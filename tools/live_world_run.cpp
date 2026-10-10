@@ -611,6 +611,82 @@ nlohmann::json lampOf(const LiveLamp &lamp) {
             {"why", lamp.why}};
 }
 
+// Light as a host reads it (docs/optics-checkpoint.md): where its power went,
+// at the last trace in watts and since it began in joules, the residual left
+// unrounded; its sources and sensors; what it reaches; and what it costs. With
+// `paths`, a few rays of the last trace to draw: each a light's id, its corners
+// in millimetres, x, y, z running, and the watts on each leg.
+nlohmann::json opticsOf(const LiveWorld &world, bool paths) {
+    const LiveOptics o = world.optics();
+    if (!o.declared) return nullptr;
+    const auto ledger = [](const LiveOpticsLedger &l) {
+        return nlohmann::json{{"sent", tidy(l.sent)},
+                              {"heated", tidy(l.heated)},
+                              {"warms_nothing", tidy(l.unheated)},
+                              {"ground", tidy(l.ground)},
+                              {"escaped", tidy(l.escaped)},
+                              {"scattered", tidy(l.scattered)},
+                              {"unfollowed", tidy(l.unfollowed)},
+                              {"bounce_limit", tidy(l.bounce_limit)},
+                              {"residual", l.residual()}};
+    };
+    nlohmann::json lights = nlohmann::json::array();
+    for (const LiveLight &light : world.lights()) {
+        nlohmann::json row = {{"id", light.id},     {"name", light.name},           {"kind", light.kind},
+                              {"power_w", tidy(light.power_w)}, {"rays", light.traced}, {"why", light.why}};
+        if (light.kind == "lamp") row["lamp"] = light.lamp;
+        else row["spacing_m"] = tidy(light.spacing_m);
+        lights.push_back(std::move(row));
+    }
+    nlohmann::json cells = nlohmann::json::array();
+    for (const LivePhotocell &cell : world.photocells())
+        cells.push_back({{"id", cell.id},
+                         {"name", cell.name},
+                         {"body", cell.body},
+                         {"at_m", vec(cell.at_m)},
+                         {"normal", vec(cell.normal)},
+                         {"area_m2", tidy(cell.area_m2)},
+                         {"power_w", tidy(cell.power_w)},
+                         {"received_j", tidy(cell.received_j)}});
+    nlohmann::json lit = nlohmann::json::array();
+    for (const LiveOptics::Lit &b : o.bodies)
+        lit.push_back({{"body", b.body},
+                       {"absorbed_w", tidy(b.absorbed_w)},
+                       {"absorbed_j", tidy(b.absorbed_j)},
+                       {"heated", b.heated}});
+    nlohmann::json out = {
+        {"t_s", tidy(o.t_s)},
+        {"watts", ledger(o.watts)},
+        {"joules", ledger(o.joules)},
+        {"lights", std::move(lights)},
+        {"photocells", std::move(cells)},
+        {"lit", std::move(lit)},
+        {"cost", {{"trace_every_steps", o.trace_every_steps},
+                  {"bounce_limit", o.bounce_limit},
+                  {"follow_share", tidy(o.follow_share)},
+                  {"traces", o.traces},
+                  {"rays", o.rays},
+                  {"casts", o.casts},
+                  {"grazed_edges", o.grazed},
+                  {"last_trace_ms", tidy(o.last_trace_ms)},
+                  {"mean_trace_ms", o.traces ? tidy(o.trace_ms / static_cast<double>(o.traces)) : 0.0}}}};
+    if (paths) {
+        nlohmann::json drawn = nlohmann::json::array();
+        for (const LiveOptics::Path &p : o.paths) {
+            nlohmann::json mm = nlohmann::json::array(), watts = nlohmann::json::array();
+            for (const Vec3 &at : p.points) {
+                mm.push_back(std::lround(at.x * 1000.0));
+                mm.push_back(std::lround(at.y * 1000.0));
+                mm.push_back(std::lround(at.z * 1000.0));
+            }
+            for (const double w : p.power_w) watts.push_back(tidy(w));
+            drawn.push_back({{"light", p.light}, {"mm", std::move(mm)}, {"w", std::move(watts)}});
+        }
+        out["paths"] = std::move(drawn);
+    }
+    return out;
+}
+
 nlohmann::json breakerOf(const LiveBreaker &breaker) {
     return {{"id", breaker.id},
             {"name", breaker.name},
@@ -2310,6 +2386,22 @@ int main(int argc, char **argv) {
                     world->moveHeld(readVec(command, "to"));
                 } else if (op == "release") {
                     world->release();
+                } else if (op == "finish") {
+                    // Wait for a fracture started without waiting, and apply it
+                    // now: what a host does when the pair it pins has been held
+                    // as long as it will allow. Held longer, a pinned body stays
+                    // put while the world goes on without it -- measured, a block
+                    // a cannon ball had knocked at 2.8 m/s sat on its pedestal
+                    // for seconds while the ball's own run queued behind it.
+                    if (world->fracturePending()) {
+                        const std::string what = world->fractureSubject();
+                        reply["pieces"] = world->finishFracture();
+                        reply["finished"] = what;
+                        made_bodies = true;
+                        reply["outcome"] = outcomeWord(world->lastOutcome());
+                        if (nlohmann::json cost = costOf(world->lastBreak()); !cost.is_null())
+                            reply["cost"] = std::move(cost);
+                    }
                 } else if (op == "fracture") {
                     const std::string what = command.at("name").get<std::string>();
                     const double window = command.value("window_s", 0.003);
@@ -2748,6 +2840,65 @@ int main(int argc, char **argv) {
                         throw std::invalid_argument("there is no lamp with that id");
                     for (const LiveLamp &lamp : world->lamps())
                         if (lamp.id == id) reply["lit"] = lampOf(lamp);
+                } else if (op == "sunlight") {
+                    // Light (docs/optics-checkpoint.md): the room's sun shining
+                    // on the world, as rays on a grid `spacing_m` apart through
+                    // the boxes given (or round every body), each box a
+                    // `center_m` and a `size_m`.
+                    std::vector<LiveLight::Box> boxes;
+                    for (const nlohmann::json &b : command.value("apertures", nlohmann::json::array()))
+                        boxes.push_back({readVec(b, "center_m"), readVec(b, "size_m")});
+                    const unsigned made = world->sunlight(command.value("name", std::string{}), boxes,
+                                                          command.value("spacing_m", 0.01));
+                    if (made == 0)
+                        throw std::invalid_argument(
+                            "sunlight has rays 1 mm to 1 m apart, through at most 64 boxes of positive size that ask "
+                            "for no more than 8192 rays, and there is one sunlight in a world");
+                    reply["light"] = made;
+                } else if (op == "lamp_light") {
+                    // A lamp's light: rays into a cone round `axis` (given in the
+                    // world; it turns with the lamp's part).
+                    const unsigned made = world->lampLight(
+                        command.value("name", std::string{}), command.at("lamp").get<unsigned>(),
+                        readVec(command, "axis"), command.value("half_angle_deg", 180.0), command.value("rays", 256U),
+                        command.value("radiant_efficacy_lm_w", 300.0), command.value("visible_share", 1.0));
+                    if (made == 0)
+                        throw std::invalid_argument(
+                            "a lamp's light needs a lamp that is there, an axis, a half angle above 0 and up to 180 "
+                            "degrees, 1 to 4096 rays, 0 to 683 lumens a watt of light and a visible share from 0 to 1");
+                    reply["light"] = made;
+                } else if (op == "light_remove") {
+                    if (!world->removeLight(command.at("light").get<unsigned>()))
+                        throw std::invalid_argument("there is no light with that id");
+                } else if (op == "polish") {
+                    // A mirror finish on a metal part, or off it.
+                    const std::string refused = world->polish(command.at("body").get<std::string>(),
+                                                              command.value("polished", true));
+                    if (!refused.empty()) throw std::invalid_argument(refused);
+                } else if (op == "photocell") {
+                    // A light sensor on a part: its middle and the way its face
+                    // looks, given in the world, and its area.
+                    const unsigned made = world->photocell(
+                        command.value("name", std::string{}), command.at("body").get<std::string>(),
+                        readVec(command, "at_m"), readVec(command, "normal"), command.value("area_m2", 0.0));
+                    if (made == 0)
+                        throw std::invalid_argument(
+                            "a light sensor goes on a part that is in the world, with a face that looks some way, an "
+                            "area above 0 and up to 1 m2, and a name no other sensor has");
+                    reply["photocell"] = made;
+                } else if (op == "light_tracing") {
+                    const LiveOptics now = world->optics();
+                    if (!world->setLightTracing(command.value("trace_every_steps", now.trace_every_steps),
+                                                command.value("bounce_limit", now.bounce_limit),
+                                                command.value("follow_share", now.follow_share),
+                                                command.value("drawn", now.drawn)))
+                        throw std::invalid_argument(
+                            "light is traced every 1 to 240 steps, each ray meeting 1 to 64 surfaces, a part split off "
+                            "followed while it carries 0 to 1 of its ray, with 0 to 512 rays kept to draw");
+                } else if (op == "light_trace" || op == "optics") {
+                    // Light now, with its paths: traced first when asked to.
+                    if (op == "light_trace") world->traceLight();
+                    reply["optics"] = opticsOf(*world, true);
                 } else if (op == "program") {
                     // A program for a machine (LiveProgram): of a kind ("roam",
                     // "sit", "hover" or "still"), working the controllers of its
@@ -3148,6 +3299,10 @@ int main(int argc, char **argv) {
                 // A sun with a day, on every reply: it moves with the world's
                 // clock, and the host lights the room from it.
                 if (const LiveSun sun = world->sun(); sun.declared && sun.day_s > 0.0) reply["sun"] = sunOf(sun);
+                // Light, on every reply of a world that has any: its ledger,
+                // sources, sensors and cost; its paths when asked for.
+                if (!reply.contains("optics") && world->optics().declared)
+                    reply["optics"] = opticsOf(*world, command.value("light_paths", false));
                 // Pins travel when the SET of them changes -- one hung, one
                 // taken out, one that came off because its wood was smashed --
                 // and not on every tick. Their angles change every frame, but

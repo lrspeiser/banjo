@@ -1,5 +1,5 @@
 import * as THREE from '/three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime} from '/machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments} from '/machine-view.mjs';
 
 // The machine page. It asks the server to build a declaration, then shows
 // what the engine measures, frame by frame. It never moves a body itself.
@@ -136,6 +136,49 @@ function syncWires() {
   }
 }
 
+// Light (docs/optics-checkpoint.md): the rays the engine last traced, as lines
+// as bright as the power it measured on them, and each light sensor as a small
+// disc that glows with what it reads. The key light comes from where the
+// machine's sun is.
+let beams = null;
+const sensors = new Map();
+function syncLight() {
+  const light = readouts.light;
+  const {positions, colors, legs} = beamSegments(light && light.paths);
+  if (!beams) {
+    // Opaque, so the glass is drawn over them and they show through it.
+    beams = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({vertexColors: true}));
+    beams.frustumCulled = false;
+    scene.add(beams);
+  }
+  beams.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  beams.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  beams.geometry.setDrawRange(0, legs * 2);
+  beams.visible = legs > 0;
+  const seen = new Set();
+  for (const c of (light && light.photocells) || []) {
+    if (!c.at_m) continue;
+    seen.add(c.name);
+    let disc = sensors.get(c.name);
+    if (!disc) {
+      const r = Math.max(.006, Math.sqrt((c.area_m2 || 1e-4) / Math.PI));
+      disc = new THREE.Mesh(new THREE.CircleGeometry(r, 20), new THREE.MeshBasicMaterial({color: 0x334455, side: THREE.DoubleSide}));
+      scene.add(disc); sensors.set(c.name, disc);
+    }
+    const n = new THREE.Vector3(...(c.normal || [0, 1, 0])).normalize();
+    disc.position.set(...c.at_m).addScaledVector(n, .002);
+    disc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+    disc.material.color.setHex(c.power_w > 0 ? 0xffe066 : 0x334455);
+  }
+  for (const [name, disc] of sensors) if (!seen.has(name)) { scene.remove(disc); disc.geometry.dispose(); sensors.delete(name); }
+}
+function placeSun() {
+  const s = machine && (machine.sun || (machine.light && machine.light.sun));
+  if (!s) { sun.position.set(4, 8, 5); return; }
+  const el = s.elevation_deg * Math.PI / 180, az = s.azimuth_deg * Math.PI / 180;
+  sun.position.set(10 * Math.cos(el) * Math.sin(az), 10 * Math.sin(el), 10 * Math.cos(el) * Math.cos(az));
+}
+
 // The ground the engine built: its own heights, one per column.
 let terrain = null, water = null, parcels = null;
 // Poured water in the air: one small sphere per parcel the engine carries,
@@ -245,6 +288,23 @@ function updateRopes() {
   }
 }
 
+// Goal zones (a station done when a part is inside a box): drawn as a
+// translucent green box where the engine will look.
+const zones = [];
+function syncZones() {
+  for (const z of zones) { scene.remove(z); z.geometry.dispose(); }
+  zones.length = 0;
+  for (const s of machine?.stations || []) {
+    const z = s.done_when && s.done_when.in_zone;
+    if (!z) continue;
+    const box = new THREE.Mesh(new THREE.BoxGeometry(...z.size_m),
+      new THREE.MeshStandardMaterial({color: 0x3fbf6f, transparent: true, opacity: .22, depthWrite: false}));
+    box.position.set(...z.at_m);
+    box.add(new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), new THREE.LineBasicMaterial({color: 0x5fe08f})));
+    scene.add(box); zones.push(box);
+  }
+}
+
 // Gas pushing a piston (steam under a piston, a cannon's breech): its column,
 // where the engine says it is, tinted by its measured temperature. Not drawn
 // once it is open to the air.
@@ -336,6 +396,11 @@ function renderReadings(frame) {
     pair(dl, s.name, s.shaded ? `in shadow (${s.shaded_by || 'something'})` : `${(s.sunlight_w || 0).toFixed(0)} W of sunlight, ${(s.power_w || 0).toFixed(1)} W into the battery`);
   for (const m of readouts.machines?.motors || [])
     pair(dl, `Motor ${m.id}`, `${(m.speed_rad_s || 0).toFixed(1)} rad/s · ${(m.torque_n_m || 0).toFixed(2)} N·m · ${(m.power_w || 0).toFixed(0)} W`);
+  if (readouts.light) {
+    const l = readouts.light;
+    pair(dl, 'Light', `${(l.sent_w || 0).toFixed(1)} W traced, ${(l.heated_w || 0).toFixed(1)} W of it warming parts`);
+    for (const c of l.photocells || []) pair(dl, `${c.name} (light sensor)`, `${(c.power_w || 0).toFixed(3)} W`);
+  }
   if (readouts.pour)
     pair(dl, 'Poured water', `${readouts.pour.poured_l.toFixed(1)} L poured, ${readouts.pour.landed_l.toFixed(1)} L in the stream, ${readouts.pour.in_air_l.toFixed(1)} L falling`);
   for (const j of (readouts.joints || []).filter(j => j.kind === 'hinge').slice(0, 3))
@@ -386,7 +451,7 @@ function renderLabels() {
 }
 
 // ---- building and running --------------------------------------------------------
-async function build(next, start) {
+async function build(next, start, request) {
   const mine = ++polling;
   if (session) api({op: 'close', session}).catch(() => {});
   session = null; playing = false;
@@ -394,9 +459,9 @@ async function build(next, start) {
   for (const [, mesh] of meshes) { scene.remove(mesh); mesh.geometry.dispose(); }
   meshes.clear(); $('events').replaceChildren();
   try {
-    const opened = await api({op: 'open', spec: next});
-    if (mine !== polling) { api({op: 'close', session: opened.session}).catch(() => {}); return; }
-    spec = next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
+    const opened = await api(request || {op: 'open', spec: next});
+    if (mine !== polling) { api({op: 'close', session: opened.session}).catch(() => {}); return opened; }
+    spec = request ? opened.machine : next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
     world = mergeFrame({seq: 0, t: 0, bodies: new Map()}, opened);
     $('title').textContent = machine.title;
     $('spec').value = JSON.stringify(spec, null, 1);
@@ -406,10 +471,11 @@ async function build(next, start) {
     drumLines.clear();
     if (parcels) { scene.remove(parcels); parcels.geometry.dispose(); parcels = null; }
     syncGround(opened.ground); syncWater(opened.water); syncParcels(opened.parcels);
-    syncMeshes([...world.bodies.values()]); syncWires(); syncRopes(); updateWires(); renderStations(); renderReadings(opened); renderClock(opened);
+    syncMeshes([...world.bodies.values()]); syncWires(); syncRopes(); syncZones(); updateWires(); placeSun(); syncLight(); renderStations(); renderReadings(opened); renderClock(opened);
     frameCamera();
     if (start) await setPlaying(true);
     poll(mine);
+    return opened;
   } catch (e) {
     $('clock').textContent = 'Could not build: ' + e.message;
     if (e.data && e.data.problems) addEvents(e.data.problems.map(text => ({t: 0, text})));
@@ -446,7 +512,8 @@ async function poll(mine) {
       syncMeshes(changed.map(b => world.bodies.get(b.name)));
       if (frame.water) syncWater(frame.water);
       if (frame.parcels) syncParcels(frame.parcels);
-      updateWires(); addEvents(frame.events); renderStations(); renderReadings(frame); renderClock(frame);
+      updateWires(); syncLight(); addEvents(frame.events); renderStations(); renderReadings(frame); renderClock(frame);
+      watchGoal(frame);
     } catch (e) {
       if (e.status === 410) { $('clock').textContent = 'This machine stopped running on the server; press Set up again'; session = null; return; }
       $('clock').textContent = 'Connection problem: ' + e.message;
@@ -478,6 +545,13 @@ window.machineView = ({azimuth: a, elevation: e, distance: d, at} = {}) => {
   if (Number.isFinite(e)) elevation = e;
   if (Number.isFinite(d)) distance = d;
   if (Array.isArray(at) && at.length === 3) { goal.set(...at); target.copy(goal); }
+};
+
+// And where a point in the world is on the page, for a script that clicks
+// where a person would (tests of placing a piece by clicking).
+window.machineScreenPoint = point => {
+  const p = new THREE.Vector3(...point).project(camera), rect = renderer.domElement.getBoundingClientRect();
+  return [rect.left + (p.x + 1) / 2 * rect.width, rect.top + (1 - p.y) / 2 * rect.height];
 };
 
 function resize() {
@@ -550,6 +624,7 @@ function say(kind, text) {
 
 $('chat-form').addEventListener('submit', async e => {
   e.preventDefault();
+  if (LEVEL_MODE) { askLevel('hint'); return; }
   const message = $('message').value.trim();
   if (!message) return;
   $('send').disabled = true; $('chat-status').textContent = 'The model is writing a declaration; the server checks it and rehearses it once in the engine. This takes up to a few minutes…';
@@ -583,5 +658,217 @@ fetch('/api/checkpoint').then(r => r.ok ? r.json() : null).then(c => {
   $('build').textContent = `${(c.website_revision || 'unknown').slice(0, 7)}${c.local_changes ? ' + local edits' : ''}`;
 }).catch(() => {});
 
+
+// ---- the puzzles (/play) ---------------------------------------------------------
+// A level is a fixed machine, a goal and a tray. The player adds pieces from
+// the tray and turns their knobs; the server composes the machine and the
+// engine runs it. The stars come from what the engine measured.
+const params = new URLSearchParams(location.search);
+const LEVEL_MODE = location.pathname === '/play' || params.has('level');
+let levels = [], level = null, placements = [], placedCost = [], helped = false, scored = false, lastRun = null, rebuildTimer = null;
+let placing = null, pressedAt = null;
+const raycaster = new THREE.Raycaster();
+
+// A press that does not move is a click: with a piece waiting to be placed,
+// it goes where the click meets the scene (the ground or anything on it),
+// within its knobs' ranges. The server then sets it down on what is there.
+function placeAt(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects([ground, ...meshes.values()], true);
+  if (!hits.length || placing === null) return;
+  const at = hits[0].point, p = placements[placing], knobs = trayItem(p.piece).knobs;
+  const set = (key, v) => {
+    const r = knobs[key];
+    if (!r || r.choices) return;
+    const step = r.step || 0.01;
+    p[key] = Number(Math.min(r.max, Math.max(r.min, Math.round(v / step) * step)).toFixed(4));
+  };
+  set('x_m', at.x); set('z_m', at.z);
+  placing = null; view.classList.remove('placing');
+  renderPlaced(); scheduleRebuild(0);
+}
+renderer.domElement.addEventListener('pointerdown', e => { pressedAt = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (placing !== null && pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6) placeAt(e.clientX, e.clientY);
+  pressedAt = null;
+});
+
+function bestStars(id) { try { return Number(localStorage.getItem('banjo-level-' + id) || 0); } catch { return 0; } }
+function keepStars(id, n) { try { if (n > bestStars(id)) localStorage.setItem('banjo-level-' + id, String(n)); } catch { /* private window */ } }
+
+function renderLevels() {
+  const nav = $('levels'); nav.replaceChildren();
+  levels.forEach((l, i) => {
+    const b = document.createElement('button'); b.type = 'button';
+    const best = bestStars(l.id);
+    b.textContent = `${i + 1}. ${l.title}${best ? ' ' + '★'.repeat(best) : ''}`;
+    b.setAttribute('aria-current', String(Boolean(level) && l.id === level.id));
+    b.addEventListener('click', () => chooseLevel(l.id).catch(() => {}));
+    nav.append(b);
+  });
+}
+
+function knobDefault(rule) { return rule.default ?? (rule.choices ? rule.choices[0] : rule.min); }
+function trayItem(piece) { return level.tray.find(t => t.piece === piece); }
+
+function renderTray() {
+  const ul = $('tray'); ul.replaceChildren();
+  for (const t of level.tray) {
+    const used = placements.filter(p => p.piece === t.piece).length, count = t.count || 1;
+    const li = document.createElement('li');
+    const per = t.cost_per ? (t.cost_per.say || `${t.cost_per.each} per ${t.cost_per.unit} of ${t.cost_per.knob}`) : '';
+    const price = t.cost_per ? (t.cost ? `${t.cost} + ${per}` : per) : `${t.cost}`;
+    li.append(Object.assign(document.createElement('span'), {textContent: `${t.piece} — costs ${price} · ${count - used} of ${count} left`}));
+    const add = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Add', disabled: used >= count});
+    add.addEventListener('click', () => {
+      const p = {piece: t.piece};
+      for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
+      placements.push(p); renderTray(); renderPlaced(); scheduleRebuild(0);
+    });
+    li.append(add); ul.append(li);
+  }
+}
+
+function renderPlaced() {
+  const ol = $('placed'); ol.replaceChildren();
+  placements.forEach((p, i) => {
+    const t = trayItem(p.piece), li = document.createElement('li');
+    const head = Object.assign(document.createElement('div'), {className: 'piece-head'});
+    head.append(Object.assign(document.createElement('strong'), {textContent: `your ${p.piece} ${i + 1}${placedCost[i] != null ? ' · costs ' + placedCost[i] : ''}`}));
+    const remove = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Remove'});
+    remove.addEventListener('click', () => { placements.splice(i, 1); placing = null; renderTray(); renderPlaced(); scheduleRebuild(0); });
+    if (t.knobs.x_m) {
+      // Set it down where you point in the scene.
+      const place = Object.assign(document.createElement('button'), {type: 'button',
+        textContent: placing === i ? 'Click in the scene…' : 'Place by clicking'});
+      place.setAttribute('aria-pressed', String(placing === i));
+      place.addEventListener('click', () => {
+        placing = placing === i ? null : i;
+        view.classList.toggle('placing', placing !== null);
+        $('verdict').textContent = placing !== null ? `Click in the scene where your ${p.piece} should go.` : '';
+        renderPlaced();
+      });
+      head.append(place);
+    }
+    head.append(remove); li.append(head);
+    for (const [key, rule] of Object.entries(t.knobs)) {
+      const label = Object.assign(document.createElement('label'), {className: 'knob'});
+      label.append(Object.assign(document.createElement('span'), {textContent: rule.label || key}));
+      let input;
+      const shown = Object.assign(document.createElement('output'), {textContent: String(p[key])});
+      if (rule.choices) {
+        input = document.createElement('select');
+        for (const c of rule.choices) input.append(Object.assign(document.createElement('option'), {value: c, textContent: c}));
+        input.value = p[key];
+        input.addEventListener('change', () => { p[key] = input.value; shown.textContent = input.value; scheduleRebuild(); });
+      } else {
+        input = Object.assign(document.createElement('input'), {type: 'range', min: rule.min, max: rule.max, step: rule.step || 0.01, value: p[key]});
+        input.addEventListener('input', () => { p[key] = Number(input.value); shown.textContent = input.value; scheduleRebuild(); });
+      }
+      input.setAttribute('aria-label', `${rule.label || key} of your ${p.piece} ${i + 1}`);
+      label.append(input, shown); li.append(label);
+    }
+    ol.append(li);
+  });
+  const total = placedCost.reduce((a, b) => a + (b || 0), 0);
+  $('cost-line').textContent = placements.length ? `Cost ${Math.round(total * 10) / 10} of a budget of ${level.budget} (par ${level.par}).` : 'Add a piece from the tray.';
+}
+
+function scheduleRebuild(ms = 350) { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildLevel(false).catch(() => {}), ms); }
+
+async function rebuildLevel(start) {
+  scored = false; $('verdict').replaceChildren();
+  try {
+    const opened = await build(null, start, {op: 'level_open', level: level.id, placements, helped});
+    placedCost = (opened.placements || []).map(p => p.cost);
+    renderPlaced();
+  } catch (e) {
+    const problems = e.data && e.data.problems ? e.data.problems.join('; ') : e.message;
+    $('verdict').textContent = problems;
+    // Still show the level as it stands, without the pieces that do not fit.
+    if (!placements.length || e.status === 422) await build(level.machine).catch(() => {});
+  }
+}
+
+function watchGoal(frame) {
+  if (!LEVEL_MODE || !level || scored || !frame || !session || !(world.t > 0)) return;
+  const row = (readouts.stations || [])[0];
+  if ((row && row.done) || world.t > level.time_s + 0.3) { scored = true; score(row).catch(() => {}); }
+}
+
+async function score(row) {
+  lastRun = {goal_at_s: row && row.done ? row.at_s : null, world_t: world.t,
+             events: [...$('events').children].slice(0, 20).map(li => li.textContent)};
+  const r = await api({op: 'level_score', session});
+  const v = $('verdict'); v.replaceChildren();
+  v.append(Object.assign(document.createElement('span'), {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)}));
+  const said = [r.earned.goal ? `Goal at ${describeTime(r.goal_at_s)}.` : `The goal did not happen within ${level.time_s} s.`,
+                `Cost ${r.cost} (par ${r.par})${r.earned.budget ? '' : ', over par'}.`];
+  if (r.helped) said.push('The chat placed the pieces, so one star at most.');
+  v.append(' ' + said.join(' '));
+  keepStars(level.id, r.stars); renderLevels();
+}
+
+async function chooseLevel(id) {
+  level = levels.find(l => l.id === id) || levels[0];
+  placements = []; placedCost = []; helped = false; lastRun = null;
+  history_.replaceState(null, '', '/play?level=' + level.id);
+  $('title').textContent = `${levels.indexOf(level) + 1}. ${level.title}`;
+  $('brief').textContent = level.brief;
+  $('goal-line').textContent = `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s. Budget ${level.budget}, par ${level.par}. It teaches ${level.teaches}.`;
+  $('chat-log').replaceChildren();
+  renderLevels(); renderTray(); renderPlaced();
+  await rebuildLevel(false);
+}
+
+async function askLevel(mode) {
+  const message = $('message').value.trim() || (mode === 'hint' ? 'Give me a hint.' : 'Place the pieces for me.');
+  $('send').disabled = $('solve').disabled = true;
+  $('chat-status').textContent = mode === 'hint' ? 'Thinking about your last run…' : 'Placing pieces from your tray, then rehearsing them once in the engine…';
+  say('you', message);
+  try {
+    const r = await api({op: 'chat', level: level.id, placements, mode, message, last_run: lastRun});
+    say('model', r.reply);
+    if (mode === 'build' && Array.isArray(r.placements)) {
+      placements = r.placements.map(p => { const q = {...p}; delete q.cost; return q; });
+      helped = true; renderTray(); renderPlaced();
+      if (r.rehearsal) say(r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.goal_at_s != null
+        ? `Rehearsed once in the engine: the goal happened at ${describeTime(r.rehearsal.goal_at_s)}.`
+        : 'Rehearsed once in the engine: the goal did not happen. Try moving the pieces.');
+      await rebuildLevel(false);
+    }
+    $('message').value = '';
+  } catch (err) { say('refused', err.message); }
+  finally { $('send').disabled = $('solve').disabled = false; $('chat-status').textContent = ''; }
+}
+
+async function startGame() {
+  document.body.classList.add('playing-level');
+  $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
+  document.querySelector('.lede').hidden = true;
+  for (const d of document.querySelectorAll('aside details')) d.hidden = true;
+  $('send').textContent = 'Ask for a hint';
+  $('message').placeholder = 'Ask about this level, e.g. “Why does my ball fall short?”';
+  document.querySelector('.chat h2').textContent = 'Ask for help';
+  const r = await api({op: 'levels'});
+  levels = r.levels;
+  await chooseLevel(params.get('level'));
+}
+$('run').addEventListener('click', () => rebuildLevel(true).catch(() => {}));
+$('trial').addEventListener('click', async () => {
+  $('trial').disabled = true;
+  $('verdict').textContent = 'Running it three times, each loose part nudged by a millimetre or two…';
+  try {
+    const r = await api({op: 'trial', level: level.id, placements});
+    $('verdict').textContent = `Works ${r.worked} of ${r.runs}: ` + r.results.map(x => x.goal_at_s != null ? `goal at ${describeTime(x.goal_at_s)}` : 'missed').join(', ') + '.';
+  } catch (e) { $('verdict').textContent = e.data && e.data.problems ? e.data.problems.join('; ') : e.message; }
+  finally { $('trial').disabled = false; }
+});
+$('solve').addEventListener('click', () => askLevel('build'));
+
+const history_ = window.history;
 resize(); render();
-fetch('/machine-default.json').then(r => r.json()).then(d => build(d)).catch(e => { $('clock').textContent = 'Could not load the machine: ' + e.message; });
+if (LEVEL_MODE) startGame().catch(e => { $('clock').textContent = 'Could not load the levels: ' + e.message; });
+else fetch('/machine-default.json').then(r => r.json()).then(d => build(d)).catch(e => { $('clock').textContent = 'Could not load the machine: ' + e.message; });

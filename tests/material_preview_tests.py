@@ -406,6 +406,12 @@ class PlayerMaterials(unittest.TestCase):
         wait('window.banjoRoom?.ready()')
         page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get("field pick").mesh.position;'
             'r.standAt(p.x,p.y+1.62,p.z+1.1);r.lookAt(p.x,p.y,p.z)})()')
+        # The player is a body (2026-10-04) whose eye settles onto the ground
+        # where it stands, a few centimetres off the height it was put at; a
+        # view aimed before that passes under the 50 mm pick. Look again from
+        # where it came to rest, as fe774d52 does in the AI dig journey.
+        wait('(()=>{const r=banjoRoom,p=r.world.bodies.get("field pick").mesh.position;'
+             'r.lookAt(p.x,p.y,p.z);return r.world.aim?.name==="field pick"})()')
         wait('document.querySelector("#material-preview [data-method=product] img")')
         self.assertIn('Whole item',page.evaluate('document.querySelector("#material-preview").textContent'))
         key('KeyE','e');wait('banjoRoom.held()?.name==="field pick" && banjoRoom.use().mode==="tool-ready"')

@@ -1,0 +1,394 @@
+"""Puzzles on the machine: a level, a tray of pieces, a goal the engine checks.
+
+A level is a machine (banjo.machine.v1) that is fixed -- the player cannot
+move it -- plus a goal, a time limit, and a TRAY: the pieces the player may
+add, each with a cost and a few knobs (where it goes, how high, how much
+powder). The player's placements are composed into the level's machine and
+the engine runs the whole thing; nothing about the outcome is decided here.
+
+Scoring, from what the engine measured:
+  goal     the goal happened within the time limit
+  budget   the pieces cost no more than the level's par
+  style    the chain used at least the level's number of different pieces
+
+Reliability: a real chain of events is fragile. `trial` runs the same machine
+several times with every loose part nudged by a millimetre or two, and says
+in how many the goal happened -- which a player can try to raise.
+
+Levels live in client/voxel-lab/levels.json.
+"""
+import copy
+import json
+import math
+import random
+from pathlib import Path
+
+import machine_world as mw
+
+ROOT = Path(__file__).resolve().parents[1]
+LEVELS_PATH = ROOT / 'client/voxel-lab/levels.json'
+
+
+def load_levels():
+    return json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['levels']
+
+
+def level_by_id(level_id):
+    for level in load_levels():
+        if level['id'] == level_id:
+            return level
+    raise ValueError(f'There is no level called {level_id!s}')
+
+
+# ---- the pieces ---------------------------------------------------------------
+#
+# Each piece type turns a placement's knobs into the machine's own kits and
+# parts. The knobs a level allows, and their ranges, are in the level's tray;
+# every value is checked against them before anything is built.
+
+def set_down_height(parts, x0, x1, z0, z1):
+    """The top of the highest thing under a footprint (x0..x1, z0..z1):
+    where a piece set down there comes to rest first. The ground is 0."""
+    top = 0.0
+    for p in parts:
+        if p['shape'] == 'sphere':
+            r = 0.5 * p['size_m'][0]
+            ext = [r, r, r]
+        else:
+            axes, half = mw._axes(p), mw._half(p)
+            ext = [sum(abs(axes[j][i]) * half[j] for j in range(3)) for i in range(3)]
+        c = p['at_m']
+        if c[0] + ext[0] <= x0 or c[0] - ext[0] >= x1 or c[2] + ext[2] <= z0 or c[2] - ext[2] >= z1:
+            continue
+        top = max(top, c[1] + ext[1])
+    return top
+
+
+def _plank(name, k, ctx):
+    """A loose plank, cut to length_m and set down with its middle at x_m:
+    lowered until it meets the first thing under it, and from then on it is
+    gravity and contact that hold it. Nothing about it is bolted."""
+    length, thick, width = k['length_m'], 0.02, k.get('width_m', 0.3)
+    x, z = k['x_m'], k.get('z_m', 0.0)
+    rest = set_down_height(ctx['parts'], x - length / 2, x + length / 2, z - width / 2, z + width / 2)
+    return {'parts': [{'name': name, 'shape': 'box', 'material': k.get('material', 'oak'),
+                       'size_m': [round(length, 4), thick, width],
+                       'at_m': [round(x, 4), round(rest + thick / 2 + 0.002, 4), z], 'fixed': False}]}
+
+
+def _knife(name, k, ctx=None):
+    return {'kits': [{'kit': 'knife_pendulum', 'name': name,
+                      'pivot_m': [k['x_m'], k['pivot_height_m'], k.get('z_m', 0.0)], 'arm_m': k['arm_m'],
+                      'swing_toward': k.get('swing_toward', '+x'), 'weight_kg': k.get('weight_kg', 0.0),
+                      'edge_radius_m': k.get('edge_radius_m', 0.0002)}]}
+
+
+def _cannon(name, k, ctx=None):
+    kit = {'kit': 'cannon', 'name': name, 'at_m': [k['x_m'], k['bore_height_m'], k.get('z_m', 0.0)],
+           'toward': k.get('toward', '+x'), 'powder_g': k['powder_g'],
+           'ball': {'diameter_m': k.get('ball_diameter_m', 0.08), 'material': k.get('ball_material', 'iron')}}
+    if k.get('fire_at_s') is not None:
+        kit['fire_at_s'] = k['fire_at_s']
+    return {'kits': [kit]}
+
+
+def _steam(name, k, ctx=None):
+    return {'kits': [{'kit': 'steam_engine', 'name': name, 'at_m': [k['x_m'], 0.0, k.get('z_m', 0.0)],
+                      'heat_w': k['heat_kw'] * 1000.0, 'boiler_side': k.get('boiler_side', '-x')}]}
+
+
+def _ramp(name, k, ctx=None):
+    """A ramp with a ball at its top, running toward +x: its top at
+    (x_m, top_height_m), down to its foot `run_m` further on at foot_height_m."""
+    return {'kits': [{'kit': 'ramp', 'name': name, 'top_m': [k['x_m'], k['top_height_m'], k.get('z_m', 0.0)],
+                      'bottom_m': [k['x_m'] + k['run_m'], k['foot_height_m'], k.get('z_m', 0.0)],
+                      'width_m': 0.12, 'ball': {'material': k.get('ball_material', 'iron'), 'diameter_m': 0.08,
+                                                'name': name + ' ball'}}]}
+
+
+def _mirror(name, k, ctx=None):
+    """A polished aluminium mirror on its own stand, standing upright at
+    (x_m, z_m) and turned angle_deg about the vertical: at 0 it faces along
+    x. It reflects what light reaches it; where the light goes is the
+    engine's."""
+    height = k.get('height_m', 0.575)
+    return {'parts': [{'name': name, 'shape': 'box', 'material': 'aluminum', 'size_m': [0.02, 0.2, 0.2],
+                       'at_m': [k['x_m'], height, k['z_m']], 'turn_deg': [0, k['angle_deg'], 0], 'fixed': True}],
+            'mirrors': [name]}
+
+
+PIECES = {'plank': _plank, 'knife': _knife, 'cannon': _cannon, 'steam': _steam, 'ramp': _ramp, 'mirror': _mirror}
+
+
+class LevelRefused(ValueError):
+    def __init__(self, problems):
+        super().__init__('; '.join(problems))
+        self.problems = problems
+
+
+def check_placements(level, placements):
+    """Every placement names a tray piece the level offers, no more of each
+    than the tray holds, every knob within its range. Returns the placements
+    with defaults filled in and their total cost."""
+    problems, out, used, cost = [], [], {}, 0.0
+    tray = {t['piece']: t for t in level['tray']}
+    if not isinstance(placements, list):
+        raise LevelRefused(['placements is a list'])
+    for i, p in enumerate(placements):
+        what = f'piece {i + 1}'
+        if not isinstance(p, dict) or p.get('piece') not in tray:
+            problems.append(f'{what}: piece is one of {", ".join(tray)}')
+            continue
+        t = tray[p['piece']]
+        used[p['piece']] = used.get(p['piece'], 0) + 1
+        if used[p['piece']] > t.get('count', 1):
+            problems.append(f'{what}: the tray holds {t.get("count", 1)} {p["piece"]}')
+        knobs = {}
+        for key, rule in t['knobs'].items():
+            value = p.get(key, rule.get('default'))
+            if 'choices' in rule:
+                if value not in rule['choices']:
+                    problems.append(f'{what}: {key} is one of {", ".join(map(str, rule["choices"]))}')
+                knobs[key] = value
+                continue
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+                problems.append(f'{what}: {key} must be a number')
+                continue
+            if not rule['min'] <= value <= rule['max']:
+                problems.append(f'{what}: {key} is {rule["min"]} to {rule["max"]}')
+            knobs[key] = float(value)
+        extra = set(p) - set(t['knobs']) - {'piece'}
+        if extra:
+            problems.append(f'{what}: {", ".join(sorted(extra))} cannot be set on a {p["piece"]}')
+        price = t['cost']
+        if 'cost_per' in t:
+            # Priced by a knob: a plank by its length, a firebox by its power.
+            per = t['cost_per']
+            amount = knobs.get(per['knob'], 0)
+            price += per['each'] * amount / per['unit']
+        cost += price
+        out.append(dict(knobs, piece=p['piece'], cost=round(price, 1)))
+    if cost > level['budget'] + 1e-9:
+        problems.append(f'the pieces cost {cost:.0f}; the budget is {level["budget"]}')
+    if problems:
+        raise LevelRefused(problems)
+    return out, round(cost, 1)
+
+
+def compose(level, placements):
+    """The level's machine with the player's pieces in it, and the goal as a
+    station. Raises LevelRefused (the tray) or mw.MachineRefused (the
+    machine: overlaps, nothing in the ground, ...)."""
+    checked, cost = check_placements(level, placements)
+    spec = copy.deepcopy(level['machine'])
+    spec.setdefault('kits', [])
+    spec.setdefault('parts', [])
+    spec['title'] = level['title']
+    for i, p in enumerate(checked):
+        knobs = {k: v for k, v in p.items() if k not in ('piece', 'cost')}
+        # What is there already, for a piece that is set down on it.
+        ctx = {'parts': mw.compile_spec(dict(spec, stations=[]))['parts']}
+        made = PIECES[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)
+        spec['kits'] += made.get('kits', [])
+        spec['parts'] += made.get('parts', [])
+        if made.get('mirrors'):
+            spec.setdefault('light', {}).setdefault('mirrors', [])
+            spec['light']['mirrors'] = spec['light']['mirrors'] + made['mirrors']
+    goal = level['goal']['station']['done_when']
+    rule = next(iter(goal.values()))
+    wanted = rule.get('part') if isinstance(rule, dict) else rule
+    compiled = mw.compile_spec(dict(spec, stations=[]))
+    names = {p['name'] for p in compiled['parts']}
+    # Nothing of the player's goes into anything else -- not the level, not
+    # another piece. (The machine itself lets two bolted parts meet; a
+    # player's bolted mirror stood inside a wall, and a bolted plank inside
+    # the tables it should have rested on.)
+    def owner(part):
+        bits = part['name'].split(' ')
+        return ' '.join(bits[:3]) if bits[0] == 'your' and len(bits) >= 3 else None
+    clashes = []
+    for a in compiled['parts']:
+        if owner(a) is None:
+            continue
+        for b in compiled['parts']:
+            if b is a or owner(b) == owner(a) or (owner(b) is not None and b['name'] < a['name']):
+                continue
+            depth = mw.overlap_depth(a, b)
+            if depth > 0.001:
+                clashes.append(f'{a["name"]} goes {depth * 1000:.0f} mm into {b["name"]}; move it')
+    if clashes:
+        raise LevelRefused(clashes[:4])
+    if isinstance(wanted, str) and wanted not in names:
+        raise LevelRefused([level['goal'].get('needs', f'the goal is about {wanted}, which is not here yet')])
+    spec['stations'] = [dict(level['goal']['station'], title=level['goal']['title'], focus=level['goal'].get('focus', []))]
+    # The steps on the way, after the goal: shown on the page as the chain's
+    # stations, and what the engine's search steers by. One about a part
+    # that is not placed yet is left out.
+    joints = {j['name'] for j in compiled['joints']}
+    circuits = {c['name'] for c in compiled['circuits']}
+    for m in level.get('milestones', []):
+        if all(x in names or x in joints or x in circuits for x in _named(m['done_when'])):
+            spec['stations'].append({'title': m['title'], 'done_when': m['done_when'], 'focus': m.get('focus', [])})
+    return spec, checked, cost
+
+
+def _named(rule):
+    """The parts, joints and circuits a station rule names."""
+    out = []
+    for value in rule.values():
+        if isinstance(value, str):
+            out.append(value)
+        elif isinstance(value, list):
+            out += [v for v in value if isinstance(v, str)]
+        elif isinstance(value, dict):
+            out += [value[k] for k in ('part', 'joint', 'photocell') if isinstance(value.get(k), str)]
+    return out
+
+
+def stars(level, checked, cost, goal_at_s, helped=False):
+    """What a run earned, from what the engine measured."""
+    kinds = {p['piece'] for p in checked}
+    got = {'goal': goal_at_s is not None and goal_at_s <= level['time_s'],
+           'budget': cost <= level['par'],
+           'style': len(kinds) >= level.get('style_pieces', 1)}
+    count = sum(got.values()) if got['goal'] else 0
+    if helped:
+        # The chat placed the pieces: the goal still counts, the rest less so.
+        count = min(count, 1)
+    return {'stars': count, 'earned': got, 'cost': cost, 'par': level['par'], 'goal_at_s': goal_at_s,
+            'helped': helped}
+
+
+def nudged(compiled, seed, metres=0.0015):
+    """The same machine with every loose part moved by up to `metres` in each
+    direction: the run-to-run wobble a real machine has."""
+    rng = random.Random(seed)
+    out = copy.deepcopy(compiled)
+    for p in out['parts']:
+        if not p['fixed']:
+            p['at_m'] = [v + rng.uniform(-metres, metres) for v in p['at_m']]
+    return out
+
+
+def trial(level, placements, exe, logs, runs=3):
+    """Run the machine `runs` times, nudged, and say in how many the goal
+    happened in time. Unpaced: as fast as the engine goes."""
+    spec, checked, cost = compose(level, placements)
+    compiled = mw.compile_spec(spec)
+    results = []
+    for seed in range(runs):
+        r = mw.rehearse(nudged(compiled, seed + 1) if seed else compiled, exe, logs,
+                        seconds=level['time_s'] + 0.5, wall_limit_s=120)
+        row = r['stations'][0] if r['stations'] else {}
+        at = row.get('at_s') if row.get('done') else None
+        results.append({'goal_at_s': at, 'error': r.get('error'),
+                        'closest': (r.get('closest_approach') or [None])[0]})
+    worked = sum(1 for x in results if x['goal_at_s'] is not None and x['goal_at_s'] <= level['time_s'])
+    return {'runs': runs, 'worked': worked, 'results': results, 'cost': cost}
+
+
+def miss_m(level, rehearsal):
+    """How far from the goal a rehearsal ended up: 0 when the goal happened
+    in time, otherwise how near the goal zone the part came (or 1 m when the
+    goal is not a zone)."""
+    rows = rehearsal.get('stations') or [{}]
+    row = rows[0]
+    if row.get('done') and row.get('at_s') is not None and row['at_s'] <= level['time_s']:
+        return 0.0
+    # A chain: one metre for every step on the way not reached, and for the
+    # first of them, how near its two parts came (a "hits" step) -- so a
+    # ball that misses the lever by 5 cm is nearer than one that misses by
+    # 50, though neither tipped it.
+    titles = [m['title'] for m in level.get('milestones', [])]
+    missed = [r.get('title') for r in rows[1:] if r.get('title') in titles and not r.get('done')]
+    if missed:
+        close = {c['station']: c['centres_m'] for c in rehearsal.get('closest_approach') or []}
+        return len(missed) + min(1.0, close.get(missed[0], 1.0)) + 0.001
+    near = rehearsal.get('zone_nearest_m') or {}
+    return near.get(level['goal']['title'], 1.0) + 0.001
+
+
+def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
+    """Starting from `placements`, move one knob at a time and keep a move
+    when the engine says the goal came nearer -- a plain coordinate search,
+    every step of it a real run. With `scatter`, that many random settings of
+    the same pieces' knobs are tried first and the search starts from the
+    best of them all: nearness can mislead (a ball flying past a lever comes
+    near its middle from a ramp in quite the wrong place), and a few starts
+    spread over the ranges get past that. Returns (placements, rehearsal,
+    runs) for the best found; the goal happened when miss_m of it is 0."""
+    best = [{k: v for k, v in p.items() if k != 'cost'} for p in placements]
+    spec, _, _ = compose(level, best)
+    best_run = rehearse(mw.compile_spec(spec))
+    best_miss, runs = miss_m(level, best_run), 1
+    tray = {t['piece']: t for t in level['tray']}
+    knobs = [(i, key, rule) for i, p in enumerate(best) for key, rule in tray[p['piece']]['knobs'].items()
+             if 'choices' not in rule]
+    rng = random.Random(seed)
+    for _ in range(scatter):
+        if best_miss == 0 or runs >= budget:
+            break
+        trial_p = copy.deepcopy(best)
+        for i, key, rule in knobs:
+            step = rule.get('step', 0.01)
+            trial_p[i][key] = round(round(rng.uniform(rule['min'], rule['max']) / step) * step, 4)
+        try:
+            spec, _, _ = compose(level, trial_p)
+            compiled = mw.compile_spec(spec)
+        except (LevelRefused, mw.MachineRefused):
+            continue
+        run = rehearse(compiled)
+        runs += 1
+        miss = miss_m(level, run)
+        if miss < best_miss:
+            best, best_run, best_miss = trial_p, run, miss
+    for fraction in (0.12, 0.05, 0.02):
+        improved = True
+        while improved and best_miss > 0 and runs < budget:
+            improved = False
+            for i, key, rule in knobs:
+                for sign in (1, -1):
+                    if best_miss == 0 or runs >= budget:
+                        break
+                    trial_p = copy.deepcopy(best)
+                    step = sign * fraction * (rule['max'] - rule['min'])
+                    trial_p[i][key] = round(min(rule['max'], max(rule['min'], trial_p[i][key] + step)), 4)
+                    if trial_p[i][key] == best[i][key]:
+                        continue
+                    try:
+                        spec, _, _ = compose(level, trial_p)
+                        compiled = mw.compile_spec(spec)
+                    except (LevelRefused, mw.MachineRefused):
+                        continue
+                    run = rehearse(compiled)
+                    runs += 1
+                    miss = miss_m(level, run)
+                    if miss < best_miss - 1e-4:
+                        best, best_run, best_miss, improved = trial_p, run, miss, True
+                        # Going the right way: keep going while it helps.
+                        while best_miss > 0 and runs < budget:
+                            ahead = copy.deepcopy(best)
+                            ahead[i][key] = round(min(rule['max'], max(rule['min'], ahead[i][key] + step)), 4)
+                            if ahead[i][key] == best[i][key]:
+                                break
+                            try:
+                                spec, _, _ = compose(level, ahead)
+                                compiled = mw.compile_spec(spec)
+                            except (LevelRefused, mw.MachineRefused):
+                                break
+                            run = rehearse(compiled)
+                            runs += 1
+                            miss = miss_m(level, run)
+                            if miss >= best_miss - 1e-4:
+                                break
+                            best, best_run, best_miss = ahead, run, miss
+                        break
+        if best_miss == 0:
+            break
+    return best, best_run, runs
+
+
+def public(level):
+    """What the page needs to show a level: never its solution."""
+    return {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
+                                  'tray', 'goal', 'hints') if k in level}

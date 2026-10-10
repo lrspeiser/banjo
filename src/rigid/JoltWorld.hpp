@@ -249,6 +249,18 @@ struct SphereContact {
     Vec3 surface_velocity_m_s{};
 };
 
+// Where a ray meets a surface, with the way out of the surface there: what light
+// needs to reflect and refract (docs/optics-checkpoint.md). `named` is false for
+// the ground, as it is for a RayHit.
+struct SurfaceHit {
+    bool hit{};
+    bool named{};
+    MatterBodyId body_id{};
+    double distance_m{};
+    Vec3 point_world_m{};
+    Vec3 normal_world{};
+};
+
 struct CohesiveTensionPatchKick {
     std::vector<CohesiveInterfaceIncrement> interface_increments;
     PairImpulseAudit transfer;
@@ -1167,6 +1179,18 @@ public:
     // or hiding bodies belonging to another actor.
     [[nodiscard]] RayHit castRayIgnoring(const Vec3 &from_world_m, const Vec3 &direction,
                                         double max_distance_m, std::span<const MatterBodyId> ignore_bodies) const;
+    // The nearest surface along a ray, as castRayIgnoring finds it, and the
+    // surface's outward normal there, from the shape the solver collides
+    // (Jolt's GetWorldSpaceSurfaceNormal at the sub-shape hit). A ray that
+    // starts inside a body meets it where it starts.
+    [[nodiscard]] SurfaceHit castRayToSurface(const Vec3 &from_world_m, const Vec3 &direction,
+                                              double max_distance_m,
+                                              std::span<const MatterBodyId> ignore_bodies = {}) const;
+    // A ray travelling INSIDE one body: where it reaches that body's surface
+    // again, and the surface's outward normal there. Only that body is asked,
+    // and its surfaces are met from behind. Read-only, between steps.
+    [[nodiscard]] SurfaceHit castRayOutOf(MatterBodyId body_id, const Vec3 &from_world_m, const Vec3 &direction,
+                                          double max_distance_m) const;
     // Put a body back into simulation and clear how long it has been still.
     // A body that has come to rest is dropped from the step -- that is what
     // keeps a scene of a hundred settled pieces cheap -- and nothing that only

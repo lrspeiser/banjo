@@ -537,13 +537,20 @@ if(BANJO_BUILD_HEADLESS)
     target_include_directories(banjo_circuits PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(banjo_circuits PUBLIC nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_circuits)
+    # Light: rays from the sun and lamps followed through the world's own
+    # shapes -- reflected, refracted, absorbed -- with one ledger of where the
+    # power went (docs/optics-checkpoint.md). It owns no geometry: the host
+    # answers where a ray meets a surface.
+    add_library(banjo_optics src/optics/OpticalProperties.cpp src/optics/RayOptics.cpp)
+    target_link_libraries(banjo_optics PUBLIC banjo_core)
+    banjo_enable_warnings(banjo_optics)
     add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
                                        src/fastlattice/LiveWorld.cpp
                                        src/fastlattice/ToolTerrain.cpp
                                        src/fastlattice/NativeToolUse.cpp
                                        src/fastlattice/NativeToolClearance.cpp
     src/fastlattice/PreciseRigidScene.cpp)
-    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment banjo_circuits PRIVATE nlohmann_json::nlohmann_json)
+    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment banjo_circuits banjo_optics PRIVATE nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_fastlattice_scene)
     add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
     target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
@@ -1467,6 +1474,11 @@ if(BANJO_BUILD_TESTS)
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_physics_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                 set_tests_properties(banjo_machine_physics_tests PROPERTIES TIMEOUT 600
                     ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
+                # The puzzles (/play): every level solvable, and only that way.
+                add_test(NAME banjo_machine_game_tests COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_game_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
+                set_tests_properties(banjo_machine_game_tests PROPERTIES TIMEOUT 600
+                    ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
             endif()
             target_link_libraries(banjo_motor_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_motor_tests)
@@ -1511,6 +1523,16 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_sun_day_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_sun_day_tests)
             add_test(NAME banjo_sun_day_tests COMMAND banjo_sun_day_tests)
+
+            # Light (docs/optics-checkpoint.md): a mirror reflects at the angle it
+            # was met; a glass slab shifts a ray by Snell's law; total internal
+            # reflection; a glass ball concentrates sunlight; light heats what
+            # absorbs it until it burns; a light sensor works a circuit switch;
+            # the ledger closes; and a world with no light is untouched.
+            add_executable(banjo_optics_tests tests/optics_tests.cpp)
+            target_link_libraries(banjo_optics_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_optics_tests)
+            add_test(NAME banjo_optics_tests COMMAND banjo_optics_tests)
 
             # What a break costs: the charge the room's failure law makes for
             # a crack, against what the material itself declares, and what a

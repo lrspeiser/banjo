@@ -283,14 +283,17 @@ condition.
    bounded steps, written by the model, previewed before it commits, proved by a
    trial -- and should be one mechanism, not two.
 
-2. **The chat-built robot cannot turn.** Nine tool calls build it, the bench
-   takes it as drawn, it compiles into six bodies on five pins and the Workshop
-   installs it as a machine -- but on the ground it drives and will not come
-   round, so it never reaches the stool. The hand-built one does. First thing to
-   test: the bench only fastens parts that TOUCH, so a butt-jointed swivel sits
-   face to face with the deck it hangs from and the two faces rub, where the
-   hand-built caster hangs from a pin with clearance. The compiler already
-   speaks of "explicit clearance".
+2. **The chat-built robot drives to the stool and sits (2026-10-10).** It could
+   not before, and the rubbing swivel suspected here was not why. Each wheel
+   meets its mount on the outside face, +x on one side and -x on the other,
+   and a bearing turned about the face's normal as it pointed from one part
+   to the other -- so the two wheels, told the same thing, turned opposite
+   ways. "Forward" spun it on the spot and "turn" drove it straight. A
+   bearing's axis is now signed one way for every bearing
+   (`workshop_construction.turning_axis`, first non-zero component positive),
+   as the rover's stubs, both laid along +x, always were. At the bench it
+   faces a stool 2.6 m off, drives to it and sits in about 11 s
+   (workshop_test_room_tests).
 
 3. **Ask the model to design it.** The nine calls above are the ones a model
    could make, and they are written by hand. Nothing has yet asked the chat for

@@ -92,13 +92,14 @@ Declaration (JSON object, schema "{mw.SCHEMA}"):
   "batteries": [ {{"name": str, "in": part, "capacity_j": n, "voltage_v": n, "max_power_w": n,
                   "charge_j": n (what it holds at the start; 0 for an empty one a solar panel fills)}} ],
   "circuits": [ {{"name": str, "battery": battery name,
-                 "switch": {{"hinge": hinge joint name, "closed_at_or_above_deg": n}} or null (always closed),
+                 "switch": {{"hinge": hinge joint name, "closed_at_or_above_deg": n}}, or
+                           {{"photocell": light sensor name, "closed_at_or_above_w": n}}, or null (always closed),
                  "coil": {{"heats": part, "resistance_ohm": n}},
                  "motor": {{"hinge": hinge joint name, "stall_torque_n_m": n, "no_load_rad_s": n,
                             "brake_torque_n_m": n, "gear_ratio": n, "command": 1 (full ahead) to -1 (astern)}}}}
                ] (a load is a coil, a motor, or both; the switch works them together),
   "sun": {{"elevation_deg": n, "azimuth_deg": n, "irradiance_w_m2": n}} (sunlight; the engine thins it through the
-         air and casts shadows),
+         air and casts shadows; "light" below traces it through glass and off mirrors),
   "solar_panels": [ {{"name": str, "part": part, "battery": battery name, "normal": [0, 1, 0] (the way its cells
                     face), "area_m2": n, "efficiency": 0.2}} ] (needs a sun; charges the battery with what falls on
                     it, nothing while something shades it),
@@ -120,6 +121,7 @@ Declaration (JSON object, schema "{mw.SCHEMA}"):
                  dents a tenth of a millimetre at 16 m/s), {{"rose_m": {{"part": name, "m": n}}}} (its centre
                  rose that far), {{"moved_m": {{"part": name, "m": n}}}} (it moved that far from where it began),
                  {{"cut": part}} (an edge cut it through),
+                 {{"lit_w": {{"photocell": name, "w": n}}}}, {{"shaded_w": {{"photocell": name, "w": n}}}},
                  "focus": [part]}} ] }}
 A part may also be "shape": "compound": one exact rigid body of "parts": [{{"shape": "box"|"cylinder", "size_m":
 [x, y, z] (a cylinder is [diameter, length, diameter] along its own y), "at_m": local centre, "turn_deg": local}}].
@@ -132,6 +134,9 @@ hinge with a torque that falls from its stall torque to nothing at its no-load s
 Steam and powder: a steam_engine kit's boiler boils with a firebox (heat_w) or a coil wound on its boiler; a cannon
 kit fires when its charge is hot, from a primer at fire_at_s or a coil wound on "<name> charge" (measured: a 0.1 ohm
 coil on a 24 V battery fires it 0.4 s after its switch closes, a 0.5 ohm coil 0.8 s after).
+
+Light (the engine follows rays of light; it reflects, bends, focuses, warms and works sensors):
+{mw.LIGHT_HELP}
 
 Rules the server enforces (a declaration that breaks one is refused and sent back to you):
 - Nothing goes into the ground: a part's lowest point is at or above the ground under it (y = 0, or the trench bed
@@ -153,7 +158,7 @@ asked for, and give every new step a station. Answer with ONE JSON object:
   "spec": the complete new declaration}}"""
 
 
-def _call(api_key, model, messages, max_tokens=20000):
+def _call(api_key, model, messages, max_tokens=20000, want='spec'):
     payload = {'model': model, 'store': False, 'max_output_tokens': max_tokens, 'reasoning': {'effort': 'low'},
                'input': messages, 'text': {'format': {'type': 'json_object'}}}
     req = request.Request('https://api.openai.com/v1/responses', data=json.dumps(payload).encode(), method='POST',
@@ -179,9 +184,184 @@ def _call(api_key, model, messages, max_tokens=20000):
             if content.get('type') == 'output_text':
                 texts.append(content.get('text', ''))
     answer = json.loads(''.join(texts))
-    if not isinstance(answer, dict) or not isinstance(answer.get('spec'), dict):
+    if want == 'spec' and (not isinstance(answer, dict) or not isinstance(answer.get('spec'), dict)):
         raise ValueError('The model did not return a machine declaration')
     return answer, result.get('usage', {})
+
+
+# ---- puzzles ---------------------------------------------------------------------
+
+def level_prompt(level, mode):
+    """The rules of one puzzle for the model: the goal, the tray and its knobs,
+    and what it may answer. It never sees the level's solution."""
+    tray = []
+    for t in level['tray']:
+        knobs = []
+        for key, rule in t['knobs'].items():
+            if 'choices' in rule:
+                knobs.append(f'{key} ({rule.get("label", key)}): one of {rule["choices"]}')
+            else:
+                knobs.append(f'{key} ({rule.get("label", key)}): {rule["min"]} to {rule["max"]}')
+        price = f'{t["cost"]}' + (f' + {t["cost_per"]["each"]} per {t["cost_per"]["unit"]:g} of '
+                                   f'{t["cost_per"]["knob"]}' if 'cost_per' in t else '')
+        tray.append(f'- {t["piece"]} (up to {t.get("count", 1)}; costs {price}): ' + '; '.join(knobs))
+    tray = '\n'.join(tray)
+    offered = [t['piece'] for t in level['tray']]
+    pieces = '\n'.join(f'- {name}: {PIECE_HELP[name]}' for name in offered if name in PIECE_HELP)
+    if mode == 'build':
+        answer = ('Answer with ONE JSON object: {"reply": "one or two plain sentences to the player about what you '
+                  'placed and what the engine will decide", "options": [[{"piece": tray piece, knob: value, ...}], '
+                  '...]} -- up to three DIFFERENT ways to place the pieces, best first; the engine rehearses each and '
+                  'uses the first that reaches the goal. Vary the knobs that matter most between them. Use only tray '
+                  'pieces and knobs, within their ranges and the budget.')
+    else:
+        answer = ('Answer with ONE JSON object: {"reply": "a hint of one to three plain sentences"}. A hint points '
+                  'the player toward what to change, from what the engine measured in their last run when there '
+                  'is one (where the thing went, how fast, what it hit). Do not give every knob\'s value; let the '
+                  'player find them.')
+    return f"""You help a player with a physics puzzle in Banjo. The engine calculates everything: you never decide
+an outcome. Metres, kilograms, seconds; y is up and the ground is at y = 0.
+
+The level: {level['title']}. {level['brief']}
+Goal: {level['goal']['title']} within {level['time_s']} s. Budget {level['budget']}, par {level['par']}.
+What is known about this level (measured): {' '.join(level.get('hints', []))}
+The player may add only these pieces (the tray):
+{tray}
+What each piece is:
+{pieces}
+
+{answer}"""
+
+
+PIECE_HELP = {
+    'plank': 'a loose oak plank 2 cm thick and 0.3 m wide, cut to length_m and set down with its middle at x_m: it '
+             'is lowered onto the highest thing under it and rests there; gravity holds it, nothing bolts it',
+    'knife': 'a knife pendulum held out level and let go: its pivot at (x_m, pivot_height_m, z_m), arm_m long, '
+             'swinging toward swing_toward. At the bottom of its swing the blade is about arm_m + 0.03 m below the '
+             'pivot, its sharp edge about 0.06 m ahead of the pivot, 0.2 m wide across the swing. It cuts oak and '
+             'rubber, not iron',
+    'cannon': 'a cannon firing level toward +x: its muzzle at (x_m, bore_height_m, z_m), the barrel behind it; '
+              'fire_at_s is when its primer lights it; powder_g of powder throws its 2.1 kg iron ball at very '
+              'roughly 9 m/s for 1 g and 20 m/s for 2 g. The ball drops as it flies',
+    'steam': 'a steam engine: a cylinder at (x_m, z_m) on the ground with a piston on top, the piston at about '
+             '0.34 m up; heat_kw boils water under it and the piston rises about 1.2 cm/s per kW',
+    'ramp': 'a ramp toward +x with an iron ball at its top: its top at (x_m, top_height_m, z_m), its foot run_m '
+            'further on at foot_height_m. The ball rolls down and flies on from the foot',
+    'mirror': 'a polished aluminium mirror 0.2 m square standing upright at (x_m, z_m), turned angle_deg about the '
+              'vertical: at 0 its face looks along x; turned 45 a beam along +x leaves along +z, turned -45 a beam '
+              'along +z leaves along -x. Light reflects off its face, 1 cm in front of its middle, and it keeps 92% '
+              'of the light',
+}
+
+
+def _placements_answer(answer):
+    if not isinstance(answer, dict) or not isinstance(answer.get('reply'), str):
+        raise ValueError('The model did not answer')
+    return answer
+
+
+def respond_level(message, level, placements, mode='hint', last_run=None, call=None, rehearse=None):
+    """A hint, or the tray's pieces placed for the player ("build"), checked
+    against the level and rehearsed in the engine like any chat build."""
+    import machine_game as mg
+    if not isinstance(message, str) or not message.strip():
+        message = 'Give me a hint.' if mode == 'hint' else 'Place the pieces for me.'
+    if len(message) > MAX_MESSAGE:
+        raise ValueError(f'Keep a request under {MAX_MESSAGE} characters')
+    if mode not in ('hint', 'build'):
+        raise ValueError('mode is hint or build')
+    if call is None:
+        api_key, model = configuration()
+        if not api_key:
+            raise ChatUnavailable('No model is configured on this server (OPENAI_API_KEY)')
+        call = lambda messages: _call(api_key, model, messages, want='reply')
+    spec = None
+    try:
+        spec = mg.compose(level, placements)[0]
+    except (mg.LevelRefused, mw.MachineRefused):
+        spec = level['machine']
+    messages = [{'role': 'system', 'content': level_prompt(level, mode)},
+                {'role': 'user', 'content': json.dumps({'request': message, 'placements': placements,
+                                                        'fixed_layout': layout(spec) if spec else None,
+                                                        'last_run': last_run})}]
+    answer, usage = call(messages)
+    answer = _placements_answer(answer)
+    if mode == 'hint':
+        return {'ok': True, 'reply': answer['reply'], 'usage': usage}
+    # Up to three different ways, each rehearsed in the engine; the first
+    # that reaches the goal is the one used. A model cannot tune a shot or a
+    # swing from words alone; the engine can say which of its ideas works.
+    def options(a):
+        found = a.get('options') if isinstance(a.get('options'), list) else [a.get('placements')]
+        return [[fit(p) for p in o] for o in found if isinstance(o, list)][:3]
+
+    tray = {t['piece']: t for t in level['tray']}
+
+    def fit(p):
+        # A knob just outside its range is brought to the nearest end of it,
+        # and a knob the piece does not have is left out: the player could do
+        # exactly that with the sliders. A piece not on the tray is left as it
+        # is, for the tray's own refusal to explain.
+        if not isinstance(p, dict) or p.get('piece') not in tray:
+            return p
+        out = {'piece': p['piece']}
+        for key, rule in tray[p['piece']]['knobs'].items():
+            if key not in p:
+                continue
+            value = p[key]
+            if 'choices' not in rule and isinstance(value, (int, float)) and not isinstance(value, bool):
+                value = min(rule['max'], max(rule['min'], value))
+            out[key] = value
+        return out
+
+    tried = []
+    for revision in range(2):
+        for placed in options(answer):
+            try:
+                spec, checked, cost = mg.compose(level, placed)
+                compiled = mw.compile_spec(spec)
+            except (mg.LevelRefused, mw.MachineRefused) as e:
+                tried.append({'placements': placed, 'refused': e.problems})
+                continue
+            if rehearse is None:
+                return {'ok': True, 'reply': answer['reply'], 'placements': checked, 'cost': cost, 'helped': True,
+                        'usage': usage}
+            r = rehearse(compiled)
+            row = (r.get('stations') or [{}])[0]
+            if row.get('done'):
+                return {'ok': True, 'reply': answer['reply'], 'placements': checked, 'cost': cost, 'helped': True,
+                        'usage': usage, 'tried': len(tried) + 1,
+                        'rehearsal': {'goal_at_s': row.get('at_s'), 'events': [e['text'] for e in r['events'][:20]]}}
+            tried.append({'placements': placed, 'goal': 'did not happen', 'miss': mg.miss_m(level, r),
+                          'events': [e['text'] for e in r['events'][:12]], 'closest': r.get('closest_approach'),
+                          'nearest_to_goal_m': r.get('zone_nearest_m')})
+        if revision:
+            break
+        # Every way it tried, and what the engine measured of each.
+        messages += [{'role': 'assistant', 'content': json.dumps(answer)},
+                     {'role': 'user', 'content': json.dumps({'measured': tried[-3:],
+                                                             'ask': 'Change the knobs from what was measured and '
+                                                                    'give up to three new options.'})}]
+        answer, more = call(messages)
+        answer = _placements_answer(answer)
+        usage = _added(usage, more)
+    # Nothing it tried reached the goal. Its nearest idea is then finished
+    # by the engine: one knob at a time, kept when the goal comes nearer.
+    built = [t for t in tried if 'refused' not in t]
+    if not built:
+        raise mg.LevelRefused(tried[-1]['refused'] if tried else ['The model placed nothing'])
+    nearest = min(built, key=lambda t: t['miss'])
+    placed, r, runs = mg.refine(level, nearest['placements'], rehearse, budget=48, scatter=16)
+    spec, checked, cost = mg.compose(level, placed)
+    row = (r.get('stations') or [{}])[0]
+    reached = mg.miss_m(level, r) == 0
+    note = (f' Its ideas missed; the engine then tried {runs} small changes to the nearest and '
+            + ('found one that works.' if reached else 'got closer but not there.'))
+    return {'ok': True, 'reply': answer['reply'] + note, 'placements': checked, 'cost': cost, 'helped': True,
+            'usage': usage, 'tried': len(tried) + runs,
+            'rehearsal': {'goal_at_s': row.get('at_s') if reached else None,
+                          'events': [e['text'] for e in r['events'][:20]]}}
+
 
 
 def layout(spec):
