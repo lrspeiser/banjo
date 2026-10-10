@@ -246,7 +246,21 @@ class WorkshopBrowserRegression(unittest.TestCase):
         for event in ("mousePressed","mouseReleased"):
             self.page.send("Input.dispatchMouseEvent",{"type":event,"x":point["x"],"y":point["y"],"button":"left","clickCount":1})
 
+    def settled_stage(self):
+        """Until the stage has stopped moving and resizing: what it reports is
+        projected through the rect it had when it was drawn, and a line of
+        notice appearing above it moved it 49 px mid-check."""
+        last = None
+        for _ in range(30):
+            now = self.js("JSON.stringify(document.querySelector('#workshop-stage').getBoundingClientRect())")
+            if now == last:
+                break
+            last = now
+            time.sleep(.15)
+        time.sleep(.2)
+
     def assert_geometry_is_visible(self):
+        self.settled_stage()
         info=self.js("document.querySelector('#workshop-stage').visibleGeometry()")
         self.assertIsNotNone(info); self.assertGreater(info["meshes"],0)
         self.assertEqual(0,info["clipped"])
@@ -485,6 +499,11 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.wait("document.querySelector('#workshop-stage').getBoundingClientRect().width < 650"
                   " && getComputedStyle(document.querySelector('.ws-left')).visibility === 'hidden'")
         self.pointer_click('#ws-fit-view')
+        # The Build hub (c3e79e92) stacks the recipe shelf above the Lab in a
+        # narrow window, so the stage is below the fold: scroll to it, as a
+        # person does, and it must show the whole small part.
+        self.js("document.querySelector('#workshop-stage').scrollIntoView({block:'center'})")
+        self.settled_stage()
         self.assert_geometry_is_visible()
 
     def test_library_rows_are_names_and_open_a_product_to_its_components(self):
@@ -728,12 +747,12 @@ class WorkshopBrowserRegression(unittest.TestCase):
         """
         said = self.js("[...document.querySelectorAll('.ws-suggestion')].map(b=>b.textContent)")
         self.assertGreaterEqual(len(said), 4)
-        # And they point at finding a RANGE, because that is what testing is
-        # for: one run only says whether the number you guessed was over or
-        # under.
-        self.assertTrue(any("breaks it" in line for line in said), said)
-        self.assertTrue(any("light to heavy" in line for line in said), said)
-        self.assertTrue(any("midnight" in line for line in said), said)
+        # They are the Build chat's (1572c275): an edit to the thing, why it
+        # cannot be made, what making it would take, and undo. The range-
+        # finding test runs they offered went with the Test tab.
+        self.assertTrue(any(line.startswith("Make the") for line in said), said)
+        self.assertTrue(any("make this" in line for line in said), said)
+        self.assertTrue(any(line.startswith("Undo") for line in said), said)
         # Each one is a real turn: clicking it puts that message in the box and
         # sends it, rather than printing a canned answer.
         self.js("[...document.querySelectorAll('.ws-suggestion')][1].click()")
@@ -1324,6 +1343,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
             self.assertTrue(point['visible'] and point['hit'],f"{selector}: {point}")
         # Real mouse input: a programmatic element.click() can pass for an
         # offscreen button and failed to catch the previous below-fold layout.
+        first=self.js("document.querySelector('.ws-suggestion').textContent")
         point=self.js("""(()=>{const e=document.querySelector('.ws-suggestion'),r=e.getBoundingClientRect();
           return {x:r.x+r.width/2,y:r.y+r.height/2};})()""")
         for kind in ('mousePressed','mouseReleased'):
@@ -1331,8 +1351,7 @@ class WorkshopBrowserRegression(unittest.TestCase):
         # Without a key the chat answers deterministically, but the turn is a
         # real one either way: the message goes into the log.
         self.wait("document.querySelectorAll('#ws-chat-log .ws-chat-message.user').length>0")
-        self.assertIn("Find the weight that breaks it",
-                      self.js("document.querySelector('#ws-chat-log .ws-chat-message.user').textContent"))
+        self.assertIn(first, self.js("document.querySelector('#ws-chat-log .ws-chat-message.user').textContent"))
         # And the run controls are not on the bench at all: "Run simulation"
         # and "Reset to setup" went with the Test tab nobody could read.
         self.assertTrue(self.js("Boolean(document.querySelector('#ws-run-bench')"
@@ -1370,14 +1389,19 @@ class WorkshopBrowserRegression(unittest.TestCase):
         self.assertEqual("clean", takes[0]["take"])
         self.assertEqual(("Driven", "true"), (takes[1]["title"], takes[1]["selected"]))
         self.wait("document.querySelectorAll('#ws-takes .ws-take img').length === 2")
+        # The takes strip is not shown in the Build editor (1572c275 hides it
+        # there), so the drive's run is what the view shows, with its replay
+        # controls, and "Back to the build" is the way to the clean thing.
+        self.wait("!document.querySelector('#ws-watching').hidden && !document.querySelector('#ws-playback').hidden")
+        # The run again, from its start.
+        self.pointer_click('#ws-play-reset')
+        self.wait("Number(document.querySelector('#ws-play-timeline').value) === 0")
+        self.pointer_click('#ws-play')
+        self.wait("Number(document.querySelector('#ws-play-timeline').value) > 0")
         # Back to the clean thing: the design, untouched, with no run over it.
-        self.pointer_click('#ws-takes .ws-take[data-take="clean"]')
-        self.wait("document.querySelector('#ws-playback').hidden")
-        self.assertEqual("true", self.js("document.querySelector('#ws-takes .ws-take[data-take=clean]').getAttribute('aria-selected')"))
+        self.pointer_click('#ws-back-to-build')
+        self.wait("document.querySelector('#ws-playback').hidden && document.querySelector('#ws-watching').hidden")
         self.assertEqual(2, self.js("document.querySelectorAll('#ws-takes .ws-take').length"), "the run is kept")
-        # And the run again, from its take.
-        self.pointer_click('#ws-takes .ws-take:nth-child(2)')
-        self.wait("!document.querySelector('#ws-playback').hidden")
 
     def test_heating_has_visible_changing_temperature_and_accelerated_display(self):
         self.open_product('kettle');self.click('[data-mode="test"]')
