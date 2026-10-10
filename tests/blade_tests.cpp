@@ -478,10 +478,11 @@ void anEdgeStrikeCutsTheRopeAndTheWeightFalls() {
 }
 
 // The same rope, and the same blade coming at it edge first, but with its flats
-// tipped `tilt_deg` about its own length -- so no face of it is square to the
-// world -- and coming along the way its edge faces, from 100 mm back from the
-// middle of the fifth segment, moved by `shift`.
-Rope tiltedBladeAtTheRope(double tilt_deg, const Vec3 &shift, double speed) {
+// tipped `tilt_deg` about its own length and the whole of it turned `heading_deg`
+// about the vertical -- so no face of it is square to the world -- and coming
+// along the way its edge faces, from 100 mm back from the middle of the fifth
+// segment, moved by `shift`.
+Rope tiltedBladeAtTheRope(double tilt_deg, double heading_deg, const Vec3 &shift, double speed) {
     TileImpactRequest r = request();
     r.bodies = {box("beam", MaterialPreset::Oak, {0.2, 0.04, 0.04}, {0.0, 1.22, 0.0}, true)};
     for (int k = 0; k < 8; ++k)
@@ -489,12 +490,12 @@ Rope tiltedBladeAtTheRope(double tilt_deg, const Vec3 &shift, double speed) {
                                {0.02, 0.06, 0.02}, {0.0, 1.17 - 0.06 * k, 0.0}));
     r.bodies.push_back(box("weight", MaterialPreset::Iron, {0.06, 0.06, 0.06}, {0.0, 0.69, 0.0}));
     double q[4];
-    rotationQuaternion({tilt_deg, 0.0, 0.0}, q);
+    rotationQuaternion({tilt_deg, heading_deg, 0.0}, q);
     const Quat turn{q[0], q[1], q[2], q[3]};
     const Vec3 facing = turn.rotate({0.0, 0.0, -1.0});
     const Vec3 centre = Vec3{0.0, 0.93, 0.0} - 0.1 * facing + shift;
     SceneBody blade = box("blade", MaterialPreset::Iron, {0.4, 0.01, 0.03}, centre, false, speed * facing);
-    blade.rotation_deg = {tilt_deg, 0.0, 0.0};
+    blade.rotation_deg = {tilt_deg, heading_deg, 0.0};
     r.bodies.push_back(blade);
     Rope rope;
     rope.world = LiveWorld::open(r);
@@ -522,13 +523,14 @@ Rope tiltedBladeAtTheRope(double tilt_deg, const Vec3 &shift, double speed) {
 // A tilted box was a staircase of the world's cells, so whether its face had
 // matter where an edge was laid depended on where it happened to stand: the
 // machine's knife, pulled back 60 degrees, was refused its edge in some places
-// and not in others. Built in its own frame it is the same blade everywhere.
+// and not in others. Built in its own frame it is the same blade everywhere,
+// tipped about one axis or turned about two.
 void aTiltedBladeTakesItsEdgeAnywhereAndCutsEdgeFirst() {
     const Vec3 shifts[] = {Vec3{}, Vec3{0.0031, 0.0023, 0.0}, Vec3{-0.0047, -0.0036, 0.0041},
                            Vec3{0.0073, 0.0011, -0.0029}};
-    for (const double tilt : {20.0, -35.0}) {
+    for (const auto &[tilt, heading] : {std::pair{20.0, 0.0}, std::pair{-35.0, 0.0}, std::pair{20.0, 30.0}}) {
         for (const Vec3 &shift : shifts) {
-            Rope rope = tiltedBladeAtTheRope(tilt, shift, 16.0);
+            Rope rope = tiltedBladeAtTheRope(tilt, heading, shift, 16.0);
             LiveWorld &world = *rope.world;
             const double hung = named(world.poses(), "weight").position_m.y;
             run(world, 360);
@@ -540,8 +542,9 @@ void aTiltedBladeTakesItsEdgeAnywhereAndCutsEdgeFirst() {
                 parted += cut.links;
                 if (kind.empty() && (cut.bonds > 0 || cut.links > 0)) kind = cut.kind;
             }
-            std::cout << "  tipped " << tilt << " degrees, moved (" << shift.x << ", " << shift.y << ", "
-                      << shift.z << "): " << severed << " bonds and " << parted << " links cut (\"" << kind
+            std::cout << "  tipped " << tilt << " degrees, turned " << heading << ", moved (" << shift.x << ", "
+                      << shift.y << ", " << shift.z << "): " << severed << " bonds and " << parted
+                      << " links cut (\"" << kind
                       << "\"); the weight went from y=" << hung << " to y=" << fell << "\n";
             require(kind == "edge", "a tilted blade did not cut the rope edge first: \"" + kind + "\"");
             require(fell < hung - 0.4, "the tilted blade cut the rope and the weight did not fall");

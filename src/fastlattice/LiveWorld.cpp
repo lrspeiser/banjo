@@ -441,7 +441,10 @@ bool wholeFactors(const thermo::ZoneFactors &f) {
 // the box as it is; a joint anywhere in the stack, or anything standing on
 // something else as well, and it declines, and the solver settles the stack as
 // before. Extents are world-aligned boxes, so a body slightly tilted is carried
-// by its lowest point.
+// by its lowest point. A box's extent is its own box as it faces: its pose with
+// the turn a whole tilted box carries inside its collision shape on top
+// (`shape_turns`, Impl::shapeTurn), or a plank built at 30 degrees resting on
+// the burning box was measured as the plank built square.
 struct Recession {
     bool applies{};
     bool lower_burned{};
@@ -451,6 +454,7 @@ struct Recession {
 
 Recession planRecession(const JoltWorld &world, const std::vector<LiveBodyPose> &described,
                         const std::vector<MatterBodyId> &body_of, const std::vector<bool> &jointed,
+                        const std::vector<Quat> &shape_turns,
                         double ground_y, std::size_t burned, const Vec3 &was_m, const Vec3 &now_m) {
     constexpr double kRest = 0.02;   // the load survey's whisker, for the same reason
     const std::size_t count = std::min({described.size(), body_of.size(), jointed.size()});
@@ -474,8 +478,16 @@ Recession planRecession(const JoltWorld &world, const std::vector<LiveBodyPose> 
         at[k].centre = s.center_of_mass_world_m;
         if (p.shape == "sphere")
             at[k].half = Vec3{0.5 * p.dimensions_m.x, 0.5 * p.dimensions_m.x, 0.5 * p.dimensions_m.x};
-        else if (p.shape == "box")
-            at[k].half = halfOf(s.orientation_world, 0.5 * p.dimensions_m);
+        else if (p.shape == "box") {
+            // The pose, then the turn inside the shape: the Hamilton product.
+            const Quat &a = s.orientation_world;
+            const Quat b = k < shape_turns.size() ? shape_turns[k] : Quat{};
+            const Quat faces{a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+                             a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+                             a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+                             a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w};
+            at[k].half = halfOf(faces, 0.5 * p.dimensions_m);
+        }
         else
             at[k].half = 0.5 * p.dimensions_m;   // a hull: the box of its cells
         at[k].known = true;
@@ -11703,7 +11715,10 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         settings.support.plane_count < kMaxSupportPlanes) {
         const RigidSnapshot on = impl_->world->snapshot(impl_->body_of[anvil]);
         const Vec3 half = 0.5 * impl_->described[anvil].dimensions_m;
-        const Quat turn = on.orientation_world;
+        // Its box as it faces: a ramp built tilted carries its tilt inside its
+        // collision shape (Impl::shapeTurn), and its faces are that box's.
+        // Without it, what struck a tilted ramp met a face of the ramp built square.
+        const Quat turn = compose(on.orientation_world, impl_->shapeTurn(anvil));
         const Quat unturn{turn.w, -turn.x, -turn.y, -turn.z};
         const std::array<Vec3, 3> axes{turn.rotate(Vec3{1.0, 0.0, 0.0}), turn.rotate(Vec3{0.0, 1.0, 0.0}),
                                        turn.rotate(Vec3{0.0, 0.0, 1.0})};
@@ -13281,7 +13296,12 @@ std::vector<thermo::BodyShape> LiveWorld::thermoShapes() const {
         // is counted from its cells.
         const double density = i < impl_->density_of.size() ? impl_->density_of[i] : 0.0;
         shape.mass_kg = state.mass_kg > 0.0 ? state.mass_kg : matter * density;
-        const Quat q = state.motion.orientation_world;
+        // Its box as it faces: the pose with the turn a whole tilted box carries
+        // inside its collision shape on top (Impl::shapeTurn). Without that, a
+        // plank built at 30 degrees was measured as the plank built square --
+        // its reach up, down and across, and so what it touched and what it
+        // stood on, those of a box it is not.
+        const Quat q = compose(state.motion.orientation_world, impl_->shapeTurn(i));
         const Vec3 h = d * 0.5;
         const Vec3 ax = q.rotate({1.0, 0.0, 0.0}), ay = q.rotate({0.0, 1.0, 0.0}),
                    az = q.rotate({0.0, 0.0, 1.0});
@@ -14046,7 +14066,10 @@ void LiveWorld::reviseMatter() {
                                 at != I.index_of.end() && at->second < jointed.size())
                                 jointed[at->second] = true;
                     }
-                    plan = planRecession(*I.world, I.described, I.body_of, jointed, I.setup->ground_y, i, was, cut);
+                    std::vector<Quat> turns(I.described.size());
+                    for (std::size_t k = 0; k < turns.size(); ++k) turns[k] = I.shapeTurn(k);
+                    plan = planRecession(*I.world, I.described, I.body_of, jointed, turns, I.setup->ground_y, i,
+                                         was, cut);
                 }
                 I.world->reshapePrimitive(I.body_of[i], record.round, box, turn, mass.mass_kg, mass.inertia_kg_m2,
                                           !plan.applies);
