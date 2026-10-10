@@ -57,6 +57,7 @@ class CpuCoupledEvaluator(CoupledNewton):
         self.lib.banjo_coupled_cpu_schedule.argtypes=[p,u,d,d,d,d,p];self.lib.banjo_coupled_cpu_schedule.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_flight.argtypes=[p,u,u,d,d,d,p,p,p,p,p];self.lib.banjo_coupled_cpu_flight.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_separation.argtypes=[p,u,u,p];self.lib.banjo_coupled_cpu_separation.restype=ctypes.c_int
+        self.lib.banjo_coupled_cpu_contact_geometry.argtypes=[p,u,u,p];self.lib.banjo_coupled_cpu_contact_geometry.restype=ctypes.c_int
     def evaluate(self,velocity,h,gravity=-9.81,*,_jacobian_base=None):
         v=np.ascontiguousarray(velocity,dtype=np.float64).reshape(-1,self.n,6);batch=len(v)
         if not 1<=batch<=384:raise ValueError('Coupled trial batch exceeds reference bound')
@@ -87,6 +88,11 @@ class CpuCoupledEvaluator(CoupledNewton):
         gaps=np.empty(self.n)
         if self.lib.banjo_coupled_cpu_separation(self.bodies,self.n,sphere,gaps)!=self.n or not np.isfinite(gaps).all():raise ValueError('Native current-contact geometry refused')
         return gaps
+    def contact_geometry(self):
+        capacity=len(self.pairs)*48;rows=np.empty((capacity,10))
+        count=self.lib.banjo_coupled_cpu_contact_geometry(self.bodies,self.n,capacity,rows)
+        if count<0 or count>capacity or not np.isfinite(rows[:count]).all():raise ValueError('Native contact geometry refused')
+        return rows[:count].copy()
 
 class CpuCoupledWorld(CoupledWorld):
     array_api=np

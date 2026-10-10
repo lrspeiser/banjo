@@ -155,12 +155,15 @@ BANJO_DG_HD inline double dgScale(const double *b){return static_cast<int>(b[0])
 // nonsmooth extreme-corner torque of a single SAT penetration spring at a
 // flat support. It is a declared reduced compliant contact model, not exact
 // volume integration or a general edge-edge collision certification.
-BANJO_DG_HD inline DGContact dgSurfaceContact(const double *a,const double *b,DGPose pa,DGPose pb,unsigned site){
+BANJO_DG_HD inline FrameVector dgSurfaceLever(const double *a,DGPose pa,unsigned site){
     const unsigned face=site/4,normal=face/2,u=(normal+1)%3,v=(normal+2)%3;
     FrameVector local{};double components[3]{};components[normal]=(face%2?1:-1)*a[4+normal];
     components[u]=(site%2?1:-1)*a[4+u]/sqrt(3.);
     components[v]=((site/2)%2?1:-1)*a[4+v]/sqrt(3.);
-    local=dgRead3(components);const auto lever=frameRotate(pa.q,local);
+    local=dgRead3(components);return frameRotate(pa.q,local);
+}
+BANJO_DG_HD inline DGContact dgSurfaceContact(const double *a,const double *b,DGPose pa,DGPose pb,unsigned site){
+    const auto lever=dgSurfaceLever(a,pa,site);
     double point[30]{};point[0]=2; // zero-radius sphere is the sample point
     auto out=dgContact(point,b,dgAddPosition(pa,lever),pb);
     out.gradient.torque_a=frameCross(lever,out.gradient.force_a);return out;

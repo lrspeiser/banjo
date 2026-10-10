@@ -30,6 +30,77 @@ class ModeBasis:
         self.modal_force = self.vectors.T @ (self.force / self.root)
         self.modal_velocity = self.vectors.T @ (self.root * self.velocity)
 
+    def envelope(self, h):
+        """Continuous component bounds for this affine reference on [0,h].
+
+        Includes interior extrema and every retained mode. Interval mapping
+        deliberately loses mode correlations. This is NOT a nonlinear native
+        trajectory bound, and cannot admit world execution by itself.
+        """
+        self.advance(h)  # same finite-time/unstable-mode refusal contract
+        qlo=[]; qhi=[]; vlo=[]; vhi=[]
+        eps=np.finfo(float).eps
+        for eigen, f, v0 in zip(self.eigenvalues,self.modal_force,self.modal_velocity):
+            tq=[0.,h];tv=[0.,h]
+            if eigen == 0:
+                if f and 0 < -v0/f < h: tq.append(-v0/f)
+                q=lambda t:v0*t+.5*f*t*t
+                v=lambda t:v0+f*t
+                qscale=abs(v0)*h+.5*abs(f)*h*h
+                vscale=abs(v0)+abs(f)*h
+            else:
+                rate=math.sqrt(abs(eigen));angle=rate*h
+                if eigen > 0:
+                    q=lambda t:v0*math.sin(rate*t)/rate+f*2*math.sin(rate*t/2)**2/eigen
+                    v=lambda t:v0*math.cos(rate*t)+f*math.sin(rate*t)/rate
+                    # A sin(theta)+B cos(theta)+C has stationary points
+                    # atan2(A,B)+k*pi. At most three candidates for <2pi;
+                    # complete cycles use exact global amplitude bounds.
+                    def extrema(a,b):
+                        base=math.atan2(a,b)%math.pi
+                        return [x/rate for x in (base,base+math.pi,base+2*math.pi)
+                            if x<=angle+32*eps*max(1.,angle)]
+                    if angle >= 2*math.pi:
+                        center=f/eigen;amp=math.hypot(v0/rate,center)
+                        qr=[center-amp,center+amp]
+                        ampv=math.hypot(v0,f/rate);vr=[-ampv,ampv]
+                    else:
+                        tq+=extrema(v0/rate,-f/eigen)
+                        tv+=extrema(f/rate,v0)
+                        qr=[q(t) for t in tq];vr=[v(t) for t in tv]
+                    qscale=abs(v0)/rate*min(1.,angle)+abs(f/eigen)*min(2.,angle*angle/2)
+                    vscale=abs(v0)+abs(f/rate)*min(1.,angle)
+                else:
+                    q=lambda t:v0*math.sinh(rate*t)/rate+f*2*math.sinh(rate*t/2)**2/(-eigen)
+                    v=lambda t:v0*math.cosh(rate*t)+f*math.sinh(rate*t)/rate
+                    # Hyperbolic extrema: tanh(theta)=-a/b. Monotone tanh
+                    # gives at most one positive stationary point per mode.
+                    for a,b,times in ((v0/rate,f/(-eigen),tq),(f/rate,v0,tv)):
+                        ratio=-a/b if b else -1.
+                        if 0 < ratio < 1:
+                            t=math.atanh(ratio)/rate
+                            if t<=h:times.append(t)
+                    qscale=abs(v0)/rate*math.sinh(angle)+abs(f/(-eigen))*2*math.sinh(angle/2)**2
+                    vscale=abs(v0)*math.cosh(angle)+abs(f/rate)*math.sinh(angle)
+            if eigen <= 0:qr=[q(t) for t in tq];vr=[v(t) for t in tv]
+            # Explicit arithmetic/libm roundoff allowance, then outward rounding.
+            # This is measured FP64 coverage, not a formal directed-libm proof.
+            qpad=64*eps*qscale;vpad=64*eps*vscale
+            qlo.append(np.nextafter(min(qr)-qpad,-np.inf));qhi.append(np.nextafter(max(qr)+qpad,np.inf))
+            vlo.append(np.nextafter(min(vr)-vpad,-np.inf));vhi.append(np.nextafter(max(vr)+vpad,np.inf))
+        transform=self.vectors/self.root[:,None]
+        positive=np.maximum(transform,0);negative=np.minimum(transform,0)
+        def mapped(lo,hi):
+            lo=np.asarray(lo);hi=np.asarray(hi)
+            pad=64*eps*(abs(transform)@np.maximum(abs(lo),abs(hi)))
+            return (np.nextafter(positive@lo+negative@hi-pad,-np.inf),
+                np.nextafter(positive@hi+negative@lo+pad,np.inf))
+        xlo,xhi=mapped(qlo,qhi);ulo,uhi=mapped(vlo,vhi)
+        if not all(np.isfinite(a).all() for a in (xlo,xhi,ulo,uhi)):raise ValueError('Nonfinite affine envelope')
+        return dict(horizon_s=h,displacement_lower=xlo,displacement_upper=xhi,
+            velocity_lower=ulo,velocity_upper=uhi,
+            scope='Continuous all-mode affine reference only; FP64 allowance, not certified nonlinear world motion')
+
     def advance(self, h):
         if type(h) not in (int, float) or not math.isfinite(h) or not 0 <= h <= 2:
             raise ValueError('Affine prediction time must be between zero and two seconds')
@@ -103,6 +174,47 @@ def _samples(evaluator, bodies, edges, delta):
     return np.asarray(forces), irreversible_changes
 
 
+def contact_envelope(basis, evaluator, h):
+    """Native site sign checks conditional on the continuous affine motion.
+
+    Translation boxes and local Cayley rotation vectors map to point travel.
+    The exact box signed-distance is 1-Lipschitz in its local coordinates;
+    rotation travel is bounded by min(|theta|,2)*lever length. This covers
+    interior times, including a close/reopen missed by endpoint-only checks.
+    Broad SAT feature selection, constitutive branches and nonlinear error
+    are separate gates and deliberately remain unqualified.
+    """
+    if not np.array_equal(evaluator.bodies,basis.native_bodies) or not np.array_equal(evaluator.edges,basis.native_edges):
+        raise ValueError('Contact envelope needs the exact prepared native state/history')
+    started=time.perf_counter();bounds=basis.envelope(h)
+    absolute=np.maximum(abs(bounds['displacement_lower']),abs(bounds['displacement_upper']))
+    travel=np.zeros((evaluator.n,6));travel.ravel()[basis.dynamic_dofs]=absolute
+    translation=np.linalg.norm(travel[:,:3],axis=1)
+    rotation=np.minimum(np.linalg.norm(travel[:,3:],axis=1),2.)
+    if not np.isfinite(translation).all() or not np.isfinite(rotation).all():raise ValueError('Nonfinite affine body travel')
+    rows=evaluator.contact_geometry();owner=rows[:,3].astype(int)
+    if np.any(owner<0):raise ValueError('Affine contact envelope requires native surface sites; primitive pairs are not qualified')
+    targets=np.where(owner==rows[:,0],rows[:,1],rows[:,0]).astype(int)
+    width=translation[owner]+rotation[owner]*rows[:,9]+translation[targets]+rotation[targets]*np.linalg.norm(rows[:,6:9],axis=1)
+    width+=64*np.finfo(float).eps*(abs(rows[:,4])+np.linalg.norm(rows[:,6:9],axis=1)+width)
+    if not np.isfinite(width).all():raise ValueError('Nonfinite contact travel envelope')
+    lower=np.nextafter(rows[:,4]-width,-np.inf);upper=np.nextafter(rows[:,4]+width,np.inf)
+    clear=lower>0;compressed=upper<0;uncertain=~(clear|compressed)
+    groups=[]
+    for a,b in evaluator.pairs:
+        selected=(rows[:,0]==a)&(rows[:,1]==b)
+        count=int(np.sum(uncertain&selected))
+        if count:groups.append(dict(world_body_ids=[basis.world_body_ids[int(a)],basis.world_body_ids[int(b)]],
+            possible_site_changes=count,minimum_lower_gap_m=float(np.min(lower[selected])),maximum_upper_gap_m=float(np.max(upper[selected]))))
+    summary=dict(horizon_s=h,native_sites=len(rows),always_separated_sites=int(clear.sum()),
+        always_compressed_sites=int(compressed.sum()),possible_contact_changes=int(uncertain.sum()),
+        body_translation_bound_m=translation.tolist(),body_rotation_chord_bound=rotation.tolist(),
+        unresolved_pairs=groups,execution_admitted=False,
+        scope='Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified',
+        wall_s=time.perf_counter()-started)
+    return dict(summary=summary,geometry=rows,lower_gap_m=lower,upper_gap_m=upper,envelope=bounds)
+
+
 def prepare(evaluator, *, source_identity, world_body_ids=None):
     """Compile privately, with an exact state key and an explicit non-admission receipt."""
     from cpu_coupled_world import CpuCoupledEvaluator
@@ -141,6 +253,7 @@ def prepare(evaluator, *, source_identity, world_body_ids=None):
     # mapping for later transfer work; the active eigensystem alone loses them.
     basis.full_force=force.copy();basis.full_force_tangent=-matrices[-1].copy()
     basis.native_bodies=bodies.copy();basis.native_edges=edges.copy();basis.dynamic_dofs=e.dynamic.copy();basis.world_body_ids=ids
+    guard=contact_envelope(basis,e,1/240)
     identity = hashlib.sha256()
     for a in (bodies,edges):identity.update(a.tobytes())
     identity.update(json.dumps(ids,separators=(',',':')).encode())
@@ -161,6 +274,7 @@ def prepare(evaluator, *, source_identity, world_body_ids=None):
         mass_scaled_force_norm_sqrt_j_per_s=float(np.linalg.norm(force[e.dynamic]/weights)),baseline_contact_energy_j=float(baseline['ledger'][0,4]),
         baseline_material_energy_j=float(baseline['ledger'][0,0]),
         affine_probe_dt_s=1/240,affine_reference_energy_residual_j=probe['reference_energy_residual_j'],
+        continuous_contact_envelope=guard['summary'],
         execution_admitted=False,reason='Continuous branch/contact bounds, nonlinear trajectory error and full reaction/work transfers are not qualified',
         build_wall_s=time.perf_counter()-started)
     return basis, receipt

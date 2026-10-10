@@ -1,0 +1,355 @@
+{
+  "schema": "banjo.affine-contact-envelope-evidence.v1",
+  "base_revision": "8e3fac7a6fa777f227a2e58d84bf75eafde12a63",
+  "scope": "Conditional affine-reference geometry; no world reduced execution, nonlinear qualification or new conservation proof",
+  "platforms": [
+    {
+      "environment": "Windows MSVC 19.44 / Python 3.13 / NumPy 2.2.6",
+      "implementation_sha256": "550ba17d9db5cce29003f7f869b4fc7d07c7d8ba18dd93e66b5f8e39635518f9",
+      "runs": [
+        {
+          "material": "glass",
+          "declaration": {
+            "material": "glass",
+            "ball_material": "iron",
+            "ball_mass_kg": 0.1,
+            "height_m": 10.0,
+            "dt_s": 0.004166666666666667,
+            "experiment": "sheet",
+            "device": "cpu",
+            "pipeline": "local-jacobian",
+            "newton_strategy": "ranked",
+            "line_search": "batch-tail",
+            "linear_backend": "numpy-reference",
+            "contact_resolution": "reference",
+            "representation_policy": "partitioned-flight"
+          },
+          "initial": {
+            "retained_modes": 54,
+            "state_key": "ba042d27cb567163901890ca851dc3974dbb8d6500f2716b1dc58b04aca75250",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.001711399992927909,
+            "maximum_translation_bound_m": 4.349414791165957e-10,
+            "execution_admitted": false
+          },
+          "loaded": {
+            "retained_modes": 54,
+            "state_key": "eaafa50f2c7f067b192b9cbd315000e15661c0381556e820c39341f3a44c9a55",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.002069599984679371,
+            "maximum_translation_bound_m": 4.59690021334379e-10,
+            "execution_admitted": false
+          }
+        },
+        {
+          "material": "oak",
+          "declaration": {
+            "material": "oak",
+            "ball_material": "iron",
+            "ball_mass_kg": 0.1,
+            "height_m": 10.0,
+            "dt_s": 0.004166666666666667,
+            "experiment": "sheet",
+            "device": "cpu",
+            "pipeline": "local-jacobian",
+            "newton_strategy": "ranked",
+            "line_search": "batch-tail",
+            "linear_backend": "numpy-reference",
+            "contact_resolution": "reference",
+            "representation_policy": "partitioned-flight"
+          },
+          "initial": {
+            "retained_modes": 54,
+            "state_key": "b0129a5c04d6d01cdf4acdabfa39616a450c96e3f7b7f12dd41e996f173d6066",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.0016759000136516988,
+            "maximum_translation_bound_m": 6.707947003239353e-10,
+            "execution_admitted": false
+          },
+          "loaded": {
+            "retained_modes": 54,
+            "state_key": "d1e99ac8d1b9a60f388275fba15e418be1f24cf75e2b94d97d4b3ad1b1110847",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.0017620999715290964,
+            "maximum_translation_bound_m": 6.953204848628601e-10,
+            "execution_admitted": false
+          }
+        },
+        {
+          "material": "iron",
+          "declaration": {
+            "material": "iron",
+            "ball_material": "iron",
+            "ball_mass_kg": 0.1,
+            "height_m": 10.0,
+            "dt_s": 0.004166666666666667,
+            "experiment": "sheet",
+            "device": "cpu",
+            "pipeline": "local-jacobian",
+            "newton_strategy": "ranked",
+            "line_search": "batch-tail",
+            "linear_backend": "numpy-reference",
+            "contact_resolution": "reference",
+            "representation_policy": "partitioned-flight"
+          },
+          "initial": {
+            "retained_modes": 54,
+            "state_key": "3b1159de73874a3e6b702d924c18dfe926b0decf9e7711c18abfde49612a0731",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.0016134000034071505,
+            "maximum_translation_bound_m": 1.1352800137613642e-09,
+            "execution_admitted": false
+          },
+          "loaded": {
+            "retained_modes": 54,
+            "state_key": "d615b3aee48474a25e0ceb378d8cff28a2872497011bbdde4afcd72d209be864",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.0017356000025756657,
+            "maximum_translation_bound_m": 8.316389938779812e-10,
+            "execution_admitted": false
+          }
+        },
+        {
+          "material": "ice",
+          "declaration": {
+            "material": "ice",
+            "ball_material": "iron",
+            "ball_mass_kg": 0.1,
+            "height_m": 10.0,
+            "dt_s": 0.004166666666666667,
+            "experiment": "sheet",
+            "device": "cpu",
+            "pipeline": "local-jacobian",
+            "newton_strategy": "ranked",
+            "line_search": "batch-tail",
+            "linear_backend": "numpy-reference",
+            "contact_resolution": "reference",
+            "representation_policy": "partitioned-flight"
+          },
+          "initial": {
+            "retained_modes": 54,
+            "state_key": "1e92e86e940170e2f6eae6c8d521de8e24a54ed94e30c5b878f3124eaa124a1a",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.0017922999686561525,
+            "maximum_translation_bound_m": 2.2273900267220996e-09,
+            "execution_admitted": false
+          },
+          "loaded": {
+            "retained_modes": 54,
+            "state_key": "9953d9c9e08a5ad0e06e7c6063f064c13a85369284498c22456487e73c840a81",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.0018026999896392226,
+            "maximum_translation_bound_m": 1.6900917170135146e-09,
+            "execution_admitted": false
+          }
+        }
+      ]
+    },
+    {
+      "environment": "WSL GCC 13.3 / Python 3.12 / NumPy 1.26.4",
+      "implementation_sha256": "60059c332073289dc14a927342129e680ab457954c22b6d0a3c423415b0a0f69",
+      "runs": [
+        {
+          "material": "glass",
+          "declaration": {
+            "material": "glass",
+            "ball_material": "iron",
+            "ball_mass_kg": 0.1,
+            "height_m": 10.0,
+            "dt_s": 0.004166666666666667,
+            "experiment": "sheet",
+            "device": "cpu",
+            "pipeline": "local-jacobian",
+            "newton_strategy": "ranked",
+            "line_search": "batch-tail",
+            "linear_backend": "numpy-reference",
+            "contact_resolution": "reference",
+            "representation_policy": "partitioned-flight"
+          },
+          "initial": {
+            "retained_modes": 54,
+            "state_key": "168d44430e093e63a6b269f59a256fcd5a10d86efd56d3df31d4aec6ee715ce5",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.0013686540187336504,
+            "maximum_translation_bound_m": 4.3494147911659104e-10,
+            "execution_admitted": false
+          },
+          "loaded": {
+            "retained_modes": 54,
+            "state_key": "ce1eb8f8154a2b91af1d13f70b07c759f94c2db4b30a9a41362d3529c0160bee",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.004866098985075951,
+            "maximum_translation_bound_m": 4.5968048803709965e-10,
+            "execution_admitted": false
+          }
+        },
+        {
+          "material": "oak",
+          "declaration": {
+            "material": "oak",
+            "ball_material": "iron",
+            "ball_mass_kg": 0.1,
+            "height_m": 10.0,
+            "dt_s": 0.004166666666666667,
+            "experiment": "sheet",
+            "device": "cpu",
+            "pipeline": "local-jacobian",
+            "newton_strategy": "ranked",
+            "line_search": "batch-tail",
+            "linear_backend": "numpy-reference",
+            "contact_resolution": "reference",
+            "representation_policy": "partitioned-flight"
+          },
+          "initial": {
+            "retained_modes": 54,
+            "state_key": "9e7197ebbda509028d38b3dc0283fd82df3a819e948f965f19516f0abadb3e60",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.0013910760171711445,
+            "maximum_translation_bound_m": 6.707947003239219e-10,
+            "execution_admitted": false
+          },
+          "loaded": {
+            "retained_modes": 54,
+            "state_key": "19af35d992eec134c9497bb702f2548d079e9b98ef36cf06805a25fd4e0c8542",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.001493600953835994,
+            "maximum_translation_bound_m": 6.953204842749623e-10,
+            "execution_admitted": false
+          }
+        },
+        {
+          "material": "iron",
+          "declaration": {
+            "material": "iron",
+            "ball_material": "iron",
+            "ball_mass_kg": 0.1,
+            "height_m": 10.0,
+            "dt_s": 0.004166666666666667,
+            "experiment": "sheet",
+            "device": "cpu",
+            "pipeline": "local-jacobian",
+            "newton_strategy": "ranked",
+            "line_search": "batch-tail",
+            "linear_backend": "numpy-reference",
+            "contact_resolution": "reference",
+            "representation_policy": "partitioned-flight"
+          },
+          "initial": {
+            "retained_modes": 54,
+            "state_key": "b028d999c1b12066d24f7db168b41b3bfb765b4179bf00816988fecd67762c93",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.001389281009323895,
+            "maximum_translation_bound_m": 1.1352800137613374e-09,
+            "execution_admitted": false
+          },
+          "loaded": {
+            "retained_modes": 54,
+            "state_key": "11113efee5decf83a87efadb2be8490cf851e7047e6de6ca53fcc7647c19044d",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.0015182950301095843,
+            "maximum_translation_bound_m": 8.316396037654742e-10,
+            "execution_admitted": false
+          }
+        },
+        {
+          "material": "ice",
+          "declaration": {
+            "material": "ice",
+            "ball_material": "iron",
+            "ball_mass_kg": 0.1,
+            "height_m": 10.0,
+            "dt_s": 0.004166666666666667,
+            "experiment": "sheet",
+            "device": "cpu",
+            "pipeline": "local-jacobian",
+            "newton_strategy": "ranked",
+            "line_search": "batch-tail",
+            "linear_backend": "numpy-reference",
+            "contact_resolution": "reference",
+            "representation_policy": "partitioned-flight"
+          },
+          "initial": {
+            "retained_modes": 54,
+            "state_key": "75214a84aa46fadd7391daaab4ed30f74b78f95e727d39f77048eded3ab36492",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.0013645360013470054,
+            "maximum_translation_bound_m": 2.2273900267221405e-09,
+            "execution_admitted": false
+          },
+          "loaded": {
+            "retained_modes": 54,
+            "state_key": "c4c020d37dcfcc5c2d1f935b77ee1d49d1eae6036fd8fa265a4f064af7c79be7",
+            "checked_horizon_s": 0.004166666666666667,
+            "native_sites": 2808,
+            "always_separated_sites": 2692,
+            "always_compressed_sites": 0,
+            "possible_contact_changes": 116,
+            "envelope_wall_s": 0.0014527960447594523,
+            "maximum_translation_bound_m": 1.690091581523658e-09,
+            "execution_admitted": false
+          }
+        }
+      ]
+    }
+  ]
+}

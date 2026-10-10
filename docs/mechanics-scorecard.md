@@ -1139,3 +1139,12 @@ add accepted per-body interaction-force receipts, contact-frame/peak-load views
 and direct controls for the three available inspections. Eight scoped suites
 pass. Net loads are not temperature or resolved stress; the other families and
 complete sheet impacts remain unfinished.
+
+**Continuous affine envelopes, October 9 (conditional reference implemented; world reduction/realtime OPEN):**
+[Continuous motion and native contact-site evidence](affine-contact-envelope-checkpoint.md)
+retain all modes and interior extrema, then classify 2,808 native contact sites
+through a 4.167 ms affine/Cayley interval. Four materials retain 116 uncertain
+sites, so reduced execution remains refused. The same 3D lab shows bounds and
+cost. Eight scoped suites, compiled Windows/WSL preparation and 346/346 source
+registration pass. Nonlinear error, branch continuation, full transfers and the
+remaining representation families remain required; no world speedup is claimed.

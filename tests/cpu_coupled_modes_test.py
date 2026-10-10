@@ -8,7 +8,7 @@ from unittest.mock import patch
 from pathlib import Path
 import numpy as np
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
-from coupled_modes import ModeBasis,prepare
+from coupled_modes import ModeBasis,prepare,contact_envelope
 from cpu_coupled_world import CpuCoupledWorld,CpuCoupledEvaluator,implementation_hash
 
 
@@ -20,6 +20,38 @@ def refuse(fn):
 
 def main(args):
     os.environ['BANJO_COUPLED_CPU_LIBRARY']=str(args.library.resolve())
+    # A complete oscillator cycle has identical endpoints but interior contact
+    # travel. An endpoint-only envelope would wrongly declare zero motion.
+    oscillator=ModeBasis([1.],[[16.]],[0.],[1.])
+    box=oscillator.envelope(math.pi/2)
+    assert box['displacement_lower'][0]<=-.25 and box['displacement_upper'][0]>=.25
+    assert abs(box['displacement_lower'][0]+.25)<1e-12 and abs(box['displacement_upper'][0]-.25)<1e-12
+    assert abs(oscillator.advance(math.pi/2)['displacement'][0])<1e-15
+    # Loaded equilibrium offset, zero-mode turnaround and unstable turnaround.
+    loaded=ModeBasis([1.],[[16.]],[8.],[0.]).envelope(math.pi/2)
+    assert loaded['displacement_lower'][0]<=0 and 1<=loaded['displacement_upper'][0]<1+1e-12
+    quadratic=ModeBasis([1.],[[0.]],[-2.],[1.]).envelope(1.)
+    assert quadratic['displacement_lower'][0]<=0 and .25<=quadratic['displacement_upper'][0]<.25+1e-12
+    unstable_box=ModeBasis([1.],[[-4.]],[-1.],[.2]).envelope(.4)
+    peak=.2*math.sinh(math.atanh(.4))/2-.25*(math.cosh(math.atanh(.4))-1)
+    assert peak<=unstable_box['displacement_upper'][0]<peak+1e-12
+    # Full cycles do not cost O(frequency*h). Keep actual vibration at 1MHz.
+    stiff=ModeBasis([1.],[[1e12]],[0.],[1.]).envelope(2.)
+    assert stiff['displacement_lower'][0]<=-1e-6 and stiff['displacement_upper'][0]>=1e-6
+    # Independent RK4 integration checks correlated mixed modes, including a
+    # near-zero and an unstable eigenvalue. Interval mapping must enclose them.
+    stiffness=np.array([[3.,-1.,.2],[-1.,.1,0.],[.2,0.,0.]])
+    masses=np.array([1.,2.,3.]);force=np.array([.2,-.4,.1]);initial_v=np.array([.3,-.1,.2])
+    mixed=ModeBasis(masses,stiffness,force,initial_v);bounds=mixed.envelope(.3)
+    y=np.r_[np.zeros(3),initial_v];dt=.3/2000
+    def rhs(s):return np.r_[s[3:],(force-stiffness@s[:3])/masses]
+    for _ in range(2000):
+        a=rhs(y);b=rhs(y+dt*a/2);c=rhs(y+dt*b/2);d=rhs(y+dt*c)
+        y+=dt*(a+2*b+2*c+d)/6
+        assert np.all(y[:3]>=bounds['displacement_lower']-1e-13) and np.all(y[:3]<=bounds['displacement_upper']+1e-13)
+        assert np.all(y[3:]>=bounds['velocity_lower']-1e-13) and np.all(y[3:]<=bounds['velocity_upper']+1e-13)
+    refuse(lambda:mixed.envelope(float('nan')))
+    refuse(lambda:ModeBasis([1.],[[-1e4]],[0.],[1.]).envelope(1.))
     # A known oscillator retains a load-induced equilibrium and actual vibration.
     for frequency in (2.,1e6):
         mass=np.array([2.]);force=np.array([.3]);velocity=np.array([.17]);k=mass*frequency**2
@@ -78,6 +110,28 @@ def main(args):
         assert np.array_equal(basis.native_edges[:,35:67],w.eval.edges[:,35:67]),'native prestress/plastic/damage/work history lost'
         assert basis.full_force_tangent.shape==(72,54),'fixed support reaction tangent lost'
         assert np.isfinite(basis.advance(1/240)['affine_wrench_impulse']).all()
+        guard=contact_envelope(basis,CpuCoupledEvaluator(basis.native_bodies.copy(),basis.native_edges.copy()),1/240)
+        assert r['continuous_contact_envelope']['native_sites']==len(guard['geometry'])
+        assert guard['summary']['possible_contact_changes']>0,'touching branches must not be silently admitted'
+        assert not guard['summary']['execution_admitted']
+        # Evaluate actual native geometry along the explicitly declared affine
+        # translation/Cayley path, not a canned endpoint or contact animation.
+        geometry_eval=CpuCoupledEvaluator(basis.native_bodies.copy(),basis.native_edges.copy())
+        for h in np.linspace(0,1/240,33):
+            prediction=basis.advance(float(h));movement=np.zeros((geometry_eval.n,6))
+            movement.ravel()[basis.dynamic_dofs]=prediction['displacement']
+            geometry_eval.bodies[:]=basis.native_bodies
+            geometry_eval.bodies[:,23:26]+=movement[:,:3]
+            geometry_eval.bodies[:,7:10]=geometry_eval.bodies[:,20:23]+geometry_eval.bodies[:,23:26]
+            for i,theta in enumerate(movement[:,3:]):
+                w0,xyz=basis.native_bodies[i,10],basis.native_bodies[i,11:14]
+                dq=np.r_[w0-np.dot(theta/2,xyz),xyz+w0*theta/2+np.cross(theta/2,xyz)]
+                geometry_eval.bodies[i,10:14]=dq/np.linalg.norm(dq)
+            sites=geometry_eval.contact_geometry()
+            assert np.array_equal(sites[:,:4],guard['geometry'][:,:4])
+            assert np.all(sites[:,4]>=guard['lower_gap_m']) and np.all(sites[:,4]<=guard['upper_gap_m']),material
+        mutated=CpuCoupledEvaluator(basis.native_bodies.copy(),basis.native_edges.copy());mutated.edges[0,35]+=1e-15
+        refuse(lambda:contact_envelope(basis,mutated,1/240))
         assert r['derivative_irreversible_changes']==0,'derivative crossed damage/plasticity'
         repeated=w.prepare_modes();assert repeated['state_key']==r['state_key']
         assert repeated['maximum_omega_squared_s2']==r['maximum_omega_squared_s2']
@@ -140,6 +194,21 @@ def main(args):
     assert abs(geometry.current_sphere_gaps(1)[0]-.0007)<1e-15
     protected=np.full(2,123.)
     assert geometry.lib.banjo_coupled_cpu_separation(geometry.bodies,2,2,protected)==-1 and np.all(protected==123)
+    protected_sites=np.full((48,10),123.)
+    assert geometry.lib.banjo_coupled_cpu_contact_geometry(geometry.bodies,2,0,protected_sites)==-1
+    assert np.all(protected_sites==123),'invalid capacity mutated caller output'
+    # Independent box/plane Gauss-site geometry: half the six faces lie above,
+    # half below the cube center; do not query only broadphase-active pairs.
+    plane=control.eval.bodies[0].copy();cube=control.eval.bodies[3].copy()
+    cube[7:10]=cube[20:23]=[0,.1,0];cube[23:26]=0;cube[10:14]=cube[26:30]=[1,0,0,0]
+    gp=CpuCoupledEvaluator(np.array([plane,cube]),[]).contact_geometry()
+    expected=[]
+    for face in range(6):
+        for j in range(4):
+            y=.1+((1 if face%2 else -1)*cube[5] if face//2==1 else (1 if (j%2 if face//2==0 else (j//2)%2) else -1)*cube[5]/math.sqrt(3))
+            expected.append(y)
+    assert len(gp)==24 and np.allclose(gp[:,4],expected,rtol=0,atol=2e-17)
+    assert np.all(gp[:,5]>0),'separated broad pairs disappeared from the branch diagnostic'
     report=dict(schema='banjo.cpu-mode-preparation-evidence.v1',implementation_sha256=implementation_hash(),runs=rows,
         scope='Private affine preparation and analytical evolution; no world modal execution or full impact qualification')
     args.output.write_text(json.dumps(report,indent=2)+'\n',encoding='utf8')

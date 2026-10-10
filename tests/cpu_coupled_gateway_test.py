@@ -52,6 +52,8 @@ with tempfile.TemporaryDirectory() as folder:
         modes=command({'op':'inspect_modes','session':sheet_key})
         assert modes['ok'] and modes['mode_preparation']['retained_modes']==54
         assert not modes['mode_preparation']['execution_admitted']
+        guard=modes['mode_preparation']['continuous_contact_envelope']
+        assert guard['native_sites']>0 and guard['possible_contact_changes']>0 and not guard['execution_admitted']
         assert command({'op':'export','session':sheet_key})['checkpoint']==untouched
         assert command({'op':'snapshot','session':other})['state']['time_s']==0
         mode_log=[json.loads(row) for row in request('/api/log/'+sheet_key)[1].splitlines()]

@@ -171,6 +171,43 @@ BANJO_CPU_EXPORT int banjo_coupled_cpu_separation(const double* b,unsigned n,uns
         banjo::dgContact(b+30*sphere,b+30*i,banjo::dgPose(b+30*sphere),banjo::dgPose(b+30*i)).gap;
     return static_cast<int>(n);
 }
+// All current native contact sites, including sites behind a separated broad
+// pair. Read-only geometry for continuous-branch diagnostics, not a CCD gate.
+// Rows (10 doubles): a,b,site,sample owner (-1 primitive),gap,broad gap,
+// current sample/center relative to target center (xyz),sample lever length.
+BANJO_CPU_EXPORT int banjo_coupled_cpu_contact_geometry(const double* b,unsigned n,
+    unsigned capacity,double* out){
+    if(!scene(b,n,nullptr,0,1e-12,0)||!out)return -1;
+    unsigned count=0;
+    for(unsigned a=0;a<n;++a)for(unsigned c=a+1;c<n;++c)
+        if(b[30*a+1]>0||b[30*c+1]>0)count+=banjo::dgContactSiteCount(b+30*a,b+30*c);
+    if(capacity<count)return -1; // refusal leaves the caller output untouched
+    unsigned k=0;
+    for(unsigned a=0;a<n;++a)for(unsigned c=a+1;c<n;++c){
+        const auto ba=b+30*a,bc=b+30*c;if(ba[1]==0&&bc[1]==0)continue;
+        const auto pa=banjo::dgPose(ba),pc=banjo::dgPose(bc);
+        const auto broad=banjo::dgContact(ba,bc,pa,pc);
+        const unsigned sites=banjo::dgContactSiteCount(ba,bc);
+        const bool sa=static_cast<int>(ba[0])==1&&static_cast<int>(bc[0])!=2;
+        const bool sb=static_cast<int>(bc[0])==1&&static_cast<int>(ba[0])!=2;
+        for(unsigned site=0;site<sites;++site){
+            auto point=pa,target=pc;banjo::FrameVector lever{};
+            double owner=-1,gap=broad.gap;
+            if(sites>1){
+                const bool swap=sb&&(!sa||site>=24);const auto source=swap?bc:ba;
+                point=swap?pc:pa;target=swap?pa:pc;owner=swap?c:a;
+                lever=banjo::dgSurfaceLever(source,point,site%24);
+                gap=banjo::dgSurfaceContact(source,swap?ba:bc,point,target,site%24).gap;
+                point=banjo::dgAddPosition(point,lever);
+            }
+            auto row=out+10*k++;row[0]=a;row[1]=c;row[2]=site;row[3]=owner;
+            row[4]=gap;row[5]=broad.gap;
+            banjo::dgWrite3(row+6,banjo::dgPositionValue(banjo::dgRelative(point,target)));
+            row[9]=banjo::dgLength(lever);
+        }
+    }
+    return static_cast<int>(k);
+}
 BANJO_CPU_EXPORT int banjo_coupled_cpu_flight(const double* b,unsigned n,unsigned sphere,double h,double gy,
     double travel,double* bounds,double* poses,double* v,double* f,double* r){
     if(!scene(b,n,nullptr,0,h,gy)||sphere>=n||b[30*sphere]!=2||b[30*sphere+1]<=0||
