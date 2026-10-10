@@ -202,6 +202,40 @@ class Tray(unittest.TestCase):
         self.assertNotIn('_needs', spec)
         self.assertEqual(spec['stations'][0]['title'], steam['goal']['title'])
 
+    def test_a_win_is_scored_by_the_energy_it_took(self):
+        # Making the pieces: mass (the engine's densities) times the material's
+        # embodied energy. Level 1's 0.7 m oak plank is 2.94 kg, 30.6 MJ.
+        gap = mg.level_by_id('gap')
+        compiled = mw.compile_spec(mg.compose(gap, gap['solution'])[0])
+        plank = mg.pieces_energy(compiled)['your plank 1']
+        self.assertAlmostEqual(plank['kg'], 0.7 * 0.02 * 0.3 * 700.0, places=3)
+        self.assertAlmostEqual(plank['j'], plank['kg'] * 10.4e6, delta=1.0)
+        # Aluminium costs six times iron's energy a kilogram: on level 8 the
+        # heavier iron counterweight takes less energy to make.
+        tackle = mg.level_by_id('tackle')
+        def made(kg, ratio, h):
+            c = mw.compile_spec(mg.compose(tackle, [dict(tackle['solution'][0], counterweight_kg=kg, ratio=ratio,
+                                                         drop_from_m=h)])[0])
+            return mg.pieces_energy(c)['your tackle 1']['j']
+        self.assertLess(made(7.9, 2, 1.2), made(4.7, 3, 1.75) / 3)
+        # The run: heaters' heat and batteries' energy as measured, and the
+        # powder in the charges (level 3's 1 g: 2.8 kJ).
+        fire = mg.level_by_id('fire')
+        compiled = mw.compile_spec(mg.compose(fire, fire['solution'])[0])
+        run = mg.run_energy(compiled, {'heat_ledger': {'heater_in_j': 1500.0}})
+        self.assertEqual((run['heat_j'], run['powder_j'], run['electric_j']), (1500, 2800, 0))
+        battery = {'batteries': [{'name': 'b', 'capacity_j': 1000.0, 'charge_j': 600.0}]}
+        self.assertEqual(mg.run_energy(battery | {'parts': []},
+                                       {'machines': {'batteries': [{'name': 'b', 'charge_j': 450.0}]}})['electric_j'], 150)
+        # Stars: the goal, within a quarter of par, at or under par.
+        par = gap['par_energy_j']
+        checked = mg.check_placements(gap, gap['solution'])[0]
+        self.assertEqual([mg.stars(gap, checked, 21, 1.9, energy_j=e)['stars'] for e in (par, 1.2 * par, 1.3 * par)],
+                         [3, 2, 1])
+        self.assertEqual(mg.stars(gap, checked, 21, None, energy_j=par)['stars'], 0)
+        self.assertEqual(mg.stars(gap, checked, 21, 1.9, helped=True, energy_j=par)['stars'], 1)
+        self.assertTrue(all(level.get('par_energy_j') for level in LEVELS), 'every level has an energy par')
+
     def test_a_goal_about_a_piece_needs_that_piece(self):
         with self.assertRaises(mg.LevelRefused) as caught:
             mg.compose(mg.level_by_id('steam'), [])
@@ -309,6 +343,22 @@ class Engine(unittest.TestCase):
         with tempfile.TemporaryDirectory() as logs:
             t = mg.trial(cut, [dict(cut['solution'][0], yaw_deg=30)], ENGINE, Path(logs), runs=1)
         self.assertEqual(t['worked'], 1, t['results'])
+
+    @need_engine
+    def test_each_levels_par_is_what_its_own_solution_takes(self):
+        # Measured, rounded up to three figures: the level's own answer wins
+        # on par, and a better one (level 1's plank a little shorter) beats it.
+        with tempfile.TemporaryDirectory() as logs:
+            for level in LEVELS:
+                m = mg.measure_energy(level, level['solution'], ENGINE, Path(logs))
+                with self.subTest(level=level['id']):
+                    self.assertIsNotNone(m['goal_at_s'])
+                    self.assertLessEqual(m['j'], level['par_energy_j'])
+                    self.assertGreater(m['j'], 0.99 * level['par_energy_j'])
+            gap = mg.level_by_id('gap')
+            shorter = mg.measure_energy(gap, [dict(gap['solution'][0], length_m=0.66)], ENGINE, Path(logs))
+        self.assertIsNotNone(shorter['goal_at_s'])
+        self.assertLess(shorter['j'], gap['par_energy_j'])
 
     @need_engine
     def test_the_preview_is_the_engines_rehearsal_of_where_things_go(self):

@@ -141,3 +141,25 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 .preview-legend .chips{display:flex;flex-wrap:wrap;gap:4px 10px}
 .preview-legend .chip::before{content:"";display:inline-block;width:10px;height:10px;margin-right:4px;border-radius:50%;background:var(--c);vertical-align:-1px}
 #path-toggle[aria-pressed="false"]{opacity:.6}
+/* The levels screen: every level and how far this player has got. */
+body.on-levels main{display:none}
+.levels-screen{max-width:960px;margin:0 auto;padding:14px 16px 40px;box-sizing:border-box}
+.levels-screen[hidden]{display:none}
+.ls-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+.ls-head h1{margin:0}
+.levels-screen button,.levels-screen select,.levels-screen input{min-height:40px;padding:6px 12px;border-radius:8px;border:1px solid #63899d;background:#294c60;color:#e7f2f8;font:14px system-ui}
+.levels-screen input{background:#10202a}
+.ls-player{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0}
+.ls-summary{margin:6px 0 12px;color:#c9dbe5}
+.ls-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.levels-screen .ls-card{width:100%;height:100%;min-height:110px;display:grid;align-content:start;gap:4px;text-align:left;padding:12px;background:#1b2f3c;border:1px solid #3d5b6d;border-radius:12px;cursor:pointer}
+.ls-card strong{font-size:16px}
+.ls-card .stars{font-size:20px;letter-spacing:3px;color:#ffd34d}
+.ls-card .teaches{font-size:13px;color:#b9cbd6}
+.ls-card .status{font-size:13px;color:#9fdcff}
+.ls-list li.won .ls-card{border-color:#5fe08f}
+.ls-list li.next .ls-card{outline:2px solid #6cc6ff}
+/* What a win took. */
+.level-done .energy{font-size:18px;font-weight:700;margin:6px 0 2px}
+.level-done .breakdown{font-size:13px;color:#b9cbd6}
+.level-done .hint{font-size:13px;color:#ffd38a}

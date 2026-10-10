@@ -160,7 +160,9 @@ class Puzzles(unittest.TestCase):
         self.assertIn('★★★', self.js("document.getElementById('verdict').textContent"))
         # The goal says so, over the scene, and leads on to the next level.
         self.wait("!document.getElementById('level-done').hidden", 10)
-        self.assertIn('Level complete!', self.js("document.getElementById('level-done').textContent"))
+        done = self.js("document.getElementById('level-done').textContent")
+        self.assertIn('Level complete!', done)
+        self.assertIn('Energy used: 30.6 MJ', done)
         self.press('Next level')
         self.wait("/^2\\. /.test(document.getElementById('title').textContent)", 30)
 
@@ -184,6 +186,32 @@ class Puzzles(unittest.TestCase):
         self.assertEqual((notes[-1]['text'], notes[-1]['level']), ('The plank looked like it floated', 'gap'))
         self.assertNotIn('127.0.0.1', json.dumps(notes[-1]), 'nothing that names the player is kept')
 
+    def test_the_levels_screen_shows_each_players_own_progress(self):
+        # /play on its own: every level and how far this player has got.
+        self.page.send('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 860, 'deviceScaleFactor': 1,
+                                                              'mobile': False})
+        self.page.send('Page.navigate', {'url': f'{self.base}/play'})
+        self.wait("document.getElementById('levels-screen') && !document.getElementById('levels-screen').hidden", 90)
+        self.assertEqual(self.js("document.querySelectorAll('.ls-list li').length"), 8)
+        self.js("document.querySelector('.ls-player input').value = 'Tester'")
+        self.press('Add player')
+        self.assertIn('Tester: 0 of 8 levels won', self.js("document.querySelector('.ls-summary').textContent"))
+        # A win kept for this player shows on the screen; another player's is
+        # their own.
+        self.js("""(() => { const s = JSON.parse(localStorage.getItem('banjo-play-save'));
+            s.players.Tester.levels.gap = {stars: 3, energy_j: 28800000}; localStorage.setItem('banjo-play-save', JSON.stringify(s)); })()""")
+        self.page.send('Page.navigate', {'url': f'{self.base}/play'})
+        self.wait("!document.getElementById('levels-screen').hidden", 90)
+        self.assertIn('Tester: 1 of 8 levels won, 3 of 24 stars', self.js("document.querySelector('.ls-summary').textContent"))
+        self.assertIn('Best win: 28.8 MJ', self.js("document.querySelector('.ls-list li').textContent"))
+        self.js("(() => { const p = document.getElementById('player-pick'); p.value = 'Player 1'; p.dispatchEvent(new Event('change')); })()")
+        self.assertTrue(self.js("document.querySelector('.ls-summary').textContent.startsWith('Player 1:')"))
+        self.assertNotIn('28.8 MJ', self.js("document.querySelector('.ls-list li').textContent"), 'Tester’s best is Tester’s')
+        self.press('Play level 2, Cut it down')
+        self.wait(READY, 90)
+        self.assertTrue(self.js("document.getElementById('levels-screen').hidden"))
+        self.assertTrue(self.js("document.getElementById('title').textContent.startsWith('2. ')"))
+
     def test_a_level_opens_before_its_goal_piece_and_a_missed_goal_starts_over(self):
         # Level 4's goal is its engine's piston: before there is one, the
         # level is shown, ready, with what it needs -- not "could not build".
@@ -198,7 +226,7 @@ class Puzzles(unittest.TestCase):
         self.ghost()
         self.press('Set it down')
         self.wait('!window.machineGhostState()', 5)
-        self.wait("/costs/.test(document.getElementById('placed').textContent)", 60)
+        self.wait("/to make/.test(document.getElementById('placed').textContent)", 60)
         self.press('Run it')
         self.wait("!document.getElementById('level-done').hidden", 30)
         self.assertIn('Not this time', self.js("document.getElementById('level-done').textContent"))

@@ -368,6 +368,7 @@ def ghost(level, placements, index):
                         'sunlight_w': round(max(0.0, c) * compiled['sun']['irradiance_w_m2'] * sp['area_m2'], 1)})
     keys = ('name', 'shape', 'material', 'size_m', 'at_m', 'turn_deg', 'fixed')
     return {'name': name, 'cost': checked[index]['cost'], 'problems': problems[:4], 'fits': not problems, 'sun': sun,
+            'energy': pieces_energy(compiled).get(name),
             'parts': [dict({k: p[k] for k in keys if k in p},
                            **({'parts': p['parts']} if p['shape'] == 'compound' else {})) for p in mine]}
 
@@ -419,18 +420,105 @@ def _named(rule):
     return out
 
 
-def stars(level, checked, cost, goal_at_s, helped=False):
-    """What a run earned, from what the engine measured."""
-    kinds = {p['piece'] for p in checked}
-    got = {'goal': goal_at_s is not None and goal_at_s <= level['time_s'],
-           'budget': cost <= level['par'],
-           'style': len(kinds) >= level.get('style_pieces', 1)}
+# ---- energy: what a win took ---------------------------------------------------
+#
+# The less energy a win takes, the better. Two kinds count, both real:
+#   making your pieces -- each part's mass (the engine's own densities) times
+#     its material's embodied energy, typical cradle-to-gate values (ICE, the
+#     Inventory of Carbon and Energy, University of Bath); ice is the heat
+#     taken out to freeze it;
+#   the run -- what the engine measured going in: heaters' heat (fireboxes,
+#     primers), chemical energy released (powder burning), and energy drawn
+#     from batteries (lasers, motors, coils; what the sun put in is free).
+EMBODIED_J_PER_KG = {'oak': 10.4e6, 'iron': 25.0e6, 'aluminum': 155.0e6, 'glass': 15.0e6, 'concrete': 0.95e6,
+                     'rubber': 67.5e6, 'ceramic': 40.0e6, 'ice': 0.4e6}
+DENSITY = {'iron': 7870.0, 'aluminum': 2700.0, 'glass': 2500.0, 'ceramic': 3900.0, 'oak': 700.0, 'rubber': 1100.0,
+           'ice': 917.0, 'concrete': 2400.0}
+
+
+def _volume(part):
+    if part['shape'] == 'sphere':
+        return math.pi / 6.0 * part['size_m'][0] ** 3
+    if part['shape'] == 'compound':
+        return sum(math.pi / 4.0 * s['size_m'][0] ** 2 * s['size_m'][1] if s['shape'] == 'cylinder'
+                   else math.prod(s['size_m']) for s in part['parts'])
+    return math.prod(part['size_m'])
+
+
+def pieces_energy(compiled):
+    """{'your plank 1': {'kg': ..., 'j': ...}}: what each of the player's
+    pieces weighs and took to make."""
+    out = {}
+    for p in compiled['parts']:
+        name = owner(p)
+        if name is None:
+            continue
+        kg = _volume(p) * DENSITY.get(p['material'], 1000.0)
+        row = out.setdefault(name, {'kg': 0.0, 'j': 0.0})
+        row['kg'] += kg
+        row['j'] += kg * EMBODIED_J_PER_KG.get(p['material'], 20.0e6)
+    return {k: {'kg': round(v['kg'], 3), 'j': round(v['j'])} for k, v in out.items()}
+
+
+PROPELLANT_J_PER_KG = 2.8e6    # the engine's stand-in for gunpowder (machine_world _kit_cannon)
+
+
+def run_energy(compiled, readouts):
+    """What the run put in so far: heaters' heat and batteries' energy as the
+    engine measured them, and the powder in the machine's charges (all of it:
+    a charge is there to be fired)."""
+    ledger = (readouts or {}).get('heat_ledger') or {}
+    start = {b['name']: b.get('charge_j', b['capacity_j']) for b in compiled.get('batteries') or []}
+    now = {b['name']: b.get('charge_j') for b in ((readouts or {}).get('machines') or {}).get('batteries') or []}
+    drawn = sum(max(0.0, start[n] - now[n]) for n in start if now.get(n) is not None)
+    heat = max(0.0, ledger.get('heater_in_j') or 0.0)
+    parts = {p['name']: p for p in compiled['parts']}
+    powder = 0.0
+    for row in ((compiled.get('thermo') or {}).get('contents') or []):
+        body = parts.get(row.get('body'))
+        share = (row.get('contents') or {}).get('propellant', 0.0)
+        if body and share:
+            powder += _volume(body) * DENSITY.get(body['material'], 1000.0) * share * PROPELLANT_J_PER_KG
+    return {'heat_j': round(heat), 'powder_j': round(powder), 'electric_j': round(drawn),
+            'j': round(heat + powder + drawn)}
+
+
+def energy_of(compiled, readouts):
+    """The whole of it: the pieces' making and the run's energy, itemised."""
+    pieces = pieces_energy(compiled)
+    run = run_energy(compiled, readouts)
+    made = sum(v['j'] for v in pieces.values())
+    return {'j': made + run['j'], 'pieces_j': made, 'pieces': pieces, 'run': run}
+
+
+def measure_energy(level, placements, exe, logs):
+    """A rehearsal to the goal: when it happened and what the win took (a
+    level's par is its own solution's)."""
+    spec, _, _ = compose(level, placements)
+    compiled = mw.compile_spec(spec)
+    r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=120)
+    row = (r['stations'] or [{}])[0]
+    return dict(energy_of(compiled, r.get('readouts')), goal_at_s=row.get('at_s') if row.get('done') else None)
+
+
+def stars(level, checked, cost, goal_at_s, helped=False, energy_j=None):
+    """What a run earned, from what the engine measured: one star for the
+    goal in time, a second for winning on no more than a quarter more energy
+    than the level's par, a third for no more than par."""
+    par = level.get('par_energy_j')
+    got = {'goal': goal_at_s is not None and goal_at_s <= level['time_s']}
+    if par and energy_j is not None:
+        got['near_par'] = energy_j <= 1.25 * par
+        got['par'] = energy_j <= par
+    else:   # no energy measured: the cost and the variety of pieces, as before
+        got['budget'] = cost <= level['par']
+        got['style'] = len({p['piece'] for p in checked}) >= level.get('style_pieces', 1)
     count = sum(got.values()) if got['goal'] else 0
     if helped:
         # The chat placed the pieces: the goal still counts, the rest less so.
         count = min(count, 1)
     return {'stars': count, 'earned': got, 'cost': cost, 'par': level['par'], 'goal_at_s': goal_at_s,
-            'helped': helped}
+            'helped': helped, 'energy_j': energy_j, 'par_energy_j': par}
 
 
 def nudged(compiled, seed, metres=0.0015):
@@ -603,4 +691,4 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
 def public(level):
     """What the page needs to show a level: never its solution."""
     return {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
-                                  'tray', 'goal', 'hints') if k in level}
+                                  'tray', 'goal', 'hints', 'par_energy_j') if k in level}

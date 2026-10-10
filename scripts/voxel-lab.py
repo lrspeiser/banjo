@@ -539,7 +539,7 @@ class Handler(BaseHTTPRequestHandler):
     # without its goal, and the page is told what it needs.
     spec,checked,cost=machine_game.compose(level,data.get('placements') or [],leave_out_goal=True)
     needs=spec.pop('_needs',None)
-    r=host.open(spec);r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost
+    r=host.open(spec);r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost;r['energy']=machine_game.pieces_energy(r['machine'])
     if needs:r['needs']=needs
     host.get(r['session']).game={'level':level['id'],'checked':checked,'cost':cost,'helped':bool(data.get('helped'))}
    elif op=='feedback':
@@ -576,7 +576,9 @@ class Handler(BaseHTTPRequestHandler):
     if not game:raise ValueError('That session is not a level')
     level=machine_game.level_by_id(game['level'])
     rows=(s.readouts or {}).get('stations') or [{}]
-    r={'ok':True,**machine_game.stars(level,game['checked'],game['cost'],rows[0].get('at_s') if rows[0].get('done') else None,game['helped'])}
+    # And what the win took: making the pieces, and what the run put in so far.
+    energy=machine_game.energy_of(s.compiled,s.readouts)
+    r={'ok':True,**machine_game.stars(level,game['checked'],game['cost'],rows[0].get('at_s') if rows[0].get('done') else None,game['helped'],energy_j=energy['j']),'energy':energy}
    elif op=='trial':
     if self.server.trial_allowance:self.server.trial_allowance.take(self.visitor())
     if not self.server.chat_busy.acquire(blocking=False):raise ValueError('The engine is busy with another trial; try again shortly')

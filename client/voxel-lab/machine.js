@@ -484,7 +484,7 @@ async function build(next, start, request) {
     if (mine !== polling) { api({op: 'close', session: opened.session}).catch(() => {}); return opened; }
     spec = request ? opened.machine : next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
     world = mergeFrame({seq: 0, t: 0, bodies: new Map()}, opened);
-    $('title').textContent = machine.title;
+    $('title').textContent = LEVEL_MODE && level ? `${levels.indexOf(level) + 1}. ${level.title}` : machine.title;
     $('spec').value = JSON.stringify(spec, null, 1);
     const notes = $('notes'); notes.replaceChildren();
     for (const n of machine.notes || []) { const li = document.createElement('li'); li.textContent = n; notes.append(li); }
@@ -703,7 +703,7 @@ fetch('/api/checkpoint').then(r => r.ok ? r.json() : null).then(c => {
 // engine runs it. The stars come from what the engine measured.
 const params = new URLSearchParams(location.search);
 const LEVEL_MODE = location.pathname === '/play' || params.has('level');
-let levels = [], level = null, placements = [], placedCost = [], helped = false, scored = false, lastRun = null, rebuildTimer = null;
+let levels = [], level = null, placements = [], placedCost = [], placedEnergy = {}, helped = false, scored = false, lastRun = null, rebuildTimer = null;
 
 // ---- the ghost: a piece before it is set down ------------------------------------
 // A see-through copy of a piece. It follows the pointer over the scene until
@@ -823,7 +823,7 @@ async function askGhost() {
   try {
     const r = await api({op: 'level_ghost', level: level.id, placements: ghostPlacements(), index: g.index});
     if (ghost !== g) return;
-    Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], drawnAt: sent, answered: true});
+    Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], energy: r.energy, drawnAt: sent, answered: true});
     drawGhost(r.parts, r.fits);
     schedulePreview();
   } catch (e) {
@@ -844,8 +844,7 @@ function startGhost(p, index) {
   view.classList.add('placing');
   renderTray(); renderPlaced(); renderGhostBar();
   // Where the ghost is: in sight (a phone's page has scrolled down to the tray).
-  const seen = view.getBoundingClientRect();
-  if (seen.top < -40 || seen.bottom > innerHeight + 40) view.scrollIntoView({block: 'start'});
+  sceneIntoView();
   if (!ghost.was) {
     const rect = renderer.domElement.getBoundingClientRect();
     const at = sceneHit(rect.left + rect.width / 2, rect.top + rect.height / 2);
@@ -934,7 +933,7 @@ function showGhostState() {
     said.className = 'state ' + (ghost.fits ? 'fits' : 'refused');
     said.textContent = (ghost.follow ? 'It follows the pointer: click where it should go. ' : '') + (ghost.fits ? (ghost.sun && ghost.sun.length
       ? `Faces ${ghost.sun[0].off_sun_deg}° off the sun: about ${Math.round(ghost.sun[0].sunlight_w)} W` : 'It fits here.')
-      : ghost.problems.join('; '));
+      : ghost.problems.join('; ')) + (ghost.fits && ghost.energy ? ` It takes ${energyText(ghost.energy.j)} to make.` : '');
   }
   const state = $('ghost-state'), down = $('ghost-down');
   if (!ghost || !state) return;
@@ -947,7 +946,7 @@ function showGhostState() {
     `${Math.round(s.sunlight_w)} W of sunlight on it, if nothing shades it.`;
   if (down) down.disabled = !ghost.fits || ghost.busy;
   const head = $('ghost-cost');
-  if (head && ghost.cost != null) head.textContent = ` · costs ${ghost.cost}`;
+  if (head && ghost.energy) head.textContent = ` · ${energyText(ghost.energy.j)} to make`;
 }
 
 function showGhostKnobs() {
@@ -1131,8 +1130,53 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
 });
 
-function bestStars(id) { try { return Number(localStorage.getItem('banjo-level-' + id) || 0); } catch { return 0; } }
-function keepStars(id, n) { try { if (n > bestStars(id)) localStorage.setItem('banjo-level-' + id, String(n)); } catch { /* private window */ } }
+// ---- who is playing, and how far each has got --------------------------------------
+// Kept in this browser: a record per player (by name) of, for each level, the
+// best stars, the least energy a win took and when it was first won. Stars
+// kept the old way (one key a level) belong to the first player.
+const SAVE_KEY = 'banjo-play-save';
+function loadSave() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch { /* private window */ }
+  if (!s || typeof s !== 'object' || !s.players || !Object.keys(s.players).length)
+    s = {current: 'Player 1', players: {'Player 1': {levels: {}}}};
+  if (!s.players[s.current]) s.current = Object.keys(s.players)[0];
+  try {
+    const first = s.players[Object.keys(s.players)[0]];
+    for (let i = 0; i < localStorage.length; i++) {
+      const m = (localStorage.key(i) || '').match(/^banjo-level-(.+)$/);
+      if (!m) continue;
+      const row = first.levels[m[1]] || (first.levels[m[1]] = {});
+      row.stars = Math.max(row.stars || 0, Number(localStorage.getItem(m[0])) || 0);
+    }
+  } catch { /* private window */ }
+  return s;
+}
+let save = loadSave();
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch { /* private window */ } }
+function me() { return save.players[save.current] || (save.players[save.current] = {levels: {}}); }
+function record(id) { return me().levels[id] || {}; }
+function bestStars(id) { return record(id).stars || 0; }
+// A run's result, kept where it is better: more stars, or a win on less energy.
+function keepResult(id, r) {
+  const row = me().levels[id] || (me().levels[id] = {}), was = {...row};
+  const lessEnergy = r.earned.goal && r.energy_j != null && (row.energy_j == null || r.energy_j < row.energy_j);
+  if (r.stars > (row.stars || 0)) row.stars = r.stars;
+  if (lessEnergy) row.energy_j = r.energy_j;
+  if (r.earned.goal && !row.won_at) row.won_at = new Date().toISOString();
+  me().last = id;
+  persist();
+  return {was, better: lessEnergy || r.stars > (was.stars || 0)};
+}
+window.machineSave = () => JSON.parse(JSON.stringify(save));
+
+// Energy as a person reads it: joules, kilo-, mega-, giga-.
+function energyText(j) {
+  if (j == null || !Number.isFinite(j)) return '—';
+  const [div, unit] = [[1e9, 'GJ'], [1e6, 'MJ'], [1e3, 'kJ'], [1, 'J']].find(([d]) => Math.abs(j) >= d) || [1, 'J'];
+  const v = j / div;
+  return `${v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(1) : v.toFixed(2)} ${unit}`;
+}
 
 function renderLevels() {
   const nav = $('levels'); nav.replaceChildren();
@@ -1173,7 +1217,7 @@ function renderTray() {
     const count = t.count || 1, li = document.createElement('li');
     const per = t.cost_per ? (t.cost_per.say || `${t.cost_per.each} per ${t.cost_per.unit} of ${t.cost_per.knob}`) : '';
     const price = t.cost_per ? (t.cost ? `${t.cost} + ${per}` : per) : `${t.cost}`;
-    li.append(Object.assign(document.createElement('span'), {textContent: `${t.piece} — costs ${price} · ${count - used} of ${count} left`}));
+    li.append(Object.assign(document.createElement('span'), {textContent: `${t.piece} — ${count - used} of ${count} left`}));
     const add = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Add', disabled: used >= count});
     add.addEventListener('click', () => {
       const p = {piece: t.piece};
@@ -1270,7 +1314,8 @@ function renderPlaced() {
     if (ghost && ghost.was && ghost.index === i) { ol.append(ghostItem()); return; }
     const t = trayItem(p.piece), li = document.createElement('li');
     const head = Object.assign(document.createElement('div'), {className: 'piece-head'});
-    head.append(Object.assign(document.createElement('strong'), {textContent: `your ${p.piece} ${i + 1}${placedCost[i] != null ? ' · costs ' + placedCost[i] : ''}`}));
+    const made = placedEnergy[`your ${p.piece} ${i + 1}`];
+    head.append(Object.assign(document.createElement('strong'), {textContent: `your ${p.piece} ${i + 1}${made ? ' · ' + energyText(made.j) + ' to make' : ''}`}));
     const actions = Object.assign(document.createElement('div'), {className: 'ghost-actions'});
     // Picked up, it becomes a ghost again: moved, changed, turned, set down.
     actions.append(button('Pick up', () => startGhost({...p}, i), {ariaLabel: `Pick up your ${p.piece} ${i + 1}`}),
@@ -1284,8 +1329,10 @@ function renderPlaced() {
   });
   if (ghost && !ghost.was) ol.append(ghostItem());
   if (ghost) { showGhostKnobs(); showGhostState(); }
-  const total = placedCost.reduce((a, b) => a + (b || 0), 0);
-  $('cost-line').textContent = placements.length ? `Cost ${Math.round(total * 10) / 10} of a budget of ${level.budget} (par ${level.par}).` : 'Add a piece from the tray.';
+  const made = Object.values(placedEnergy).reduce((a, b) => a + (b.j || 0), 0);
+  $('cost-line').textContent = placements.length
+    ? `Your pieces take ${energyText(made)} to make. Par for the whole win, pieces and run: ${energyText(level.par_energy_j)}.`
+    : 'Add a piece from the tray.';
 }
 
 function scheduleRebuild(ms = 350) { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildLevel(false).catch(() => {}), ms); }
@@ -1298,6 +1345,7 @@ async function rebuildLevel(start) {
   try {
     const opened = await build(null, false, {op: 'level_open', level: level.id, placements, helped});
     placedCost = (opened.placements || []).map(p => p.cost);
+    placedEnergy = opened.energy || {};
     renderPlaced();
     // Its goal is about a piece not placed yet: shown, not run.
     if (opened.needs) $('verdict').textContent = opened.needs;
@@ -1324,12 +1372,13 @@ async function score(row) {
   const r = await api({op: 'level_score', session});
   const v = $('verdict'); v.replaceChildren();
   v.append(Object.assign(document.createElement('span'), {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)}));
-  const said = [r.earned.goal ? `Goal at ${describeTime(r.goal_at_s)}.` : `The goal did not happen within ${level.time_s} s.`,
-                `Cost ${r.cost} (par ${r.par})${r.earned.budget ? '' : ', over par'}.`];
+  const said = [r.earned.goal ? `Goal at ${describeTime(r.goal_at_s)}, on ${energyText(r.energy_j)} (par ${energyText(r.par_energy_j)}).`
+                              : `The goal did not happen within ${level.time_s} s.`];
   if (r.helped) said.push('The chat placed the pieces, so one star at most.');
   v.append(' ' + said.join(' '));
-  keepStars(level.id, r.stars); renderLevels();
-  showDone(r);
+  const kept = keepResult(level.id, r);
+  renderLevels();
+  showDone(r, kept);
   // The goal happened: let what follows settle for a moment, then stop.
   const ran = session;
   if (r.earned.goal) setTimeout(() => { if (session === ran && playing) setPlaying(false).catch(() => {}); }, 1500);
@@ -1343,12 +1392,13 @@ let advanceTimer = null;
 // or change them) or with none.
 function startOver(keep) {
   endGhost();
-  if (!keep) { placements = []; placedCost = []; helped = false; }
+  if (!keep) { placements = []; placedCost = []; placedEnergy = {}; helped = false; }
   renderTray(); renderPlaced();
   rebuildLevel(false).then(() => {
     if (!$('verdict').textContent) $('verdict').textContent = keep
       ? 'Back to the start, with your pieces: pick one up to move or change it, then Run it.'
       : 'Back to the start: add a piece from your tray.';
+    sceneIntoView();
   }).catch(() => {});
 }
 
@@ -1356,33 +1406,34 @@ function closeDone() {
   clearInterval(advanceTimer); advanceTimer = null;
   $('level-done').hidden = true; $('level-done').replaceChildren();
 }
-function showDone(r) {
+function showDone(r, kept = {was: {}, better: false}) {
   closeDone();
   const box = $('level-done'), next = levels[levels.indexOf(level) + 1];
   const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
+  const allLevels = button('All levels', () => { closeDone(); showLevelsScreen(true); });
   if (r.earned.goal) {
+    // The win, and what it took: less energy is better.
     add('h2', {textContent: next ? 'Level complete!' : 'You finished every level!'});
     add('p', {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)});
-    const why = [];
-    if (!r.earned.budget) why.push(`a third star for staying at or under par (${r.par})`);
-    if (r.helped) why.push('more stars for placing the pieces yourself');
-    add('p', {textContent: `Goal at ${describeTime(r.goal_at_s)}, for a cost of ${r.cost}.` +
-      (why.length ? ` There is ${why.join(', and ')}.` : '')});
+    const e = r.energy || {}, run = e.run || {};
+    add('p', {className: 'energy', textContent: `Energy used: ${energyText(r.energy_j)}`});
+    add('p', {className: 'breakdown', textContent: `${energyText(e.pieces_j)} to make your pieces, ` +
+      (run.j ? `${energyText(run.j)} in the run` : 'nothing used in the run') + (run.j ? ` (${[['heat', run.heat_j], ['powder', run.powder_j],
+      ['electricity', run.electric_j]].filter(([, j]) => j).map(([w, j]) => `${w} ${energyText(j)}`).join(', ')})` : '') + '.'});
+    // Par is the level's own solution's energy, rounded up: within 1% of it is on par.
+    const par = r.par_energy_j, verdict = r.energy_j < 0.99 * par ? `Under par (${energyText(par)})!`
+      : r.energy_j <= par ? `At par (${energyText(par)}).` : `Par is ${energyText(par)}.`;
+    const best = kept.was.energy_j != null
+      ? (r.energy_j < kept.was.energy_j ? ` New best for ${save.current}!` : ` Your best: ${energyText(kept.was.energy_j)}.`) : '';
+    add('p', {textContent: `Goal at ${describeTime(r.goal_at_s)}. ${verdict}${best}`});
+    if (r.stars < 3) add('p', {className: 'hint', textContent: r.helped
+      ? 'Place the pieces yourself for more stars.'
+      : 'Win on less energy for more stars: smaller or lighter pieces, cheaper materials, less fuel.'});
     const actions = add('div', {className: 'actions'});
-    if (next) {
-      const go = () => { closeDone(); chooseLevel(next.id).catch(() => {}); };
-      actions.append(button('Next level ▶', go, {className: 'primary', ariaLabel: 'Next level'}),
-                     button('Stay here', closeDone));
-      const count = add('p', {className: 'count'});
-      let left = 6;
-      const tick = () => { count.textContent = `Next level in ${left} s`; if (left-- <= 0) go(); };
-      tick(); advanceTimer = setInterval(tick, 1000);
-    } else {
-      const total = levels.reduce((sum, l) => sum + bestStars(l.id), 0);
-      add('p', {textContent: `${total} of ${levels.length * 3} stars in all.`});
-      actions.append(button('Play level 1 again', () => { closeDone(); chooseLevel(levels[0].id).catch(() => {}); },
-                            {className: 'primary'}), button('Stay here', closeDone));
-    }
+    if (next) actions.append(button('Next level ▶', () => { closeDone(); chooseLevel(next.id).catch(() => {}); },
+                                    {className: 'primary', ariaLabel: 'Next level'}));
+    actions.append(button('Play again', () => { closeDone(); startOver(true); }, {ariaLabel: 'Play this level again'}),
+                   allLevels);
   } else {
     // Running the same pieces again does the same thing: start the level
     // over, with no pieces or with the same ones to change.
@@ -1390,10 +1441,61 @@ function showDone(r) {
     add('p', {textContent: `The goal did not happen within ${level.time_s} s.`});
     const actions = add('div', {className: 'actions'});
     actions.append(button('Start over', () => { closeDone(); startOver(false); }, {className: 'primary'}),
-                   button('Keep my pieces', () => { closeDone(); startOver(true); }));
+                   button('Keep my pieces', () => { closeDone(); startOver(true); }), allLevels);
   }
   box.hidden = false;
+  sceneIntoView();
 }
+
+// ---- the levels screen: every level, and how far this player has got --------------------
+function showLevelsScreen(show) {
+  const box = $('levels-screen');
+  box.hidden = !show;
+  document.body.classList.toggle('on-levels', show);
+  if (!show) { resize(); return; }
+  box.replaceChildren();
+  const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
+  const head = add(box, 'div', {className: 'ls-head'});
+  add(head, 'h1', {textContent: 'Levels'});
+  if (level) head.append(button(`Back to ${levels.indexOf(level) + 1}. ${level.title}`, () => showLevelsScreen(false)));
+  // Who is playing: each name keeps its own progress, in this browser.
+  const who = add(box, 'form', {className: 'ls-player'});
+  add(who, 'label', {textContent: 'Player', htmlFor: 'player-pick'});
+  const pick = add(who, 'select', {id: 'player-pick'});
+  for (const name of Object.keys(save.players)) pick.append(new Option(name, name, false, name === save.current));
+  pick.addEventListener('change', () => { save.current = pick.value; persist(); renderLevels(); showLevelsScreen(true); });
+  const fresh = add(who, 'input', {type: 'text', maxLength: 24, placeholder: 'New player’s name'});
+  fresh.setAttribute('aria-label', 'New player’s name');
+  who.append(button('Add player', () => {
+    const name = fresh.value.trim();
+    if (!name) { fresh.focus(); return; }
+    if (!save.players[name]) save.players[name] = {levels: {}};
+    save.current = name; persist(); renderLevels(); showLevelsScreen(true);
+  }, {type: 'submit'}));
+  who.addEventListener('submit', e => e.preventDefault());
+  const won = levels.filter(l => bestStars(l.id) > 0).length, starsAll = levels.reduce((s, l) => s + bestStars(l.id), 0);
+  const nextUp = levels.find(l => !bestStars(l.id));
+  add(box, 'p', {className: 'ls-summary', textContent: `${save.current}: ${won} of ${levels.length} levels won, ` +
+    `${starsAll} of ${levels.length * 3} stars.` + (nextUp ? ` Next up: ${levels.indexOf(nextUp) + 1}. ${nextUp.title}.` : ' Every level won!')});
+  const list = add(box, 'ol', {className: 'ls-list'});
+  levels.forEach((l, i) => {
+    const row = record(l.id), li = add(list, 'li', {});
+    li.classList.toggle('won', Boolean(row.stars)); li.classList.toggle('next', l === nextUp);
+    const card = button('', () => { showLevelsScreen(false); chooseLevel(l.id).catch(() => {}); },
+                        {className: 'ls-card', ariaLabel: `Play level ${i + 1}, ${l.title}`});
+    add(card, 'strong', {textContent: `${i + 1}. ${l.title}`});
+    add(card, 'span', {className: 'stars', textContent: '★'.repeat(row.stars || 0) + '☆'.repeat(3 - (row.stars || 0))});
+    add(card, 'span', {className: 'teaches', textContent: l.teaches});
+    add(card, 'span', {className: 'status', textContent: row.energy_j != null
+      ? `Best win: ${energyText(row.energy_j)} (par ${energyText(l.par_energy_j)})`
+      : row.stars ? 'Won' : l === nextUp ? 'Next up' : 'Not won yet'});
+    li.append(card);
+  });
+}
+$('levels-open').addEventListener('click', e => {
+  if (!LEVEL_MODE || !levels.length) return;
+  e.preventDefault(); showLevelsScreen(true);
+});
 // Looking around the scene while it counts down: stay, and look.
 renderer.domElement.addEventListener('pointerdown', () => {
   if (!advanceTimer) return;
@@ -1405,11 +1507,12 @@ renderer.domElement.addEventListener('pointerdown', () => {
 async function chooseLevel(id) {
   level = levels.find(l => l.id === id) || levels[0];
   endGhost(); closeDone(); previewAsk++; clearPreview();
-  placements = []; placedCost = []; helped = false; lastRun = null;
+  placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null;
   history_.replaceState(null, '', '/play?level=' + level.id);
   $('title').textContent = `${levels.indexOf(level) + 1}. ${level.title}`;
   $('brief').textContent = level.brief;
-  $('goal-line').textContent = `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s. Budget ${level.budget}, par ${level.par}. It teaches ${level.teaches}.`;
+  $('goal-line').textContent = `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s, on as little energy as you can `+
+    `(par ${energyText(level.par_energy_j)}, pieces and run). It teaches ${level.teaches}.`;
   $('chat-log').replaceChildren();
   renderLevels(); renderTray(); renderPlaced();
   await rebuildLevel(false);
@@ -1477,15 +1580,25 @@ async function startGame() {
   document.querySelector('.chat h2').textContent = 'Ask for help';
   const r = await api({op: 'levels'});
   levels = r.levels;
-  await chooseLevel(params.get('level'));
+  // /play on its own opens the levels screen, over the level this player is up to.
+  const upTo = levels.find(l => !bestStars(l.id)) || levels[0];
+  await chooseLevel(params.get('level') || me().last || upTo.id);
+  if (!params.get('level')) showLevelsScreen(true);
 }
+// The scene in sight: on a phone the panel below it (the tray, Run it) is a
+// scroll away, and what happens -- a ghost, a run, how it went -- is up here.
+function sceneIntoView() {
+  const seen = view.getBoundingClientRect();
+  if (seen.top < -40 || seen.bottom > innerHeight + 40) view.scrollIntoView({block: 'start'});
+}
+
 // A ghost is not in the machine yet: set it down (or cancel it) before a run.
 function ghostInTheWay() {
   if (!ghost) return false;
   $('verdict').textContent = `Set your ${ghost.p.piece} down first (or cancel it): a ghost is not part of the machine yet.`;
   return true;
 }
-$('run').addEventListener('click', () => { if (!ghostInTheWay()) rebuildLevel(true).catch(() => {}); });
+$('run').addEventListener('click', () => { if (!ghostInTheWay()) { sceneIntoView(); rebuildLevel(true).catch(() => {}); } });
 $('trial').addEventListener('click', async () => {
   if (ghostInTheWay()) return;
   $('trial').disabled = true;

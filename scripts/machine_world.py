@@ -2136,6 +2136,7 @@ class MachineSession:
                            for row in self._cut_summary().values()]
         ledger = heat.get('ledger') or {}
         out['heat_ledger'] = {'heater_in_j': _round(ledger.get('heater_in_j', 0.0), 2),
+                              'chemical_j': _round(ledger.get('chemical_j', 0.0), 2),
                               'residual_j': ledger.get('residual_j')}
         if self.machines:
             m = self.machines
@@ -2378,7 +2379,10 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                    'zone_nearest_m': {compiled['stations'][i]['title']: round(d, 4)
                                       for i, d in sorted(getattr(session, 'zone_nearest', {}).items())},
                    'closest_approach': [c for i, c in sorted(getattr(session, 'closest', {}).items()) if i not in done],
-                   'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]]}
+                   'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]],
+                   # What went in, as it stood at the end: heat, chemistry, batteries.
+                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines')
+                                if (session.readouts or {}).get(k) is not None}}
             if track:
                 out['paths'] = {name: {'points': points, 'turn_wxyz': session.trail_turn.get(name)}
                                 for name, points in session.trail.items()}
