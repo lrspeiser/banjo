@@ -36,7 +36,7 @@ The same 0.1 kg iron ball on the other materials, 2 s:
 | Glass | Completes; all 48 interfaces break | Stops at the impact (0.45 s): the impact step needs more than its 30 s of computing |
 | Ice | Completes; all 48 break (0.0018 J) | Completes; all 48 break |
 | Oak | Stops at the impact (1.43 s): over the 30 s limit | Stops at the impact (0.50 s): over the 30 s limit |
-| Iron (plastic connectors) | Completes | Had not finished after 25 minutes while seven other drops shared the computer |
+| Iron (plastic connectors) | Completes | Runs to 1.76 s (18 minutes of computing, with threads), then a step needs more than its 30 s |
 
 Before this change, the 10 m glass drop stopped at the impact (1.425 s), and the 10 m ice drop stopped just after it (1.4292 s, at the 128-trial limit). Oak's interfaces soften over 17 µm of opening where glass's soften over 0.27 µm, so oak keeps them softening, and needing sub-microsecond steps, for far longer.
 
