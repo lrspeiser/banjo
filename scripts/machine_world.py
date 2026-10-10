@@ -533,6 +533,28 @@ def _kit_water_wheel(k, problems, name):
               'at_m': [x, 0.5 * post_h, z + side * (reach + 0.06)], 'turn_deg': [0, 0, 0], 'fixed': True}]
     joints = [{'name': name + ' hinge', 'kind': 'hinge', 'a': name + ' post', 'b': name, 'at_m': [x, hub_y, z],
                'axis': [0, 0, 1], 'friction_n_m': _num(k, 'friction_n_m', name, problems, 0.2, 0, 50)}]
+    pour = k.get('pour')
+    if pour is not None:
+        # A spout above the paddles on one side of the axle: water poured on
+        # the -x side turns the wheel toward +z (as the stream under it does),
+        # on the +x side the other way.
+        if not isinstance(pour, dict):
+            problems.append(f'{name}: pour is an object')
+            return parts, joints
+        sx = {'-x': -1.0, '+x': 1.0}.get(pour.get('side', '-x'))
+        if sx is None:
+            problems.append(f'{name}: pour side is "-x" or "+x"')
+            sx = -1.0
+        offset = _num(pour, 'offset_m', name + ' pour', problems, 0.5 * radius, 0.05, radius)
+        height = _num(pour, 'height_m', name + ' pour', problems, 0.5, 0.1, 3.0)
+        mouth = [x + sx * offset, hub_y + radius + height, z]
+        parts.append({'name': name + ' spout', 'shape': 'box', 'material': 'iron', 'size_m': [0.06, 0.1, 0.06],
+                      'at_m': [mouth[0], mouth[1] + 0.08, z], 'turn_deg': [0, 0, 0], 'fixed': True})
+        k['_spouts'].append({'name': name + ' spout', 'at_m': mouth, 'direction': [0, -1, 0],
+                             'speed_m_s': _num(pour, 'speed_m_s', name + ' pour', problems, 1.0, 0, 10),
+                             'discharge_l_s': _num(pour, 'discharge_l_s', name + ' pour', problems, 2.0, 0.1, 20),
+                             'from_s': _num(pour, 'from_s', name + ' pour', problems, 0.0, 0, 600),
+                             'until_s': pour.get('until_s')})
     return parts, joints
 
 
@@ -566,7 +588,10 @@ KIT_HELP = {
     'water_wheel': 'needs ground kind flume. A paddle wheel standing in the trench at at_m [x, _, _] (z is the '
                    'trench line): radius_m, paddles, paddle_width_m, clearance_m above the bed, post_side "+z|-z". One '
                    'rigid body "<name>" on hinge "<name> hinge"; its axle reaches the bank, so a drum rope can wind on '
-                   'it at [x, hub height, trench z + (trench width/2 + 0.2) * side]',
+                   'it at [x, hub height, trench z + (trench width/2 + 0.2) * side]. Optional pour {side "-x"|"+x" '
+                   '(which side of the axle the water lands; -x turns it toward +z), offset_m from the axle, height_m '
+                   'above the wheel, discharge_l_s (2), speed_m_s, from_s}: a spout "<name> spout" pouring onto the '
+                   'paddles; the poured water falls, turns the wheel and runs off down the trench',
 }
 
 
@@ -584,7 +609,7 @@ def compile_spec(spec):
     if cell not in CELL_CHOICES:
         problems.append('cell_m is 0.02 or 0.04')
         cell = 0.02
-    parts, joints, notes = [], [], []
+    parts, joints, notes, spouts = [], [], [], []
     ground = compile_ground(spec.get('ground'), problems)
     for i, kit in enumerate(spec.get('kits', []) or []):
         if not isinstance(kit, dict) or kit.get('kit') not in KITS:
@@ -595,7 +620,7 @@ def compile_spec(spec):
             problems.append(f'kit {i + 1} ({kit["kit"]}) needs a name')
             continue
         p, j = KITS[kit['kit']](dict(kit, _known={r['name']: r for r in parts if isinstance(r, dict) and 'name' in r},
-                                     _ground=ground), problems, name.strip())
+                                     _ground=ground, _spouts=spouts), problems, name.strip())
         for row in p:
             row['kit'] = name.strip()
         parts += p
@@ -603,6 +628,42 @@ def compile_spec(spec):
     for row in spec.get('parts', []) or []:
         parts.append(row)
     joints += list(spec.get('joints', []) or [])
+    for i, s in enumerate(spec.get('spouts', []) or []):
+        if not isinstance(s, dict) or not isinstance(s.get('name'), str) or not s['name'].strip():
+            problems.append(f'spout {i + 1} needs a name')
+            continue
+        spouts.append({'name': s['name'].strip(), 'at_m': s.get('at_m'), 'direction': s.get('direction', [0, -1, 0]),
+                       'speed_m_s': s.get('speed_m_s', 1.0), 'discharge_l_s': s.get('discharge_l_s', 1.0),
+                       'from_s': s.get('from_s', 0.0), 'until_s': s.get('until_s')})
+    # Poured water falls until it reaches the river, so it needs the flume's
+    # ground under it to land in.
+    checked_spouts = []
+    for s in spouts:
+        what = 'spout ' + s['name']
+        if ground is None:
+            problems.append(what + ': poured water needs ground {"kind": "flume", ...} to land in')
+            continue
+        at = _vec(s['at_m'], 3, what + ' at_m', problems)
+        direction = _vec(s['direction'], 3, what + ' direction', problems)
+        if math.sqrt(sum(d * d for d in direction)) < 1e-6:
+            problems.append(f'{what}: direction must point somewhere')
+        x1 = ground['x0_m'] + (ground['nx'] - 1) * ground['cell_m']
+        z1 = ground['z0_m'] + (ground['nz'] - 1) * ground['cell_m']
+        if not (ground['x0_m'] <= at[0] <= x1 and ground['z0_m'] <= at[2] <= z1):
+            problems.append(f'{what}: at_m is off the edge of the ground')
+        elif at[1] <= ground_height(ground, at[0], at[2]) + 0.05:
+            problems.append(f'{what}: the mouth is at or below the ground')
+        row = {'name': s['name'], 'at_m': at, 'direction': direction,
+               'speed_m_s': _num(s, 'speed_m_s', what, problems, 1.0, 0, 10),
+               'discharge_l_s': _num(s, 'discharge_l_s', what, problems, 1.0, 0.05, 20),
+               'from_s': _num(s, 'from_s', what, problems, 0.0, 0, 600)}
+        if s.get('until_s') is not None:
+            row['until_s'] = _num(s, 'until_s', what, problems, None, row['from_s'] + 0.01, 3600)
+        checked_spouts.append(row)
+    if len({s['name'] for s in checked_spouts}) != len(checked_spouts):
+        problems.append('two spouts share a name')
+    if len(checked_spouts) > 8:
+        problems.append('at most 8 spouts')
     names = {}
     checked = []
     for i, p in enumerate(parts):
@@ -884,7 +945,7 @@ def compile_spec(spec):
         raise MachineRefused(problems)
     return {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
             'parts': checked, 'joints': joint_rows, 'batteries': batteries, 'circuits': circuits,
-            'torches': torches, 'stations': stations, 'cells': round(cells), 'notes': notes}
+            'torches': torches, 'spouts': checked_spouts, 'stations': stations, 'cells': round(cells), 'notes': notes}
 
 
 def scene_of(compiled):
@@ -909,6 +970,11 @@ def scene_of(compiled):
         scene['precise_rigid_bodies'] = precise
     if compiled.get('ground'):
         scene['terrain'] = ground_scene(compiled['ground'])
+    if compiled.get('spouts'):
+        scene['spouts'] = [{'name': s['name'], 'at_m': s['at_m'], 'direction': s['direction'],
+                            'speed_m_s': s['speed_m_s'], 'discharge_m3_s': s['discharge_l_s'] / 1000.0,
+                            'from_s': s['from_s'], **({'until_s': s['until_s']} if 'until_s' in s else {})}
+                           for s in compiled['spouts']]
     return scene
 
 
@@ -1093,6 +1159,7 @@ class MachineSession:
         self._turned = {}
         self.water = None
         self.water_seq = 0
+        self.parcels = None
         # The ground as the engine built it, sent to the page once.
         terrain = self.engine.first.get('terrain') or {}
         self.ground_view = ({'grid': terrain.get('grid'), 'heights_b64': terrain.get('heights_b64')}
@@ -1140,6 +1207,10 @@ class MachineSession:
             self.water = {k: reply['water'].get(k) for k in ('box', 'base_m', 'surface_mm_b64', 'in_m3_s',
                                                              'out_m3_s', 'volume_m3', 'wet_cells', 'residual_m3')}
             self.water_seq = self.seq
+        if isinstance(reply.get('parcels'), dict):
+            # Poured water in the air, every reply: each parcel's centre in
+            # millimetres, and the pour's ledger.
+            self.parcels = reply['parcels']
         for imp in reply.get('impacts', []) or []:
             # The first contact between two different things is news; pieces
             # of one broken thing knocking about each other is not.
@@ -1244,6 +1315,12 @@ class MachineSession:
         ledger = heat.get('ledger') or {}
         out['heat_ledger'] = {'heater_in_j': _round(ledger.get('heater_in_j', 0.0), 2),
                               'residual_j': ledger.get('residual_j')}
+        if self.parcels is not None:
+            p = self.parcels
+            out['pour'] = {'poured_l': _round(1000 * p.get('poured_m3', 0.0), 2),
+                           'landed_l': _round(1000 * p.get('landed_m3', 0.0), 2),
+                           'in_air_l': _round(1000 * p.get('in_air_m3', 0.0), 2),
+                           'parcels': len(p.get('xyz_mm', [])) // 3, 'residual_m3': p.get('residual_m3')}
         self.readouts = out
         out['stations'] = self._stations(out)
 
@@ -1380,6 +1457,8 @@ class MachineSession:
                 extra['water'] = self.water
             if after == 0 and self.ground_view:
                 extra['ground'] = self.ground_view
+            if self.parcels is not None:
+                extra['parcels'] = self.parcels
             return {**extra, 'ok': True, 'session': self.id, 'seq': self.seq, 't': round(self.t, 4),
                     'playing': self.playing, 'speed': self.speed, 'full': after == 0, 'bodies': bodies,
                     'removed': [n for n, s in self.removed.items() if s > after],

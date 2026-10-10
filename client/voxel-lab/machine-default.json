@@ -3,11 +3,12 @@
   "title": "Chain reaction",
   "cell_m": 0.02,
   "ground": {"kind": "flume", "nx": 100, "nz": 60, "cell_m": 0.1, "trench_z_m": 1.0, "trench_width_m": 0.5,
-             "trench_depth_m": 0.35, "trench_slope": 0.005, "discharge_m3_s": 0.08,
+             "trench_depth_m": 0.35, "trench_slope": 0.005, "discharge_m3_s": 0.0,
              "reservoir_to_x_m": -2.4, "reservoir_level_m": -0.15},
   "kits": [
     {"kit": "water_wheel", "name": "water wheel", "at_m": [-1.5, 0, 1.0], "radius_m": 0.4, "paddles": 8,
-     "paddle_width_m": 0.36, "post_side": "-z", "material": "oak"},
+     "paddle_width_m": 0.36, "post_side": "-z", "material": "oak",
+     "pour": {"side": "-x", "offset_m": 0.2, "height_m": 0.5, "discharge_l_s": 2.0, "speed_m_s": 1.0}},
     {"kit": "ramp", "name": "ramp", "top_m": [-1.55, 0.76, 0], "bottom_m": [-0.45, 0.36, 0], "width_m": 0.2,
      "material": "oak", "rails": false, "gate": true, "ball": {"name": "marble", "material": "iron", "diameter_m": 0.08}},
     {"kit": "domino_row", "name": "domino", "start_m": [-0.15, 0, 0], "direction": "+x", "count": 8,
@@ -37,10 +38,10 @@
      "coil": {"heats": "weight peg", "resistance_ohm": 0.8}}
   ],
   "stations": [
-    {"title": "Water wheel", "shows": "Water runs down the flume and turns an oak paddle wheel.",
-     "law": "Shallow-water flow; the drag of the moving water on each paddle turns the wheel on its hinge",
+    {"title": "Pouring water", "shows": "A spout pours water onto the paddles of an oak wheel in a dry trench; its weight and fall turn it.",
+     "law": "Falling water as parcels (weakly compressible SPH); contact that neither rubs nor bounces gives each paddle the water's weight and momentum; then the water joins the shallow-water stream in the trench",
      "maturity": "experimental", "done_when": {"turned_deg": {"joint": "water wheel hinge", "deg": 90}},
-     "focus": ["water wheel"]},
+     "focus": ["water wheel", "water wheel spout"]},
     {"title": "Rope and gate", "shows": "The wheel's axle winds in a rope that slides the gate bar away from the marble.",
      "law": "A rope wound on a turning drum (it pulls, never pushes); a bar on a sliding joint", "maturity": "calculated",
      "done_when": {"slid_m": {"joint": "ramp gate slide", "m": 0.12}}, "focus": ["ramp gate"]},

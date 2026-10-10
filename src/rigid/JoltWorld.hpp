@@ -236,6 +236,19 @@ struct PlacementOverlap {
     Vec3 point_world_m{};
 };
 
+// A body's surface near a sphere: the point on it nearest the sphere, the way
+// out of it towards the sphere's centre, how far the sphere is into it
+// (negative: the gap between them), and how fast that point of the body is
+// moving. `named` is false for the ground, as it is for a RayHit.
+struct SphereContact {
+    bool named{};
+    MatterBodyId body_id{};
+    double depth_m{};
+    Vec3 point_world_m{};
+    Vec3 normal_world{};
+    Vec3 surface_velocity_m_s{};
+};
+
 struct CohesiveTensionPatchKick {
     std::vector<CohesiveInterfaceIncrement> interface_increments;
     PairImpulseAudit transfer;
@@ -1142,6 +1155,12 @@ public:
                                                            const Vec3 &center_of_mass_world_m,
                                                            const Quat &orientation_world,
                                                            double tolerance_m) const;
+    // Every body a sphere at `center_world_m` reaches into or comes within
+    // `reach_m` of, from the shapes the solver uses: one entry per shape it
+    // meets. Read-only, between steps -- what a parcel of falling water asks
+    // to know what it will land on this step.
+    [[nodiscard]] std::vector<SphereContact> sphereContacts(const Vec3 &center_world_m, double radius_m,
+                                                            double reach_m) const;
     [[nodiscard]] RayHit castRay(const Vec3 &from_world_m,const Vec3 &direction,
                                  double max_distance_m, std::optional<MatterBodyId> ignore_body = std::nullopt) const;
     // Filter complete held assemblies without advancing the ray past terrain

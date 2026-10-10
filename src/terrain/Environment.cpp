@@ -564,6 +564,42 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
             if (saved.contains("time_s")) net.restoreClock(saved.value("time_s", 0.0));
         }
     }
+    // Spouts: water poured into the world at a declared rate, falling as
+    // parcels until it reaches the river (water/FallingWater.hpp).
+    if (document.contains("spouts")) {
+        const Json &spouts = document.at("spouts");
+        if (!spouts.is_array()) throw std::invalid_argument("spouts is a list");
+        if (spouts.size() > 8) throw std::invalid_argument("at most 8 spouts");
+        const auto vec = [](const Json &node, const char *key, const std::string &whose) {
+            if (!node.contains(key) || !node.at(key).is_array() || node.at(key).size() != 3)
+                throw std::invalid_argument(whose + " needs " + key + " as three numbers");
+            Vec3 v{};
+            double *out[] = {&v.x, &v.y, &v.z};
+            for (std::size_t i = 0; i < 3; ++i) {
+                const Json &x = node.at(key).at(i);
+                if (!x.is_number() || !std::isfinite(x.get<double>()))
+                    throw std::invalid_argument(whose + " " + key + " must be finite numbers");
+                *out[i] = x.get<double>();
+            }
+            return v;
+        };
+        for (const Json &s : spouts) {
+            if (!s.is_object()) throw std::invalid_argument("a spout is an object");
+            onlyKeys(s, {"name", "at_m", "direction", "speed_m_s", "discharge_m3_s", "from_s", "until_s"}, "a spout");
+            water::Spout spout;
+            spout.name = s.value("name", std::string());
+            const std::string whose = "spout \"" + spout.name + "\"";
+            spout.at_m = vec(s, "at_m", whose);
+            spout.direction = vec(s, "direction", whose);
+            spout.speed_m_s = number(s, "speed_m_s", 0.0, 0.0, 30.0);
+            spout.discharge_m3_s = number(s, "discharge_m3_s", 0.0, 0.0, 0.05);
+            spout.from_s = number(s, "from_s", 0.0, 0.0, 1e6);
+            spout.until_s = number(s, "until_s", std::numeric_limits<double>::infinity(), 0.0,
+                                   std::numeric_limits<double>::infinity());
+            if (!environment->falling_) environment->falling_ = std::make_unique<water::FallingWater>();
+            environment->falling_->addSpout(spout);
+        }
+    }
     // A world opening is drawn whole: nothing in it is newly grown.
     environment->regions_added_.clear();
     return environment;
@@ -1277,9 +1313,37 @@ void Environment::noteChanged(const std::vector<std::size_t> &cells) {
 
 // ---- the step ---------------------------------------------------------------
 
-void Environment::push(JoltWorld &world, const std::vector<water::BodyInWater> &bodies) {
+void Environment::push(JoltWorld &world, const std::vector<water::BodyInWater> &bodies, double dt_s) {
     const Clock::time_point t0 = Clock::now();
     forces_ = coupling_.forces(*water_, bodies, reactions_);
+    // Poured water: its step, worked out from the bodies as they stand, and
+    // what it gives each body it strikes pushed into this step -- as a force
+    // and a torque about the body's centre -- so a step taken back takes it
+    // back. The parcels themselves move on only when commit keeps the step.
+    falling_plan_.reset();
+    if (falling_ && dt_s > 0.0) {
+        const auto near = [&](const Vec3 &c, double r, double reach) {
+            std::vector<water::NearSurface> out;
+            for (const SphereContact &m : world.sphereContacts(c, r, reach))
+                out.push_back({m.named, m.body_id, m.depth_m, m.point_world_m, m.normal_world, m.surface_velocity_m_s});
+            return out;
+        };
+        const auto landing = [&](double x, double z) -> std::optional<double> {
+            if (!terrain_->cellAt(x, z)) return std::nullopt;
+            if (const auto surface = waterSurfaceAt(x, z)) return surface;
+            return groundHeightAt(x, z);
+        };
+        falling_plan_ = falling_->plan(time_s_, dt_s, near, landing, floorY());
+        falling_step_s_ = dt_s;
+        for (const water::ParcelPush &p : falling_plan_->pushes) {
+            const MatterBodyId id = static_cast<MatterBodyId>(p.body);
+            if (!world.contains(id)) continue;
+            const Vec3 centre = world.snapshot(id).center_of_mass_world_m;
+            world.pushBody(id, p.impulse_n_s / dt_s);
+            world.twistBody(id, (p.moment_n_m_s - cross(centre, p.impulse_n_s)) / dt_s);
+            world.wake(id);
+        }
+    }
     in_water_.clear();
     const double g = water_->settings().gravity_m_s2;
     for (const water::BodyForce &f : forces_) {
@@ -1311,6 +1375,22 @@ void Environment::commit(JoltWorld &world, const std::vector<water::BodyInWater>
     // which momentum crosses between them.
     for (const water::Reaction &r : reactions_) water_->addImpulse(r.cell, -r.fx_n * dt_s, -r.fz_n * dt_s);
     reactions_.clear();
+    // Poured water that reached the river this step joins it: its volume in
+    // the ledger as added, its horizontal momentum into that column. A plan
+    // made for another step length is not this step's, and is dropped.
+    if (falling_ && falling_plan_ && falling_step_s_ == dt_s) {
+        water::FallingWater::Plan plan = std::move(*falling_plan_);
+        for (const water::Landing &l : plan.landings) {
+            const double went = addWater(l.at_m.x, l.at_m.z, l.volume_m3);
+            if (went < l.volume_m3) {
+                plan.ledger.landed_m3 -= l.volume_m3 - went;
+                plan.ledger.ran_off_m3 += l.volume_m3 - went;
+            }
+            (void)pushWater(l.at_m.x, l.at_m.z, l.momentum_n_s.x, l.momentum_n_s.z);
+        }
+        falling_->accept(std::move(plan));
+    }
+    falling_plan_.reset();
     // What the water held up this step, folded into each body's running share
     // (see kFloatAverageS). Here, after the step was accepted, so a step taken
     // back is not counted; a body that has left the water is forgotten.
@@ -1963,6 +2043,18 @@ std::string Environment::reportJson(bool full) const {
         report["regions"] = {{"streaming", streaming_}, {"can_stream", canStream(&why)}, {"why_not", why},
                              {"grow_within_m", kGrowWithinM}, {"most", kMostRegions},
                              {"count", regions_.size()}, {"columns", columns}, {"list", list}};
+    }
+    // Poured water still in the air, and its own ledger: every parcel the same
+    // volume, so poured = landed + ran off + in the air, to rounding.
+    if (falling_) {
+        const water::FallingWaterLedger &fl = falling_->ledger();
+        report["water"]["poured"] = {{"spouts", falling_->spouts().size()},
+                                     {"parcels_in_air", falling_->parcels().size()},
+                                     {"parcel_volume_m3", water::FallingWater::kVolume},
+                                     {"poured_m3", fl.poured_m3}, {"landed_m3", fl.landed_m3},
+                                     {"ran_off_m3", fl.ran_off_m3}, {"in_air_m3", falling_->inFlight()},
+                                     {"residual_m3", falling_->residual()},
+                                     {"contact_loss_j", fl.contact_loss_j}};
     }
     if (full) {
         const water::Settings &s = water_->settings();

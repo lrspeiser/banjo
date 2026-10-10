@@ -4006,6 +4006,42 @@ std::vector<PlacementOverlap> JoltWorld::overlapsAt(MatterBodyId body_id, const 
     return out;
 }
 
+std::vector<SphereContact> JoltWorld::sphereContacts(const Vec3 &center_world_m, double radius_m,
+                                                     double reach_m) const {
+    if (!(radius_m > 0.0) || !(reach_m >= 0.0)) throw std::invalid_argument("a sphere query needs a radius and a reach");
+    const JPH::SphereShape sphere(static_cast<float>(radius_m));
+    const JPH::RVec3 at = toJoltPosition(center_world_m);
+    JPH::CollideShapeSettings settings;
+    settings.mMaxSeparationDistance = static_cast<float>(reach_m);
+    JPH::AllHitCollisionCollector<JPH::CollideShapeCollector> collector;
+    impl_->physics_->GetNarrowPhaseQuery().CollideShape(&sphere, JPH::Vec3::sReplicate(1.0f),
+                                                       JPH::RMat44::sTranslation(at), settings, at, collector);
+    std::vector<SphereContact> out;
+    out.reserve(collector.mHits.size());
+    const auto &bodies = impl_->physics_->GetBodyInterface();
+    for (const JPH::CollideShapeResult &hit : collector.mHits) {
+        SphereContact met{};
+        met.depth_m = static_cast<double>(hit.mPenetrationDepth);
+        met.point_world_m = center_world_m + Vec3{hit.mContactPointOn2.GetX(), hit.mContactPointOn2.GetY(),
+                                                  hit.mContactPointOn2.GetZ()};
+        // The penetration axis is the way to push the body out of the sphere;
+        // the sphere's way out of the body is the opposite.
+        const JPH::Vec3 axis = hit.mPenetrationAxis;
+        const float axis_length = axis.Length();
+        if (!(axis_length > 0.0f)) continue;
+        const JPH::Vec3 out_of_body = -axis / axis_length;
+        met.normal_world = {out_of_body.GetX(), out_of_body.GetY(), out_of_body.GetZ()};
+        const MatterBodyId id = bodies.GetUserData(hit.mBodyID2);
+        const auto found = impl_->bodies_.find(id);
+        met.named = found != impl_->bodies_.end() && found->second == hit.mBodyID2;
+        if (met.named) met.body_id = id;
+        const JPH::Vec3 v = bodies.GetPointVelocity(hit.mBodyID2, toJoltPosition(met.point_world_m));
+        met.surface_velocity_m_s = {v.GetX(), v.GetY(), v.GetZ()};
+        out.push_back(met);
+    }
+    return out;
+}
+
 void JoltWorld::setDrivenContact(MatterBodyId body_id, bool driven) {
     if (driven) impl_->impact_collector_.driven.insert(body_id);
     else impl_->impact_collector_.driven.erase(body_id);

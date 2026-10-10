@@ -124,7 +124,25 @@ function syncWires() {
 }
 
 // The ground the engine built: its own heights, one per column.
-let terrain = null, water = null;
+let terrain = null, water = null, parcels = null;
+// Poured water in the air: one small sphere per parcel the engine carries,
+// where the engine says it is (millimetres).
+function syncParcels(p) {
+  if (!p) return;
+  const xyz = p.xyz_mm || [], count = Math.floor(xyz.length / 3);
+  if (!parcels || parcels.instanceMatrix.count < count) {
+    if (parcels) { scene.remove(parcels); parcels.geometry.dispose(); }
+    const capacity = Math.max(256, 2 * count);
+    parcels = new THREE.InstancedMesh(new THREE.SphereGeometry(p.r_m || .018, 10, 8),
+      new THREE.MeshStandardMaterial({color: 0x3f8fd8, transparent: true, opacity: .85, roughness: .15}), capacity);
+    parcels.frustumCulled = false;
+    scene.add(parcels);
+  }
+  const m = new THREE.Matrix4();
+  for (let k = 0; k < count; k++) parcels.setMatrixAt(k, m.makeTranslation(xyz[3 * k] / 1000, xyz[3 * k + 1] / 1000, xyz[3 * k + 2] / 1000));
+  parcels.count = count;
+  parcels.instanceMatrix.needsUpdate = true;
+}
 function decodeFloats(b64) {
   const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
   return new Float32Array(bytes.buffer, 0, bytes.length / 4);
@@ -261,6 +279,8 @@ function renderReadings(frame) {
   }
   for (const h of (readouts.heat || []).slice(0, 4))
     pair(dl, h.name, `${h.temperature_k.toFixed(0)} K` + (h.reacting ? ' · burning' : '') + (h.heater_w ? ` · ${h.heater_w.toFixed(0)} W in` : ''));
+  if (readouts.pour)
+    pair(dl, 'Poured water', `${readouts.pour.poured_l.toFixed(1)} L poured, ${readouts.pour.landed_l.toFixed(1)} L in the stream, ${readouts.pour.in_air_l.toFixed(1)} L falling`);
   for (const j of (readouts.joints || []).filter(j => j.kind === 'hinge').slice(0, 3))
     pair(dl, j.name, `${(j.degrees || 0).toFixed(1)}°`);
   const pieces = [...world.bodies.keys()].filter(n => n.includes(' piece ')).length;
@@ -327,7 +347,8 @@ async function build(next, start) {
     for (const n of machine.notes || []) { const li = document.createElement('li'); li.textContent = n; notes.append(li); }
     for (const [, line] of drumLines) { scene.remove(line); line.geometry.dispose(); }
     drumLines.clear();
-    syncGround(opened.ground); syncWater(opened.water);
+    if (parcels) { scene.remove(parcels); parcels.geometry.dispose(); parcels = null; }
+    syncGround(opened.ground); syncWater(opened.water); syncParcels(opened.parcels);
     syncMeshes([...world.bodies.values()]); syncWires(); syncRopes(); updateWires(); renderStations(); renderReadings(opened); renderClock(opened);
     frameCamera();
     if (start) await setPlaying(true);
@@ -367,6 +388,7 @@ async function poll(mine) {
       readouts = frame.readouts || readouts; playing = frame.playing; lastFrame = frame;
       syncMeshes(changed.map(b => world.bodies.get(b.name)));
       if (frame.water) syncWater(frame.water);
+      if (frame.parcels) syncParcels(frame.parcels);
       updateWires(); addEvents(frame.events); renderStations(); renderReadings(frame); renderClock(frame);
     } catch (e) {
       if (e.status === 410) { $('clock').textContent = 'This machine stopped running on the server; press Set up again'; session = null; return; }

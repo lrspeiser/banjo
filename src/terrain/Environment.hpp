@@ -32,6 +32,7 @@
 // ground's settling a few times a frame. Nothing skips physical time.
 #include "terrain/TerrainField.hpp"
 #include "terrain/TerrainGenerator.hpp"
+#include "water/FallingWater.hpp"
 #include "water/RiverNetwork.hpp"
 #include "water/ShallowWater.hpp"
 #include "water/WaterCoupling.hpp"
@@ -147,8 +148,14 @@ public:
     // Give the rigid world its ground: one height-field collider per chunk.
     void attach(JoltWorld &world);
 
-    void push(JoltWorld &world, const std::vector<water::BodyInWater> &bodies);
+    // The water's push on the bodies for the coming step, inside the host's
+    // reversible step. Given the step's length, poured water (spouts) works
+    // out that step too and pushes what it strikes; commit keeps it.
+    void push(JoltWorld &world, const std::vector<water::BodyInWater> &bodies, double dt_s = 0.0);
     void commit(JoltWorld &world, const std::vector<water::BodyInWater> &bodies, double dt_s);
+    // Water poured from spouts and still in the air, and its ledger; nothing
+    // when the scene declares no spouts.
+    [[nodiscard]] const water::FallingWater *fallingWater() const { return falling_.get(); }
     // How long the world has run, as far as the environment knows.
     [[nodiscard]] double timeS() const { return time_s_; }
 
@@ -453,6 +460,11 @@ private:
     water::WaterCoupling coupling_;
     std::vector<water::Reaction> reactions_;
     std::vector<water::BodyForce> forces_;
+    // Poured water (scene "spouts"), and the step push() worked out for it,
+    // kept by commit() only if that step is kept.
+    std::unique_ptr<water::FallingWater> falling_;
+    std::optional<water::FallingWater::Plan> falling_plan_;
+    double falling_step_s_{};
     std::vector<unsigned> patch_of_chunk_;
     // Per chunk that has a working: its floor patch and its roof patch.
     std::map<int, std::pair<unsigned, unsigned>> working_patches_;

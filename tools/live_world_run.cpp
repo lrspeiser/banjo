@@ -1820,6 +1820,21 @@ void addEnvironment(LiveWorld &world, nlohmann::json &reply, bool whole) {
         reply["water"] = waterBlock(*env, t);
         water_sent_at = t;
     }
+    // Poured water in the air moves every step, so it goes in every reply:
+    // each parcel's centre in millimetres, and the pour's own ledger.
+    if (const banjo::water::FallingWater *falling = env->fallingWater()) {
+        nlohmann::json at = nlohmann::json::array();
+        for (const banjo::water::Parcel &q : falling->parcels()) {
+            at.push_back(std::lround(q.x_m.x * 1000.0));
+            at.push_back(std::lround(q.x_m.y * 1000.0));
+            at.push_back(std::lround(q.x_m.z * 1000.0));
+        }
+        const banjo::water::FallingWaterLedger &fl = falling->ledger();
+        reply["parcels"] = {{"r_m", banjo::water::FallingWater::kRadius}, {"xyz_mm", at},
+                            {"poured_m3", tidy(fl.poured_m3)}, {"landed_m3", tidy(fl.landed_m3)},
+                            {"ran_off_m3", tidy(fl.ran_off_m3)}, {"in_air_m3", tidy(falling->inFlight())},
+                            {"residual_m3", falling->residual()}, {"contact_loss_j", tidy(fl.contact_loss_j)}};
+    }
 }
 
 nlohmann::json dugJson(const banjo::terrain::EditEffect &effect) {

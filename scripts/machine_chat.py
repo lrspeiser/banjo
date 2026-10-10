@@ -86,6 +86,10 @@ Declaration (JSON object, schema "{mw.SCHEMA}"):
                  "switch": {{"hinge": hinge joint name, "closed_at_or_above_deg": n}} or null (always closed),
                  "coil": {{"heats": part, "resistance_ohm": n}}}} ],
   "torches": [ {{"target": part, "power_w": n, "seconds": n}} ],
+  "spouts": [ {{"name": str, "at_m": [x, y, z] (the mouth, in the air over the flume's ground), "direction": [0, -1, 0],
+              "speed_m_s": n, "discharge_l_s": n (0.05-20), "from_s": n, "until_s": n}} ]
+             -- poured water falls as parcels, pushes what it lands on and joins the stream; needs ground kind
+             flume (a water_wheel kit's "pour" makes one for you),
   "stations": [ {{"title": str, "shows": str, "law": str, "maturity": "calculated"|"experimental",
                  "done_when": one of {{"hits": [part, part]}}, {{"hinge_beyond_deg": {{"joint": name, "deg": n}}}},
                  {{"turned_deg": {{"joint": hinge name, "deg": n}}}} (total turning, e.g. a wheel),

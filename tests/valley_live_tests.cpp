@@ -904,6 +904,73 @@ void aStreamWakesAndTurnsAWheelAsleepInTheFlume() {
               << " rad in 12 s; water residual " << water->residual() << " m^3\n";
 }
 
+// Water poured from a spout falls, strikes the paddles of a wheel standing in
+// a dry trench and turns it the way it lands; poured on the other side it
+// turns it the other way, and poured past it the wheel does not move. Every
+// parcel ends in the river or the air: the pour's ledger and the river's
+// close together.
+void pouredWaterTurnsAWheelTheWayItLands() {
+    constexpr double kPi = 3.14159265358979323846;
+    const double tz = 1.0, depth = .35, slope = .005, x0 = -.5 * 99 * .1;
+    const Json flume = {{"kind","flume"},{"nx",100},{"nz",60},{"trench_z_m",tz},{"trench_width_m",.5},
+                        {"trench_depth_m",depth},{"trench_slope",slope}};
+    const double wx = 1.0, bed = -depth - slope * (wx - x0), hub = bed + .065 + .4;
+    Json parts = Json::array();
+    const double q = std::sqrt(.5);
+    parts.push_back({{"shape","cylinder"},{"dimensions_m",{.06,.55,.06}},{"center_local_m",{0,0,.25}},
+                     {"rotation_wxyz",{q,q,0,0}}});
+    parts.push_back({{"shape","cylinder"},{"dimensions_m",{.22,.36,.22}},{"center_local_m",{0,0,0}},
+                     {"rotation_wxyz",{q,q,0,0}}});
+    for (int k = 0; k < 8; ++k) {
+        const double th = 2 * kPi * k / 8;
+        parts.push_back({{"shape","box"},{"dimensions_m",{.3,.03,.36}},
+                         {"center_local_m",{.25 * std::cos(th),.25 * std::sin(th),0}},
+                         {"rotation_wxyz",{std::cos(th / 2),0,0,std::sin(th / 2)}}});
+    }
+    const auto pour = [&](double offset_x, double seconds) {
+        const Json scene = {{"bodies",{box("wheel post","concrete",{.12,.16,.12},{wx,.08,tz + .57},true)}},
+                            {"precise_rigid_bodies",{{{"name","water wheel"},{"material","oak"},
+                                                      {"position_m",{wx,hub,tz}},{"parts",parts}}}},
+                            {"terrain",{{"generate",flume}}},
+                            {"spouts",{{{"name","the spout"},{"at_m",{wx + offset_x,hub + .6,tz}},
+                                        {"direction",{0,-1,0}},{"speed_m_s",1.0},{"discharge_m3_s",.002}}}}};
+        auto world = open(scene);
+        const auto pin = world->hinge("wheel post", "water wheel", {wx, hub, tz}, {0, 0, 1}, -180.0, 180.0, .2);
+        require(pin != 0, "the wheel goes on its pin");
+        double last = 0.0, total = 0.0;
+        for (int tenth = 1; tenth <= static_cast<int>(std::lround(seconds * 10)); ++tenth) {
+            run(*world, .1);
+            double at = 0.0;
+            for (const auto &j : world->joints()) if (j.id == pin) at = j.at;
+            total += std::remainder(at - last, 2 * kPi);
+            last = at;
+        }
+        const auto *falling = world->environment()->fallingWater();
+        require(falling != nullptr, "a scene with a spout pours");
+        const auto &fl = falling->ledger();
+        near(fl.poured_m3, .002 * seconds, banjo::water::FallingWater::kVolume, "the spout pours its declared rate");
+        require(fl.landed_m3 > .5 * fl.poured_m3, "most of the poured water reached the trench");
+        near(falling->residual(), 0.0, 1e-12, "poured = landed + ran off + in the air");
+        const auto *water = world->environment()->water();
+        near(water->ledger().added_m3, fl.landed_m3, 1e-12, "what landed is what the river was given");
+        near(water->residual(), 0.0, 1e-9 * std::max(1.0, water->volume()), "the river's volume ledger");
+        std::cout << "    poured " << offset_x << " m from the axle: " << total << " rad in " << seconds
+                  << " s; poured " << fl.poured_m3 << " m^3, landed " << fl.landed_m3 << ", in the air "
+                  << falling->inFlight() << ", residual " << falling->residual() << "\n";
+        return total;
+    };
+    const double right = pour(.2, 6.0), left = pour(-.2, 6.0), past = pour(1.0, 3.0);
+    require(right < -1.0, "water landing right of the axle turns the wheel clockwise: " + std::to_string(right));
+    require(left > 1.0, "and landing left of it, the other way: " + std::to_string(left));
+    require(std::abs(past) < .05, "water poured past the wheel leaves it still: " + std::to_string(past));
+    bool refused = false;
+    try {
+        (void)open({{"bodies",{box("block","concrete",{.1,.1,.1},{0,.05,0},true)}},
+                    {"spouts",{{{"name","s"},{"at_m",{0,1,0}},{"direction",{0,-1,0}},{"discharge_m3_s",.001}}}}});
+    } catch (const std::exception &) { refused = true; }
+    require(refused, "a spout with nowhere to pour is refused");
+}
+
 LiveNativePlayer nativePlayerOf(const LiveWorld &world, const std::string &actor) {
     for (const auto &player : world.nativePlayers()) if (player.actor == actor) return player;
     throw std::runtime_error("native player missing: " + actor);
@@ -1598,6 +1665,7 @@ int main(int argc, char **argv) {
         {"native player inputs are bounded and cannot teleport",nativePlayerInputsAreBoundedAndCannotTeleport},
         {"exact compounds have native water forces and retain their state",exactCompoundsHaveNativeWaterForcesAndRetainTheirState},
         {"a stream wakes and turns a wheel asleep in the flume",aStreamWakesAndTurnsAWheelAsleepInTheFlume},
+        {"poured water turns a wheel the way it lands",pouredWaterTurnsAWheelTheWayItLands},
         {"a closed basin conserves water with a log in it", aClosedBasinConservesWaterWithALogInIt},
         {"a lake at rest stays at rest", aLakeAtRestStaysAtRest},
         {"a dam of loose blocks raises the river", aDamOfLooseBlocksRaisesTheRiver},

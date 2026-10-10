@@ -196,6 +196,8 @@ void readSceneSettings(const std::string &text, TileImpactRequest &request) {
     // Terrain and water: read by the live world with the environment's own
     // reader, for the same reason.
     if (document.contains("terrain") || document.contains("water")) request.environment_scene_json = text;
+    else if (document.contains("spouts"))
+        throw std::invalid_argument("spouts pour into the world's water: the scene needs terrain or water");
 }
 
 std::vector<SceneBody> readSceneJson(const std::string &text) {

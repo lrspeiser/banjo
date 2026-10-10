@@ -7174,7 +7174,7 @@ void LiveWorld::step(double dt_s) {
     // the ground and its colliders move on only once the step is accepted.
     terrain::Environment *const environment = impl_->environment.get();
     const auto pushWater = [&]() {
-        if (environment != nullptr) environment->push(*impl_->world, waterBodies());
+        if (environment != nullptr) environment->push(*impl_->world, waterBodies(), dt_s);
     };
     const auto settleEnvironment = [&]() {
         if (environment != nullptr) environment->commit(*impl_->world, waterBodies(), dt_s);

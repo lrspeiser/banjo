@@ -59,8 +59,8 @@ class Declaration(unittest.TestCase):
     def test_default_machine_compiles_from_general_parts(self):
         c = mw.compile_spec(mw.default_spec())
         names = {p['name'] for p in c['parts']}
-        for n in ('water wheel', 'ramp gate', 'marble', 'domino 1', 'domino 8', 'lever', 'lever pivot', 'weight',
-                  'weight peg', 'glass plate'):
+        for n in ('water wheel', 'water wheel spout', 'ramp gate', 'marble', 'domino 1', 'domino 8', 'lever',
+                  'lever pivot', 'weight', 'weight peg', 'glass plate'):
             self.assertIn(n, names)
         self.assertEqual({j['kind'] for j in c['joints']}, {'hinge', 'fix', 'slide', 'drum'})
         self.assertEqual(c['circuits'][0]['switch'], {'hinge': 'lever hinge', 'closed_at_or_above_deg': 8.0})
@@ -103,6 +103,33 @@ class Declaration(unittest.TestCase):
                     continue
                 with self.assertRaises(mw.MachineRefused) as refused:
                     mw.compile_spec(spec)
+                self.assertTrue(any(words in q for q in refused.exception.problems), refused.exception.problems)
+
+    def test_poured_water_is_declared_over_the_ground_it_lands_on(self):
+        flume = {'kind': 'flume', 'trench_z_m': 1.0, 'trench_width_m': 0.5, 'trench_depth_m': 0.35}
+        c = mw.compile_spec({'schema': mw.SCHEMA, 'ground': flume, 'kits': [
+            {'kit': 'water_wheel', 'name': 'w', 'at_m': [0, 0, 1], 'pour': {'side': '+x', 'discharge_l_s': 3}}]})
+        spout = c['spouts'][0]
+        wheel = next(q for q in c['parts'] if q['name'] == 'w')
+        self.assertEqual(spout['name'], 'w spout')
+        self.assertAlmostEqual(spout['at_m'][0], 0.2, places=9)        # half the radius, on the +x side
+        self.assertAlmostEqual(spout['at_m'][1], wheel['at_m'][1] + 0.4 + 0.5, places=9)
+        self.assertIn('w spout', {q['name'] for q in c['parts']})      # the pipe it pours from
+        scene = mw.scene_of(c)
+        self.assertEqual(scene['spouts'][0]['discharge_m3_s'], 0.003)
+        base = {'schema': mw.SCHEMA, 'ground': flume}
+        cases = [
+            ({'ground': None, 'spouts': [{'name': 's', 'at_m': [0, 1, 1]}]}, 'to land in'),
+            ({'spouts': [{'name': 's', 'at_m': [9, 1, 1]}]}, 'off the edge of the ground'),
+            ({'spouts': [{'name': 's', 'at_m': [0, -0.1, 0]}]}, 'at or below the ground'),
+            ({'spouts': [{'name': 's', 'at_m': [0, 1, 1], 'direction': [0, 0, 0]}]}, 'point somewhere'),
+            ({'spouts': [{'name': 's', 'at_m': [0, 1, 1], 'discharge_l_s': 50}]}, 'discharge_l_s'),
+            ({'kits': [{'kit': 'water_wheel', 'name': 'w', 'at_m': [0, 0, 1], 'pour': {'side': 'up'}}]}, 'pour side'),
+        ]
+        for extra, words in cases:
+            with self.subTest(words=words):
+                with self.assertRaises(mw.MachineRefused) as refused:
+                    mw.compile_spec(dict(base, **extra))
                 self.assertTrue(any(words in q for q in refused.exception.problems), refused.exception.problems)
 
     def test_compound_parts_become_exact_bodies_in_the_scene(self):
@@ -228,6 +255,18 @@ class Engine(unittest.TestCase):
                 self.assertAlmostEqual(frame['readouts']['heat_ledger']['heater_in_j'], circuit['into_body_j'],
                                        delta=1e-6 * max(1.0, circuit['into_body_j']) + 0.02)
                 self.assertLess(abs(circuit['electrical_residual_j']), 1e-6)
+                # The pour: every parcel the engine carries, where it is, and a
+                # ledger that closes (poured = landed + ran off + in the air).
+                pour = frame['readouts']['pour']
+                self.assertGreater(pour['poured_l'], 5.0)
+                self.assertGreater(pour['landed_l'], 0.5 * pour['poured_l'])
+                self.assertLess(abs(pour['residual_m3']), 1e-12)
+                xyz = frame['parcels']['xyz_mm']
+                self.assertEqual(len(xyz) % 3, 0)
+                self.assertEqual(len(xyz) // 3, pour['parcels'])
+                for k in range(0, len(xyz), 3):
+                    self.assertTrue(-2600 <= xyz[k] <= -800 and -600 <= xyz[k + 1] <= 1100 and 700 <= xyz[k + 2] <= 1300,
+                                    xyz[k:k + 3])
                 quiet = session.frame(session.seq, 0)
                 self.assertEqual(quiet['bodies'], [])
                 self.assertTrue(host.close(opened['session'])['closed'])
