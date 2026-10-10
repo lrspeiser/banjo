@@ -7,6 +7,18 @@ export function computePace(ratio){
   if(ratio===1)return 'Realtime';
   return ratio.toFixed(1)+'× faster than realtime';
 }
+// Native accepted-substep resultants, excluding gravity. Missing observations
+// stay missing (e.g. a restored scene), rather than becoming fabricated zeros.
+export function interactionLoads(frame){
+  const rows=frame?.interaction_wrench_n_nm??frame?.substep_accounts?.at(-1)?.interaction_wrench_n_nm;
+  if(!rows||rows.length!==frame.cells.length||rows.some(r=>!Array.isArray(r)||r.length!==6||r.some(v=>!Number.isFinite(v))))return null;
+  return rows.map(r=>Math.hypot(...r.slice(0,3)));
+}
+export function loadColor(value,maximum){
+  if(!Number.isFinite(value)||!Number.isFinite(maximum)||value<=0||maximum<=0)return [0.16,0.22,0.27];
+  const t=Math.min(1,value/maximum);
+  return t<=.5?[2*t,.5+t,1-2*t]:[1,2-2*t,0];
+}
 // Presentation of measured states only. Sampling drops redundant render frames,
 // never creates a pose, advances physics, or extrapolates beyond delivered data.
 export class AcceptedReplay {

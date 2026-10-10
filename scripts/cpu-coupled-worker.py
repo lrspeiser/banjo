@@ -50,6 +50,10 @@ def main():
                 elif op == 'export' and set(command)=={'op'} and world and hasattr(world,'export_checkpoint'):
                     print(json.dumps(dict(ok=True,checkpoint=world.export_checkpoint()),separators=(',',':'),allow_nan=False),file=protocol,flush=True)
                     continue
+                elif op == 'inspect_modes' and set(command)=={'op'} and world:
+                    receipt=world.prepare_modes()
+                    print(json.dumps(dict(ok=True,state=world.snapshot(),mode_preparation=receipt),separators=(',',':'),allow_nan=False),file=protocol,flush=True)
+                    continue
                 elif op == 'restore' and set(command)=={'op','checkpoint'}:
                     candidate=CpuCoupledWorld.from_checkpoint(command['checkpoint'])
                     state=candidate.snapshot()

@@ -42,10 +42,23 @@ with tempfile.TemporaryDirectory() as folder:
                 receipt[field]=original
         x=command({'op':'create','declaration':{'solver_backend':'cpu-implicit-body','experiment':'freefall','height_m':10.,'representation_policy':'partitioned-flight'}});assert x['ok'] and not x['state']['qualification']['gpu'];key=x['session']
         y=command({'op':'create','declaration':{'experiment':'freefall','height_m':10.}});other=y['session']
-        assert command({'op':'advance','session':key,'steps':16})['state']['time_s']>0
+        flying=command({'op':'advance','session':key,'steps':16})['state'];assert flying['time_s']>0
+        assert all(all(all(v==0 for v in row) for row in account['interaction_wrench_n_nm']) for account in flying['substep_accounts']),'free flight must not fabricate contact heat'
         assert command({'op':'snapshot','session':other})['state']['time_s']==0
         saved=command({'op':'export','session':key})['checkpoint'];r=command({'op':'restore','checkpoint':saved});assert r['ok']
         assert command({'op':'export','session':r['session']})['checkpoint']==saved
+        sheet=command({'op':'create','declaration':{'material':'glass','height_m':10.,'pipeline':'local-jacobian','representation_policy':'partitioned-flight'}})
+        sheet_key=sheet['session'];untouched=command({'op':'export','session':sheet_key})['checkpoint']
+        modes=command({'op':'inspect_modes','session':sheet_key})
+        assert modes['ok'] and modes['mode_preparation']['retained_modes']==54
+        assert not modes['mode_preparation']['execution_admitted']
+        assert command({'op':'export','session':sheet_key})['checkpoint']==untouched
+        assert command({'op':'snapshot','session':other})['state']['time_s']==0
+        mode_log=[json.loads(row) for row in request('/api/log/'+sheet_key)[1].splitlines()]
+        assert any(row.get('response',{}).get('mode_preparation',{}).get('state_key')==modes['mode_preparation']['state_key'] for row in mode_log)
+        assert request('/api/coupled',{'op':'inspect_modes','session':sheet_key,'steps':1})[0]==400
+        refused=command({'op':'inspect_modes','session':other});assert not refused['ok'] and refused['state']['time_s']==0
+        assert command({'op':'close','session':sheet_key})['ok']
         for k in (other,r['session']):assert command({'op':'close','session':k})['ok']
         log=json.loads(request('/api/log/'+key)[1].splitlines()[-1]);assert log['response']['checkpoint']==saved
         assert command({'op':'close','session':key})['ok']

@@ -386,7 +386,7 @@ class Handler(BaseHTTPRequestHandler):
      if type(data['wait_ms']) is not int or not 0<=data['wait_ms']<=250:raise ValueError('Frame wait must be 0–250 ms')
      r=s.frame(data['after'],data['wait_ms'])
     r['session']=data['session']
-   elif op in ['advance','snapshot','close','accelerate_object','strain','unload','export']:
+   elif op in ['advance','snapshot','close','accelerate_object','strain','unload','export','inspect_modes']:
     allowed={'op','session','steps'} if op=='advance' else {'op','session','object','acceleration_m_s2'} if op=='accelerate_object' else {'op','session','opening_m'} if op=='strain' else {'op','session'}
     if set(data)!=allowed:raise ValueError('Invalid command fields')
     try:s=self.server.session(data['session'],backend)
@@ -394,6 +394,7 @@ class Handler(BaseHTTPRequestHandler):
      if op!='close':raise
      s=None
     if backend in ('gpu','cpu-coupled') and op=='accelerate_object':raise ValueError('GPU actuation is not implemented')
+    if op=='inspect_modes' and backend!='cpu-coupled':raise ValueError('Mode preparation requires the explicit native CPU reference')
     if op=='export' and (backend not in ('gpu','cpu-coupled') or not s.current['state'].get('objects')):raise ValueError('Object checkpoint export requires the coupled lab')
     if op in ('strain','unload') and (backend!='gpu' or not s.current['state'].get('controlled_loading')):raise ValueError('Material loading requires the controlled GPU inspector')
     if op=='close':
@@ -402,7 +403,7 @@ class Handler(BaseHTTPRequestHandler):
      r={'ok':True,'already_closed':s is None}
     else:
      if op=='advance' and (type(data['steps']) is not int or not 1<=data['steps']<=16):raise ValueError('Steps must be 1–16')
-     r=s.manual({k:v for k,v in data.items() if k!='session'}) if op in ['advance','accelerate_object','strain','unload','export'] else s.frame(0,0);r['session']=data['session']
+     r=s.manual({k:v for k,v in data.items() if k!='session'}) if op in ['advance','accelerate_object','strain','unload','export','inspect_modes'] else s.frame(0,0);r['session']=data['session']
    else:raise ValueError('Unknown operation')
    self.send(200,json.dumps(r,separators=(',',':')).encode())
   except SessionExpired as e:self.send(410,json.dumps({'ok':False,'error':str(e),'code':'session_expired'}).encode())

@@ -146,7 +146,12 @@ class CoupledWorld:
                     self.eval.bodies[:,23:26]+=h*(self.eval.bodies[:,14:17]+velocity[:,:3])/2
                     self.eval.bodies[:,7:14]=out['poses'];self.eval.bodies[:,14:20]=velocity
                     if self.eval.m:self.eval.edges[:,35:67]=out['history']
+                    # Read-only visualization receipt from the accepted native
+                    # midpoint wrench. Remove gravity, retaining contact AND
+                    # interface resultants. This is not a resolved stress field.
+                    interaction=forces.copy();interaction[:,1]+=9.81*before[:,1]
                     accounts.append(dict(dt_s=h,energy_residual_j=balance,energy_tolerance_j=tolerance,P_residual_n_s=pres.tolist(),L_residual_n_m_s=lres.tolist(),
+                        interaction_wrench_n_nm=interaction.tolist(),
                         ground_impulse_n_s=reaction.tolist(),ground_torque_impulse_n_m_s=reaction_torque.tolist(),ledger=ledger.tolist(),iterations=iterations,equation_residual=equation,
                         poses_wxyz=ending[:,7:14].tolist(),velocities=ending[:,14:20].tolist(),material_history=history.tolist(),newton_start=copy.deepcopy(self.eval.last_solve),contact_schedule=schedule,
                         coordinate_rebases=coordinate_rebases,

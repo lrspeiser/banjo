@@ -162,6 +162,15 @@ BANJO_CPU_EXPORT int banjo_coupled_cpu_schedule(const double* b,unsigned n,doubl
     }
     return static_cast<int>(k);
 }
+// Current primitive geometry only. A bounding sphere may overlap a box even
+// when their actual surfaces are separated; that flight bound is intentionally
+// conservative and must not be mistaken for present contact.
+BANJO_CPU_EXPORT int banjo_coupled_cpu_separation(const double* b,unsigned n,unsigned sphere,double* gaps){
+    if(!scene(b,n,nullptr,0,1e-12,0)||sphere>=n||b[30*sphere]!=2||!gaps)return -1;
+    for(unsigned i=0;i<n;++i)gaps[i]=i==sphere?1e300:
+        banjo::dgContact(b+30*sphere,b+30*i,banjo::dgPose(b+30*sphere),banjo::dgPose(b+30*i)).gap;
+    return static_cast<int>(n);
+}
 BANJO_CPU_EXPORT int banjo_coupled_cpu_flight(const double* b,unsigned n,unsigned sphere,double h,double gy,
     double travel,double* bounds,double* poses,double* v,double* f,double* r){
     if(!scene(b,n,nullptr,0,h,gy)||sphere>=n||b[30*sphere]!=2||b[30*sphere+1]<=0||

@@ -1,6 +1,6 @@
 """Explicit NumPy/native CPU reference. Never imports CUDA or falls back to it."""
 from pathlib import Path
-import ctypes,hashlib,os
+import ctypes,hashlib,os,math
 import numpy as np
 from coupled_solver import CoupledNewton,TrialFailure
 from coupled_world import CoupledWorld,declaration
@@ -10,7 +10,7 @@ HEADERS=('src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKerne
  'src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp',
  'src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp','src/physics/CoupledFlightKernel.hpp')
 SOURCES=('scripts/cpu_coupled_world.py','scripts/coupled_solver.py','scripts/coupled_world.py',
- 'scripts/coupled_representations.py','scripts/object_registry.py','src/physics/CoupledCpuApi.cpp',
+ 'scripts/coupled_representations.py','scripts/object_registry.py','scripts/coupled_modes.py','src/physics/CoupledCpuApi.cpp',
  *HEADERS,'client/voxel-lab/material-laws.json')
 def disk_source_hash():
     h=hashlib.sha256()
@@ -56,6 +56,7 @@ class CpuCoupledEvaluator(CoupledNewton):
         self.lib.banjo_coupled_cpu_local_trials.argtypes=[p,u,p,u,p,p,i,u,d,d,p,p,p,p,p,i];self.lib.banjo_coupled_cpu_local_trials.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_schedule.argtypes=[p,u,d,d,d,d,p];self.lib.banjo_coupled_cpu_schedule.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_flight.argtypes=[p,u,u,d,d,d,p,p,p,p,p];self.lib.banjo_coupled_cpu_flight.restype=ctypes.c_int
+        self.lib.banjo_coupled_cpu_separation.argtypes=[p,u,u,p];self.lib.banjo_coupled_cpu_separation.restype=ctypes.c_int
     def evaluate(self,velocity,h,gravity=-9.81,*,_jacobian_base=None):
         v=np.ascontiguousarray(velocity,dtype=np.float64).reshape(-1,self.n,6);batch=len(v)
         if not 1<=batch<=384:raise ValueError('Coupled trial batch exceeds reference bound')
@@ -82,10 +83,39 @@ class CpuCoupledEvaluator(CoupledNewton):
         if self.lib.banjo_coupled_cpu_flight(self.bodies,self.n,sphere,h,gravity,travel_bound,bounds,*buffers):raise TrialFailure('CPU swept flight refused')
     def flight_step(self,sphere,h,gravity,poses,velocity,forces,residual):
         if self.lib.banjo_coupled_cpu_flight(self.bodies,self.n,sphere,h,gravity,0.,np.empty(self.n),poses,velocity,forces,residual):raise TrialFailure('CPU isolated flight refused')
+    def current_sphere_gaps(self,sphere):
+        gaps=np.empty(self.n)
+        if self.lib.banjo_coupled_cpu_separation(self.bodies,self.n,sphere,gaps)!=self.n or not np.isfinite(gaps).all():raise ValueError('Native current-contact geometry refused')
+        return gaps
 
 class CpuCoupledWorld(CoupledWorld):
     array_api=np
     to_host=staticmethod(host)
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.prepared_modes=None
+    def advance(self,steps):
+        result=super().advance(steps)
+        self.prepared_modes=None
+        return result
+    def prepare_modes(self):
+        from coupled_modes import prepare
+        self.ensure_source_current()
+        if self.d['experiment']!='sheet':raise ValueError('Vibration preparation needs a connected material sheet')
+        sphere=self.eval.n-1
+        if self.eval.bodies[sphere,0]!=2 or np.any(self.eval.edges[:,:2]==sphere):raise ValueError('No isolated rigid sphere for material preparation')
+        separation=float(np.min(self.eval.current_sphere_gaps(sphere)))
+        if not math.isfinite(separation) or separation<=1e-10:raise ValueError('Ball contact requires coupled preparation; isolated material basis refused')
+        indices=np.array([i for i in range(self.eval.n) if i!=sphere],dtype=np.int32)
+        edges=self.eval.edges.copy();mapping={int(old):new for new,old in enumerate(indices)}
+        if len(edges):edges[:,:2]=[[mapping[int(a)],mapping[int(b)]] for a,b in edges[:,:2]]
+        private=CpuCoupledEvaluator(self.eval.bodies[indices],edges)
+        basis,receipt=prepare(private,source_identity=implementation_hash(),world_body_ids=indices.tolist())
+        receipt.update(accepted_time_s=self.time,excluded_sphere_id=sphere,current_native_surface_gap_m=separation,
+            separation_scope='Current instant only; this is not a future contact admission')
+        # A derived preparation is never an extra physical owner or restart state.
+        self.prepared_modes=(basis,receipt)
+        return receipt
     evaluator_type=CpuCoupledEvaluator
     flight_partition=FlightPartition
     declaration=staticmethod(lambda raw:declaration(raw,device='cpu',pipeline='serial-reference',linear='numpy-reference',pipelines=('serial-reference','local-jacobian'),linears=('numpy-reference',)))

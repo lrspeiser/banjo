@@ -3,6 +3,12 @@
 .camera-controls button[aria-pressed=true]{border-color:#9ed6ef;background:#356178}
 #drop-progress{position:absolute;top:62px;left:12px;right:12px;background:#18252ee6;padding:10px;border-radius:6px;font-size:13px;color:#e4edf4;pointer-events:none;line-height:1.5}
 .position-marker{position:absolute;pointer-events:none;color:#e3f4ff;max-width:160px;padding:3px 6px;background:#142836dd;border:1px solid #9ed6ef;border-radius:5px;transform:translate(-50%,-50%);text-align:center;font-size:12px;white-space:pre-line}
+.impact-controls{position:absolute;top:110px;left:12px;right:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.impact-controls button,.impact-controls select{min-height:44px;font-size:13px}
+.impact-controls button[aria-pressed=true]{background:#356178;border-color:#9ed6ef}
+#impact-legend{position:absolute;bottom:116px;left:12px;right:12px;font-size:12px;padding:5px 8px;background:#142836e6;border-left:4px solid #ffb342;pointer-events:none}
+@media(min-width:751px){#impact-legend{bottom:70px}}
+@media(max-width:350px){.impact-controls{top:140px}}
 #scene-note{font-size:13px;max-width:calc(100% - 30px)}
 .readiness{border:1px solid #456171;border-radius:8px;padding:12px;margin:12px 0;background:#172c37}
 .readiness h2{font-size:16px;margin:0 0 8px}

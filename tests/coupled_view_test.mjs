@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as THREE from '../playground/vendor/three.module.js';
-import {ballObservation,cameraFrame,settingsDiffer,remainingSteps,computePace,dropMilestones,AcceptedReplay} from '../client/voxel-lab/coupled-view.mjs';
+import {ballObservation,cameraFrame,settingsDiffer,remainingSteps,computePace,dropMilestones,AcceptedReplay,interactionLoads,loadColor} from '../client/voxel-lab/coupled-view.mjs';
 const plane={shape:'plane',position_m:[0,0,0],quaternion_wxyz:[1,0,0,0],size_m:[.3,.001,.3],radius_m:0};
 const cube={shape:'cube',position_m:[0,.03,0],quaternion_wxyz:[1,0,0,0],size_m:[.03,.01,.03],radius_m:0};
 const sphere={shape:'sphere',position_m:[0,10.045,0],quaternion_wxyz:[1,0,0,0],size_m:[.02,.02,.02],radius_m:.01,velocity_m_s:[0,0,0]};
@@ -75,5 +75,20 @@ const {readFileSync}=await import('node:fs');
 const html=readFileSync(new URL('../client/voxel-lab/coupled.html',import.meta.url),'utf8');
 const ids=[...html.matchAll(/ id="([^"]+)"/g)].map(m=>m[1]);
 assert.equal(new Set(ids).size,ids.length,'duplicate controls can silently leave the visible button disabled');
+const client=readFileSync(new URL('../client/voxel-lab/coupled.js',import.meta.url),'utf8');
+for(const ref of client.matchAll(/\$\('([^']+)'\)/g))assert.ok(ids.includes(ref[1]),`missing UI control ${ref[1]} prevents startup`);
 for(const id of ['reset','full-drop','replay','stop'])assert.ok(html.indexOf(`id="${id}"`)<html.indexOf('<aside>'),'primary action must remain beside the mobile scene');
 console.log('PASS actual-ball pixel visibility at phone aspects and unique scene-adjacent controls');
+// Actual accepted loads, including the fixed reaction, map to their own cells.
+// Torque remains in the receipt; the displayed quantity is force in N only.
+const loaded={...initial,interaction_wrench_n_nm:[[0,-10,0,0,0,0],[3,4,0,99,0,0],[0,10,0,0,0,0]]};
+const savedLoad=JSON.stringify(loaded);
+assert.deepEqual(interactionLoads(loaded),[10,5,10]);
+assert.deepEqual(interactionLoads({...initial,substep_accounts:[{interaction_wrench_n_nm:loaded.interaction_wrench_n_nm}]}),[10,5,10]);
+assert.equal(interactionLoads(initial),null,'no guessed stress/heat from poses or material names');
+assert.equal(interactionLoads({...loaded,interaction_wrench_n_nm:[[NaN,0,0,0,0,0]]}),null);
+assert.equal(interactionLoads({...loaded,interaction_wrench_n_nm:loaded.interaction_wrench_n_nm.slice(1)}),null,'mapping mismatch');
+assert.deepEqual(loadColor(10,10),[1,0,0]);assert.deepEqual(loadColor(5,10),[1,1,0]);
+assert.deepEqual(loadColor(20,10),[1,0,0]);assert.deepEqual(loadColor(0,10),loadColor(NaN,10));
+assert.equal(JSON.stringify(loaded),savedLoad,'heat map must never modify accepted physics');
+console.log('PASS accepted load/matter mapping, fixed reactions, missing-data refusal and read-only load colors');

@@ -2059,3 +2059,17 @@ new material-law qualification is claimed.
 reduce matched material-control cost about fourfold on Windows/WSL Linux.
 Ten scoped tests pass and the same 3D lab exposes both CPU choices. Strong
 refined sheet drops still refuse before impact; the eight-family goal remains open.
+
+**Native vibration preparation, October 9 (private reference implemented; world reduction/realtime OPEN):**
+[Native modes, retained load/history and explicit non-admission](native-mode-preparation-checkpoint.md)
+prepare all 54 current sheet modes with fixed reaction rows, exact state keys,
+branch/refinement diagnostics and affine oracles. The same 3D lab exposes the
+receipt; the detailed solver still owns motion. Strong impacts, continuous branch
+bounds, full transfer/conservation and the remaining families are unfinished.
+
+**Impact inspection, October 9 (visualization implemented; full physics remains OPEN):**
+[Measured load colors and explicit physics-test availability](impact-inspector-checkpoint.md)
+add accepted per-body interaction-force receipts, contact-frame/peak-load views
+and direct controls for the three available inspections. Eight scoped suites
+pass. Net loads are not temperature or resolved stress; the other families and
+complete sheet impacts remain unfinished.

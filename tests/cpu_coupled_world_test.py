@@ -50,12 +50,22 @@ def main(args):
     tiny=tiny_contact_oracle();root=retained_glass_root()
     for material in ('glass','oak','iron','ice'):
         w=CpuCoupledWorld(dict(material=material,height_m=.001,dt_s=1/240,representation_policy='partitioned-flight'))
-        initial=w.snapshot();start=time.perf_counter();contact=False
+        initial=w.snapshot();start=time.perf_counter();contact=False;peak_load=0.
+        previous=np.array([c['velocity_m_s']+c['angular_velocity_rad_s'] for c in initial['cells']])
         for _ in range(10):
             s=w.advance(1)
             assert not s['qualification']['gpu'] and s['qualification']['device']=='cpu'
             assert abs(s['diagnostics']['global_energy_residual_j'])<5e-9
             for a in s['substep_accounts']:
+                load=np.array(a['interaction_wrench_n_nm']);assert load.shape==(len(s['cells']),6) and np.isfinite(load).all()
+                # Independent per-body impulse check, not just a color fixture.
+                velocity=np.array(a['velocities']);mass=np.array([c['mass_kg'] for c in s['cells']]);dynamic=mass>0
+                impulse=(velocity[:,:3]-previous[:,:3])*mass[:,None]
+                impulse[:,1]+=9.81*mass*a['dt_s']
+                assert np.max(np.linalg.norm((impulse-a['dt_s']*load[:,:3])[dynamic],axis=1))<1e-9
+                assert np.linalg.norm(load[:,:3].sum(axis=0))<1e-6,'internal interactions and fixed reaction must balance'
+                assert np.linalg.norm(-a['dt_s']*load[~dynamic,:3].sum(axis=0)-a['ground_impulse_n_s'])<1e-12
+                peak_load=max(peak_load,float(np.max(np.linalg.norm(load[:,:3],axis=1))));previous=velocity
                 assert abs(a['energy_residual_j'])<=a['energy_tolerance_j']
                 assert np.linalg.norm(a['P_residual_n_s'])<1e-9 and np.linalg.norm(a['L_residual_n_m_s'])<1e-9
                 contact|=a['ledger'][8]>0
@@ -65,7 +75,8 @@ def main(args):
         assert np.array_equal(r.eval.bodies,w.eval.bodies) and np.array_equal(r.eval.edges,w.eval.edges)
         a=w.advance(1);b=r.advance(1)
         for field in ('cells','history_arrays','diagnostics','substep_accounts'):assert a[field]==b[field],field
-        runs.append(dict(material=material,conditions=w.d,physical_s=w.time,wall_s=time.perf_counter()-start,diagnostics=a['diagnostics'],resume_exact=True))
+        assert peak_load>0,'actual contact must publish a nonzero measured load'
+        runs.append(dict(material=material,conditions=w.d,physical_s=w.time,wall_s=time.perf_counter()-start,diagnostics=a['diagnostics'],peak_interaction_load_n=peak_load,resume_exact=True))
         print(material,'CPU sheet control accepted',flush=True)
         # Malformed candidates refuse without modifying authoritative matter.
         original=w.eval.bodies.copy();v=original[:,14:20].copy();v[0,0]=np.nan
