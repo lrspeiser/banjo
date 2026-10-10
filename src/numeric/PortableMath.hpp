@@ -31,11 +31,44 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 
 #include "numeric/PortableMathTables.hpp"
 
 namespace banjo::pm {
+
+// ldexp and frexp as exact operations on the bits. The C library's are calls
+// (glibc's are not inlined), and a fast path makes several a call; these give
+// exactly what std::ldexp and std::frexp give.
+namespace bits {
+[[nodiscard]] inline std::uint64_t of(double x) {
+    std::uint64_t b;
+    std::memcpy(&b, &x, sizeof b);
+    return b;
+}
+[[nodiscard]] inline double from(std::uint64_t b) {
+    double x;
+    std::memcpy(&x, &b, sizeof x);
+    return x;
+}
+// x * 2^k: one multiplication by an exact power of two rounds the exact product
+// once, as ldexp does, denormal results included. Beyond the normal exponents,
+// the library.
+[[nodiscard]] inline double ldexp(double x, int k) {
+    if (k >= -1022 && k <= 1023) return x * from(static_cast<std::uint64_t>(k + 1023) << 52);
+    return std::ldexp(x, k);
+}
+// A normal x as m 2^e, m in [0.5, 1); zeros, denormals, infinities and NaNs
+// from the library.
+[[nodiscard]] inline double frexp(double x, int *e) {
+    const std::uint64_t b = of(x);
+    const int biased = static_cast<int>((b >> 52) & 0x7ff);
+    if (biased == 0 || biased == 0x7ff) return std::frexp(x, e);
+    *e = biased - 1022;
+    return from((b & ~(std::uint64_t{0x7ff} << 52)) | (std::uint64_t{1022} << 52));
+}
+} // namespace bits
 
 namespace dd {
 
@@ -99,7 +132,7 @@ struct Twin {
     const double rest = ((a.hi - square.hi) - square.lo + a.lo) / (2.0 * s);
     return quickTwoSum(s, rest);
 }
-[[nodiscard]] inline Twin ldexp(Twin a, int e) { return {std::ldexp(a.hi, e), std::ldexp(a.lo, e)}; }
+[[nodiscard]] inline Twin ldexp(Twin a, int e) { return {bits::ldexp(a.hi, e), bits::ldexp(a.lo, e)}; }
 
 // Constants as double-doubles (each hi the double nearest; lo the remainder).
 inline constexpr Twin kLn2{6.93147180559945286227e-01, 2.31904681384629955842e-17};
@@ -132,7 +165,7 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
 // [sqrt(1/2), sqrt(2)), ln m = 2 atanh((m - 1) / (m + 1)) by its series.
 [[nodiscard]] inline Twin log(Twin x) {
     int e = 0;
-    (void)std::frexp(x.hi, &e);
+    (void)bits::frexp(x.hi, &e);
     Twin m = ldexp(x, -e);  // hi in [0.5, 1)
     if (m.hi < 0.70710678118654752440) {
         m = ldexp(m, 1);
@@ -217,16 +250,16 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
 // that count rounded to an integer once: ties to even, or, for a result known
 // to lie just inside a (`below`), towards zero.
 [[nodiscard]] inline double scaleRound(Twin a, int k, bool below = false) {
-    if (a.hi == 0.0 || !(std::abs(std::ldexp(a.hi, k)) <= 0x1p-1022)) return std::ldexp(round(a), k);
+    if (a.hi == 0.0 || !(std::abs(bits::ldexp(a.hi, k)) <= 0x1p-1022)) return bits::ldexp(round(a), k);
     const bool negative = a.hi < 0.0;
-    const double h = std::ldexp(std::abs(a.hi), k + 1074);
-    const double l = std::ldexp(negative ? -a.lo : a.lo, k + 1074);
+    const double h = bits::ldexp(std::abs(a.hi), k + 1074);
+    const double l = bits::ldexp(negative ? -a.lo : a.lo, k + 1074);
     double n = std::nearbyint(h);
     const double rest = (h - n) + l;  // h - n is exact: |h| < 2^52 and n the integer nearest it
     const bool odd = std::fmod(n, 2.0) != 0.0;
     if (rest > 0.5 || (rest == 0.5 && odd && !below)) n += 1.0;
     else if (rest < -0.5 || (rest == -0.5 && (odd || below))) n -= 1.0;
-    const double out = std::ldexp(n, -1074);
+    const double out = bits::ldexp(n, -1074);
     return negative ? -out : out;
 }
 
@@ -281,7 +314,7 @@ inline constexpr double kRelativeBound = 0x1p-64;
 // below 2^-67.
 [[nodiscard]] inline Twin log(double x) {
     int e = 0;
-    double m = std::frexp(x, &e);
+    double m = bits::frexp(x, &e);
     m *= 2.0;
     --e;  // x = m 2^e, m in [1, 2)
     const int i = static_cast<int>(std::round((m - 1.0) * 128.0));
@@ -542,7 +575,7 @@ enum class Trig { Sin, Cos, Tan };
         // where a quotient of double-doubles is no longer exact: the quotient
         // of the two significands, scaled and rounded once, just below it.
         int ey = 0, ex = 0;
-        const double my = std::frexp(y, &ey), mx = std::frexp(x, &ex);
+        const double my = bits::frexp(y, &ey), mx = bits::frexp(x, &ex);
         return dd::scaleRound(dd::div(dd::Twin{my, 0.0}, dd::Twin{mx, 0.0}), ey - ex, true);
     }
     return detail::atan2(dd::Twin{y, 0.0}, dd::Twin{x, 0.0});
@@ -582,8 +615,8 @@ enum class Trig { Sin, Cos, Tan };
     int scale = 0;
     if (big > 0x1p+500) scale = -600;
     else if (big < 0x1p-500) scale = 600;
-    ax = std::ldexp(ax, scale);
-    ay = std::ldexp(ay, scale);
+    ax = bits::ldexp(ax, scale);
+    ay = bits::ldexp(ay, scale);
     const dd::Twin sum = dd::add(dd::twoProduct(ax, ax), dd::twoProduct(ay, ay));
     return dd::scaleRound(dd::sqrt(sum), -scale);
 }
@@ -598,9 +631,9 @@ enum class Trig { Sin, Cos, Tan };
     int scale = 0;
     if (big > 0x1p+500) scale = -600;
     else if (big < 0x1p-500) scale = 600;
-    ax = std::ldexp(ax, scale);
-    ay = std::ldexp(ay, scale);
-    az = std::ldexp(az, scale);
+    ax = bits::ldexp(ax, scale);
+    ay = bits::ldexp(ay, scale);
+    az = bits::ldexp(az, scale);
     const dd::Twin sum = dd::add(dd::add(dd::twoProduct(ax, ax), dd::twoProduct(ay, ay)), dd::twoProduct(az, az));
     return dd::scaleRound(dd::sqrt(sum), -scale);
 }
@@ -613,9 +646,9 @@ enum class Trig { Sin, Cos, Tan };
     if (!std::isfinite(x) || x == 0.0) return x;
     const double ax = std::abs(x);
     int e = 0;
-    const double m = std::frexp(ax, &e);  // ax = m 2^e, m in [0.5, 1)
+    const double m = bits::frexp(ax, &e);  // ax = m 2^e, m in [0.5, 1)
     const int third = (e >= 0 ? e : e - 2) / 3, rest = e - 3 * third;
-    const double mm = std::ldexp(m, rest);  // ax = mm 2^(3 third), mm in [0.5, 4)
+    const double mm = bits::ldexp(m, rest);  // ax = mm 2^(3 third), mm in [0.5, 4)
     double y = 0.62 + 0.25 * mm;
     for (int i = 0; i < 4; ++i) {
         const double cube = y * y * y;
@@ -640,7 +673,7 @@ enum class Trig { Sin, Cos, Tan };
             else break;
         }
     }
-    root = std::ldexp(root, third);
+    root = bits::ldexp(root, third);
     return x < 0.0 ? -root : root;
 }
 
