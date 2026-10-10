@@ -9,6 +9,7 @@ from copy import deepcopy
 from functools import lru_cache
 import json
 import math
+import portable_math as pm
 from pathlib import Path
 from mcp import progression, workshop
 import workshop_library
@@ -208,13 +209,13 @@ def _surface(saved, owner, area):
         # Native identity/body presence is checked in the same durably saved
         # document as the admission receipt and geometry.
         q=live.get('orientation_wxyz',[1,0,0,0])
-        if 1-2*(q[1]*q[1]+q[3]*q[3]) < math.cos(math.radians(15)): continue
+        if 1-2*(q[1]*q[1]+q[3]*q[3]) < pm.cos(math.radians(15)): continue
         for point in points.get(root,[]):
             if point['kind']!='surface': continue
             at=point['position_m']; size=point['size_m']
             angle=math.radians(point.get('yaw_deg',0))
-            footprint=[abs(math.cos(angle))*size[0]+abs(math.sin(angle))*size[2],
-                       abs(math.sin(angle))*size[0]+abs(math.cos(angle))*size[2]]
+            footprint=[abs(pm.cos(angle))*size[0]+abs(pm.sin(angle))*size[2],
+                       abs(pm.sin(angle))*size[0]+abs(pm.cos(angle))*size[2]]
             for part in body['parts']:
                 if part.get('shape','box')!='box' or part.get('rotation_wxyz',[1,0,0,0]) != [1,0,0,0]: continue
                 d=part['dimensions_m']; c=part['center_local_m']

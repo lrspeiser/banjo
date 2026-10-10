@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+import portable_math as pm
 from typing import Any, Callable
 
 import machine_senses as senses
@@ -313,7 +314,7 @@ def _around_m(ctx: senses.Context, middle: list[float], radius_m: float) -> floa
     heights = []
     for i in range(8):
         turn = i * math.pi / 4.0
-        x, z = middle[0] + radius_m * math.sin(turn), middle[1] + radius_m * math.cos(turn)
+        x, z = middle[0] + radius_m * pm.sin(turn), middle[1] + radius_m * pm.cos(turn)
         here = ctx.survey(x, z) or {}
         if "ground_m" in here:
             heights.append(float(here["ground_m"] or 0.0))
@@ -361,7 +362,7 @@ def _place_spots(ctx: senses.Context, middle: list[float]) -> list[list[float]]:
         turns = 1 if radius == 0.0 else max(8, int(2.0 * math.pi * radius / DIG_STEP_M))
         for i in range(turns):
             turn = i * 2.0 * math.pi / turns
-            spot = [middle[0] + radius * math.sin(turn), middle[1] + radius * math.cos(turn)]
+            spot = [middle[0] + radius * pm.sin(turn), middle[1] + radius * pm.cos(turn)]
             if deposit is None or math.hypot(spot[0] - at[0], spot[-1] - at[-1]) < inside:
                 spots.append(spot)
     return spots
@@ -438,7 +439,7 @@ def _find_stand(ctx: senses.Context, middle: list[float], around: float) -> list
     best = None
     for i in range(24):
         turn = i * 2.0 * math.pi / 24
-        stand = [middle[0] + ring * math.sin(turn), middle[1] + ring * math.cos(turn)]
+        stand = [middle[0] + ring * pm.sin(turn), middle[1] + ring * pm.cos(turn)]
         away = math.hypot(stand[0] - ax, stand[1] - az)
         if away <= FINAL_STAND_M + machine_navigation.CELL_M / 2.0:
             # Here already, with nothing to bite, or nearer than its route

@@ -16,6 +16,7 @@ import hashlib
 import json
 import logging
 import math
+import portable_math as pm
 import os
 import re
 import struct
@@ -673,13 +674,13 @@ def _square_to_ground(old, body, room):
         return False
     ga, gb, gc = plane
     n = [-ga, 1.0, -gb]; size = math.sqrt(sum(v*v for v in n)); n = [v/size for v in n]
-    angle = math.acos(max(-1.0, min(1.0, n[1])))
+    angle = pm.acos(max(-1.0, min(1.0, n[1])))
     if angle > math.radians(25):
         return False
     if angle > 1e-6:
         axis = [n[2], 0.0, -n[0]]; length = math.hypot(axis[0], axis[2])
-        s = math.sin(angle/2)
-        tilt = [math.cos(angle/2), axis[0]/length*s, 0.0, axis[2]/length*s]
+        s = pm.sin(angle/2)
+        tilt = [pm.cos(angle/2), axis[0]/length*s, 0.0, axis[2]/length*s]
         w1,x1,y1,z1 = tilt; w2,x2,y2,z2 = body["orientation_wxyz"]
         body["orientation_wxyz"] = [w1*w2-x1*x2-y1*y2-z1*z2, w1*x2+x1*w2+y1*z2-z1*y2,
                                     w1*y2-x1*z2+y1*w2+z1*x2, w1*z2+x1*y2-y1*x2+z1*w2]
@@ -724,7 +725,7 @@ def _stands_here(staged, root):
     end = pose()
     if start is None or end is None:
         return
-    turn = math.degrees(math.acos(max(-1.0, min(1.0, sum(a*b for a, b in zip(start[0], end[0]))))))
+    turn = math.degrees(pm.acos(max(-1.0, min(1.0, sum(a*b for a, b in zip(start[0], end[0]))))))
     if turn > STAND_TILT_DEG:
         raise ValueError(f"It would not stand here: it tipped {turn:.0f} degrees in its first "
                          f"{STAND_TRIAL_S:g} s. Choose flatter ground.")

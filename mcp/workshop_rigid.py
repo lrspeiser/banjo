@@ -113,7 +113,7 @@ def compile_rigid(design, overrides=None, *, require_request=True) -> dict[str, 
         for a in range(3):
             for b in range(3):
                 inertia[a][b] += m*((sum(v*v for v in c) if a==b else 0)-c[a]*c[b])
-            inertia[a][a] += m*sum(d[b]**2 for b in range(3) if b != a)/12
+            inertia[a][a] += m*sum(d[b]*d[b] for b in range(3) if b != a)/12
     lo = [min(p["center_m"][a]-p["dimensions_m"][a]/2 for p in parts) for a in range(3)]
     hi = [max(p["center_m"][a]+p["dimensions_m"][a]/2 for p in parts) for a in range(3)]
     if max(hi[a]-lo[a] for a in (0,2)) > 16:

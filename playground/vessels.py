@@ -45,6 +45,7 @@ whose contents warm the vessel back.
 from __future__ import annotations
 
 import math
+import portable_math as pm
 from typing import Any, Iterable
 
 NAMES_MOST = 60
@@ -323,7 +324,7 @@ class Vessel:
         body's y; the angle is between that and the room's."""
         self.mouth_m = [a + b for a, b in zip(at, _turn(q, self.mouth_local_m))]
         up = _turn(q, [0.0, 1.0, 0.0])
-        self.tilt_deg = math.degrees(math.acos(max(-1.0, min(1.0, up[1]))))
+        self.tilt_deg = math.degrees(pm.acos(max(-1.0, min(1.0, up[1]))))
 
     def pouring(self) -> float:
         """How hard it is pouring, 0 upright to 1 upside down. Nothing until

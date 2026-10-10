@@ -63,6 +63,7 @@ clear.
 from __future__ import annotations
 
 import math
+import portable_math as pm
 from typing import Any, Callable, Iterable
 
 # The coupling a port carries. Goods are the only thing that flows between
@@ -93,7 +94,7 @@ DOCK_M = 1.2
 # mean a dock a machine can see and reach and still not make, which is the one
 # thing a person watching cannot forgive.
 FACING_DEG = 60.0
-FACING = math.cos(math.radians(FACING_DEG))
+FACING = pm.cos(math.radians(FACING_DEG))
 # A port whose partner is within this much of docking is worth saying out loud
 # ("it is near, but turned away"), so a person can see why nothing moved rather
 # than only that nothing did. Twice the dock: near enough to be about it.
@@ -335,7 +336,7 @@ def between(giving: Port, taking: Port) -> tuple[bool, str, float]:
         return False, f"they are {far:.2f} m apart, and a dock is {DOCK_M:g} m", far
     opposed = -sum(giving.normal[k] * taking.normal[k] for k in range(3))
     if opposed < FACING:
-        off = math.degrees(math.acos(max(-1.0, min(1.0, opposed))))
+        off = math.degrees(pm.acos(max(-1.0, min(1.0, opposed))))
         return False, (f"they are {far:.2f} m apart but their mouths are turned {off:.0f} deg from facing each "
                        f"other, and a dock allows {FACING_DEG:g}"), far
     if far > 1e-6:

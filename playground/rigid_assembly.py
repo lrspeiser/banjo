@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections import defaultdict
 from copy import deepcopy
 import math
+import portable_math as pm
 import re
 from typing import Any
 
@@ -266,8 +267,8 @@ def placed(artifact: dict[str, Any], origin_m: list[float], yaw_rad: float = 0.0
     origin at `origin_m`: bodies, pins and all. `pitch_rad` first tips it about
     its own x, its front (+z) going down, to stand square on a slope it faces
     down: a cart set level there stands on its back wheels alone."""
-    cy, sy = math.cos(yaw_rad / 2), math.sin(yaw_rad / 2)
-    cp, sp = math.cos(pitch_rad / 2), math.sin(pitch_rad / 2)
+    cy, sy = pm.cos(yaw_rad / 2), pm.sin(yaw_rad / 2)
+    cp, sp = pm.cos(pitch_rad / 2), pm.sin(pitch_rad / 2)
     q = [cy * cp, cy * sp, sy * cp, -sy * sp]
     r = _turn(q)
     out = deepcopy(artifact)

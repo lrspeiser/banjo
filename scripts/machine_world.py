@@ -15,6 +15,13 @@ from __future__ import annotations
 import copy
 import json
 import math
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 import os
 import queue
 import subprocess
@@ -80,7 +87,7 @@ def _num(d, key, what, problems, default=None, low=None, high=None):
 def rotation(turn_deg):
     """The engine's turn: about x, then y, then z (TileImpactScene rotateDegrees)."""
     rx, ry, rz = (math.radians(a) for a in turn_deg)
-    cx, sx, cy, sy, cz, sz = math.cos(rx), math.sin(rx), math.cos(ry), math.sin(ry), math.cos(rz), math.sin(rz)
+    cx, sx, cy, sy, cz, sz = pm.cos(rx), pm.sin(rx), pm.cos(ry), pm.sin(ry), pm.cos(rz), pm.sin(rz)
     mx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]]
     my = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]]
     mz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]]
@@ -196,7 +203,7 @@ def ground_scene(ground):
 def quaternion_of_turn(degrees):
     """TileImpactScene rotationQuaternion: about x, then y, then z."""
     hx, hy, hz = (math.radians(d) / 2 for d in degrees)
-    cx, sx, cy, sy, cz, sz = math.cos(hx), math.sin(hx), math.cos(hy), math.sin(hy), math.cos(hz), math.sin(hz)
+    cx, sx, cy, sy, cz, sz = pm.cos(hx), pm.sin(hx), pm.cos(hy), pm.sin(hy), pm.cos(hz), pm.sin(hz)
     return [cz * cy * cx - sz * sy * sx, cz * cy * sx + sz * sy * cx, cz * sy * cx - sz * cy * sx,
             sz * cy * cx + cz * sy * sx]
 
@@ -217,9 +224,9 @@ def solids_of(part):
         r = rotation(sub['turn_deg'])
         m = [[sum(outer[i][k] * r[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
         # The same matrix as x-y-z turn angles (R = Rz Ry Rx).
-        ry = math.asin(max(-1.0, min(1.0, -m[2][0])))
-        rx = math.atan2(m[2][1], m[2][2])
-        rz = math.atan2(m[1][0], m[0][0])
+        ry = pm.asin(max(-1.0, min(1.0, -m[2][0])))
+        rx = pm.atan2(m[2][1], m[2][2])
+        rz = pm.atan2(m[1][0], m[0][0])
         out.append({'name': part['name'], 'shape': 'box', 'size_m': size, 'at_m': at,
                     'turn_deg': [math.degrees(rx), math.degrees(ry), math.degrees(rz)]})
     return out
@@ -269,7 +276,7 @@ def _kit_ramp(k, problems, name):
         length = max(length, 0.2)
     if dy >= 0:
         problems.append(name + ': bottom_m must be lower than top_m')
-    slope = math.degrees(math.atan2(-dy, max(run, 1e-9)))
+    slope = math.degrees(pm.atan2(-dy, max(run, 1e-9)))
     if slope > 60:
         problems.append(name + ': a ramp is at most 60 degrees')
     sign = 1.0 if (dx if along_x else dz) >= 0 else -1.0
@@ -496,7 +503,7 @@ def _kit_pendulum(k, problems, name):
         pivot = _vec(k.get('pivot_m'), 3, name + ' pivot_m', problems)
     side = (0.0, 0.0, 1.0) if d[0] else (1.0, 0.0, 0.0)
     beam_t, half_span = 0.06, max(0.3, dia)
-    s, c = math.sin(math.radians(pull)), math.cos(math.radians(pull))
+    s, c = pm.sin(math.radians(pull)), pm.cos(math.radians(pull))
     at = [pivot[0] - d[0] * rope * s, pivot[1] - rope * c, pivot[2] - d[2] * rope * s]
     if pivot[1] - rope - 0.5 * dia < 0.01:
         problems.append(f'{name}: the ball would hit the ground at the bottom of its swing; '
@@ -561,7 +568,7 @@ def _kit_water_wheel(k, problems, name):
     for i in range(count):
         th = 360.0 * i / count
         sub.append({'shape': 'box', 'size_m': [paddle_len, 0.03, width],
-                    'at_m': [mid * math.cos(math.radians(th)), mid * math.sin(math.radians(th)), 0],
+                    'at_m': [mid * pm.cos(math.radians(th)), mid * pm.sin(math.radians(th)), 0],
                     'turn_deg': [0, 0, th]})
     post_h = max(0.12, hub_y + 0.06)
     parts = [{'name': name, 'shape': 'compound', 'material': k.get('material', 'oak'), 'size_m': [2 * radius] * 3,

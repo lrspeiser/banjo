@@ -11,7 +11,8 @@ compare evidence only against criteria the design actually declares.
 """
 from __future__ import annotations
 
-from math import acos, isfinite
+from math import isfinite
+from portable_math import acos
 from pathlib import Path
 from typing import Any, Callable
 

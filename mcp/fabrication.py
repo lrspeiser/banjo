@@ -11,6 +11,13 @@ from copy import deepcopy
 import hashlib
 import json
 import math
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 import re
 from mcp import engine_materials
 
@@ -674,7 +681,7 @@ def advance(state, time_s):
         if heat >= ceiling-max(1e-10,ceiling*1e-12):
             power = min(power, g*heat/cap)
         if power <= 0:
-            lost = heat * -math.expm1(-g*left/cap)
+            lost = heat * -pm.expm1(-g*left/cap)
             state["station_heat_j"] -= lost; state["ambient_j"] += lost
             break
         dt = min(left, state["energy_j"]/power,
@@ -684,11 +691,11 @@ def advance(state, time_s):
                 dt = min(dt,(ceiling-heat)/power)
             elif power*cap/g > ceiling:
                 ratio = (ceiling-heat)/(power*cap/g-heat)
-                if ratio < 1: dt = min(dt,-cap/g*math.log1p(-ratio))
+                if ratio < 1: dt = min(dt,-cap/g*pm.log1p(-ratio))
         if dt <= 0: raise ValueError("Fabrication event failed to advance")
         supplied = min(state["energy_j"],power*dt)
         if g:
-            change = -math.expm1(-g*dt/cap)
+            change = -pm.expm1(-g*dt/cap)
             new_heat = heat + (power*cap/g-heat)*change
         else: new_heat = heat+supplied
         state["ambient_j"] += max(0.,heat+supplied-new_heat)

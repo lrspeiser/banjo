@@ -7,6 +7,7 @@ grant a second copy. These are goods ledger packets, not solver bodies.
 from __future__ import annotations
 import json
 import math
+import portable_math as pm
 import re
 import uuid
 from copy import deepcopy
@@ -70,8 +71,8 @@ def heap_excavation(app, body):
                 # material piles apart; skip ground outside the map or underwater.
                 candidate=None
                 for radius,angle in ((r,a) for r in (1.2,1.8,2.4) for a in (math.pi,3*math.pi/4,-3*math.pi/4,math.pi/2,-math.pi/2)):
-                    sx=ahead[0]*math.cos(angle)-ahead[1]*math.sin(angle)
-                    sz=ahead[0]*math.sin(angle)+ahead[1]*math.cos(angle)
+                    sx=ahead[0]*pm.cos(angle)-ahead[1]*pm.sin(angle)
+                    sz=ahead[0]*pm.sin(angle)+ahead[1]*pm.cos(angle)
                     point=[eyes[0]+sx*radius,eyes[2]+sz*radius]
                     if not clear(point):continue
                     if any(math.hypot(point[0]-p['at_m'][0],point[1]-p['at_m'][1])<.65 for p in goods.stockpiles):continue

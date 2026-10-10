@@ -46,6 +46,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground"), str(ROOT / "tools")]
+import portable_math as pm                       # noqa: E402
 
 import build_explore_world as grounds   # noqa: E402  the ground, and standing things on it
 import fracture_lab                     # noqa: E402
@@ -99,7 +100,7 @@ def compose(ground: dict) -> dict:
     # Tipped about its own x to the slope it faces down, so all four wheels meet
     # the ground: set level, it stood on its back wheels alone.
     fall = grounds.surface_at(ground, x, z + 0.5) - grounds.surface_at(ground, x, z - 0.5)
-    pitch = math.atan(-fall)
+    pitch = pm.atan(-fall)
     design, over = workshop_components.design_from_spec({"kind": "cart", "design_id": "cart", "parameters": {}})
     artifact = rigid_assembly.compile_design(design, over, root="cart")
     flat = rigid_assembly.placed(artifact, [x, 0.0, z], 0.0, pitch)

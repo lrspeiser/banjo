@@ -210,6 +210,26 @@ inline constexpr double kHalfPi3Tail = 8.47842766036889956997e-32;
 
 [[nodiscard]] inline double round(Twin a) { return a.hi + a.lo; }
 
+// The double nearest a * 2^k, rounded once. Where that is a denormal,
+// std::ldexp(round(a), k) would round twice -- to 53 bits, then to the coarser
+// grid of the denormals -- and can miss by one. So it is counted in units of
+// the smallest denormal, 2^-1074, where the scaled pair is still exact, and
+// that count rounded to an integer once: ties to even, or, for a result known
+// to lie just inside a (`below`), towards zero.
+[[nodiscard]] inline double scaleRound(Twin a, int k, bool below = false) {
+    if (a.hi == 0.0 || !(std::abs(std::ldexp(a.hi, k)) <= 0x1p-1022)) return std::ldexp(round(a), k);
+    const bool negative = a.hi < 0.0;
+    const double h = std::ldexp(std::abs(a.hi), k + 1074);
+    const double l = std::ldexp(negative ? -a.lo : a.lo, k + 1074);
+    double n = std::nearbyint(h);
+    const double rest = (h - n) + l;  // h - n is exact: |h| < 2^52 and n the integer nearest it
+    const bool odd = std::fmod(n, 2.0) != 0.0;
+    if (rest > 0.5 || (rest == 0.5 && odd && !below)) n += 1.0;
+    else if (rest < -0.5 || (rest == -0.5 && (odd || below))) n -= 1.0;
+    const double out = std::ldexp(n, -1074);
+    return negative ? -out : out;
+}
+
 // Whether a result known to within e (absolute) rounds to one double: the
 // double nearest the true value then, whatever is in the last bits.
 [[nodiscard]] inline bool decided(Twin r, double e, double &out) {
@@ -343,8 +363,8 @@ inline void sinCos(Twin r, Twin &s, Twin &c) {
         double out;
         if (dd::decided(scaled, std::abs(scaled.hi) * fast::kRelativeBound, out)) return out;
     }
-    const dd::Twin e = dd::exp(dd::Twin{x, 0.0}, k);
-    return std::ldexp(dd::round(e), k);
+    const dd::Twin e = dd::exp(dd::Twin{x, 0.0}, k);  // sets k: not in one expression
+    return dd::scaleRound(e, k);
 }
 
 // e^x - 1, kept relative for small x.
@@ -446,8 +466,8 @@ inline void sinCos(Twin r, Twin &s, Twin &c) {
         else if (t.hi < -745.1332191019412) result = 0.0;
         else {
             int k = 0;
-            const double scaled = dd::round(dd::exp(t, k));  // sets k: not in one expression
-            result = std::ldexp(scaled, k);
+            const dd::Twin e = dd::exp(t, k);  // sets k: not in one expression
+            result = dd::scaleRound(e, k);
         }
     }
     return x < 0.0 && y_odd ? -result : result;
@@ -517,6 +537,14 @@ enum class Trig { Sin, Cos, Tan };
         return std::copysign(a, y);
     }
     if (y == 0.0 && x == 0.0) return std::copysign(std::signbit(x) ? dd::round(dd::kPi) : 0.0, y);
+    if (x > 0.0 && std::abs(y) < x * 0x1p-900) {
+        // atan(y/x) is y/x to within 2^-1800 of it, and may be a denormal,
+        // where a quotient of double-doubles is no longer exact: the quotient
+        // of the two significands, scaled and rounded once, just below it.
+        int ey = 0, ex = 0;
+        const double my = std::frexp(y, &ey), mx = std::frexp(x, &ex);
+        return dd::scaleRound(dd::div(dd::Twin{my, 0.0}, dd::Twin{mx, 0.0}), ey - ex, true);
+    }
     return detail::atan2(dd::Twin{y, 0.0}, dd::Twin{x, 0.0});
 }
 
@@ -557,7 +585,7 @@ enum class Trig { Sin, Cos, Tan };
     ax = std::ldexp(ax, scale);
     ay = std::ldexp(ay, scale);
     const dd::Twin sum = dd::add(dd::twoProduct(ax, ax), dd::twoProduct(ay, ay));
-    return std::ldexp(dd::round(dd::sqrt(sum)), -scale);
+    return dd::scaleRound(dd::sqrt(sum), -scale);
 }
 
 [[nodiscard]] inline double hypot(double x, double y, double z) {
@@ -574,7 +602,7 @@ enum class Trig { Sin, Cos, Tan };
     ay = std::ldexp(ay, scale);
     az = std::ldexp(az, scale);
     const dd::Twin sum = dd::add(dd::add(dd::twoProduct(ax, ax), dd::twoProduct(ay, ay)), dd::twoProduct(az, az));
-    return std::ldexp(dd::round(dd::sqrt(sum)), -scale);
+    return dd::scaleRound(dd::sqrt(sum), -scale);
 }
 
 // The double nearest the real cube root. Halley's iteration from a linear

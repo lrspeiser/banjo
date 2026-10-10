@@ -75,6 +75,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground"), str(ROOT / "tools")]
+import portable_math as pm                       # noqa: E402
 
 import build_explore_world as grounds   # noqa: E402  the ground, and standing things on it
 import fracture_lab                     # noqa: E402
@@ -292,9 +293,9 @@ def compose(ground: dict, kind: str, yaw_rad: float = 0., *, inorganic: bool = F
     x, z = ROVER_AT
     # Tipped about its own x to the slope it faces down, so its wheels and its
     # caster all meet the ground.
-    dx,dz=.5*math.sin(yaw_rad),.5*math.cos(yaw_rad)
+    dx,dz=.5*pm.sin(yaw_rad),.5*pm.cos(yaw_rad)
     fall = grounds.surface_at(ground, x+dx, z+dz) - grounds.surface_at(ground, x-dx, z-dz)
-    pitch = math.atan(-fall)
+    pitch = pm.atan(-fall)
     artifact = inorganic_artifact() if inorganic else rover_artifact()
     flat = rigid_assembly.placed(artifact, [x, 0.0, z], yaw_rad, pitch)
     lift = max(grounds.ground_under(ground, lo, hi) - low for low, lo, hi in rigid_assembly.footprint(flat))

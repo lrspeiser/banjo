@@ -31,6 +31,13 @@ from __future__ import annotations
 
 import json
 import math
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 import sys
 import traceback
 import uuid
@@ -942,9 +949,9 @@ def _stands(shape: str, orientation_wxyz: Any) -> dict[str, float] | None:
     def degrees(a: float) -> float:
         return round(math.degrees(a), 1) + 0.0
 
-    return {"x_side_rises_deg": degrees(math.asin(max(-1.0, min(1.0, along[1])))),
-            "z_side_leans_deg": degrees(math.asin(max(-1.0, min(1.0, across[1])))),
-            "x_side_faces_deg": degrees(math.atan2(-along[2], along[0]))}
+    return {"x_side_rises_deg": degrees(pm.asin(max(-1.0, min(1.0, along[1])))),
+            "z_side_leans_deg": degrees(pm.asin(max(-1.0, min(1.0, across[1])))),
+            "x_side_faces_deg": degrees(pm.atan2(-along[2], along[0]))}
 
 
 def tool_remove_object(args: dict[str, Any]) -> dict[str, Any]:
@@ -1073,8 +1080,8 @@ def _turn_matrix(rotation_deg: Any) -> list[list[float]]:
     """A body's authored rotation as a matrix, the way the ENGINE builds it
     (TileImpactScene's rotationQuaternion, qx * qy * qz: z turns first)."""
     x, y, z = (math.radians(float(v)) for v in (rotation_deg or [0.0, 0.0, 0.0]))
-    cx, sx, cy, sy, cz, sz = (math.cos(x), math.sin(x), math.cos(y), math.sin(y),
-                              math.cos(z), math.sin(z))
+    cx, sx, cy, sy, cz, sz = (pm.cos(x), pm.sin(x), pm.cos(y), pm.sin(y),
+                              pm.cos(z), pm.sin(z))
     rx = [[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]]
     ry = [[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]]
     rz = [[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]]
@@ -1094,14 +1101,14 @@ def _rotation_of(orientation_wxyz: Any) -> list[float]:
     r11, r12 = 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)
     r21, r22 = 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)
     cos_y = math.hypot(r00, r01)
-    if cos_y > math.sin(math.radians(SQUARE_DEG)):
-        turn = [math.atan2(-r12, r22), math.atan2(r02, cos_y), math.atan2(-r01, r00)]
+    if cos_y > pm.sin(math.radians(SQUARE_DEG)):
+        turn = [pm.atan2(-r12, r22), pm.atan2(r02, cos_y), pm.atan2(-r01, r00)]
     else:
         # Its own z within half a degree of the room's x -- a thing turned a
         # quarter about the vertical, which is common. x and z are then one turn
         # about the same axis, so all of it is put on x: a pillar laid along z
         # reads [0, -90, 0], not something like [37, -89.99, -37].
-        turn = [math.atan2(r21, r11), math.copysign(math.pi / 2, r02), 0.0]
+        turn = [pm.atan2(r21, r11), math.copysign(math.pi / 2, r02), 0.0]
     return [math.degrees(a) for a in turn]
 
 
@@ -1143,7 +1150,7 @@ def _stood(body: dict[str, Any], stand: str, along: Any) -> tuple[list[float], f
         ha, hb = level(sides[a]), level(sides[b])
         # The heading that keeps whichever of the two is more level where it is:
         # the new x side along `a`, or the new z side along `b`.
-        heading = math.atan2(-ha[1], ha[0]) if size(ha) >= size(hb) else math.atan2(hb[0], hb[1])
+        heading = pm.atan2(-ha[1], ha[0]) if size(ha) >= size(hb) else pm.atan2(hb[0], hb[1])
         return [dims[a], dims[up], dims[b]], math.degrees(heading)
     long = min(longs, key=lambda i: abs(sides[i][1]))
     thin, wide = sorted((i for i in range(3) if i != long), key=lambda i: dims[i])
@@ -1154,7 +1161,7 @@ def _stood(body: dict[str, Any], stand: str, along: Any) -> tuple[list[float], f
         run = level(sides[long]) if size(level(sides[long])) > 1e-3 else level(sides[wide])
     if size(run) < 1e-6:
         run = (1.0, 0.0)
-    return [dims[long], dims[thin], dims[wide]], math.degrees(math.atan2(-run[1], run[0]))
+    return [dims[long], dims[thin], dims[wide]], math.degrees(pm.atan2(-run[1], run[0]))
 
 
 def _half_up(dims: list[float], orientation_wxyz: Any) -> float:
@@ -1174,8 +1181,8 @@ def _under_turned(entry: dict[str, Any], body: dict[str, Any],
     world = _live(entry)
     half_x, half_z = body["dimensions_m"][0] / 2.0, body["dimensions_m"][2] / 2.0
     heading = math.radians(body["rotation_deg"][1])
-    ex = (math.cos(heading), -math.sin(heading))     # its own x side, level
-    ez = (math.sin(heading), math.cos(heading))      # its own z side, level
+    ex = (pm.cos(heading), -pm.sin(heading))     # its own x side, level
+    ez = (pm.sin(heading), pm.cos(heading))      # its own z side, level
     x, _, z = body["center_m"]
     old = world.body(past)
     old_bottom = (old.position_m[1] - _half_up(list(old.dimensions_m), old.orientation_wxyz)
@@ -1247,7 +1254,7 @@ def _settle(entry: dict[str, Any], name: str, put: dict[str, Any]) -> dict[str, 
     it was put, and how far it turned."""
     world = _live(entry)
     heading = math.radians(put["rotation_deg"][1])
-    q_put = [math.cos(heading / 2.0), 0.0, math.sin(heading / 2.0), 0.0]
+    q_put = [pm.cos(heading / 2.0), 0.0, pm.sin(heading / 2.0), 0.0]
     dt, per_look = 1.0 / 240.0, 4
     events: list[dict[str, Any]] = []
     t = still = 0.0
@@ -1261,7 +1268,7 @@ def _settle(entry: dict[str, Any], name: str, put: dict[str, Any]) -> dict[str, 
             return {"stays": False, "after_s": round(t, 3), "why": f"{name} broke as it settled",
                     "events": events}
         q = list(body.orientation_wxyz)
-        spin = (2.0 * math.acos(min(1.0, abs(_dot3(q, last)))) / (per_look * dt)
+        spin = (2.0 * pm.acos(min(1.0, abs(_dot3(q, last)))) / (per_look * dt)
                 if last is not None else math.inf)
         last = q
         speed = math.sqrt(_dot3(body.velocity_m_s, body.velocity_m_s))
@@ -1271,7 +1278,7 @@ def _settle(entry: dict[str, Any], name: str, put: dict[str, Any]) -> dict[str, 
     body = world.body(name)
     q = list(body.orientation_wxyz)
     moved = math.dist(body.position_m, put["center_m"])
-    turned = math.degrees(2.0 * math.acos(min(1.0, abs(_dot3(q, q_put)))))
+    turned = math.degrees(2.0 * pm.acos(min(1.0, abs(_dot3(q, q_put)))))
     w, x, y, z = q
     up_now = [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)]   # its own y side
     long_now = [1 - 2 * (y * y + z * z), 2 * (x * y + w * z), 2 * (x * z - w * y)]  # its own x side
@@ -1279,9 +1286,9 @@ def _settle(entry: dict[str, Any], name: str, put: dict[str, Any]) -> dict[str, 
             "moved_m": round(moved, 4), "turned_deg": round(turned, 2),
             "position_m": [round(v, 4) for v in body.position_m]}
     if put.get("_stand") == "upright":
-        said["long_side_from_vertical_deg"] = round(math.degrees(math.acos(min(1.0, abs(up_now[1])))), 2)
+        said["long_side_from_vertical_deg"] = round(math.degrees(pm.acos(min(1.0, abs(up_now[1])))), 2)
     else:
-        said["long_side_from_level_deg"] = round(math.degrees(math.asin(min(1.0, abs(long_now[1])))), 2)
+        said["long_side_from_level_deg"] = round(math.degrees(pm.asin(min(1.0, abs(long_now[1])))), 2)
     said["stays"] = said["at_rest"] and moved < STAYS_M and turned < STAYS_DEG
     if events:
         said["events"] = events
@@ -1342,7 +1349,7 @@ def tool_turn_object(args: dict[str, Any]) -> dict[str, Any]:
     # "On it" allows the tilt settling may have, STAYS_DEG across the footprint.
     across = 1.8 * max(dims[0], dims[2]) / 2.0
     on = [(a, b) for a, b, h in points
-          if h >= top - (0.01 + across * math.tan(math.radians(STAYS_DEG)))]
+          if h >= top - (0.01 + across * pm.tan(math.radians(STAYS_DEG)))]
     carried, of = len(on), len(points)
     if not (any(a < 0 for a, _ in on) and any(a > 0 for a, _ in on)
             and any(b < 0 for _, b in on) and any(b > 0 for _, b in on)):
@@ -2869,7 +2876,7 @@ def tool_plan_construction(args: dict[str, Any]) -> dict[str, Any]:
     # rather than by the caller: rotation_deg turns z first, then y, so a board
     # [0, yaw, t] lies along the line tilted t degrees, rising along it for t > 0.
     (x0, z0), (ux, uz) = record["start_m"], (record["facing"][0], record["facing"][2])
-    yaw = round(math.degrees(math.atan2(-uz, ux)), 2) + 0.0
+    yaw = round(math.degrees(pm.atan2(-uz, ux)), 2) + 0.0
     return {"construction": name, "kind": record["kind"], "reading": record["reading"],
             "line": {"start_m": record["start_m"], "facing": record["facing"],
                      "a_point_s_m_along_it_and_a_m_to_its_right":
@@ -3258,7 +3265,7 @@ def _drum_warnings(entry: dict[str, Any], args: dict[str, Any]) -> list[str]:
             here = there = None
         if here is not None:
             down = _downward(here[0], made_off, here[1])
-            off_deg = math.degrees(math.acos(max(-1.0, min(1.0, down))))
+            off_deg = math.degrees(pm.acos(max(-1.0, min(1.0, down))))
             if off_deg > 2.0:
                 other = (_downward(there[0], made_off, there[1]) if there is not None else -2.0)
                 said.append(f"the rope leaves {drum} at {[round(v, 3) for v in here[0]]} and runs "
@@ -3266,7 +3273,7 @@ def _drum_warnings(entry: dict[str, Any], args: dict[str, Any]) -> list[str]:
                             f"swings in under where it leaves the drum. What hangs from a drum is "
                             f"made off straight below its rim"
                             + (f"; with winds {-winds} the rope would leave the drum's other side, "
-                               f"{math.degrees(math.acos(max(-1.0, min(1.0, other)))):.0f} degrees "
+                               f"{math.degrees(pm.acos(max(-1.0, min(1.0, other)))):.0f} degrees "
                                f"off" if other > down + 1e-6 else ""))
     return said
 
@@ -5331,7 +5338,7 @@ def _swing_round(entry: dict[str, Any], world: banjo.World, held: str,
     around = _vunit(_vcross(pointing, going), "the swing's axis")
 
     def turned(v: list[float], angle: float) -> list[float]:
-        c, s = math.cos(angle), math.sin(angle)
+        c, s = pm.cos(angle), pm.sin(angle)
         k_cross = _vcross(around, v)
         k_dot = _vdot(around, v)
         return [v[i] * c + k_cross[i] * s + around[i] * k_dot * (1.0 - c) for i in range(3)]
@@ -6416,7 +6423,7 @@ def tool_survey(args: dict[str, Any]) -> dict[str, Any]:
         # The ground's own share; a ball adds its own, and rests here when the
         # sum is more than the tangent of the slope.
         ground = here["rolling_resistance"]
-        steep = math.tan(math.radians(here["slope_deg"]))
+        steep = pm.tan(math.radians(here["slope_deg"]))
         own = {m: e["rolling_resistance"] for m, e in _engine_materials()["materials"].items()}
         said["rolling_resistance"] = ground
         said["a_ball_rests_here"] = {

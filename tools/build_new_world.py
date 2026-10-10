@@ -34,6 +34,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground"), str(ROOT / "tools")]
+import portable_math as pm                       # noqa: E402
 
 import build_explore_world as grounds   # noqa: E402
 import build_mine_room as mine          # noqa: E402
@@ -124,7 +125,7 @@ def compose(ground: dict, world: dict, terrain_seed: int | None = None, *, insta
     if ground.get('surface') in ('cuts','columns'):rover_room.TERRAIN['surface']=ground['surface']
     try:
         here=rover_room.ROVER_AT
-        yaw=math.atan2(vein['at_m'][0]-here[0],vein['at_m'][1]-here[1])
+        yaw=pm.atan2(vein['at_m'][0]-here[0],vein['at_m'][1]-here[1])
         spec = rover_room.compose(ground, "tests-dig",yaw, inorganic=True)
     finally:
         rover_room.ROVER_AT, rover_room.POST_AT, rover_room.TERRAIN = was
@@ -355,14 +356,14 @@ def _standing_footprints(spec):
 
 def _rover_start(ground,intake,vein):
     """An authored starting pose on the working approach, with clear probes."""
-    bearing=math.atan2(vein[0]-intake[0],vein[1]-intake[1])
+    bearing=pm.atan2(vein[0]-intake[0],vein[1]-intake[1])
     candidates=[];surface=grounds.surface_at;step=ground['cell']/2
     for offset in (0.,15.,-15.,30.,-30.):
         a=bearing+math.radians(offset)
         for distance in (2.5,3.,2.,3.5):
-            x,z=intake[0]+distance*math.sin(a),intake[1]+distance*math.cos(a)
+            x,z=intake[0]+distance*pm.sin(a),intake[1]+distance*pm.cos(a)
             if ws.wet_near(ground,x,z,.8):continue
-            yaw=math.atan2(vein[0]-x,vein[1]-z);c,s=math.cos(yaw),math.sin(yaw)
+            yaw=pm.atan2(vein[0]-x,vein[1]-z);c,s=pm.cos(yaw),pm.sin(yaw)
             h=surface(ground,x,z)
             gx=(surface(ground,x+step,z)-surface(ground,x-step,z))/(2*step)
             gz=(surface(ground,x,z+step)-surface(ground,x,z-step))/(2*step)
@@ -409,8 +410,8 @@ def _placement(ground, artifact, preferred, reserved, service_regions):
     """Reserve actual compiled parts; retain reach of each served stockpile."""
     candidates=[preferred]
     for radius in (.5,1.,1.5,2.,2.5,3.,4.,5.,6.):
-        candidates.extend((preferred[0]+radius*math.cos(k*math.tau/24),
-                           preferred[1]+radius*math.sin(k*math.tau/24)) for k in range(24))
+        candidates.extend((preferred[0]+radius*pm.cos(k*math.tau/24),
+                           preferred[1]+radius*pm.sin(k*math.tau/24)) for k in range(24))
     for x,z in candidates:
         flat=rigid_assembly.placed(artifact,[x,0.,z],0.,0.)
         root=next(b for b in flat['bodies'] if b['name']==artifact['root'])['_centre_m']
@@ -557,7 +558,7 @@ def _clear_of(ground: dict, of: tuple[float, float], by: float,
     best, score = None, math.inf
     for turn in range(24):
         a = turn * math.tau / 24.0
-        dx, dz = math.cos(a), math.sin(a)
+        dx, dz = pm.cos(a), pm.sin(a)
         if away_from is not None:
             to = (away_from[0] - of[0], away_from[1] - of[1])
             if dx * to[0] + dz * to[1] > 0.0:      # this side faces the thing

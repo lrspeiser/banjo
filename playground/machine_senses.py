@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import math
+import portable_math as pm
 from typing import Any, Callable
 
 # How far round it the ground is surveyed for the lie of the land and the
@@ -78,7 +79,7 @@ class Context:
 def relative_bearing(heading_deg: float, dx: float, dz: float) -> float:
     """Which way a point lies from a machine's front: degrees, positive to its
     left, in (-180, 180]. Headings are round from +z towards +x."""
-    absolute = math.degrees(math.atan2(dx, dz))
+    absolute = math.degrees(pm.atan2(dx, dz))
     off = absolute - heading_deg
     while off > 180.0:
         off -= 360.0
@@ -98,7 +99,7 @@ def point_ahead(ctx: Context, metres: float, bearing_deg: float = 0.0) -> list[f
     """The point so far ahead of the machine, so many degrees to its left."""
     ax, az = ctx.at()
     a = math.radians(ctx.heading() + bearing_deg)
-    return [round(ax + metres * math.sin(a), 3), round(az + metres * math.cos(a), 3)]
+    return [round(ax + metres * pm.sin(a), 3), round(az + metres * pm.cos(a), 3)]
 
 
 def _ring(ctx: Context) -> list[dict[str, Any]]:
@@ -110,7 +111,7 @@ def _ring(ctx: Context) -> list[dict[str, Any]]:
         for k in range(RING_BEARINGS):
             bearing = k * 360.0 / RING_BEARINGS
             a = math.radians(ctx.heading() + bearing)
-            x, z = ax + r * math.sin(a), az + r * math.cos(a)
+            x, z = ax + r * pm.sin(a), az + r * pm.cos(a)
             s = ctx.survey(x, z)
             if not s.get("on_the_ground", True) and "ground_m" not in s:
                 continue
@@ -185,10 +186,10 @@ def sense_slope(ctx: Context) -> dict[str, Any]:
         low = min(ring, key=lambda p: p["ground_m"])
         high = max(ring, key=lambda p: p["ground_m"])
         out["downhill_bearing_deg"] = low["bearing_deg"]
-        out["downhill_deg"] = round(math.degrees(math.atan2(h0 - low["ground_m"], low["distance_m"])), 1)
+        out["downhill_deg"] = round(math.degrees(pm.atan2(h0 - low["ground_m"], low["distance_m"])), 1)
         out["uphill_bearing_deg"] = high["bearing_deg"]
-        out["uphill_deg"] = round(math.degrees(math.atan2(high["ground_m"] - h0, high["distance_m"])), 1)
-        out["ahead_rises_deg"] = round(math.degrees(math.atan2(
+        out["uphill_deg"] = round(math.degrees(pm.atan2(high["ground_m"] - h0, high["distance_m"])), 1)
+        out["ahead_rises_deg"] = round(math.degrees(pm.atan2(
             next((p["ground_m"] for p in ring if abs(p["bearing_deg"]) < 1.0), h0) - h0, RING_M[0])), 1)
     return out
 

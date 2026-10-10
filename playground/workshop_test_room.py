@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import math
+import portable_math as pm
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -150,8 +151,8 @@ def _turned(tilt_deg: Any) -> list[float]:
     out = [1.0, 0.0, 0.0, 0.0]
     for axis, degrees in reversed(list(enumerate(tilt_deg))):
         half = math.radians(float(degrees)) / 2.0
-        turn = [math.cos(half), 0.0, 0.0, 0.0]
-        turn[axis + 1] = math.sin(half)
+        turn = [pm.cos(half), 0.0, 0.0, 0.0]
+        turn[axis + 1] = pm.sin(half)
         w1, x1, y1, z1 = turn
         w2, x2, y2, z2 = out
         out = [w1*w2 - x1*x2 - y1*y2 - z1*z2,
@@ -468,7 +469,7 @@ def _turn_deg(a, b) -> float:
         n = math.sqrt(sum(v * v for v in q)) or 1.0
         return [v / n for v in q]
     dot = abs(sum(x * y for x, y in zip(unit(a), unit(b))))
-    return math.degrees(2.0 * math.acos(max(-1.0, min(1.0, dot))))
+    return math.degrees(2.0 * pm.acos(max(-1.0, min(1.0, dot))))
 
 
 class Bench:

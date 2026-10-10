@@ -1388,7 +1388,7 @@ def where_the_person_is(raw: Any) -> dict[str, Any] | None:
     standing, facing = point(raw.get("standing_m")), point(raw.get("facing"))
     if standing is None or facing is None:
         return None
-    level = (facing[0] ** 2 + facing[2] ** 2) ** 0.5
+    level = math.sqrt(facing[0] * facing[0] + facing[2] * facing[2])
     if level < 1e-6:
         return None
     fx, fz = facing[0] / level, facing[2] / level

@@ -11,7 +11,14 @@ class; silently tearing existing relationships apart is refused now.
 from __future__ import annotations
 
 from copy import deepcopy
-from math import acos, isfinite, sqrt
+from math import isfinite, sqrt
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    from portable_math import acos
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    from portable_math import acos
 from typing import Any
 
 from mcp.product_graph import (ProductComponent, ProductGraph, ProductInterface,

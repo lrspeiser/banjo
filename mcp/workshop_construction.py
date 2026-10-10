@@ -23,7 +23,14 @@ where two parts meet, over what area, and about which axis.
 from __future__ import annotations
 
 from copy import deepcopy
-from math import asin, atan2, cos, degrees, isfinite, pi, radians, sin, sqrt
+from math import degrees, isfinite, pi, radians, sqrt
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    from portable_math import asin, atan2, cos, sin
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    from portable_math import asin, atan2, cos, sin
 from typing import Any, Iterable
 
 from mcp.workshop import ComponentLibrary, WirePart, WorkshopDesign

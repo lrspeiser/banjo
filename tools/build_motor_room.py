@@ -42,6 +42,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground"), str(ROOT / "tools")]
+import portable_math as pm                       # noqa: E402
 
 import fracture_lab       # noqa: E402
 import live_session       # noqa: E402
@@ -136,7 +137,7 @@ def compose() -> dict:
 
 def _spin(q):
     w, x, y, z = q
-    return math.degrees(math.atan2(2 * (w * y + z * x), 1 - 2 * (y * y + z * z)))
+    return math.degrees(pm.atan2(2 * (w * y + z * x), 1 - 2 * (y * y + z * z)))
 
 
 def watch(engine: Path, validated: dict) -> list[str]:

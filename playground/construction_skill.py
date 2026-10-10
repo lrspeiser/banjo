@@ -14,6 +14,7 @@ fastening.
 """
 import hashlib
 import math
+import portable_math as pm
 import time
 
 from mcp import progression
@@ -29,7 +30,7 @@ FASTENED_HELD_S = 2.0
 def _tilt_deg(body):
     w, x, y, z = body.get('orientation_wxyz') or [1, 0, 0, 0]
     up_y = 1 - 2 * (x * x + z * z)
-    return math.degrees(math.acos(max(-1.0, min(1.0, up_y))))
+    return math.degrees(pm.acos(max(-1.0, min(1.0, up_y))))
 
 
 def demonstrated(app, owner, project):

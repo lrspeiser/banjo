@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import logging
 import json
 import math
+import portable_math as pm
 import os
 from pathlib import Path
 import re
@@ -2880,7 +2881,7 @@ def _round_target(now,step):
 def _rotated(p,axis,at,angle):
     """p turned by angle (radians, right-handed) about the line through at along axis."""
     r=[p[k]-at[k] for k in range(3)]
-    c,s=math.cos(angle),math.sin(angle)
+    c,s=pm.cos(angle),pm.sin(angle)
     cross=[axis[1]*r[2]-axis[2]*r[1],axis[2]*r[0]-axis[0]*r[2],axis[0]*r[1]-axis[1]*r[0]]
     along=sum(axis[k]*r[k] for k in range(3))
     return [at[k]+r[k]*c+cross[k]*s+axis[k]*along*(1-c) for k in range(3)]

@@ -377,12 +377,12 @@ class _Model:
         q = moved[6 * frame["a"]:6 * frame["a"] + 6] + moved[6 * frame["b"]:6 * frame["b"] + 6]
         gap = [sum(r * x for r, x in zip(row, q)) for row in frame["rows"]]
         force = [k * g for k, g in zip(list(frame["k_lin"]) + list(frame["k_rot"]), gap)]
-        across = sqrt(force[1] ** 2 + force[2] ** 2)
+        across = sqrt(force[1] * force[1] + force[2] * force[2])
         if joint["interface"]["form"] == "planar":
             return {"axial_n": frame["sign"] * force[0], "shear_n": across, "torsion_n_m": force[3],
                     "moment_u_n_m": force[4], "moment_v_n_m": force[5]}
         return {"axial_n": force[0], "shear_n": across, "torsion_n_m": force[3],
-                "prying_n_m": sqrt(force[4] ** 2 + force[5] ** 2)}
+                "prying_n_m": sqrt(force[4] * force[4] + force[5] * force[5])}
 
 
 def _finite3(value: Any, what: str) -> Vec:
@@ -554,7 +554,7 @@ def _in_line(points: list[tuple[float, float]]) -> tuple[float, float] | None:
     far = max(((a, b) for a in points for b in points),
               key=lambda pair: (pair[0][0] - pair[1][0]) ** 2 + (pair[0][1] - pair[1][1]) ** 2)
     along = (far[1][0] - far[0][0], far[1][1] - far[0][1])
-    length = sqrt(along[0] ** 2 + along[1] ** 2)
+    length = sqrt(along[0] * along[0] + along[1] * along[1])
     if length < 1e-9:
         return (1.0, 0.0)
     along = (along[0] / length, along[1] / length)

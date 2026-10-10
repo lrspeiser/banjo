@@ -14,7 +14,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-from math import ceil, cos, floor, isfinite, radians, sin, sqrt
+from math import ceil, floor, isfinite, radians, sqrt
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    from portable_math import cos, sin
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    from portable_math import cos, sin
 from typing import Any
 
 from mcp.workshop import WorkshopDesign, WirePart, _rotate

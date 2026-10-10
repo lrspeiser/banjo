@@ -6,7 +6,14 @@ bond graph. Unsupported gaps/joints must be validated in a detailed trial.
 """
 from __future__ import annotations
 
-from math import atan2, degrees, hypot, isfinite
+from math import degrees, hypot, isfinite
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    from portable_math import atan2
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    from portable_math import atan2
 from typing import Any
 
 from mcp import engine_materials

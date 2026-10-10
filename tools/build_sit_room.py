@@ -34,6 +34,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground"), str(ROOT / "tools")]
+import portable_math as pm                       # noqa: E402
 
 import fracture_lab       # noqa: E402
 import live_session       # noqa: E402
@@ -148,7 +149,7 @@ def compose() -> dict:
     bodies += rigid_assembly.scene_bodies(stool)
 
     away = math.hypot(sx - rx, sz - rz)
-    off = math.degrees(math.atan2(sx - rx, sz - rz))
+    off = math.degrees(pm.atan2(sx - rx, sz - rz))
     print(f"  the robot at ({rx:+.2f}, {rz:+.2f}), the stool {away:.2f} m off and {off:.0f} degrees to its left; "
           f"it comes within {CLOSE_M:.2f} m and turns its torso to {POSE_DEG:.0f} degrees")
 

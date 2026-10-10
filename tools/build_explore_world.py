@@ -48,6 +48,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "playground")]
+import portable_math as pm                       # noqa: E402
 
 import fracture_lab            # noqa: E402
 import live_session            # noqa: E402
@@ -641,7 +642,7 @@ def across_the_slope(ground: dict, at) -> float:
     if math.hypot(gx, gz) < 0.005:
         return 0.0
     # Its own x turned by yaw about y is (cos yaw, 0, -sin yaw).
-    return math.atan2(-gz, gx)
+    return pm.atan2(-gz, gx)
 
 
 # --------------------------------------------------------------------------
@@ -677,7 +678,7 @@ def _part_gap(body: dict, part: dict, ground: dict) -> float:
             else:                        # standing on end: its whole rim is lowest
                 for i in range(16):
                     a = 2 * math.pi * i / 16
-                    points.append([rim[0] + d[0] / 2 * math.cos(a), rim[1], rim[2] + d[0] / 2 * math.sin(a)])
+                    points.append([rim[0] + d[0] / 2 * pm.cos(a), rim[1], rim[2] + d[0] / 2 * pm.sin(a)])
     else:
         for corner in itertools.product((-d[0] / 2, d[0] / 2), (-d[1] / 2, d[1] / 2), (-d[2] / 2, d[2] / 2)):
             local = [c[k] + v for k, v in enumerate(_turn(own, corner))]
@@ -712,7 +713,7 @@ def lowest_gap(body: dict, ground: dict, cell: float) -> float:
 
 def lean_deg(body: dict) -> float:
     """How far the body's own up has turned from straight up."""
-    return math.degrees(math.acos(max(-1.0, min(1.0, _turn(body["orientation_wxyz"],
+    return math.degrees(pm.acos(max(-1.0, min(1.0, _turn(body["orientation_wxyz"],
                                                             (0.0, 1.0, 0.0))[1]))))
 
 

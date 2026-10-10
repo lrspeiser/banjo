@@ -5,6 +5,7 @@ it on its own joints (inventory_room.items_of): its other parts are never taken 
 somewhere to put it or for the ground under it, and its weight is all of it."""
 from __future__ import annotations
 import math
+import portable_math as pm
 import interaction_points
 import inventory
 import world_chat
@@ -23,7 +24,7 @@ def rotate(q, v):
 
 def yaw_of(body):
     x, _, z = rotate(body.get("orientation_wxyz", [1,0,0,0]), [1,0,0])
-    return math.degrees(math.atan2(-z, x))
+    return math.degrees(pm.atan2(-z, x))
 
 
 def mul(a, b):
@@ -273,7 +274,7 @@ def resolve(app, body):
         if other is None or other["name"] in own or other.get("parked"):
             continue
         q = other.get("orientation_wxyz", [1,0,0,0])
-        if rotate(q, [0,1,0])[1] < math.cos(math.radians(15)):
+        if rotate(q, [0,1,0])[1] < pm.cos(math.radians(15)):
             continue  # tipped receptacles cannot promise an upright receiving area
         for point in record["points"]:
             if point["kind"] not in ("surface", "container"):
@@ -291,8 +292,8 @@ def resolve(app, body):
             # Item aligns to point yaw. Project its upright footprint into the
             # receiving body's frame; declared space does not enlarge geometry.
             angle = math.radians(point.get("yaw_deg", 0))
-            need = [abs(math.cos(angle))*dims[0]+abs(math.sin(angle))*dims[2],
-                    dims[1], abs(math.sin(angle))*dims[0]+abs(math.cos(angle))*dims[2]]
+            need = [abs(pm.cos(angle))*dims[0]+abs(pm.sin(angle))*dims[2],
+                    dims[1], abs(pm.sin(angle))*dims[0]+abs(pm.cos(angle))*dims[2]]
             if any(need[k] > size[k]+1e-6 for k in range(3)):
                 continue
             if whole_kg > point.get("max_mass_kg", math.inf):
@@ -413,7 +414,7 @@ def execute(app, name, person, stroke, expected=None, speed=.8, direct=False):
     # on a 0.28 m base -- which tips at about 9 -- was let go leaning, and fell
     # over towards the person a second later.
     dims = current().get("dimensions_m") or [1.0, 1.0, 1.0]
-    tips = math.atan2(min(dims[0], dims[2]) / 2, max(dims[1] / 2, 1e-3))
+    tips = pm.atan2(min(dims[0], dims[2]) / 2, max(dims[1] / 2, 1e-3))
     # On a slope less of that is left: what tips it from resting square there
     # takes a lift of R (1 - cos((1 - used) tips)), which shrinks as the square
     # of what the slope leaves, while what a let-go adds does not -- the swing
@@ -440,13 +441,13 @@ def execute(app, name, person, stroke, expected=None, speed=.8, direct=False):
     while time.monotonic() < until:
         b = current()
         q = unit(b["orientation_wxyz"])
-        aligned = abs(sum(q[k]*facing[k] for k in range(4))) >= math.cos(half_turn)
+        aligned = abs(sum(q[k]*facing[k] for k in range(4))) >= pm.cos(half_turn)
         # And STILL: let go of a thing that is still swinging and it goes on
         # swinging. The hand reports how fast the point it grips is moving;
         # the turn is compared across two looks 30 ms apart.
         grip = live_session.current_hand(session).get("grip_velocity_m_s") or [0.0, 0.0, 0.0]
         still = math.hypot(*grip) < .1 * left and was is not None and \
-            abs(sum(q[k]*was[k] for k in range(4))) >= math.cos(.004 * left)
+            abs(sum(q[k]*was[k] for k in range(4))) >= pm.cos(.004 * left)
         was = q
         if math.dist(b["position_m"], end) <= .05 and aligned and still:
             swinging = [p for p in session.state.get("bodies", []) if p.get("name") in rest and

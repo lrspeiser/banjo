@@ -9,6 +9,7 @@ from copy import deepcopy
 import json
 import logging
 import math
+import portable_math as pm
 import os
 import threading
 import time
@@ -34,7 +35,7 @@ CADENCE_S = .8
 # Where a player tries to set a new thing down, nearest first: three
 # distances in eight directions. A preview refuses a spot where the thing
 # would tip over, so on sloping valleys six spots were often all refused.
-PLACEMENT_SPOTS=tuple((round(r*math.cos(a*math.pi/4),2),round(r*math.sin(a*math.pi/4),2))
+PLACEMENT_SPOTS=tuple((round(r*pm.cos(a*math.pi/4),2),round(r*pm.sin(a*math.pi/4),2))
                       for r in (2.,3.,4.) for a in range(8))
 
 class Manager:
@@ -205,7 +206,7 @@ class Manager:
                     if gap<.4:break
                     speed=min(1.4,gap/.5)
                     reply=self._post(profile,'/api/world/player/walk',{'session':sid,
-                        'velocity_m_s':[speed*dx/gap,0,speed*dz/gap],'heading_rad':math.atan2(dx,dz)},cookie)
+                        'velocity_m_s':[speed*dx/gap,0,speed*dz/gap],'heading_rad':pm.atan2(dx,dz)},cookie)
                     self._post(profile,'/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':48},cookie)
                     native=reply.get('native') or {}
                     profile['native_at']=native.get('position_m') or at

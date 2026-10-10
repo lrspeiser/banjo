@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import heapq
 import math
+import portable_math as pm
 from itertools import product
 
 from machine_ports import _turn
@@ -191,7 +192,7 @@ def waypoint(ctx, target, arrival=(0.,0.), avoid_workings=True):
                 # secant plane across its occupied radius; native pitch and
                 # drop probes still veto the actual drive on sharp curvature.
                 heights=[float(s['ground_m']) for s in samples]
-                grade=math.degrees(math.atan(math.hypot(heights[2]-heights[1],
+                grade=math.degrees(pm.atan(math.hypot(heights[2]-heights[1],
                                                         heights[4]-heights[3])/(2*radius)))
                 # The bound is on where it may GO, not on the ground it already
                 # stands on. A final arrival is not graded, so a rover sent to
@@ -221,7 +222,7 @@ def waypoint(ctx, target, arrival=(0.,0.), avoid_workings=True):
         center=terrain(node);gradient=(center or {}).get('ground_gradient_xz')
         ok=center is not None
         if ok and gradient:
-            delta=heading-initial_heading;c=math.cos(delta);s=math.sin(delta)
+            delta=heading-initial_heading;c=pm.cos(delta);s=pm.sin(delta)
             for ox,oz,limit in rear_offsets if reverse else probe_offsets:
                 dx=ox*c+oz*s;dz=-ox*s+oz*c
                 observed=terrain((node[0]+dx/CELL_M,node[1]+dz/CELL_M))
@@ -262,7 +263,7 @@ def waypoint(ctx, target, arrival=(0.,0.), avoid_workings=True):
     start_clear=clear(start)
     retreat=None
     if len(rear)>=2 and not any(s.get('sees') for s in rear):
-        dx,dz=-math.sin(initial_heading),-math.cos(initial_heading)
+        dx,dz=-pm.sin(initial_heading),-pm.cos(initial_heading)
         if all(clear((dx*k*.25/CELL_M,dz*k*.25/CELL_M)) and
                clear_pose((dx*k*.25/CELL_M,dz*k*.25/CELL_M),initial_heading,reverse=True)
                for k in range(0 if start_clear else 1,5)):
@@ -276,7 +277,7 @@ def waypoint(ctx, target, arrival=(0.,0.), avoid_workings=True):
                 'rejections':rejections,'radius_m':radius,'surveys':queries}
     # Heading is part of a route state: arrival from one direction can be safe
     # while a turn at the same location would sweep a probe over a drop.
-    directions=[(dx,dz,math.atan2(dx,dz)) for dx,dz in product((-1,0,1),repeat=2) if dx or dz]
+    directions=[(dx,dz,pm.atan2(dx,dz)) for dx,dz in product((-1,0,1),repeat=2) if dx or dz]
     begin=(*start,-1)
     def heading(state):return initial_heading if state[2]==-1 else directions[state[2]][2]
     costs={begin:0.};parents={};queue=[(remaining(start),0.,begin)];best=begin
@@ -314,7 +315,7 @@ def waypoint(ctx, target, arrival=(0.,0.), avoid_workings=True):
         # An approach ask inside its arrival radius would brake immediately,
         # erasing that required loop/turn and replanning forever at the origin.
         if math.hypot(*candidate)*CELL_M<=WAYPOINT_NEAR_M+.05:continue
-        if leg_clear(start,candidate,initial_heading,math.atan2(*candidate)):
+        if leg_clear(start,candidate,initial_heading,pm.atan2(*candidate)):
             chosen=candidate;break
     destination=list(point(chosen))
     final=remaining(chosen)<=CELL_M/2
@@ -330,7 +331,7 @@ def waypoint(ctx, target, arrival=(0.,0.), avoid_workings=True):
         reach=max(0.,arrival[1]-FINAL_NEAR_M)
         endpoint=[target[0]+dx*reach/distance,target[1]+dz*reach/distance] if distance>reach else destination
         node=((endpoint[0]-at[0])/CELL_M,(endpoint[1]-at[1])/CELL_M)
-        if leg_clear(start,node,initial_heading,math.atan2(node[0],node[1])):
+        if leg_clear(start,node,initial_heading,pm.atan2(node[0],node[1])):
             destination=endpoint;near=FINAL_NEAR_M
         else:final=False
     if final and arrival==(0.,0.):destination=list(target)
@@ -411,7 +412,7 @@ def map_route(ctx, target, arrival=(0.,0.)):
             # from the cells either side; a missing neighbour is not graded.
             h=[survey(i+di,j+dj) for di,dj in ((1,0),(-1,0),(0,1),(0,-1))]
             if all(n is not None and 'ground_m' in n for n in h):
-                grade=math.degrees(math.atan(math.hypot(float(h[0]['ground_m'])-float(h[1]['ground_m']),
+                grade=math.degrees(pm.atan(math.hypot(float(h[0]['ground_m'])-float(h[1]['ground_m']),
                                                         float(h[2]['ground_m'])-float(h[3]['ground_m']))/(2*c)))
                 good=grade<=climb
         if good:

@@ -20,7 +20,14 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from itertools import product
 from json import dumps
-from math import acos, atan2, cos, degrees, hypot, isfinite, radians, sin, sqrt, tan
+from math import degrees, hypot, isfinite, radians, sqrt
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    from portable_math import acos, atan2, cos, sin, tan
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    from portable_math import acos, atan2, cos, sin, tan
 from typing import Any, Callable, Iterable
 
 from mcp import engine_materials

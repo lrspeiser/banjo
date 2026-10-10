@@ -1089,6 +1089,10 @@ if(BANJO_BUILD_TESTS)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fp_model_audit_tests.py)
     set_tests_properties(banjo_fp_model_audit_tests PROPERTIES ENVIRONMENT
         "BANJO_FP_FIXTURE_GENERATOR=${CMAKE_GENERATOR};BANJO_FP_FIXTURE_PLATFORM=${CMAKE_GENERATOR_PLATFORM};BANJO_FP_FIXTURE_CXX=${CMAKE_CXX_COMPILER};BANJO_FP_FIXTURE_REQUIRED=1")
+    # The game's Python has the engine's transcendental functions too
+    # (playground/portable_math.py), held to the engine's own table.
+    add_test(NAME banjo_portable_math_py_tests
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/portable_math_py_tests.py)
 
     add_executable(banjo_material_tests tests/material_prediction_tests.cpp)
     target_link_libraries(banjo_material_tests PRIVATE banjo_core)

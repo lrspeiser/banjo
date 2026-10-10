@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import portable_math as pm
 import run_account
 import re
 import subprocess
@@ -2254,7 +2255,7 @@ def _rotate(v: list[float], degrees: list[float], inverse: bool = False) -> list
     p = list(v)
     for axis in order:
         a = math.radians(-degrees[axis] if inverse else degrees[axis])
-        c, s = math.cos(a), math.sin(a)
+        c, s = pm.cos(a), pm.sin(a)
         if axis == 0:
             p = [p[0], p[1] * c - p[2] * s, p[1] * s + p[2] * c]
         elif axis == 1:

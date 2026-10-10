@@ -55,6 +55,7 @@ WHAT IS HONESTLY NOT HERE.
 from __future__ import annotations
 
 import math
+import portable_math as pm
 import random
 from dataclasses import dataclass
 from typing import Any, Iterable
@@ -485,7 +486,7 @@ def prove_it_is_only_just_enough(goods_block: dict[str, Any], *,
 # (docs/rover-grades.md). Leave one degree for the route's sampled terrain.
 # This graph remains a placement filter: actual body/ground routes still run
 # in the engine, and payload, traction and all generated grades are not certified.
-CLIMB = math.tan(math.radians(11.0))
+CLIMB = pm.tan(math.radians(11.0))
 
 #: How flat the ground has to be over a deposit before a machine can work it:
 #: the rise and fall across the whole patch, in metres.
@@ -770,8 +771,8 @@ def place(ground: dict[str, Any], seed: int, *,
     # because the substance is in the ground either way.
     def heaps_at(at: tuple[float, float]) -> list[tuple[float, float]]:
         """Where a yard's two heaps go, either side of its machine."""
-        return [(at[0] + YARD_M * math.cos(n * math.tau / 2.0),
-                 at[1] + YARD_M * math.sin(n * math.tau / 2.0)) for n in (0, 1)]
+        return [(at[0] + YARD_M * pm.cos(n * math.tau / 2.0),
+                 at[1] + YARD_M * pm.sin(n * math.tau / 2.0)) for n in (0, 1)]
 
     def a_works_yard(works: Works, near: tuple[float, float]) -> bool:
         # BOTH HEAPS HAVE TO BE DRIVABLE TO, not just the machine's own spot.
@@ -793,7 +794,7 @@ def place(ground: dict[str, Any], seed: int, *,
         taken.append((at[0], at[1], 0.5))
         for n, what in enumerate((f"{works.machine} intake", f"{works.machine} output")):
             a = n * math.tau / 2.0
-            x, z = at[0] + YARD_M * math.cos(a), at[1] + YARD_M * math.sin(a)
+            x, z = at[0] + YARD_M * pm.cos(a), at[1] + YARD_M * pm.sin(a)
             taken.append((x, z, YARD_PILE_M))
             stockpiles.append({"name": what, "at_m": [round(x, 2), round(z, 2)],
                                "radius_m": YARD_PILE_M})
@@ -819,7 +820,7 @@ def place(ground: dict[str, Any], seed: int, *,
     for n, (name, extra) in enumerate((("smelter intake", {}),
                                        ("smelter output", {}))):
         a = n * math.tau / 2.0
-        x, z = middle[0] + YARD_M * math.cos(a), middle[1] + YARD_M * math.sin(a)
+        x, z = middle[0] + YARD_M * pm.cos(a), middle[1] + YARD_M * pm.sin(a)
         taken.append((x, z, YARD_PILE_M))
         stockpiles.append({"name": name, "at_m": [round(x, 2), round(z, 2)],
                            "radius_m": YARD_PILE_M, **extra})

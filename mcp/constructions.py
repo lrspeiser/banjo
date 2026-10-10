@@ -44,6 +44,13 @@ the thing it failed.
 from __future__ import annotations
 
 import math
+try:  # correctly rounded: the same bits on every platform (playground/portable_math.py)
+    import portable_math as pm
+except ModuleNotFoundError:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.append(str(_Path(__file__).resolve().parents[1] / "playground"))
+    import portable_math as pm
 from typing import Any, Callable
 
 # What each kind of structure must do: the measurements it is held to, and its
@@ -200,9 +207,9 @@ def plan(existing: dict[str, Any] | None, args: dict[str, Any], names_now: set[s
         requirements["rise_m"] = round(rise, 3)
     if "gentle" in checks:
         steepest = shape["steepest_deg"]
-        if length < rise / math.tan(math.radians(steepest)) - 1e-6:
+        if length < rise / pm.tan(math.radians(steepest)) - 1e-6:
             raise ValueError(f"an access ramp rising {rise:g} m is at least "
-                             f"{rise / math.tan(math.radians(steepest)):.2f} m long, to be no steeper "
+                             f"{rise / pm.tan(math.radians(steepest)):.2f} m long, to be no steeper "
                              f"than one in eight")
         requirements["steepest_deg"] = steepest
     if "above" in checks:
@@ -361,19 +368,19 @@ def design(record: dict[str, Any], ground_at: Callable[[float, float], float],
         """Boards laid end to end from one point of the profile to the next,
         each tilted to follow it, none longer than longest_m, 1 cm apart."""
         span, rise = to_s - from_s, to_y - from_y
-        angle = math.degrees(math.atan2(rise, span))
+        angle = math.degrees(pm.atan2(rise, span))
         run = math.hypot(span, rise)
         pieces = max(1, math.ceil((run + 0.01) / longest_m))
         cut = _whole((run - 0.01 * (pieces - 1)) / pieces, cell_m)
-        yaw = round(math.degrees(math.atan2(-uz, ux)), 4)
-        along = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+        yaw = round(math.degrees(pm.atan2(-uz, ux)), 4)
+        along = pm.cos(math.radians(angle)), pm.sin(math.radians(angle))
         s, y = from_s, from_y
         for i in range(pieces):
             mid_s, mid_y = s + along[0] * cut / 2.0, y + along[1] * cut / 2.0
-            x, z = at(mid_s + math.sin(math.radians(angle)) * thick / 2.0)
+            x, z = at(mid_s + pm.sin(math.radians(angle)) * thick / 2.0)
             parts.append({"name": f"{name} {i + 1}" if pieces > 1 else name,
                           "size_m": [round(cut, 4), thick, width],
-                          "position_m": [round(x, 4), round(mid_y - math.cos(math.radians(angle)) * thick / 2.0, 4),
+                          "position_m": [round(x, 4), round(mid_y - pm.cos(math.radians(angle)) * thick / 2.0, 4),
                                          round(z, 4)],
                           "rotation_deg": [0.0, yaw, round(angle, 3)]})
             s, y = s + along[0] * (cut + 0.01), y + along[1] * (cut + 0.01)
@@ -412,15 +419,15 @@ def design(record: dict[str, Any], ground_at: Callable[[float, float], float],
             takeoff = max(1.5 * factor, 0.2 * length) if "takeoff" in shape["checks"] else 0.0
             profile = [(0.0, start), (length - takeoff, low)]
             if takeoff:
-                profile.append((length, low + takeoff * math.tan(math.radians(req["takeoff_deg"] * 2.0))))
+                profile.append((length, low + takeoff * pm.tan(math.radians(req["takeoff_deg"] * 2.0))))
         for i, ((from_s, from_y), (to_s, to_y)) in enumerate(zip(profile, profile[1:]), 1):
             board("deck" if len(profile) == 2 else ("run" if i == 1 else "takeoff"), from_s, from_y, to_s, to_y)
 
         def surface(s: float) -> float:
             for (a_s, a_y), (b_s, b_y) in zip(profile, profile[1:]):
                 if a_s - 1e-9 <= s <= b_s + 1e-9:
-                    return a_y + (b_y - a_y) * (s - a_s) / max(b_s - a_s, 1e-9) - thick / math.cos(
-                        math.atan2(b_y - a_y, b_s - a_s))
+                    return a_y + (b_y - a_y) * (s - a_s) / max(b_s - a_s, 1e-9) - thick / pm.cos(
+                        pm.atan2(b_y - a_y, b_s - a_s))
             return profile[-1][1] - thick
         props("post", surface, 0.0, length)
     elif kind == "staircase":
@@ -434,7 +441,7 @@ def design(record: dict[str, Any], ground_at: Callable[[float, float], float],
         while step_rise * count < rise - 1e-9:
             step_rise += cell_m
         going = _whole(max(req["length_m"] / count, shape["least_going_m"] * factor + cell_m), cell_m)
-        yaw = round(math.degrees(math.atan2(-uz, ux)), 4)
+        yaw = round(math.degrees(pm.atan2(-uz, ux)), 4)
         for k in range(count):
             s = going * (k + 0.5)
             top = base + step_rise * (k + 1)
@@ -534,7 +541,7 @@ def _steepest(on: list[float], height: dict[float, float], window: float, first:
     while True:
         span = [s for s in on if begin - 1e-9 <= s <= begin + window + 1e-9]
         if len(span) >= 3:
-            degrees = abs(math.degrees(math.atan(_slope(span, height))))
+            degrees = abs(math.degrees(pm.atan(_slope(span, height))))
             if degrees > steepest:
                 steepest, where = degrees, begin
         if begin + window >= last:
@@ -694,7 +701,7 @@ def check(record: dict[str, Any], world: Any, ground_at: Callable[[float, float]
                drop >= wanted - 0.02 * factor)
     if "takeoff" in checks:
         tail = [s for s in on if s >= last - TAKEOFF_OVER_M * factor - 1e-9]
-        degrees = math.degrees(math.atan(_slope(tail, height)))
+        degrees = math.degrees(pm.atan(_slope(tail, height)))
         result("takeoff", f"rising at least {req['takeoff_deg']:g} degrees over its last metre",
                f"{'rising' if degrees >= 0 else 'falling'} {abs(degrees):.1f} degrees",
                degrees >= req["takeoff_deg"] - 0.2)

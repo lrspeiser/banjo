@@ -307,6 +307,14 @@ const Row kRows[] = {
     {"cbrt", -0x1.b021291bf0b84p+7, 0x0.0p+0, -0x1.8009d30a4d1f9p+2},
     {"cbrt", -0x1.9be5d9edf5668p+6, 0x0.0p+0, -0x1.2bfa7105415bcp+2},
     {"cbrt", 0x1.0a79658de3c3ep-12, 0x0.0p+0, 0x1.0371e0f61903dp-4},
+    // Denormal results, the exact value rounded once to the 2^-1074 grid
+    // (rounding to 53 bits first, then to the grid, misses some by one).
+    {"exp", -0x1.627524676699dp+9, 0x0.0p+0, 0x0.98630a3db26efp-1022},
+    {"pow", 0x1.486c959d021e7p-1, 0x1.9a6c869b2cbc7p+10, 0x0.000000051f3d7p-1022},
+    {"hypot", -0x0.00086dd27e4bfp-1022, -0x0.0042d89f30d2fp-1022, 0x0.0043602189415p-1022},
+    {"atan2", -0x0.00eead7860983p-1022, 0x1.1777ea1e9e964p+0, -0x0.00daa27648739p-1022},
+    // y/x exactly halfway between two denormals; atan2 is just below it.
+    {"atan2", 0x0.0000000000003p-1022, 0x1.0000000000000p+1, 0x0.0000000000001p-1022},
 };
 
 double evaluate(const Row &r) {

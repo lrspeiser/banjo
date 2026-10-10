@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 import math
+import portable_math as pm
 from mcp import progression, interaction_profiles, resource_previews
 import machine_witness
 import workshop_library
@@ -23,11 +24,11 @@ def _dry_ground(app, at, use=None, pose=None):
         at=pose['eyes_m']
         least,most=use['reach_m']
         face=pose.get('facing') or [0,0,1]
-        heading=math.atan2(face[0],face[2])
+        heading=pm.atan2(face[0],face[2])
         # Prefer a target already inside this tool's real reach, in front of
         # the player's current pose. The carried body's centre can be at the
         # feet and is not where the person should be told to dig.
-        offsets=[(radius*math.sin(heading+angle),radius*math.cos(heading+angle))
+        offsets=[(radius*pm.sin(heading+angle),radius*pm.cos(heading+angle))
                  for radius in ((least+most)/2,least+(most-least)/4,most+1.)
                  for angle in (0,math.pi/4,-math.pi/4,math.pi/2,-math.pi/2,
                                3*math.pi/4,-3*math.pi/4,math.pi)]

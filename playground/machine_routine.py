@@ -51,6 +51,7 @@ from copy import deepcopy
 import hashlib
 import json
 import math
+import portable_math as pm
 from typing import Any
 
 import machine_senses as senses
@@ -549,7 +550,7 @@ class Routine:
             if clear and ctx.terrain_declared:
                 ground=ctx.survey(*at)
                 gradient=ground.get('ground_gradient_xz')
-                slope=(math.degrees(math.atan(math.hypot(*gradient))) if gradient else ground.get('slope_deg'))
+                slope=(math.degrees(pm.atan(math.hypot(*gradient))) if gradient else ground.get('slope_deg'))
                 clear=(ground.get('on_the_ground') is True and slope is not None
                        and float(slope)<=float(program.get('climb_deg') or 0)
                        and float((ground.get('water') or {}).get('depth_m') or 0)<=.003)
