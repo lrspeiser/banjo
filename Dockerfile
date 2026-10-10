@@ -24,10 +24,11 @@ RUN cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DBANJO_BUILD_LAB=OFF -DBANJO_BUILD_HEADLESS=ON \
       -DBANJO_BUILD_PRECOMPUTE=OFF -DBANJO_BUILD_TESTS=OFF \
  && cmake --build build/linux --parallel "${BUILD_JOBS}" \
-      --target banjo_platform_cli banjo_c banjo_live_world_run banjo_voxel_world_run banjo_coupled_cpu \
+      --target banjo_platform_cli banjo_c banjo_live_world_run banjo_voxel_world_run banjo_coupled_cpu banjo_thermal_fields banjo_mechanisms_cpu banjo_flow_cpu \
  && mkdir -p /out/bin \
  && cp -a build/linux/banjo_platform_cli build/linux/banjo_live_world_run \
-       build/linux/libbanjo.so* build/linux/banjo_voxel_world_run build/linux/libbanjo_coupled_cpu.so /out/bin/
+       build/linux/libbanjo.so* build/linux/banjo_voxel_world_run build/linux/libbanjo_coupled_cpu.so \
+       build/linux/libbanjo_thermal_fields.so build/linux/libbanjo_mechanisms_cpu.so build/linux/libbanjo_flow_cpu.so /out/bin/
 
 FROM ubuntu:24.04
 RUN apt-get update \
@@ -47,6 +48,9 @@ RUN python3 scripts/cpu-build-receipt.py --library /app/bin/libbanjo_coupled_cpu
 ENV BANJO_LIBRARY=/app/bin/libbanjo.so \
     BANJO_TERRAIN_CACHE=/data/terrain-cache \
     BANJO_COUPLED_CPU_LIBRARY=/app/bin/libbanjo_coupled_cpu.so \
+    BANJO_THERMAL_FIELDS_LIBRARY=/app/bin/libbanjo_thermal_fields.so \
+    BANJO_MECHANISMS_LIBRARY=/app/bin/libbanjo_mechanisms_cpu.so \
+    BANJO_FLOW_LIBRARY=/app/bin/libbanjo_flow_cpu.so \
     OPENBLAS_NUM_THREADS=1 \
     OMP_NUM_THREADS=1 \
     PYTHONUNBUFFERED=1

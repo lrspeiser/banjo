@@ -58,6 +58,7 @@ class CpuCoupledEvaluator(CoupledNewton):
         self.lib.banjo_coupled_cpu_flight.argtypes=[p,u,u,d,d,d,p,p,p,p,p];self.lib.banjo_coupled_cpu_flight.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_separation.argtypes=[p,u,u,p];self.lib.banjo_coupled_cpu_separation.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_contact_geometry.argtypes=[p,u,u,p];self.lib.banjo_coupled_cpu_contact_geometry.restype=ctypes.c_int
+        self.lib.banjo_coupled_cpu_contact_receipt.argtypes=[p,u,p,u,p,d,u,p,p];self.lib.banjo_coupled_cpu_contact_receipt.restype=ctypes.c_int
     def evaluate(self,velocity,h,gravity=-9.81,*,_jacobian_base=None):
         v=np.ascontiguousarray(velocity,dtype=np.float64).reshape(-1,self.n,6);batch=len(v)
         if not 1<=batch<=384:raise ValueError('Coupled trial batch exceeds reference bound')
@@ -93,6 +94,14 @@ class CpuCoupledEvaluator(CoupledNewton):
         count=self.lib.banjo_coupled_cpu_contact_geometry(self.bodies,self.n,capacity,rows)
         if count<0 or count>capacity or not np.isfinite(rows[:count]).all():raise ValueError('Native contact geometry refused')
         return rows[:count].copy()
+    def interaction_sites(self,velocity,h):
+        v=np.ascontiguousarray(velocity,dtype=np.float64).reshape(self.n,6)
+        capacity=len(self.pairs)*48;rows=np.empty((capacity,24));total=np.empty((self.n,6))
+        count=self.lib.banjo_coupled_cpu_contact_receipt(self.bodies,self.n,self.edges,self.m,v,h,capacity,rows,total)
+        if count<0 or count>capacity or not np.isfinite(rows[:count]).all() or not np.isfinite(total).all():raise ValueError('Native contact receipt refused')
+        samples=[dict(body_ids=r[:2].astype(int).tolist(),site_id=int(r[2]),positions_m=[r[3:6].tolist(),r[6:9].tolist()],
+            wrenches_n_nm=[r[9:15].tolist(),r[15:21].tolist()],contact_energy_before_j=float(r[21]),contact_energy_after_j=float(r[22]),compression_m=float(r[23])) for r in rows[:count]]
+        return samples,total
 
 class CpuCoupledWorld(CoupledWorld):
     array_api=np

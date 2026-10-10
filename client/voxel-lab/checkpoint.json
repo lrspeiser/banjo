@@ -1,8 +1,9 @@
 {
-  "title": "Contact-boundary regression repaired; reliable smash test still unfinished",
+  "title": "Mechanisms, water and heat/reactions: bounded 3D references; strong smash and coupling remain open",
   "date": "2026-10-09",
   "native_sha256": "a1eb6b91f4bbc3296bed53a637a8780108cc5037fbaec6c7c482ed69f6f72605",
   "changes": [
+    "Separate native 3D references: hinged bar with exact-equilibrium sleep/wake and support removal, conservative depth-averaged water, conduction/ice latent heat and closed fuel/oxygen/products. CPU contact forces now mark actual surface sample locations on both participants. These do not complete strong sheet impacts or cross-system coupling.",
     "Shared CPU/CUDA box closest-point geometry now preserves tiny exterior gaps in local coordinates instead of producing an invalid normal at a rounded boundary. The measured native regression passes, and four-material CPU/CUDA, parallel/reference and 10 m rigid controls retain their gates. The page lists usable checks and clearly marks full smash tests and remaining representation families unfinished.",
     "Representation workbench at /representations compiles adaptive occupied cubes and tests conservative CPU rigid/detail mappings and gravity-only flight. No internal/contact solver is connected there. Coupled lab now shows Before/Contact/After milestones and frames the ground in Full drop; the default test is plainly labeled a rigid rebound control.",
     "Versioned geometry/law definitions and stable matter/instance IDs retain exact native state with Save scene / Open scene. Unattached spheres use a local numerical translation origin without changing physical state or history. Four materials complete the 10 m primitive control at two timesteps/contact phases and match an independent compliance oracle; the connected glass sheet still stops at its work bound. The page starts with a useful 10 m drop and clearly separates that control from fracture.",
@@ -30,6 +31,11 @@
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
+    {
+      "label": "Parallel references and native spatial contact inspection",
+      "status": "passed",
+      "value": "17 scoped Windows CTests and 9 scoped WSL CTests pass; 352/352 sources registered. Native/Python/API/oracle/refusal checks plus ordinary 3D browser views; per-family experimental limits remain explicit. Viewer-only framing checks rerun after phone fixes."
+    },
     {
       "label": "Rounded contact boundary",
       "status": "passed",
@@ -214,6 +220,6 @@
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
   "gpu_coupled_source_sha256": "ae85f484987660d523ce56085fa5ec19c27725bfe9ecf0a0728b10dc5ed83069",
   "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling",
-  "cpu_coupled_source_sha256": "7164c4fb441c7f867ccd458465a04b547602e8275dcd1697466c378758f149c6",
+  "cpu_coupled_source_sha256": "4cc758d717c706bf000f4f53de6ca780931d842c2f46957c75342300643a2dc1",
   "cpu_hosted_scope": "Explicit compiled CPU reference for the same material/contact equations; bounded rigid rebound and low-energy sheet controls. Strong fracture and all-family realtime remain open."
 }

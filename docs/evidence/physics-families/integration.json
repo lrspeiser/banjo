@@ -1,0 +1,175 @@
+{
+  "schema": "banjo.physics-families-checkpoint.v1",
+  "base_revision": "c79bcb847cc4d618191af160036f23f6e1cebfc1",
+  "source_registration": "352/352",
+  "sources": {
+    "contact": "4cc758d717c706bf000f4f53de6ca780931d842c2f46957c75342300643a2dc1",
+    "thermal": "d9b1eae28435b4378e0891490db110c87ddfcf399ac82207c09249fcdc7fade1",
+    "flow": "71ada9201f992dc1ec6295008ed5eeb430edd3d8f82d3147006dc28cfca366a0",
+    "mechanism": "6fee5dc86e34f7a550aa647fb580d2719b061d5e1388fa5ec7663fef9a8551cd"
+  },
+  "windows": {
+    "environment": "Windows x64, MSVC 19.44 Release, Python 3.13.5",
+    "tests": [
+      {
+        "name": "banjo_thermal_field_api_tests",
+        "wall_s": 0.0111422,
+        "passed": true
+      },
+      {
+        "name": "banjo_flow_reference_tests",
+        "wall_s": 0.337408,
+        "passed": true
+      },
+      {
+        "name": "banjo_physics_fields_gateway_tests",
+        "wall_s": 1.70281,
+        "passed": true
+      },
+      {
+        "name": "banjo_thermal_fields_tests",
+        "wall_s": 0.427267,
+        "passed": true
+      },
+      {
+        "name": "banjo_flow_reference_api_tests",
+        "wall_s": 0.400699,
+        "passed": true
+      },
+      {
+        "name": "banjo_mechanisms_tests",
+        "wall_s": 0.26765,
+        "passed": true
+      },
+      {
+        "name": "banjo_cpu_coupled_modes_tests",
+        "wall_s": 8.94269,
+        "passed": true
+      },
+      {
+        "name": "banjo_cpu_local_jacobian_tests",
+        "wall_s": 70.1026,
+        "passed": true
+      },
+      {
+        "name": "banjo_cpu_coupled_world_tests",
+        "wall_s": 56.8362,
+        "passed": true
+      },
+      {
+        "name": "banjo_cpu_high_drop_tests",
+        "wall_s": 7.35644,
+        "passed": true
+      },
+      {
+        "name": "banjo_cpu_coupled_gateway_tests",
+        "wall_s": 3.16854,
+        "passed": true
+      },
+      {
+        "name": "banjo_cpu_coupled_parity_tests",
+        "wall_s": 1.38601,
+        "passed": true
+      },
+      {
+        "name": "banjo_flow_view_tests",
+        "wall_s": 0.038247,
+        "passed": true
+      },
+      {
+        "name": "banjo_mechanisms_view_tests",
+        "wall_s": 0.0376213,
+        "passed": true
+      },
+      {
+        "name": "banjo_thermal_fields_view_tests",
+        "wall_s": 0.0369572,
+        "passed": true
+      },
+      {
+        "name": "banjo_voxel_playback_tests",
+        "wall_s": 0.037987,
+        "passed": true
+      },
+      {
+        "name": "banjo_coupled_view_tests",
+        "wall_s": 0.074239,
+        "passed": true
+      }
+    ],
+    "binaries": {
+      "banjo_coupled_cpu": "db3dbe5da1ac60d266cabc357680c9445d7b91c6b2e4e2ac2e341db3a84432c6",
+      "banjo_thermal_fields": "7dee6d41209e1aa875a788e9399221033521320585db33497826701575db7558",
+      "banjo_mechanisms_cpu": "09301102570e6d69e527e332343b87c24d72018dafcb17b5afdfb1909e7fbdbd",
+      "banjo_flow_cpu": "e8944880b5ba13007146a93d7de7a68f78e8ccfcea5fd2d0050f02bfd7cd74cf"
+    }
+  },
+  "linux": {
+    "environment": "WSL Ubuntu, GCC 13.3 Release, Python 3.12.3",
+    "tests": [
+      {
+        "name": "banjo_thermal_field_api_tests",
+        "wall_s": 0.00262117,
+        "passed": true
+      },
+      {
+        "name": "banjo_flow_reference_tests",
+        "wall_s": 0.173006,
+        "passed": true
+      },
+      {
+        "name": "banjo_physics_fields_gateway_tests",
+        "wall_s": 16.7766,
+        "passed": true
+      },
+      {
+        "name": "banjo_thermal_fields_tests",
+        "wall_s": 1.54397,
+        "passed": true
+      },
+      {
+        "name": "banjo_flow_reference_api_tests",
+        "wall_s": 0.441729,
+        "passed": true
+      },
+      {
+        "name": "banjo_mechanisms_tests",
+        "wall_s": 0.47729,
+        "passed": true
+      },
+      {
+        "name": "banjo_cpu_coupled_modes_tests",
+        "wall_s": 8.35891,
+        "passed": true
+      },
+      {
+        "name": "banjo_cpu_coupled_world_tests",
+        "wall_s": 36.5894,
+        "passed": true
+      },
+      {
+        "name": "banjo_cpu_high_drop_tests",
+        "wall_s": 9.64514,
+        "passed": true
+      }
+    ]
+  },
+  "browser": {
+    "desktop": [
+      1280,
+      720
+    ],
+    "phone": [
+      390,
+      844
+    ],
+    "observed": [
+      "Native mechanism swing, force wake and support removal; fixed whole-motion view",
+      "Native water release and accepted replay",
+      "Temperature diffusion and ice latent plateau in actual 3D cells",
+      "Explicit fuel/oxygen/product fields",
+      "Native contact points on both surfaces, original ball material color"
+    ]
+  },
+  "scope": "Separate CPU references; no complete strong-impact, full-fluid pouring, coupled field/solid transfer or end-to-end realtime qualification."
+}

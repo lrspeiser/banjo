@@ -25,6 +25,14 @@ def tiny_contact_oracle():
             assert abs(energy/expected_energy-1)<1e-12,(p['material'],shift,energy,expected_energy)
             assert np.linalg.norm(trial['forces'][0,:,:3].sum(axis=0))<1e-25
             assert np.array_equal(e.bodies,b),'Private contact changed authoritative matter'
+            sites,total=e.interaction_sites(v,1.)
+            assert len(sites)==4 and np.allclose(total,trial['forces'][0],rtol=1e-12,atol=1e-25)
+            assert abs(sum(s['contact_energy_after_j'] for s in sites)/expected_energy-1)<1e-12
+            assert all(abs(s['positions_m'][1][1]-shift)<1e-14 for s in sites),'native target positions must lie on the actual plane'
+            assert np.array_equal(e.bodies,b),'Contact inspection changed accepted matter'
+            sentinel=np.full((48,24),123.);totals=np.full((2,6),123.)
+            assert e.lib.banjo_coupled_cpu_contact_receipt(b,2,e.edges,0,v,1.,0,sentinel,totals)==-1
+            assert np.all(sentinel==123.) and np.all(totals==123.),'capacity refusal must not partially publish'
             rows.append(dict(material=p['material'],translation_m=shift,displacement_m=-1e-18,force_n=float(force),contact_energy_j=float(energy)))
     return rows
 
@@ -68,6 +76,12 @@ def main(args):
                 peak_load=max(peak_load,float(np.max(np.linalg.norm(load[:,:3],axis=1))));previous=velocity
                 assert abs(a['energy_residual_j'])<=a['energy_tolerance_j']
                 assert np.linalg.norm(a['P_residual_n_s'])<1e-9 and np.linalg.norm(a['L_residual_n_m_s'])<1e-9
+                samples=a['contact_samples'];assert isinstance(samples,list) and len(samples)==int(a['ledger'][7])
+                for sample in samples:
+                    assert len(sample['body_ids'])==2 and all(0<=i<len(s['cells']) for i in sample['body_ids'])
+                    assert np.isfinite(sample['positions_m']).all() and np.isfinite(sample['wrenches_n_nm']).all()
+                    assert np.linalg.norm(np.sum(np.asarray(sample['wrenches_n_nm'])[:,:3],axis=0))<1e-8
+                assert np.isclose(sum(sample['contact_energy_after_j'] for sample in samples),a['ledger'][5],rtol=1e-12,atol=1e-20)
                 contact|=a['ledger'][8]>0
         ballistic=initial['cells'][-1]['position_m'][1]-.5*9.81*w.time**2
         assert contact and s['cells'][-1]['position_m'][1]>ballistic+1e-4

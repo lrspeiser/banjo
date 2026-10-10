@@ -1,5 +1,6 @@
 // Bounded host ABI over the SAME private CPU/CUDA physical trial equations.
 #include <cmath>
+#include <algorithm>
 #include <initializer_list>
 #include <array>
 #include <cstring>
@@ -215,4 +216,59 @@ BANJO_CPU_EXPORT int banjo_coupled_cpu_flight(const double* b,unsigned n,unsigne
     for(unsigned i=0;i<n;++i)banjo::dgIsolatedSphereBound(b,n,sphere,i,h,gy,travel,bounds);
     banjo::dgIsolatedSphereStep(b,sphere,h,gy,poses,v,f,r);
     return 0;
+}
+// Read-only replay of ONE accepted native trial's actual contact contributions.
+// Rows (24 doubles): a,b,site, surface A xyz, surface B xyz, wrench (12),
+// contact U0,U1,maximum compression. total includes material interfaces too,
+// excluding gravity, so callers can audit reconstruction against the solve.
+BANJO_CPU_EXPORT int banjo_coupled_cpu_contact_receipt(const double* b,unsigned n,
+    const double* e,unsigned m,const double* v,double h,unsigned capacity,double* out,double* total){
+    if(!scene(b,n,e,m,h,0)||!finite(v,6*n)||!out||!total)return -1;
+    unsigned possible=0;
+    for(unsigned a=0;a<n;++a)for(unsigned c=a+1;c<n;++c)
+        if(b[30*a+1]>0||b[30*c+1]>0)possible+=banjo::dgContactSiteCount(b+30*a,b+30*c);
+    if(capacity<possible)return -1;
+    std::array<banjo::DGTrialBody,banjo::dgMaxBodies> p;
+    for(unsigned i=0;i<n;++i)p[i]=banjo::dgPrepareTrial(b+30*i,v+6*i,h);
+    std::fill(total,total+6*n,0.);
+    for(unsigned i=0;i<m;++i){const auto row=material(b,e+70*i,p.data());
+        if(row.fault)return -2;
+        banjo::dgAdd(total,static_cast<unsigned>(e[70*i]),static_cast<unsigned>(e[70*i+1]),row.wrench);}
+    unsigned k=0;
+    for(unsigned a=0;a<n;++a)for(unsigned c=a+1;c<n;++c){
+        const auto ba=b+30*a,bc=b+30*c;if(ba[1]==0&&bc[1]==0)continue;
+        const auto before=banjo::dgContact(ba,bc,p[a].initial,p[c].initial);
+        const auto after=banjo::dgContact(ba,bc,p[a].ending,p[c].ending);
+        if(before.gap>0&&after.gap>0)continue;
+        const unsigned sites=banjo::dgContactSiteCount(ba,bc);
+        const bool sa=static_cast<int>(ba[0])==1&&static_cast<int>(bc[0])!=2;
+        const bool sb=static_cast<int>(bc[0])==1&&static_cast<int>(ba[0])!=2;
+        for(unsigned site=0;site<sites;++site){
+            banjo::FiniteFrameWrenches w{};double ledger[12]{};bool active=false;
+            if(banjo::dgContactTrial(ba,bc,p[a],p[c],site,h,w,ledger,active,true))return -2;
+            if(!active)continue;
+            banjo::dgAdd(total,a,c,w);
+            auto xa=p[a].midpoint.p,xb=p[c].midpoint.p;
+            if(sites>1){const bool swap=sb&&(!sa||site>=24);
+                const auto source=swap?bc:ba,target=swap?ba:bc;
+                const auto ps=swap?p[c].midpoint:p[a].midpoint,pt=swap?p[a].midpoint:p[c].midpoint;
+                const auto lever=banjo::dgSurfaceLever(source,ps,site%24);
+                const auto g=banjo::dgSurfaceContact(source,target,ps,pt,site%24);
+                const auto sample=banjo::dgAddPosition(ps,lever).p;
+                const auto surface=banjo::dgSub(sample,banjo::frameScale(g.gradient.force_a,g.gap));
+                xa=swap?surface:sample;xb=swap?sample:surface;
+            }else {const auto g=banjo::dgContact(ba,bc,p[a].midpoint,p[c].midpoint);
+                if(static_cast<int>(ba[0])==2){xa=banjo::dgSub(xa,banjo::frameScale(g.gradient.force_a,ba[4]));
+                    xb=banjo::dgSub(xa,banjo::frameScale(g.gradient.force_a,g.gap));}
+                else if(static_cast<int>(bc[0])==2){xb=banjo::dgSub(xb,banjo::frameScale(g.gradient.force_b,bc[4]));
+                    xa=banjo::dgSub(xb,banjo::frameScale(g.gradient.force_b,g.gap));}
+            }
+            auto row=out+24*k++;row[0]=a;row[1]=c;row[2]=site;
+            banjo::dgWrite3(row+3,xa);banjo::dgWrite3(row+6,xb);
+            const banjo::FrameVector values[]{w.force_a,w.torque_a,w.force_b,w.torque_b};
+            for(unsigned j=0;j<4;++j)banjo::dgWrite3(row+9+3*j,values[j]);
+            row[21]=ledger[4];row[22]=ledger[5];row[23]=ledger[8];
+        }
+    }
+    return static_cast<int>(k);
 }

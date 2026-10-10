@@ -92,3 +92,18 @@ assert.deepEqual(loadColor(10,10),[1,0,0]);assert.deepEqual(loadColor(5,10),[1,1
 assert.deepEqual(loadColor(20,10),[1,0,0]);assert.deepEqual(loadColor(0,10),loadColor(NaN,10));
 assert.equal(JSON.stringify(loaded),savedLoad,'heat map must never modify accepted physics');
 console.log('PASS accepted load/matter mapping, fixed reactions, missing-data refusal and read-only load colors');
+// Contacts have positions on BOTH participating surfaces. The net body force
+// cannot identify them: distinct contributions may cancel on the same body.
+const {contactSamples}=await import('../client/voxel-lab/coupled-view.mjs');
+const spatial={...initial,contact_samples:[{body_ids:[0,2],site_id:0,positions_m:[[1,2,3],[1,2.01,3]],wrenches_n_nm:[[0,-10,0,0,0,0],[0,10,0,0,0,0]]}]};
+const spatialSaved=JSON.stringify(spatial),glyphs=contactSamples(spatial);
+assert.equal(glyphs.length,2);assert.deepEqual(glyphs[0].position,[1,2,3]);assert.deepEqual(glyphs[1].position,[1,2.01,3]);assert.equal(glyphs[0].load,10);
+assert.equal(contactSamples(initial),null,'missing receipts must not guess a contact location');
+assert.deepEqual(contactSamples({...initial,contact_samples:[]}),[],'measured no-contact differs from unavailable');
+assert.equal(contactSamples({...spatial,contact_samples:[{...spatial.contact_samples[0],body_ids:[0,99]}]}),null);
+assert.equal(contactSamples({...spatial,contact_samples:[{...spatial.contact_samples[0],positions_m:[[NaN,0,0],[0,0,0]]}]}),null);
+glyphs[0].position[0]=99;assert.equal(JSON.stringify(spatial),spatialSaved,'inspection must never mutate measured positions');
+const moved=structuredClone(spatial);moved.cells[2].position_m[1]+=10;
+assert.deepEqual(contactSamples(moved)[1].position,[1,2.01,3],'historic peak remains at its measured contact site');
+assert.ok(!client.includes('mesh.material.color.setRGB(...loadColor'),'whole-body net-force tint hides spatial contacts');
+console.log('PASS spatial native contacts, both surfaces, historic positions and unavailable-data refusal');

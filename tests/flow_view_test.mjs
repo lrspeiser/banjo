@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {scalar,columnTransform,frameAtTime} from '../client/voxel-lab/flow-view.mjs';
+assert.equal(scalar([.2,.6,.8],'speed',1000),5);
+assert.equal(scalar([.2,0,0],'pressure',1000),1962);
+assert.equal(scalar([.2,0,0],'depth',1000),.2);
+assert.equal(scalar([0,0,0],'speed',1000),0);
+assert.throws(()=>scalar([-.2,0,0],'depth',1000));
+assert.throws(()=>scalar([.2,NaN,0],'depth',1000));
+const c=columnTransform(0,48,24,.1,.2);assert.ok(Math.abs(c.position[0]+2.35)<1e-12);assert.ok(Math.abs(c.position[2]+1.15)<1e-12);assert.equal(c.position[1],.1);assert.equal(c.scale[1],.2);
+assert.equal(columnTransform(0,48,24,.1,0).scale[0],0);
+assert.throws(()=>columnTransform(1152,48,24,.1,.1));
+const frames=[0,.1,.3].map(time_s=>({account:{time_s}}));assert.equal(frameAtTime(frames,.05),0);assert.equal(frameAtTime(frames,.29),1);assert.equal(frameAtTime(frames,20),2);assert.equal(frameAtTime(frames,0,2),0);
+const html=fs.readFileSync(new URL('../client/voxel-lab/flowing-matter.html',import.meta.url),'utf8'),js=fs.readFileSync(new URL('../client/voxel-lab/flowing-matter.js',import.meta.url),'utf8');
+const ids=[...html.matchAll(/id="([^"]+)"/g)].map(x=>x[1]);assert.equal(new Set(ids).size,ids.length);
+for(const match of js.matchAll(/\$\('([^']+)'\)/g))assert.ok(ids.includes(match[1]),'Missing DOM control '+match[1]);
+assert.ok(html.includes('href="/thermal-fields"'));assert.ok(html.includes('href="/mechanisms"'));
+console.log('Flow physical observation mapping, accepted replay clock and controls pass');

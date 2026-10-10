@@ -14,6 +14,15 @@ export function interactionLoads(frame){
   if(!rows||rows.length!==frame.cells.length||rows.some(r=>!Array.isArray(r)||r.length!==6||r.some(v=>!Number.isFinite(v))))return null;
   return rows.map(r=>Math.hypot(...r.slice(0,3)));
 }
+// Actual native contact surface points and per-side forces, never an inferred
+// temperature/stress field or a whole-object tint. Missing receipts stay missing.
+export function contactSamples(frame){
+  const rows=frame?.contact_samples??frame?.substep_accounts?.at(-1)?.contact_samples;
+  if(!Array.isArray(rows))return null;
+  if(rows.some(r=>!Array.isArray(r.body_ids)||r.body_ids.length!==2||r.body_ids.some(i=>!Number.isInteger(i)||i<0||i>=frame.cells.length)||!Number.isInteger(r.site_id)||r.site_id<0||!Array.isArray(r.positions_m)||r.positions_m.length!==2||r.positions_m.some(p=>!Array.isArray(p)||p.length!==3||p.some(x=>!Number.isFinite(x)))||!Array.isArray(r.wrenches_n_nm)||r.wrenches_n_nm.length!==2||r.wrenches_n_nm.some(w=>!Array.isArray(w)||w.length!==6||w.some(x=>!Number.isFinite(x)))))return null;
+  return rows.flatMap(r=>r.body_ids.map((body,i)=>({key:r.body_ids.join(':')+':'+r.site_id+':'+body,body,
+    position:r.positions_m[i].slice(),force:r.wrenches_n_nm[i].slice(0,3),load:Math.hypot(...r.wrenches_n_nm[i].slice(0,3))}))).filter(r=>r.load>0);
+}
 export function loadColor(value,maximum){
   if(!Number.isFinite(value)||!Number.isFinite(maximum)||value<=0||maximum<=0)return [0.16,0.22,0.27];
   const t=Math.min(1,value/maximum);

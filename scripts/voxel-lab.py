@@ -15,6 +15,11 @@ ASSETS.update({'/coupled':'client/voxel-lab/coupled.html','/coupled.js':'client/
 ASSETS['/scene-session.mjs']='client/voxel-lab/scene-session.mjs'
 ASSETS.update({'/coupled-view.mjs':'client/voxel-lab/coupled-view.mjs','/coupled.css':'client/voxel-lab/coupled.css'})
 ASSETS.update({'/representations':'client/voxel-lab/representations.html','/representations.js':'client/voxel-lab/representations.js'})
+for route,stem in (('mechanisms','mechanisms'),('flow','flowing-matter'),('thermal-fields','thermal-fields')):
+ ASSETS['/'+route]='client/voxel-lab/'+stem+'.html'
+ for ext in ('js','css'):ASSETS['/'+stem+'.'+ext]='client/voxel-lab/'+stem+'.'+ext
+ASSETS['/mechanisms-view.mjs']='client/voxel-lab/mechanisms-view.mjs'
+ASSETS['/flow-view.mjs']='client/voxel-lab/flow-view.mjs'
 
 class SessionExpired(ValueError):pass
 
@@ -249,6 +254,12 @@ class Server(ThreadingHTTPServer):
   self.checkpoint_path=checkpoint_path or ROOT/'client/voxel-lab/checkpoint.json';self.started_revision,_=repository_state()
   self.cpu_library=cpu_library
   if cpu_library:os.environ['BANJO_COUPLED_CPU_LIBRARY']=str(cpu_library)
+  self.field_libraries={}
+  for key,stem,env in (('mechanisms','banjo_mechanisms_cpu','BANJO_MECHANISMS_LIBRARY'),('flow','banjo_flow_cpu','BANJO_FLOW_LIBRARY'),('thermal-fields','banjo_thermal_fields','BANJO_THERMAL_FIELDS_LIBRARY')):
+   candidate=Path(os.environ[env]) if os.environ.get(env) else (cpu_library.parent/((stem+'.dll') if os.name=='nt' else ('lib'+stem+'.so'))) if cpu_library else None
+   self.field_libraries[key]=candidate if candidate and candidate.is_file() else None
+   if self.field_libraries[key]:os.environ[env]=str(candidate)
+  self.field_busy=threading.BoundedSemaphore(1)
   self.gpu_python=gpu_python;self.representation_busy=threading.BoundedSemaphore(1)
  def checkpoint_status(self):
   try:
@@ -278,7 +289,7 @@ class Server(ThreadingHTTPServer):
    cpu_source=disk_source_hash();cpu_hash=implementation_hash();cpu_binary=hashlib.sha256(self.cpu_library.read_bytes()).hexdigest()
   image_verified=bool(receipt and receipt.get('schema')=='banjo.cpu-image-identity.v1' and receipt.get('cpu_source_sha256')==cpu_source and receipt.get('cpu_implementation_sha256')==cpu_hash and receipt.get('native_sha256')==actual)
   source_verified=image_verified if receipt else bool(cpu_source and checkpoint.get('cpu_coupled_source_sha256')==cpu_source)
-  return {'cpu_coupled_available':self.cpu_library is not None,'coupled_backend':'cpu-implicit-body' if self.cpu_library else 'cupy-implicit-body',
+  return {'field_references':{key:{'available':path is not None,'binary_sha256':hashlib.sha256(path.read_bytes()).hexdigest() if path else None} for key,path in self.field_libraries.items()},'cpu_coupled_available':self.cpu_library is not None,'coupled_backend':'cpu-implicit-body' if self.cpu_library else 'cupy-implicit-body',
    'cpu_coupled_source_sha256':cpu_source,'cpu_coupled_implementation_sha256':cpu_hash,'cpu_coupled_binary_sha256':cpu_binary,
    'cpu_image_identity_verified':image_verified,'cpu_coupled_source_verified':source_verified,'checkpoint':checkpoint,'native_sha256':actual,'native_verified':bool(checkpoint.get('native_sha256')==actual),'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,'restart_pending':revision!=self.started_revision,'gpu_available':self.gpu_python is not None,'gpu_source_sha256':gpu_hash,'gpu_worker_sha256':worker_hash,'physx_source_sha256':physx_hash,'physx_source_verified':bool(physx_hash and checkpoint.get('physx_source_sha256')==physx_hash),'gpu_source_verified':bool(gpu_hash and checkpoint.get('gpu_source_sha256')==gpu_hash and checkpoint.get('gpu_worker_sha256')==worker_hash),'gpu_material_source_sha256':material_hash,'gpu_material_source_verified':bool(material_hash and checkpoint.get('gpu_material_source_sha256')==material_hash),'gpu_coupled_source_sha256':coupled_hash,'gpu_coupled_source_verified':bool(coupled_hash and checkpoint.get('gpu_coupled_source_sha256')==coupled_hash)}
  def session(self,key,backend=None):
@@ -349,8 +360,27 @@ class Handler(BaseHTTPRequestHandler):
     try:r=experiment(data['declaration'])
     finally:self.server.representation_busy.release()
     self.send(200,json.dumps(r,separators=(',',':'),allow_nan=False).encode());return
-   if self.path not in ('/api/world','/api/gpu','/api/coupled'):raise ValueError('Unknown endpoint')
-   backend=('cpu-coupled' if self.server.cpu_library else 'gpu') if self.path=='/api/coupled' else 'gpu' if self.path=='/api/gpu' else 'cpu'
+   if self.path in ('/api/mechanisms/run','/api/flow-reference'):
+    data=json.loads(body)
+    if not isinstance(data,dict):raise ValueError('Declaration must be an object')
+    kind='mechanisms' if self.path=='/api/mechanisms/run' else 'flow'
+    library=self.server.field_libraries[kind]
+    if library is None:raise ValueError('Native '+kind+' reference is unavailable; no substitute response')
+    if not self.server.field_busy.acquire(blocking=False):raise ValueError('Field reference is busy; retry after it finishes')
+    try:
+     if kind=='mechanisms':
+      if length>4096:raise ValueError('Mechanism declaration size invalid')
+      from mechanisms import run_experiment
+      r=run_experiment(data,library)
+     else:
+      if set(data)!={'declaration'}:raise ValueError('Invalid flow declaration')
+      from flowing_matter import run
+      r=run(data['declaration'],library)
+    finally:self.server.field_busy.release()
+    self.send(200,json.dumps(r,separators=(',',':'),allow_nan=False).encode());return
+   if self.path not in ('/api/world','/api/gpu','/api/coupled','/api/thermal-fields'):raise ValueError('Unknown endpoint')
+   backend='thermal-fields' if self.path=='/api/thermal-fields' else ('cpu-coupled' if self.server.cpu_library else 'gpu') if self.path=='/api/coupled' else 'gpu' if self.path=='/api/gpu' else 'cpu'
+   if backend=='thermal-fields' and self.server.field_libraries[backend] is None:raise ValueError('Native thermal reference is unavailable; no substitute response')
    if backend=='gpu' and not self.server.gpu_python:raise ValueError('GPU runtime is not configured; no CPU fallback')
    if not self.origin_allowed():raise ValueError('Cross-origin request refused')
    length=int(self.headers.get('Content-Length','0'))
@@ -361,13 +391,14 @@ class Handler(BaseHTTPRequestHandler):
    if op!='restore' and length>4096:raise ValueError('Request size invalid')
    if op in ('create','restore'):
     if op=='create' and (set(data)!={'op','declaration'} or not isinstance(data['declaration'],dict)):raise ValueError('Invalid scene declaration')
-    if op=='restore' and (backend not in ('gpu','cpu-coupled') or set(data)!={'op','checkpoint'} or not isinstance(data['checkpoint'],dict)):raise ValueError('Invalid checkpoint restore')
+    if op=='restore' and (backend not in ('gpu','cpu-coupled','thermal-fields') or set(data)!={'op','checkpoint'} or not isinstance(data['checkpoint'],dict)):raise ValueError('Invalid checkpoint restore')
     with self.server.lock:
      for key,s in list(self.server.sessions.items()):
       if time.monotonic()-s.last>600:s.close();del self.server.sessions[key]
      if len(self.server.sessions)>=8:raise ValueError('Eight scenes active; close or reset an old scene')
      command=[str(self.server.gpu_python),str(ROOT/'scripts/gpu-contact-worker.py')] if backend=='gpu' else None
      if backend=='cpu-coupled':command=[sys.executable,str(ROOT/'scripts/cpu-coupled-worker.py')]
+     if backend=='thermal-fields':command=[sys.executable,str(ROOT/'scripts/thermal-field-worker.py')]
      s=Session(self.server.native,self.server.logs,self.server.checkpoint_status(),worker_command=command,backend=backend);key=uuid.uuid4().hex
      try:r=s.manual(data)
      except Exception:s.close();raise
@@ -375,6 +406,7 @@ class Handler(BaseHTTPRequestHandler):
      else:s.close()
     r['session']=key
    elif op in ['play','frame']:
+    if backend=='thermal-fields':raise ValueError('Thermal fields use bounded manual advance; scheduler is not qualified')
     allowed={'op','session','running','target_time_s'} if op=='play' else {'op','session','after','wait_ms'}
     if set(data)!=allowed:raise ValueError('Invalid pipeline command fields')
     s=self.server.session(data['session'],backend)
@@ -393,16 +425,17 @@ class Handler(BaseHTTPRequestHandler):
     except SessionExpired:
      if op!='close':raise
      s=None
-    if backend in ('gpu','cpu-coupled') and op=='accelerate_object':raise ValueError('GPU actuation is not implemented')
+    if backend in ('gpu','cpu-coupled','thermal-fields') and op=='accelerate_object':raise ValueError('Actuation is not implemented for this reference')
     if op=='inspect_modes' and backend!='cpu-coupled':raise ValueError('Mode preparation requires the explicit native CPU reference')
-    if op=='export' and (backend not in ('gpu','cpu-coupled') or not s.current['state'].get('objects')):raise ValueError('Object checkpoint export requires the coupled lab')
+    if op=='export' and backend!='thermal-fields' and (backend not in ('gpu','cpu-coupled') or not s.current['state'].get('objects')):raise ValueError('Object checkpoint export requires the coupled lab')
     if op in ('strain','unload') and (backend!='gpu' or not s.current['state'].get('controlled_loading')):raise ValueError('Material loading requires the controlled GPU inspector')
     if op=='close':
      with self.server.lock:
       if s:s.close();self.server.sessions.pop(data['session'],None)
      r={'ok':True,'already_closed':s is None}
     else:
-     if op=='advance' and (type(data['steps']) is not int or not 1<=data['steps']<=16):raise ValueError('Steps must be 1–16')
+     maximum=200 if backend=='thermal-fields' else 16
+     if op=='advance' and (type(data['steps']) is not int or not 1<=data['steps']<=maximum):raise ValueError('Steps must be 1–'+str(maximum))
      r=s.manual({k:v for k,v in data.items() if k!='session'}) if op in ['advance','accelerate_object','strain','unload','export','inspect_modes'] else s.frame(0,0);r['session']=data['session']
    else:raise ValueError('Unknown operation')
    self.send(200,json.dumps(r,separators=(',',':')).encode())

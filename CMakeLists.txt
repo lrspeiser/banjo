@@ -312,6 +312,22 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     target_include_directories(banjo_coupled_cpu PRIVATE src)
     target_compile_features(banjo_coupled_cpu PRIVATE cxx_std_17)
     banjo_enable_warnings(banjo_coupled_cpu)
+    # Bounded field/mechanism references used by the editable 3D lab. These
+    # are real compiled adapters; complete inter-family coupling stays gated.
+    add_library(banjo_thermal_fields SHARED src/thermal/ThermalFieldApi.cpp
+        src/thermal/ThermalKernel.cpp src/thermal/EnthalpyLaw.cpp)
+    target_include_directories(banjo_thermal_fields PUBLIC src)
+    target_compile_definitions(banjo_thermal_fields PRIVATE BANJO_THERMAL_FIELDS_BUILD)
+    target_compile_features(banjo_thermal_fields PRIVATE cxx_std_17)
+    banjo_enable_warnings(banjo_thermal_fields)
+    add_library(banjo_mechanisms_cpu SHARED src/physics/MechanismCpuApi.cpp)
+    target_include_directories(banjo_mechanisms_cpu PRIVATE src)
+    target_compile_features(banjo_mechanisms_cpu PRIVATE cxx_std_17)
+    banjo_enable_warnings(banjo_mechanisms_cpu)
+    add_library(banjo_flow_cpu SHARED src/flow/FlowReference.cpp src/flow/FlowCpuApi.cpp)
+    target_include_directories(banjo_flow_cpu PUBLIC src)
+    target_compile_features(banjo_flow_cpu PRIVATE cxx_std_17)
+    banjo_enable_warnings(banjo_flow_cpu)
     add_executable(banjo_gpu_material_oracle src/app/gpu_material_oracle_main.cpp)
     target_link_libraries(banjo_gpu_material_oracle PRIVATE banjo_core nlohmann_json::nlohmann_json)
     banjo_enable_warnings(banjo_gpu_material_oracle)
@@ -840,6 +856,20 @@ if(BANJO_BUILD_LAB)
 endif()
 
 if(BANJO_BUILD_TESTS)
+    if(TARGET banjo_thermal_fields)
+        add_executable(banjo_thermal_field_api_tests tests/thermal_field_api_tests.cpp)
+        target_link_libraries(banjo_thermal_field_api_tests PRIVATE banjo_thermal_fields)
+        banjo_enable_warnings(banjo_thermal_field_api_tests)
+        add_test(NAME banjo_thermal_field_api_tests COMMAND banjo_thermal_field_api_tests)
+        set_tests_properties(banjo_thermal_field_api_tests PROPERTIES TIMEOUT 60 LABELS "thermal;reaction;experimental")
+    endif()
+    if(TARGET banjo_flow_cpu)
+        add_executable(banjo_flow_reference_tests tests/flow_reference_tests.cpp src/flow/FlowReference.cpp)
+        target_include_directories(banjo_flow_reference_tests PRIVATE src)
+        banjo_enable_warnings(banjo_flow_reference_tests)
+        add_test(NAME banjo_flow_reference_tests COMMAND banjo_flow_reference_tests)
+        set_tests_properties(banjo_flow_reference_tests PROPERTIES TIMEOUT 60 LABELS "flow;experimental")
+    endif()
     find_program(BANJO_NODE_EXECUTABLE node)
     if(BANJO_NODE_EXECUTABLE)
         add_test(NAME banjo_test_world_input_tests COMMAND ${BANJO_NODE_EXECUTABLE}
@@ -2232,6 +2262,20 @@ if(BANJO_BUILD_TESTS)
             set_tests_properties(banjo_gpu_contact_timing_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
         endif()
         if(TARGET banjo_coupled_cpu AND TARGET banjo_voxel_world_run)
+            add_test(NAME banjo_physics_fields_gateway_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/physics_fields_gateway_test.py
+                --library-dir $<TARGET_FILE_DIR:banjo_coupled_cpu> --native $<TARGET_FILE:banjo_voxel_world_run>)
+            set_tests_properties(banjo_physics_fields_gateway_tests PROPERTIES TIMEOUT 120 LABELS "field;mechanism;thermal;flow;client")
+            add_test(NAME banjo_thermal_fields_tests COMMAND ${CMAKE_COMMAND} -E env
+                BANJO_THERMAL_FIELDS_LIBRARY=$<TARGET_FILE:banjo_thermal_fields>
+                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/thermal_fields_test.py)
+            set_tests_properties(banjo_thermal_fields_tests PROPERTIES TIMEOUT 60 LABELS "thermal;phase;reaction;experimental")
+            add_test(NAME banjo_flow_reference_api_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/flow_reference_api_test.py $<TARGET_FILE:banjo_flow_cpu>)
+            set_tests_properties(banjo_flow_reference_api_tests PROPERTIES TIMEOUT 30 LABELS "flow;field;api")
+            add_test(NAME banjo_mechanisms_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/mechanisms_test.py $<TARGET_FILE:banjo_mechanisms_cpu>)
+            set_tests_properties(banjo_mechanisms_tests PROPERTIES TIMEOUT 120 LABELS "mechanism;sleep;experimental")
             add_test(NAME banjo_cpu_coupled_modes_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_coupled_modes_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
                 --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-coupled-modes-evidence.json)
@@ -2309,6 +2353,15 @@ if(BANJO_BUILD_TESTS)
             set_tests_properties(banjo_voxel_pipeline_tests PROPERTIES TIMEOUT 60 LABELS "native;voxel;client")
             find_program(BANJO_NODE_EXECUTABLE NAMES node)
             if(BANJO_NODE_EXECUTABLE)
+                add_test(NAME banjo_flow_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/flow_view_test.mjs)
+                set_tests_properties(banjo_flow_view_tests PROPERTIES TIMEOUT 10 LABELS "flow;client")
+                add_test(NAME banjo_mechanisms_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/mechanisms_view_test.mjs)
+                set_tests_properties(banjo_mechanisms_view_tests PROPERTIES TIMEOUT 10 LABELS "mechanism;client")
+                add_test(NAME banjo_thermal_fields_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/thermal_fields_view_test.mjs)
+                set_tests_properties(banjo_thermal_fields_view_tests PROPERTIES TIMEOUT 10 LABELS "thermal;client")
                 add_test(NAME banjo_voxel_playback_tests COMMAND ${BANJO_NODE_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_playback_test.mjs)
                 set_tests_properties(banjo_voxel_playback_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")

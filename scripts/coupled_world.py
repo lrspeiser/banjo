@@ -143,6 +143,16 @@ class CoupledWorld:
                         queue.extend([(h/2,depth+1),(h/2,depth+1)]);continue
                     updates+=1
                     if updates>512 or time.perf_counter()-started>30:raise TrialFailure('Coupled interval work budget')
+                    # Observe actual solver contributions BEFORE moving/history
+                    # commit. This cannot substitute an inferred colored field.
+                    sites=None
+                    if hasattr(self.eval,'interaction_sites'):
+                        sites,reconstructed=self.eval.interaction_sites(self.to_host(velocity),h)
+                        measured=forces.copy();measured[:,1]+=9.81*before[:,1]
+                        if not np.allclose(reconstructed,measured,rtol=1e-12,atol=1e-9):raise TrialFailure('Contact receipt does not reconstruct native interaction forces')
+                        if len(sites)!=int(ledger[7]):raise TrialFailure('Contact receipt does not reconstruct native active-site count')
+                        for key,index in (('contact_energy_before_j',4),('contact_energy_after_j',5)):
+                            if not math.isclose(sum(s[key] for s in sites),float(ledger[index]),rel_tol=1e-12,abs_tol=1e-20):raise TrialFailure('Contact receipt does not reconstruct native contact energy')
                     self.eval.bodies[:,23:26]+=h*(self.eval.bodies[:,14:17]+velocity[:,:3])/2
                     self.eval.bodies[:,7:14]=out['poses'];self.eval.bodies[:,14:20]=velocity
                     if self.eval.m:self.eval.edges[:,35:67]=out['history']
@@ -152,6 +162,7 @@ class CoupledWorld:
                     interaction=forces.copy();interaction[:,1]+=9.81*before[:,1]
                     accounts.append(dict(dt_s=h,energy_residual_j=balance,energy_tolerance_j=tolerance,P_residual_n_s=pres.tolist(),L_residual_n_m_s=lres.tolist(),
                         interaction_wrench_n_nm=interaction.tolist(),
+                        contact_samples=sites,
                         ground_impulse_n_s=reaction.tolist(),ground_torque_impulse_n_m_s=reaction_torque.tolist(),ledger=ledger.tolist(),iterations=iterations,equation_residual=equation,
                         poses_wxyz=ending[:,7:14].tolist(),velocities=ending[:,14:20].tolist(),material_history=history.tolist(),newton_start=copy.deepcopy(self.eval.last_solve),contact_schedule=schedule,
                         coordinate_rebases=coordinate_rebases,

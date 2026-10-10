@@ -1,0 +1,109 @@
+{
+  "materials": {
+    "glass": {
+      "energy_residual_j": 2.842170943040401e-14,
+      "max_step_energy_residual_j": 3.9121483830228954e-14,
+      "external_work_j": 0.0,
+      "support_impulse_ns": [
+        -15.622848977815309,
+        290.7286325962473
+      ],
+      "sleep_steps": 0,
+      "sleep_omitted_motion_bound_m": 0.0,
+      "max_momentum_residual_ns": 0.0,
+      "max_angular_residual_nms": 9.006684287271582e-15,
+      "accepted_time_s": 2.0000000000000466,
+      "calculation_wall_s": 0.0042215000139549375,
+      "wall_per_sim_second": 0.0021107500069774197,
+      "dt_s": 0.0020833333333333333,
+      "mass_kg": 15.0,
+      "final_angle_rad": 0.22473735554937943,
+      "release_energy_residual_j": -8.554934538551606e-12,
+      "moving_release_energy_residual_j": -9.29389898374211e-12
+    },
+    "oak": {
+      "energy_residual_j": 7.105427357601002e-15,
+      "max_step_energy_residual_j": 1.0852430065710905e-14,
+      "external_work_j": 0.0,
+      "support_impulse_ns": [
+        -4.3743977137883,
+        81.40401712694916
+      ],
+      "sleep_steps": 0,
+      "sleep_omitted_motion_bound_m": 0.0,
+      "max_momentum_residual_ns": 0.0,
+      "max_angular_residual_nms": 2.8766052040385404e-15,
+      "accepted_time_s": 2.0000000000000466,
+      "calculation_wall_s": 0.004609900002833456,
+      "wall_per_sim_second": 0.002304950001416674,
+      "dt_s": 0.0020833333333333333,
+      "mass_kg": 4.2,
+      "final_angle_rad": 0.22473735554937904,
+      "release_energy_residual_j": -2.4513724383723456e-12,
+      "moving_release_energy_residual_j": -2.6787461138155777e-12
+    },
+    "iron": {
+      "energy_residual_j": 5.684341886080802e-14,
+      "max_step_energy_residual_j": 1.3147816169123416e-13,
+      "external_work_j": 0.0,
+      "support_impulse_ns": [
+        -49.18072858216267,
+        915.2137354129854
+      ],
+      "sleep_steps": 0,
+      "sleep_omitted_motion_bound_m": 0.0,
+      "max_momentum_residual_ns": 0.0,
+      "max_angular_residual_nms": 2.758904216193514e-14,
+      "accepted_time_s": 2.0000000000000466,
+      "calculation_wall_s": 0.003403400012757629,
+      "wall_per_sim_second": 0.001701700006378775,
+      "dt_s": 0.0020833333333333333,
+      "mass_kg": 47.22,
+      "final_angle_rad": 0.22473735554937949,
+      "release_energy_residual_j": -2.773958840407431e-11,
+      "moving_release_energy_residual_j": -2.955857780762017e-11
+    },
+    "ice": {
+      "energy_residual_j": 7.105427357601002e-15,
+      "max_step_energy_residual_j": 1.4162282457874653e-14,
+      "external_work_j": 0.0,
+      "support_impulse_ns": [
+        -5.730461005062679,
+        106.63926243630327
+      ],
+      "sleep_steps": 0,
+      "sleep_omitted_motion_bound_m": 0.0,
+      "max_momentum_residual_ns": 0.0,
+      "max_angular_residual_nms": 3.931750758301433e-15,
+      "accepted_time_s": 2.0000000000000466,
+      "calculation_wall_s": 0.0035099000087939203,
+      "wall_per_sim_second": 0.0017549500043969192,
+      "dt_s": 0.0020833333333333333,
+      "mass_kg": 5.502,
+      "final_angle_rad": 0.22473735554937954,
+      "release_energy_residual_j": -3.225864020350855e-12,
+      "moving_release_energy_residual_j": -3.524291969370097e-12
+    }
+  },
+  "common_time_refinement_errors_rad": [
+    0.0002715098622723122,
+    6.709450863595645e-05,
+    1.5975811740287504e-05
+  ],
+  "small_angle_error_rad": 2.2492018108737695e-10,
+  "native_sha256": "09301102570e6d69e527e332343b87c24d72018dafcb17b5afdfb1909e7fbdbd",
+  "source_sha256": "6fee5dc86e34f7a550aa647fb580d2719b061d5e1388fa5ec7663fef9a8551cd",
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.5"
+  },
+  "conditions": {
+    "length_m": 1,
+    "width_m": 0.12,
+    "thickness_m": 0.05,
+    "gravity_m_s2": 9.81,
+    "initial_angle_deg": 35,
+    "dt_s": 0.0020833333333333333,
+    "duration_s": 2
+  }
+}
