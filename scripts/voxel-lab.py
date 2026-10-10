@@ -288,6 +288,7 @@ class Server(ThreadingHTTPServer):
   self.public=public
   self.chat_allowance=Allowance(int(os.environ.get('BANJO_CHAT_PER_HOUR','12')),int(os.environ.get('BANJO_CHAT_PER_DAY','400')),'chat') if public else None
   self.trial_allowance=Allowance(int(os.environ.get('BANJO_TRIALS_PER_HOUR','30')),int(os.environ.get('BANJO_TRIALS_PER_DAY','2000')),'reliability check') if public else None
+  self.feedback_allowance=Allowance(10,500,'feedback') if public else None
   if site not in ('all','game'):raise ValueError('site is all or game')
   self.site=site
   self.app=SimpleNamespace(password=password,public_host=public_host,sessions=set(),login_destination='/play' if site=='game' else '/machine')
@@ -500,7 +501,7 @@ class Handler(BaseHTTPRequestHandler):
  def machine(self,body):
   # One live machine world per session; every response is the engine's own
   # measured state. A refused declaration answers with its problems in words.
-  from machine_world import MachineRefused
+  from machine_world import MachineRefused,SiteBusy
   import machine_chat, machine_game
   host=self.server.machines
   try:
@@ -535,6 +536,21 @@ class Handler(BaseHTTPRequestHandler):
     spec,checked,cost=machine_game.compose(level,data.get('placements') or [])
     r=host.open(spec);r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost
     host.get(r['session']).game={'level':level['id'],'checked':checked,'cost':cost,'helped':bool(data.get('helped'))}
+   elif op=='feedback':
+    # A player's word about the game: one line to the log, where the host
+    # keeps it (FEEDBACK ...), and to feedback.jsonl beside the machines'
+    # logs. Rationed like the chat; nothing that names the player is kept.
+    if self.server.feedback_allowance:self.server.feedback_allowance.take(self.visitor())
+    text=data.get('text')
+    if not isinstance(text,str) or not text.strip() or len(text)>2000:raise ValueError('Feedback is 1 to 2000 characters')
+    note={'at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'text':text.strip(),'level':str(data.get('level') or '')[:40],
+     'placements':data.get('placements') if isinstance(data.get('placements'),list) else None,'last_run':data.get('last_run'),
+     'screen':data.get('screen'),'touch':bool(data.get('touch')),'site':os.environ.get('RENDER_GIT_COMMIT','')[:12]}
+    line=json.dumps(note,separators=(',',':'))[:16000]
+    print('FEEDBACK '+line,flush=True)
+    with self.server.lock:
+     with open(self.server.logs/'feedback.jsonl','a',encoding='utf-8') as f:f.write(line+'\n')
+    r={'ok':True}
    elif op=='level_ghost':
     # A piece before it is set down: what it would be and where, and why it
     # could not go there. Compiled only, never run, so it is not rationed.
@@ -557,6 +573,7 @@ class Handler(BaseHTTPRequestHandler):
   except machine_game.LevelRefused as e:self.send(422,json.dumps({'ok':False,'error':'Those pieces do not fit this level','problems':e.problems}).encode())
   except LookupError as e:self.send(410,json.dumps({'ok':False,'error':str(e),'code':'session_expired'}).encode())
   except machine_chat.ChatUnavailable as e:self.send(503,json.dumps({'ok':False,'error':str(e)}).encode())
+  except SiteBusy as e:self.send(503,json.dumps({'ok':False,'error':str(e),'code':'site_busy'}).encode())
   except (ValueError,TypeError,KeyError,RuntimeError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def log_message(self,*args):pass
 if __name__=='__main__':

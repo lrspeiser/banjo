@@ -53,7 +53,8 @@ ENV BANJO_LIBRARY=/app/bin/libbanjo.so \
     BANJO_FLOW_LIBRARY=/app/bin/libbanjo_flow_cpu.so \
     OPENBLAS_NUM_THREADS=1 \
     OMP_NUM_THREADS=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    BANJO_MACHINE_SESSIONS=10
 EXPOSE 8080
 # On the port a host hands it in PORT -- Render sets one -- or else 8080, which
 # fly.toml forwards to. The native studio windows are a desktop feature: not

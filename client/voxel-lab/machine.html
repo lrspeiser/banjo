@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo Machine</title><link rel="stylesheet" href="/machine.css"></head><body>
-<header><strong>Banjo <span>Machine</span></strong><nav><a href="/play">Levels</a><a href="/machine">Sandbox</a></nav><output id="build">Checking…</output></header>
+<header><strong>Banjo <span>Machine</span></strong><nav><a href="/play">Levels</a><a href="/machine">Sandbox</a><a href="/play" id="guide-open">How to play</a></nav><output id="build">Checking…</output></header>
 <main>
 <section id="view" aria-label="The machine in 3D, as the engine calculates it">
 <output id="clock">Setting up…</output>
@@ -15,6 +15,17 @@
 <aside>
 <h1 id="title">Chain reaction</h1>
 <section id="game" hidden aria-label="The puzzle">
+<section id="guide" class="guide" hidden aria-label="How to play">
+<h2>How to play</h2>
+<ol>
+<li>Each level has a goal: something has to end up in the <b>green box</b> in time.</li>
+<li>Press <b>Add</b> on a piece in your tray. A blue <b>ghost</b> of it follows your pointer; click (or tap) to put it there.</li>
+<li>Change it with its sliders, drag it, and turn it with the buttons (or Q/E, R/F, Z/C). A red ghost cannot go there, and says why.</li>
+<li>Press <b>Set it down</b>, then <b>Run it</b>. Nothing is animated: the physics engine calculates every bounce, burn and cut live.</li>
+<li>Stuck? <b>Ask for a hint</b>, or <b>Place it for me</b> (worth one star at most).</li>
+</ol>
+<button id="guide-done" type="button">Got it</button>
+</section>
 <nav id="levels" aria-label="Levels"></nav>
 <p id="brief"></p>
 <p id="goal-line" class="legend"></p>
@@ -23,6 +34,11 @@
 <p id="cost-line"></p>
 <div class="chat-actions"><button id="run" type="button">Run it</button><button id="trial" type="button">Is it reliable? (3 runs)</button></div>
 <output id="verdict" aria-live="polite"></output>
+<details id="feedback" class="feedback"><summary>Tell us what happened</summary>
+<form id="feedback-form"><label for="feedback-text">Something odd, broken, confusing or fun? We read every one.</label>
+<textarea id="feedback-text" rows="3" maxlength="2000" placeholder="e.g. “The plank fell through the table” or “I could not tell where the sun was.”"></textarea>
+<div class="chat-actions"><button id="feedback-send" type="submit">Send</button></div>
+<output id="feedback-status" aria-live="polite"></output></form></details>
 </section>
 <p class="lede">One world, one engine. Each station tests a different part of the physics, and each sets off the next. Nothing is animated: the engine calculates every contact, hinge, current, temperature and break as you watch.</p>
 <section class="chat" aria-label="Build with words">

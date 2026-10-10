@@ -151,6 +151,26 @@ class Puzzles(unittest.TestCase):
         self.wait("Boolean(document.querySelector('#verdict .stars'))", 90)
         self.assertIn('★★★', self.js("document.getElementById('verdict').textContent"))
 
+    def test_a_first_visit_shows_how_to_play_and_a_player_can_tell_us_what_happened(self):
+        self.open('gap')
+        self.js("localStorage.removeItem('banjo-play-guide-seen')")
+        self.open('gap')
+        self.assertFalse(self.js("document.getElementById('guide').hidden"), 'a first visit shows how to play')
+        self.press('Got it')
+        self.open('gap')
+        self.assertTrue(self.js("document.getElementById('guide').hidden"), 'once read, it stays out of the way')
+        self.js("document.getElementById('guide-open').click()")
+        self.assertFalse(self.js("document.getElementById('guide').hidden"), 'How to play brings it back')
+        self.press('Got it')
+        # Telling us: the words, with the level and its pieces, reach the log.
+        self.js("document.getElementById('feedback').open = true")
+        self.js("document.getElementById('feedback-text').value = 'The plank looked like it floated'")
+        self.press('Send')
+        self.wait("/Thank you/.test(document.getElementById('feedback-status').textContent)", 10)
+        notes = [json.loads(line) for line in (Path(self.logs.name) / 'feedback.jsonl').read_text(encoding='utf-8').splitlines()]
+        self.assertEqual((notes[-1]['text'], notes[-1]['level']), ('The plank looked like it floated', 'gap'))
+        self.assertNotIn('127.0.0.1', json.dumps(notes[-1]), 'nothing that names the player is kept')
+
     def test_a_ghost_inside_a_wall_is_red_says_why_and_cannot_be_set_down(self):
         self.open('laser')
         self.press('Add')

@@ -749,5 +749,55 @@ class Chat(unittest.TestCase):
             self.assertIn(name, prompt)
 
 
+class Host(unittest.TestCase):
+    def test_a_full_site_says_busy_and_takes_only_an_idle_players_world(self):
+        """Nobody's game is ended while they play it: with every world in use,
+        a newcomer is told the site is busy; a world whose player has done
+        nothing for IDLE_S, or whose page has stopped asking, makes room."""
+        made = []
+
+        class Stand:   # an engine world, without the engine
+            def __init__(self, compiled, exe, logs):
+                self.id, self.closed = f'world {len(made)}', False
+                self.last_used = self.last_action = time.monotonic()
+                made.append(self)
+
+            def frame(self, after, wait_ms):
+                return {'ok': True}
+
+            def close(self):
+                self.closed = True
+        spec = mw.default_spec()
+        real = mw.MachineSession
+        mw.MachineSession = Stand
+        try:
+            with tempfile.TemporaryDirectory() as logs:
+                host = mw.MachineHost(Path('engine'), Path(logs), limit=2)
+                host.open(spec)
+                host.open(spec)
+                with self.assertRaises(mw.SiteBusy) as caught:
+                    host.open(spec)
+                self.assertIn('in use by people playing', str(caught.exception))
+                self.assertFalse(any(w.closed for w in made))
+                # Its page still polls (last_used is fresh), but its player has
+                # done nothing for three minutes: that world makes room.
+                made[0].last_action -= host.IDLE_S + 1
+                host.open(spec)
+                self.assertEqual([w.closed for w in made], [True, False, False])
+                # A page that has gone quiet (it polls every second) makes room
+                # first, whatever its player last did.
+                made[1].last_used -= host.QUIET_S + 1
+                host.open(spec)
+                self.assertTrue(made[1].closed)
+                self.assertEqual(len(host.sessions), 2)
+                # And one gone for GONE_S is closed even with room to spare.
+                made[2].last_used -= host.GONE_S + 1
+                host.limit = 5
+                host.open(spec)
+                self.assertTrue(made[2].closed)
+        finally:
+            mw.MachineSession = real
+
+
 if __name__ == '__main__':
     unittest.main()

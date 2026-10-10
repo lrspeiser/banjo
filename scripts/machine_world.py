@@ -1811,7 +1811,11 @@ class MachineSession:
         self.events = []
         self.readouts = {}
         self.error = None
-        self.last_used = time.monotonic()
+        # last_used: anything asked of it, a page's polling included (a page
+        # gone stops asking); last_action: something a person did (built it,
+        # started or stopped it), which is what decides whose world goes when
+        # the site is full.
+        self.last_used = self.last_action = time.monotonic()
         self.wall_compute_s = 0.0
         self.fracture_s = 0.0
         self.behind_s = 0.0
@@ -2285,7 +2289,7 @@ class MachineSession:
                     raise ValueError('speed is 0.25, 0.5, 1, 2 or 4 times real time')
                 self.speed = float(speed)
             self.playing = bool(running)
-            self.last_used = time.monotonic()
+            self.last_used = self.last_action = time.monotonic()
             self.lock.notify_all()
         return self.frame(0, 0)
 
@@ -2350,20 +2354,33 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0):
         session.close()
 
 
-class MachineHost:
-    """The server's machines: a few at a time, closed when idle."""
+class SiteBusy(ValueError):
+    """Every world the server can run is in use by someone playing."""
 
-    def __init__(self, exe, logs, limit=4):
+
+class MachineHost:
+    """The server's machines: up to `limit` at a time (BANJO_MACHINE_SESSIONS).
+    A world whose page has stopped asking about it (closed, or gone away)
+    is closed after GONE_S. When all are in use, a new one takes the place of
+    one whose page has been quiet for QUIET_S (a page polls every second, so
+    it is gone), else of the one whose player has done nothing for longest --
+    if that is at least IDLE_S -- and otherwise the newcomer is told the site
+    is busy: nobody's game is ended while they are playing it."""
+    GONE_S = 120.0
+    QUIET_S = 15.0
+    IDLE_S = 180.0
+
+    def __init__(self, exe, logs, limit=None):
         self.exe = exe
         self.logs = Path(logs)
         self.logs.mkdir(parents=True, exist_ok=True)
-        self.limit = limit
+        self.limit = limit or int(os.environ.get('BANJO_MACHINE_SESSIONS', '4'))
         self.sessions = {}
         self.lock = threading.Lock()
 
     def _sweep(self):
         for key, s in list(self.sessions.items()):
-            if time.monotonic() - s.last_used > 600:
+            if time.monotonic() - s.last_used > self.GONE_S:
                 s.close()
                 del self.sessions[key]
 
@@ -2374,9 +2391,18 @@ class MachineHost:
         with self.lock:
             self._sweep()
             if len(self.sessions) >= self.limit:
-                oldest = min(self.sessions.values(), key=lambda s: s.last_used)
-                oldest.close()
-                del self.sessions[oldest.id]
+                now = time.monotonic()
+                quietest = min(self.sessions.values(), key=lambda s: s.last_used)
+                idlest = min(self.sessions.values(), key=lambda s: s.last_action)
+                if now - quietest.last_used >= self.QUIET_S:
+                    making_room = quietest
+                elif now - idlest.last_action >= self.IDLE_S:
+                    making_room = idlest
+                else:
+                    raise SiteBusy(f'All {self.limit} of this site\'s worlds are in use by people playing right now. '
+                                   'Try again in a minute or two.')
+                making_room.close()
+                del self.sessions[making_room.id]
         session = MachineSession(compiled, self.exe, self.logs)
         with self.lock:
             self.sessions[session.id] = session

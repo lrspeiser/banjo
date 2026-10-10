@@ -502,8 +502,15 @@ async function build(next, start, request) {
 }
 
 async function setPlaying(run) {
-  if (!session) return;
-  const frame = await api({op: 'play', session, running: run, speed: Number($('speed').value)});
+  // A level whose world the server closed while it sat idle is built again
+  // and started, as Run it would: the pieces are kept here, in the page.
+  if (!session) { if (LEVEL_MODE && run && level) await rebuildLevel(true); return; }
+  let frame;
+  try { frame = await api({op: 'play', session, running: run, speed: Number($('speed').value)}); }
+  catch (e) {
+    if (e.status === 410 && LEVEL_MODE && run && level) { session = null; await rebuildLevel(true); return; }
+    throw e;
+  }
   playing = frame.playing; renderClock(frame);
   if (wake) wake();
 }
@@ -533,7 +540,11 @@ async function poll(mine) {
       updateWires(); syncLight(); addEvents(frame.events); renderStations(); renderReadings(frame); renderClock(frame);
       watchGoal(frame);
     } catch (e) {
-      if (e.status === 410) { $('clock').textContent = 'This machine stopped running on the server; press Set up again'; session = null; return; }
+      if (e.status === 410) {
+        $('clock').textContent = LEVEL_MODE ? 'The server closed this level while it sat idle; press Start or Run it to build it again'
+          : 'This machine stopped running on the server; press Set up again';
+        session = null; return;
+      }
       $('clock').textContent = 'Connection problem: ' + e.message;
       await new Promise(r => setTimeout(r, 1500));
     }
@@ -1151,11 +1162,41 @@ async function askLevel(mode) {
   finally { $('send').disabled = $('solve').disabled = false; $('chat-status').textContent = ''; }
 }
 
+// How to play: shown on a first visit, and again from the header's link.
+function showGuide(show) {
+  $('guide').hidden = !show;
+  if (!show) { try { localStorage.setItem('banjo-play-guide-seen', '1'); } catch { /* private window */ } }
+}
+$('guide-done').addEventListener('click', () => showGuide(false));
+$('guide-open').addEventListener('click', e => {
+  if (!LEVEL_MODE) return;
+  e.preventDefault(); showGuide(true); $('guide').scrollIntoView({block: 'nearest'});
+});
+
+// What a player tells us: with the level and pieces it is about, to the
+// server's log. Nothing that names them is sent.
+$('feedback-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const text = $('feedback-text').value.trim();
+  if (!text) return;
+  $('feedback-send').disabled = true;
+  try {
+    await api({op: 'feedback', text, level: level && level.id, placements, last_run: lastRun,
+               screen: [innerWidth, innerHeight], touch: matchMedia('(pointer: coarse)').matches});
+    $('feedback-text').value = '';
+    $('feedback-status').textContent = 'Thank you: it is with us.';
+  } catch (err) { $('feedback-status').textContent = err.message; }
+  finally { $('feedback-send').disabled = false; }
+});
+
 async function startGame() {
   document.body.classList.add('playing-level');
+  let seen = false;
+  try { seen = Boolean(localStorage.getItem('banjo-play-guide-seen')); } catch { /* private window */ }
+  showGuide(!seen);
   $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;
-  for (const d of document.querySelectorAll('aside details')) d.hidden = true;
+  for (const d of document.querySelectorAll('aside details:not(#feedback)')) d.hidden = true;
   $('send').textContent = 'Ask for a hint';
   $('message').placeholder = 'Ask about this level, e.g. “Why does my ball fall short?”';
   document.querySelector('.chat h2').textContent = 'Ask for help';
@@ -1181,6 +1222,12 @@ $('trial').addEventListener('click', async () => {
   finally { $('trial').disabled = false; }
 });
 $('solve').addEventListener('click', () => askLevel('build'));
+
+// Leaving the page: the server is told at once, so its world makes room for
+// someone else instead of waiting to notice that the page has gone quiet.
+addEventListener('pagehide', () => {
+  if (session) navigator.sendBeacon('/api/machine', new Blob([JSON.stringify({op: 'close', session})], {type: 'application/json'}));
+});
 
 const history_ = window.history;
 resize(); render();
