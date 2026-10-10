@@ -42,13 +42,23 @@ def need_engine(test):
 
 
 def engine_turn(v, degrees):
-    """TileImpactScene rotateDegrees, written out again independently."""
+    """A body's turn as the engine makes it (TileImpactScene
+    rotationQuaternion, R = Rx Ry Rz: about the world's z first), written out
+    again independently: v turned about z, then y, then x."""
     x, y, z = v
     a = [math.radians(d) for d in degrees]
-    y, z = y * math.cos(a[0]) - z * math.sin(a[0]), y * math.sin(a[0]) + z * math.cos(a[0])
-    x, z = x * math.cos(a[1]) + z * math.sin(a[1]), -x * math.sin(a[1]) + z * math.cos(a[1])
     x, y = x * math.cos(a[2]) - y * math.sin(a[2]), x * math.sin(a[2]) + y * math.cos(a[2])
+    x, z = x * math.cos(a[1]) + z * math.sin(a[1]), -x * math.sin(a[1]) + z * math.cos(a[1])
+    y, z = y * math.cos(a[0]) - z * math.sin(a[0]), y * math.sin(a[0]) + z * math.cos(a[0])
     return [x, y, z]
+
+
+def quaternion_turn(q, v):
+    """v turned by the unit quaternion q = [w, x, y, z]."""
+    w, qv = q[0], q[1:]
+    t = [2 * (qv[1] * v[2] - qv[2] * v[1]), 2 * (qv[2] * v[0] - qv[0] * v[2]), 2 * (qv[0] * v[1] - qv[1] * v[0])]
+    c = [qv[1] * t[2] - qv[2] * t[1], qv[2] * t[0] - qv[0] * t[2], qv[0] * t[1] - qv[1] * t[0]]
+    return [v[i] + w * t[i] + c[i] for i in range(3)]
 
 
 def part(name, size, at, **kw):
@@ -145,12 +155,18 @@ class Declaration(unittest.TestCase):
         self.assertAlmostEqual(q[3], math.sin(math.pi / 4), places=12)
 
     def test_rotation_matches_the_engine(self):
+        # The matrix the checks use, the quaternion the scene is built with
+        # (which the engine reports back as the body's orientation:
+        # test_a_two_axis_turn_is_the_one_the_engine_reports), and the turn
+        # written out by hand all agree.
         for degrees in ([30, 0, 45], [20, 35, -50], [-60, 25, 10], [0, 90, 0], [0, 0, -20]):
             r = mw.rotation(degrees)
+            q = mw.quaternion_of_turn(degrees)
             for v in ([1, 0, 0], [0, 1, 0], [0.3, -0.2, 0.9]):
                 mine = [sum(r[i][j] * v[j] for j in range(3)) for i in range(3)]
-                for a, b in zip(mine, engine_turn(v, degrees)):
+                for a, b, c in zip(mine, engine_turn(v, degrees), quaternion_turn(q, v)):
                     self.assertAlmostEqual(a, b, places=12)
+                    self.assertAlmostEqual(a, c, places=12)
 
     def test_refuses_what_cannot_be_built_honestly(self):
         base = {'schema': mw.SCHEMA, 'cell_m': 0.02}
@@ -200,6 +216,25 @@ class Declaration(unittest.TestCase):
 
 
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_a_two_axis_turn_is_the_one_the_engine_reports(self):
+        """The turn the declaration's checks use is the engine's own: a plank
+        turned about two axes faces where the engine says it does."""
+        turn = [30, 0, 45]
+        spec = {'schema': mw.SCHEMA, 'parts': [part('plank', [0.4, 0.02, 0.2], [0, 1, 0], turn_deg=turn, fixed=True)]}
+        with tempfile.TemporaryDirectory() as logs:
+            session = mw.MachineSession(mw.compile_spec(spec), ENGINE, Path(logs), paced=False)
+            try:
+                q = session.bodies['plank']['orientation_wxyz']
+            finally:
+                session.close()
+        r = mw.rotation(turn)
+        for v in ([1, 0, 0], [0, 1, 0], [0, 0, 1]):
+            mine = [sum(r[i][j] * v[j] for j in range(3)) for i in range(3)]
+            for a, b in zip(mine, quaternion_turn(q, v)):
+                self.assertAlmostEqual(a, b, places=4)   # the engine's reply is rounded to 1e-5
+
+
     @need_engine
     def test_default_machine_runs_every_built_station_in_order_and_hands_heat_over_exactly(self):
         with tempfile.TemporaryDirectory() as logs:
@@ -440,6 +475,46 @@ class Light(unittest.TestCase):
         self.assertAlmostEqual(r['stations'][1]['at_s'], math.sqrt(2 * 0.65 / 9.81), delta=0.04)
         # It comes to rest on the block in the beam, and the alarm stays on.
         self.assertGreaterEqual(r['stations'][2]['at_s'], r['stations'][1]['at_s'])
+
+    @need_engine
+    def test_mirrors_aimed_at_a_part_add_their_light_on_it(self):
+        """A dark target in the sun, and 0, 1 or 3 mirror kits aimed at it: each
+        mirror adds, on the target, about what falls on the mirror times its
+        reflectance, and the target absorbs half (it is oak)."""
+        def absorbed(count):
+            spec = {'schema': mw.SCHEMA, 'cell_m': 0.02,
+                    'sun': {'elevation_deg': 60, 'azimuth_deg': 0, 'irradiance_w_m2': 1000},
+                    'parts': [part('target', [0.4, 0.4, 0.04], [0, 0.5, 1.5], fixed=True)],
+                    'kits': [{'kit': 'mirror', 'name': f'mirror {k}', 'at_m': [-0.6 + 0.6 * k, 0.5, 0.0],
+                              'size_m': [0.2, 0.2], 'aim_m': [0, 0.5, 1.5]} for k in range(count)],
+                    'light': {'sunlight': {'through': ['target'] + [f'mirror {k}' for k in range(count)],
+                                           'spacing_m': 0.01}}}
+            with tempfile.TemporaryDirectory() as logs:
+                session = mw.MachineSession(mw.compile_spec(spec), ENGINE, Path(logs), paced=False)
+                try:
+                    light = session.readouts['light']
+                finally:
+                    session.close()
+            return next((b['absorbed_w'] for b in light['lit'] if b['name'] == 'target'), 0.0), light
+        alone, _ = absorbed(0)
+        one, _ = absorbed(1)
+        three, light = absorbed(3)
+        # The sun stands 60 degrees up over +z, behind the target, so the face
+        # the mirrors see is in its own shadow. Each mirror, 0.2 m square, is
+        # turned square to the bisector of the sun and the target, so it takes
+        # 1000 W/m2 x 0.04 m2 x cos(half the angle between them) and reflects
+        # 0.925 of it (0.92 visible, 0.93 infrared); the whole beam lands on the
+        # target's face and the oak absorbs half.
+        sun = [0.0, math.sin(math.radians(60)), math.cos(math.radians(60))]
+
+        def landed(k):
+            to = [0.6 - 0.6 * k, 0.0, 1.5]
+            n = math.sqrt(sum(c * c for c in to))
+            cos_half = math.sqrt(0.5 * (1 + sum(a * b / n for a, b in zip(sun, to))))
+            return 0.5 * 1000 * 0.04 * cos_half * (0.46 * 0.92 + 0.54 * 0.93)
+        self.assertAlmostEqual(one - alone, landed(0), delta=0.08 * landed(0))
+        self.assertAlmostEqual(three - alone, sum(landed(k) for k in range(3)), delta=0.08 * sum(landed(k) for k in range(3)))
+        self.assertLess(abs(light['residual_w']), 1e-9 * light['sent_w'])
 
     @need_engine
     def test_light_goes_on_through_the_pieces_of_a_broken_pane(self):

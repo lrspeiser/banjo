@@ -133,7 +133,8 @@ function syncLight() {
   const light = readouts.light;
   const {positions, colors, legs} = beamSegments(light && light.paths);
   if (!beams) {
-    beams = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({vertexColors: true, transparent: true, opacity: .9}));
+    // Opaque, so the glass is drawn over them and they show through it.
+    beams = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({vertexColors: true}));
     beams.frustumCulled = false;
     scene.add(beams);
   }

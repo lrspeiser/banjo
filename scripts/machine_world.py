@@ -78,7 +78,15 @@ def _num(d, key, what, problems, default=None, low=None, high=None):
 
 
 def rotation(turn_deg):
-    """The engine's turn: about x, then y, then z (TileImpactScene rotateDegrees)."""
+    """The engine's turn of a body by turn_deg (TileImpactScene
+    rotationQuaternion, which the engine reports back as the body's
+    orientation): about the body's own x, then its own y, then its own z --
+    which is about the world's z first, then y, then x: R = Rx Ry Rz.
+
+    (TileImpactScene rotateDegrees turns the other way round, x first; with the
+    angles negated it undoes a body's turn, and that is all it is for. This
+    was built from it until October 10, 2026, which is the same for a turn
+    about one axis and not for a turn about two.)"""
     rx, ry, rz = (math.radians(a) for a in turn_deg)
     cx, sx, cy, sy, cz, sz = math.cos(rx), math.sin(rx), math.cos(ry), math.sin(ry), math.cos(rz), math.sin(rz)
     mx = [[1, 0, 0], [0, cx, -sx], [0, sx, cx]]
@@ -86,7 +94,7 @@ def rotation(turn_deg):
     mz = [[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]]
     def mul(a, b):
         return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
-    return mul(mz, mul(my, mx))
+    return mul(mx, mul(my, mz))
 
 
 def _axes(part):
@@ -216,10 +224,10 @@ def solids_of(part):
             size = [size[0], size[1], size[0]]
         r = rotation(sub['turn_deg'])
         m = [[sum(outer[i][k] * r[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
-        # The same matrix as x-y-z turn angles (R = Rz Ry Rx).
-        ry = math.asin(max(-1.0, min(1.0, -m[2][0])))
-        rx = math.atan2(m[2][1], m[2][2])
-        rz = math.atan2(m[1][0], m[0][0])
+        # The same matrix as turn angles (R = Rx Ry Rz, as rotation()).
+        ry = math.asin(max(-1.0, min(1.0, m[0][2])))
+        rx = math.atan2(-m[1][2], m[2][2])
+        rz = math.atan2(-m[0][1], m[0][0])
         out.append({'name': part['name'], 'shape': 'box', 'size_m': size, 'at_m': at,
                     'turn_deg': [math.degrees(rx), math.degrees(ry), math.degrees(rz)]})
     return out
@@ -1921,9 +1929,11 @@ def light_station(rule, session):
 # -- light kits ------------------------------------------------------------------
 
 def _turn_to_normal(n):
-    """turn_deg [x, 0, z] that turns a part's own +y to the unit vector n."""
-    ax = math.degrees(math.asin(max(-1.0, min(1.0, n[2]))))
-    az = math.degrees(math.atan2(-n[0], n[1]))
+    """turn_deg [x, 0, z] that turns a part's own +y to the unit vector n: the
+    engine turns about z first, so +y goes to (-sin z, cos z, 0), and then
+    about x, to (-sin z, cos z cos x, cos z sin x)."""
+    az = math.degrees(math.asin(max(-1.0, min(1.0, -n[0]))))
+    ax = math.degrees(math.atan2(n[2], n[1]))
     return [round(ax, 6), 0.0, round(az, 6)]
 
 

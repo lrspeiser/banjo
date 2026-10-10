@@ -2292,11 +2292,11 @@ struct LiveWorld::Impl {
         }
         light.traced = static_cast<unsigned>(rays.size() - first);
         for (std::size_t k = first; k < rays.size(); ++k) light.power_w += optics::total(rays[k].power_w);
-        // A few of them kept to draw, spread evenly through the light's rays.
-        if (drawn_each > 0 && light.traced > 0) {
-            const std::size_t every = std::max<std::size_t>(1, light.traced / drawn_each);
-            for (std::size_t k = first; k < rays.size(); k += every) rays[k].drawn = true;
-        }
+        // Every path is kept for now; a few are chosen to draw once they are
+        // traced (traceLightNow), so that the ones a lens or a mirror turned
+        // are among them.
+        if (drawn_each > 0)
+            for (std::size_t k = first; k < rays.size(); ++k) rays[k].drawn = true;
     }
     static constexpr std::size_t kMostSunRays = 8192;
 
@@ -2352,10 +2352,24 @@ struct LiveWorld::Impl {
             }
             row->absorbed_w = w;
         }
+        // A few paths to draw, light by light: the rays that something turned
+        // (a mirror, a lens: three corners or more) first, spread evenly
+        // through them, then the plain ones the same way, up to each light's
+        // share of `drawn`.
         light_report.paths.clear();
-        for (optics::Path &p : result.paths) {
-            if (p.points.size() < 2) continue;
-            light_report.paths.push_back({p.light, std::move(p.points), std::move(p.power_w)});
+        for (const LiveLight &light : lights) {
+            std::vector<optics::Path *> turned, plain;
+            for (optics::Path &p : result.paths)
+                if (p.light == light.id && p.points.size() >= 2) (p.points.size() > 2 ? turned : plain).push_back(&p);
+            std::size_t room = drawn_each;
+            for (std::vector<optics::Path *> *group : {&turned, &plain}) {
+                const std::size_t take = std::min(room, group->size());
+                for (std::size_t k = 0; k < take; ++k) {
+                    optics::Path &p = *(*group)[k * group->size() / take];
+                    light_report.paths.push_back({p.light, std::move(p.points), std::move(p.power_w)});
+                }
+                room -= take;
+            }
         }
         light_report.rays = result.rays;
         light_report.casts = result.casts;

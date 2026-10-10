@@ -23,8 +23,10 @@ In a machine (`/machine`, schema `banjo.machine.v1`) you can now:
 - Use two new **station rules**: `lit_w` (a sensor read at least so many watts) and `shaded_w`
   (it read more, then that or less).
 
-The page draws the rays the engine last traced, each as bright as the power the engine
-measured on it, and each sensor as a small disc that lights up when light reaches it.
+The page draws a few of the rays the engine last traced (those a mirror or a lens turned
+first), each as bright as the power the engine measured on it, and each sensor as a small disc
+that lights up when light reaches it. Checked in a browser: the glass-ball machine below ran
+on the page through all four stations, with the rays bending through the ball to its focus.
 
 An example the tests rehearse: a glass ball rolls along two rails to a stop. There the
 overhead sun, focused through the ball, lands on a sensor 8 mm across under the rails. The
@@ -137,6 +139,10 @@ From `tests/machine_world_tests.py`:
   closes.
 - A ball dropped through a light gate's beam darkens its sensor 0.36 s after it is released (it
   falls 0.65 m), and the alarm switch that follows the sensor closes.
+- Mirror kits aimed at an oak target 1.5 m away, with the sun behind the target: one 0.2 m mirror
+  adds 16.2 W absorbed on it (expected 15.8 W: the sunlight on the mirror, times its 0.925
+  reflectance, times the oak's 0.5) and three add 48.1 W (expected 47.7 W). The difference is
+  the ray grid's sampling of the mirrors' edges (10 mm).
 - Light goes on through the pieces of a glass pane broken by a falling iron ball, and the ledger
   still closes to rounding.
 
@@ -171,7 +177,7 @@ transparent body to find where the ray leaves.
 | Scene | Rays | Ray casts | Time per trace | Per step (trace every 4 steps) |
 |---|---|---|---|---|
 | Heat lamp on a cord | 256 | 258 | 0.06–0.07 ms | 0.02 ms |
-| Glass-ball machine (rails, ball, sensor) | 2,116 | 9,759 | 2.1 ms | 0.5 ms |
+| Glass-ball machine (rails, ball, sensor) | 2,116 | 9,759 | 2.1–2.2 ms | 0.55 ms |
 | Ball-lens test (1.5 mm grid) | 7,272 | 35,196 | 7–9 ms | 2 ms |
 
 Sunlight is limited to 8,192 rays and a lamp to 4,096; the machine's rehearsal of the glass-ball
@@ -242,4 +248,15 @@ Windows, MSVC Release, `banjo-cpu-precise-v1`. Passed: `banjo_optics_tests`,
 `banjo_solar_panel_tests`, `banjo_sun_day_tests`, `banjo_thermo_live_tests`,
 `banjo_machine_control_tests`, `tests/machine_world_tests.py` (all 23), and
 `tests/machine_view_test.mjs`. The source-registration check and the floating-point audit pass.
-Not checked yet: Linux, and the page in a browser.
+The page was run in a browser on a local server (port 18951). Not checked: Linux.
+
+## A fix on the way: the machine's turns
+
+A mirror kit turns its plate about two axes, and the first one aimed sunlight the wrong way.
+`machine_world.rotation()`, which the declaration's checks (overlap, the ground, a compound's
+pieces) use, turned a part about x first, then y, then z. The engine turns a body about z first
+(TileImpactScene's rotation quaternion, which the engine also reports back as the body's
+orientation); x first is the order of the helper that undoes a turn. The two agree for a turn
+about one axis, which is all the existing kits use, and not for a turn about two: a plank
+turned [30, 0, 45] had its face pointing 10 degrees away from where the checks thought. It now
+builds the engine's turn, and a test compares it with the orientation the engine reports.
