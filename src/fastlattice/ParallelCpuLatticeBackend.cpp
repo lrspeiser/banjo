@@ -882,11 +882,12 @@ BANJO_AVX2_TARGET void bondSolveRange8(const LatticeArrays<float> &L, const Elem
     for (; j < end; ++j) bondSolveKept(L, C, j, false, first_iteration);
 }
 
-// bondEndSampleAndFailureKept over the live bonds of [begin, end), without
-// plasticity. The peaks and the damage of every live bond go into the running
-// maxima; a bond that breaks is finished by the scalar code and listed.
+// bondEndSampleAndFailureKept over the live bonds of [begin, end). The peaks,
+// the damage and the plastic stretch of every live bond go into the running
+// maxima; a bond that breaks is finished by the scalar code and listed, and so
+// is the plastic work of every bond that flowed.
 struct BondEndTally {
-    float tensile{}, compressive{}, shear{}, damage{};
+    float tensile{}, compressive{}, shear{}, damage{}, plastic{};
 };
 
 // damageProgressKept for mode `mode` (0 tension, 1 compression, 2 shear) of
@@ -922,11 +923,18 @@ BANJO_AVX2_TARGET inline __m256 damageProgress8(const ElementCache<float> &C, st
 
 BANJO_AVX2_TARGET void bondEndRange8(const LatticeArrays<float> &L, const ElementCache<float> &C,
                                      const StepSettings<float> &S, std::uint32_t begin, std::uint32_t end,
-                                     BondEndTally &tally, std::vector<Breakage> &breakages) {
+                                     BondEndTally &tally, std::vector<Breakage> &breakages,
+                                     std::vector<Breakage> &flows) {
     using namespace v8;
     const __m256 zero = _mm256_setzero_ps(), one = _mm256_set1_ps(1.0f), two = _mm256_set1_ps(2.0f);
+    const __m256 half = _mm256_set1_ps(0.5f);
     const __m256i three = _mm256_set1_epi32(3), six = _mm256_set1_epi32(6);
-    __m256 most_t = zero, most_c = zero, most_s = zero, most_d = zero;
+    const bool plastic = S.plastic_yield_stretch > 0.0f;
+    const __m256 yield_stretch = _mm256_set1_ps(S.plastic_yield_stretch);
+    const __m256 hardening = _mm256_set1_ps(S.plastic_hardening);
+    const __m256 one_plus_hardening = _mm256_set1_ps(1.0f + S.plastic_hardening);
+    __m256 most_t = zero, most_c = zero, most_s = zero, most_d = zero, most_p = zero;
+    alignas(32) float work_of[8];
     alignas(32) std::uint32_t ia[8], ib[8];
     alignas(32) float mode_of[8], broke_of[8];
     alignas(32) std::int32_t valid_a[8], valid_b[8], finite[8];
@@ -953,6 +961,45 @@ BANJO_AVX2_TARGET void bondEndRange8(const LatticeArrays<float> &L, const Elemen
         const __m256 len2_minus_rest2 =
             add(add(_mm256_loadu_ps(L.rest_length_sq_minus + j), mul(two, dot3(rx, ry, rz, dux, duy, duz))),
                 dot3(dux, duy, duz, dux, duy, duz));
+        // bondPlasticReturn, before the sample as the scalar code has it. Its
+        // elastic extension is length(bondVector) - rest_length -
+        // plastic_extension, and that length is `len`.
+        if (plastic) {
+            const __m256 plastic_extension = _mm256_loadu_ps(L.plastic_extension + j);
+            const __m256 plastic_strain = _mm256_loadu_ps(L.plastic_strain + j);
+            const __m256 elastic = sub(sub(len, rest), plastic_extension);
+            const __m256 shortened = _mm256_cmp_ps(elastic, zero, _CMP_LT_OQ);
+            const __m256 magnitude = _mm256_blendv_ps(elastic, neg(elastic), shortened);
+            const __m256 yield_extension = add(mul(yield_stretch, rest), mul(hardening, plastic_strain));
+            const __m256 flowing = _mm256_and_ps(alive, _mm256_cmp_ps(magnitude, yield_extension, _CMP_GT_OQ));
+            __m256 extension_now = plastic_extension;
+            const int flowed = _mm256_movemask_ps(flowing);
+            if (flowed != 0) {
+                const __m256 increment = div(sub(magnitude, yield_extension), one_plus_hardening);
+                extension_now = _mm256_blendv_ps(
+                    plastic_extension,
+                    add(plastic_extension, _mm256_blendv_ps(increment, neg(increment), shortened)), flowing);
+                _mm256_storeu_ps(L.plastic_extension + j, extension_now);
+                _mm256_storeu_ps(L.plastic_strain + j,
+                                 _mm256_blendv_ps(plastic_strain, add(plastic_strain, increment), flowing));
+                // 0.5 * (yield + yield_end) * increment / c, for c > 0.
+                const __m256 compliance = _mm256_loadu_ps(L.compliance + j);
+                const __m256 yield_end = add(yield_extension, mul(hardening, increment));
+                const __m256 work = div(mul(mul(half, add(yield_extension, yield_end)), increment), compliance);
+                const int paid = flowed & _mm256_movemask_ps(_mm256_cmp_ps(compliance, zero, _CMP_GT_OQ));
+                if (paid != 0) {
+                    _mm256_store_ps(work_of, work);
+                    for (int k = 0; k < 8; ++k)
+                        if ((paid & (1 << k)) && work_of[k] != 0.0f)
+                            flows.push_back({j + static_cast<std::uint32_t>(k), static_cast<double>(work_of[k])});
+                }
+            }
+            // absR(plastic_extension) / rest_length
+            const __m256 stretch_now =
+                div(_mm256_blendv_ps(extension_now, neg(extension_now), _mm256_cmp_ps(extension_now, zero, _CMP_LT_OQ)),
+                    rest);
+            most_p = _mm256_blendv_ps(most_p, maxR8(most_p, stretch_now), alive);
+        }
         const __m256 stretch = div(len2_minus_rest2, mul(add(len, rest), rest));
         __m256 tensile = stretch, compressive = neg(stretch), shear = zero;
         // The strain at either end, resolved along the rest direction.
@@ -1034,17 +1081,19 @@ BANJO_AVX2_TARGET void bondEndRange8(const LatticeArrays<float> &L, const Elemen
             }
         }
     }
-    alignas(32) float lane_t[8], lane_c[8], lane_s[8], lane_d[8];
+    alignas(32) float lane_t[8], lane_c[8], lane_s[8], lane_d[8], lane_p[8];
     _mm256_store_ps(lane_t, most_t);
     _mm256_store_ps(lane_c, most_c);
     _mm256_store_ps(lane_s, most_s);
     _mm256_store_ps(lane_d, most_d);
+    _mm256_store_ps(lane_p, most_p);
     _mm256_zeroupper();
     for (int k = 0; k < 8; ++k) {
         tally.tensile = std::max(tally.tensile, lane_t[k]);
         tally.compressive = std::max(tally.compressive, lane_c[k]);
         tally.shear = std::max(tally.shear, lane_s[k]);
         tally.damage = std::max(tally.damage, lane_d[k]);
+        tally.plastic = std::max(tally.plastic, lane_p[k]);
     }
     for (; j < end; ++j) {
         if (!L.alive[j]) continue;
@@ -1053,6 +1102,8 @@ BANJO_AVX2_TARGET void bondEndRange8(const LatticeArrays<float> &L, const Elemen
         tally.compressive = std::max(tally.compressive, out.peak_compressive);
         tally.shear = std::max(tally.shear, out.peak_shear);
         tally.damage = std::max(tally.damage, out.damage);
+        tally.plastic = std::max(tally.plastic, out.plastic_stretch);
+        if (plastic && out.plastic_increment_j != 0.0) flows.push_back({j, out.plastic_increment_j});
         if (out.broke) breakages.push_back({j, out.removed_energy_j});
     }
 }
@@ -1638,25 +1689,26 @@ private:
 
     // The end-of-substep sample and failure test of every live bond, eight at
     // a time; false when the kernel does not apply and the caller must do it.
-    bool endSample8(bool direct, bool plastic) {
+    bool endSample8(bool direct) {
 #if BANJO_LATTICE_AVX2
         if constexpr (std::is_same_v<Real, float>) {
-            if (vector_ && !direct && !plastic) {
+            if (vector_ && !direct) {
                 forEachChunk(0U, L_.bond_count, kBondGrain8, [&](std::uint32_t first, std::uint32_t last, unsigned thread) {
                     Scratch &scratch = scratch_[thread];
-                    BondEndTally tally{scratch.tensile, scratch.compressive, scratch.shear, scratch.damage};
-                    bondEndRange8(L_, C_, S_, first, last, tally, scratch.breakages);
+                    BondEndTally tally{scratch.tensile, scratch.compressive, scratch.shear, scratch.damage,
+                                       scratch.plastic};
+                    bondEndRange8(L_, C_, S_, first, last, tally, scratch.breakages, scratch.flows);
                     scratch.tensile = tally.tensile;
                     scratch.compressive = tally.compressive;
                     scratch.shear = tally.shear;
                     scratch.damage = tally.damage;
+                    scratch.plastic = tally.plastic;
                 });
                 return true;
             }
         }
 #endif
         (void)direct;
-        (void)plastic;
         return false;
     }
 
@@ -1806,7 +1858,7 @@ private:
             scratch.breakages.clear();
             scratch.flows.clear();
         }
-        if (!endSample8(direct, plastic))
+        if (!endSample8(direct))
             forEach(B, kBondGrain, [&](std::uint32_t j, unsigned thread) {
                 if (!L_.alive[j]) return;
                 const FailureOutcome out = bondEndSampleAndFailureKept(views_[thread], C_, S_, j, direct);
