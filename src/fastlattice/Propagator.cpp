@@ -90,13 +90,16 @@ void SubstepMap::apply(const double *x, double *y) {
 namespace {
 
 // Random increment of the given amplitude, in the u block alone unless the
-// caller asks for the whole state.
+// caller asks for the whole state. Each draw is taken from the engine's bits
+// directly, uniform on [-1, 1): std::uniform_real_distribution is the standard
+// library's own, and MSVC's and libstdc++'s give different numbers from the
+// same engine (docs/floating-point-model.md).
 void randomIncrement(std::mt19937_64 &rng, std::size_t n, double amplitude, bool displacement_only,
                      std::vector<double> &out) {
-    std::uniform_real_distribution<double> dist(-1.0, 1.0);
+    const auto unit = [&rng] { return static_cast<double>(rng() >> 11) * 0x1p-52 - 1.0; };
     const std::size_t half = n / 2;
     for (std::size_t i = 0; i < n; ++i)
-        out[i] = (displacement_only && i >= half) ? 0.0 : amplitude * dist(rng);
+        out[i] = (displacement_only && i >= half) ? 0.0 : amplitude * unit();
 }
 
 // Worst absolute difference over the u block and over the v block.
