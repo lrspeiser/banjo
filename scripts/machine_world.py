@@ -385,6 +385,43 @@ def _kit_hanging_weight(k, problems, name):
     holds = _num(k, 'holds_shear_n', name, problems, 800, 10, 1e6)
     peg_len = _num(k, 'peg_length_m', name, problems, 0.3, 0.1, 1.0)
     post_w = 0.16
+    hang = k.get('hang', 'peg')
+    if hang not in ('peg', 'rope'):
+        problems.append(f'{name}: hang is "peg" or "rope"')
+    if hang == 'rope':
+        # A rope -- an oak cord, there being no fibre material yet -- hanging
+        # from a fixed arm at the top of the post, the weight on its lower end.
+        # The rope's fixing to the arm is made of the rope: heat weakens it
+        # and it parts in tension when it can no longer carry the weight.
+        rope = _num(k, 'rope_m', name, problems, 0.3, 0.1, 2.0)
+        thick = peg
+        reach = 0.5 * peg_len + 0.005
+        post_h = drop + wsize + 0.005 + rope + 0.005 + 0.04
+        x = at[0] + side[0] * (0.5 * post_w + reach)
+        z = at[2] + side[2] * (0.5 * post_w + reach)
+        arm_len = reach + 0.03
+        arm_c = [at[0] + side[0] * (0.5 * post_w + 0.5 * arm_len), post_h - 0.02,
+                 at[2] + side[2] * (0.5 * post_w + 0.5 * arm_len)]
+        rope_top = post_h - 0.04 - 0.005
+        rope_c = [x, rope_top - 0.5 * rope, z]
+        weight_c = [x, drop + 0.5 * wsize, z]
+        arm_size = [arm_len if side[0] else 0.06, 0.04, arm_len if side[2] else 0.06]
+        parts = [{'name': name + ' post', 'shape': 'box', 'material': k.get('post_material', 'concrete'),
+                  'size_m': [post_w, post_h, post_w], 'at_m': [at[0], 0.5 * post_h, at[2]], 'turn_deg': [0, 0, 0],
+                  'fixed': True},
+                 {'name': name + ' arm', 'shape': 'box', 'material': k.get('post_material', 'concrete'),
+                  'size_m': arm_size, 'at_m': arm_c, 'turn_deg': [0, 0, 0], 'fixed': True},
+                 {'name': name + ' rope', 'shape': 'box', 'material': k.get('peg_material', 'oak'),
+                  'size_m': [thick, rope, thick], 'at_m': rope_c, 'turn_deg': [0, 0, 0], 'fixed': False},
+                 {'name': name, 'shape': 'box', 'material': k.get('weight_material', 'iron'),
+                  'size_m': [wsize, wsize, wsize], 'at_m': weight_c, 'turn_deg': [0, 0, 0], 'fixed': False}]
+        joints = [{'name': name + ' rope fixing', 'kind': 'fix', 'a': name + ' arm', 'b': name + ' rope',
+                   'at_m': [x, rope_top, z], 'axis': [0.0, 1.0, 0.0],
+                   'holds_tension_n': _num(k, 'holds_tension_n', name, problems, holds, 10, 1e6),
+                   'member': name + ' rope'},
+                  {'name': name + ' hook', 'kind': 'fix', 'a': name + ' rope', 'b': name,
+                   'at_m': [x, rope_top - rope, z], 'axis': [0, 1, 0]}]
+        return parts, joints
     # So the weight's underside is drop_m above the ground.
     post_h = drop + 0.2 + 0.5 * peg + wsize + 0.005
     peg_c = [at[0] + side[0] * (0.5 * post_w + 0.5 * peg_len + 0.005), post_h - 0.2,
@@ -575,7 +612,10 @@ KIT_HELP = {
              'along "x|z", material. Its hinge joint is named "<name> hinge"',
     'hanging_weight': 'post with an oak peg holding a weight: post_m [x, 0, z], drop_m (height of the weight\'s '
                       'underside above the ground), peg_size_m, weight_size_m, weight_material, side "+x|-x|+z|-z", '
-                      'holds_shear_n. The weight is named "<name>", the peg "<name> peg"',
+                      'holds_shear_n. The weight is named "<name>", the peg "<name> peg". Or hang "rope": the weight '
+                      'hangs from a rope "<name> rope" (an oak cord, rope_m long, under an arm on the post, at the '
+                      'same place the peg would hold it), whose fixing parts in tension (holds_tension_n) when heat '
+                      'has weakened it enough; heat the rope with a coil or a torch',
     'plate_on_supports': 'a plate resting on two supports: at_m [x, underside height, z], size_m [x, thickness, z], '
                          'material, span "z|x"',
     'pendulum': 'fixed frame (beam on two posts) with a rope tie to a ball: EITHER aim_at (name of a part declared '

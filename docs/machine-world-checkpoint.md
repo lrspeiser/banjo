@@ -11,12 +11,12 @@ The page shows one world with a chain reaction in it. Press **Start** and watch 
 3. The marble rolls down an oak ramp.
 4. It knocks over eight oak dominoes.
 5. The last domino presses down one end of a hinged oak lever.
-6. Past 8 degrees the lever closes an electric switch. A 48 V battery drives about 56 A through a heating coil wound on an oak peg.
-7. The coil heats the peg. Oak chars, burns and loses strength as it heats; about 13 s later the peg can no longer carry the iron weight hanging from it.
+6. Past 8 degrees the lever closes an electric switch. A 48 V battery drives about 56 A through a heating coil wound on the rope the iron weight hangs from.
+7. The coil sets the rope burning. The rope is an oak cord (there is no fibre material yet): it chars, burns and loses strength as it heats. About 14.5 s later it can no longer carry the weight. In the rehearsal the engine reports the rope "carrying 317 N against the 317 N it could still take (800 N cold)": surface 578 K, core 337 K, 3 mm of char, a 14 × 14 mm core of its 20 × 20 mm section still sound, and 40% of its tension strength left.
 8. The weight falls about 1.1 m.
 9. It lands on a glass plate on two supports, and the plate breaks.
 
-In the engine's rehearsal of this machine the stations happen at 1.9, 2.4, 4.5, 5.4, 5.5, 5.5, 18.7, 19.2 and 19.2 s.
+In the engine's rehearsal of this machine the stations happen at 1.9, 2.4, 4.5, 5.4, 5.5, 5.5, 20.0, 20.5 and 20.5 s.
 
 Every step is calculated by the engine while you watch. Nothing is animated or replayed. The stations are checked off only when the engine measures what each one names: a contact between two parts, a hinge past an angle, a switch closed, a fixing parted, a body broken.
 
@@ -66,8 +66,8 @@ Measured in the default machine: the battery gave 25,238.6 J, of which 1,118.3 J
 | Station | Engine law | Maturity |
 |---|---|---|
 | Marble run, dominoes, lever, falling weight | Jolt rigid bodies, contact friction, rolling resistance, hinge limits | Calculated |
-| Electric switch and coil | Kirchhoff/Ohm DC network with a finite battery; Joule heat into the peg | Calculated |
-| Burning peg | Heat conduction, oak combustion with oxygen, strength falling with temperature | Experimental: not calibrated against measured oak burns |
+| Electric switch and coil | Kirchhoff/Ohm DC network with a finite battery; Joule heat into the rope | Calculated |
+| Burning rope | Heat conduction, oak combustion with oxygen, strength falling with temperature; the rope is an oak cord | Experimental: not calibrated against measured burns; no fibre (hemp) material yet |
 | Glass plate | Bonded-cell fracture | Experimental: whether it breaks is computed; the number of pieces is not calibrated |
 | Pouring water | Falling water as SPH parcels; contact that neither rubs nor bounces; the stream in the trench is shallow-water flow | Experimental: coarse parcels, reduced sound speed; not compared with a measured wheel |
 | Rope and gate | A rope wound on a drum (pulls, never pushes); a bar on a sliding joint | Calculated |

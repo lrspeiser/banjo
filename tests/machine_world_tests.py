@@ -60,7 +60,7 @@ class Declaration(unittest.TestCase):
         c = mw.compile_spec(mw.default_spec())
         names = {p['name'] for p in c['parts']}
         for n in ('water wheel', 'water wheel spout', 'ramp gate', 'marble', 'domino 1', 'domino 8', 'lever',
-                  'lever pivot', 'weight', 'weight peg', 'glass plate'):
+                  'lever pivot', 'weight', 'weight rope', 'weight arm', 'glass plate'):
             self.assertIn(n, names)
         self.assertEqual({j['kind'] for j in c['joints']}, {'hinge', 'fix', 'slide', 'drum'})
         self.assertEqual(c['circuits'][0]['switch'], {'hinge': 'lever hinge', 'closed_at_or_above_deg': 8.0})
