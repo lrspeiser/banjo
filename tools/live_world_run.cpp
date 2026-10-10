@@ -2310,6 +2310,22 @@ int main(int argc, char **argv) {
                     world->moveHeld(readVec(command, "to"));
                 } else if (op == "release") {
                     world->release();
+                } else if (op == "finish") {
+                    // Wait for a fracture started without waiting, and apply it
+                    // now: what a host does when the pair it pins has been held
+                    // as long as it will allow. Held longer, a pinned body stays
+                    // put while the world goes on without it -- measured, a block
+                    // a cannon ball had knocked at 2.8 m/s sat on its pedestal
+                    // for seconds while the ball's own run queued behind it.
+                    if (world->fracturePending()) {
+                        const std::string what = world->fractureSubject();
+                        reply["pieces"] = world->finishFracture();
+                        reply["finished"] = what;
+                        made_bodies = true;
+                        reply["outcome"] = outcomeWord(world->lastOutcome());
+                        if (nlohmann::json cost = costOf(world->lastBreak()); !cost.is_null())
+                            reply["cost"] = std::move(cost);
+                    }
                 } else if (op == "fracture") {
                     const std::string what = command.at("name").get<std::string>();
                     const double window = command.value("window_s", 0.003);

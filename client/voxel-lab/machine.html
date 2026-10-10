@@ -13,11 +13,21 @@
 </section>
 <aside>
 <h1 id="title">Chain reaction</h1>
+<section id="game" hidden aria-label="The puzzle">
+<nav id="levels" aria-label="Levels"></nav>
+<p id="brief"></p>
+<p id="goal-line" class="legend"></p>
+<h2>Your tray</h2><ul id="tray"></ul>
+<h2>Your pieces</h2><ol id="placed"></ol>
+<p id="cost-line"></p>
+<div class="chat-actions"><button id="run" type="button">Run it</button><button id="trial" type="button">Is it reliable? (3 runs)</button></div>
+<output id="verdict" aria-live="polite"></output>
+</section>
 <p class="lede">One world, one engine. Each station tests a different part of the physics, and each sets off the next. Nothing is animated: the engine calculates every contact, hinge, current, temperature and break as you watch.</p>
 <section class="chat" aria-label="Build with words">
 <h2>Build something</h2>
 <form id="chat-form"><textarea id="message" rows="3" maxlength="2000" placeholder="Describe what to build or change, e.g. “Add a second ramp with a rubber ball that knocks over a glass pane on a post.”"></textarea>
-<div class="chat-actions"><button id="send" type="submit">Build it</button><button id="undo" type="button" disabled>Undo</button></div></form>
+<div class="chat-actions"><button id="send" type="submit">Build it</button><button id="undo" type="button" disabled>Undo</button><button id="solve" type="button" hidden>Place it for me</button></div></form>
 <output id="chat-status" aria-live="polite"></output>
 <ol id="chat-log"></ol>
 </section>

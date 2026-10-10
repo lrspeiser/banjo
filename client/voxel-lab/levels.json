@@ -1,0 +1,799 @@
+{
+ "schema": "banjo.levels.v1",
+ "about": "Puzzle levels for the machine (scripts/machine_game.py). Each machine is fixed; the player adds pieces from the tray. Every solution here is checked in the engine by tests/machine_game_tests.py.",
+ "levels": [
+  {
+   "id": "gap",
+   "title": "Mind the gap",
+   "teaches": "rolling",
+   "brief": "The ball rolls down the ramp and along the table. Get it into the green cup on the far table.",
+   "time_s": 6,
+   "budget": 40,
+   "par": 21,
+   "style_pieces": 1,
+   "machine": {
+    "schema": "banjo.machine.v1",
+    "title": "Mind the gap",
+    "kits": [
+     {
+      "kit": "ramp",
+      "name": "start ramp",
+      "top_m": [
+       -1.5,
+       0.62,
+       0
+      ],
+      "bottom_m": [
+       -0.7,
+       0.3,
+       0
+      ],
+      "width_m": 0.12,
+      "ball": {
+       "material": "iron",
+       "diameter_m": 0.08,
+       "name": "ball"
+      }
+     }
+    ],
+    "parts": [
+     {
+      "name": "near table",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.7,
+       0.3,
+       0.3
+      ],
+      "at_m": [
+       -0.35,
+       0.15,
+       0
+      ],
+      "fixed": true
+     },
+     {
+      "name": "far table",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       1.0,
+       0.3,
+       0.3
+      ],
+      "at_m": [
+       1.1,
+       0.15,
+       0
+      ],
+      "fixed": true
+     },
+     {
+      "name": "cup back",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.04,
+       0.1,
+       0.3
+      ],
+      "at_m": [
+       1.58,
+       0.35,
+       0
+      ],
+      "fixed": true
+     },
+     {
+      "name": "cup left",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.36,
+       0.06,
+       0.04
+      ],
+      "at_m": [
+       1.38,
+       0.33,
+       0.13
+      ],
+      "fixed": true
+     },
+     {
+      "name": "cup right",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.36,
+       0.06,
+       0.04
+      ],
+      "at_m": [
+       1.38,
+       0.33,
+       -0.13
+      ],
+      "fixed": true
+     }
+    ]
+   },
+   "goal": {
+    "title": "The ball is in the cup",
+    "focus": [
+     "ball"
+    ],
+    "station": {
+     "done_when": {
+      "in_zone": {
+       "part": "ball",
+       "at_m": [
+        1.38,
+        0.34,
+        0
+       ],
+       "size_m": [
+        0.36,
+        0.1,
+        0.22
+       ]
+      }
+     }
+    }
+   },
+   "tray": [
+    {
+     "piece": "plank",
+     "count": 1,
+     "cost": 0,
+     "cost_per": {
+      "knob": "length",
+      "each": 3,
+      "unit": 0.1
+     },
+     "knobs": {
+      "x_from_m": {
+       "min": -0.3,
+       "max": 0.7,
+       "default": 0.1,
+       "step": 0.01,
+       "label": "Starts at x"
+      },
+      "x_to_m": {
+       "min": -0.3,
+       "max": 0.7,
+       "default": 0.4,
+       "step": 0.01,
+       "label": "Ends at x"
+      },
+      "top_m": {
+       "min": 0.1,
+       "max": 0.5,
+       "default": 0.3,
+       "step": 0.01,
+       "label": "Top height"
+      }
+     }
+    }
+   ],
+   "hints": [
+    "The gap is from x = 0 to x = 0.6. A plank whose top is level with the tables lets the ball roll across."
+   ],
+   "solution": [
+    {
+     "piece": "plank",
+     "x_from_m": -0.04,
+     "x_to_m": 0.64,
+     "top_m": 0.3
+    }
+   ]
+  },
+  {
+   "id": "cut",
+   "title": "Cut it down",
+   "teaches": "cutting",
+   "brief": "The iron weight hangs on an oak rope over the bin. Swing a knife through the rope so the weight drops in.",
+   "time_s": 4,
+   "budget": 40,
+   "par": 25,
+   "style_pieces": 1,
+   "machine": {
+    "schema": "banjo.machine.v1",
+    "title": "Cut it down",
+    "kits": [
+     {
+      "kit": "hanging_weight",
+      "name": "weight",
+      "post_m": [
+       0,
+       0,
+       0
+      ],
+      "drop_m": 0.4,
+      "side": "+z",
+      "hang": "rope",
+      "rope_m": 0.3,
+      "weight_material": "iron",
+      "weight_size_m": 0.12
+     }
+    ],
+    "parts": [
+     {
+      "name": "bin back",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.04,
+       0.12,
+       0.34
+      ],
+      "at_m": [
+       0.2,
+       0.06,
+       0.235
+      ],
+      "fixed": true
+     },
+     {
+      "name": "bin front",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.04,
+       0.12,
+       0.34
+      ],
+      "at_m": [
+       -0.2,
+       0.06,
+       0.235
+      ],
+      "fixed": true
+     }
+    ]
+   },
+   "goal": {
+    "title": "The weight is in the bin",
+    "focus": [
+     "weight rope",
+     "weight"
+    ],
+    "station": {
+     "done_when": {
+      "in_zone": {
+       "part": "weight",
+       "at_m": [
+        0.0,
+        0.08,
+        0.235
+       ],
+       "size_m": [
+        0.36,
+        0.16,
+        0.34
+       ]
+      }
+     }
+    }
+   },
+   "tray": [
+    {
+     "piece": "knife",
+     "count": 1,
+     "cost": 15,
+     "cost_per": {
+      "knob": "arm_m",
+      "each": 1,
+      "unit": 0.1
+     },
+     "knobs": {
+      "x_m": {
+       "min": -1.0,
+       "max": 1.0,
+       "default": -0.5,
+       "step": 0.01,
+       "label": "Pivot x"
+      },
+      "pivot_height_m": {
+       "min": 0.6,
+       "max": 2.0,
+       "default": 1.5,
+       "step": 0.01,
+       "label": "Pivot height"
+      },
+      "z_m": {
+       "min": 0.0,
+       "max": 0.5,
+       "default": 0.235,
+       "step": 0.005,
+       "label": "Pivot z"
+      },
+      "arm_m": {
+       "min": 0.3,
+       "max": 1.0,
+       "default": 0.6,
+       "step": 0.01,
+       "label": "Arm length"
+      },
+      "swing_toward": {
+       "choices": [
+        "+x",
+        "-x"
+       ],
+       "default": "+x",
+       "label": "Swings toward"
+      }
+     }
+    }
+   ],
+   "hints": [
+    "The rope hangs at x = 0, z = 0.235, from 0.53 m to 0.83 m up.",
+    "At the bottom of its swing the blade is about arm length + 0.03 m below the pivot, and its edge 6 cm ahead of the pivot."
+   ],
+   "solution": [
+    {
+     "piece": "knife",
+     "x_m": -0.08,
+     "pivot_height_m": 1.31,
+     "z_m": 0.235,
+     "arm_m": 0.6,
+     "swing_toward": "+x"
+    }
+   ]
+  },
+  {
+   "id": "fire",
+   "title": "Knock it off",
+   "teaches": "a powder charge",
+   "brief": "Knock the iron block off its pedestal into the green zone behind it with a cannon.",
+   "time_s": 4,
+   "budget": 40,
+   "par": 26,
+   "style_pieces": 1,
+   "machine": {
+    "schema": "banjo.machine.v1",
+    "title": "Knock it off",
+    "plasticity": true,
+    "parts": [
+     {
+      "name": "pedestal",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.14,
+       0.4,
+       0.14
+      ],
+      "at_m": [
+       2.0,
+       0.2,
+       0.0
+      ],
+      "fixed": true
+     },
+     {
+      "name": "block",
+      "shape": "box",
+      "material": "iron",
+      "size_m": [
+       0.1,
+       0.1,
+       0.1
+      ],
+      "at_m": [
+       2.0,
+       0.452,
+       0.0
+      ],
+      "fixed": false
+     }
+    ]
+   },
+   "goal": {
+    "title": "The block is in the zone",
+    "focus": [
+     "block"
+    ],
+    "station": {
+     "done_when": {
+      "in_zone": {
+       "part": "block",
+       "at_m": [
+        2.75,
+        0.1,
+        0.0
+       ],
+       "size_m": [
+        1.0,
+        0.2,
+        0.8
+       ]
+      }
+     }
+    }
+   },
+   "tray": [
+    {
+     "piece": "cannon",
+     "count": 1,
+     "cost": 10,
+     "cost_per": {
+      "knob": "powder_g",
+      "each": 8,
+      "unit": 1.0
+     },
+     "knobs": {
+      "x_m": {
+       "min": -0.5,
+       "max": 1.4,
+       "default": 0.6,
+       "step": 0.01,
+       "label": "Muzzle x"
+      },
+      "bore_height_m": {
+       "min": 0.05,
+       "max": 0.8,
+       "default": 0.2,
+       "step": 0.01,
+       "label": "Bore height"
+      },
+      "z_m": {
+       "min": -0.4,
+       "max": 0.4,
+       "default": 0.0,
+       "step": 0.01,
+       "label": "Muzzle z"
+      },
+      "powder_g": {
+       "min": 0.3,
+       "max": 3.0,
+       "default": 1.0,
+       "step": 0.05,
+       "label": "Powder (g)"
+      },
+      "fire_at_s": {
+       "min": 0.2,
+       "max": 3.0,
+       "default": 0.5,
+       "step": 0.1,
+       "label": "Fires at (s)"
+      }
+     }
+    }
+   ],
+   "hints": [
+    "The block sits 0.4 m up; its middle is 0.45 m above the ground. The ball flies level, dropping a little.",
+    "Heavier charges throw the ball faster, but cost more."
+   ],
+   "solution": [
+    {
+     "piece": "cannon",
+     "x_m": 1.4,
+     "bore_height_m": 0.48,
+     "z_m": 0.0,
+     "powder_g": 1.0,
+     "fire_at_s": 0.5
+    }
+   ]
+  },
+  {
+   "id": "steam",
+   "title": "Up she goes",
+   "teaches": "steam",
+   "brief": "Raise a steam engine's piston into the green zone before time runs out. More heat is faster, and costs more.",
+   "time_s": 5,
+   "budget": 45,
+   "par": 24,
+   "style_pieces": 1,
+   "machine": {
+    "schema": "banjo.machine.v1",
+    "title": "Up she goes",
+    "parts": [
+     {
+      "name": "marker",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.3,
+       0.02,
+       0.3
+      ],
+      "at_m": [
+       0.6,
+       0.01,
+       0.0
+      ],
+      "fixed": true
+     }
+    ]
+   },
+   "goal": {
+    "title": "The piston is in the zone",
+    "focus": [
+     "your steam 1 piston"
+    ],
+    "needs": "Place a steam engine: the goal is its piston",
+    "station": {
+     "done_when": {
+      "in_zone": {
+       "part": "your steam 1 piston",
+       "at_m": [
+        0.6,
+        0.95,
+        0.0
+       ],
+       "size_m": [
+        0.3,
+        0.2,
+        0.3
+       ]
+      }
+     }
+    }
+   },
+   "tray": [
+    {
+     "piece": "steam",
+     "count": 1,
+     "cost": 10,
+     "cost_per": {
+      "knob": "heat_kw",
+      "each": 1,
+      "unit": 1.0
+     },
+     "knobs": {
+      "x_m": {
+       "min": -1.0,
+       "max": 1.5,
+       "default": 0.0,
+       "step": 0.01,
+       "label": "x"
+      },
+      "z_m": {
+       "min": -0.6,
+       "max": 0.6,
+       "default": 0.0,
+       "step": 0.01,
+       "label": "z"
+      },
+      "heat_kw": {
+       "min": 1,
+       "max": 30,
+       "default": 5,
+       "step": 0.5,
+       "label": "Firebox (kW)"
+      },
+      "boiler_side": {
+       "choices": [
+        "-x",
+        "+x",
+        "-z",
+        "+z"
+       ],
+       "default": "-x",
+       "label": "Boiler on the"
+      }
+     }
+    }
+   ],
+   "hints": [
+    "The zone is over the marker on the floor. Every kilowatt boils about 0.44 g of water a second, and each gram of steam fills about 1.7 litres."
+   ],
+   "solution": [
+    {
+     "piece": "steam",
+     "x_m": 0.6,
+     "z_m": 0.0,
+     "heat_kw": 12,
+     "boiler_side": "-x"
+    }
+   ]
+  },
+  {
+   "id": "chain",
+   "title": "Chain reaction",
+   "teaches": "a chain: rolling, a switch, a powder charge",
+   "brief": "The cannon is wired to fire when the lever tips. Get a ball onto the lever, and the cannon will knock the block into the zone.",
+   "time_s": 6,
+   "budget": 40,
+   "par": 22,
+   "style_pieces": 1,
+   "machine": {
+    "schema": "banjo.machine.v1",
+    "title": "Chain reaction",
+    "plasticity": true,
+    "kits": [
+     {
+      "kit": "lever",
+      "name": "lever",
+      "pivot_m": [
+       0.6,
+       0.1,
+       0.0
+      ],
+      "length_m": 0.8,
+      "width_m": 0.2,
+      "limit_deg": 15,
+      "along": "x",
+      "material": "oak"
+     },
+     {
+      "kit": "cannon",
+      "name": "cannon",
+      "at_m": [
+       1.4,
+       0.48,
+       0.6
+      ],
+      "toward": "+x",
+      "powder_g": 1.0,
+      "ball": {
+       "diameter_m": 0.08,
+       "material": "iron"
+      }
+     }
+    ],
+    "parts": [
+     {
+      "name": "battery box",
+      "shape": "box",
+      "material": "iron",
+      "size_m": [
+       0.1,
+       0.1,
+       0.1
+      ],
+      "at_m": [
+       0.6,
+       0.05,
+       -0.4
+      ],
+      "fixed": true
+     },
+     {
+      "name": "pedestal",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.14,
+       0.4,
+       0.14
+      ],
+      "at_m": [
+       2.0,
+       0.2,
+       0.6
+      ],
+      "fixed": true
+     },
+     {
+      "name": "block",
+      "shape": "box",
+      "material": "iron",
+      "size_m": [
+       0.1,
+       0.1,
+       0.1
+      ],
+      "at_m": [
+       2.0,
+       0.452,
+       0.6
+      ],
+      "fixed": false
+     }
+    ],
+    "batteries": [
+     {
+      "name": "battery",
+      "in": "battery box",
+      "capacity_j": 100000,
+      "voltage_v": 24
+     }
+    ],
+    "circuits": [
+     {
+      "name": "firing circuit",
+      "battery": "battery",
+      "switch": {
+       "hinge": "lever hinge",
+       "closed_at_or_above_deg": 8
+      },
+      "coil": {
+       "heats": "cannon charge",
+       "resistance_ohm": 0.1
+      }
+     }
+    ]
+   },
+   "goal": {
+    "title": "The block is in the zone",
+    "focus": [
+     "lever",
+     "block"
+    ],
+    "station": {
+     "done_when": {
+      "in_zone": {
+       "part": "block",
+       "at_m": [
+        2.75,
+        0.1,
+        0.6
+       ],
+       "size_m": [
+        1.0,
+        0.2,
+        0.8
+       ]
+      }
+     }
+    }
+   },
+   "tray": [
+    {
+     "piece": "ramp",
+     "count": 1,
+     "cost": 12,
+     "cost_per": {
+      "knob": "top_height_m",
+      "each": 1,
+      "unit": 0.1
+     },
+     "knobs": {
+      "x_m": {
+       "min": -2.0,
+       "max": 0.5,
+       "default": -1.2,
+       "step": 0.01,
+       "label": "Top at x"
+      },
+      "top_height_m": {
+       "min": 0.2,
+       "max": 1.2,
+       "default": 0.5,
+       "step": 0.01,
+       "label": "Top height"
+      },
+      "run_m": {
+       "min": 0.3,
+       "max": 1.5,
+       "default": 0.6,
+       "step": 0.01,
+       "label": "Run"
+      },
+      "foot_height_m": {
+       "min": 0.05,
+       "max": 1.0,
+       "default": 0.2,
+       "step": 0.01,
+       "label": "Foot height"
+      },
+      "z_m": {
+       "min": -0.3,
+       "max": 0.3,
+       "default": 0.0,
+       "step": 0.01,
+       "label": "z"
+      }
+     }
+    }
+   ],
+   "hints": [
+    "The lever is 0.8 m long, its middle at x = 0.6. A ball landing on its left half tips it far enough to close the switch.",
+    "A ball leaving a ramp's foot flies on; the higher the top, the faster and further."
+   ],
+   "solution": [
+    {
+     "piece": "ramp",
+     "x_m": -0.75,
+     "top_height_m": 0.6,
+     "run_m": 0.7,
+     "foot_height_m": 0.3,
+     "z_m": 0.0
+    }
+   ]
+  }
+ ]
+}

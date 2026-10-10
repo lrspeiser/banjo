@@ -26,6 +26,8 @@ ASSETS['/flow-view.mjs']='client/voxel-lab/flow-view.mjs'
 # The machine: one live engine world built from general parts (machine_world.py).
 ASSETS.update({'/machine':'client/voxel-lab/machine.html','/machine.js':'client/voxel-lab/machine.js','/machine.css':'client/voxel-lab/machine.css',
  '/machine-view.mjs':'client/voxel-lab/machine-view.mjs','/machine-default.json':'client/voxel-lab/machine-default.json'})
+# The puzzles: the same page, a level at a time (machine_game.py).
+ASSETS['/play']='client/voxel-lab/machine.html'
 
 class SessionExpired(ValueError):pass
 
@@ -455,7 +457,7 @@ class Handler(BaseHTTPRequestHandler):
   # One live machine world per session; every response is the engine's own
   # measured state. A refused declaration answers with its problems in words.
   from machine_world import MachineRefused
-  import machine_chat
+  import machine_chat, machine_game
   host=self.server.machines
   try:
    if len(body)>65536:raise ValueError('Machine request size invalid')
@@ -474,11 +476,35 @@ class Handler(BaseHTTPRequestHandler):
    elif op=='close':r=host.close(data.get('session'))
    elif op=='chat':
     if not self.server.chat_busy.acquire(blocking=False):raise ValueError('Two chat requests are already being worked on; try again shortly')
-    try:r=machine_chat.respond(data.get('message'),data.get('spec'),data.get('history'),rehearse=host.rehearse if data.get('rehearse',True) else None)
+    try:
+     if data.get('level'):
+      # A puzzle: the chat hints, or places pieces from the tray -- nothing else.
+      r=machine_chat.respond_level(data.get('message'),machine_game.level_by_id(data.get('level')),data.get('placements') or [],
+       mode=data.get('mode','hint'),last_run=data.get('last_run'),rehearse=host.rehearse)
+     else:r=machine_chat.respond(data.get('message'),data.get('spec'),data.get('history'),rehearse=host.rehearse if data.get('rehearse',True) else None)
+    finally:self.server.chat_busy.release()
+   elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()]}
+   elif op=='level_open':
+    # The level's machine with the player's pieces in it, built in the engine.
+    level=machine_game.level_by_id(data.get('level'))
+    spec,checked,cost=machine_game.compose(level,data.get('placements') or [])
+    r=host.open(spec);r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost
+    host.get(r['session']).game={'level':level['id'],'checked':checked,'cost':cost,'helped':bool(data.get('helped'))}
+   elif op=='level_score':
+    # Stars from what the engine measured in this session's run.
+    s=host.get(data.get('session'));game=getattr(s,'game',None)
+    if not game:raise ValueError('That session is not a level')
+    level=machine_game.level_by_id(game['level'])
+    rows=(s.readouts or {}).get('stations') or [{}]
+    r={'ok':True,**machine_game.stars(level,game['checked'],game['cost'],rows[0].get('at_s') if rows[0].get('done') else None,game['helped'])}
+   elif op=='trial':
+    if not self.server.chat_busy.acquire(blocking=False):raise ValueError('The engine is busy with another trial; try again shortly')
+    try:r={'ok':True,**machine_game.trial(machine_game.level_by_id(data.get('level')),data.get('placements') or [],host.exe,host.logs,runs=3)}
     finally:self.server.chat_busy.release()
    else:raise ValueError('Unknown machine operation')
    self.send(200,json.dumps(r,separators=(',',':'),allow_nan=False).encode())
   except MachineRefused as e:self.send(422,json.dumps({'ok':False,'error':'This machine cannot be built as written','problems':e.problems}).encode())
+  except machine_game.LevelRefused as e:self.send(422,json.dumps({'ok':False,'error':'Those pieces do not fit this level','problems':e.problems}).encode())
   except LookupError as e:self.send(410,json.dumps({'ok':False,'error':str(e),'code':'session_expired'}).encode())
   except machine_chat.ChatUnavailable as e:self.send(503,json.dumps({'ok':False,'error':str(e)}).encode())
   except (ValueError,TypeError,KeyError,RuntimeError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())

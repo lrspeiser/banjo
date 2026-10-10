@@ -245,6 +245,23 @@ function updateRopes() {
   }
 }
 
+// Goal zones (a station done when a part is inside a box): drawn as a
+// translucent green box where the engine will look.
+const zones = [];
+function syncZones() {
+  for (const z of zones) { scene.remove(z); z.geometry.dispose(); }
+  zones.length = 0;
+  for (const s of machine?.stations || []) {
+    const z = s.done_when && s.done_when.in_zone;
+    if (!z) continue;
+    const box = new THREE.Mesh(new THREE.BoxGeometry(...z.size_m),
+      new THREE.MeshStandardMaterial({color: 0x3fbf6f, transparent: true, opacity: .22, depthWrite: false}));
+    box.position.set(...z.at_m);
+    box.add(new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), new THREE.LineBasicMaterial({color: 0x5fe08f})));
+    scene.add(box); zones.push(box);
+  }
+}
+
 // Gas pushing a piston (steam under a piston, a cannon's breech): its column,
 // where the engine says it is, tinted by its measured temperature. Not drawn
 // once it is open to the air.
@@ -386,7 +403,7 @@ function renderLabels() {
 }
 
 // ---- building and running --------------------------------------------------------
-async function build(next, start) {
+async function build(next, start, request) {
   const mine = ++polling;
   if (session) api({op: 'close', session}).catch(() => {});
   session = null; playing = false;
@@ -394,9 +411,9 @@ async function build(next, start) {
   for (const [, mesh] of meshes) { scene.remove(mesh); mesh.geometry.dispose(); }
   meshes.clear(); $('events').replaceChildren();
   try {
-    const opened = await api({op: 'open', spec: next});
-    if (mine !== polling) { api({op: 'close', session: opened.session}).catch(() => {}); return; }
-    spec = next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
+    const opened = await api(request || {op: 'open', spec: next});
+    if (mine !== polling) { api({op: 'close', session: opened.session}).catch(() => {}); return opened; }
+    spec = request ? opened.machine : next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
     world = mergeFrame({seq: 0, t: 0, bodies: new Map()}, opened);
     $('title').textContent = machine.title;
     $('spec').value = JSON.stringify(spec, null, 1);
@@ -406,10 +423,11 @@ async function build(next, start) {
     drumLines.clear();
     if (parcels) { scene.remove(parcels); parcels.geometry.dispose(); parcels = null; }
     syncGround(opened.ground); syncWater(opened.water); syncParcels(opened.parcels);
-    syncMeshes([...world.bodies.values()]); syncWires(); syncRopes(); updateWires(); renderStations(); renderReadings(opened); renderClock(opened);
+    syncMeshes([...world.bodies.values()]); syncWires(); syncRopes(); syncZones(); updateWires(); renderStations(); renderReadings(opened); renderClock(opened);
     frameCamera();
     if (start) await setPlaying(true);
     poll(mine);
+    return opened;
   } catch (e) {
     $('clock').textContent = 'Could not build: ' + e.message;
     if (e.data && e.data.problems) addEvents(e.data.problems.map(text => ({t: 0, text})));
@@ -447,6 +465,7 @@ async function poll(mine) {
       if (frame.water) syncWater(frame.water);
       if (frame.parcels) syncParcels(frame.parcels);
       updateWires(); addEvents(frame.events); renderStations(); renderReadings(frame); renderClock(frame);
+      watchGoal(frame);
     } catch (e) {
       if (e.status === 410) { $('clock').textContent = 'This machine stopped running on the server; press Set up again'; session = null; return; }
       $('clock').textContent = 'Connection problem: ' + e.message;
@@ -550,6 +569,7 @@ function say(kind, text) {
 
 $('chat-form').addEventListener('submit', async e => {
   e.preventDefault();
+  if (LEVEL_MODE) { askLevel('hint'); return; }
   const message = $('message').value.trim();
   if (!message) return;
   $('send').disabled = true; $('chat-status').textContent = 'The model is writing a declaration; the server checks it and rehearses it once in the engine. This takes up to a few minutes…';
@@ -583,5 +603,175 @@ fetch('/api/checkpoint').then(r => r.ok ? r.json() : null).then(c => {
   $('build').textContent = `${(c.website_revision || 'unknown').slice(0, 7)}${c.local_changes ? ' + local edits' : ''}`;
 }).catch(() => {});
 
+
+// ---- the puzzles (/play) ---------------------------------------------------------
+// A level is a fixed machine, a goal and a tray. The player adds pieces from
+// the tray and turns their knobs; the server composes the machine and the
+// engine runs it. The stars come from what the engine measured.
+const params = new URLSearchParams(location.search);
+const LEVEL_MODE = location.pathname === '/play' || params.has('level');
+let levels = [], level = null, placements = [], placedCost = [], helped = false, scored = false, lastRun = null, rebuildTimer = null;
+
+function bestStars(id) { try { return Number(localStorage.getItem('banjo-level-' + id) || 0); } catch { return 0; } }
+function keepStars(id, n) { try { if (n > bestStars(id)) localStorage.setItem('banjo-level-' + id, String(n)); } catch { /* private window */ } }
+
+function renderLevels() {
+  const nav = $('levels'); nav.replaceChildren();
+  levels.forEach((l, i) => {
+    const b = document.createElement('button'); b.type = 'button';
+    const best = bestStars(l.id);
+    b.textContent = `${i + 1}. ${l.title}${best ? ' ' + '★'.repeat(best) : ''}`;
+    b.setAttribute('aria-current', String(Boolean(level) && l.id === level.id));
+    b.addEventListener('click', () => chooseLevel(l.id).catch(() => {}));
+    nav.append(b);
+  });
+}
+
+function knobDefault(rule) { return rule.default ?? (rule.choices ? rule.choices[0] : rule.min); }
+function trayItem(piece) { return level.tray.find(t => t.piece === piece); }
+
+function renderTray() {
+  const ul = $('tray'); ul.replaceChildren();
+  for (const t of level.tray) {
+    const used = placements.filter(p => p.piece === t.piece).length, count = t.count || 1;
+    const li = document.createElement('li');
+    const price = t.cost_per ? `${t.cost} + ${t.cost_per.each} per ${t.cost_per.unit} ${t.cost_per.knob === 'length' ? 'm of length' : t.cost_per.knob}` : `${t.cost}`;
+    li.append(Object.assign(document.createElement('span'), {textContent: `${t.piece} — costs ${price} · ${count - used} of ${count} left`}));
+    const add = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Add', disabled: used >= count});
+    add.addEventListener('click', () => {
+      const p = {piece: t.piece};
+      for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
+      placements.push(p); renderTray(); renderPlaced(); scheduleRebuild(0);
+    });
+    li.append(add); ul.append(li);
+  }
+}
+
+function renderPlaced() {
+  const ol = $('placed'); ol.replaceChildren();
+  placements.forEach((p, i) => {
+    const t = trayItem(p.piece), li = document.createElement('li');
+    const head = Object.assign(document.createElement('div'), {className: 'piece-head'});
+    head.append(Object.assign(document.createElement('strong'), {textContent: `your ${p.piece} ${i + 1}${placedCost[i] != null ? ' · costs ' + placedCost[i] : ''}`}));
+    const remove = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Remove'});
+    remove.addEventListener('click', () => { placements.splice(i, 1); renderTray(); renderPlaced(); scheduleRebuild(0); });
+    head.append(remove); li.append(head);
+    for (const [key, rule] of Object.entries(t.knobs)) {
+      const label = Object.assign(document.createElement('label'), {className: 'knob'});
+      label.append(Object.assign(document.createElement('span'), {textContent: rule.label || key}));
+      let input;
+      const shown = Object.assign(document.createElement('output'), {textContent: String(p[key])});
+      if (rule.choices) {
+        input = document.createElement('select');
+        for (const c of rule.choices) input.append(Object.assign(document.createElement('option'), {value: c, textContent: c}));
+        input.value = p[key];
+        input.addEventListener('change', () => { p[key] = input.value; shown.textContent = input.value; scheduleRebuild(); });
+      } else {
+        input = Object.assign(document.createElement('input'), {type: 'range', min: rule.min, max: rule.max, step: rule.step || 0.01, value: p[key]});
+        input.addEventListener('input', () => { p[key] = Number(input.value); shown.textContent = input.value; scheduleRebuild(); });
+      }
+      input.setAttribute('aria-label', `${rule.label || key} of your ${p.piece} ${i + 1}`);
+      label.append(input, shown); li.append(label);
+    }
+    ol.append(li);
+  });
+  const total = placedCost.reduce((a, b) => a + (b || 0), 0);
+  $('cost-line').textContent = placements.length ? `Cost ${Math.round(total * 10) / 10} of a budget of ${level.budget} (par ${level.par}).` : 'Add a piece from the tray.';
+}
+
+function scheduleRebuild(ms = 350) { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildLevel(false).catch(() => {}), ms); }
+
+async function rebuildLevel(start) {
+  scored = false; $('verdict').replaceChildren();
+  try {
+    const opened = await build(null, start, {op: 'level_open', level: level.id, placements, helped});
+    placedCost = (opened.placements || []).map(p => p.cost);
+    renderPlaced();
+  } catch (e) {
+    const problems = e.data && e.data.problems ? e.data.problems.join('; ') : e.message;
+    $('verdict').textContent = problems;
+    // Still show the level as it stands, without the pieces that do not fit.
+    if (!placements.length || e.status === 422) await build(level.machine).catch(() => {});
+  }
+}
+
+function watchGoal(frame) {
+  if (!LEVEL_MODE || !level || scored || !frame || !session || !(world.t > 0)) return;
+  const row = (readouts.stations || [])[0];
+  if ((row && row.done) || world.t > level.time_s + 0.3) { scored = true; score(row).catch(() => {}); }
+}
+
+async function score(row) {
+  lastRun = {goal_at_s: row && row.done ? row.at_s : null, world_t: world.t,
+             events: [...$('events').children].slice(0, 20).map(li => li.textContent)};
+  const r = await api({op: 'level_score', session});
+  const v = $('verdict'); v.replaceChildren();
+  v.append(Object.assign(document.createElement('span'), {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)}));
+  const said = [r.earned.goal ? `Goal at ${describeTime(r.goal_at_s)}.` : `The goal did not happen within ${level.time_s} s.`,
+                `Cost ${r.cost} (par ${r.par})${r.earned.budget ? '' : ', over par'}.`];
+  if (r.helped) said.push('The chat placed the pieces, so one star at most.');
+  v.append(' ' + said.join(' '));
+  keepStars(level.id, r.stars); renderLevels();
+}
+
+async function chooseLevel(id) {
+  level = levels.find(l => l.id === id) || levels[0];
+  placements = []; placedCost = []; helped = false; lastRun = null;
+  history_.replaceState(null, '', '/play?level=' + level.id);
+  $('title').textContent = `${levels.indexOf(level) + 1}. ${level.title}`;
+  $('brief').textContent = level.brief;
+  $('goal-line').textContent = `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s. Budget ${level.budget}, par ${level.par}. It teaches ${level.teaches}.`;
+  $('chat-log').replaceChildren();
+  renderLevels(); renderTray(); renderPlaced();
+  await rebuildLevel(false);
+}
+
+async function askLevel(mode) {
+  const message = $('message').value.trim() || (mode === 'hint' ? 'Give me a hint.' : 'Place the pieces for me.');
+  $('send').disabled = $('solve').disabled = true;
+  $('chat-status').textContent = mode === 'hint' ? 'Thinking about your last run…' : 'Placing pieces from your tray, then rehearsing them once in the engine…';
+  say('you', message);
+  try {
+    const r = await api({op: 'chat', level: level.id, placements, mode, message, last_run: lastRun});
+    say('model', r.reply);
+    if (mode === 'build' && Array.isArray(r.placements)) {
+      placements = r.placements.map(p => { const q = {...p}; delete q.cost; return q; });
+      helped = true; renderTray(); renderPlaced();
+      if (r.rehearsal) say(r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.goal_at_s != null
+        ? `Rehearsed once in the engine: the goal happened at ${describeTime(r.rehearsal.goal_at_s)}.`
+        : 'Rehearsed once in the engine: the goal did not happen. Try moving the pieces.');
+      await rebuildLevel(false);
+    }
+    $('message').value = '';
+  } catch (err) { say('refused', err.message); }
+  finally { $('send').disabled = $('solve').disabled = false; $('chat-status').textContent = ''; }
+}
+
+async function startGame() {
+  document.body.classList.add('playing-level');
+  $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
+  document.querySelector('.lede').hidden = true;
+  for (const d of document.querySelectorAll('aside details')) d.hidden = true;
+  $('send').textContent = 'Ask for a hint';
+  $('message').placeholder = 'Ask about this level, e.g. “Why does my ball fall short?”';
+  document.querySelector('.chat h2').textContent = 'Ask for help';
+  const r = await api({op: 'levels'});
+  levels = r.levels;
+  await chooseLevel(params.get('level'));
+}
+$('run').addEventListener('click', () => rebuildLevel(true).catch(() => {}));
+$('trial').addEventListener('click', async () => {
+  $('trial').disabled = true;
+  $('verdict').textContent = 'Running it three times, each loose part nudged by a millimetre or two…';
+  try {
+    const r = await api({op: 'trial', level: level.id, placements});
+    $('verdict').textContent = `Works ${r.worked} of ${r.runs}: ` + r.results.map(x => x.goal_at_s != null ? `goal at ${describeTime(x.goal_at_s)}` : 'missed').join(', ') + '.';
+  } catch (e) { $('verdict').textContent = e.data && e.data.problems ? e.data.problems.join('; ') : e.message; }
+  finally { $('trial').disabled = false; }
+});
+$('solve').addEventListener('click', () => askLevel('build'));
+
+const history_ = window.history;
 resize(); render();
-fetch('/machine-default.json').then(r => r.json()).then(d => build(d)).catch(e => { $('clock').textContent = 'Could not load the machine: ' + e.message; });
+if (LEVEL_MODE) startGame().catch(e => { $('clock').textContent = 'Could not load the levels: ' + e.message; });
+else fetch('/machine-default.json').then(r => r.json()).then(d => build(d)).catch(e => { $('clock').textContent = 'Could not load the machine: ' + e.message; });

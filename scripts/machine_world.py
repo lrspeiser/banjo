@@ -32,6 +32,10 @@ SUB_SHAPES = ('box', 'cylinder')
 JOINT_KINDS = ('hinge', 'fix', 'tie', 'spring', 'slide', 'drum', 'gear', 'pulley')
 DT_S = 1.0 / 240.0
 STEPS_PER_CALL = 4
+# How long, in world time, a live machine lets a pair that is being worked
+# out (a break or a dent, on the engine's worker) stay held while everything
+# else moves on, before it waits for the answer.
+MAX_HOLD_S = 0.05
 MAX_PARTS = 120
 MAX_TIME_S = 120.0
 # Engine cell edges are 10-40 mm; the world's matter is built from cells this
@@ -1396,6 +1400,14 @@ def compile_spec(spec):
             elif kind == 'cut':
                 if arg not in names:
                     problems.append(f'{what}: cut names a part; {arg!s} is not one')
+            elif kind == 'in_zone':
+                if not isinstance(arg, dict) or arg.get('part') not in names:
+                    problems.append(f'{what}: in_zone needs a part, at_m (the zone\'s centre) and size_m')
+                else:
+                    _vec(arg.get('at_m'), 3, what + ' in_zone at_m', problems)
+                    size = _vec(arg.get('size_m'), 3, what + ' in_zone size_m', problems)
+                    if min(size) <= 0:
+                        problems.append(f'{what}: in_zone size_m must be positive')
             elif kind in ('rose_m', 'moved_m'):
                 if not isinstance(arg, dict) or arg.get('part') not in names or \
                         not isinstance(arg.get('m'), (int, float)):
@@ -1407,7 +1419,7 @@ def compile_spec(spec):
                     problems.append(f'{what}: a dent needs "plasticity": true (metal and wood then yield and stay bent)')
             else:
                 problems.append(f'{what}: done_when is one of hits, hinge_beyond_deg, turned_deg, slid_m, switch_closed, '
-                                'hotter_than_k, parted, broke, dented, rose_m, moved_m, cut')
+                                'hotter_than_k, parted, broke, dented, rose_m, moved_m, cut, in_zone')
         elif rule is not None:
             problems.append(f'{what}: done_when is one rule, or null for a station not built yet')
         focus = [f for f in (s.get('focus') or []) if isinstance(f, str) and f in names]
@@ -1616,6 +1628,9 @@ def build_engine(exe, compiled, workdir):
             circuit_ids[c['name']] = engine.op(op='circuit', network=network)['circuit']
         for t in compiled['torches']:
             engine.op(op='heat', target=t['target'], power_w=t['power_w'], seconds=t['seconds'])
+        # Start working out a collision that is coming before it arrives (up
+        # to 2.5 s ahead), so a break is often ready when the pieces meet.
+        engine.op(op='foresee', horizon_s=float(os.environ.get('BANJO_MACHINE_FORESEE', 2.5)))
     except Exception:
         engine.close()
         raise
@@ -1678,6 +1693,7 @@ class MachineSession:
         self._pushed = set()
         self.cuts = {}
         self._cut_said = {}
+        self._held_since = None
         # The ground as the engine built it, sent to the page once.
         terrain = self.engine.first.get('terrain') or {}
         self.ground_view = ({'grid': terrain.get('grid'), 'heights_b64': terrain.get('heights_b64')}
@@ -1802,6 +1818,12 @@ class MachineSession:
                 closest[i] = {'station': st['title'], 'a': a, 'b': b, 'centres_m': round(d, 3), 'at_s': round(self.t, 3),
                               'a_at_m': [round(v, 3) for v in pa], 'b_at_m': [round(v, 3) for v in pb]}
 
+    def _broke(self, name, answer):
+        """News of a break the engine has worked out: how many pieces."""
+        if answer.get('outcome') == 'broke' and int(answer.get('pieces') or 0) > 1:
+            count = int(answer['pieces'])
+            self._event('broke', f'{name} broke into {count} pieces', body=name, pieces=count)
+
     def _track_moves(self):
         """When each rose_m / moved_m station's part first got that far, read
         on every reply from the engine rather than on the slower probe, so a
@@ -1810,7 +1832,24 @@ class MachineSession:
         crossed = self.__dict__.setdefault('_crossed', {})
         for i, st in enumerate(self.compiled['stations']):
             rule = st.get('done_when')
-            if i in crossed or not isinstance(rule, dict) or not ('rose_m' in rule or 'moved_m' in rule):
+            if i in crossed or not isinstance(rule, dict) or not ('rose_m' in rule or 'moved_m' in rule
+                                                                  or 'in_zone' in rule):
+                continue
+            if 'in_zone' in rule:
+                # Any piece of the part with its centre inside the box; and
+                # how near the box it has come, for a designer (or a search)
+                # to know how far off a miss was.
+                z = rule['in_zone']
+                nearest = self.__dict__.setdefault('zone_nearest', {})
+                for b in self.bodies.values():
+                    if family(b['name']) != z['part']:
+                        continue
+                    gap = math.sqrt(sum(max(0.0, abs(b['position_m'][k] - z['at_m'][k]) - 0.5 * z['size_m'][k]) ** 2
+                                        for k in range(3)))
+                    nearest[i] = min(nearest.get(i, gap), gap)
+                    if gap == 0.0:
+                        crossed[i] = self.t
+                        break
                 continue
             r = rule.get('rose_m') or rule.get('moved_m')
             start = self.starts.get(r.get('part'))
@@ -2003,7 +2042,7 @@ class MachineSession:
                 elif 'cut' in rule:
                     hit = next((e['t'] for e in self.events if e['kind'] == 'severed' and same(e.get('body'), rule['cut'])),
                                None)
-                elif 'rose_m' in rule or 'moved_m' in rule:
+                elif 'rose_m' in rule or 'moved_m' in rule or 'in_zone' in rule:
                     hit = getattr(self, '_crossed', {}).get(i)
                 elif 'dented' in rule:
                     hit = next((e['t'] for e in self.events if e['kind'] == 'dent' and same(e.get('body'), rule['dented'])),
@@ -2040,20 +2079,42 @@ class MachineSession:
             try:
                 started = time.perf_counter()
                 reply = self.engine.op(op='step', dt=DT_S, n=STEPS_PER_CALL, moved=True)
-                for name in reply.get('breakable', []) or []:
+                # Something is about to break or bend. Played live, its run
+                # goes onto the engine's worker and the world keeps going while
+                # the pair that met is held still -- but for no more than
+                # MAX_HOLD_S of world time: held longer, a held body misses
+                # what it should have been doing (a block a cannon ball had
+                # knocked at 2.8 m/s sat on its pedestal for seconds while a
+                # second run queued). Then the host waits for the answer
+                # (`finish`). Unpaced -- a rehearsal, a test, a trial -- it
+                # always waits, so the answer is exactly the physics'.
+                if reply.get('breakable') and not reply.get('working_on'):
+                    name = reply['breakable'][0]
                     f0 = time.perf_counter()
-                    fractured = self.engine.op(op='fracture', name=name, timeout=120)
+                    fractured = self.engine.op(op='fracture', name=name, wait=not self.paced, timeout=120)
                     self.fracture_s += time.perf_counter() - f0
-                    before = {b for b in self.bodies}
-                    with self.lock:
-                        self._ingest(fractured, full=True)
-                        pieces = [b for b in self.bodies if b not in before]
-                        if pieces:
-                            self._event('broke', f'{name} broke into {len(pieces) + 1} pieces', body=name,
-                                        pieces=len(pieces) + 1)
+                    if fractured.get('outcome') != 'working':
+                        with self.lock:
+                            self._ingest(fractured, full=True)
+                            self._broke(name, fractured)
                 self.wall_compute_s += time.perf_counter() - started
                 with self.lock:
                     self._ingest(reply)
+                    if reply.get('finished'):
+                        self._broke(reply['finished'], reply)
+                    held_since = self._held_since
+                    self._held_since = (held_since if held_since is not None else self.t) \
+                        if reply.get('working_on') else None
+                if self._held_since is not None and self.t - self._held_since > MAX_HOLD_S:
+                    f0 = time.perf_counter()
+                    finished = self.engine.op(op='finish', timeout=120)
+                    self.fracture_s += time.perf_counter() - f0
+                    with self.lock:
+                        self._ingest(finished, full=True)
+                        if finished.get('finished'):
+                            self._broke(finished['finished'], finished)
+                        self._held_since = None
+                with self.lock:
                     self._track_closest()
                     if self.t - last_probe >= 0.1:
                         self._probe()
@@ -2136,6 +2197,8 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0):
             done = getattr(session, '_done_at', {})
             return {'world_time_s': round(session.t, 3), 'wall_s': round(time.perf_counter() - started, 2),
                     'error': session.error, 'stations': list(rows),
+                    'zone_nearest_m': {compiled['stations'][i]['title']: round(d, 4)
+                                       for i, d in sorted(getattr(session, 'zone_nearest', {}).items())},
                     'closest_approach': [c for i, c in sorted(getattr(session, 'closest', {}).items()) if i not in done],
                     'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]]}
     finally:

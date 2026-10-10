@@ -153,7 +153,7 @@ asked for, and give every new step a station. Answer with ONE JSON object:
   "spec": the complete new declaration}}"""
 
 
-def _call(api_key, model, messages, max_tokens=20000):
+def _call(api_key, model, messages, max_tokens=20000, want='spec'):
     payload = {'model': model, 'store': False, 'max_output_tokens': max_tokens, 'reasoning': {'effort': 'low'},
                'input': messages, 'text': {'format': {'type': 'json_object'}}}
     req = request.Request('https://api.openai.com/v1/responses', data=json.dumps(payload).encode(), method='POST',
@@ -179,9 +179,179 @@ def _call(api_key, model, messages, max_tokens=20000):
             if content.get('type') == 'output_text':
                 texts.append(content.get('text', ''))
     answer = json.loads(''.join(texts))
-    if not isinstance(answer, dict) or not isinstance(answer.get('spec'), dict):
+    if want == 'spec' and (not isinstance(answer, dict) or not isinstance(answer.get('spec'), dict)):
         raise ValueError('The model did not return a machine declaration')
     return answer, result.get('usage', {})
+
+
+# ---- puzzles ---------------------------------------------------------------------
+
+def level_prompt(level, mode):
+    """The rules of one puzzle for the model: the goal, the tray and its knobs,
+    and what it may answer. It never sees the level's solution."""
+    tray = []
+    for t in level['tray']:
+        knobs = []
+        for key, rule in t['knobs'].items():
+            if 'choices' in rule:
+                knobs.append(f'{key} ({rule.get("label", key)}): one of {rule["choices"]}')
+            else:
+                knobs.append(f'{key} ({rule.get("label", key)}): {rule["min"]} to {rule["max"]}')
+        price = f'{t["cost"]}' + (f' + {t["cost_per"]["each"]} per {t["cost_per"]["unit"]:g} of '
+                                   f'{t["cost_per"]["knob"]}' if 'cost_per' in t else '')
+        tray.append(f'- {t["piece"]} (up to {t.get("count", 1)}; costs {price}): ' + '; '.join(knobs))
+    tray = '\n'.join(tray)
+    offered = [t['piece'] for t in level['tray']]
+    pieces = '\n'.join(f'- {name}: {PIECE_HELP[name]}' for name in offered if name in PIECE_HELP)
+    if mode == 'build':
+        answer = ('Answer with ONE JSON object: {"reply": "one or two plain sentences to the player about what you '
+                  'placed and what the engine will decide", "options": [[{"piece": tray piece, knob: value, ...}], '
+                  '...]} -- up to three DIFFERENT ways to place the pieces, best first; the engine rehearses each and '
+                  'uses the first that reaches the goal. Vary the knobs that matter most between them. Use only tray '
+                  'pieces and knobs, within their ranges and the budget.')
+    else:
+        answer = ('Answer with ONE JSON object: {"reply": "a hint of one to three plain sentences"}. A hint points '
+                  'the player toward what to change, from what the engine measured in their last run when there '
+                  'is one (where the thing went, how fast, what it hit). Do not give every knob\'s value; let the '
+                  'player find them.')
+    return f"""You help a player with a physics puzzle in Banjo. The engine calculates everything: you never decide
+an outcome. Metres, kilograms, seconds; y is up and the ground is at y = 0.
+
+The level: {level['title']}. {level['brief']}
+Goal: {level['goal']['title']} within {level['time_s']} s. Budget {level['budget']}, par {level['par']}.
+What is known about this level (measured): {' '.join(level.get('hints', []))}
+The player may add only these pieces (the tray):
+{tray}
+What each piece is:
+{pieces}
+
+{answer}"""
+
+
+PIECE_HELP = {
+    'plank': 'a bolted plank, its top surface at top_m, from x_from_m to x_to_m (0.3 m wide, centred on z = 0)',
+    'knife': 'a knife pendulum held out level and let go: its pivot at (x_m, pivot_height_m, z_m), arm_m long, '
+             'swinging toward swing_toward. At the bottom of its swing the blade is about arm_m + 0.03 m below the '
+             'pivot, its sharp edge about 0.06 m ahead of the pivot, 0.2 m wide across the swing. It cuts oak and '
+             'rubber, not iron',
+    'cannon': 'a cannon firing level toward +x: its muzzle at (x_m, bore_height_m, z_m), the barrel behind it; '
+              'fire_at_s is when its primer lights it; powder_g of powder throws its 2.1 kg iron ball at very '
+              'roughly 9 m/s for 1 g and 20 m/s for 2 g. The ball drops as it flies',
+    'steam': 'a steam engine: a cylinder at (x_m, z_m) on the ground with a piston on top, the piston at about '
+             '0.34 m up; heat_kw boils water under it and the piston rises about 1.2 cm/s per kW',
+    'ramp': 'a ramp toward +x with an iron ball at its top: its top at (x_m, top_height_m, z_m), its foot run_m '
+            'further on at foot_height_m. The ball rolls down and flies on from the foot',
+}
+
+
+def _placements_answer(answer):
+    if not isinstance(answer, dict) or not isinstance(answer.get('reply'), str):
+        raise ValueError('The model did not answer')
+    return answer
+
+
+def respond_level(message, level, placements, mode='hint', last_run=None, call=None, rehearse=None):
+    """A hint, or the tray's pieces placed for the player ("build"), checked
+    against the level and rehearsed in the engine like any chat build."""
+    import machine_game as mg
+    if not isinstance(message, str) or not message.strip():
+        message = 'Give me a hint.' if mode == 'hint' else 'Place the pieces for me.'
+    if len(message) > MAX_MESSAGE:
+        raise ValueError(f'Keep a request under {MAX_MESSAGE} characters')
+    if mode not in ('hint', 'build'):
+        raise ValueError('mode is hint or build')
+    if call is None:
+        api_key, model = configuration()
+        if not api_key:
+            raise ChatUnavailable('No model is configured on this server (OPENAI_API_KEY)')
+        call = lambda messages: _call(api_key, model, messages, want='reply')
+    spec = None
+    try:
+        spec = mg.compose(level, placements)[0]
+    except (mg.LevelRefused, mw.MachineRefused):
+        spec = level['machine']
+    messages = [{'role': 'system', 'content': level_prompt(level, mode)},
+                {'role': 'user', 'content': json.dumps({'request': message, 'placements': placements,
+                                                        'fixed_layout': layout(spec) if spec else None,
+                                                        'last_run': last_run})}]
+    answer, usage = call(messages)
+    answer = _placements_answer(answer)
+    if mode == 'hint':
+        return {'ok': True, 'reply': answer['reply'], 'usage': usage}
+    # Up to three different ways, each rehearsed in the engine; the first
+    # that reaches the goal is the one used. A model cannot tune a shot or a
+    # swing from words alone; the engine can say which of its ideas works.
+    def options(a):
+        found = a.get('options') if isinstance(a.get('options'), list) else [a.get('placements')]
+        return [[fit(p) for p in o] for o in found if isinstance(o, list)][:3]
+
+    tray = {t['piece']: t for t in level['tray']}
+
+    def fit(p):
+        # A knob just outside its range is brought to the nearest end of it,
+        # and a knob the piece does not have is left out: the player could do
+        # exactly that with the sliders. A piece not on the tray is left as it
+        # is, for the tray's own refusal to explain.
+        if not isinstance(p, dict) or p.get('piece') not in tray:
+            return p
+        out = {'piece': p['piece']}
+        for key, rule in tray[p['piece']]['knobs'].items():
+            if key not in p:
+                continue
+            value = p[key]
+            if 'choices' not in rule and isinstance(value, (int, float)) and not isinstance(value, bool):
+                value = min(rule['max'], max(rule['min'], value))
+            out[key] = value
+        return out
+
+    tried = []
+    for revision in range(2):
+        for placed in options(answer):
+            try:
+                spec, checked, cost = mg.compose(level, placed)
+                compiled = mw.compile_spec(spec)
+            except (mg.LevelRefused, mw.MachineRefused) as e:
+                tried.append({'placements': placed, 'refused': e.problems})
+                continue
+            if rehearse is None:
+                return {'ok': True, 'reply': answer['reply'], 'placements': checked, 'cost': cost, 'helped': True,
+                        'usage': usage}
+            r = rehearse(compiled)
+            row = (r.get('stations') or [{}])[0]
+            if row.get('done'):
+                return {'ok': True, 'reply': answer['reply'], 'placements': checked, 'cost': cost, 'helped': True,
+                        'usage': usage, 'tried': len(tried) + 1,
+                        'rehearsal': {'goal_at_s': row.get('at_s'), 'events': [e['text'] for e in r['events'][:20]]}}
+            tried.append({'placements': placed, 'goal': 'did not happen', 'miss': mg.miss_m(level, r),
+                          'events': [e['text'] for e in r['events'][:12]], 'closest': r.get('closest_approach'),
+                          'nearest_to_goal_m': r.get('zone_nearest_m')})
+        if revision:
+            break
+        # Every way it tried, and what the engine measured of each.
+        messages += [{'role': 'assistant', 'content': json.dumps(answer)},
+                     {'role': 'user', 'content': json.dumps({'measured': tried[-3:],
+                                                             'ask': 'Change the knobs from what was measured and '
+                                                                    'give up to three new options.'})}]
+        answer, more = call(messages)
+        answer = _placements_answer(answer)
+        usage = _added(usage, more)
+    # Nothing it tried reached the goal. Its nearest idea is then finished
+    # by the engine: one knob at a time, kept when the goal comes nearer.
+    built = [t for t in tried if 'refused' not in t]
+    if not built:
+        raise mg.LevelRefused(tried[-1]['refused'] if tried else ['The model placed nothing'])
+    nearest = min(built, key=lambda t: t['miss'])
+    placed, r, runs = mg.refine(level, nearest['placements'], rehearse)
+    spec, checked, cost = mg.compose(level, placed)
+    row = (r.get('stations') or [{}])[0]
+    reached = mg.miss_m(level, r) == 0
+    note = (f' Its ideas missed; the engine then tried {runs} small changes to the nearest and '
+            + ('found one that works.' if reached else 'got closer but not there.'))
+    return {'ok': True, 'reply': answer['reply'] + note, 'placements': checked, 'cost': cost, 'helped': True,
+            'usage': usage, 'tried': len(tried) + runs,
+            'rehearsal': {'goal_at_s': row.get('at_s') if reached else None,
+                          'events': [e['text'] for e in r['events'][:20]]}}
+
 
 
 def layout(spec):
