@@ -188,9 +188,27 @@ class Declarations(unittest.TestCase):
         self.assertGreater(abs(edge['tip_m'][2] - edge['heel_m'][2]), 0.15)
         self.assertEqual(edge['facing'], [0.0, -1.0, 0.0])
         self.assertAlmostEqual(edge['heel_m'][1], by['knife blade']['at_m'][1] - 0.06, places=9)
-        tilted = dict(KNIFE, kits=[KNIFE['kits'][0], dict(KNIFE['kits'][1], pull_back_deg=60)])
-        with self.assertRaises(mw.MachineRefused):
-            mw.compile_spec(tilted)
+        # Pulled back 60 degrees: the arm and the blade turned down 30 degrees
+        # about the hinge (toward +x, so about +z), and the edge still on the
+        # blade's leading face, facing the way the blade first moves.
+        tilted = mw.compile_spec(dict(KNIFE, kits=[KNIFE['kits'][0], dict(KNIFE['kits'][1], pull_back_deg=60)]))
+        at60 = {p['name']: p for p in tilted['parts']}
+        self.assertEqual(at60['knife blade']['turn_deg'], [0.0, 0.0, 30.0])
+        self.assertEqual(at60['knife arm']['turn_deg'], [0.0, 0.0, 30.0])
+        pivot = next(j for j in tilted['joints'] if j['name'] == 'knife hinge')['at_m']
+        level, low = by['knife blade']['at_m'], at60['knife blade']['at_m']
+        self.assertAlmostEqual(math.dist(level[:2], pivot[:2]), math.dist(low[:2], pivot[:2]), places=9)
+        self.assertAlmostEqual(math.degrees(math.atan2(pivot[1] - low[1], pivot[0] - low[0])), 30.0, places=6)
+        cut60 = tilted['blades'][0]
+        self.assertAlmostEqual(cut60['facing'][0], 0.5, places=9)
+        self.assertAlmostEqual(cut60['facing'][1], -math.sqrt(3) / 2, places=9)
+        c30, s30 = math.cos(math.radians(30)), math.sin(math.radians(30))
+        for key in ('heel_m', 'tip_m'):
+            # Into the blade's own frame: on its leading face, inside its thickness.
+            rel = [cut60[key][i] - low[i] for i in range(3)]
+            local = [c30 * rel[0] + s30 * rel[1], -s30 * rel[0] + c30 * rel[1], rel[2]]
+            self.assertAlmostEqual(local[1], -0.06, places=9)
+            self.assertAlmostEqual(local[0], 0.0, places=9)
         # Heavier: an iron weight of whole cells fixed on the arm near its end.
         heavy = mw.compile_spec(dict(KNIFE, kits=[KNIFE['kits'][0], dict(KNIFE['kits'][1], weight_kg=10)]))
         weight = next(p for p in heavy['parts'] if p['name'] == 'knife weight')
@@ -288,6 +306,37 @@ class Engine(unittest.TestCase):
         # least that much area, each square metre at oak's R for this edge.
         self.assertGreater(cut['area_mm2'], 400.0)
         self.assertGreater(cut['work_j'], 0.9 * 400e-6 * 15000.0)
+
+    @need_engine
+    def test_a_knife_pulled_back_60_degrees_cuts_the_rope_edge_first_wherever_it_stands(self):
+        # Pulled back 60 degrees, the blade starts tilted 30 degrees off level.
+        # A tilted box was built of a staircase of the world's cells, so its
+        # face had matter where the edge was declared in some places and not in
+        # others: with the rope's post at x 0.513 or 0.527 the engine refused
+        # the edge, and where it took it the cut came to 442-514 mm2 by place.
+        # Built in its own frame, it is the same knife wherever it stands.
+        places = [[0.5, 0, 0], [0.513, 0, 0], [0.527, 0, 0.004], [0.5371, 0, -0.0113], [0.4437, 0, 0.0071]]
+        seen = []
+        for post in places:
+            spec = dict(KNIFE, kits=[dict(KNIFE['kits'][0], post_m=post),
+                                     dict(KNIFE['kits'][1], pull_back_deg=60)])
+            r = run(spec, 1.5)
+            self.assertIsNone(r['error'], f'post at {post}')
+            done = {s['title']: s for s in r['stations']}
+            self.assertTrue(done['Knife cuts the rope']['done'], (post, r['events']))
+            self.assertTrue(done['Weight falls']['done'], (post, r['events']))
+            self.assertLess(done['Knife cuts the rope']['at_s'], done['Weight falls']['at_s'])
+            cuts = [c for c in r['readouts']['cuts'] if c['target'].startswith('weight rope')]
+            self.assertTrue(cuts, (post, r['events']))
+            self.assertEqual(cuts[0]['kind'], 'edge', (post, r['events']))
+            self.assertTrue(any('cut weight rope through' in t for t in r['events']), (post, r['events']))
+            area = sum(c['area_mm2'] for c in cuts)
+            self.assertGreater(area, 400.0)
+            seen.append(area)
+        print(f'\n  pulled back 60 degrees, the rope cut edge first in {len(places)} places: '
+              + ', '.join(f'{a:.0f}' for a in seen) + ' mm2')
+        # The same blade meets the same rope the same way wherever it stands.
+        self.assertLess(max(seen) - min(seen), 0.01 * max(seen))
 
     @need_engine
     def test_the_flat_of_the_knife_does_not_cut(self):

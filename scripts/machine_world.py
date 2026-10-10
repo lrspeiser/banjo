@@ -744,17 +744,15 @@ def _kit_knife_pendulum(k, problems, name):
     the thing being cut is above it, where an arm over the blade's middle
     would run into it.
 
-    It starts held out level -- pulled back a quarter turn -- and is let go.
-    Level, every part of it is square to the world, and the engine builds a
-    square part exactly to its faces; a plate tilted at any other angle is
-    built of a staircase of the world's cells, and whether its face has matter
-    where the edge is declared depends on where it happens to sit (an edge on
-    one was refused as off its matter)."""
+    It starts pulled back by pull_back_deg from hanging straight down -- 90,
+    held out level, unless asked -- and is let go. The arm, the blade, its
+    edge and any weight are laid out held out level and then turned about the
+    hinge to that angle, so at any angle the edge is on the blade's leading
+    face. The engine builds a tilted box's cells in its own frame, to its faces
+    as a square one's are, so an edge laid along a tilted plate's face is on its
+    matter wherever the knife stands."""
     arm = _num(k, 'arm_m', name, problems, 0.6, 0.2, 3.0)
-    if k.get('pull_back_deg', 90) != 90:
-        problems.append(f'{name}: a knife pendulum starts held out level, pull_back_deg 90: a blade tilted at another '
-                        'angle is built of a staircase of cells and its edge cannot be laid along it. Use arm_m to '
-                        'make it swing harder (it passes the bottom at about the speed of a fall from arm_m)')
+    pull = _num(k, 'pull_back_deg', name, problems, 90, 10, 90)
     d = _dir(k.get('swing_toward', '+x'), problems, name)
     side = (0.0, 0.0, 1.0) if d[0] else (1.0, 0.0, 0.0)
     cell = k['_cell']
@@ -864,12 +862,43 @@ def _kit_knife_pendulum(k, problems, name):
     # An edge set back inside the plate never reaches what the plate's face
     # has already stopped against.
     lead = [blade_c[0], blade_c[1] - 0.5 * depth, blade_c[2]]
-    k['_blades'].append({'part': name + ' blade',
-                         'heel_m': [lead[i] - side[i] * 0.45 * width for i in range(3)],
-                         'tip_m': [lead[i] + side[i] * 0.45 * width for i in range(3)],
-                         'facing': [0.0, -1.0, 0.0],
-                         'thickness_m': 0.004, 'edge_radius_m': _num(k, 'edge_radius_m', name, problems, 0.0002, 0.00001, 0.005),
-                         'bevel_deg': 30.0})
+    edge = {'part': name + ' blade',
+            'heel_m': [lead[i] - side[i] * 0.45 * width for i in range(3)],
+            'tip_m': [lead[i] + side[i] * 0.45 * width for i in range(3)],
+            'facing': [0.0, -1.0, 0.0],
+            'thickness_m': 0.004, 'edge_radius_m': _num(k, 'edge_radius_m', name, problems, 0.0002, 0.00001, 0.005),
+            'bevel_deg': 30.0}
+    if pull != 90:
+        # Pulled back less than level: everything that swings is turned down
+        # about the hinge by what is left of the quarter turn -- about the axis
+        # d x up, the way it falls when let go -- the arm, the blade, the
+        # weight, the pins that fix them and the edge, all together.
+        turn = math.radians(90.0 - pull)
+        axis = (-d[2], 0.0, d[0])
+        c, s = math.cos(turn), math.sin(turn)
+
+        def turned(v):
+            along = sum(axis[i] * v[i] for i in range(3))
+            across = [axis[1] * v[2] - axis[2] * v[1], axis[2] * v[0] - axis[0] * v[2], axis[0] * v[1] - axis[1] * v[0]]
+            return [v[i] * c + across[i] * s + axis[i] * along * (1.0 - c) for i in range(3)]
+
+        def about_pin(p):
+            return [pivot[i] + t for i, t in enumerate(turned([p[j] - pivot[j] for j in range(3)]))]
+
+        degrees = 90.0 - pull
+        turn_deg = [0.0, 0.0, d[0] * degrees] if d[0] else [-d[2] * degrees, 0.0, 0.0]
+        swinging = {name + ' arm', name + ' blade', name + ' weight'}
+        for p in parts:
+            if p['name'] in swinging:
+                p['at_m'] = about_pin(p['at_m'])
+                p['turn_deg'] = turn_deg
+        for j in joints:
+            if j['kind'] == 'fix':
+                j['at_m'] = about_pin(j['at_m'])
+                j['axis'] = turned(j['axis'])
+        edge['heel_m'], edge['tip_m'] = about_pin(edge['heel_m']), about_pin(edge['tip_m'])
+        edge['facing'] = turned(edge['facing'])
+    k['_blades'].append(edge)
     return parts, joints
 
 
@@ -920,9 +949,10 @@ KIT_HELP = {
                     'the piston',
     'knife_pendulum': 'a frame with an iron arm "<name> arm" on hinge "<name> hinge" and a blade "<name> blade" '
                       '(a horizontal plate, its sharp edge across the swing on its leading side), pulled back and let '
-                      'go from held out level: EITHER aim_at (a part declared earlier; the edge reaches its near face '
+                      'go: EITHER aim_at (a part declared earlier; the edge reaches its near face '
                       'at the bottom of the swing, at its middle height) OR pivot_m [x, y, z]; arm_m (0.6; longer swings '
-                      'harder), weight_kg (an iron weight on the arm; heavier carries more through the cut), '
+                      'harder), pull_back_deg (90, held out level, down to 10: how far back from hanging straight down '
+                      'it starts), weight_kg (an iron weight on the arm; heavier carries more through the cut), '
                       'edge_radius_m (how sharp: 0.00002 a razor, 0.0002 a working edge, 0.001 blunt; the work per area '
                       'cut is the material\'s fracture energy plus its hardness times twice this), swing_toward '
                       '"+x|-x|+z|-z", blade_material. The engine cuts what '
