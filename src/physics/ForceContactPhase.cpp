@@ -31,6 +31,7 @@ ForceContactPhaseAudit auditForceContactPhase(std::span<const ForceContactPointS
             "force/contact phase changed point geometry/mass or admitted spin");
         const auto jf=a.mass_kg*(b.velocity_m_s-a.velocity_m_s),jc=a.mass_kg*(c.velocity_m_s-b.velocity_m_s);
         measure(out,a.velocity_m_s,b.velocity_m_s,c.velocity_m_s,jf,jc);
+        out.point_contact_work_j+=.5*dot(jc,a.velocity_m_s+c.velocity_m_s);
         out.kinetic_change_j+=.5*a.mass_kg*dot(c.velocity_m_s-a.velocity_m_s,c.velocity_m_s+a.velocity_m_s);
         out.force_impulse_n_s+=jf;out.contact_impulse_n_s+=jc;
         out.force_angular_impulse_kg_m2_s+=cross(a.position_world_m,jf);out.contact_angular_impulse_kg_m2_s+=cross(a.position_world_m,jc);
@@ -51,6 +52,8 @@ ForceContactPhaseAudit auditForceContactPhase(std::span<const ForceContactPointS
         const auto jf=a.mass_kg*(v1-v0),jc=a.mass_kg*(v2-v1);
         const auto kf=a.inertia_world_kg_m2*(w1-w0),kc=a.inertia_world_kg_m2*(w2-w1);
         measure(out,v0,v1,v2,jf,jc);measure(out,w0,w1,w2,kf,kc);
+        out.rigid_contact_work_j+=.5*dot(jc,v0+v2)+.5*dot(kc,w0+w2);
+        out.rigid_force_work_j+=.5*dot(jf,v0+v2)+.5*dot(kf,w0+w2);
         out.kinetic_change_j+=.5*a.mass_kg*dot(v2-v0,v2+v0)+.5*dot(a.inertia_world_kg_m2*(w2-w0),w2+w0);
         out.force_impulse_n_s+=jf;out.contact_impulse_n_s+=jc;
         out.force_angular_impulse_kg_m2_s+=cross(a.motion.center_of_mass_world_m,jf)+kf;
@@ -63,7 +66,8 @@ ForceContactPhaseAudit auditForceContactPhase(std::span<const ForceContactPointS
     out.angular_residual_kg_m2_s=delta_l-out.force_angular_impulse_kg_m2_s-out.contact_angular_impulse_kg_m2_s;
     for(double value:{out.kinetic_change_j,out.sequential_force_work_j,out.sequential_contact_work_j,
         out.simultaneous_force_work_j,out.simultaneous_contact_work_j,out.force_cross_work_j,out.contact_cross_work_j,
-        out.energy_residual_j,out.cross_work_residual_j})require(std::isfinite(value),"force/contact phase work overflow");
+        out.energy_residual_j,out.cross_work_residual_j,out.point_contact_work_j,out.rigid_contact_work_j,out.rigid_force_work_j})
+        require(std::isfinite(value),"force/contact phase work overflow");
     for(Vec3 value:{out.force_impulse_n_s,out.contact_impulse_n_s,out.force_angular_impulse_kg_m2_s,
         out.contact_angular_impulse_kg_m2_s,out.momentum_residual_n_s,out.angular_residual_kg_m2_s})
         require(finite(value),"force/contact phase impulse overflow");

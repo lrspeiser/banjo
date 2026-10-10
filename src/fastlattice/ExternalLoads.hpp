@@ -19,17 +19,21 @@ class CpuExternalLoads {
 public:
     [[nodiscard]] bool active() const { return remaining_!=0; }
     [[nodiscard]] std::size_t payloadBytes() const {
-        std::size_t bytes=sizeof(*this)+nodes_.size()*sizeof(Node)+wrenches_.size()*sizeof(ExternalWrench);
+        std::size_t bytes=sizeof(*this)+nodes_.size()*sizeof(Node)+wrenches_.size()*sizeof(ExternalWrench)+last_sources_.size()*sizeof(ExternalLoadLedger);
         for (const auto &w:wrenches_) bytes+=w.source.size()+w.nodes.size()*sizeof(std::uint32_t);
         return bytes;
     }
-    void reset(const Vec3 &origin) { origin_=origin; nodes_.clear(); wrenches_.clear(); remaining_=0; }
+    void reset(const Vec3 &origin) { origin_=origin; nodes_.clear(); wrenches_.clear(); remaining_=0;last_sources_.clear();last_={};last_available_=false;time_owned_=continuous_=false;duration_s_=elapsed_s_=time_correction_s_=0; }
+    [[nodiscard]] double intervalLimit(double maximum) const {
+        if(!remaining_||!time_owned_||continuous_)return maximum;
+        return std::min(maximum,duration_s_-elapsed_s_);
+    }
 
     void set(const std::vector<Vec3> &forces, std::uint64_t substeps,
-             const LatticeArrays<Real> &lattice, bool allow_fixed_boundary=false) {
+             const LatticeArrays<Real> &lattice, bool allow_fixed_boundary=false,double nominal_dt=0,bool continuous=false) {
         if (forces.empty()) {
             if (substeps != 0) throw std::invalid_argument("empty external load needs zero substeps");
-            nodes_.clear(); wrenches_.clear(); remaining_=0; return;
+            nodes_.clear(); wrenches_.clear(); remaining_=0;last_available_=false; return;
         }
         if (forces.size()!=lattice.node_count || substeps==0)
             throw std::invalid_argument("external load needs one force per node and a finite nonzero span");
@@ -46,12 +50,13 @@ public:
                 throw std::invalid_argument("external force needs a finite positive movable node mass");
             staged.push_back({i,force,converted,{}});
         }
-        nodes_=std::move(staged);wrenches_.clear();remaining_=nodes_.empty()?0:substeps;
+        configureTime(nominal_dt,substeps,continuous);
+        nodes_=std::move(staged);wrenches_.clear();remaining_=nodes_.empty()?0:substeps;last_available_=false;
     }
 
     void setWrenches(const std::vector<ExternalWrench> &wrenches,std::uint64_t substeps,
-                     const LatticeArrays<Real> &lattice) {
-        if (wrenches.empty()) { set({},substeps,lattice);return; }
+                     const LatticeArrays<Real> &lattice,double nominal_dt=0) {
+        if (wrenches.empty()) { set({},substeps,lattice,false,nominal_dt);return; }
         if (!substeps) throw std::invalid_argument("external wrench needs a finite nonzero span");
         auto staged=wrenches;
         std::set<std::string> sources;
@@ -73,14 +78,25 @@ public:
                    w.torque_n_m.x==0&&w.torque_n_m.y==0&&w.torque_n_m.z==0;
         }),staged.end());
         auto nodes=wrenchNodes(staged,lattice); // validate before replacing any active load
-        nodes_=std::move(nodes);wrenches_=std::move(staged);remaining_=nodes_.empty()?0:substeps;
+        configureTime(nominal_dt,substeps,false);
+        nodes_=std::move(nodes);wrenches_=std::move(staged);remaining_=nodes_.empty()?0:substeps;last_available_=false;
     }
 
     void kick(const LatticeArrays<Real> &lattice, Real dt, ExternalLoadLedger &ledger,
               std::vector<ExternalWrenchLedger> *source_ledgers=nullptr, bool finish_step=true,
-              FixedBoundaryLedger *fixed_boundary=nullptr) {
+              FixedBoundaryLedger *fixed_boundary=nullptr,double interval_to_consume=0) {
+        last_available_=false;
         if (!remaining_) return;
         if (!(dt>0) || !std::isfinite(dt)) throw std::invalid_argument("external load needs a finite positive timestep");
+        const double consume=interval_to_consume>0?interval_to_consume:static_cast<double>(dt);
+        double next_time=elapsed_s_,next_correction=time_correction_s_;
+        if(finish_step&&time_owned_&&!continuous_){
+            if(!std::isfinite(consume)||consume<=0||consume>duration_s_-elapsed_s_)
+                throw std::invalid_argument("external load interval exceeds remaining physical duration");
+            const auto corrected=consume-time_correction_s_;next_time=elapsed_s_+corrected;
+            next_correction=(next_time-elapsed_s_)-corrected;
+            if(!std::isfinite(next_time)||next_time<=elapsed_s_||next_time>duration_s_)
+                throw std::invalid_argument("external load physical clock cannot advance");}
         if (!wrenches_.empty()) {
             if (!source_ledgers) throw std::invalid_argument("external wrench needs its source ledgers");
             nodes_=wrenchNodes(wrenches_,lattice);
@@ -102,6 +118,7 @@ public:
             // Retain the source impulse and the cancelling support reaction.
             const Vec3 impulse=fixed?static_cast<double>(dt)*widen(node.applied):
                 static_cast<double>(lattice.mass[node.index])*(next-old);
+            node.last_impulse=impulse;
             const Vec3 where=origin_+widen(position(lattice,node.index));
             if (fixed) {
                 boundary_change.impulse_n_s-=impulse;
@@ -144,12 +161,34 @@ public:
         ledger=total;
         if (fixed_boundary) *fixed_boundary=boundary_total;
         if (!wrenches_.empty()) *source_ledgers=std::move(source_totals);
-        if (finish_step) --remaining_;
+        last_=change;last_sources_=std::move(source_changes);last_available_=true;
+        if (finish_step) {
+            if(time_owned_){elapsed_s_=next_time;time_correction_s_=next_correction;if(!continuous_&&elapsed_s_==duration_s_)remaining_=0;}
+            else --remaining_;}
+    }
+
+    struct PhaseWork {ExternalLoadLedger total;std::vector<ExternalWrenchLedger> sources;double operator_work_j{};};
+    [[nodiscard]] PhaseWork phaseWork(const LatticeArrays<Real> &lattice,std::span<const double> start) const {
+        PhaseWork out;if(!last_available_)return out;
+        if(start.size()!=3ULL*lattice.node_count)throw std::invalid_argument("phase load work needs the complete starting velocity array");
+        out.total=last_;out.operator_work_j=last_.work_j;out.total.work_j=0;
+        for(std::size_t i=0;i<wrenches_.size();++i){auto load=last_sources_.at(i);load.work_j=0;out.sources.push_back({wrenches_[i].source,load});}
+        for(const auto &node:nodes_){const auto i=node.index;const Vec3 before{start[3*i],start[3*i+1],start[3*i+2]};
+            const auto work=dot(node.last_impulse,.5*(before+widen(load3(lattice.v,i))));
+            if(!std::isfinite(work))throw std::overflow_error("common-phase load work overflow");
+            out.total.work_j+=work;if(node.source!=kNoSource)out.sources.at(node.source).load.work_j+=work;}
+        (void)added({},out.total);for(const auto &source:out.sources)(void)added({},source.load);return out;
     }
 
 private:
     static constexpr std::size_t kNoSource=std::numeric_limits<std::size_t>::max();
-    struct Node { std::uint32_t index; Vec3 requested; V3<Real> applied,after; std::size_t source{kNoSource}; };
+    struct Node { std::uint32_t index; Vec3 requested; V3<Real> applied,after; std::size_t source{kNoSource};Vec3 last_impulse{}; };
+    void configureTime(double nominal_dt,std::uint64_t steps,bool continuous){
+        if(!std::isfinite(nominal_dt)||nominal_dt<0)throw std::invalid_argument("invalid external load time declaration");
+        const double duration=nominal_dt*static_cast<double>(steps);
+        if(nominal_dt>0&&!continuous&&(!std::isfinite(duration)||duration<=0))throw std::invalid_argument("external load duration overflow");
+        time_owned_=nominal_dt>0;continuous_=continuous;duration_s_=duration;elapsed_s_=time_correction_s_=0;
+    }
     static ExternalLoadLedger added(const ExternalLoadLedger &a,const ExternalLoadLedger &b) {
         if (b.steps>std::numeric_limits<std::uint64_t>::max()-a.steps)
             throw std::overflow_error("external load step count overflow");
@@ -244,6 +283,10 @@ private:
     std::vector<Node> nodes_;
     std::vector<ExternalWrench> wrenches_;
     std::uint64_t remaining_{};
+    bool time_owned_{},continuous_{},last_available_{};
+    double duration_s_{},elapsed_s_{},time_correction_s_{};
+    ExternalLoadLedger last_{};
+    std::vector<ExternalLoadLedger> last_sources_;
 };
 
 } // namespace banjo::fastlattice

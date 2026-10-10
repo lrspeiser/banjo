@@ -14,6 +14,7 @@ struct ForceContactPhaseAudit {
     double sequential_force_work_j{},sequential_contact_work_j{};
     double simultaneous_force_work_j{},simultaneous_contact_work_j{};
     double force_cross_work_j{},contact_cross_work_j{};
+    double point_contact_work_j{},rigid_contact_work_j{},rigid_force_work_j{};
     double energy_residual_j{},cross_work_residual_j{};
     Vec3 force_impulse_n_s{},contact_impulse_n_s{};
     Vec3 force_angular_impulse_kg_m2_s{},contact_angular_impulse_kg_m2_s{};

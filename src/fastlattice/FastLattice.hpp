@@ -162,6 +162,11 @@ struct ExternalPointVelocity {
     ActiveNodeState expected;
     Vec3 velocity_m_s{};
 };
+struct ForcePhaseLoads {
+    ExternalLoadLedger external,gravity;
+    std::vector<ExternalWrenchLedger> external_sources;
+    double operator_external_work_j{},operator_gravity_work_j{};
+};
 
 // Serial-double Verlet only. An explicitly clamped node keeps its physical
 // mass, has zero inverse mass and zero velocity, and stays at its declared
@@ -306,6 +311,7 @@ public:
     virtual RunStatus advanceExternalContactStep(double,const std::function<void()> &) {
         throw std::invalid_argument("this lattice backend does not implement variable contact steps");
     }
+    [[nodiscard]] virtual double externalContactMaximumInterval() const {return externalContactTimestep();}
     // Serial-double Verlet: actual first force half-kick, BeforeDrift contact,
     // drift, final forces/damping, AfterForces contact, failure/history update.
     // One physical step and one finite-load substep. Pure contact transfers
@@ -323,6 +329,12 @@ public:
     }
     [[nodiscard]] virtual std::vector<std::uint32_t> externalContactForceMovableNodes() const {
         throw std::invalid_argument("this lattice backend does not expose force-phase mobility");
+    }
+    // Actual delivered load impulses evaluated at the common force/contact
+    // midpoint, including stationary supports and per-source identity. Only
+    // available inside the coupled force callback, after its contact response.
+    [[nodiscard]] virtual ForcePhaseLoads externalContactForceLoads() const {
+        throw std::invalid_argument("this lattice backend does not expose common-phase load work");
     }
     [[nodiscard]] virtual ExternalPointTransferLedger validateExternalPointVelocity(
         std::uint32_t,const ActiveNodeState &,Vec3) const {
