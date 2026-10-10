@@ -215,8 +215,21 @@ def _tackle(name, k, ctx):
     return {'parts': [weight], 'joints': [rope]}
 
 
+def _lens(name, k, ctx):
+    """A glass lens on a stand, its middle at (x_m, the tray's height_m, z_m),
+    looking along +x until it is turned: convex (it brings a beam to a focus
+    about radius_m / 1.05 beyond itself) or concave (it spreads it). Where
+    the light goes after it is the engine's, traced through both faces."""
+    m = mw.heading(*(_turn(k) or [0.0, 0.0, 0.0]))
+    at = [k['x_m'], ctx['tray'].get('height_m', 0.575), k.get('z_m', 0.0)]
+    return {'kits': [{'kit': 'lens', 'name': name, 'at_m': at,
+                      'axis': [round(v, 9) for v in mw._mat_apply(m, [1.0, 0.0, 0.0])],
+                      'shape': k.get('shape', 'convex'), 'radius_m': ctx['tray'].get('radius_m', 0.2),
+                      'diameter_m': ctx['tray'].get('diameter_m', 0.1)}]}
+
+
 PIECES = {'plank': _plank, 'knife': _knife, 'cannon': _cannon, 'steam': _steam, 'ramp': _ramp, 'mirror': _mirror,
-          'solar': _solar, 'tackle': _tackle}
+          'solar': _solar, 'tackle': _tackle, 'lens': _lens}
 
 
 class LevelRefused(ValueError):

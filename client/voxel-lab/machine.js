@@ -714,8 +714,9 @@ function setKnob(p, key, v) {
   const r = trayItem(p.piece).knobs[key];
   if (!r || r.choices || !Number.isFinite(v)) return false;
   if (r.turning) v = ((v + 180) % 360 + 360) % 360 - 180;
+  // On its step counted from its minimum, as the slider steps.
   const step = r.step || 0.01;
-  const next = Number(Math.min(r.max, Math.max(r.min, Math.round(v / step) * step)).toFixed(4));
+  const next = Number(Math.min(r.max, Math.max(r.min, r.min + Math.round((v - r.min) / step) * step)).toFixed(4));
   if (next === p[key]) return false;
   p[key] = next;
   return true;
