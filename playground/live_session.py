@@ -599,6 +599,10 @@ class Session:
                                          if b["name"] not in went]}
         if "joints" in state and "bodies" not in state:
             self.state = {**self.state, "joints": state["joints"]}
+        # And a whole ground that came by itself (the "terrain" op) is the
+        # newest whole picture of it; see _whole for why it is kept.
+        if "terrain" in state and "bodies" not in state:
+            self.state = {**self.state, "terrain": state["terrain"]}
         # Anything the world waited on goes to the server's log, so a run that
         # stalls leaves a trace behind rather than only an impression.
         for wait in state.get("waits") or ():
@@ -649,6 +653,16 @@ class Session:
         # An explicit empty list does clear the graph.
         if "joints" not in reply and "joints" in self.state:
             reply = {**reply, "joints": self.state["joints"]}
+        # The ground comes whole only with the opening and the "terrain" op; a
+        # step carries at most the rectangles that changed. So an ordinary
+        # reply must not erase it either. Its grid -- where the cells start and
+        # how big they are, which digging never changes -- is what a strike on
+        # cube ground and the guide's dig advice are snapped to
+        # (tool_use.cube_target_point, learning_routes), and losing it with the
+        # first clock step left both aiming at cell boundaries. Its heights are
+        # as of that whole block, not of the latest dig: ask "terrain" for those.
+        if "terrain" not in reply and "terrain" in (self.state or {}):
+            reply = {**reply, "terrain": self.state["terrain"]}
         if not reply.get("partial"):
             return reply
         bodies = {body["name"]: body for body in (self.state or {}).get("bodies", ())}

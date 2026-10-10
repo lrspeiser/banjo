@@ -69,6 +69,21 @@ class ConnectionGraphCache(unittest.TestCase):
         self.assertEqual([],session._whole({'bodies':[],'partial':True,'joints':[]})['joints'])
 
 
+class GroundCache(unittest.TestCase):
+    def test_step_replies_keep_the_whole_ground(self):
+        # Only the opening and the "terrain" op carry the ground whole. A step
+        # that erased it left the cube-ground strike and the guide's dig
+        # advice with no grid to snap to after the first clock step.
+        session=live_session.Session.__new__(live_session.Session)
+        ground={'grid':{'x0_m':-10.,'z0_m':-8.,'cell_m':.25,'nx':80,'nz':64}}
+        session.state={'bodies':[{'name':'rover'}],'terrain':ground}
+        for partial in (True,False):
+            session.state=session._whole({'bodies':[{'name':'rover'}],'partial':partial})
+            self.assertEqual(ground,session.state['terrain'])
+        newer={'grid':{**ground['grid'],'nx':96}}
+        self.assertEqual(newer,session._whole({'bodies':[],'terrain':newer})['terrain'])
+
+
 class LiveSession(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
