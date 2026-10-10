@@ -6,6 +6,8 @@
 #include <cstring>
 #include <vector>
 #include <new>
+#include <thread>
+#include <exception>
 #include "physics/FiniteFrameKernel.hpp"
 #include "physics/CohesiveInterfaceKernel.hpp"
 #include "material/ConnectorModeKernel.hpp"
@@ -19,6 +21,22 @@
 #define BANJO_CPU_EXPORT extern "C" __attribute__((visibility("default")))
 #endif
 namespace {
+// The candidates of one batch are independent trials: each reads only the
+// shared, already prepared scene and writes only its own rows of the
+// caller's arrays. So they may run on several threads at once and every
+// output is the same to the bit as one after another. Contiguous ranges of
+// candidates, at most 8 threads, at least 8 candidates each.
+template<class Range> void eachRange(unsigned batch,const Range& range){
+    const unsigned cores=std::max(1u,std::thread::hardware_concurrency());
+    const unsigned threads=std::min({cores,8u,std::max(1u,batch/8)});
+    if(threads<=1){range(0u,batch);return;}
+    std::vector<std::thread> workers;std::vector<std::exception_ptr> failed(threads);
+    const unsigned each=(batch+threads-1)/threads;
+    for(unsigned t=0;t<threads;++t){const unsigned from=t*each,to=std::min(batch,from+each);if(from>=to)break;
+        workers.emplace_back([&,t,from,to](){try{range(from,to);}catch(...){failed[t]=std::current_exception();}});}
+    for(auto& w:workers)w.join();
+    for(const auto& f:failed)if(f)std::rethrow_exception(f);
+}
 bool finite(const double* p,unsigned count){
     if(!p&&count)return false;
     for(unsigned i=0;i<count;++i)if(!std::isfinite(p[i]))return false;
@@ -96,8 +114,12 @@ BANJO_CPU_EXPORT int banjo_coupled_cpu_trials(const double* b,unsigned n,const d
     double* history,double* forces,double* ledger,int* faults){
     if(!batch||batch>384||!scene(b,n,e,m,h,gy)||!finite(v,6*n*batch)||!poses||!residual||
        (!history&&m)||!forces||!ledger||!faults)return -1;
-    for(unsigned i=0;i<batch;++i)faults[i]=banjo::coupledTrialUnchecked(b,n,e,m,v+6*n*i,h,{0,gy,0},
-        poses+7*n*i,residual+6*n*i,history?history+32*m*i:nullptr,forces+6*n*i,ledger+12*i);
+    try {
+        eachRange(batch,[&](unsigned from,unsigned to){
+            for(unsigned i=from;i<to;++i)faults[i]=banjo::coupledTrialUnchecked(b,n,e,m,v+6*n*i,h,{0,gy,0},
+                poses+7*n*i,residual+6*n*i,history?history+32*m*i:nullptr,forces+6*n*i,ledger+12*i);
+        });
+    } catch(const std::bad_alloc&) {return -2;}
     return 0;
 }
 // Read-only constitutive preparation: exact native material/history transport
@@ -211,8 +233,9 @@ BANJO_CPU_EXPORT int banjo_coupled_cpu_local_trials(const double* b,unsigned n,c
             if(b[30*a+1]==0&&b[30*c+1]==0)continue;
             pairs.push_back({a,c,{}});contact(pairs.back(),b,prepared.data(),h);
         }
+        eachRange(batch,[&](unsigned from,unsigned to){
         Pair scratch;scratch.rows.reserve(48);
-        for(unsigned k=0;k<batch;++k){auto p=prepared;const unsigned body=changed[k];
+        for(unsigned k=from;k<to;++k){auto p=prepared;const unsigned body=changed[k];
             const double* velocity=v+6*n*k;double* f=forces+6*n*k,*l=ledger+12*k;
             double* s=history?history+32*m*k:nullptr,*r=residual+6*n*k,*pose=poses+7*n*k;
             p[body]=banjo::dgPrepareTrial(b+30*body,velocity+6*body,h);
@@ -235,6 +258,7 @@ BANJO_CPU_EXPORT int banjo_coupled_cpu_local_trials(const double* b,unsigned n,c
             }
             faults[k]=fault?fault:finish(b,n,m,velocity,h,pose,r,s,f,l);
         }
+        });
     } catch(const std::bad_alloc&) {return -2;}
     return 0;
 }

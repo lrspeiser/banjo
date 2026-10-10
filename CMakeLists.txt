@@ -310,6 +310,8 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     FetchContent_MakeAvailable(nlohmann_json)
     add_library(banjo_coupled_cpu SHARED src/physics/CoupledCpuApi.cpp)
     target_include_directories(banjo_coupled_cpu PRIVATE src)
+    find_package(Threads REQUIRED)
+    target_link_libraries(banjo_coupled_cpu PRIVATE Threads::Threads)
     target_compile_features(banjo_coupled_cpu PRIVATE cxx_std_17)
     banjo_enable_warnings(banjo_coupled_cpu)
     # Bounded field/mechanism references used by the editable 3D lab. These
