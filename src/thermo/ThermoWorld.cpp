@@ -1102,6 +1102,11 @@ void ThermoWorld::declareGasRegion(const GasRegionDeclaration &d) {
         boundary.minimum_volume_m3 = 0.02 * volume;
         const Vec3 face = piston->center_m - axis * Impl::extentAlong(*piston, axis);
         boundary.base_m = face - axis * (volume / area);
+        require(std::isfinite(d.opens_at_stroke_m) && d.opens_at_stroke_m >= 0.0,
+                d.name + ": a muzzle is a distance along the stroke, zero or more");
+        require(d.opens_at_stroke_m == 0.0 || (d.vent_area_m2 > 0.0 && !d.vent_open),
+                d.name + ": a muzzle opens a vent, so it needs a vent_area_m2 that starts shut");
+        boundary.opens_at_stroke_m = d.opens_at_stroke_m;
         region.piston = boundary;
     }
     const double height = area > 0.0 ? volume / area : std::cbrt(volume);
@@ -1163,6 +1168,11 @@ std::vector<Push> ThermoWorld::pushes() {
     for (GasRegion &region : w.s.regions) {
         if (!region.piston || w.shape(region.piston->body) == nullptr) continue;
         PistonBoundary &piston = *region.piston;
+        // Out of the barrel, it is a ball in the air: what is left behind it
+        // presses on nothing it carries. (Still coupled, a breech gone below
+        // the air's pressure pulled a flying ball back: 78 m/s fell to 71 over
+        // its first two metres.)
+        if (piston.out) continue;
         const double p = pressurePa(w.model, region.gas, region.volume_m3);
         piston.pushed_pressure_pa = p;
         piston.pushed_force_n = piston.axis * ((p - w.ambient.pressure_pa) * piston.area_m2);
@@ -1212,7 +1222,7 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
     // exactly the displacement that happened. The mechanics received F.dx and
     // this is F.dx; the two cannot disagree because they are the same product.
     for (GasRegion &region : w.s.regions) {
-        if (!region.piston) continue;
+        if (!region.piston || region.piston->out) continue;
         PistonBoundary &piston = *region.piston;
         const Vec3 relative = find(moved, piston.body) - find(moved, piston.container);
         const double ds = dot(relative, piston.axis);
@@ -1230,6 +1240,14 @@ void ThermoWorld::advance(double dt_s, const std::vector<Moved> &moved) {
         piston.pushed_pressure_pa = 0.0;
         region.volume_m3 =
             std::max(piston.minimum_volume_m3, piston.base_volume_m3 + piston.area_m2 * piston.stroke_m);
+        // Out of the end of the barrel: the gas behind it is open to the air
+        // from now on and leaves by the vent like any other, in the barrel's
+        // volume as it stood when the ball left it. The ball is free.
+        if (piston.opens_at_stroke_m > 0.0 && piston.stroke_m >= piston.opens_at_stroke_m) {
+            region.vent_open = true;
+            piston.out = true;
+            piston.pushed_force_n = {};
+        }
         const double floor = referenceEnergyJ(w.model, region.gas) +
                              heatCapacityJK(w.model, region.gas) * kColdestGasK;
         if (region.gas.internal_energy_j < floor) {

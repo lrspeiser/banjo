@@ -29,7 +29,7 @@ SCHEMA = 'banjo.machine.v1'
 MATERIALS = ('glass', 'oak', 'iron', 'concrete', 'ceramic', 'ice', 'aluminum', 'rubber')
 SHAPES = ('box', 'sphere', 'cone', 'compound')
 SUB_SHAPES = ('box', 'cylinder')
-JOINT_KINDS = ('hinge', 'fix', 'tie', 'spring', 'slide', 'drum')
+JOINT_KINDS = ('hinge', 'fix', 'tie', 'spring', 'slide', 'drum', 'gear', 'pulley')
 DT_S = 1.0 / 240.0
 STEPS_PER_CALL = 4
 MAX_PARTS = 120
@@ -595,9 +595,288 @@ def _kit_water_wheel(k, problems, name):
     return parts, joints
 
 
+# Water boils at 373.15 K (the engine pins it there while any is left).
+BOILING_K = 373.15
+# The engine's densities (src/material/MaterialCatalog.cpp), for the kits that
+# put so many kilograms of something into a part.
+DENSITY_KG_M3 = {'iron': 7870.0, 'oak': 700.0, 'aluminum': 2700.0, 'concrete': 2400.0, 'ice': 917.0}
+# What an edge can cut, from the same catalogue: a material with a yield point
+# (the rest crack instead) and softer than the edge's own (an edge on
+# something as hard flattens instead). Indentation hardness, Pa.
+HARDNESS_PA = {'iron': 1.5e9, 'aluminum': 950e6, 'oak': 35e6, 'rubber': 6e6}
+
+
+def cuttable(target, edge):
+    """Whether an edge of material `edge` can cut material `target`."""
+    return target in HARDNESS_PA and HARDNESS_PA[target] < HARDNESS_PA.get(edge, 0.0)
+
+
+def _kit_steam_engine(k, problems, name):
+    """A boiler, a cylinder and a piston: heat boils the boiler's water, the
+    steam fills the gas under the piston and its pressure lifts the piston and
+    whatever stands on it (the engine's thermochemistry, docs/thermal-
+    mechanics.md). The cylinder is a solid block -- the engine's gas region is
+    a volume of gas, not a hole -- and the piston sits on top of it."""
+    at = _vec(k.get('at_m'), 3, name + ' at_m', problems)       # x, base height, z
+    bore = _num(k, 'bore_m', name, problems, 0.24, 0.06, 0.6)
+    tall = _num(k, 'cylinder_m', name, problems, 0.3, 0.1, 1.0)
+    water = _num(k, 'water_kg', name, problems, 0.3, 0.005, 5.0)
+    heat_w = _num(k, 'heat_w', name, problems, 10000.0, 0.0, 1e5)
+    side = _dir(k.get('boiler_side', '-x'), problems, name + ' boiler_side')
+    base, wall, box = max(at[1], 0.0), 0.03, 0.16
+    width = bore + 2 * wall
+    parts = [
+        {'name': f'{name} cylinder', 'shape': 'box', 'material': 'iron', 'size_m': [width, tall, width],
+         'at_m': [at[0], base + 0.5 * tall, at[2]], 'turn_deg': [0, 0, 0], 'fixed': True},
+        {'name': f'{name} piston', 'shape': 'box', 'material': 'iron', 'size_m': [bore, 0.04, bore],
+         'at_m': [at[0], base + tall + 0.022, at[2]], 'turn_deg': [0, 0, 0], 'fixed': False},
+        {'name': f'{name} boiler', 'shape': 'box', 'material': 'iron', 'size_m': [box, box, box],
+         'at_m': [at[0] + side[0] * (0.5 * width + 0.05 + 0.5 * box), base + 0.5 * box,
+                  at[2] + side[2] * (0.5 * width + 0.05 + 0.5 * box)], 'turn_deg': [0, 0, 0], 'fixed': True}]
+    boiler_kg = box ** 3 * DENSITY_KG_M3['iron']
+    if water >= boiler_kg:
+        problems.append(f'{name}: water_kg must be less than the boiler ({boiler_kg:.1f} kg)')
+    region = f'{name} steam'
+    thermo = k['_thermo']
+    # Balanced: the gas starts holding the piston up, so what lifts it is the
+    # steam the boiler makes, not a jump in pressure at the start.
+    thermo['gas_regions'].append({'name': region, 'contents': {'nitrogen': 1.0}, 'piston': f'{name} piston',
+                                  'container': f'{name} cylinder', 'balance': True, 'height_m': round(0.8 * tall, 4),
+                                  'area_m2': round(bore * bore, 6), 'wall_conductance_w_k': 0.0})
+    # The boiler's water is part of what the boiler is, by mass; the rest is
+    # inert. It starts at its boiling point, as if the fire had been lit
+    # before the machine was set going, so every joule in boils water.
+    fraction = min(water / boiler_kg, 1.0)
+    thermo['contents'].append({'body': f'{name} boiler', 'contents': {'water': round(fraction, 6),
+                                                                      'ash': round(1.0 - fraction, 6)},
+                               'temperature_k': BOILING_K, 'environment': region})
+    if heat_w > 0:
+        thermo['heaters'].append({'target': f'{name} boiler', 'power_w': heat_w,
+                                  'start_s': _num(k, 'start_s', name, problems, 0.0, 0.0, 600.0),
+                                  'seconds': _num(k, 'seconds', name, problems, 120.0, 0.1, 3600.0),
+                                  'label': f'{name} firebox'})
+    return parts, []
+
+
+def _kit_cannon(k, problems, name):
+    """A barrel, a ball at its muzzle and a powder charge behind it. When the
+    charge is hot enough it burns, the gas in the breech pushes the ball out
+    along the barrel and the barrel back (the engine's thermochemistry: the
+    "propellant" is a stand-in for gunpowder, 2.8 MJ/kg, carrying its own
+    oxygen). Lit by a primer at fire_at_s, or by a circuit's coil wound on
+    "<name> charge". The ball sits at the muzzle -- a body cannot be inside
+    another one here -- held by a wad (a fixing that parts when the breech
+    pushes on it hard enough), and flies level."""
+    at = _vec(k.get('at_m'), 3, name + ' at_m', problems)       # the muzzle: x, height of the bore's axis, z
+    toward = _dir(k.get('toward', '+x'), problems, name + ' toward')
+    length = _num(k, 'length_m', name, problems, 0.3, 0.1, 2.0)
+    ball = k.get('ball') if isinstance(k.get('ball'), dict) else {}
+    d = _num(ball, 'diameter_m', name + ' ball', problems, 0.08, 0.02, 0.2)
+    material = ball.get('material', 'iron')
+    powder_g = _num(k, 'powder_g', name, problems, 1.5, 0.01, 20.0)
+    bore = d + 0.04
+    axis_y = max(at[1], 0.5 * bore, 0.5 * d)
+    along = [abs(toward[0]) > 0, abs(toward[2]) > 0]
+    size = [length if along[0] else bore, bore, length if along[1] else bore]
+    parts = [{'name': f'{name} barrel', 'shape': 'box', 'material': 'iron', 'size_m': size,
+              'at_m': [at[0] - toward[0] * 0.5 * length, axis_y, at[2] - toward[2] * 0.5 * length],
+              'turn_deg': [0, 0, 0], 'fixed': True}]
+    ball_name = ball.get('name') or f'{name} ball'
+    centre = [at[0] + toward[0] * (0.5 * d + 0.004), axis_y, at[2] + toward[2] * (0.5 * d + 0.004)]
+    parts.append({'name': ball_name, 'shape': 'sphere', 'material': material, 'size_m': [d, d, d],
+                  'at_m': centre, 'turn_deg': [0, 0, 0], 'fixed': False})
+    weight_n = DENSITY_KG_M3.get(material, 7870.0) * math.pi / 6.0 * d ** 3 * 9.81
+    area = math.pi * d * d / 4.0
+    # The wad: holds the ball until the breech is 0.4 MPa above the air, so
+    # the charge burns in a closed breech and THEN throws the ball. A wad that
+    # gave at a whisper of pressure let the ball creep out while the powder
+    # was still smouldering, and the gas went into a breech growing as fast.
+    joints = [{'name': f'{name} wad', 'kind': 'fix', 'a': f'{name} barrel', 'b': ball_name,
+               'at_m': [at[0] + toward[0] * 0.002, axis_y, at[2] + toward[2] * 0.002], 'axis': list(toward),
+               'holds_shear_n': 0.0, 'holds_tension_n': round(max(10.0 * weight_n, 4.0e5 * area), 1)}]
+    # The charge: one small keg that is mostly powder. A charge that is
+    # mostly inert only smoulders -- the inert part soaks up the heat the
+    # powder makes -- so the keg is as small as the world's cells allow.
+    keg = k['_cell']
+    parts.append({'name': f'{name} charge', 'shape': 'box', 'material': 'oak', 'size_m': [keg, keg, keg],
+                  'at_m': [at[0] - toward[0] * (length + 0.01 + 0.5 * keg), 0.5 * keg,
+                           at[2] - toward[2] * (length + 0.01 + 0.5 * keg)], 'turn_deg': [0, 0, 0], 'fixed': True})
+    keg_kg = keg ** 3 * DENSITY_KG_M3['oak']
+    fraction = powder_g / 1000.0 / keg_kg
+    if fraction > 0.9 or fraction < 0.05:
+        problems.append(f'{name}: powder_g is {0.05 * keg_kg * 1000:.2f}-{0.9 * keg_kg * 1000:.1f} g: its charge is '
+                        f'a {keg * 1000:.0f} mm keg of {keg_kg * 1000:.1f} g, and less than a twentieth of it '
+                        'powder only smoulders')
+    region = f'{name} breech'
+    thermo = k['_thermo']
+    # The breech: the gas behind the ball, pushing it along the barrel and the
+    # barrel the other way (the recoil). A centimetre of bore behind it. Once
+    # the ball has gone the barrel's length it is out of the muzzle and the gas
+    # gets out after it. (It starts AT the muzzle, outside the barrel, because
+    # a body cannot be inside another here; it is pushed as if from the
+    # breech, over the barrel's length.)
+    thermo['gas_regions'].append({'name': region, 'contents': {'nitrogen': 1.0}, 'pressure_pa': 101325.0,
+                                  'volume_m3': round(area * 0.01, 9), 'piston': ball_name,
+                                  'container': f'{name} barrel', 'axis': list(toward), 'area_m2': round(area, 7),
+                                  'wall_conductance_w_k': 0.0, 'vent_area_m2': round(area, 7), 'vent_open': False,
+                                  'opens_at_stroke_m': length})
+    # The charge waits warm, below where it runs away; a primer (or a coil)
+    # takes it the rest of the way.
+    thermo['contents'].append({'body': f'{name} charge',
+                               'contents': {'propellant': round(min(fraction, 0.9), 6),
+                                            'ash': round(1.0 - min(fraction, 0.9), 6)},
+                               'temperature_k': 500.0, 'environment': region})
+    if k.get('fire_at_s') is not None:
+        thermo['heaters'].append({'target': f'{name} charge',
+                                  'power_w': _num(k, 'primer_w', name, problems, 1500.0, 10.0, 1e5),
+                                  'start_s': _num(k, 'fire_at_s', name, problems, 1.0, 0.0, 600.0),
+                                  'seconds': 2.0, 'label': f'{name} primer'})
+    return parts, joints
+
+
+def _kit_knife_pendulum(k, problems, name):
+    """A blade on a rigid arm hinged to a frame, pulled back and let go: the
+    edge leads through the bottom of the swing and cuts what is there, if it
+    is going hard enough (docs/cutting-model.md: the work is the material's
+    fracture energy plus what a blunt edge crushes, paid bond by bond). The
+    blade is a horizontal plate, its edge across the swing on its leading
+    side, and the arm holds it at one end, like a scythe's: whatever holds up
+    the thing being cut is above it, where an arm over the blade's middle
+    would run into it.
+
+    It starts held out level -- pulled back a quarter turn -- and is let go.
+    Level, every part of it is square to the world, and the engine builds a
+    square part exactly to its faces; a plate tilted at any other angle is
+    built of a staircase of the world's cells, and whether its face has matter
+    where the edge is declared depends on where it happens to sit (an edge on
+    one was refused as off its matter)."""
+    arm = _num(k, 'arm_m', name, problems, 0.6, 0.2, 3.0)
+    if k.get('pull_back_deg', 90) != 90:
+        problems.append(f'{name}: a knife pendulum starts held out level, pull_back_deg 90: a blade tilted at another '
+                        'angle is built of a staircase of cells and its edge cannot be laid along it. Use arm_m to '
+                        'make it swing harder (it passes the bottom at about the speed of a fall from arm_m)')
+    d = _dir(k.get('swing_toward', '+x'), problems, name)
+    side = (0.0, 0.0, 1.0) if d[0] else (1.0, 0.0, 0.0)
+    cell = k['_cell']
+    depth, width, plate = 0.12, 0.2, cell
+    aim = k.get('aim_at')
+    if aim is not None:
+        # Hang it so the edge reaches the named part's near face at the
+        # bottom of the swing, at that part's middle height.
+        target = (k.get('_known') or {}).get(aim)
+        edge_material = k.get('blade_material', 'iron')
+        if target is None:
+            problems.append(f'{name}: aim_at must name a part declared before this kit ({aim!s} is not one)')
+            pivot = [0.0, arm + 0.2, 0.0]
+        else:
+            if not cuttable(target.get('material', 'oak'), edge_material):
+                can = [m for m in HARDNESS_PA if cuttable(m, edge_material)]
+                problems.append(f'{name}: aim_at {aim} is {target.get("material", "oak")}, which an {edge_material} edge '
+                                f'cannot cut (it cuts {", ".join(can) or "nothing here"}; glass, ceramic, ice and '
+                                'concrete crack instead). To cut a weight loose, hang it from a rope (a hanging_weight '
+                                'kit with "hang": "rope") and aim at "<that kit\'s name> rope"')
+            axes, h = _axes(target), _half(target)
+            reach = sum(abs(axes[j][0 if d[0] else 2]) * h[j] for j in range(3))
+            centre = target['at_m']
+            bottom = [centre[0] - d[0] * (reach + 0.5 * depth + 0.01), centre[1],
+                      centre[2] - d[2] * (reach + 0.5 * depth + 0.01)]
+            pivot = [bottom[0], bottom[1] + arm + 0.006 + 0.5 * plate, bottom[2]]
+    else:
+        pivot = _vec(k.get('pivot_m'), 3, name + ' pivot_m', problems)
+    if pivot[1] - arm - plate < 0.01:
+        problems.append(f'{name}: the blade would hit the ground at the bottom of its swing; raise pivot_m above '
+                        f'{arm + plate + 0.01:.2f} m or shorten the arm')
+    # The arm at the blade's end on whichever side its swing stays clear of
+    # the parts already declared (the one asked for, if arm_side says).
+    known = [p for p in (k.get('_known') or {}).values() if p.get('shape') != 'compound']
+
+    def blocked(sign):
+        off = [pivot[i] + sign * side[i] * 0.5 * width for i in range(3)]
+        for p in known:
+            axes_p, h = _axes(p), _half(p)
+            ext = [sum(abs(axes_p[j][i]) * h[j] for j in range(3)) for i in range(3)]
+            c = p['at_m']
+            lateral = 0 if side[0] else 2
+            along = 2 if side[0] else 0
+            if abs(c[lateral] - off[lateral]) > ext[lateral] + 0.03:
+                continue
+            if c[1] + ext[1] < pivot[1] - arm or c[1] - ext[1] > pivot[1]:
+                continue
+            if abs(c[along] - pivot[along]) > ext[along] + arm:
+                continue
+            return True
+        return False
+
+    asked = k.get('arm_side')
+    if asked in ('+', '-'):
+        arm_sign = 1.0 if asked == '+' else -1.0
+    else:
+        arm_sign = -1.0 if not blocked(-1.0) else 1.0
+    # Held out level on the far side from the swing: radially along -d.
+    radius = 0.006 + arm + 0.5 * plate
+    hang = [pivot[i] + arm_sign * side[i] * 0.5 * width for i in range(3)]
+    arm_c = [hang[i] - d[i] * (0.004 + 0.5 * arm) for i in range(3)]
+    blade_c = [pivot[i] - d[i] * radius for i in range(3)]
+    # Square to the world: thin along the arm (along d), deep upright, wide
+    # across the swing. At the bottom of the swing it lies flat, edge first.
+    arm_size = [arm if d[0] else 0.04, 0.04, arm if d[2] else 0.04]
+    blade_size = [plate if d[0] else width, depth, width if d[0] else plate]
+    # The beam a little above the pin, so the arm's top clears it however
+    # far back it is pulled; the hinge is the pin between them.
+    beam_t, half_span, clear = 0.06, 0.3 + 0.5 * width, 0.03
+    beam_size = [beam_t, beam_t, 2 * half_span + beam_t] if d[0] else [2 * half_span + beam_t, beam_t, beam_t]
+    post_h = pivot[1] + clear + beam_t
+    frame = k.get('frame_material', 'oak')
+    parts = [{'name': name + ' beam', 'shape': 'box', 'material': frame, 'size_m': beam_size,
+              'at_m': [pivot[0], pivot[1] + clear + 0.5 * beam_t, pivot[2]], 'turn_deg': [0, 0, 0], 'fixed': True}]
+    for tag, sgn in (('A', -1), ('B', 1)):
+        parts.append({'name': f'{name} post {tag}', 'shape': 'box', 'material': frame,
+                      'size_m': [beam_t, post_h, beam_t],
+                      'at_m': [pivot[0] + sgn * side[0] * half_span, 0.5 * post_h, pivot[2] + sgn * side[2] * half_span],
+                      'turn_deg': [0, 0, 0], 'fixed': True})
+    parts.append({'name': name + ' arm', 'shape': 'box', 'material': 'iron', 'size_m': arm_size,
+                  'at_m': arm_c, 'turn_deg': [0, 0, 0], 'fixed': False})
+    parts.append({'name': name + ' blade', 'shape': 'box', 'material': k.get('blade_material', 'iron'),
+                  'size_m': blade_size, 'at_m': blade_c, 'turn_deg': [0, 0, 0], 'fixed': False})
+    # A weight on the arm, near its end: more to carry through the cut. An
+    # iron block of whole cells, as near the asked mass as they come.
+    heavy = _num(k, 'weight_kg', name, problems, 0.0, 0.0, 60.0)
+    if heavy > 0:
+        block = max(cell, round((heavy / DENSITY_KG_M3['iron']) ** (1 / 3) / cell) * cell)
+        along = min(arm - 0.5 * block, arm - 0.01)
+        weight_c = [hang[i] - d[i] * (0.004 + along) for i in range(3)]
+        weight_c[1] = pivot[1] + 0.02 + 0.002 + 0.5 * block
+        parts.append({'name': name + ' weight', 'shape': 'box', 'material': 'iron', 'size_m': [block] * 3,
+                      'at_m': weight_c, 'turn_deg': [0, 0, 0], 'fixed': False})
+        extra_joints = [{'name': name + ' weight fixing', 'kind': 'fix', 'a': name + ' arm', 'b': name + ' weight',
+                         'at_m': [weight_c[0], pivot[1] + 0.021, weight_c[2]], 'axis': [0, 1, 0],
+                         'holds_shear_n': 0.0, 'holds_tension_n': 0.0}]
+    else:
+        extra_joints = []
+    joint_at = [hang[i] - d[i] * (0.005 + arm) for i in range(3)]
+    joints = [{'name': name + ' hinge', 'kind': 'hinge', 'a': name + ' beam', 'b': name + ' arm', 'at_m': hang,
+               'axis': [side[0], 0.0, side[2]], 'friction_n_m': 0.0},
+              {'name': name + ' socket', 'kind': 'fix', 'a': name + ' arm', 'b': name + ' blade',
+               'at_m': joint_at, 'axis': [float(d[0]), 0.0, float(d[2])], 'holds_shear_n': 0.0,
+               'holds_tension_n': 0.0}] + extra_joints
+    # The edge: across the swing, ON the blade's leading face -- its
+    # underside as it is let go, its front as it comes through the bottom.
+    # An edge set back inside the plate never reaches what the plate's face
+    # has already stopped against.
+    lead = [blade_c[0], blade_c[1] - 0.5 * depth, blade_c[2]]
+    k['_blades'].append({'part': name + ' blade',
+                         'heel_m': [lead[i] - side[i] * 0.45 * width for i in range(3)],
+                         'tip_m': [lead[i] + side[i] * 0.45 * width for i in range(3)],
+                         'facing': [0.0, -1.0, 0.0],
+                         'thickness_m': 0.004, 'edge_radius_m': _num(k, 'edge_radius_m', name, problems, 0.0002, 0.00001, 0.005),
+                         'bevel_deg': 30.0})
+    return parts, joints
+
+
 KITS = {'ramp': _kit_ramp, 'domino_row': _kit_domino_row, 'lever': _kit_lever,
         'hanging_weight': _kit_hanging_weight, 'plate_on_supports': _kit_plate,
-        'pendulum': _kit_pendulum, 'block_tower': _kit_block_tower, 'water_wheel': _kit_water_wheel}
+        'pendulum': _kit_pendulum, 'block_tower': _kit_block_tower, 'water_wheel': _kit_water_wheel,
+        'steam_engine': _kit_steam_engine, 'cannon': _kit_cannon, 'knife_pendulum': _kit_knife_pendulum}
 
 KIT_HELP = {
     'ramp': 'anchored plank from top_m down to bottom_m (centre of its upper surface at each end, metres), '
@@ -612,7 +891,7 @@ KIT_HELP = {
              'along "x|z", material. Its hinge joint is named "<name> hinge"',
     'hanging_weight': 'post with an oak peg holding a weight: post_m [x, 0, z], drop_m (height of the weight\'s '
                       'underside above the ground), peg_size_m, weight_size_m, weight_material, side "+x|-x|+z|-z", '
-                      'holds_shear_n. The weight is named "<name>", the peg "<name> peg". Or hang "rope": the weight '
+                      'holds_shear_n. The weight is named "<name>", the peg "<name> peg". Or "hang": "rope": the weight '
                       'hangs from a rope "<name> rope" (an oak cord, rope_m long, under an arm on the post, at the '
                       'same place the peg would hold it), whose fixing parts in tension (holds_tension_n) when heat '
                       'has weakened it enough; heat the rope with a coil or a torch',
@@ -632,6 +911,32 @@ KIT_HELP = {
                    '(which side of the axle the water lands; -x turns it toward +z), offset_m from the axle, height_m '
                    'above the wheel, discharge_l_s (2), speed_m_s, from_s}: a spout "<name> spout" pouring onto the '
                    'paddles; the poured water falls, turns the wheel and runs off down the trench',
+    'steam_engine': 'a boiler "<name> boiler" beside a cylinder "<name> cylinder" with a piston "<name> piston" on '
+                    'top: at_m [x, base height, z] (the cylinder\'s foot), bore_m (0.24), cylinder_m (0.3 tall), '
+                    'water_kg (0.3), boiler_side "+x|-x|+z|-z", heat_w (10000; 0 to heat the boiler only with a '
+                    'circuit coil wound on "<name> boiler"), start_s, seconds. The water starts at its boiling point; '
+                    'heat boils it, the steam fills the gas "<name> steam" under the piston and lifts it and '
+                    'whatever rests on it (about 13 cm/s at 10 kW with the default bore). Use a rose_m station on '
+                    'the piston',
+    'knife_pendulum': 'a frame with an iron arm "<name> arm" on hinge "<name> hinge" and a blade "<name> blade" '
+                      '(a horizontal plate, its sharp edge across the swing on its leading side), pulled back and let '
+                      'go from held out level: EITHER aim_at (a part declared earlier; the edge reaches its near face '
+                      'at the bottom of the swing, at its middle height) OR pivot_m [x, y, z]; arm_m (0.6; longer swings '
+                      'harder), weight_kg (an iron weight on the arm; heavier carries more through the cut), '
+                      'edge_radius_m (how sharp: 0.00002 a razor, 0.0002 a working edge, 0.001 blunt; the work per area '
+                      'cut is the material\'s fracture energy plus its hardness times twice this), swing_toward '
+                      '"+x|-x|+z|-z", blade_material. The engine cuts what '
+                      'the edge goes through if the swing pays for it (fracture energy plus crushing, bond by bond); '
+                      'an iron edge cuts aluminum, oak and rubber; iron is as hard and glass, ceramic, ice and '
+                      'concrete crack instead, so aiming at one is refused. To drop a weight: a hanging_weight kit '
+                      'with "hang": "rope" (field hang, value "rope"), and aim_at "<that kit\'s name> rope". Use a '
+                      '"cut" station on the rope',
+    'cannon': 'an anchored barrel "<name> barrel" with a ball "<name> ball" (or ball.name) at its muzzle on a '
+              'cradle, and a powder charge "<name> charge" behind it: at_m [x, height of the bore, z] is the '
+              'muzzle, toward "+x|-x|+z|-z" (it fires level that way), length_m, ball {diameter_m (0.06), '
+              'material, name}, powder_g (0.2 g throws a 0.06 m iron ball at very roughly 15 m/s; more powder, '
+              'faster), fire_at_s (a primer lights it then; leave it out and light it with a circuit coil wound on '
+              '"<name> charge", e.g. a switch on a hinge). The gas in "<name> breech" pushes the ball out',
 }
 
 
@@ -650,6 +955,10 @@ def compile_spec(spec):
         problems.append('cell_m is 0.02 or 0.04')
         cell = 0.02
     parts, joints, notes, spouts = [], [], [], []
+    # Heat, chemistry and gas the kits declare: steam in a cylinder, powder in
+    # a breech. Read by the engine's thermochemistry (src/thermo/ThermoJson).
+    thermo = {'gas_regions': [], 'contents': [], 'heaters': []}
+    blades = []
     ground = compile_ground(spec.get('ground'), problems)
     for i, kit in enumerate(spec.get('kits', []) or []):
         if not isinstance(kit, dict) or kit.get('kit') not in KITS:
@@ -660,7 +969,8 @@ def compile_spec(spec):
             problems.append(f'kit {i + 1} ({kit["kit"]}) needs a name')
             continue
         p, j = KITS[kit['kit']](dict(kit, _known={r['name']: r for r in parts if isinstance(r, dict) and 'name' in r},
-                                     _ground=ground, _spouts=spouts), problems, name.strip())
+                                     _ground=ground, _spouts=spouts, _thermo=thermo, _cell=cell,
+                                     _blades=blades), problems, name.strip())
         for row in p:
             row['kit'] = name.strip()
         parts += p
@@ -831,6 +1141,33 @@ def compile_spec(spec):
         if kind not in JOINT_KINDS:
             problems.append(f'{what}: kind is one of {", ".join(JOINT_KINDS)}')
             continue
+        if kind == 'gear':
+            # Two wheels that turn together at the ratio of their teeth. A gear
+            # couples two PINS (hinge joints), not two bodies; teeth in mesh
+            # turn the wheels opposite ways, a chain the same way.
+            row = {'name': name, 'kind': 'gear', 'a': j.get('a'), 'b': j.get('b'),
+                   'teeth_a': int(_num(j, 'teeth_a', what, problems, 12, 3, 500)),
+                   'teeth_b': int(_num(j, 'teeth_b', what, problems, 24, 3, 500)),
+                   'chain': bool(j.get('chain', False)),
+                   'strips_at_n_m': _num(j, 'strips_at_n_m', what, problems, 0.0, 0, 1e6)}
+            joint_rows.append(row)
+            continue
+        if kind == 'pulley':
+            # A rope from a on part a, over two fixed points, to b on part b; b
+            # moves 1/ratio as far as a and feels ratio times the tension (a
+            # block and tackle). The rope pulls and never pushes.
+            for end in ('a', 'b'):
+                if j.get(end) not in names:
+                    problems.append(f'{what}: {end} must name a part ({j.get(end)!s} is not one)')
+            row = {'name': name, 'kind': 'pulley', 'a': j.get('a'), 'b': j.get('b'),
+                   'at_m': _vec(j.get('at_m'), 3, what + ' at_m', problems),
+                   'at_b_m': _vec(j.get('at_b_m'), 3, what + ' at_b_m', problems),
+                   'over_a_m': _vec(j.get('over_a_m'), 3, what + ' over_a_m', problems),
+                   'over_b_m': _vec(j.get('over_b_m'), 3, what + ' over_b_m', problems),
+                   'ratio': _num(j, 'ratio', what, problems, 1.0, 0.1, 20),
+                   'length_m': _num(j, 'length_m', what, problems, 0.0, 0, 100)}
+            joint_rows.append(row)
+            continue
         if kind == 'drum':
             # A rope that winds onto a turning body (the drum, on a pin of its
             # own) from a load: rigid/DrumRope.hpp. It pulls and never pushes.
@@ -888,6 +1225,11 @@ def compile_spec(spec):
             row['stiffness_n_m'] = _num(j, 'stiffness_n_m', what, problems, None, 1, 1e7)
             row['damping_n_s_m'] = _num(j, 'damping_n_s_m', what, problems, 0.0, 0, 1e5)
         joint_rows.append(row)
+    hinge_names = {j['name'] for j in joint_rows if j['kind'] == 'hinge'}
+    for row in joint_rows:
+        if row['kind'] == 'gear':
+            if row['a'] not in hinge_names or row['b'] not in hinge_names or row['a'] == row['b']:
+                problems.append(f'joint {row["name"]}: a gear couples two different hinge joints (a and b name hinges)')
     batteries, battery_names = [], set()
     for b in spec.get('batteries', []) or []:
         name = b.get('name') if isinstance(b, dict) else None
@@ -902,6 +1244,8 @@ def compile_spec(spec):
                           'capacity_j': _num(b, 'capacity_j', what, problems, 2.0e5, 1, 1e9),
                           'voltage_v': _num(b, 'voltage_v', what, problems, 48, 1, 1000),
                           'max_power_w': _num(b, 'max_power_w', what, problems, 0, 0, 1e6)})
+        if b.get('charge_j') is not None:
+            batteries[-1]['charge_j'] = _num(b, 'charge_j', what, problems, None, 0, batteries[-1]['capacity_j'])
     circuits = []
     for c in spec.get('circuits', []) or []:
         name = c.get('name') if isinstance(c, dict) else None
@@ -911,14 +1255,30 @@ def compile_spec(spec):
         what = 'circuit ' + name
         if c.get('battery') not in battery_names:
             problems.append(f'{what}: battery must name a battery')
-        coil = c.get('coil') if isinstance(c.get('coil'), dict) else None
-        if coil is None or coil.get('heats') not in names:
-            problems.append(f'{what}: coil.heats must name the part its coil is wound on')
-            coil = coil or {}
         row = {'name': name, 'battery': c.get('battery'),
-               'coil': {'heats': coil.get('heats'),
-                        'resistance_ohm': _num(coil, 'resistance_ohm', what + ' coil', problems, 1.1, 0.01, 1e6)},
                'source_resistance_ohm': _num(c, 'source_resistance_ohm', what, problems, 0.05, 1e-6, 1e3)}
+        # Its loads, in parallel behind the switch: a coil that heats a part,
+        # a motor that turns a hinge, or both.
+        coil = c.get('coil') if isinstance(c.get('coil'), dict) else None
+        if coil is not None:
+            if coil.get('heats') not in names:
+                problems.append(f'{what}: coil.heats must name the part its coil is wound on')
+            row['coil'] = {'heats': coil.get('heats'),
+                           'resistance_ohm': _num(coil, 'resistance_ohm', what + ' coil', problems, 1.1, 0.01, 1e6)}
+        motor = c.get('motor') if isinstance(c.get('motor'), dict) else None
+        if motor is not None:
+            if motor.get('hinge') not in hinge_names:
+                problems.append(f'{what}: motor.hinge must name the hinge joint the motor turns')
+            row['motor'] = {'hinge': motor.get('hinge'),
+                            'stall_torque_n_m': _num(motor, 'stall_torque_n_m', what + ' motor', problems, 5.0, 0.01, 1e5),
+                            'no_load_rad_s': _num(motor, 'no_load_rad_s', what + ' motor', problems, 10.0, 0.01, 1e4),
+                            'brake_torque_n_m': _num(motor, 'brake_torque_n_m', what + ' motor', problems, 0.0, 0, 1e5),
+                            'gear_ratio': _num(motor, 'gear_ratio', what + ' motor', problems, 1.0, 0.01, 1e4),
+                            # Its throttle while the circuit is closed: 1 full
+                            # ahead, -1 full astern.
+                            'command': _num(motor, 'command', what + ' motor', problems, 1.0, -1.0, 1.0)}
+        if coil is None and motor is None:
+            problems.append(f'{what}: a circuit needs a load: a coil, a motor, or both')
         switch = c.get('switch')
         if switch is not None:
             if not isinstance(switch, dict) or switch.get('hinge') not in {j['name'] for j in joint_rows if j['kind'] == 'hinge'}:
@@ -929,6 +1289,41 @@ def compile_spec(spec):
             key = 'closed_at_or_above_deg' if above else 'closed_at_or_below_deg'
             row['switch'] = {'hinge': switch.get('hinge'), key: _num(switch, key, what + ' switch', problems, 0, -179, 179)}
         circuits.append(row)
+    # The sun: where it stands and how strongly it shines (the engine thins
+    # it through the air by its elevation). Solar panels on parts charge a
+    # battery with what falls on them, shadows included.
+    sun = None
+    if spec.get('sun') is not None:
+        sun_spec = spec['sun'] if isinstance(spec['sun'], dict) else {}
+        sun = {'elevation_deg': _num(sun_spec, 'elevation_deg', 'sun', problems, 50, 0.5, 90),
+               'azimuth_deg': _num(sun_spec, 'azimuth_deg', 'sun', problems, 180, -360, 360),
+               'irradiance_w_m2': _num(sun_spec, 'irradiance_w_m2', 'sun', problems, 1000, 0, 1400)}
+    solar_panels = []
+    for i, sp in enumerate(spec.get('solar_panels', []) or []):
+        what = 'solar panel ' + str(sp.get('name', i + 1) if isinstance(sp, dict) else i + 1)
+        if not isinstance(sp, dict) or sp.get('part') not in names or sp.get('battery') not in battery_names:
+            problems.append(f'{what}: part must name the part it is on and battery the battery it charges')
+            continue
+        if sun is None:
+            problems.append(f'{what}: a solar panel needs a sun')
+        normal = _vec(sp.get('normal', [0, 1, 0]), 3, what + ' normal', problems)
+        if math.hypot(*normal) < 1e-6:
+            problems.append(f'{what}: normal must point somewhere')
+        part_row = names[sp['part']]
+        # The cell sits on the part's face the normal points out of, so the
+        # part itself is never what shades it.
+        unit = [v / (math.hypot(*normal) or 1.0) for v in normal]
+        if part_row['shape'] == 'sphere':
+            reach = 0.5 * part_row['size_m'][0]
+        elif part_row['shape'] == 'compound':
+            reach = max(max(abs(c) + 0.5 * max(sub['size_m']) for c in sub['at_m']) for sub in part_row['parts'])
+        else:
+            axes, half = _axes(part_row), _half(part_row)
+            reach = sum(abs(sum(axes[j][k] * unit[k] for k in range(3))) * half[j] for j in range(3))
+        solar_panels.append({'name': sp.get('name') or f'panel {i + 1}', 'part': sp['part'], 'battery': sp['battery'],
+                             'at_m': [part_row['at_m'][k] + unit[k] * reach for k in range(3)], 'normal': normal,
+                             'area_m2': _num(sp, 'area_m2', what, problems, 0.25, 0.001, 100),
+                             'efficiency': _num(sp, 'efficiency', what, problems, 0.2, 0.01, 1.0)})
     torches = []
     for t in spec.get('torches', []) or []:
         if not isinstance(t, dict) or t.get('target') not in names:
@@ -937,6 +1332,30 @@ def compile_spec(spec):
         torches.append({'target': t['target'],
                         'power_w': _num(t, 'power_w', 'torch', problems, 2000, 1, 1e5),
                         'seconds': _num(t, 'seconds', 'torch', problems, 60, 0.1, 600)})
+    # Edges: on a part made of cells, heel to tip on its matter, facing out
+    # of it. The engine checks the rest and refuses an edge in the air.
+    checked_blades = []
+    for i, b in enumerate(blades + list(spec.get('blades', []) or [])):
+        what = f'blade {i + 1}'
+        if not isinstance(b, dict) or b.get('part') not in names:
+            problems.append(f'{what}: part must name the part the edge is on')
+            continue
+        if names[b['part']]['shape'] == 'compound':
+            problems.append(f'{what}: an edge goes on a part made of cells, not a compound part')
+            continue
+        heel = _vec(b.get('heel_m'), 3, what + ' heel_m', problems)
+        tip = _vec(b.get('tip_m'), 3, what + ' tip_m', problems)
+        facing = _vec(b.get('facing'), 3, what + ' facing', problems)
+        if 'facing_from' in b:
+            facing = [facing[j] - b['facing_from'][j] for j in range(3)]
+        if math.dist(heel, tip) < 0.005:
+            problems.append(f'{what}: heel_m and tip_m must be at least 5 mm apart')
+        if math.hypot(*facing) < 1e-6:
+            problems.append(f'{what}: facing must point somewhere')
+        checked_blades.append({'part': b['part'], 'heel_m': heel, 'tip_m': tip, 'facing': facing,
+                               'thickness_m': _num(b, 'thickness_m', what, problems, 0.004, 0.0005, 0.05),
+                               'edge_radius_m': _num(b, 'edge_radius_m', what, problems, 0.0002, 0.00001, 0.005),
+                               'bevel_deg': _num(b, 'bevel_deg', what, problems, 30.0, 5.0, 120.0)})
     stations = []
     hinge_names = {j['name'] for j in joint_rows if j['kind'] == 'hinge'}
     slide_names = {j['name'] for j in joint_rows if j['kind'] == 'slide'}
@@ -974,9 +1393,21 @@ def compile_spec(spec):
             elif kind == 'hotter_than_k':
                 if not isinstance(arg, dict) or arg.get('part') not in names or not isinstance(arg.get('k'), (int, float)):
                     problems.append(f'{what}: hotter_than_k needs a part and k')
+            elif kind == 'cut':
+                if arg not in names:
+                    problems.append(f'{what}: cut names a part; {arg!s} is not one')
+            elif kind in ('rose_m', 'moved_m'):
+                if not isinstance(arg, dict) or arg.get('part') not in names or \
+                        not isinstance(arg.get('m'), (int, float)):
+                    problems.append(f'{what}: {kind} needs a part and m (metres from where it started)')
+            elif kind == 'dented':
+                if arg not in names:
+                    problems.append(f'{what}: dented names a part; {arg!s} is not one')
+                elif not spec.get('plasticity'):
+                    problems.append(f'{what}: a dent needs "plasticity": true (metal and wood then yield and stay bent)')
             else:
                 problems.append(f'{what}: done_when is one of hits, hinge_beyond_deg, turned_deg, slid_m, switch_closed, '
-                                'hotter_than_k, parted, broke')
+                                'hotter_than_k, parted, broke, dented, rose_m, moved_m, cut')
         elif rule is not None:
             problems.append(f'{what}: done_when is one rule, or null for a station not built yet')
         focus = [f for f in (s.get('focus') or []) if isinstance(f, str) and f in names]
@@ -985,7 +1416,9 @@ def compile_spec(spec):
         raise MachineRefused(problems)
     return {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
             'parts': checked, 'joints': joint_rows, 'batteries': batteries, 'circuits': circuits,
-            'torches': torches, 'spouts': checked_spouts, 'stations': stations, 'cells': round(cells), 'notes': notes}
+            'torches': torches, 'spouts': checked_spouts, 'stations': stations, 'cells': round(cells), 'notes': notes,
+            'plasticity': bool(spec.get('plasticity', False)), 'sun': sun, 'solar_panels': solar_panels,
+            'thermo': {key: rows for key, rows in thermo.items() if rows}, 'blades': checked_blades}
 
 
 def scene_of(compiled):
@@ -1010,6 +1443,11 @@ def scene_of(compiled):
         scene['precise_rigid_bodies'] = precise
     if compiled.get('ground'):
         scene['terrain'] = ground_scene(compiled['ground'])
+    if compiled.get('plasticity'):
+        # Metal and wood bonds yield and keep their stretch: dents, measured.
+        scene['plasticity'] = True
+    if compiled.get('thermo'):
+        scene['thermo'] = compiled['thermo']
     if compiled.get('spouts'):
         scene['spouts'] = [{'name': s['name'], 'at_m': s['at_m'], 'direction': s['direction'],
                             'speed_m_s': s['speed_m_s'], 'discharge_m3_s': s['discharge_l_s'] / 1000.0,
@@ -1095,8 +1533,15 @@ def build_engine(exe, compiled, workdir):
     engine = Engine(exe, scene_of(compiled), compiled['cell_m'], workdir)
     joint_ids = {}
     try:
-        for j in compiled['joints']:
-            if j['kind'] == 'hinge':
+        # Gears couple hinges, so they go after every hinge is made.
+        for j in sorted(compiled['joints'], key=lambda j: j['kind'] == 'gear'):
+            if j['kind'] == 'gear':
+                r = engine.op(op='gear', pin_a=joint_ids[j['a']], pin_b=joint_ids[j['b']], teeth_a=j['teeth_a'],
+                              teeth_b=j['teeth_b'], chain=j['chain'], strips_at_n_m=j['strips_at_n_m'])
+            elif j['kind'] == 'pulley':
+                r = engine.op(op='reeve', a=j['a'], b=j['b'], at_a=j['at_m'], at_b=j['at_b_m'], over_a=j['over_a_m'],
+                              over_b=j['over_b_m'], ratio=j['ratio'], length_m=j['length_m'])
+            elif j['kind'] == 'hinge':
                 r = engine.op(op='hinge', a=j['a'], b=j['b'], at=j['at_m'], axis=j['axis'], lower_deg=j['lower_deg'],
                               upper_deg=j['upper_deg'], friction_n_m=j['friction_n_m'])
             elif j['kind'] == 'fix':
@@ -1118,11 +1563,20 @@ def build_engine(exe, compiled, workdir):
                 r = engine.op(op='spring', a=j['a'], b=j['b'], at_a=j['at_m'], at_b=j['at_b_m'], rest_m=j['rest_m'],
                               stiffness_n_m=j['stiffness_n_m'], damping_n_s_m=j['damping_n_s_m'])
             joint_ids[j['name']] = r['joint']
+        for b in compiled.get('blades', []):
+            engine.op(op='blade', body=b['part'], heel=b['heel_m'], tip=b['tip_m'], facing=b['facing'],
+                      thickness_m=b['thickness_m'], edge_radius_m=b['edge_radius_m'], bevel_deg=b['bevel_deg'])
         store_ids = {}
         for b in compiled['batteries']:
+            extra = {'charge_j': b['charge_j']} if 'charge_j' in b else {}
             r = engine.op(op='store', name=b['name'], body=b['in'], capacity_j=b['capacity_j'],
-                          voltage_v=b['voltage_v'], max_power_w=b['max_power_w'])
+                          voltage_v=b['voltage_v'], max_power_w=b['max_power_w'], **extra)
             store_ids[b['name']] = r['store']
+        if compiled.get('sun'):
+            engine.op(op='sun', **compiled['sun'])
+        for sp in compiled.get('solar_panels', []):
+            engine.op(op='solar_panel', name=sp['name'], body=sp['part'], store=store_ids[sp['battery']], at_m=sp['at_m'],
+                      normal=sp['normal'], area_m2=sp['area_m2'], efficiency=sp['efficiency'])
         circuit_ids = {}
         for c in compiled['circuits']:
             branches = []
@@ -1135,14 +1589,29 @@ def build_engine(exe, compiled, workdir):
                 branches.append({'id': 'switch', 'kind': 'switch', 'component': c['name'] + ' switch', 'a': 'plus',
                                  'b': 'switched', 'thermal': 'battery', 'resistance_ohm': 0.001, 'closed': False,
                                  'follows_hinge': follows})
-            branches.append({'id': 'coil', 'kind': 'resistor', 'component': c['name'] + ' coil', 'a': coil_in,
-                             'b': 'minus', 'resistance_ohm': c['coil']['resistance_ohm'], 'heats_body': c['coil']['heats']})
+            if 'coil' in c:
+                branches.append({'id': 'coil', 'kind': 'resistor', 'component': c['name'] + ' coil', 'a': coil_in,
+                                 'b': 'minus', 'resistance_ohm': c['coil']['resistance_ohm'],
+                                 'heats_body': c['coil']['heats']})
+            if 'motor' in c:
+                m = c['motor']
+                motor_id = engine.op(op='motor', joint=joint_ids[m['hinge']], store=store_ids[c['battery']],
+                                     stall_torque_n_m=m['stall_torque_n_m'], no_load_rad_s=m['no_load_rad_s'],
+                                     brake_torque_n_m=m['brake_torque_n_m'])['motor']
+                engine.op(op='drive', motor=motor_id, command=m['command'])
+                # Its copper losses warm its own windings, a small lump that
+                # loses heat to the air.
+                branches.append({'id': 'motor', 'kind': 'motor', 'component': c['name'] + ' motor', 'a': coil_in,
+                                 'b': 'minus', 'motor': motor_id, 'gear_ratio': m['gear_ratio'],
+                                 'thermal': 'windings'})
             network = {'schema': 'banjo.circuit.v1', 'id': c['name'],
                        'nodes': ['plus', 'minus'] + (['switched'] if 'switch' in c else []),
                        'source': {'store': store_ids[c['battery']], 'positive': 'plus', 'negative': 'minus',
                                   'resistance_ohm': c['source_resistance_ohm'], 'thermal': 'battery'},
                        'thermal_nodes': [{'id': 'battery', 'component': c['battery'], 'capacity_j_k': 2000,
-                                          'ambient_w_k': 1}],
+                                          'ambient_w_k': 1}] +
+                                        ([{'id': 'windings', 'component': c['name'] + ' motor', 'capacity_j_k': 400,
+                                           'ambient_w_k': 2}] if 'motor' in c else []),
                        'branches': branches}
             circuit_ids[c['name']] = engine.op(op='circuit', network=network)['circuit']
         for t in compiled['torches']:
@@ -1200,6 +1669,15 @@ class MachineSession:
         self.water = None
         self.water_seq = 0
         self.parcels = None
+        self._dented = set()
+        self.machines = None
+        self.joint_kinds = {j['name']: j['kind'] for j in compiled['joints']}
+        self.motor_hinges = {c['name']: c['motor']['hinge'] for c in compiled['circuits'] if 'motor' in c}
+        # Where each part started, for "rose" and "moved" stations.
+        self.starts = {p['name']: list(p['at_m']) for p in compiled['parts']}
+        self._pushed = set()
+        self.cuts = {}
+        self._cut_said = {}
         # The ground as the engine built it, sent to the page once.
         terrain = self.engine.first.get('terrain') or {}
         self.ground_view = ({'grid': terrain.get('grid'), 'heights_b64': terrain.get('heights_b64')}
@@ -1223,7 +1701,17 @@ class MachineSession:
         for b in reply.get('bodies', []):
             old = self.bodies.get(b['name'])
             row = {k: b[k] for k in ('name', 'shape', 'material', 'dimensions_m', 'position_m', 'orientation_wxyz',
-                                     'velocity_m_s', 'anchored', 'color_rgba', 'revision', 'mass_kg') if k in b}
+                                     'velocity_m_s', 'anchored', 'color_rgba', 'revision', 'mass_kg', 'dent_mm') if k in b}
+            # A dent is permanent set the engine measured, not a redrawn shape:
+            # news the first time it is a micrometre deep. At the engine's cell
+            # sizes a dent is spread over a cell, so it reads shallower than a
+            # real one would (docs/machine-physics-roadmap.md).
+            if (b.get('dent_mm') or 0.0) >= 0.001 and family(b['name']) not in self._dented:
+                self._dented.add(family(b['name']))
+                depth = b['dent_mm']
+                said = f'{depth:.1f} mm' if depth >= 0.1 else f'{depth * 1000:.0f} micrometres'
+                self._event('dent', f'{b["name"]} dented {said} deep', body=family(b['name']),
+                            dent_mm=_round(depth, 5), at_m=b.get('dent_at_m'))
             if 'rigid_parts_local' in b:
                 row['rigid_parts_local'] = b['rigid_parts_local']
             elif old and 'rigid_parts_local' in old:
@@ -1241,12 +1729,35 @@ class MachineSession:
                 del self.bodies[name]
                 self.removed[name] = self.seq
         self.t = float(reply.get('t', self.t))
+        self._track_moves()
         if isinstance(reply.get('water'), dict):
             # The engine's own picture of the water: the box of wet columns,
             # each surface in millimetres above base_m.
             self.water = {k: reply['water'].get(k) for k in ('box', 'base_m', 'surface_mm_b64', 'in_m3_s',
                                                              'out_m3_s', 'volume_m3', 'wet_cells', 'residual_m3')}
             self.water_seq = self.seq
+        if reply.get('cuts'):
+            # Every edge contact since the last reply, as the engine measured it;
+            # it sends a finished one once and forgets it, so it is read here.
+            for c in reply['cuts']:
+                self.cuts[(c.get('blade'), c.get('target'), c.get('at_s'))] = c
+            for (blade, target), row in self._cut_summary().items():
+                said = self._cut_said.get((blade, target))
+                if row['bit'] and said != 'cut' and said != 'through':
+                    self._cut_said[(blade, target)] = 'cut'
+                    self._event('cut', f'{blade} cuts into {target} {row["how"]} at {row["speed_m_s"]:.1f} m/s',
+                                blade=blade, body=target)
+                elif not row['bit'] and said is None:
+                    self._cut_said[(blade, target)] = 'touch'
+                    self._event('contact', f'{blade} meets {target} but does not cut it ({row["kind"]})',
+                                blade=blade, body=target)
+                if row['through'] and self._cut_said.get((blade, target)) != 'through':
+                    self._cut_said[(blade, target)] = 'through'
+                    self._event('severed', f'{blade} cut {target} through: {row["area_mm2"]:.0f} mm2 for '
+                                f'{row["work_j"]:.2f} J', blade=blade, body=target)
+        if isinstance(reply.get('machines'), dict):
+            # Batteries, motors and solar panels as the engine last said.
+            self.machines = reply['machines']
         if isinstance(reply.get('parcels'), dict):
             # Poured water in the air, every reply: each parcel's centre in
             # millimetres, and the pour's ledger.
@@ -1291,6 +1802,46 @@ class MachineSession:
                 closest[i] = {'station': st['title'], 'a': a, 'b': b, 'centres_m': round(d, 3), 'at_s': round(self.t, 3),
                               'a_at_m': [round(v, 3) for v in pa], 'b_at_m': [round(v, 3) for v in pb]}
 
+    def _track_moves(self):
+        """When each rose_m / moved_m station's part first got that far, read
+        on every reply from the engine rather than on the slower probe, so a
+        cannon ball that is gone in a twentieth of a second is timed when it
+        went."""
+        crossed = self.__dict__.setdefault('_crossed', {})
+        for i, st in enumerate(self.compiled['stations']):
+            rule = st.get('done_when')
+            if i in crossed or not isinstance(rule, dict) or not ('rose_m' in rule or 'moved_m' in rule):
+                continue
+            r = rule.get('rose_m') or rule.get('moved_m')
+            start = self.starts.get(r.get('part'))
+            now = next((b['position_m'] for b in self.bodies.values() if family(b['name']) == r.get('part')), None)
+            if start and now:
+                gone = now[1] - start[1] if 'rose_m' in rule else math.dist(now, start)
+                if gone >= r['m']:
+                    crossed[i] = self.t
+
+    def _cut_summary(self):
+        """Each edge against each part (its pieces counted as it): whether
+        it bit, how, what it has cut and what that cost, and whether the part
+        is through -- the engine says it came apart, or it is now in pieces."""
+        out = {}
+        for (blade, target, _), c in self.cuts.items():
+            key = (blade, family(target or ''))
+            row = out.setdefault(key, {'blade': blade, 'target': key[1], 'bit': False, 'how': '', 'kind': '',
+                                       'speed_m_s': 0.0, 'area_mm2': 0.0, 'work_j': 0.0, 'through': False})
+            how = {'edge': 'edge first', 'slice': 'slicing', 'press': 'pressing'}.get(c.get('kind'))
+            if how and not row['bit']:
+                row.update(bit=True, how=how, kind=c.get('kind'), speed_m_s=c.get('speed_m_s', 0.0))
+            elif not row['kind']:
+                row.update(kind=c.get('kind'), speed_m_s=c.get('speed_m_s', 0.0))
+            row['area_mm2'] += c.get('area_mm2', 0.0) or 0.0
+            row['work_j'] += c.get('work_j', 0.0) or 0.0
+            row['through'] = row['through'] or bool(c.get('separated'))
+        for row in out.values():
+            if row['bit'] and row['area_mm2'] > 0 and any(b.startswith(row['target'] + ' piece') for b in self.bodies):
+                row['through'] = True
+        return out
+
     def _event(self, kind, text, **data):
         self.events.append({'t': round(self.t, 3), 'kind': kind, 'text': text, **data, 'seq': self.seq})
         if len(self.events) > 400:
@@ -1303,12 +1854,17 @@ class MachineSession:
         rows = []
         for j in joints:
             name = next((n for n, i in self.joint_ids.items() if i == j['id']), str(j['id']))
-            row = {'name': name, 'kind': j['kind'], 'degrees': j.get('degrees'), 'attached': j.get('attached'),
+            kind = self.joint_kinds.get(name, j['kind'])
+            row = {'name': name, 'kind': kind, 'degrees': j.get('degrees'), 'attached': j.get('attached'),
                    'a': j.get('a'), 'b': j.get('b')}
+            if kind == 'gear':
+                # A gear pair's own reading is no angle anyone set; its two
+                # hinges carry the turns.
+                row['degrees'] = None
             for key in ('metres', 'tension_n', 'leaves', 'meets', 'wound_m'):
                 if key in j:
                     row[key] = j[key]
-            if j['kind'] == 'hinge' and j.get('degrees') is not None:
+            if kind == 'hinge' and j.get('degrees') is not None:
                 # The reading wraps at +-180; the total turn is unwrapped from
                 # readings a tenth of a second apart.
                 last, total = self._turned.get(name, (j['degrees'], 0.0))
@@ -1321,18 +1877,22 @@ class MachineSession:
         if self.circuit_ids:
             for c in self.engine.op(op='circuits').get('circuits', []):
                 coil = next((b for b in c['branches'] if b['id'] == 'coil'), {})
+                motor = next((b for b in c['branches'] if b['id'] == 'motor'), {})
                 sw = next((b for b in c['branches'] if b['id'] == 'switch'), None)
-                current = coil.get('current_a', 0.0) or 0.0
+                coil_a = coil.get('current_a', 0.0) or 0.0
+                current = coil_a + (motor.get('current_a', 0.0) or 0.0)
                 row = {'name': c['id'], 'closed': None if sw is None else sw.get('closed'),
-                       'current_a': _round(current), 'coil_w': _round(current * current * coil.get('resistance_ohm', 0)),
-                       'heats': coil.get('heats_body'), 'source_j': _round(c['ledger']['source_j'], 2),
+                       'current_a': _round(current), 'coil_w': _round(coil_a * coil_a * coil.get('resistance_ohm', 0)),
+                       'heats': coil.get('heats_body'), 'drives': self.motor_hinges.get(c['id']),
+                       'source_j': _round(c['ledger']['source_j'], 2),
                        'into_body_j': _round(c['ledger'].get('exported_j', 0.0), 2),
                        'electrical_residual_j': c['ledger']['electrical_residual_j']}
                 circuits.append(row)
                 was = self._switches.get(c['id'])
                 if sw is not None and sw.get('closed') and not was:
-                    self._event('switch', f'{c["id"]}: switch closed, {current:.1f} A into the coil on {row["heats"]}',
-                                circuit=c['id'])
+                    into = ' and '.join(x for x in (row['heats'] and f'the coil on {row["heats"]}',
+                                                    row['drives'] and f'the motor on {row["drives"]}') if x)
+                    self._event('switch', f'{c["id"]}: switch closed, {current:.1f} A into {into}', circuit=c['id'])
                 self._switches[c['id']] = bool(sw and sw.get('closed'))
         out['circuits'] = circuits
         heat = self.engine.op(op='thermo').get('thermo', {})
@@ -1352,9 +1912,40 @@ class MachineSession:
                     self._event('burning', f'{b["name"]} is burning: {k:.0f} K, its fire giving {release:.0f} W',
                                 body=b['name'])
         out['heat'] = sorted(hot, key=lambda r: -r['temperature_k'])[:12]
+        gas = []
+        for r in heat.get('regions', []) or []:
+            gas.append({'name': r['name'], 'pressure_kpa': _round(r.get('pressure_pa', 0.0) / 1000.0, 2),
+                        'temperature_k': _round(r.get('temperature_k', 0.0), 1),
+                        'stroke_m': _round(r.get('stroke_m', 0.0), 4), 'force_n': _round(r.get('force_n', 0.0), 1),
+                        'work_j': _round(r.get('work_to_bodies_j', 0.0), 2), 'piston': r.get('piston'),
+                        # Where its column is, for drawing it: from base_m along
+                        # the axis for its volume over its area.
+                        'base_m': [_round(v, 4) for v in r.get('base_m') or [0, 0, 0]],
+                        'axis': r.get('axis'), 'area_m2': r.get('area_m2'),
+                        'volume_m3': r.get('volume_m3'), 'vent_open': r.get('vent_open')})
+            # News once: the gas has pushed its piston (or ball) along.
+            if r.get('piston') and (r.get('stroke_m') or 0.0) > 0.005 and r['name'] not in self._pushed:
+                self._pushed.add(r['name'])
+                self._event('gas', f'{r["name"]} pushes {r["piston"]}: {r.get("pressure_pa", 0.0) / 1000.0:.0f} kPa',
+                            region=r['name'])
+        out['gas'] = gas
+        if self.cuts:
+            out['cuts'] = [dict(row, area_mm2=_round(row['area_mm2'], 1), work_j=_round(row['work_j'], 3))
+                           for row in self._cut_summary().values()]
         ledger = heat.get('ledger') or {}
         out['heat_ledger'] = {'heater_in_j': _round(ledger.get('heater_in_j', 0.0), 2),
                               'residual_j': ledger.get('residual_j')}
+        if self.machines:
+            m = self.machines
+            out['machines'] = {
+                'batteries': [{'name': s.get('name'), 'charge_j': _round(s.get('charge_j', 0.0), 1),
+                               'capacity_j': s.get('capacity_j')} for s in m.get('stores', [])],
+                'motors': [{'id': x.get('id'), 'speed_rad_s': _round(x.get('speed_rad_s', 0.0), 3),
+                            'torque_n_m': _round(x.get('torque_n_m', 0.0), 3), 'power_w': _round(x.get('power_w', 0.0), 2),
+                            'turned_rad': _round(x.get('turned_rad', 0.0), 3)} for x in m.get('motors', [])],
+                'solar_panels': [{'name': x.get('name'), 'sunlight_w': _round(x.get('sunlight_w', 0.0), 2),
+                                  'power_w': _round(x.get('power_w', 0.0), 2), 'shaded': x.get('shaded'),
+                                  'shaded_by': x.get('shaded_by')} for x in m.get('panels', [])]}
         if self.parcels is not None:
             p = self.parcels
             out['pour'] = {'poured_l': _round(1000 * p.get('poured_m3', 0.0), 2),
@@ -1409,6 +2000,14 @@ class MachineSession:
                 elif 'parted' in rule:
                     hit = next((e['t'] for e in self.events if e['kind'] == 'parted' and
                                 rule['parted'] in (e.get('a'), e.get('b'))), None)
+                elif 'cut' in rule:
+                    hit = next((e['t'] for e in self.events if e['kind'] == 'severed' and same(e.get('body'), rule['cut'])),
+                               None)
+                elif 'rose_m' in rule or 'moved_m' in rule:
+                    hit = getattr(self, '_crossed', {}).get(i)
+                elif 'dented' in rule:
+                    hit = next((e['t'] for e in self.events if e['kind'] == 'dent' and same(e.get('body'), rule['dented'])),
+                               None)
                 elif 'broke' in rule:
                     hit = next((e['t'] for e in self.events if e['kind'] == 'broke' and same(e.get('body'), rule['broke'])),
                                None)

@@ -48,6 +48,8 @@ function api(body) {
 }
 
 // ---- meshes: one per body, drawn from the engine's own record --------------
+const stripeLook = new THREE.MeshStandardMaterial({color: 0xf1d38a, roughness: .7, metalness: 0});
+
 function makeMesh(b) {
   const hex = materialColor(b.material, b.color_rgba);
   const look = () => material(hex, b.material).clone();
@@ -65,10 +67,18 @@ function makeMesh(b) {
       piece.position.set(...part.center_local_m);
       const r = part.rotation_wxyz;
       piece.quaternion.set(r[1], r[2], r[3], r[0]);
+      if (part.shape === 'cylinder') {
+        // A pale stripe from the hub to the rim, through both faces, so a
+        // turning wheel shows how far it has turned.
+        const radius = part.dimensions_m[0] / 2;
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(.85 * radius, part.dimensions_m[1] * 1.04, .14 * radius), stripeLook);
+        stripe.position.x = .45 * radius;
+        piece.add(stripe);
+      }
       mesh.add(piece);
     }
     mesh.material = mesh.children[0].material;
-    mesh.geometry = {dispose() { for (const c of mesh.children) c.geometry.dispose(); }};
+    mesh.geometry = {dispose() { mesh.traverse(c => { if (c !== mesh && c.geometry) c.geometry.dispose(); }); }};
   }
   else if (b.shape === 'hull' && b.cells_local_m && b.cells_local_m.length) {
     const cell = machine ? machine.cell_m : .02;
@@ -108,7 +118,8 @@ function syncMeshes(changed) {
 }
 
 // Wires: from the battery's part, past the switch's pin, to the part the coil
-// is wound on. Bright while the engine reports the switch closed.
+// is wound on or the motor's hinge. Bright while the engine reports the
+// switch closed.
 function syncWires() {
   for (const w of wires) { scene.remove(w.line); w.line.geometry.dispose(); }
   wires.length = 0;
@@ -119,7 +130,9 @@ function syncWires() {
     const geometry = new THREE.BufferGeometry();
     const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({color: 0x6b7680}));
     scene.add(line);
-    wires.push({line, from: battery && battery.in, via: hinge && hinge.at_m, to: c.coil.heats, name: c.name});
+    const driven = c.motor ? machine.joints.find(j => j.name === c.motor.hinge) : null;
+    wires.push({line, from: battery && battery.in, via: hinge && hinge.at_m,
+                to: c.coil ? c.coil.heats : null, toPoint: driven && driven.at_m, name: c.name});
   }
 }
 
@@ -199,12 +212,14 @@ function syncRopes() {
     return new THREE.Vector3(...at).sub(new THREE.Vector3(...b.position_m)).applyQuaternion(q.invert());
   };
   for (const j of machine.joints) {
-    if (j.kind !== 'tie' && j.kind !== 'spring') continue;
+    if (j.kind !== 'tie' && j.kind !== 'spring' && j.kind !== 'pulley') continue;
     const a = local(j.a, j.at_m), b = local(j.b, j.at_b_m);
     if (!a || !b) continue;
-    const line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color: j.kind === 'tie' ? 0xd8c9a3 : 0x9fd3ff}));
+    const line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color: j.kind === 'spring' ? 0x9fd3ff : 0xd8c9a3}));
     scene.add(line);
-    ropes.push({line, name: j.name, a: j.a, b: j.b, localA: a, localB: b});
+    // A pulley's rope runs up over its two fixed points.
+    const over = j.kind === 'pulley' ? [new THREE.Vector3(...j.over_a_m), new THREE.Vector3(...j.over_b_m)] : [];
+    ropes.push({line, name: j.name, a: j.a, b: j.b, localA: a, localB: b, over});
   }
 }
 const drumLines = new Map();
@@ -226,18 +241,45 @@ function updateRopes() {
   for (const r of ropes) {
     const pa = at(r.a, r.localA), pb = at(r.b, r.localB);
     r.line.visible = Boolean(pa && pb) && !gone.has(r.name);
-    if (r.line.visible) r.line.geometry.setFromPoints([pa, pb]);
+    if (r.line.visible) r.line.geometry.setFromPoints([pa, ...r.over, pb]);
   }
+}
+
+// Gas pushing a piston (steam under a piston, a cannon's breech): its column,
+// where the engine says it is, tinted by its measured temperature. Not drawn
+// once it is open to the air.
+const gasColumns = new Map();
+function updateGas() {
+  const live = new Set();
+  for (const g of readouts.gas || []) {
+    if (!g.piston || g.vent_open || !(g.area_m2 > 0) || !(g.volume_m3 > 0) || !g.axis) continue;
+    live.add(g.name);
+    let mesh = gasColumns.get(g.name);
+    if (!mesh) {
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshStandardMaterial({color: 0xdfe8f0, transparent: true, opacity: .35, roughness: .9, depthWrite: false}));
+      scene.add(mesh); gasColumns.set(g.name, mesh);
+    }
+    const side = Math.sqrt(g.area_m2), length = g.volume_m3 / g.area_m2;
+    const axis = new THREE.Vector3(...g.axis).normalize();
+    mesh.scale.set(side, length, side);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
+    mesh.position.copy(new THREE.Vector3(...g.base_m).addScaledVector(axis, length / 2));
+    mesh.material.color.setHex(heatTint(0xdfe8f0, g.temperature_k || 293));
+  }
+  for (const [name, mesh] of gasColumns) if (!live.has(name)) { scene.remove(mesh); mesh.geometry.dispose(); gasColumns.delete(name); }
 }
 
 function updateWires() {
   updateRopes();
+  updateGas();
   for (const w of wires) {
     const at = name => { const b = world.bodies.get(name); return b ? b.position_m : null; };
-    const pts = [at(w.from), w.via, at(w.to)].filter(Boolean).map(p => new THREE.Vector3(...p));
+    const pts = [at(w.from), w.via, w.to ? at(w.to) : w.toPoint].filter(Boolean).map(p => new THREE.Vector3(...p));
     w.line.geometry.setFromPoints(pts);
     const live = (readouts.circuits || []).find(c => c.name === w.name);
-    w.line.material.color.setHex(live && live.closed ? 0xffd34d : 0x6b7680);
+    const flowing = live && (live.closed || (live.closed === null && Math.abs(live.current_a || 0) > 1e-3));
+    w.line.material.color.setHex(flowing ? 0xffd34d : 0x6b7680);
   }
 }
 
@@ -275,11 +317,25 @@ function renderReadings(frame) {
   pair(dl, 'World time', describeTime(frame.t));
   for (const c of readouts.circuits || []) {
     pair(dl, `${c.name}: switch`, c.closed === null ? 'always closed' : c.closed ? 'closed' : 'open');
-    pair(dl, `${c.name}: current`, `${(c.current_a || 0).toFixed(1)} A · ${(c.coil_w || 0).toFixed(0)} W into ${c.heats}`);
-    pair(dl, `${c.name}: energy`, `${((c.source_j || 0) / 1000).toFixed(1)} kJ from the battery, ${((c.into_body_j || 0) / 1000).toFixed(1)} kJ into ${c.heats}`);
+    pair(dl, `${c.name}: current`, `${(c.current_a || 0).toFixed(2)} A` + (c.heats ? ` · ${(c.coil_w || 0).toFixed(0)} W into ${c.heats}` : '') +
+      (c.drives ? ` · driving the motor on ${c.drives}` : ''));
+    pair(dl, `${c.name}: energy`, `${((c.source_j || 0) / 1000).toFixed(2)} kJ from the battery` +
+      (c.heats ? `, ${((c.into_body_j || 0) / 1000).toFixed(1)} kJ into ${c.heats}` : ''));
   }
   for (const h of (readouts.heat || []).slice(0, 4))
     pair(dl, h.name, `${h.temperature_k.toFixed(0)} K` + (h.reacting ? ' · burning' : '') + (h.heater_w ? ` · ${h.heater_w.toFixed(0)} W in` : ''));
+  for (const c of readouts.cuts || [])
+    pair(dl, `${c.blade} → ${c.target}`, c.through ? `cut through: ${(c.area_mm2 || 0).toFixed(0)} mm² for ${(c.work_j || 0).toFixed(2)} J`
+      : `${c.kind}: ${(c.area_mm2 || 0).toFixed(0)} mm² cut, ${(c.work_j || 0).toFixed(2)} J`);
+  for (const g of readouts.gas || [])
+    pair(dl, g.name, `${(g.pressure_kpa || 0).toFixed(0)} kPa · ${(g.temperature_k || 0).toFixed(0)} K` +
+      (g.piston ? ` · ${g.piston} pushed ${((g.stroke_m || 0) * 1000).toFixed(0)} mm` : ''));
+  for (const b of readouts.machines?.batteries || [])
+    pair(dl, b.name, `${((b.charge_j || 0) / 1000).toFixed(1)} kJ of ${((b.capacity_j || 0) / 1000).toFixed(0)} kJ`);
+  for (const s of readouts.machines?.solar_panels || [])
+    pair(dl, s.name, s.shaded ? `in shadow (${s.shaded_by || 'something'})` : `${(s.sunlight_w || 0).toFixed(0)} W of sunlight, ${(s.power_w || 0).toFixed(1)} W into the battery`);
+  for (const m of readouts.machines?.motors || [])
+    pair(dl, `Motor ${m.id}`, `${(m.speed_rad_s || 0).toFixed(1)} rad/s · ${(m.torque_n_m || 0).toFixed(2)} N·m · ${(m.power_w || 0).toFixed(0)} W`);
   if (readouts.pour)
     pair(dl, 'Poured water', `${readouts.pour.poured_l.toFixed(1)} L poured, ${readouts.pour.landed_l.toFixed(1)} L in the stream, ${readouts.pour.in_air_l.toFixed(1)} L falling`);
   for (const j of (readouts.joints || []).filter(j => j.kind === 'hinge').slice(0, 3))
@@ -409,9 +465,20 @@ function frameCamera() {
   const span = Math.max(hi[0] - lo[0], hi[2] - lo[2], hi[1] - lo[1]);
   // Far enough that the whole width fits the narrower of the two view angles.
   const half = Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
-  distance = Math.min(40, Math.max(3, .6 * span / Math.tan(half)));
+  distance = Math.min(40, Math.max(1.6, .6 * span / Math.tan(half)));
   azimuth = -.25; elevation = .38;
 }
+
+// A scripted view, for scripts/film_machine.py: where the camera looks from
+// (azimuth and elevation in radians, distance in metres) and at what point.
+// It stops following, as dragging the view does.
+window.machineView = ({azimuth: a, elevation: e, distance: d, at} = {}) => {
+  follow = false; $('follow').setAttribute('aria-pressed', 'false');
+  if (Number.isFinite(a)) azimuth = a;
+  if (Number.isFinite(e)) elevation = e;
+  if (Number.isFinite(d)) distance = d;
+  if (Array.isArray(at) && at.length === 3) { goal.set(...at); target.copy(goal); }
+};
 
 function resize() {
   const w = view.clientWidth, h = view.clientHeight;

@@ -4597,7 +4597,9 @@ nlohmann::json savedPistonBoundary(const thermo::PistonBoundary &v) {
             {"minimum_volume_m3", savedNumber(v.minimum_volume_m3)},
             {"pushed_pressure_pa", savedNumber(v.pushed_pressure_pa)},
             {"work_to_bodies_j", savedNumber(v.work_to_bodies_j)},
-            {"work_to_atmosphere_j", savedNumber(v.work_to_atmosphere_j)}};
+            {"work_to_atmosphere_j", savedNumber(v.work_to_atmosphere_j)},
+            {"opens_at_stroke_m", savedNumber(v.opens_at_stroke_m)},
+            {"out", v.out}};
 }
 thermo::PistonBoundary readPistonBoundary(const nlohmann::json &j) {
     thermo::PistonBoundary v;
@@ -4613,6 +4615,9 @@ thermo::PistonBoundary readPistonBoundary(const nlohmann::json &j) {
     v.pushed_pressure_pa = numberFrom(j.at("pushed_pressure_pa"));
     v.work_to_bodies_j = numberFrom(j.at("work_to_bodies_j"));
     v.work_to_atmosphere_j = numberFrom(j.at("work_to_atmosphere_j"));
+    // Saved before muzzles existed: no muzzle.
+    v.opens_at_stroke_m = j.contains("opens_at_stroke_m") ? numberFrom(j.at("opens_at_stroke_m")) : 0.0;
+    v.out = j.value("out", false);
     return v;
 }
 nlohmann::json savedContact(const thermo::Contact &v) {
@@ -10923,15 +10928,80 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
     // footprint is the body's own extent, so the island is stopped where the
     // scenery actually is and passes beside it where it is not.
     //
-    // Horizontal only: the plane's normal is +Y. So this is a table top, an
-    // anvil, a floor -- the cases where something is driven DOWN into
-    // something. A wall or a tilted ramp is not covered, and would need a
-    // plane that can face any direction.
+    // The FACE it was driven into, whichever way that faces. This used to be
+    // the top alone (normal +Y), so a ball fired sideways into an anchored
+    // iron block went into a run whose only surface was the block's top,
+    // passed through the block's side as though it were not there, and came
+    // out "held" with no set at 20 m/s -- where the same ball dropped onto the
+    // same block at 16 m/s dents. The face is the one the struck body's line
+    // of travel enters the scenery's box through (the box grown by the struck
+    // body's own reach); something resting on it, or going nowhere, is on the
+    // face its centre is beyond -- the top, for a thing on a table.
     if (anvil != static_cast<std::size_t>(-1) && impl_->inWorld(anvil) &&
         settings.support.plane_count < kMaxSupportPlanes) {
         const RigidSnapshot on = impl_->world->snapshot(impl_->body_of[anvil]);
         const Vec3 half = 0.5 * impl_->described[anvil].dimensions_m;
-        const double top = on.center_of_mass_world_m.y + half.y;
+        const Quat turn = on.orientation_world;
+        const Quat unturn{turn.w, -turn.x, -turn.y, -turn.z};
+        const std::array<Vec3, 3> axes{turn.rotate(Vec3{1.0, 0.0, 0.0}), turn.rotate(Vec3{0.0, 1.0, 0.0}),
+                                       turn.rotate(Vec3{0.0, 0.0, 1.0})};
+        const std::array<double, 3> halves{half.x, half.y, half.z};
+        const Vec3 local = unturn.rotate(snap.center_of_mass_world_m - on.center_of_mass_world_m);
+        const Vec3 way = unturn.rotate(snap.linear_velocity_m_s - on.linear_velocity_m_s);
+        const std::array<double, 3> from{local.x, local.y, local.z}, toward{way.x, way.y, way.z};
+        const Vec3 own = impl_->described[which].dimensions_m;
+        const double reach = 0.5 * std::max({own.x, own.y, own.z});
+        int face = 1;
+        double sense = 1.0;
+        bool entered = false;
+        if (length(way) > 1.0e-6) {
+            // Where the line of travel enters the grown box: the latest of the
+            // three slabs' entries, if that is before the earliest exit.
+            double enter = -std::numeric_limits<double>::infinity();
+            double leave = std::numeric_limits<double>::infinity();
+            int enter_axis = -1;
+            bool misses = false;
+            for (int i = 0; i < 3; ++i) {
+                const double h = halves[static_cast<std::size_t>(i)] + reach;
+                const double p = from[static_cast<std::size_t>(i)], u = toward[static_cast<std::size_t>(i)];
+                if (std::abs(u) < 1.0e-12) {
+                    if (std::abs(p) > h) misses = true;
+                    continue;
+                }
+                const double t0 = std::min((-h - p) / u, (h - p) / u), t1 = std::max((-h - p) / u, (h - p) / u);
+                if (t0 > enter) { enter = t0; enter_axis = i; }
+                leave = std::min(leave, t1);
+            }
+            if (!misses && enter_axis >= 0 && enter <= leave) {
+                face = enter_axis;
+                sense = toward[static_cast<std::size_t>(enter_axis)] > 0.0 ? -1.0 : 1.0;
+                entered = true;
+            }
+        }
+        if (!entered) {
+            double most = -1.0;
+            for (int i = 0; i < 3; ++i) {
+                const double r = std::abs(from[static_cast<std::size_t>(i)]) /
+                                 std::max(halves[static_cast<std::size_t>(i)], 1.0e-9);
+                if (r > most) {
+                    most = r;
+                    face = i;
+                    sense = from[static_cast<std::size_t>(i)] < 0.0 ? -1.0 : 1.0;
+                }
+            }
+        }
+        const Vec3 facing = sense * axes[static_cast<std::size_t>(face)];
+        const Vec3 face_centre = on.center_of_mass_world_m + halves[static_cast<std::size_t>(face)] * facing;
+        // The face's extent along a direction in it: the box's other two
+        // half-sides as they lie along that direction.
+        const auto across = [&](const Vec3 &along) {
+            double extent = 0.0;
+            for (int i = 0; i < 3; ++i)
+                if (i != face)
+                    extent += std::abs(dot(along, axes[static_cast<std::size_t>(i)])) *
+                              halves[static_cast<std::size_t>(i)];
+            return extent;
+        };
         // How the struck body meets the scenery, from the two materials.
         const MaterialDefinition &anvil_material =
             setup.multi_body && !impl_->nodes_of[anvil].empty() &&
@@ -10942,9 +11012,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         const CombinedContactMaterial against = combineContactMaterials(
             compileContactMaterial(*struck_material), compileContactMaterial(anvil_material));
         SupportPlane<double> plane{};
-        const SupportPlaneFrame frame = makeSupportPlane(
-            Vec3{on.center_of_mass_world_m.x, top, on.center_of_mass_world_m.z} - island.origin,
-            Vec3{0.0, 1.0, 0.0});
+        const SupportPlaneFrame frame = makeSupportPlane(face_centre - island.origin, facing);
         plane.point = toV3(frame.point_world_m);
         plane.normal = toV3(frame.normal_world);
         plane.tangent = toV3(frame.tangent_world);
@@ -10955,7 +11023,7 @@ std::unique_ptr<LiveWorld::Pending> LiveWorld::prepared(const std::string &name,
         plane.node_radius = impl_->request.node_contact_radius_factor * impl_->request.cell_size_m;
         plane.reach_capped = 1;
         plane.footprint_count = 1;
-        plane.footprints[0] = {0.0, 0.0, half.x, half.z};
+        plane.footprints[0] = {0.0, 0.0, across(frame.tangent_world), across(frame.bitangent_world)};
         settings.support.planes[settings.support.plane_count++] = plane;
     }
     settings.node_contact.bucket_mask =

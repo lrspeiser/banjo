@@ -80,11 +80,32 @@ Declaration (JSON object, schema "{mw.SCHEMA}"):
              {{"name": str, "kind": "drum", "drum": a part that turns on its own hinge, "load": part,
                "centre_m": [..] (a point on the drum's axle), "axis": [..], "radius_m": n, "load_point_m": [..]
                (where the rope is tied on the load), "winds": 1 or -1, "spare_m": n}} (a rope that winds onto the
-               drum as it turns the "winds" way, pulling the load; it pulls and never pushes) ],
-  "batteries": [ {{"name": str, "in": part, "capacity_j": n, "voltage_v": n, "max_power_w": n}} ],
+               drum as it turns the "winds" way, pulling the load; it pulls and never pushes),
+             {{"name": str, "kind": "gear", "a": hinge joint name, "b": hinge joint name, "teeth_a": n, "teeth_b": n,
+               "chain": false, "strips_at_n_m": n}} (two wheels on their own hinges turning together at the ratio of
+               their teeth: meshed teeth turn them opposite ways, a chain the same way; declare it after both
+               hinges),
+             {{"name": str, "kind": "pulley", "a": part, "b": part, "at_m": [..] (rope end on a), "at_b_m": [..]
+               (rope end on b), "over_a_m": [..], "over_b_m": [..] (two fixed points the rope runs over),
+               "ratio": n, "length_m": n}} (a block and tackle: b moves 1/ratio as far as a and feels ratio times
+               the rope's tension; a counterweight of load/ratio balances the load) ],
+  "batteries": [ {{"name": str, "in": part, "capacity_j": n, "voltage_v": n, "max_power_w": n,
+                  "charge_j": n (what it holds at the start; 0 for an empty one a solar panel fills)}} ],
   "circuits": [ {{"name": str, "battery": battery name,
                  "switch": {{"hinge": hinge joint name, "closed_at_or_above_deg": n}} or null (always closed),
-                 "coil": {{"heats": part, "resistance_ohm": n}}}} ],
+                 "coil": {{"heats": part, "resistance_ohm": n}},
+                 "motor": {{"hinge": hinge joint name, "stall_torque_n_m": n, "no_load_rad_s": n,
+                            "brake_torque_n_m": n, "gear_ratio": n, "command": 1 (full ahead) to -1 (astern)}}}}
+               ] (a load is a coil, a motor, or both; the switch works them together),
+  "sun": {{"elevation_deg": n, "azimuth_deg": n, "irradiance_w_m2": n}} (sunlight; the engine thins it through the
+         air and casts shadows),
+  "solar_panels": [ {{"name": str, "part": part, "battery": battery name, "normal": [0, 1, 0] (the way its cells
+                    face), "area_m2": n, "efficiency": 0.2}} ] (needs a sun; charges the battery with what falls on
+                    it, nothing while something shades it),
+  "plasticity": true (metal and wood yield and keep a permanent dent; needed for a dented station),
+  "blades": [ {{"part": part (made of cells, not compound), "heel_m": [..], "tip_m": [..] (the edge, a line ON the
+              part's surface), "facing": [..] (the way the edge faces, out of the part), "edge_radius_m": 0.0002}} ]
+             (an edge cuts oak and rubber when it leads into them hard enough; a knife_pendulum kit makes one),
   "torches": [ {{"target": part, "power_w": n, "seconds": n}} ],
   "spouts": [ {{"name": str, "at_m": [x, y, z] (the mouth, in the air over the flume's ground), "direction": [0, -1, 0],
               "speed_m_s": n, "discharge_l_s": n (0.05-20), "from_s": n, "until_s": n}} ]
@@ -95,6 +116,10 @@ Declaration (JSON object, schema "{mw.SCHEMA}"):
                  {{"turned_deg": {{"joint": hinge name, "deg": n}}}} (total turning, e.g. a wheel),
                  {{"slid_m": {{"joint": slide name, "m": n}}}}, {{"switch_closed": circuit}},
                  {{"hotter_than_k": {{"part": name, "k": n}}}}, {{"parted": part}}, {{"broke": part}},
+                 {{"dented": part}} (a permanent set the engine measured: iron needs a hit above about 5 m/s and
+                 dents a tenth of a millimetre at 16 m/s), {{"rose_m": {{"part": name, "m": n}}}} (its centre
+                 rose that far), {{"moved_m": {{"part": name, "m": n}}}} (it moved that far from where it began),
+                 {{"cut": part}} (an edge cut it through),
                  "focus": [part]}} ] }}
 A part may also be "shape": "compound": one exact rigid body of "parts": [{{"shape": "box"|"cylinder", "size_m":
 [x, y, z] (a cylinder is [diameter, length, diameter] along its own y), "at_m": local centre, "turn_deg": local}}].
@@ -102,7 +127,11 @@ A part may also be "shape": "compound": one exact rigid body of "parts": [{{"sha
 Kits expand into ordinary parts and joints; prefer them for layout:
 {kits}
 A circuit's coil heats the part it is wound on (heat flows in as I^2 R). A switch that follows a hinge is closed while
-that hinge's measured angle is at or beyond its reading; the engine measures the angle every step.
+that hinge's measured angle is at or beyond its reading; the engine measures the angle every step. A motor turns its
+hinge with a torque that falls from its stall torque to nothing at its no-load speed, from its battery's charge.
+Steam and powder: a steam_engine kit's boiler boils with a firebox (heat_w) or a coil wound on its boiler; a cannon
+kit fires when its charge is hot, from a primer at fire_at_s or a coil wound on "<name> charge" (measured: a 0.1 ohm
+coil on a 24 V battery fires it 0.4 s after its switch closes, a 0.5 ohm coil 0.8 s after).
 
 Rules the server enforces (a declaration that breaks one is refused and sent back to you):
 - Nothing goes into the ground: a part's lowest point is at or above the ground under it (y = 0, or the trench bed

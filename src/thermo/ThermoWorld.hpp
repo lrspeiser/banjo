@@ -103,6 +103,10 @@ struct GasRegionDeclaration {
     // just pushes nothing, which is a safety valve.
     std::string vessel;
     Vec3 vent_axis{0.0, -1.0, 0.0};
+    // A MUZZLE: how far the piston goes before it is out of the end and the
+    // gas behind it gets out through the vent (vent_area_m2, declared shut).
+    // A cannon ball pushed along its barrel. 0: never.
+    double opens_at_stroke_m{};
 };
 
 // What a body CARRIES, as against what it is made of: the water in a kettle,
@@ -213,6 +217,8 @@ struct PistonBoundary {
     Vec3 pushed_force_n{};
     double work_to_bodies_j{};
     double work_to_atmosphere_j{};
+    double opens_at_stroke_m{};    // the muzzle: the vent opens once it has gone this far; 0 never
+    bool out{};                    // past the muzzle: the gas no longer pushes it, nor it the gas
 };
 
 struct GasRegion {
