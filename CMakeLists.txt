@@ -2331,6 +2331,16 @@ if(BANJO_BUILD_TESTS)
                 --native $<TARGET_FILE:banjo_voxel_world_run>)
             set_tests_properties(banjo_cpu_coupled_world_tests banjo_cpu_high_drop_tests banjo_cpu_coupled_gateway_tests
                 PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;material;client")
+            # The glass step a 10 m drop used to be refused at, and (long) the
+            # whole drop through the subdividing controller.
+            add_test(NAME banjo_cpu_glass_fracture_step_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_glass_fracture_step_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
+                --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-glass-fracture-step-evidence.json)
+            set_tests_properties(banjo_cpu_glass_fracture_step_tests PROPERTIES TIMEOUT 120 LABELS "cpu;experimental;material")
+            add_test(NAME banjo_cpu_glass_high_drop_full_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_glass_fracture_step_test.py --library $<TARGET_FILE:banjo_coupled_cpu> --full
+                --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-glass-high-drop-evidence.json)
+            set_tests_properties(banjo_cpu_glass_high_drop_full_tests PROPERTIES TIMEOUT 900 LABELS "cpu;experimental;material;long")
             if(BANJO_NEWTON_PYTHON)
                 add_test(NAME banjo_cpu_coupled_parity_tests COMMAND ${BANJO_NEWTON_PYTHON}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_coupled_parity_test.py --library $<TARGET_FILE:banjo_coupled_cpu>

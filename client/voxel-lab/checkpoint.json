@@ -3,6 +3,7 @@
   "date": "2026-10-10",
   "native_sha256": "3b1b3a3b6030b288c42725d17b29564ca79bd5c58f64582ddade11f018511168",
   "changes": [
+    "The 10 m glass smash test now runs to the end on the CPU lab: every glass bond breaks. While glass bonds soften, a step must be shorter than about half a microsecond or Newton stalls; the solver now halves up to 16 times instead of 10, jumps straight to the step at which the cells' inertia outweighs the softening, and skips halvings a too-fast fragment would still fail. Physical laws and admission checks are unchanged. Oak and gentler glass impacts still exceed the per-step compute limit.",
     "New /machine page: a live chain reaction built from general parts (ramp, dominoes, lever, switch, battery, coil, burning peg, weight, glass plate). Press Start to watch the engine calculate it; type a request to have a language model build more from the same parts, checked and rehearsed in the engine first.",
     "Native elastic opening/compression candidates retain cohesive shear and full support force maps. Inspect vibration basis shows their qualification beside the 3D scene. Five scoped Windows suites, compiled native API, HTTP gateway and source registration pass. Reduced motion, strong sheet impacts and complete realtime remain unfinished; this checkpoint is not yet verified on Render.",
     "Inspect vibration basis beside the 3D scene now separates native material preparation from explicit opening/closing contact curvature, including compressed geometry and torque. Independent scalar-gap/potential tests pass; native stationary force and contact energy reconstruct across glass/oak/iron/ice. Material branch, refinement, nonlinear trajectory, endpoint-history and full reaction transfers still block reduced execution. No accepted physics law or convergence gate changed.",
@@ -88,8 +89,8 @@
     },
     {
       "label": "Full connected 10 m glass drop and realtime",
-      "status": "failed",
-      "value": "Current-source four-host-step requests: 1.416667 accepted physical s / 64.493 calculation wall s; stops at interval trial/time budget. Zero accepted separated sites/yielded faces. The earlier one-step 1.42917 s result uses the prior source/request size. No controlled speed improvement is claimed. Full impact and realtime remain open."
+      "status": "in progress",
+      "value": "CPU, 1/240 s host step: the 10 m glass drop now runs the full 2 s. All 48 interfaces break; fracture ledger 0.0096 J (exactly 48 G A); worst step energy residual 8e-11 J; 9,216 substeps; about 3 minutes of wall time (1% of real time). The 10 m ice drop completes too. The saved refused step stalls at 4 us and converges at 0.13 us under the softening bound (0.19 us) (tests/cpu_glass_fracture_step_test.py). Oak at 1 m and 10 m and glass at 1 m still stop at the impact: that step needs more than its 30 s of computing. Contacts are elastic, so the ball and pieces rebound unrealistically high. Realtime remains open."
     },
     {
       "label": "Native CUDA matrix operation",
@@ -259,6 +260,6 @@
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
   "gpu_coupled_source_sha256": "41042759a91de85e7cea44d0804c2e86bd3635e25fa01c71198cc45f51e03f87",
   "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling",
-  "cpu_coupled_source_sha256": "32ca864e501cfa9002caf9bfb06e4941bd44403eabdbb581ca2ffdade866e798",
+  "cpu_coupled_source_sha256": "f4faaebb1b578c30ddd4e983d6506e4f74fb45ec251597e354263a56427f9b9b",
   "cpu_hosted_scope": "Explicit compiled CPU reference; optional inert conduction fields bound to stable matter through flight/contact. Mechanical properties remain constant; damage/plastic/phase transfers refuse. Strong fracture and all-family realtime remain open."
 }

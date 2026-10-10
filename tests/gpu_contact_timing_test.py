@@ -9,6 +9,7 @@ import cupy as cp
 import numpy as np
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
 from gpu_coupled_world import CoupledEvaluator,GpuCoupledWorld,TrialFailure,source_hash
+from coupled_world import TRIAL_BUDGET
 
 def oracle_state(t,height,omega):
     g=9.81;speed=math.sqrt(2*g*height);entry=speed/g
@@ -102,7 +103,7 @@ def main(args):
                     retained=w.snapshot();refusal=retained.pop('rejected_candidate')
                     assert retained==previous and refusal['interval_rolled_back']
                     assert bool(cp.array_equal(w.eval.bodies,saved_b)) and bool(cp.array_equal(w.eval.edges,saved_e))
-                    assert refusal['error']=='Coupled interval trial/time budget' and refusal['trial_attempts']==129
+                    assert refusal['error']=='Coupled interval trial/time budget' and (refusal['trial_attempts']==TRIAL_BUDGET+1 or refusal['interval_wall_s']>30)
                     assert refusal['contact_timestep_policy']=='phase-0.25' and refusal['last_contact_schedule']['step_s']>0
                     break
                 for a in s['substep_accounts']:

@@ -8,6 +8,7 @@ import cupy as cp
 import numpy as np
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'scripts'))
 from gpu_coupled_world import GpuCoupledWorld,TrialFailure,source_hash
+from coupled_world import SUBDIVISION_DEPTH
 
 def main(args):
     process=subprocess.Popen([str(args.oracle)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
@@ -66,7 +67,7 @@ def main(args):
         except RuntimeError:pass
         assert w.time==0 and bool(cp.array_equal(w.eval.bodies,b)) and bool(cp.array_equal(w.eval.edges,e))
         refused=w.snapshot();witness=refused.pop('rejected_candidate');assert refused==initial and witness['interval_rolled_back'] and witness['failed_interval_substeps']==1
-        assert witness['trial_attempts']>1 and witness['subdivision_refusals'][-1]['depth']==10
+        assert witness['trial_attempts']>1 and witness['subdivision_refusals'][-1]['depth']==SUBDIVISION_DEPTH
         assert all(a['error']=='Deliberate convergence refusal witness' for a in witness['subdivision_refusals'])
         result=dict(schema='banjo.gpu-coupled-evidence.v1',source_sha256=source_hash(),device=cp.cuda.runtime.getDeviceProperties(0)['name'].decode(),
             cuda_driver=cp.cuda.runtime.driverGetVersion(),cpu_cuda_trials=12,max_scaled_trial_difference=max_relative,comparisons=results,

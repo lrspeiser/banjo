@@ -5,6 +5,15 @@ import numpy as np
 from coupled_solver import TrialFailure
 from object_registry import ObjectRegistry,CHECKPOINT_SCHEMA,open_checkpoint,seal
 ROOT=Path(__file__).resolve().parents[1]
+# Halvings allowed below the host step (1/240 s / 2**16 is 64 ns), and the
+# trials one host step may spend. The 30 s wall budget still bounds both.
+SUBDIVISION_DEPTH=16
+TRIAL_BUDGET=512
+
+def halves(h,depth,levels):
+    # h/2, h/4, ..., h/2**levels and h/2**levels again: they sum to h. The
+    # queue pops from the end, so the smallest pieces run first, in time order.
+    return [(h/2**k,depth+k) for k in range(1,levels+1)]+[(h/2**levels,depth+levels)]
 
 def declaration(raw,*,device="cuda:0",pipeline="parallel",linear="cupy-reference",pipelines=("parallel","serial-reference"),linears=("cupy-reference","native-cusolver"),representations=("coupled-reference","partitioned-flight")):
     defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device=device,pipeline=pipeline,newton_strategy='ranked',line_search='batch-tail',linear_backend=linear,contact_resolution='reference',representation_policy='coupled-reference',thermal=None)
@@ -102,7 +111,7 @@ class CoupledWorld:
                 queue=[(self.d['dt_s'],0)]
                 while queue:
                     trials+=1
-                    if trials>128 or time.perf_counter()-started>30:raise TrialFailure('Coupled interval trial/time budget')
+                    if trials>TRIAL_BUDGET or time.perf_counter()-started>30:raise TrialFailure('Coupled interval trial/time budget')
                     h,depth=queue.pop();schedule=None
                     if self.d['contact_resolution']!='reference':
                         schedule=self.eval.contact_schedule(h,float(self.d['contact_resolution'].split('-')[1]))
@@ -124,8 +133,10 @@ class CoupledWorld:
                         refusals.append(dict(trial=trials,dt_s=h,depth=depth,error=str(error),
                             private_elapsed_s=sum(a['dt_s'] for a in accounts),
                             equation_residual=(error.details.get('iterations') or [{}])[-1].get('equation_residual')))
-                        if depth>=10:raise
-                        queue.extend([(h/2,depth+1),(h/2,depth+1)]);continue
+                        if depth>=SUBDIVISION_DEPTH:raise
+                        levels=self.softening_levels(error.details,h,depth)
+                        refusals[-1]['split_levels']=levels
+                        queue.extend(halves(h,depth,levels));continue
                     ending=before.copy();ending[:,7:14]=self.to_host(out['poses']);ending[:,14:20]=self.to_host(velocity)
                     ending[:,23:26]=before[:,23:26]+h*(before[:,14:17]+ending[:,14:17])/2
                     ledger=self.to_host(out['ledger']);forces=self.to_host(out['forces']);history=self.to_host(out['history']);energy1,p1,l1=self.mechanics(ending)
@@ -149,8 +160,16 @@ class CoupledWorld:
                             private_elapsed_s=sum(a['dt_s'] for a in accounts),energy_residual_j=balance,energy_tolerance_j=tolerance,
                             P_residual_n_s=pres.tolist(),L_residual_n_m_s=lres.tolist(),compression_m=float(ledger[8]),
                             maximum_compression_m=.2*scale,travel_m=travel,maximum_travel_m=.25*scale,turn_rad=float(angles),maximum_turn_rad=.25))
-                        if depth>=10:raise TrialFailure('Coupled finite/compression/travel/conservation gate')
-                        queue.extend([(h/2,depth+1),(h/2,depth+1)]);continue
+                        if depth>=SUBDIVISION_DEPTH:raise TrialFailure('Coupled finite/compression/travel/conservation gate')
+                        levels=1
+                        if not(abs(balance)>tolerance or np.linalg.norm(pres)>1e-9 or np.linalg.norm(lres)>1e-9 or ledger[8]>.2*scale):
+                            # Only the travel/turn bound failed, and both scale
+                            # with the step. Skip the halvings at which this
+                            # measured motion would still be twice the bound.
+                            ratio=max(travel/(.25*scale),angles/.25)
+                            levels=max(1,min(int(math.floor(math.log2(ratio))),SUBDIVISION_DEPTH-depth))
+                        refusals[-1]['split_levels']=levels
+                        queue.extend(halves(h,depth,levels));continue
                     updates+=1
                     if updates>512 or time.perf_counter()-started>30:raise TrialFailure('Coupled interval work budget')
                     # Observe actual solver contributions BEFORE moving/history
@@ -210,10 +229,36 @@ class CoupledWorld:
             self.registry.restore_bindings(saved_registry)
             self.fields=saved_fields
             self.rejected=dict(error=str(error),accepted_time_s=self.time,interval_rolled_back=restored,accepted_snapshot_preserved=True,
-                failed_interval_substeps=updates,trial_attempts=trials,subdivision_refusals=refusals,
+                failed_interval_substeps=updates,trial_attempts=trials,interval_wall_s=time.perf_counter()-started,subdivision_refusals=refusals,
                 last_solver_failure=last_solver_failure,last_trial_accounts=accounts[-4:],contact_timestep_policy=self.d['contact_resolution'],
                 last_contact_schedule=schedule,failed_interval_physical_s=sum(a['dt_s'] for a in accounts))
             raise RuntimeError(str(error)) from error
+
+    def softening_levels(self,details,h,depth):
+        # Between its strength opening d0 and its breaking opening df a cohesive
+        # interface softens: its force falls as it opens, by k_s =
+        # A*strength/(df-d0) per metre. A step whose path takes an interface
+        # through that range must be short enough for inertia to win
+        # (k_s*h^2 < the mass it pulls on); otherwise the step's equations have
+        # no locally unique root and Newton stalls between the holding and
+        # broken branches (glass at a 10 m drop: below about 0.5 us). When the
+        # failed trial carried interfaces that held at the step's start past
+        # d0, skip the halvings that are still too long; otherwise halve.
+        last=details.get('last_evaluated') if details else None
+        if not last or not self.eval.m:return 1
+        edges=self.to_host(self.eval.edges);mass=self.to_host(self.eval.bodies)[:,1]
+        history=np.asarray(last['material_history'][0]);load=np.zeros(len(mass))
+        for edge,trial in zip(edges,history):
+            if int(edge[2]) not in (0,2):continue
+            stiffness,strength,energy,area=edge[18:22];d0=strength/stiffness;df=2*energy/strength
+            # Separated before the step, or still short of its strength.
+            if df<=d0 or edge[36]>=df or trial[1]<=d0:continue
+            for body in edge[:2].astype(int):load[body]+=area*strength/(df-d0)
+        active=(load>0)&(mass>0)
+        if not active.any():return 1
+        bound=float(np.sqrt(np.min(mass[active]/load[active])))
+        if bound>=h/2:return 1
+        return max(1,min(int(math.ceil(math.log2(h/bound))),SUBDIVISION_DEPTH-depth))
 
     def local_primitive_origins(self,bodies):
         # A primitive without an interface has no material rest reference to
