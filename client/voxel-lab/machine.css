@@ -82,9 +82,9 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 .turn-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:.3rem}
 .turn-row .knob{grid-template-columns:2.4rem minmax(0,1fr) 2.8rem!important}
 .knob-summary{margin:0;font-size:.82rem;color:#b9cbd6}
-.ghost-bar{position:absolute;top:52px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:4px;max-width:calc(100% - 20px);padding:5px;background:#142836e8;border:1px dashed #6cc6ff;border-radius:8px}
+
 .ghost-bar[hidden]{display:none}
-.ghost-bar button{min-height:34px;padding:4px 9px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer;font:13px system-ui}
+
 .ghost-bar button.down:not(:disabled){background:#1f6b45;border-color:#5fe08f}
 .ghost-bar button:disabled{opacity:.45;cursor:not-allowed}
 /* How to play, and telling us what happened. */
@@ -97,3 +97,30 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 .feedback form{display:grid;gap:.35rem;margin-top:.35rem}
 .feedback label{font-size:.85rem}
 .feedback textarea{width:100%;box-sizing:border-box;font:14px system-ui}
+/* The ghost's card: its controls beside it in the scene (placeGhostCard). */
+.ghost-bar{position:absolute;left:0;top:0;z-index:3;display:grid;gap:5px;width:min(340px,calc(100% - 16px));box-sizing:border-box;padding:7px;background:#142836f0;border:1px dashed #6cc6ff;border-radius:10px;box-shadow:0 6px 18px #0008;will-change:transform}
+.ghost-bar button{min-height:34px;padding:4px 9px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer;font:13px system-ui}
+.ghost-bar .hint{margin:0;align-self:center;font-size:14px}
+.ghost-bar:has(.hint){grid-template-columns:1fr auto;width:auto}
+.ghost-bar .chips{display:flex;flex-wrap:wrap;gap:4px}
+.ghost-bar .chips button{min-height:30px;padding:3px 8px;font-size:12px}
+.ghost-bar .chips button[aria-pressed="true"]{background:#2f6f94;border-color:#9fdcff;outline:none}
+.ghost-bar .knob-row{display:grid;grid-template-columns:40px minmax(0,1fr) 40px 3.4rem;align-items:center;gap:6px}
+.ghost-bar .knob-row button{min-height:40px;font-size:20px;padding:0}
+.ghost-bar .knob-row input[type=range]{width:100%;min-width:0;margin:0}
+.ghost-bar .knob-row select{grid-column:1/-1;min-height:38px;font:15px system-ui}
+.ghost-bar .knob-row output{text-align:right;font-variant-numeric:tabular-nums;font-size:13px}
+.ghost-bar .state{margin:0;font-size:12px}
+.ghost-bar .state.fits{color:#9fdcff}
+.ghost-bar .state.refused{color:#ff9d9d}
+.ghost-bar .actions{display:grid;grid-template-columns:1fr auto;gap:6px}
+/* How the run went. */
+.level-done{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;width:min(360px,calc(100% - 24px));box-sizing:border-box;padding:16px 18px;text-align:center;background:#142836f5;border:1px solid #5fe08f;border-radius:12px;box-shadow:0 10px 30px #000a}
+.level-done[hidden]{display:none}
+.level-done h2{margin:0 0 4px;font-size:22px}
+.level-done .stars{margin:2px 0 6px;font-size:30px;letter-spacing:4px;color:#ffd34d}
+.level-done p{margin:4px 0;font-size:14px}
+.level-done .actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px}
+.level-done button{min-height:42px;padding:6px 16px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:8px;cursor:pointer;font:15px system-ui}
+.level-done button.primary{background:#1f6b45;border-color:#5fe08f;font-weight:600}
+.level-done .count{color:#b9cbd6;font-size:13px}

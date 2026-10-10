@@ -150,6 +150,11 @@ class Puzzles(unittest.TestCase):
         self.press('Run it')
         self.wait("Boolean(document.querySelector('#verdict .stars'))", 90)
         self.assertIn('★★★', self.js("document.getElementById('verdict').textContent"))
+        # The goal says so, over the scene, and leads on to the next level.
+        self.wait("!document.getElementById('level-done').hidden", 10)
+        self.assertIn('Level complete!', self.js("document.getElementById('level-done').textContent"))
+        self.press('Next level')
+        self.wait("/^2\\. /.test(document.getElementById('title').textContent)", 30)
 
     def test_a_first_visit_shows_how_to_play_and_a_player_can_tell_us_what_happened(self):
         self.open('gap')
@@ -198,7 +203,12 @@ class Puzzles(unittest.TestCase):
         self.page.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
         g = self.ghost()
         self.assertFalse(g['follow'], 'a tap pins it')
-        self.press('Turn it on 15 degrees')
+        # Its controls are beside it: a chip picks the knob, + turns it on.
+        card = self.js("document.getElementById('ghost-bar').getBoundingClientRect().toJSON()")
+        gx, gy = self.screen_point([0.3, 0.0, 0.0])
+        self.assertLess(min(abs(card['top'] - gy), abs(card['bottom'] - gy)), 160, (card, gy))
+        self.press('Change its turn')
+        self.press('More turn')
         self.assertEqual(self.ghost()['p']['yaw_deg'], 15)
         self.press('✓ Set down')
         self.wait('!window.machineGhostState()', 5)

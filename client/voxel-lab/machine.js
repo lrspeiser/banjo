@@ -621,6 +621,7 @@ function render() {
   if (LEVEL_MODE) for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name);
   renderer.render(scene, camera);
   renderLabels();
+  if (LEVEL_MODE) placeGhostCard();
 }
 
 // ---- controls -----------------------------------------------------------------
@@ -860,28 +861,108 @@ function setGhostDown() {
   endGhost(); renderTray(); renderPlaced(); scheduleRebuild(0);
 }
 
-// The same controls over the scene, next to the ghost: on a phone the list
-// of pieces is a scroll away from the scene.
+// The ghost's own controls, beside it in the scene (placeGhostCard keeps
+// them there as it moves): on a phone the list of pieces is a scroll away.
+// One knob at a time -- its chip picks which -- with - and + either side of
+// its slider, and Set down. While it follows the pointer, only a hint.
+function knobName(rule, key) { return (rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
+
+function nudgeKnob(key, by) {
+  if (ghost && setKnob(ghost.p, key, (ghost.p[key] ?? 0) + by)) { followGhost(); showGhostKnobs(); askGhost(); }
+}
+
 function renderGhostBar() {
-  const bar = $('ghost-bar');
-  bar.hidden = !ghost;
-  if (!ghost) { bar.replaceChildren(); return; }
-  const turns = [['yaw_deg', '⟲ turn', '⟳ turn'], ['pitch_deg', 'tip ▲', 'tip ▼'], ['roll_deg', '⟲ roll', '⟳ roll']]
-    .filter(([key]) => turnKnob(ghost.p, key));
-  const row = [];
-  for (const [key, up, down] of turns) {
-    const word = key === 'yaw_deg' ? 'Turn' : key === 'pitch_deg' ? 'Tip' : 'Roll';
-    row.push(button(up, () => turnGhost(key, 15), {ariaLabel: `${word} it on 15 degrees`}),
-             button(down, () => turnGhost(key, -15), {ariaLabel: `${word} it back 15 degrees`}));
+  const card = $('ghost-bar');
+  card.hidden = !ghost;
+  ghost && (ghost.cardInput = null);
+  if (!ghost) { card.replaceChildren(); return; }
+  const throwAway = button('✕', cancelGhost, {ariaLabel: 'Throw the ghost away', title: 'Throw the ghost away'});
+  if (ghost.follow) {
+    card.replaceChildren(Object.assign(document.createElement('p'), {className: 'hint',
+      textContent: matchMedia('(pointer: coarse)').matches ? 'Tap where it should go' : 'Click where it should go'}), throwAway);
+    return;
   }
-  row.push(button('✓ Set down', setGhostDown, {className: 'down', disabled: !ghost.fits || ghost.busy}),
-           button('✕', cancelGhost, {ariaLabel: 'Throw the ghost away', title: 'Throw the ghost away'}));
-  bar.replaceChildren(...row);
+  const knobs = trayItem(ghost.p.piece).knobs, keys = Object.keys(knobs);
+  if (!keys.includes(ghost.card)) ghost.card = keys.find(k => k !== 'x_m' && k !== 'z_m') || keys[0];
+  const chips = Object.assign(document.createElement('div'), {className: 'chips'});
+  for (const key of keys) {
+    const chip = button(knobName(knobs[key], key), () => { ghost.card = key; renderGhostBar(); },
+                        {ariaLabel: `Change its ${knobName(knobs[key], key)}`});
+    chip.setAttribute('aria-pressed', String(key === ghost.card));
+    chips.append(chip);
+  }
+  const key = ghost.card, rule = knobs[key], name = knobName(rule, key);
+  const row = Object.assign(document.createElement('div'), {className: 'knob-row'});
+  if (rule.choices) {
+    const select = document.createElement('select');
+    for (const c of rule.choices) select.append(Object.assign(document.createElement('option'), {value: c, textContent: c}));
+    select.value = ghost.p[key];
+    select.setAttribute('aria-label', `Its ${name}`);
+    select.addEventListener('change', () => {
+      ghost.p[key] = rule.choices.find(c => String(c) === select.value) ?? select.value;
+      showGhostKnobs(); askGhost();
+    });
+    row.append(select);
+  } else {
+    const step = rule.turning ? 15 : (rule.step || 0.01) * 5;
+    const input = Object.assign(document.createElement('input'), {type: 'range', min: rule.min, max: rule.max,
+      step: rule.step || 0.01, value: ghost.p[key]});
+    input.setAttribute('aria-label', `Its ${name}`);
+    input.addEventListener('input', () => { if (setKnob(ghost.p, key, Number(input.value))) { followGhost(); showGhostKnobs(); askGhost(); } });
+    const shown = document.createElement('output');
+    row.append(button('−', () => nudgeKnob(key, -step), {ariaLabel: `Less ${name}`}), input,
+               button('+', () => nudgeKnob(key, step), {ariaLabel: `More ${name}`}), shown);
+    ghost.cardInput = [input, shown, key];
+  }
+  const state = Object.assign(document.createElement('p'), {className: 'state'});
+  const actions = Object.assign(document.createElement('div'), {className: 'actions'});
+  actions.append(button('✓ Set down', setGhostDown, {className: 'down', disabled: !ghost.fits || ghost.busy}), throwAway);
+  card.replaceChildren(chips, row, state, actions);
+  showGhostKnobs(); showGhostState();
+}
+
+// Keep the card beside the ghost on the screen: under it, or over it when
+// there is no room under it, never off the scene or over its own buttons.
+const cardBox = new THREE.Box3(), cardCorner = new THREE.Vector3();
+function placeGhostCard() {
+  const card = $('ghost-bar');
+  if (!ghost || card.hidden) return;
+  const w = view.clientWidth, h = view.clientHeight;
+  if (ghost.follow) {
+    // Its hint keeps out of the way of where the player is about to tap.
+    const at = `translate(${Math.round((w - card.offsetWidth) / 2)}px, 52px)`;
+    if (card.style.transform !== at) card.style.transform = at;
+    return;
+  }
+  if (!ghostGroup.children.length) return;
+  cardBox.setFromObject(ghostGroup);
+  if (cardBox.isEmpty()) return;
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < 8; i++) {
+    cardCorner.set(i & 1 ? cardBox.max.x : cardBox.min.x, i & 2 ? cardBox.max.y : cardBox.min.y,
+                   i & 4 ? cardBox.max.z : cardBox.min.z).project(camera);
+    const sx = (cardCorner.x + 1) / 2 * w, sy = (1 - cardCorner.y) / 2 * h;
+    x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+  }
+  const cw = card.offsetWidth, ch = card.offsetHeight, floor = h - ($('scene-actions').offsetHeight || 0) - 18;
+  let top = y1 + 12;
+  if (top + ch > floor) top = y0 - ch - 12;
+  top = Math.max(8, Math.min(floor - ch, top));
+  const left = Math.max(8, Math.min(w - cw - 8, (x0 + x1) / 2 - cw / 2));
+  const at = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+  if (card.style.transform !== at) card.style.transform = at;
 }
 
 function showGhostState() {
   const bar = document.querySelector('#ghost-bar .down');
   if (bar && ghost) bar.disabled = !ghost.fits || ghost.busy || !ghost.answered;
+  const said = document.querySelector('#ghost-bar .state');
+  if (said && ghost) {
+    said.className = 'state ' + (ghost.fits ? 'fits' : 'refused');
+    said.textContent = ghost.fits ? (ghost.sun && ghost.sun.length
+      ? `Faces ${ghost.sun[0].off_sun_deg}° off the sun: about ${Math.round(ghost.sun[0].sunlight_w)} W` : 'It fits here.')
+      : ghost.problems.join('; ');
+  }
   const state = $('ghost-state'), down = $('ghost-down');
   if (!ghost || !state) return;
   state.className = 'ghost-state ' + (ghost.fits ? 'fits' : 'refused');
@@ -898,9 +979,15 @@ function showGhostState() {
 
 function showGhostKnobs() {
   if (!ghost) return;
+  const knobs = trayItem(ghost.p.piece).knobs;
   for (const [key, [input, shown]] of Object.entries(ghost.inputs)) {
     if (String(input.value) !== String(ghost.p[key])) input.value = ghost.p[key];
-    shown.textContent = String(ghost.p[key]) + (trayItem(ghost.p.piece).knobs[key].turning ? '°' : '');
+    shown.textContent = String(ghost.p[key]) + (knobs[key].turning ? '°' : '');
+  }
+  if (ghost.cardInput) {
+    const [input, shown, key] = ghost.cardInput;
+    if (String(input.value) !== String(ghost.p[key])) input.value = ghost.p[key];
+    shown.textContent = String(ghost.p[key]) + (knobs[key].turning ? '°' : '');
   }
 }
 
@@ -926,7 +1013,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   const click = pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6;
   if (ghost && click && !draggingGhost) {
     moveGhostTo(e.clientX, e.clientY);
-    if (ghost.follow) { ghost.follow = false; renderPlaced(); showGhostState(); }
+    if (ghost.follow) { ghost.follow = false; renderPlaced(); renderGhostBar(); showGhostState(); }
   }
   draggingGhost = null; pressedAt = null;
 });
@@ -1036,7 +1123,7 @@ function ghostItem() {
   title.append(Object.assign(document.createElement('span'), {id: 'ghost-cost'}));
   head.append(title);
   const follow = button(ghost.follow ? 'Following the pointer' : 'Follow the pointer', () => {
-    ghost.follow = !ghost.follow; renderPlaced(); showGhostState();
+    ghost.follow = !ghost.follow; renderPlaced(); renderGhostBar(); showGhostState();
   });
   follow.setAttribute('aria-pressed', String(ghost.follow));
   const actions = Object.assign(document.createElement('div'), {className: 'ghost-actions'});
@@ -1046,7 +1133,7 @@ function ghostItem() {
   const turning = Object.assign(document.createElement('fieldset'), {className: 'turning'});
   turning.append(Object.assign(document.createElement('legend'), {textContent: 'Turn it (degrees)'}));
   for (const [key, rule] of Object.entries(t.knobs)) {
-    const c = knobControl(p, key, rule, what, () => { followGhost(); askGhost(); });
+    const c = knobControl(p, key, rule, what, () => { followGhost(); showGhostKnobs(); askGhost(); });
     ghost.inputs[key] = [c.input, c.shown];
     if (!rule.turning) { li.append(c.label); continue; }
     // − and + by 15 degrees either side of the slider; the slider for the rest.
@@ -1095,7 +1182,10 @@ function renderPlaced() {
 function scheduleRebuild(ms = 350) { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildLevel(false).catch(() => {}), ms); }
 
 async function rebuildLevel(start) {
-  scored = false; $('verdict').replaceChildren();
+  // A rebuild still waiting to start would come after this one and undo it
+  // (a Run pressed just after setting a piece down stayed unstarted).
+  clearTimeout(rebuildTimer);
+  scored = false; $('verdict').replaceChildren(); closeDone();
   try {
     const opened = await build(null, start, {op: 'level_open', level: level.id, placements, helped});
     placedCost = (opened.placements || []).map(p => p.cost);
@@ -1125,11 +1215,67 @@ async function score(row) {
   if (r.helped) said.push('The chat placed the pieces, so one star at most.');
   v.append(' ' + said.join(' '));
   keepStars(level.id, r.stars); renderLevels();
+  showDone(r);
+  // The goal happened: let what follows settle for a moment, then stop.
+  const ran = session;
+  if (r.earned.goal) setTimeout(() => { if (session === ran && playing) setPlaying(false).catch(() => {}); }, 1500);
 }
+
+// How the run went, over the scene: on the goal, congratulations and on to
+// the next level (by itself in a few seconds, unless the player stays);
+// without it, a way to try again.
+let advanceTimer = null;
+function closeDone() {
+  clearInterval(advanceTimer); advanceTimer = null;
+  $('level-done').hidden = true; $('level-done').replaceChildren();
+}
+function showDone(r) {
+  closeDone();
+  const box = $('level-done'), next = levels[levels.indexOf(level) + 1];
+  const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
+  if (r.earned.goal) {
+    add('h2', {textContent: next ? 'Level complete!' : 'You finished every level!'});
+    add('p', {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)});
+    const why = [];
+    if (!r.earned.budget) why.push(`a third star for staying at or under par (${r.par})`);
+    if (r.helped) why.push('more stars for placing the pieces yourself');
+    add('p', {textContent: `Goal at ${describeTime(r.goal_at_s)}, for a cost of ${r.cost}.` +
+      (why.length ? ` There is ${why.join(', and ')}.` : '')});
+    const actions = add('div', {className: 'actions'});
+    if (next) {
+      const go = () => { closeDone(); chooseLevel(next.id).catch(() => {}); };
+      actions.append(button('Next level ▶', go, {className: 'primary', ariaLabel: 'Next level'}),
+                     button('Stay here', closeDone));
+      const count = add('p', {className: 'count'});
+      let left = 6;
+      const tick = () => { count.textContent = `Next level in ${left} s`; if (left-- <= 0) go(); };
+      tick(); advanceTimer = setInterval(tick, 1000);
+    } else {
+      const total = levels.reduce((sum, l) => sum + bestStars(l.id), 0);
+      add('p', {textContent: `${total} of ${levels.length * 3} stars in all.`});
+      actions.append(button('Play level 1 again', () => { closeDone(); chooseLevel(levels[0].id).catch(() => {}); },
+                            {className: 'primary'}), button('Stay here', closeDone));
+    }
+  } else {
+    add('h2', {textContent: 'Not this time'});
+    add('p', {textContent: `The goal did not happen within ${level.time_s} s. Move or change your pieces and run it again.`});
+    const actions = add('div', {className: 'actions'});
+    actions.append(button('Try again', () => { closeDone(); $('run').click(); }, {className: 'primary'}),
+                   button('Close', closeDone));
+  }
+  box.hidden = false;
+}
+// Looking around the scene while it counts down: stay, and look.
+renderer.domElement.addEventListener('pointerdown', () => {
+  if (!advanceTimer) return;
+  clearInterval(advanceTimer); advanceTimer = null;
+  const count = document.querySelector('#level-done .count');
+  if (count) count.textContent = '';
+});
 
 async function chooseLevel(id) {
   level = levels.find(l => l.id === id) || levels[0];
-  endGhost();
+  endGhost(); closeDone();
   placements = []; placedCost = []; helped = false; lastRun = null;
   history_.replaceState(null, '', '/play?level=' + level.id);
   $('title').textContent = `${levels.indexOf(level) + 1}. ${level.title}`;
