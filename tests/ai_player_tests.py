@@ -297,6 +297,26 @@ class AutonomousGuests(unittest.TestCase):
         app.ai_players.cadence_s = .02
         return world, owner, app
 
+    def advance(self, world, session, seconds):
+        """Step a named world through `seconds` of its own time over HTTP.
+
+        A named world shares a wall-time budget across its callers (server.py,
+        /api/live/act): a step that asks for n steps is granted only as many as
+        wall time has passed since the last step, at most 0.25 s' worth, and
+        none at all reads the poses instead. So asking six times for 120 steps
+        was 3 s of the world's time only while each call was slow; on a fast
+        machine it was a tenth of that. Count the world's clock, not the asks.
+        Returns the seconds it advanced."""
+        step = {'session': session, 'op': 'step', 'dt': 1 / 240}
+        began = self.post('/api/live/act', {**step, 'n': 1}, world)['t']
+        deadline = time.monotonic() + 30 + 4 * seconds
+        while True:
+            now = self.post('/api/live/act', {**step, 'n': 120}, world)['t']
+            if now - began >= seconds - 1e-9:
+                return now - began
+            self.assertLess(time.monotonic(), deadline, f'the world advanced {now - began:.3f} s of {seconds} s')
+            time.sleep(.05)
+
     def test_character_join_checkpoints_advancing_world_before_profile_save(self):
         for surface in ('smooth','columns'):
             world,owner,app=self.setup_world(surface=surface)

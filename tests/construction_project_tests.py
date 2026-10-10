@@ -117,6 +117,7 @@ class PlacementJourney(unittest.TestCase):
             raise
     join=fixture.AutonomousGuests.join
     setup_world=fixture.AutonomousGuests.setup_world
+    advance=fixture.AutonomousGuests.advance
 
     def write(self,world,action,**fields):
         view=self.post('/api/world/construction',{},world)
@@ -381,7 +382,7 @@ class PlacementJourney(unittest.TestCase):
             taken=self.post('/api/world/inventory',{'session':sid,'op':'take','item':table,
                 'request':'take-support-'+str(fasten),'person':person},world)
             self.assertTrue(taken['ok'],taken)
-            for _ in range(6):self.post('/api/live/act',{'session':sid,'op':'step','dt':1/240,'n':120},world)
+            self.advance(world,sid,3.0)
             lamp=next((b for b in app.live.session.state['bodies'] if b['name']=='camp light'),None)
             if lamp is None or lamp.get('parked'):
                 outcomes[fasten]={'parked':True};continue
