@@ -117,6 +117,26 @@ class ControllerBoundaries(unittest.TestCase):
         self.assertFalse(any(a['verb']=='select-target' for a in offered))
         self.assertTrue(any('first needs' in b for a in offered if a['verb']=='wait' for b in a['blockers']))
 
+    def test_ground_tool_goal_offers_only_tools_the_goal_counts(self):
+        # The Metal shovel, the Metal hoe and the Stone field pick dig, but they
+        # are local-cell precise rigid tools and the funded-ground-tool goal
+        # counts fixed lattice tools only (goal_chains.funded_tools). Offering
+        # the lightest of them made the AI make shovel after shovel, the goal
+        # still open after each, until the room's 256 collision parts ran out.
+        import playable_recipes
+        def card(name,source,kg):
+            return {'name':name,**source,'readiness':{'ready_as_drawn':True},
+                    'enough':True,'missing':[],'wants_kg':kg}
+        state={'goals':{'chain_id':'first-tool-v1','next_goal':'make-own-tool','goals':[
+                   {'id':'make-own-tool','requirement':{'kind':'funded-ground-tool'}}]},
+               'market':{},'recipes':[card('Metal shovel',playable_recipes.metal_shovel_recipe(),2.308),
+                   card('Metal hoe',playable_recipes.metal_hoe_recipe(),3.498),
+                   card('Stone field pick',playable_recipes.stone_pick_recipe(),18.739),
+                   card('Personal field pick',playable_recipes.recipe('field-pick'),5.651)]}
+        offered=ai_actions.catalog(state,{})
+        compared=next(a for a in offered if a['verb']=='compare-recipes')['comparison']
+        self.assertEqual(['Personal field pick'],[r['name'] for r in compared])
+
     def test_reference_controller_stops_at_the_decision_budget(self):
         manager = ai_player.Manager.__new__(ai_player.Manager)
         manager.app = SimpleNamespace()

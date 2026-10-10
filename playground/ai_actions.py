@@ -8,7 +8,7 @@ import hashlib
 import heapq
 import json
 import math
-from mcp import interaction_points, workshop_components, workshop_rigid, workshop_tools
+from mcp import interaction_points, workshop_components, workshop_rigid
 
 
 def key(value):
@@ -48,7 +48,12 @@ def _fits(recipe,requirement):
     if requirement['kind'] not in ('funded-box-surface','ground-tool','funded-ground-tool'):return False
     try:
         design,overrides=workshop_components.design_from_spec(candidate(recipe))
-        if requirement['kind'] in ('ground-tool','funded-ground-tool'):return workshop_tools.frame(design) is not None
+        if requirement['kind'] in ('ground-tool','funded-ground-tool'):
+            # Only a tool the goal itself would count. A ground-tool frame is
+            # not enough: a local-cell or exact rigid tool digs, but the goal
+            # never counts it, and the player would make it again and again.
+            import goal_chains
+            return goal_chains.counts_as_funded_tool(design,overrides)
         workshop_rigid.compile_rigid(design,overrides)
         # The compiler checks exact axis-aligned boxes. Native commit and the
         # goal's saved physical-face predicate are still required afterwards.

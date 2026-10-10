@@ -172,6 +172,23 @@ def funded_tools(saved, owner):
     return tools
 
 
+def counts_as_funded_tool(design, overrides):
+    """Whether a tool made from this source is one funded_tools can count.
+
+    funded_tools counts a tool made of fixed lattice matter: its install is
+    engine_grid_verified and its profile's parts are lattice bodies. A source
+    with explicit local material cells (the Metal shovel, the Metal hoe, the
+    Stone field pick) or exact rigid parts is installed as precise rigid bodies
+    instead. It digs, but this goal does not count it, so a planner must not
+    offer it here: the AI player did, saw the goal still open after each one,
+    and made shovel after shovel until the room's 256 collision parts ran out.
+    """
+    from mcp import workshop_local_cells, workshop_rigid, workshop_tools
+    return (workshop_tools.frame(design) is not None
+            and workshop_local_cells.declaration(design, overrides) is None
+            and workshop_rigid.requested_models(design, overrides) == {'lattice'})
+
+
 def _surface(saved, owner, area):
     """A funded native-admitted box face, not an arbitrary surface annotation.
 
