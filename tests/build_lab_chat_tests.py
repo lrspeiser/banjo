@@ -146,7 +146,9 @@ def test_world_help_is_explicit_and_refreshes_do_not_repeat_model_calls(self):
         self.page.send('Input.dispatchKeyEvent',{'type':'keyUp','key':'F1','code':'F1','windowsVirtualKeyCode':112})
         self.wait('!document.querySelector("#next-step").hidden && !!document.querySelector("#next-step button")')
         self.assertEqual([],calls,'Opening the next-action card is a status read')
-        self.open_rail()
+        # F1 brings the rail out for the next step alone; Details, which this
+        # opened, went with the inspector rail (eaf9e306).
+        self.wait('document.body.classList.contains("guide-open")');self.wait_rail_shown()
         self.click('#next-step button')
         self.wait('document.querySelector("#next-step").textContent.includes("Follow the available next action")')
         self.assertEqual(1,len(calls))

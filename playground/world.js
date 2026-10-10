@@ -2829,8 +2829,9 @@ function openMachinePanel(control) {
   // The machine panel lives in the right rail, which starts folded away
   // (dcd94bae). Opening Controls must show it; closing folds it again. It
   // takes the rail over from the conversation too: the two never share it.
-  if (document.body.classList.contains("panel-away") || document.body.classList.contains("chat-open")) {
-    document.body.classList.remove("chat-open");
+  if (document.body.classList.contains("panel-away") || document.body.classList.contains("chat-open")
+      || document.body.classList.contains("guide-open")) {
+    document.body.classList.remove("chat-open", "guide-open");
     machinePanel.unfolded = true;
     foldPanel(false);
   }
@@ -7300,6 +7301,7 @@ $("keys-list").replaceChildren(...controls().flatMap(([keysSaid, what]) => {
 // what they say (whereIAm), so "this" and "in front of me" mean something.
 function talk() {
   closeMachinePanel();
+  document.body.classList.remove("guide-open");
   document.body.classList.add("chat-open");foldPanel(false);
   setCursorFree(true);
   $("ask-text").focus();
@@ -7895,15 +7897,19 @@ function offerStick(e) {
 // FOLDING THE PANEL AWAY. The room is what a small screen came for, so the
 // panel starts folded on one and is remembered either way.
 function foldPanel(away) {
-  // The rail comes out for two things only: the conversation (chat-open), and
+  // The rail comes out for three things only: the conversation (chat-open),
   // a machine's own controls opened on purpose (machine-open: E on it, or its
-  // Controls button). Never by itself, and never as an inspector. Letting only
+  // Controls button), and the next step when it is asked for (guide-open: F1,
+  // or placing a construction). Never by itself, and never as an inspector. Letting only
   // the chat through (eaf9e306) left E on a machine opening a panel nobody
   // could see, so a rover could not be switched on or recovered and a
   // smelter could not be loaded.
   away = away || !document.body.classList.contains("chat-open") &&
-    !document.body.classList.contains("machine-open");
+    !document.body.classList.contains("machine-open") &&
+    !document.body.classList.contains("guide-open");
   if(away)document.body.classList.remove("chat-open");
+  // The next step asked for with F1 has been seen once its rail is folded.
+  if(away && document.body.classList.contains("guide-open")) endGuide();
   // Folding the rail away closes a machine's controls with it, so nothing is
   // left open out of sight. closeMachinePanel folds again, with the class gone.
   if(away && document.body.classList.contains("machine-open")) closeMachinePanel();
@@ -9360,6 +9366,7 @@ async function enterConstruction(item=null) {
         await askWhere(world.placing);
       }
     }
+    guideAsked=!!world.placing?.project;
     guidanceReadAt=-Infinity;await showNextStep();
   }finally {constructionBusy=false;}
 }
@@ -12082,16 +12089,38 @@ function showToolSkills() {
 // The same authenticated next action is shown in every game screen and chat.
 let guidanceBusy=false, guidanceReadAt=-Infinity;
 let worldHelpRequested=false;
-addEventListener('keydown',event=>{if(event.key==='F1' && !event.repeat){event.preventDefault();worldHelpRequested=true;guidanceReadAt=-Infinity;showNextStep();}});
+// THE NEXT STEP IS SHOWN WHEN IT IS ASKED FOR (1572c275: hidden "until
+// explicit help or active placement"): F1, or beginning to place a
+// construction, whose Place, Cancel and Fasten controls are on this card. It
+// lives in the rail, and once the rail became the conversation only
+// (eaf9e306) neither F1 nor a placement showed anything. The rail comes out
+// for it as it does for a machine's controls, with nothing else in it.
+let guideAsked=false;
+function askForGuide() { guideAsked=true; guidanceReadAt=-Infinity; void showNextStep(); }
+function endGuide() {
+  document.body.classList.remove("guide-open");
+  worldHelpRequested=false; guideAsked=false;
+}
+addEventListener('keydown',event=>{if(event.key==='F1' && !event.repeat){event.preventDefault();worldHelpRequested=true;askForGuide();}});
 async function showNextStep() {
   const root=$("next-step");
   const chat=$("talk");
   if(root && chat && root.parentElement!==chat.parentElement)chat.before(root);
-  if(root && !worldHelpRequested && !world.placing?.project){root.hidden=true;return;}
+  if(root && !worldHelpRequested && !world.placing?.project){
+    root.hidden=true;
+    if(document.body.classList.contains("guide-open"))foldPanel(true);
+    return;
+  }
   if (!root || !worldId || !world.session || watchedId || guidanceBusy || performance.now()-guidanceReadAt<4500) return;
   guidanceBusy=true;guidanceReadAt=performance.now();
   try {
     const data=await api("/api/world/guidance",{});renderPlayerGuidance(root,data,api);
+    // Asked for, and not while the conversation or a machine has the rail.
+    if(guideAsked && !root.hidden && !document.body.classList.contains("chat-open")
+       && !document.body.classList.contains("machine-open")) {
+      guideAsked=false;
+      document.body.classList.add("guide-open");foldPanel(false);
+    }
     if(data.construction_project) {
       constructionContext=data.construction_project;
       constructionControls(root,constructionContext,{hold:()=>enterConstruction(constructionContext.project.item),
