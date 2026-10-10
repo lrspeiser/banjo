@@ -165,6 +165,27 @@ class SourceSearch(unittest.TestCase):
             self.assertEqual(files, {"a.cpp", "local.h", "deep.h", "flush.h"})
 
 
+class LibraryCalls(unittest.TestCase):
+    """Engine code takes its transcendental functions from banjo::pm (v2)."""
+
+    def _calls(self, text):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "src").mkdir()
+            (Path(d) / "src" / "thing.cpp").write_text(text, encoding="utf-8")
+            return [line for _, _, line in audit.libm_calls(d)]
+
+    def test_the_c_librarys_functions_are_found_however_they_are_spelled(self):
+        text = ("double a = std::sin(x);\ndouble b = ::exp(y);\ndouble c = pow(x, y);\n"
+                "float d = sinf(z);\ndouble e = std::hypot(x, y, z);\n")
+        self.assertEqual(len(self._calls(text)), 5)
+
+    def test_the_portable_functions_members_strings_and_comments_are_not(self):
+        text = ("double a = banjo::pm::sin(x);\nauto b = dd::exp(t, k);\ndouble c = v.log(3);\n"
+                "double d = p->exp(2);\ndouble e = mylog(3);\nconst char *f = \"tan(slope) < c\";\n"
+                "// std::cos(x) in a comment\n#define BANJO_FRAME_TAN tan\n")
+        self.assertEqual(self._calls(text), [])
+
+
 def fixture_settings():
     generator = os.environ.get("BANJO_FP_FIXTURE_GENERATOR")
     if not generator:

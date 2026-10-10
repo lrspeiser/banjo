@@ -717,13 +717,22 @@ def vs_cross_check(build, name, family, prefix, suffix, expected, source_dir, vi
 
 # The C library's transcendental functions: each platform rounds them its own
 # way. Engine code takes them from numeric/PortableMath.hpp (banjo::pm::).
-LIBM_CALL = re.compile(r"\bstd::(sin|cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|asinh|acosh|atanh|exp|exp2|expm1|"
-                       r"log|log2|log10|log1p|pow|cbrt|hypot|erf|erfc|tgamma|lgamma)\s*\(|"
+_LIBM_NAMES = (r"(sin|cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|asinh|acosh|atanh|exp|exp2|expm1|"
+               r"log|log2|log10|log1p|pow|cbrt|hypot|erf|erfc|tgamma|lgamma)")
+# std::sin(...), ::sin(...) and a bare sin(...) -- but not banjo::pm::sin,
+# dd::exp, a member's .log( or ->log(, or a name that only ends in one -- and
+# the float family by name.
+LIBM_CALL = re.compile(r"\bstd::" + _LIBM_NAMES + r"\s*\(|"
+                       r"(?<![\w:])::" + _LIBM_NAMES + r"\s*\(|"
+                       r"(?<![\w.>:])" + _LIBM_NAMES + r"\s*\(|"
                        r"\b(sinf|cosf|tanf|expf|logf|powf|atan2f|acosf|asinf|cbrtf|hypotf)\s*\(")
+# A string's contents are not a call.
+STRING_LITERAL = re.compile(r'"(?:\\.|[^"\\\n])*"')
 # Where a libm call is not engine physics, and why.
 LIBM_OUTSIDE_ENGINE = (
     ("src/viewer/", "the raylib viewer draws; it computes no world state"),
     ("src/creator/codexassistant.cpp", "text in a prompt for the assistant, not a call"),
+    ("src/numeric/portablemath.hpp", "the portable functions themselves: their definitions, and no C library call"),
 )
 
 
@@ -746,7 +755,7 @@ def libm_calls(source_dir):
             except OSError:
                 continue
             for number, line in enumerate(text.splitlines(), start=1):
-                if LIBM_CALL.search(line):
+                if LIBM_CALL.search(STRING_LITERAL.sub('""', line)):
                     hits.append((str(path), number, line.strip()))
     return hits
 
