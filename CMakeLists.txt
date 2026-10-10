@@ -1468,6 +1468,12 @@ if(BANJO_BUILD_TESTS)
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_world_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                 set_tests_properties(banjo_machine_world_tests PROPERTIES TIMEOUT 300
                     ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
+                # The newer pieces, each in a small machine: gears, a pulley,
+                # a motor, the sun, steam, a cannon, a dent and a knife.
+                add_test(NAME banjo_machine_physics_tests COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_physics_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
+                set_tests_properties(banjo_machine_physics_tests PROPERTIES TIMEOUT 600
+                    ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
             endif()
             target_link_libraries(banjo_motor_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_motor_tests)
