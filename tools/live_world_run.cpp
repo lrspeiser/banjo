@@ -174,6 +174,7 @@
 // scene's bodies.
 
 #include "fastlattice/LiveWorld.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -1506,7 +1507,7 @@ constexpr double kCarriedSlackM3 = 1.0e-9;
 std::array<double, 2> pointAlong(const std::vector<std::array<double, 2>> &path, double s) {
     for (std::size_t k = 1; k < path.size(); ++k) {
         const double dx = path[k][0] - path[k - 1][0], dz = path[k][1] - path[k - 1][1];
-        const double len = std::hypot(dx, dz);
+        const double len = banjo::pm::hypot(dx, dz);
         if (s <= len || k + 1 == path.size()) {
             const double t = len > 0.0 ? std::clamp(s / len, 0.0, 1.0) : 0.0;
             return {path[k - 1][0] + t * dx, path[k - 1][1] + t * dz};
@@ -1596,7 +1597,7 @@ nlohmann::json beyondBlock(const banjo::terrain::Environment &env) {
                 if (node_placed[n]) continue;
                 const Point end = at_to ? path[k].back() : path[k].front();
                 const Point next = at_to ? path[k][path[k].size() - 2] : path[k][1];
-                const double len = std::max(1e-9, std::hypot(end[0] - next[0], end[1] - next[1]));
+                const double len = std::max(1e-9, banjo::pm::hypot(end[0] - next[0], end[1] - next[1]));
                 const double off = node_side[n] / 2.0;
                 node_at[n] = {end[0] + (end[0] - next[0]) / len * off, end[1] + (end[1] - next[1]) / len * off};
                 node_placed[n] = true;
@@ -1618,7 +1619,7 @@ nlohmann::json beyondBlock(const banjo::terrain::Environment &env) {
         if (path[k].size() < 2) continue;
         double along = 0.0;
         for (std::size_t p = 1; p < path[k].size(); ++p)
-            along += std::hypot(path[k][p][0] - path[k][p - 1][0], path[k][p][1] - path[k][p - 1][1]);
+            along += banjo::pm::hypot(path[k][p][0] - path[k][p - 1][0], path[k][p][1] - path[k][p - 1][1]);
         nlohmann::json points = nlohmann::json::array(), beds = nlohmann::json::array();
         for (int c = 0; c <= r.cells; ++c) {
             const Point p = pointAlong(path[k], along * c / r.cells);

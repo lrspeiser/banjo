@@ -1,4 +1,5 @@
 #include "water/FallingWater.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -13,11 +14,11 @@ namespace {
 // kernel and gradient the fluid wheel uses.
 double kernel(double r) {
     const double h = FallingWater::kSupport, q = r / h;
-    return q >= 1.0 ? 0.0 : 21.0 / (2.0 * std::numbers::pi * h * h * h) * std::pow(1.0 - q, 4) * (1.0 + 4.0 * q);
+    return q >= 1.0 ? 0.0 : 21.0 / (2.0 * std::numbers::pi * h * h * h) * banjo::pm::pow(1.0 - q, 4) * (1.0 + 4.0 * q);
 }
 double minusGradient(double r) {
     const double h = FallingWater::kSupport, q = r / h;
-    return q >= 1.0 ? 0.0 : 210.0 / (std::numbers::pi * h * h * h * h) * q * std::pow(1.0 - q, 3);
+    return q >= 1.0 ? 0.0 : 210.0 / (std::numbers::pi * h * h * h * h) * q * banjo::pm::pow(1.0 - q, 3);
 }
 double pressure(double rho) {
     const double c = FallingWater::kSoundSpeed;

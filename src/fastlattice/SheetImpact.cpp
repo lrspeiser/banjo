@@ -1,4 +1,5 @@
 #include "fastlattice/SheetImpact.hpp"
+#include "numeric/PortableMath.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "matter/BoxLattice.hpp"
 #include "rigid/JoltWorld.hpp"
@@ -30,7 +31,7 @@ struct SheetImpact::Impl {
         const double center=(m1*.004+m2*.026)/(m1+m2);
         auto inertia=tip.inertia(m1);const auto shaft_inertia=shaft.inertia(m2);
         for(unsigned i=0;i<3;++i)for(unsigned j=0;j<3;++j)inertia.m[i][j]+=shaft_inertia.m[i][j];
-        const double parallel=m1*std::pow(.004-center,2)+m2*std::pow(.026-center,2);
+        const double parallel=m1*banjo::pm::pow(.004-center,2)+m2*banjo::pm::pow(.026-center,2);
         inertia.m[0][0]+=parallel;inertia.m[2][2]+=parallel;
         geometry.addCompound({1,{{tip,{0,.004-center,0},{},tool,0},{shaft,{0,.026-center,0},{},tool,0}},
             tool,{{point.x,center,point.z},{},{0,-speed,0},{}},m1+m2,inertia});

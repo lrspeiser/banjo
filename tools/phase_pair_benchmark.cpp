@@ -1,4 +1,5 @@
 #include "thermal/EnthalpyLaw.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -77,10 +78,10 @@ int main(int argc, char **argv) {
                                       (1.0 + 600.0 * unit(random));
             }
         };
-        cases.push_back({water, {std::pow(10.0, 4.0 * unit(random) - 2.0), enthalpy(water)},
-                         salt, {std::pow(10.0, 4.0 * unit(random) - 2.0), enthalpy(salt)},
-                         std::pow(10.0, 6.0 * unit(random) - 2.0),
-                         std::pow(10.0, 4.0 * unit(random) - 3.0)});
+        cases.push_back({water, {banjo::pm::pow(10.0, 4.0 * unit(random) - 2.0), enthalpy(water)},
+                         salt, {banjo::pm::pow(10.0, 4.0 * unit(random) - 2.0), enthalpy(salt)},
+                         banjo::pm::pow(10.0, 6.0 * unit(random) - 2.0),
+                         banjo::pm::pow(10.0, 4.0 * unit(random) - 3.0)});
     }
 
     auto measure = [&](auto solve) {

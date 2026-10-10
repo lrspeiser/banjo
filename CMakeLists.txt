@@ -33,8 +33,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # before any target and any fetched dependency, so Jolt gets it too.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # One floating-point model for everything linked into the engine, Jolt
-# included -- banjo-cpu-precise-v1: /fp:precise, or -fno-fast-math
-# -ffp-contract=off -- and a build that audits the commands CMake generated
+# included -- banjo-cpu-precise-v2: /fp:precise, or -fno-fast-math
+# -ffp-contract=off, Jolt cross-platform deterministic and the engine's
+# transcendental functions from numeric/PortableMath.hpp, so Windows and Linux
+# give one result -- and a build that audits the commands CMake generated
 # before it compiles anything. Before any target and any fetched dependency, for
 # the same reason as the line above. Why, and what it cost:
 # cmake/FloatingPointModel.cmake and docs/floating-point-model.md.
@@ -240,6 +242,13 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     # Jolt defaults to the static MSVC runtime (/MT); Banjo and raylib use the
     # dynamic one (/MD), so the link fails on Visual Studio without this.
     set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
+    # Part of the floating-point profile (banjo-cpu-precise-v2): Jolt promises
+    # the same arithmetic from MSVC and GCC only in this mode. Without it a voxel
+    # fracture run parted between Windows and Linux at its first impact, contact
+    # impulses differing in the sixth figure from bit-identical inputs
+    # (docs/floating-point-model.md). scripts/check-fp-model.py refuses a build
+    # whose Jolt lacks it.
+    set(CROSS_PLATFORM_DETERMINISTIC ON CACHE BOOL "" FORCE)
 
     FetchContent_Declare(
         JoltPhysics
@@ -1339,6 +1348,13 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_fp_profile_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_fp_profile_tests)
             add_test(NAME banjo_fp_profile_tests COMMAND banjo_fp_profile_tests)
+            # The engine's transcendental functions (numeric/PortableMath.hpp)
+            # against values computed to 240 bits: one table, so the same bits on
+            # every platform that passes it.
+            add_executable(banjo_portable_math_tests tests/portable_math_tests.cpp)
+            target_link_libraries(banjo_portable_math_tests PRIVATE banjo_core)
+            banjo_enable_warnings(banjo_portable_math_tests)
+            add_test(NAME banjo_portable_math_tests COMMAND banjo_portable_math_tests)
 
             # A room opened again from a scene that has changed keeps everything
             # the change did not touch: a saved world carried in thing by thing.

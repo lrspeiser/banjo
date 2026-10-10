@@ -1,4 +1,5 @@
 #include "platform/NetworkWorld.hpp"
+#include "numeric/PortableMath.hpp"
 #include "material/NetworkMaterial.hpp"
 #include "material/MaterialCompiler.hpp"
 #include "physics/ResolutionBudget.hpp"
@@ -259,7 +260,7 @@ std::unique_ptr<NetworkWorld> NetworkWorld::load(const std::string &text){
             indices.emplace(std::array<int,3>{int(x),int(y),int(z)},index);object.nodes.push_back(index);w.nodes.push_back({objectIndex,body,local,mass,proxy,{int(x),int(y),int(z)}});
         }
         require(!indices.empty(),"empty occupied network");
-        const double area=std::pow(volume,2./3)/6;
+        const double area=banjo::pm::pow(volume,2./3)/6;
         for(auto &[grid,a]:indices)for(int dx=-1;dx<=1;++dx)for(int dy=-1;dy<=1;++dy)for(int dz=-1;dz<=1;++dz){
             if(dx*dx+dy*dy+dz*dz>2||dx*dx+dy*dy+dz*dz==0)continue;
             const auto it=indices.find({grid[0]+dx,grid[1]+dy,grid[2]+dz});if(it==indices.end()||it->second<=a)continue;const auto b=it->second;

@@ -3,6 +3,7 @@
 // Finite CPU load phase. No positions, bond state or material law are assigned;
 // a force integrates through the same explicit velocity kick as gravity.
 #include "fastlattice/FastLattice.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <cmath>
 #include <algorithm>
@@ -37,7 +38,7 @@ public:
         for (std::uint32_t i=0; i<lattice.node_count; ++i) {
             const Vec3 force=forces[i];
             const V3<Real> converted{static_cast<Real>(force.x),static_cast<Real>(force.y),static_cast<Real>(force.z)};
-            if (!finite(force) || !std::isfinite(std::hypot(force.x,force.y,force.z)) ||
+            if (!finite(force) || !std::isfinite(banjo::pm::hypot(force.x,force.y,force.z)) ||
                 !finite(converted)) throw std::invalid_argument("external force is not finite in backend precision");
             if (force.x==0 && force.y==0 && force.z==0) continue;
             if (!(lattice.mass[i]>0) || !(lattice.inv_mass[i]>0 ||
@@ -236,7 +237,7 @@ private:
         }
         return out;
     }
-    static double norm(const Vec3 &v) { return std::hypot(v.x,v.y,v.z); }
+    static double norm(const Vec3 &v) { return banjo::pm::hypot(v.x,v.y,v.z); }
     static bool finite(const Vec3 &v) { return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z); }
     static bool finite(const V3<Real> &v) { return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z); }
     static Vec3 widen(const V3<Real> &v) { return {static_cast<double>(v.x),static_cast<double>(v.y),static_cast<double>(v.z)}; }

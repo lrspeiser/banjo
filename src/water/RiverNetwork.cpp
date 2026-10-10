@@ -1,4 +1,5 @@
 #include "water/RiverNetwork.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -413,7 +414,7 @@ void RiverNetwork::substep(double dt, double limit) {
             const double q = old[f] / r.width_m;
             const double start = (theta * old[f] + 0.5 * (1.0 - theta) * (left + right)) / r.width_m;
             double next = (start - g * h * dt * (eta_r - eta_l) / r.dx_m) /
-                          (1.0 + friction * std::abs(q) / std::pow(h, 7.0 / 3.0));
+                          (1.0 + friction * std::abs(q) / banjo::pm::pow(h, 7.0 / 3.0));
             // Held to the limit. At an end, where the water falls freely into a
             // node standing below it, that is the brink: the critical discharge
             // for its depth, as the detailed water's mouths pass -- the boundary,

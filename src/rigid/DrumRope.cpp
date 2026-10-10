@@ -1,4 +1,5 @@
 #include "rigid/DrumRope.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <Jolt/Physics/Body/Body.h>
 #include <Jolt/Physics/Constraints/SpringSettings.h>
@@ -103,13 +104,13 @@ double DrumRopeConstraint::woundNow() const {
         ty = -ty;
         tz = -tz;
     }
-    const double twist = 2.0 * std::atan2(tx * ax + ty * ay + tz * az, tw);
+    const double twist = 2.0 * banjo::pm::atan2(tx * ax + ty * ay + tz * az, tw);
     JPH::Vec3 leaving;
     JPH::RVec3 anchor;
     departure(leaving, anchor);
     const double lx = leaving.GetX(), ly = leaving.GetY(), lz = leaving.GetZ();
     const double px = mLeavingBefore.GetX(), py = mLeavingBefore.GetY(), pz = mLeavingBefore.GetZ();
-    const double swept = std::atan2(ax * (py * lz - pz * ly) + ay * (pz * lx - px * lz) + az * (px * ly - py * lx),
+    const double swept = banjo::pm::atan2(ax * (py * lz - pz * ly) + ay * (pz * lx - px * lz) + az * (px * ly - py * lx),
                                     px * lx + py * ly + pz * lz);
     return std::clamp(mRope.wound_m + static_cast<double>(mRope.winds) * static_cast<double>(mRope.radius_m) *
                                           (twist - swept),

@@ -1,4 +1,5 @@
 #include "platform/PlatformWorld.hpp"
+#include "numeric/PortableMath.hpp"
 #include "material/MaterialCatalog.hpp"
 #include <nlohmann/json.hpp>
 #include <cmath>
@@ -42,7 +43,7 @@ Json declaration(const Json &r){
     // 32 of the 4^3 equal-volume cells lie inside this ellipsoid. Its mass
     // comes from their occupied material volume, not a sphere mass override.
     const double occupied_fraction=deformable?.5:3.141592653589793/6;
-    const double diameter=std::cbrt(mass/(makeReferenceMaterial(ball).density_kg_m3*occupied_fraction));
+    const double diameter=banjo::pm::cbrt(mass/(makeReferenceMaterial(ball).density_kg_m3*occupied_fraction));
     auto sheet=object(1,"Sheet",target,"box",deformable?"network":"rigid",{.24,.08,.24},{0,.54,0});
     auto projectile=object(2,"Ball",ball,deformable?"ellipsoid":"sphere",deformable?"network":"rigid",{diameter,diameter,diameter},
         {offset,(deformable?.5796:.58)+height+(deformable?.4975:.5)*diameter,0});

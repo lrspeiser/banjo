@@ -1,4 +1,5 @@
 #include "terrain/Environment.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include "material/Material.hpp"
 #include "rigid/JoltWorld.hpp"
@@ -414,7 +415,7 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
             }
             double along = 0.0;
             for (std::size_t k = 1; k < reach.path_m.size(); ++k)
-                along += std::hypot(reach.path_m[k].first - reach.path_m[k - 1].first,
+                along += banjo::pm::hypot(reach.path_m[k].first - reach.path_m[k - 1].first,
                                     reach.path_m[k].second - reach.path_m[k - 1].second);
             reach.length_m = r.contains("length_m") ? number(r, "length_m", 10.0, 0.1, 1.0e6) : along;
             if (!(reach.length_m > 0.0)) throw std::invalid_argument(who + " needs a length_m or a path_m");
@@ -1395,7 +1396,7 @@ void Environment::commit(JoltWorld &world, const std::vector<water::BodyInWater>
     // (see kFloatAverageS). Here, after the step was accepted, so a step taken
     // back is not counted; a body that has left the water is forgotten.
     {
-        const double keep = std::exp(-dt_s / kFloatAverageS);
+        const double keep = banjo::pm::exp(-dt_s / kFloatAverageS);
         std::unordered_map<std::string, double> shares;
         shares.reserve(in_water_.size());
         for (Afloat &a : in_water_) {
@@ -1501,7 +1502,7 @@ void Environment::wakeWhatTheWaterReached(JoltWorld &world, const std::vector<wa
         // The same twentieth of its weight, as a turn at half its size: a
         // stream reaching a wheel asleep on its pin turns it long before it
         // pushes as hard as a twentieth of the wheel's weight.
-        const double size = std::cbrt(std::max(b.volume_m3, 1.0e-12));
+        const double size = banjo::pm::cbrt(std::max(b.volume_m3, 1.0e-12));
         if (length(force - rest->second) > 0.05 * weight ||
             length(torque - rest_turn->second) > 0.05 * weight * 0.5 * size) {
             world.wake(b.body_id);
@@ -1861,7 +1862,7 @@ std::string Environment::reportJson(bool full) const {
         for (int j = 0; j < g.nz; ++j) {
             const std::size_t c = g.at(i, j);
             const double h = water_->depth(c);
-            if (!(h > 0.02) || !(std::hypot(water_->velocityX(c), water_->velocityZ(c)) > 0.03)) continue;
+            if (!(h > 0.02) || !(banjo::pm::hypot(water_->velocityX(c), water_->velocityZ(c)) > 0.03)) continue;
             if (h > deepest) { deepest = h; at = j; }
         }
         if (at < 0) continue;
@@ -1871,7 +1872,7 @@ std::string Environment::reportJson(bool full) const {
         while (to + 1 < g.nz && water_->depth(g.at(i, to + 1)) > 0.01) ++to;
         path.push_back({{"x_m", g.xOf(i)}, {"z_m", g.zOf(at)}, {"level_m", water_->surface(c)},
                         {"depth_m", deepest}, {"bed_m", water_->bed(c)},
-                        {"speed_m_s", std::hypot(water_->velocityX(c), water_->velocityZ(c))},
+                        {"speed_m_s", banjo::pm::hypot(water_->velocityX(c), water_->velocityZ(c))},
                         {"wet_from_z_m", g.zOf(from)}, {"wet_to_z_m", g.zOf(to)}});
     }
     // Where there is bare, level rock to cut stone from: the middle of the
@@ -2201,7 +2202,7 @@ std::string Environment::surveyJson(double x, double z) const {
     } else if (water_->wet(c) && water_->depth(c) > 0.003) {
         const double u = water_->velocityX(c), w = water_->velocityZ(c);
         out["water"] = {{"depth_m", water_->depth(c)}, {"surface_m", water_->surface(c)},
-                        {"speed_m_s", std::hypot(u, w)}, {"velocity_m_s", {u, w}},
+                        {"speed_m_s", banjo::pm::hypot(u, w)}, {"velocity_m_s", {u, w}},
                         {"bed_m", water_->bed(c)}};
     } else {
         out["water"] = nullptr;

@@ -1,4 +1,5 @@
 #include "thermo/Thermochemistry.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -443,7 +444,7 @@ Model demonstrationModel() {
         dry.reactants = {{moisture_in_matter, 1.0, Supply::Material, Fate::Retained}};
         dry.products = {{steam, 1.0, Supply::Material, Fate::Released}};
         constexpr double kDryingTa = 4800.0;
-        dry.rate = {RateKind::Surface, 0.015 * std::exp(kDryingTa / kBoilingK), kDryingTa, 300.0,
+        dry.rate = {RateKind::Surface, 0.015 * banjo::pm::exp(kDryingTa / kBoilingK), kDryingTa, 300.0,
                     700.0, 0.0};
         model.addReaction(std::move(dry));
     }

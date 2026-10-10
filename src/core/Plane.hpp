@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Math.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <cmath>
 #include <numbers>
@@ -57,8 +58,8 @@ struct SupportPlaneFrame {
     // lab use a positive scalar acceleration convention while retaining a world-space plane.
     return makeSupportPlane(
         point_world_m,
-        {std::sin(radians), std::cos(radians), 0.0},
-        {std::cos(radians), -std::sin(radians), 0.0});
+        {banjo::pm::sin(radians), banjo::pm::cos(radians), 0.0},
+        {banjo::pm::cos(radians), -banjo::pm::sin(radians), 0.0});
 }
 
 [[nodiscard]] inline double signedDistanceToPlane(

@@ -1,4 +1,5 @@
 #include "rigid/JoltWorld.hpp"
+#include "numeric/PortableMath.hpp"
 #include "fracture/ActivationPolicy.hpp"
 #include "physics/RigidAttachment.hpp"
 
@@ -2055,7 +2056,7 @@ unsigned JoltWorld::addHinge(const HingeDescription &d) {
     // made that way, it reads that angle now, and its limits are about the
     // same zero the first one's were.
     const Vec3 normal_b = d.at_rad == 0.0 ? normal
-                                          : std::cos(d.at_rad) * normal + std::sin(d.at_rad) * cross(axis, normal);
+                                          : banjo::pm::cos(d.at_rad) * normal + banjo::pm::sin(d.at_rad) * cross(axis, normal);
 
     JPH::HingeConstraintSettings settings;
     // World space, where the bodies are standing right now. Jolt keeps the
@@ -2615,7 +2616,7 @@ unsigned JoltWorld::addFixing(const FixingDescription &d) {
             light_over_heavy = heaviest / light;
         }
         if (light_over_heavy < 1.0) {
-            const int steps = static_cast<int>(std::ceil(std::log(100.0) / std::log1p(light_over_heavy)));
+            const int steps = static_cast<int>(std::ceil(banjo::pm::log(100.0) / banjo::pm::log1p(light_over_heavy)));
             if (steps > 10) {
                 raw->SetNumVelocityStepsOverride(static_cast<JPH::uint>(std::min(steps, 255)));
                 raw->SetNumPositionStepsOverride(static_cast<JPH::uint>(std::min(std::max(steps / 10, 2), 32)));
@@ -2722,7 +2723,7 @@ unsigned JoltWorld::addKerf(const KerfDescription &d) {
     int cold = kWarmKerfSteps;
     if (inverse_blade > 0.0 && inverse_target > inverse_blade) {
         const double light_over_heavy = inverse_blade / inverse_target;   // m / M
-        cold = static_cast<int>(std::ceil(std::log(100.0) / std::log1p(light_over_heavy)));
+        cold = static_cast<int>(std::ceil(banjo::pm::log(100.0) / banjo::pm::log1p(light_over_heavy)));
         cold = std::min(std::max(cold, kWarmKerfSteps), kColdKerfStepsMax);
     }
     raw->SetNumVelocityStepsOverride(static_cast<JPH::uint>(cold));
@@ -2782,7 +2783,7 @@ JoltWorld::JointLoad JoltWorld::jointLoad(unsigned joint, const Vec3 &axis_world
         const JPH::Vec3 friction = seat->GetTotalLambdaMotorTranslation();
         out.axial_n = static_cast<double>(held.GetX() + friction.GetX()) / dt;
         out.tension_n = std::abs(out.axial_n);
-        out.shear_n = std::hypot(static_cast<double>(held.GetY()),
+        out.shear_n = banjo::pm::hypot(static_cast<double>(held.GetY()),
                                  static_cast<double>(held.GetZ())) / dt;
         return out;
     }
@@ -3101,7 +3102,7 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
     const auto pa=fromJoltPosition(a.GetTranslation()),pb=fromJoltPosition(b.GetTranslation());
     const auto x=fromJoltVector(a.GetAxisX()),y=fromJoltVector(a.GetAxisY()),z=fromJoltVector(a.GetAxisZ());
     const auto delta=pb-pa;const auto q=c->GetRotationInConstraintSpace();
-    const double angle=2*std::atan2(std::sqrt(double(q.GetX())*q.GetX()+double(q.GetY())*q.GetY()+double(q.GetZ())*q.GetZ()),std::abs(double(q.GetW())));
+    const double angle=2*banjo::pm::atan2(std::sqrt(double(q.GetX())*q.GetX()+double(q.GetY())*q.GetY()+double(q.GetZ())*q.GetZ()),std::abs(double(q.GetW())));
     const auto axis=Vec3{q.GetX(),q.GetY(),q.GetZ()}*(q.GetW()<0?-1.:1.);
     const auto rotation=length(axis)>1e-12?axis*(angle/length(axis)):Vec3{};
     return observed({{dot(delta,x),dot(delta,y),dot(delta,z)},rotation,fromJoltVector(c->GetTotalLambdaMotorTranslation()),fromJoltVector(c->GetTotalLambdaMotorRotation()),
@@ -3110,7 +3111,7 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
 }
 
 void JoltWorld::setFacePlasticRest(unsigned id,Vec3 p,Vec3 r){
-    if(!std::isfinite(lengthSquared(p))||!std::isfinite(lengthSquared(r))||length(p)>10||length(r)>=std::acos(-1.))
+    if(!std::isfinite(lengthSquared(p))||!std::isfinite(lengthSquared(r))||length(p)>10||length(r)>=banjo::pm::acos(-1.))
         throw std::invalid_argument("face plastic rest exceeds finite 10 m / pi rad native bounds");
     if(impl_->parked_face_joints_.contains(id))throw std::invalid_argument("restore component before editing constitutive rest");
     const auto &joint=impl_->joints_.at(id);
@@ -3876,7 +3877,7 @@ MaterialShapeQuery JoltWorld::materialShapeContactsImpl(MatterBodyId body_id,Vec
     // frame to float. A distant world must not collapse centimetre geometry.
     const Vec3 offset=source_com-point;
     const double relative_limit=std::sqrt(double(std::numeric_limits<float>::max()))/8;
-    if(!finite(offset)||std::hypot(offset.x,offset.y,offset.z)>relative_limit)
+    if(!finite(offset)||banjo::pm::hypot(offset.x,offset.y,offset.z)>relative_limit)
         throw std::invalid_argument("point shape query exceeds native relative range");
     result.source_offset_roundoff_m=fromJoltVector(toJolt(offset))-offset;
     float search=float(separation);
@@ -3909,7 +3910,7 @@ MaterialShapeQuery JoltWorld::materialShapeContactsImpl(MatterBodyId body_id,Vec
     result.contacts.reserve(collector.hits.size());
     for(const auto &hit:collector.hits) {
         const Vec3 axis=fromJoltVector(hit.mPenetrationAxis);
-        const double axis_length=std::hypot(axis.x,axis.y,axis.z);
+        const double axis_length=banjo::pm::hypot(axis.x,axis.y,axis.z);
         const Vec3 on_source=fromJoltVector(hit.mContactPointOn2),on_envelope=fromJoltVector(hit.mContactPointOn1);
         if(!finite(axis)||!std::isfinite(axis_length)||axis_length<=0||!finite(on_source)||!finite(on_envelope)||
             !std::isfinite(hit.mPenetrationDepth))

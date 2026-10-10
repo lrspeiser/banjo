@@ -1,4 +1,5 @@
 #include "flow/FlowReference.hpp"
+#include "numeric/PortableMath.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -21,7 +22,7 @@ Reference::Reference(Settings s, std::vector<Cell> c):settings_(s),cells_(std::m
        ||!std::isfinite(s.gravity)||s.gravity<0||s.gravity>20||!std::isfinite(s.cfl)||s.cfl<=0||s.cfl>0.2)
         throw std::invalid_argument("bounded flow settings refused");
     for(Cell a:cells_) if(!finite(a)||a.h<0||a.h>2||(a.h==0&&(a.qx!=0||a.qz!=0))
-        ||(a.h>0&&std::hypot(a.qx,a.qz)/a.h>20)) throw std::invalid_argument("flow initial state refused");
+        ||(a.h>0&&banjo::pm::hypot(a.qx,a.qz)/a.h>20)) throw std::invalid_argument("flow initial state refused");
     initial_=totals();
 }
 Account Reference::totals() const {
@@ -46,7 +47,7 @@ Reference Reference::restore(const State& state) {
     // pressure wave can legitimately stand higher than its initial column.
     Reference world(state.settings,std::vector<Cell>(state.cells.size()));
     for(Cell cell:state.cells)if(!finite(cell)||cell.h<0||cell.h>2*state.settings.nx*state.settings.nz
-       ||(cell.h==0&&(cell.qx!=0||cell.qz!=0))||(cell.h>0&&std::hypot(cell.qx,cell.qz)/cell.h>20))throw std::invalid_argument("invalid evolved flow state");
+       ||(cell.h==0&&(cell.qx!=0||cell.qz!=0))||(cell.h>0&&banjo::pm::hypot(cell.qx,cell.qz)/cell.h>20))throw std::invalid_argument("invalid evolved flow state");
     world.cells_=state.cells;const auto& a=state.initial;const auto& c=state.crossings;
     for(double v:{a.mass,a.px,a.pz,a.ly,a.energy,c.time,c.wall_px,c.wall_pz,c.wall_ly,c.numerical_ly,c.numerical_energy})
         if(!std::isfinite(v))throw std::invalid_argument("invalid flow continuation number");
@@ -86,7 +87,7 @@ void Reference::step(double dt) {
             crossings_.wall_px+=jx;crossings_.wall_pz+=jz;crossings_.wall_ly+=j*settings_.dx*jx-(i+0.5)*settings_.dx*jz;
         }else crossings_.numerical_ly+=settings_.dx*jscale*f.qx;
     }
-    for(Cell c:next)if(!finite(c)||c.h<0||(c.h==0&&(c.qx!=0||c.qz!=0))||(c.h>0&&std::hypot(c.qx,c.qz)/c.h>20))throw std::runtime_error("flow positivity/finite/speed gate refused");
+    for(Cell c:next)if(!finite(c)||c.h<0||(c.h==0&&(c.qx!=0||c.qz!=0))||(c.h>0&&banjo::pm::hypot(c.qx,c.qz)/c.h>20))throw std::runtime_error("flow positivity/finite/speed gate refused");
     cells_=std::move(next); const auto after=totals();
     const double change=after.energy-before.energy;
     if(change>1e-10*std::max(1.0,before.energy))throw std::runtime_error("flow entropy energy creation gate refused");
@@ -98,7 +99,7 @@ void Reference::step(double dt) {
 void Reference::advance(double seconds,std::uint64_t max_steps,std::uint64_t max_cell_updates) {
     if(!std::isfinite(seconds)||seconds<=0||seconds>5)throw std::invalid_argument("flow interval refused");
     Reference trial=*this; double remaining=seconds; std::uint64_t count=0;
-    while(remaining>0){double speed=0;for(Cell c:trial.cells_){const double u=c.h>0?std::hypot(c.qx,c.qz)/c.h:0;speed=std::max(speed,u+std::sqrt(settings_.gravity*c.h));}
+    while(remaining>0){double speed=0;for(Cell c:trial.cells_){const double u=c.h>0?banjo::pm::hypot(c.qx,c.qz)/c.h:0;speed=std::max(speed,u+std::sqrt(settings_.gravity*c.h));}
         const double dt=std::min({remaining,0.02,speed>0?settings_.cfl*settings_.dx/speed:0.02});
         if(++count>std::min<std::uint64_t>(max_steps,20000)||count>std::min<std::uint64_t>(max_cell_updates,8000000)/static_cast<std::uint64_t>(settings_.nx*settings_.nz)||dt<1e-12)
             throw std::runtime_error("bounded flow work/CFL interval refused");

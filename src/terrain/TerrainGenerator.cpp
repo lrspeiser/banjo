@@ -1,5 +1,6 @@
 ﻿#include "terrain/TerrainGenerator.hpp"
 #include "numeric/FpProfile.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <array>
@@ -266,8 +267,8 @@ ErosionResult erode(const Grid &g, std::vector<double> &rock, std::vector<double
                 const int j0 = std::max(0, j - 1), j1 = std::min(g.nz - 1, j + 1);
                 const double gx = (surface(g.at(i1, j)) - surface(g.at(i0, j))) / ((i1 - i0) * g.dx);
                 const double gz = (surface(g.at(i, j1)) - surface(g.at(i, j0))) / ((j1 - j0) * g.dx);
-                const double tilt = std::sin(std::atan(std::hypot(gx, gz)));
-                const double capacity = capacity_k * std::max(tilt, 0.02) * std::hypot(u, w) *
+                const double tilt = banjo::pm::sin(banjo::pm::atan(banjo::pm::hypot(gx, gz)));
+                const double capacity = capacity_k * std::max(tilt, 0.02) * banjo::pm::hypot(u, w) *
                                         std::min(1.0, d[c] / 0.05);
                 if (capacity > s[c]) {
                     double take = dissolve_k * (capacity - s[c]) * dt;
@@ -467,8 +468,8 @@ Beds layBeds(const Grid &g, const std::vector<double> &rock_top, double floor_m,
     // the knoll, which is where the rock is bare and it can be seen at all.
     const double strike = geology.vein_strike_deg * kPi / 180.0;
     const double dip = geology.vein_dip_deg * kPi / 180.0;
-    const Vec3 normal{std::cos(strike) * std::sin(dip), std::cos(dip),
-                      std::sin(strike) * std::sin(dip)};
+    const Vec3 normal{banjo::pm::cos(strike) * banjo::pm::sin(dip), banjo::pm::cos(dip),
+                      banjo::pm::sin(strike) * banjo::pm::sin(dip)};
     const double vein_y = rock_top[g.at(std::clamp(static_cast<int>((vein_x - g.x0) / g.dx), 0, g.nx - 1),
                                        std::clamp(static_cast<int>((vein_z - g.z0) / g.dx), 0, g.nz - 1))] - 3.0;
     for (int j = 0; j < g.nz; ++j)
@@ -484,7 +485,7 @@ Beds layBeds(const Grid &g, const std::vector<double> &rock_top, double floor_m,
             // The vein: the plane's height in this column, and how thick it is
             // measured down the column rather than across the slab.
             double vein_lo = 1.0, vein_hi = -1.0;
-            const double reach = std::hypot(x - vein_x, z - vein_z);
+            const double reach = banjo::pm::hypot(x - vein_x, z - vein_z);
             if (reach < geology.vein_reach_m && std::abs(normal.y) > 1.0e-3) {
                 const double middle = vein_y - (normal.x * (x - vein_x) + normal.z * (z - vein_z)) / normal.y;
                 // It pinches and swells, and fades out at its reach.
@@ -620,7 +621,7 @@ void alongTheWorking(const Grid &g, double ax, double az, double bx, double bz,
             const double px = g.xOf(i) - ax, pz = g.zOf(j) - az;
             const double t = length2 > 0.0 ? std::clamp((px * lx + pz * lz) / length2, 0.0, 1.0) : 0.0;
             const double ox = px - t * lx, oz = pz - t * lz;
-            const double d = std::hypot(ox, oz);
+            const double d = banjo::pm::hypot(ox, oz);
             if (d <= half_width) body(g.at(i, j), t, d);
         }
 }
@@ -786,8 +787,8 @@ Mine workOldMine(const Grid &g, Landscape &land, const MineShape &shape = {}) {
     for (int k = 0; k < 24; ++k) {
         const double out = shape.adit_back_m + 2.0 * step;
         const double a = 2.0 * kPi * k / 24.0;
-        const double x = mine.shaft_m[0] + std::cos(a) * out;
-        const double z = mine.shaft_m[1] + std::sin(a) * out;
+        const double x = mine.shaft_m[0] + banjo::pm::cos(a) * out;
+        const double z = mine.shaft_m[1] + banjo::pm::sin(a) * out;
         if (x < g.x0 + 2.0 || z < g.z0 + 2.0 ||
             x > g.xOf(g.nx - 1) - 2.0 || z > g.zOf(g.nz - 1) - 2.0) continue;
         const int i = std::clamp(int(std::lround((x - g.x0) / g.dx)), 1, g.nx - 2);
@@ -799,7 +800,7 @@ Mine workOldMine(const Grid &g, Landscape &land, const MineShape &shape = {}) {
         // a mouth in the riverbank is not a mouth.
         if (!(here < collar - shape.adit_below_m) || !dry(g.at(i, j))) continue;
         const double toward_x = (mine.shaft_m[0] - x), toward_z = (mine.shaft_m[1] - z);
-        const double n = std::hypot(toward_x, toward_z);
+        const double n = banjo::pm::hypot(toward_x, toward_z);
         if (!(n > 0.0)) continue;
         const int bi = std::clamp(int(std::lround((x + 2.0 * g.dx * toward_x / n - g.x0) / g.dx)), 0, g.nx - 1);
         const int bj = std::clamp(int(std::lround((z + 2.0 * g.dx * toward_z / n - g.z0) / g.dx)), 0, g.nz - 1);
@@ -808,7 +809,7 @@ Mine workOldMine(const Grid &g, Landscape &land, const MineShape &shape = {}) {
     }
     mine.adit_m[0] = mouth_x;
     mine.adit_m[1] = mouth_z;
-    const double into = std::hypot(mine.shaft_m[0] - mouth_x, mine.shaft_m[1] - mouth_z);
+    const double into = banjo::pm::hypot(mine.shaft_m[0] - mouth_x, mine.shaft_m[1] - mouth_z);
     mine.adit_into_m[0] = into > 0.0 ? (mine.shaft_m[0] - mouth_x) / into : 1.0;
     mine.adit_into_m[1] = into > 0.0 ? (mine.shaft_m[1] - mouth_z) / into : 0.0;
     // The adit itself: a mouth cut open where there is no hill over it yet, and
@@ -822,7 +823,7 @@ Mine workOldMine(const Grid &g, Landscape &land, const MineShape &shape = {}) {
     struct Heap { double x, z, share; };
     const double down_x = mine.cut_from_m[0] - mine.shaft_m[0];
     const double down_z = mine.cut_from_m[1] - mine.shaft_m[1];
-    const double dn = std::max(1.0e-6, std::hypot(down_x, down_z));
+    const double dn = std::max(1.0e-6, banjo::pm::hypot(down_x, down_z));
     const Heap heaps[3] = {
         {mine.shaft_m[0] - down_z / dn * shape.heap_radius_m,
          mine.shaft_m[1] + down_x / dn * shape.heap_radius_m, 0.45},
@@ -870,8 +871,8 @@ Landscape generateValley(const ValleyParameters &p) {
     const double swing = std::min(3.2, 0.12 * width);
     const auto centre = [&](double x) {
         const double t = (x - g.x0) / length;
-        return swing * std::sin(2.0 * kPi * t * 1.5 + phase) +
-               0.25 * swing * std::sin(2.0 * kPi * t * 4.0 + 1.3 * phase);
+        return swing * banjo::pm::sin(2.0 * kPi * t * 1.5 + phase) +
+               0.25 * swing * banjo::pm::sin(2.0 * kPi * t * 4.0 + 1.3 * phase);
     };
     const double floodplain = std::min(4.5, 0.15 * width);
     const double valley_top = std::min(13.0, 0.42 * width);
@@ -891,9 +892,9 @@ Landscape generateValley(const ValleyParameters &p) {
         y += 4.0 * smoothstep(floodplain, valley_top, d);
         y += 0.9 * fbm(seed, x, z, 4, 1.0 / 9.0) * smoothstep(floodplain - 0.5, floodplain + 5.0, d);
         y += 0.05 * fbm(seed + 17, x, z, 3, 1.0 / 2.5);
-        const double rp = std::hypot(x - pond_x, z - pond_z);
+        const double rp = banjo::pm::hypot(x - pond_x, z - pond_z);
         if (rp < pond_r) y -= 0.85 * (1.0 - (rp / pond_r) * (rp / pond_r));
-        y += 0.2 * std::exp(-((rp - pond_r - 0.3) / 0.45) * ((rp - pond_r - 0.3) / 0.45));
+        y += 0.2 * banjo::pm::exp(-((rp - pond_r - 0.3) / 0.45) * ((rp - pond_r - 0.3) / 0.45));
         return y;
     };
     // The knoll is a flat-topped outcrop of rock -- a mesa, 1.4 m above the
@@ -905,7 +906,7 @@ Landscape generateValley(const ValleyParameters &p) {
         for (int i = 0; i < g.nx; ++i) {
             const double x = g.xOf(i), z = g.zOf(j);
             double y = landform(x, z);
-            const double rk = std::hypot(x - knoll_x, z - knoll_z);
+            const double rk = banjo::pm::hypot(x - knoll_x, z - knoll_z);
             const double on_knoll = smoothstep(knoll_r + 0.6, knoll_r - 0.4, rk);
             y += (std::max(y, knoll_top) - y) * on_knoll;
             outcrop[g.at(i, j)] = smoothstep(knoll_r + 0.9, knoll_r, rk);
@@ -942,7 +943,7 @@ Landscape generateValley(const ValleyParameters &p) {
         for (int j = cj - reach; j <= cj + reach; ++j)
             for (int i = ci - reach; i <= ci + reach; ++i) {
                 if (i < 0 || j < 0 || i >= g.nx || j >= g.nz) continue;
-                const double dist = std::hypot((i - ci) * g.dx, (j - cj) * g.dx);
+                const double dist = banjo::pm::hypot((i - ci) * g.dx, (j - cj) * g.dx);
                 const std::size_t k = g.at(i, j);
                 from_path[k] = std::min(from_path[k], dist);
             }
@@ -1022,11 +1023,11 @@ Landscape generateValley(const ValleyParameters &p) {
             const int j0 = std::max(0, j - 1), j1 = std::min(g.nz - 1, j + 1);
             const double gx = (ground[g.at(i1, j)] - ground[g.at(i0, j)]) / ((i1 - i0) * g.dx);
             const double gz = (ground[g.at(i, j1)] - ground[g.at(i, j0)]) / ((j1 - j0) * g.dx);
-            const double steep = std::hypot(gx, gz);
+            const double steep = banjo::pm::hypot(gx, gz);
             // A pond's basin holds the silt and soil that settled in it, steep
             // or not: its sides are not a rock face.
             const double in_pond = smoothstep(pond_r + 1.2, pond_r + 0.6,
-                                              std::hypot(g.xOf(i) - pond_x, g.zOf(j) - pond_z));
+                                              banjo::pm::hypot(g.xOf(i) - pond_x, g.zOf(j) - pond_z));
             const double keep = std::max(std::clamp(1.0 - steep / 0.75, 0.0, 1.0), in_pond) *
                                 (1.0 - outcrop[c]);
             // The surface as it now stands -- pits filled and all -- which this
@@ -1034,12 +1035,12 @@ Landscape generateValley(const ValleyParameters &p) {
             const double top = land.rock[c] + land.soil[c] + land.sand[c] + land.loose[c];
             const double soil = std::min(land.soil[c], 1.2 * keep);
             // Alluvium: the river's banks and bed are sand.
-            const double alluvium = std::min(soil, 0.35 * std::exp(-(from_path[c] / 2.2) * (from_path[c] / 2.2)));
+            const double alluvium = std::min(soil, 0.35 * banjo::pm::exp(-(from_path[c] / 2.2) * (from_path[c] / 2.2)));
             land.soil[c] = soil - alluvium;
             land.sand[c] += alluvium;
             if (outcrop[c] > 0.5) { land.sand[c] = 0.0; land.loose[c] = 0.0; }
             land.rock[c] = top - land.soil[c] - land.sand[c] - land.loose[c];
-            const double wetness = std::exp(-from_path[c] / 4.0);
+            const double wetness = banjo::pm::exp(-from_path[c] / 4.0);
             land.moisture[c] = static_cast<float>(std::clamp(land.depth[c] > 0.0 ? 1.0 : wetness, 0.0, 1.0));
         }
 
@@ -1127,7 +1128,7 @@ struct StreamedGround {
     // How far a point is outside the valley's rectangle of points.
     double outside(double x, double z) const {
         const Grid &g = valley.grid;
-        return std::hypot(std::max({0.0, g.x0 - x, x - x1}), std::max({0.0, g.z0 - z, z - z1}));
+        return banjo::pm::hypot(std::max({0.0, g.x0 - x, x - x1}), std::max({0.0, g.z0 - z, z - z1}));
     }
     // How much of the streamed ground's own shape a point has: none at the
     // valley's edge, all of it kStreamBlendM out.
@@ -1190,7 +1191,7 @@ Landscape streamedRegion(const Landscape &valley, std::uint64_t seed, int rx, in
             // own soil, sand and loose ground eased out from its edge.
             const double gx = (at(i + 1, j) - at(i - 1, j)) / (2.0 * h);
             const double gz = (at(i, j + 1) - at(i, j - 1)) / (2.0 * h);
-            const double natural_soil = 1.2 * std::clamp(1.0 - std::hypot(gx, gz) / 0.75, 0.0, 1.0);
+            const double natural_soil = 1.2 * std::clamp(1.0 - banjo::pm::hypot(gx, gz) / 0.75, 0.0, 1.0);
             const double w = ground.own(x, z);
             const double soil = ground.edge(valley.soil, x, z) * (1.0 - w) + natural_soil * w;
             const double sand = ground.edge(valley.sand, x, z) * (1.0 - w);
@@ -1245,9 +1246,9 @@ Landscape basin(const SimpleParameters &p) {
         for (int i = 0; i < g.nx; ++i) {
             const std::size_t c = g.at(i, j);
             const double x = g.xOf(i), z = g.zOf(j);
-            const double r = std::hypot(x, z) / half;
+            const double r = banjo::pm::hypot(x, z) / half;
             // A bowl rising to the rim everywhere, so the lake cannot leave.
-            const double top = 0.2 + 1.6 * r * r + 0.03 * std::sin(2.1 * x) * std::cos(1.7 * z);
+            const double top = 0.2 + 1.6 * r * r + 0.03 * banjo::pm::sin(2.1 * x) * banjo::pm::cos(1.7 * z);
             land.rock[c] = top - land.soil[c] - land.sand[c];
             const double depth = std::max(0.0, p.lake_level_m - top);
             land.depth[c] = depth;

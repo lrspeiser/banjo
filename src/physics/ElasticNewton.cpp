@@ -1,4 +1,5 @@
 #include "physics/ElasticNewton.hpp"
+#include "numeric/PortableMath.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -188,7 +189,7 @@ bool elasticNewtonUpdate(const ActiveMatter &matter, double dt,
                 h[j+1][columns] = -sine[j]*h[j][columns] + cosine[j]*h[j+1][columns];
                 h[j][columns] = first;
             }
-            const double divisor = std::hypot(h[columns][columns], h[columns+1][columns]);
+            const double divisor = banjo::pm::hypot(h[columns][columns], h[columns+1][columns]);
             if (!std::isfinite(divisor) || divisor <= 1e-30) return false;
             cosine[columns] = h[columns][columns] / divisor;
             sine[columns] = h[columns+1][columns] / divisor;

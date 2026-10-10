@@ -1,4 +1,5 @@
 #include "physics/FixedAssemblyContact.hpp"
+#include "numeric/PortableMath.hpp"
 #include "physics/ContactTensor.hpp"
 #include <algorithm>
 #include <cmath>
@@ -11,7 +12,7 @@
 namespace banjo {
 namespace {
 bool finite(Vec3 v) {return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);}
-double norm(Vec3 v) {return std::hypot(v.x,v.y,v.z);}
+double norm(Vec3 v) {return banjo::pm::hypot(v.x,v.y,v.z);}
 void require(bool value,const char *why) {if(!value)throw std::invalid_argument(why);}
 double kinetic(const std::vector<RigidMechanicalState> &bodies) {
     double result=0;for(const auto &body:bodies)result+=measureRigidMechanics(body).kinetic_energy_j;return result;
@@ -342,7 +343,7 @@ FixedSurfaceManifoldResult evaluateFixedSurfaceManifold(std::span<const ActiveNo
     };
     const auto squared=[](const std::vector<double> &r){double value=0;for(const auto x:r)value+=x*x;return value;};
     const auto maximum=[](const std::vector<double> &r){double value=0;for(std::size_t k=0;k<r.size();k+=3)
-        value=std::max(value,std::hypot(r[k],r[k+1],r[k+2]));return value;};
+        value=std::max(value,banjo::pm::hypot(r[k],r[k+1],r[k+2]));return value;};
     double damping=1e-8;
     for(unsigned attempt=0;!converged&&attempt<96;++attempt) {
         const auto base=impulses;const auto r=residual_vector();last_residual=maximum(r);

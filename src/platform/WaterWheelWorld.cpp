@@ -1,4 +1,5 @@
 #include "platform/WaterWheelWorld.hpp"
+#include "numeric/PortableMath.hpp"
 #include "rigid/JoltWorld.hpp"
 #include <nlohmann/json.hpp>
 #include <numbers>
@@ -13,10 +14,10 @@ constexpr double particleMass=rho0*spacing*spacing*spacing;
 Json vec(Vec3 v){return {v.x,v.y,v.z};}
 void require(bool ok,const char *why){if(!ok)throw std::invalid_argument(why);}
 // Wendland C2, support h, normalized in 3D. Pressure is central and paired.
-double kernel(double r){const double q=r/h;return q>=1?0:21/(2*std::numbers::pi*h*h*h)*std::pow(1-q,4)*(1+4*q);}
-double minusGradient(double r){const double q=r/h;return q>=1?0:210/(std::numbers::pi*h*h*h*h)*q*std::pow(1-q,3);}
+double kernel(double r){const double q=r/h;return q>=1?0:21/(2*std::numbers::pi*h*h*h)*banjo::pm::pow(1-q,4)*(1+4*q);}
+double minusGradient(double r){const double q=r/h;return q>=1?0:210/(std::numbers::pi*h*h*h*h)*q*banjo::pm::pow(1-q,3);}
 double pressure(double rho){return sound*sound*std::max(0.,rho-rho0);}
-double specificEnergy(double rho){return rho<=rho0?0:sound*sound*(std::log(rho/rho0)+rho0/rho-1);}
+double specificEnergy(double rho){return rho<=rho0?0:sound*sound*(banjo::pm::log(rho/rho0)+rho0/rho-1);}
 Quat multiply(Quat a,Quat b){return {a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z,a.w*b.x+a.x*b.w+a.y*b.z-a.z*b.y,a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x,a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w};}
 }
 struct WaterWheelWorld::Impl {
@@ -58,7 +59,7 @@ std::unique_ptr<WaterWheelWorld> WaterWheelWorld::load(const std::string &source
     RigidSurfaceDescription floor;floor.material=solid;floor.half_length_tangent_m=3;floor.half_length_bitangent_m=3;w.rigid.addSupportSurface(floor);
     // Symmetric wheel: eight spokes and eight paddles, represented by its real boxes.
     Mat3 inertia;
-    auto part=[&](Vec3 d,Vec3 p,double rotation,bool hub=false){RigidPrimitive shape;shape.kind=hub?PrimitiveKind::Sphere:PrimitiveKind::Box;shape.radius_m=.04;shape.dimensions_m=d;const Quat q{std::cos(rotation/2),0,0,std::sin(rotation/2)};
+    auto part=[&](Vec3 d,Vec3 p,double rotation,bool hub=false){RigidPrimitive shape;shape.kind=hub?PrimitiveKind::Sphere:PrimitiveKind::Box;shape.radius_m=.04;shape.dimensions_m=d;const Quat q{banjo::pm::cos(rotation/2),0,0,banjo::pm::sin(rotation/2)};
         const double mass=solid.density_kg_m3*shape.volume();const auto local=shape.inertia(mass);
         const Vec3 axes[]={q.rotate({1,0,0}),q.rotate({0,1,0}),q.rotate({0,0,1})};
         for(unsigned i=0;i<3;++i)for(unsigned j=0;j<3;++j){const double a[]={p.x,p.y,p.z};
@@ -66,8 +67,8 @@ std::unique_ptr<WaterWheelWorld> WaterWheelWorld::load(const std::string &source
             inertia.m[i][j]+=mass*((i==j?lengthSquared(p):0)-a[i]*a[j]);}
         w.wheelMass+=mass;w.parts.push_back({shape,p,q,solid,0});};
     part({.08,.08,.08},{},0,true);
-    for(unsigned k=0;k<8;++k){const double a=k*std::numbers::pi/4;part({.28,.025,.035},{.18*std::cos(a),.18*std::sin(a),0},a);
-        part({.16,.035,.18},{.40*std::cos(a),.40*std::sin(a),0},a);}
+    for(unsigned k=0;k<8;++k){const double a=k*std::numbers::pi/4;part({.28,.025,.035},{.18*banjo::pm::cos(a),.18*banjo::pm::sin(a),0},a);
+        part({.16,.035,.18},{.40*banjo::pm::cos(a),.40*banjo::pm::sin(a),0},a);}
     w.rigid.addCompound({1,w.parts,solid,{{0,.65,0},{},{},{}},w.wheelMass,inertia});
     auto iron=makeReferenceMaterial(MaterialPreset::Iron);
     w.rigid.addBox({2,{.10,1.3,.10},iron,{{0,.65,-.25},{},{},{}},true});
@@ -104,7 +105,7 @@ void WaterWheelWorld::step(double dt){
         w.pairLinearResidual=std::max(w.pairLinearResidual,length(sum));w.pairAngularResidual=std::max(w.pairAngularResidual,length(torque));
         const auto before=w.rigid.mechanicalTotals();w.gravityImpulse+=w.gravity*(before.mass_kg*sub);
         w.gravityAngularImpulse+=cross(before.mass_first_moment_kg_m,w.gravity)*sub;
-        w.rigid.step(sub);const auto state=w.rigid.snapshot(1);const double angle=2*std::atan2(state.orientation_world.z,state.orientation_world.w);
+        w.rigid.step(sub);const auto state=w.rigid.snapshot(1);const double angle=2*banjo::pm::atan2(state.orientation_world.z,state.orientation_world.w);
         for(const auto &event:w.rigid.drainImpacts())if((event.body_a==1&&event.body_b>=100)||(event.body_b==1&&event.body_a>=100)){
             ++w.waterWheelContacts;if(w.contactEvents.size()<128)w.contactEvents.push_back({{"time_s",w.time+(tick+1)*sub},{"body_a",event.body_a},{"body_b",event.body_b},{"closing_speed_m_s",event.closing_speed_m_s},{"point_m",vec(event.contact_point_world_m)}});
         }

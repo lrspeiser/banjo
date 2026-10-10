@@ -7,6 +7,7 @@
 // 3D tab plays. Every stage is timed and reported against simulated time.
 
 #include "fracture/BondFailure.hpp"
+#include "numeric/PortableMath.hpp"
 #include "fracture/ConnectedComponents.hpp"
 #include "fracture/FragmentMassProperties.hpp"
 #include "material/MaterialCatalog.hpp"
@@ -185,7 +186,7 @@ Scene buildScene(const Options &o, bool heavy_clamps) {
     require(!s.free_nodes.empty(), "the clamped ring leaves no free cells; use at least 3 cells across");
     s.ball.radius_m = o.ball_radius_m;
     s.ball.contact_radius_m = o.ball_radius_m + 0.5 * o.cell_m;
-    s.ball.mass_kg = s.iron.density_kg_m3 * 4.0 / 3.0 * std::numbers::pi * std::pow(o.ball_radius_m, 3);
+    s.ball.mass_kg = s.iron.density_kg_m3 * 4.0 / 3.0 * std::numbers::pi * banjo::pm::pow(o.ball_radius_m, 3);
     s.ball.inertia_kg_m2 = 0.4 * s.ball.mass_kg * o.ball_radius_m * o.ball_radius_m;
     // On the tile's axis, with the nearest free node exactly gap_m outside the
     // contact radius. An even cell count has no node on the axis, so the first

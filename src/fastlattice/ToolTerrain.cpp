@@ -1,4 +1,5 @@
 #include "fastlattice/ToolTerrain.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include "material/Material.hpp"
 #include "rigid/JoltWorld.hpp"
@@ -42,7 +43,7 @@ constexpr double kArrivingS = 0.05;
 // them -- half a cell's diagonal across, or the point's own section if that is
 // bigger.
 [[nodiscard]] double pointRadius(const terrain::ToolPointShape &shape, double cell_m) {
-    return std::max(0.5 * std::hypot(shape.width_m, shape.thickness_m), 0.5 * std::sqrt(2.0) * cell_m);
+    return std::max(0.5 * banjo::pm::hypot(shape.width_m, shape.thickness_m), 0.5 * std::sqrt(2.0) * cell_m);
 }
 // How far back out of where it went in a point has to come before it is out.
 constexpr double kOutM = 0.01;
@@ -61,8 +62,8 @@ constexpr double kRockN = 1.0e7;
 }
 [[nodiscard]] Quat qAxisAngle(const Vec3 &axis, double angle) {
     const Vec3 k = normalized(axis);
-    const double s = std::sin(0.5 * angle);
-    return {std::cos(0.5 * angle), k.x * s, k.y * s, k.z * s};
+    const double s = banjo::pm::sin(0.5 * angle);
+    return {banjo::pm::cos(0.5 * angle), k.x * s, k.y * s, k.z * s};
 }
 [[nodiscard]] double qDot(const Quat &a, const Quat &b) {
     return a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
@@ -76,13 +77,13 @@ constexpr double kRockN = 1.0e7;
     if (c > 0.9995)
         return qNorm({a.w + t * (b.w - a.w), a.x + t * (b.x - a.x), a.y + t * (b.y - a.y),
                       a.z + t * (b.z - a.z)});
-    const double angle = std::acos(std::clamp(c, -1.0, 1.0));
-    const double s = std::sin(angle);
-    const double wa = std::sin((1.0 - t) * angle) / s, wb = std::sin(t * angle) / s;
+    const double angle = banjo::pm::acos(std::clamp(c, -1.0, 1.0));
+    const double s = banjo::pm::sin(angle);
+    const double wa = banjo::pm::sin((1.0 - t) * angle) / s, wb = banjo::pm::sin(t * angle) / s;
     return qNorm({wa * a.w + wb * b.w, wa * a.x + wb * b.x, wa * a.y + wb * b.y, wa * a.z + wb * b.z});
 }
 [[nodiscard]] double qAngle(const Quat &a, const Quat &b) {
-    return 2.0 * std::acos(std::clamp(std::abs(qDot(a, b)), 0.0, 1.0));
+    return 2.0 * banjo::pm::acos(std::clamp(std::abs(qDot(a, b)), 0.0, 1.0));
 }
 // The rotation taking three local axes onto three world ones (both
 // orthonormal and right-handed): R = W L^T.
@@ -609,7 +610,7 @@ void ToolTerrain::meet(const ToolTerrainHost &host, Point &p, MatterBodyId id, c
             std::snprintf(why, sizeof why,
                           "the point met the %s %.0f degrees off straight down: side-on, so it did not go "
                           "in -- an ordinary contact",
-                          layer.c_str(), std::acos(std::clamp(down, -1.0, 1.0)) * 180.0 / kPi);
+                          layer.c_str(), banjo::pm::acos(std::clamp(down, -1.0, 1.0)) * 180.0 / kPi);
             note(host, p, "glanced", layer, why, true, at, closing);
         }
         return;
@@ -1195,7 +1196,7 @@ std::optional<LiveStroke> ToolTerrain::plan(const ToolTerrainHost &host, const L
         const Vec3 rel_start = g_start - shoulder;
         const Vec3 flat_hit = rel_hit - dot(rel_hit, k) * k;
         const Vec3 flat_start = rel_start - dot(rel_start, k) * k;
-        const double from = std::atan2(dot(k, cross(flat_hit, flat_start)), dot(flat_hit, flat_start));
+        const double from = banjo::pm::atan2(dot(k, cross(flat_hit, flat_start)), dot(flat_hit, flat_start));
         const Vec3 correction = qAxisAngle(k, -from).rotate(rel_start) - rel_hit;
         constexpr int kArcPoints = 10;
         for (int i = 0; i <= kArcPoints; ++i) {

@@ -1,4 +1,5 @@
 #include "material/MaterialCompiler.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -289,7 +290,7 @@ double coefficientOfRestitutionFromDamping(double damping_ratio) {
     }
     const double denominator = std::sqrt(std::max(1.0e-12, 1.0 - damping * damping));
     return std::clamp(
-        std::exp(-std::numbers::pi * damping / denominator),
+        banjo::pm::exp(-std::numbers::pi * damping / denominator),
         0.0,
         1.0);
 }
@@ -302,7 +303,7 @@ double dampingRatioFromCoefficientOfRestitution(double restitution) {
     if (bounded <= 1.0e-12) {
         return 0.999999;
     }
-    const double logarithm = std::log(bounded);
+    const double logarithm = banjo::pm::log(bounded);
     return std::clamp(
         -logarithm /
             std::sqrt(std::numbers::pi * std::numbers::pi + logarithm * logarithm),

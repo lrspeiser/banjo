@@ -13,6 +13,7 @@
 // Nothing here precuts pieces, animates a shatter or launches a fragment.
 
 #include "fracture/ConnectedComponents.hpp"
+#include "numeric/PortableMath.hpp"
 #include "fracture/FragmentGeometry.hpp"
 #include "fracture/FragmentMassProperties.hpp"
 #include "fracture/PieceGeometry.hpp"
@@ -197,7 +198,7 @@ Scene buildScene(const Options &o) {
     // not a computed quantity; the lane itself has no time in it.
     const double shear_modulus = s.tile_material.young_modulus_pa / (2.0 * (1.0 + s.tile_material.poisson_ratio));
     const double rayleigh = 0.93 * std::sqrt(shear_modulus / s.tile_material.density_kg_m3);
-    s.crack_transit_s = 0.5 * std::hypot(s.tile_size.x, s.tile_size.z) / (0.55 * rayleigh);
+    s.crack_transit_s = 0.5 * banjo::pm::hypot(s.tile_size.x, s.tile_size.z) / (0.55 * rayleigh);
     return s;
 }
 
@@ -324,7 +325,7 @@ Json bondSetJson(const std::vector<std::uint32_t> &bonds, const Scene &s, const 
     for (const std::uint32_t b : bonds) {
         const BondRest &rest = s.asset.bonds[b];
         const Vec3 mid = 0.5 * (matter.reference_positions_world_m[rest.node_a] + matter.reference_positions_world_m[rest.node_b]);
-        radial += std::hypot(mid.x - s.options.offset_x_m, mid.z - s.options.offset_z_m);
+        radial += banjo::pm::hypot(mid.x - s.options.offset_x_m, mid.z - s.options.offset_z_m);
         layer += 0.5 * (s.asset.nodes[rest.node_a].grid.y + s.asset.nodes[rest.node_b].grid.y);
         if (list.size() < 64) list.push_back({{"bond", b}, {"a", rest.node_a}, {"b", rest.node_b}, {"mid_m", vec(mid)},
             {"mode", matter.bonds[b].failure_mode == BondFailureMode::Tension ? "tension" : matter.bonds[b].failure_mode == BondFailureMode::Shear ? "shear" : "compression"}});

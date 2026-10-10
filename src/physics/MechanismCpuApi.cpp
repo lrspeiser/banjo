@@ -1,5 +1,6 @@
 // Bounded ideal revolute-joint reference. SI, CPU FP64; no renderer dependency.
 #include <algorithm>
+#include "numeric/PortableMath.hpp"
 #include <cmath>
 #include <limits>
 #ifdef _WIN32
@@ -8,11 +9,11 @@
 #define BANJO_MECHANISM_EXPORT extern "C" __attribute__((visibility("default")))
 #endif
 namespace {
-double sinc(double x) { return std::abs(x)<1e-5 ? 1-x*x/6+x*x*x*x/120 : std::sin(x)/x; }
+double sinc(double x) { return std::abs(x)<1e-5 ? 1-x*x/6+x*x*x*x/120 : banjo::pm::sin(x)/x; }
 // Exact angle-integrated torque divided by angle increment, including its limit.
 double torque(double a,double b,double gravityTorque,double forceLever,double fx,double fy,double drive) {
     const double mid=.5*(a+b), scale=sinc(.5*(b-a));
-    return scale*(-gravityTorque*std::sin(mid)+forceLever*(fx*std::cos(mid)+fy*std::sin(mid)))+drive;
+    return scale*(-gravityTorque*banjo::pm::sin(mid)+forceLever*(fx*banjo::pm::cos(mid)+fy*banjo::pm::sin(mid)))+drive;
 }
 }
 BANJO_MECHANISM_EXPORT int banjo_mechanism_abi() { return 1; }
@@ -33,10 +34,10 @@ BANJO_MECHANISM_EXPORT int banjo_mechanism_step(const double* p,const double* be
     const double m=p[0], l=p[3]*.5,h=p[9],a=s[1],w=s[2];
     const bool pinned=p[8]==1;
     if(pinned&&s[7]==2) return -4; // Reattaching a moving object needs an impact law.
-    if(s[7]!=2) { s[3]=l*std::sin(a); s[4]=1.5-l*std::cos(a); s[5]=l*std::cos(a)*w; s[6]=l*std::sin(a)*w; }
+    if(s[7]!=2) { s[3]=l*banjo::pm::sin(a); s[4]=1.5-l*banjo::pm::cos(a); s[5]=l*banjo::pm::cos(a)*w; s[6]=l*banjo::pm::sin(a)*w; }
     const double inertia=pinned?p[1]:p[2], grav=pinned?m*p[4]*l:0,lever=pinned?p[3]:l;
     // Bounded unique-root regime; refusing an unresolved interval preserves state.
-    const double lipschitz=std::abs(grav)+lever*std::hypot(p[5],p[6]);
+    const double lipschitz=std::abs(grav)+lever*banjo::pm::hypot(p[5],p[6]);
     if(h*h*lipschitz/inertia>.25) return -5;
     double b=a+h*w; int it=0;
     for(;it<80;++it) {
@@ -49,8 +50,8 @@ BANJO_MECHANISM_EXPORT int banjo_mechanism_step(const double* p,const double* be
     const double w1=w+h*tq/inertia;
     double n[8]={s[0]+h,b,w1,0,0,0,0,1};
     if(pinned) {
-        n[3]=l*std::sin(b);n[4]=1.5-l*std::cos(b);
-        n[5]=l*std::cos(b)*w1;n[6]=l*std::sin(b)*w1;
+        n[3]=l*banjo::pm::sin(b);n[4]=1.5-l*banjo::pm::cos(b);
+        n[5]=l*banjo::pm::cos(b)*w1;n[6]=l*banjo::pm::sin(b)*w1;
         if(a==0&&w==0&&p[5]==0&&p[7]==0&&p[6]<=0) n[7]=0;
     } else {
         n[7]=2;n[5]=s[5]+h*p[5]/m;n[6]=s[6]+h*(p[6]/m-p[4]);
@@ -59,8 +60,8 @@ BANJO_MECHANISM_EXPORT int banjo_mechanism_step(const double* p,const double* be
     const auto kinetic=[&](const double* v) {return .5*m*(v[5]*v[5]+v[6]*v[6])+.5*p[2]*v[2]*v[2];};
     const double dk=kinetic(n)-kinetic(s),du=m*p[4]*(n[4]-s[4]);
     const double forceArm=pinned?p[3]:l;
-    const double tipdx=(pinned?0:n[3]-s[3])+forceArm*(std::sin(b)-std::sin(a));
-    const double tipdy=(pinned?0:n[4]-s[4])-forceArm*(std::cos(b)-std::cos(a));
+    const double tipdx=(pinned?0:n[3]-s[3])+forceArm*(banjo::pm::sin(b)-banjo::pm::sin(a));
+    const double tipdy=(pinned?0:n[4]-s[4])-forceArm*(banjo::pm::cos(b)-banjo::pm::cos(a));
     const double work=p[5]*tipdx+p[6]*tipdy+p[7]*(b-a);
     const double jx=h*p[5],jy=h*(p[6]-m*p[4]);
     const double rx=m*(n[5]-s[5])-jx,ry=m*(n[6]-s[6])-jy;

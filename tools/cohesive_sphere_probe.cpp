@@ -1,4 +1,5 @@
 #include "physics/CohesiveSphereWorld.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -50,7 +51,7 @@ void writeCase(std::ostream &out, const char *name, double speed, bool corotated
     const auto cohesive = facetLaw();
     std::vector<CohesiveFacetLaw> laws(topology.internal_facets.size(), cohesive);
     constexpr double radius = .012, sphere_density = 7870.;
-    const double sphere_mass = 4. / 3. * std::acos(-1.) * radius * radius * radius * sphere_density;
+    const double sphere_mass = 4. / 3. * banjo::pm::acos(-1.) * radius * radius * radius * sphere_density;
     PatchSphere sphere{{.007, .02 + radius + 2.e-5, .009}, {0, -speed, 0}, {},
                        radius, sphere_mass};
     CohesiveDynamicPatchOptions dynamics;

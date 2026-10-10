@@ -1,4 +1,5 @@
 #include "thermo/ThermoWorld.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -46,14 +47,14 @@ void require(bool ok, const std::string &message) {
 double pairTransfer(double ta, double tb, double ca, double cb, double conductance, double dt) {
     if (!(conductance > 0.0) || !(dt > 0.0) || !(ca > 0.0) || !(cb > 0.0) || ta == tb) return 0.0;
     const double rate = conductance * (1.0 / ca + 1.0 / cb);
-    const double settled = -std::expm1(-rate * dt);
+    const double settled = -banjo::pm::expm1(-rate * dt);
     return (ca * cb / (ca + cb)) * (ta - tb) * settled;
 }
 
 // Exact relaxation of one parcel towards a fixed temperature: the energy that leaves it.
 double relaxTransfer(double t, double fixed, double capacity, double conductance, double dt) {
     if (!(conductance > 0.0) || !(dt > 0.0) || !(capacity > 0.0) || t == fixed) return 0.0;
-    return capacity * (t - fixed) * -std::expm1(-conductance * dt / capacity);
+    return capacity * (t - fixed) * -banjo::pm::expm1(-conductance * dt / capacity);
 }
 
 // sigma eps A (T1^2 + T2^2)(T1 + T2): times (T1 - T2) it is exactly
@@ -604,7 +605,7 @@ struct ThermoWorld::Impl {
                 if (!(p.kg[basis] > 0.0) || t < reaction.rate.minimum_temperature_k) continue;
                 const double evaluated = std::min(t, reaction.rate.maximum_temperature_k);
                 const double k = reaction.rate.pre_exponential *
-                                 std::exp(-reaction.rate.activation_temperature_k / evaluated);
+                                 banjo::pm::exp(-reaction.rate.activation_temperature_k / evaluated);
                 double rate = 0.0;
                 if (reaction.rate.kind == RateKind::Surface) {
                     double flux = k;
@@ -645,7 +646,7 @@ struct ThermoWorld::Impl {
                 const Reaction &reaction = model.reactions[g.reaction];
                 const std::size_t basis = reaction.reactants.front().substance;
                 double extent = reaction.rate.kind == RateKind::Volume
-                                    ? p.kg[basis] * -std::expm1(-g.k * h)
+                                    ? p.kg[basis] * -banjo::pm::expm1(-g.k * h)
                                     : g.rate * h;
                 for (const Term &term : reaction.reactants) {
                     if (term.supply == Supply::Material) {
@@ -1104,8 +1105,8 @@ void ThermoWorld::declareGasRegion(const GasRegionDeclaration &d) {
         boundary.base_m = face - axis * (volume / area);
         region.piston = boundary;
     }
-    const double height = area > 0.0 ? volume / area : std::cbrt(volume);
-    const double side = area > 0.0 ? std::sqrt(area) : std::cbrt(volume);
+    const double height = area > 0.0 ? volume / area : banjo::pm::cbrt(volume);
+    const double side = area > 0.0 ? std::sqrt(area) : banjo::pm::cbrt(volume);
     region.wall_conductance_w_k =
         d.wall_conductance_w_k >= 0.0
             ? d.wall_conductance_w_k
@@ -1354,7 +1355,7 @@ void ThermoWorld::split(const std::string &body,
         // Meltwater not yet handed over goes with the pieces, by share, so the
         // host still puts every kilogram of it somewhere.
         piece.meltwater_kg = parent.meltwater_kg * share;
-        piece.area_m2 = parent.area_m2 * std::cbrt(share * share);
+        piece.area_m2 = parent.area_m2 * banjo::pm::cbrt(share * share);
         piece.exposed_area_m2 = piece.area_m2;
         piece.volume_m3 = parent.volume_m3 * share;
         piece.mirrored_mass_kg = -1.0;   // the host has not set this mass yet

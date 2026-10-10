@@ -1,4 +1,5 @@
 #include "physics/PointRigidContact.hpp"
+#include "numeric/PortableMath.hpp"
 #include "physics/ContactTensor.hpp"
 
 #include <algorithm>
@@ -11,7 +12,7 @@
 namespace banjo {
 namespace {
 bool finite(Vec3 v) { return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z); }
-double norm(Vec3 v) { return std::hypot(v.x,v.y,v.z); }
+double norm(Vec3 v) { return banjo::pm::hypot(v.x,v.y,v.z); }
 void require(bool ok,const char *why) { if (!ok) throw std::invalid_argument(why); }
 
 double kinetic(const ActiveNodeState &node,const RigidMechanicalState &rigid) {
@@ -38,8 +39,8 @@ Vec3 slidingImpulse(Vec3 relative,Vec3 normal,const Mat3 &effective,
     const double tolerance=1e-11*std::max(norm(relative),std::abs(wanted));
     const auto candidate=[&](double angle) {
         ++iterations;
-        const Vec3 direction=std::cos(angle)*u+std::sin(angle)*v;
-        const Vec3 perpendicular=-std::sin(angle)*u+std::cos(angle)*v;
+        const Vec3 direction=banjo::pm::cos(angle)*u+banjo::pm::sin(angle)*v;
+        const Vec3 perpendicular=-banjo::pm::sin(angle)*u+banjo::pm::cos(angle)*v;
         const Vec3 response=effective*(normal-mu*direction);
         const double denominator=dot(normal,response);
         SlipCandidate out;
@@ -57,8 +58,8 @@ Vec3 slidingImpulse(Vec3 relative,Vec3 normal,const Mat3 &effective,
         const auto here=candidate(angle);
         if (!here.valid) break;
         if (std::abs(here.residual)<=tolerance&&here.alignment>=0) return here.impulse;
-        const Vec3 direction=std::cos(angle)*u+std::sin(angle)*v;
-        const Vec3 perpendicular=-std::sin(angle)*u+std::cos(angle)*v;
+        const Vec3 direction=banjo::pm::cos(angle)*u+banjo::pm::sin(angle)*v;
+        const Vec3 perpendicular=-banjo::pm::sin(angle)*u+banjo::pm::cos(angle)*v;
         const Vec3 response=effective*(normal-mu*direction);
         const Vec3 derivative=effective*(-mu*perpendicular);
         const double denominator=dot(normal,response);

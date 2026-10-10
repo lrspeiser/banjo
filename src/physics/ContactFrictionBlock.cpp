@@ -1,4 +1,5 @@
 #include "physics/ContactFrictionBlock.hpp"
+#include "numeric/PortableMath.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -14,13 +15,13 @@ Pair disk(double a,double b,double c,Pair q,double cap){
         return Pair{(b*q[1]-cc*q[0])/det,(b*q[0]-aa*q[1])/det};
     };
     Pair p=at(0);
-    if(std::hypot(p[0],p[1])<=cap)return p;
+    if(banjo::pm::hypot(p[0],p[1])<=cap)return p;
     // For SPD H, |(H+eta I)^-1 q| <= |q|/eta. The right endpoint
     // is feasible, so returned impulses never exceed the specified disk.
-    double lo=0,hi=std::hypot(q[0],q[1])/cap;
+    double lo=0,hi=banjo::pm::hypot(q[0],q[1])/cap;
     for(unsigned i=0;i<64;++i){
         const double mid=lo+(hi-lo)*.5;p=at(mid);
-        if(std::hypot(p[0],p[1])>cap)lo=mid;else hi=mid;
+        if(banjo::pm::hypot(p[0],p[1])>cap)lo=mid;else hi=mid;
     }
     return at(hi);
 }

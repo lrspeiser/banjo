@@ -1,4 +1,5 @@
 #include "physics/SpherePatchWorld.hpp"
+#include "numeric/PortableMath.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -30,7 +31,7 @@ json run(bool plastic, double energy_budget, unsigned refinement, bool verlet) {
         if (definition.reference_positions_m[i].y == 0)
             definition.fixed_components[i] = {true, true, true};
     constexpr double radius = .012;
-    const double mass = 4. / 3 * std::acos(-1.) * radius * radius * radius * 7870;
+    const double mass = 4. / 3 * banjo::pm::acos(-1.) * radius * radius * radius * 7870;
     SpherePatchWorld world(
         definition, {{.007, .0325, .009}, {}, {}, radius, mass},
         {.integrator = verlet ? DynamicPatchIntegrator::VelocityVerlet

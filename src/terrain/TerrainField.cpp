@@ -1,4 +1,5 @@
 #include "terrain/TerrainField.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include "material/MaterialCatalog.hpp"
 
@@ -21,7 +22,7 @@ constexpr double kThin = 1.0e-4;
 double criticalHeight(const GroundMaterial &m) {
     if (!(m.cohesion_pa > 0.0)) return 0.0;
     const double gamma = m.density_kg_m3 * kGravity;
-    return 2.67 * (m.cohesion_pa / gamma) * std::tan((45.0 + 0.5 * m.friction_angle_deg) * kPi / 180.0);
+    return 2.67 * (m.cohesion_pa / gamma) * banjo::pm::tan((45.0 + 0.5 * m.friction_angle_deg) * kPi / 180.0);
 }
 
 // A volume onto the kind it is made of. Loose soil is soil: it is the same
@@ -48,7 +49,7 @@ void addByKind(Volumes &v, RunKind kind, double m3) {
 } // namespace
 
 double TerrainField::stableDrop(const GroundMaterial &material, double run_m) {
-    const double friction = run_m * std::tan(material.friction_angle_deg * kPi / 180.0);
+    const double friction = run_m * banjo::pm::tan(material.friction_angle_deg * kPi / 180.0);
     return std::max(friction, criticalHeight(material)) + 2.0 * kStopLayerM;
 }
 
@@ -342,7 +343,7 @@ double TerrainField::slopeDeg(std::size_t c) const {
     const int j0 = std::max(0, j - 1), j1 = std::min(grid_.nz - 1, j + 1);
     const double gx = (height(grid_.at(i1, j)) - height(grid_.at(i0, j))) / ((i1 - i0) * grid_.dx);
     const double gz = (height(grid_.at(i, j1)) - height(grid_.at(i, j0))) / ((j1 - j0) * grid_.dx);
-    return std::atan(std::hypot(gx, gz)) * 180.0 / kPi;
+    return banjo::pm::atan(banjo::pm::hypot(gx, gz)) * 180.0 / kPi;
 }
 
 double TerrainField::lowest() const {
@@ -755,7 +756,7 @@ EditReport TerrainField::deposit(double x, double z, double radius_m, double san
     for (int j = cj - reach; j <= cj + reach; ++j)
         for (int i = ci - reach; i <= ci + reach; ++i) {
             if (i < 0 || j < 0 || i >= grid_.nx || j >= grid_.nz) continue;
-            const double d = std::hypot(grid_.xOf(i) - x, grid_.zOf(j) - z);
+            const double d = banjo::pm::hypot(grid_.xOf(i) - x, grid_.zOf(j) - z);
             const double w = std::max(0.0, 1.0 - d / radius_m);
             if (w <= 0.0) continue;
             weights.emplace_back(grid_.at(i, j), w);
@@ -882,8 +883,8 @@ Relaxed TerrainField::relax(double dt_s) {
     frontier_.clear();
     std::set<std::size_t> changed;
     const double hc_soil = criticalHeight(soilMaterial());
-    const double tan_sand = std::tan(sandMaterial().friction_angle_deg * kPi / 180.0);
-    const double tan_soil = std::tan(soilMaterial().friction_angle_deg * kPi / 180.0);
+    const double tan_sand = banjo::pm::tan(sandMaterial().friction_angle_deg * kPi / 180.0);
+    const double tan_soil = banjo::pm::tan(soilMaterial().friction_angle_deg * kPi / 180.0);
     static constexpr int kDi[8] = {1, -1, 0, 0, 1, 1, -1, -1};
     static constexpr int kDj[8] = {0, 0, 1, -1, 1, -1, 1, -1};
     for (const std::size_t c : now) {

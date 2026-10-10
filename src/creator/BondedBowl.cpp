@@ -1,4 +1,5 @@
 #include "creator/BondedBowl.hpp"
+#include "numeric/PortableMath.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -12,7 +13,7 @@ const MaterialDefinition &referenceMaterial(MaterialPreset p){
  static const auto catalog=[] {std::array<MaterialDefinition,8> v;for(unsigned i=0;i<v.size();++i)v[i]=makeReferenceMaterial(static_cast<MaterialPreset>(i));return v;}();
  return catalog.at(static_cast<unsigned>(p));
 }
-Quat tilt(double degrees){double a=degrees*std::numbers::pi/360;return {std::cos(a),0,0,std::sin(a)};}
+Quat tilt(double degrees){double a=degrees*std::numbers::pi/360;return {banjo::pm::cos(a),0,0,banjo::pm::sin(a)};}
 double kinetic(const BowlCell &c){return .5*c.mass*lengthSquared(c.v)+.5*c.inertia*lengthSquared(c.spin);}
 }
 void BondedBowl::add(MatterBodyId id,MaterialPreset preset,double radius,const RigidSnapshot &s){
@@ -77,7 +78,7 @@ std::vector<BondedBowl::Contact> BondedBowl::contacts() const{
   }
  }
  if(support&&!flat_support){const auto rot=tilt(tilt_degrees),inv=tilt(-tilt_degrees);const double a=bowl_depth/(bowl_radius*bowl_radius);const auto &ms=referenceMaterial(surface);
-  for(unsigned i=0;i<cells.size();++i){auto &c=cells[i];Vec3 p=inv.rotate(c.x);double rho=std::hypot(p.x,p.z);
+  for(unsigned i=0;i<cells.size();++i){auto &c=cells[i];Vec3 p=inv.rotate(c.x);double rho=banjo::pm::hypot(p.x,p.z);
    if(rho>bowl_radius+c.radius||p.y-a*rho*rho>c.radius*2)continue;
    // Closest point on the paraboloid of revolution (bounded interior Newton).
    double r=std::min(rho,bowl_radius);for(unsigned it=0;it<12;++it){double f=r+2*a*r*(a*r*r-p.y)-rho,df=1+6*a*a*r*r-2*a*p.y; if(df<=0)break;double nr=std::clamp(r-f/df,0.,bowl_radius);if(std::abs(nr-r)<1e-13){r=nr;break;}r=nr;}
@@ -100,13 +101,13 @@ void BondedBowl::forces(std::vector<Vec3> &f,const std::vector<Contact> &c) cons
 void BondedBowl::dissipate(double dt,const std::vector<Contact> &c){
  // Exact dissipative pair maps. Central internal damping conserves angular
  // momentum. Surface friction includes finite-cell spin at one common point.
- for(unsigned i=0;i<links.size();++i){auto &e=links[i];if(!e.live)continue;auto &a=cells[e.a];auto &b=cells[e.b];Vec3 n=normalized(b.x-a.x);double rel=dot(b.v-a.v,n),mu=1/(1/a.mass+1/b.mass);double j=rel*(dt==step_limit_?damping_impulse_factors_[i]:mu*(-std::expm1(-e.damping*dt/mu)));
+ for(unsigned i=0;i<links.size();++i){auto &e=links[i];if(!e.live)continue;auto &a=cells[e.a];auto &b=cells[e.b];Vec3 n=normalized(b.x-a.x);double rel=dot(b.v-a.v,n),mu=1/(1/a.mass+1/b.mass);double j=rel*(dt==step_limit_?damping_impulse_factors_[i]:mu*(-banjo::pm::expm1(-e.damping*dt/mu)));
   double before=kinetic(a)+kinetic(b);a.v+=n*(j/a.mass);b.v-=n*(j/b.mass);ledger.internal_damping_j+=before-kinetic(a)-kinetic(b);}
  for(auto &p:c){auto &a=cells[p.a];BowlCell *b=p.fixed?nullptr:&cells[p.b];Vec3 ra=p.point-a.x,rb=b?p.point-b->x:Vec3{};
   auto relative=[&]{return a.v+cross(a.spin,ra)-(b?b->v+cross(b->spin,rb):Vec3{});};
   auto apply=[&](Vec3 j){a.v+=j/a.mass;a.spin+=cross(ra,j)/a.inertia;if(b){b->v-=j/b->mass;b->spin-=cross(rb,j)/b->inertia;}else{ledger.support_impulse+=j;ledger.support_angular_impulse+=cross(p.point,j);}};
   double inv=1/a.mass+(b?1/b->mass:0.),vn=dot(relative(),p.n),normalImpulse=p.stiffness*p.compression*dt;
-  if(vn<0){double mu=1/inv,coefficient=2*p.damping*std::sqrt(p.stiffness*mu),j=-mu*vn*(-std::expm1(-coefficient*dt/mu));double before=kinetic(a)+(b?kinetic(*b):0);apply(p.n*j);ledger.contact_damping_j+=before-kinetic(a)-(b?kinetic(*b):0);normalImpulse+=j;}
+  if(vn<0){double mu=1/inv,coefficient=2*p.damping*std::sqrt(p.stiffness*mu),j=-mu*vn*(-banjo::pm::expm1(-coefficient*dt/mu));double before=kinetic(a)+(b?kinetic(*b):0);apply(p.n*j);ledger.contact_damping_j+=before-kinetic(a)-(b?kinetic(*b):0);normalImpulse+=j;}
   Vec3 tangent=relative()-p.n*dot(relative(),p.n);double speed=length(tangent);if(speed>1e-14){Vec3 t=tangent/speed;double inverse=inv+lengthSquared(cross(ra,t))/a.inertia+(b?lengthSquared(cross(rb,t))/b->inertia:0.);double j=std::min(speed/inverse,p.friction*normalImpulse);double before=kinetic(a)+(b?kinetic(*b):0);apply(t*(-j));ledger.friction_j+=before-kinetic(a)-(b?kinetic(*b):0);}
  }
 }
@@ -127,7 +128,7 @@ bool BondedBowl::step(double dt,unsigned depth){
   double next=std::sqrt(v*v+2*release/mu);
   double j=release>0?mu*(next-v):0;a.v-=n*(j/a.mass);b.v+=n*(j/b.mass);
   ledger.elastic_release_j+=release;e.live=false;
-  breaks.push_back({time_+dt,i,a.object,e.work,.5*e.stiffness*std::pow(length(b.x-a.x)-e.rest,2)-e.threshold_energy,release});
+  breaks.push_back({time_+dt,i,a.object,e.work,.5*e.stiffness*banjo::pm::pow(length(b.x-a.x)-e.rest,2)-e.threshold_energy,release});
  }
  ledger.fracture_work_j+=work;ledger.event_overshoot_j+=overshoot;
  c=contacts();forces(f,c);
@@ -138,7 +139,7 @@ bool BondedBowl::step(double dt,unsigned depth){
 void BondedBowl::advance(double seconds){
  if(!std::isfinite(seconds)||seconds<=0||seconds>.005||step_limit_<=0)throw std::invalid_argument("bounded bowl advance requires initialized world and <=5 ms");
  damping_impulse_factors_.resize(links.size());
- for(unsigned i=0;i<links.size();++i){auto &e=links[i];double mu=1/(1/cells[e.a].mass+1/cells[e.b].mass);damping_impulse_factors_[i]=mu*(-std::expm1(-e.damping*step_limit_/mu));}
+ for(unsigned i=0;i<links.size();++i){auto &e=links[i];double mu=1/(1/cells[e.a].mass+1/cells[e.b].mass);damping_impulse_factors_[i]=mu*(-banjo::pm::expm1(-e.damping*step_limit_/mu));}
  // Exact common free flight before the first contact. Distance bounds prevent
  // stepping across a cell/support or cell/cell encounter. No elastic mode is
  // suppressed after impact; this path requires zero internal relative motion.
@@ -146,7 +147,7 @@ void BondedBowl::advance(double seconds){
  for(auto &c:cells)if(length(c.v-common)>1e-12||length(c.spin)>1e-12)free=false;
  for(auto &e:links)if(std::abs(length(cells[e.b].x-cells[e.a].x)-e.rest)>1e-12)free=false;
  if(free){double travel=length(common)*seconds+.5*length(gravity)*seconds*seconds;auto inv=tilt(-tilt_degrees);double a=bowl_depth/(bowl_radius*bowl_radius);
-  if(support)for(auto &c:cells){Vec3 p=inv.rotate(c.x);double rho=std::hypot(p.x,p.z);double bound=(p.y-a*rho*rho)/std::sqrt(1+4*a*a*std::pow(bowl_radius+c.radius+travel,2))-c.radius;if(bound<=travel)free=false;}
+  if(support)for(auto &c:cells){Vec3 p=inv.rotate(c.x);double rho=banjo::pm::hypot(p.x,p.z);double bound=(p.y-a*rho*rho)/std::sqrt(1+4*a*a*banjo::pm::pow(bowl_radius+c.radius+travel,2))-c.radius;if(bound<=travel)free=false;}
   if(!contacts().empty())free=false;
   if(free){for(auto &c:cells){Vec3 old=c.x;c.x+=common*seconds+gravity*(.5*seconds*seconds);c.v+=gravity*seconds;ledger.gravity_impulse+=gravity*(c.mass*seconds);ledger.gravity_angular_impulse+=cross((old+c.x)*.5,gravity*(c.mass*seconds));}time_+=seconds;return;}
  }
@@ -158,7 +159,7 @@ void BondedBowl::advance(double seconds){
   if(std::abs(energyResidual())>.01*std::max(std::abs(ledger.initial_energy_j),1e-6))throw std::runtime_error("bowl total energy error exceeds 1% budget");
  }catch(...){cells=std::move(savedCells);links=std::move(savedLinks);ledger=savedLedger;breaks=std::move(savedBreaks);time_=savedTime;throw;}
 }
-double BondedBowl::energy() const{double sum=0;for(auto &p:cells)sum+=kinetic(p)-p.mass*dot(gravity,p.x);for(auto &e:links)if(e.live)sum+=.5*e.stiffness*std::pow(length(cells[e.b].x-cells[e.a].x)-e.rest,2);for(auto &c:contacts())sum+=.5*c.stiffness*c.compression*c.compression;return sum;}
+double BondedBowl::energy() const{double sum=0;for(auto &p:cells)sum+=kinetic(p)-p.mass*dot(gravity,p.x);for(auto &e:links)if(e.live)sum+=.5*e.stiffness*banjo::pm::pow(length(cells[e.b].x-cells[e.a].x)-e.rest,2);for(auto &c:contacts())sum+=.5*c.stiffness*c.compression*c.compression;return sum;}
 double BondedBowl::energyResidual() const{return energy()+ledger.fracture_work_j+ledger.event_overshoot_j+ledger.internal_damping_j+ledger.contact_damping_j+ledger.friction_j-ledger.initial_energy_j;}
 Vec3 BondedBowl::momentum() const{Vec3 p;for(auto &c:cells)p+=c.v*c.mass;return p;}
 Vec3 BondedBowl::angularMomentum() const{Vec3 p;for(auto &c:cells)p+=cross(c.x,c.v*c.mass)+c.spin*c.inertia;return p;}

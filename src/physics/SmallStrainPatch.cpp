@@ -1,4 +1,5 @@
 #include "physics/SmallStrainPatch.hpp"
+#include "numeric/PortableMath.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -39,7 +40,7 @@ double vectorDot(const std::vector<Vec3> &a,const std::vector<Vec3> &b) {
     double value=0;for(std::size_t i=0;i<a.size();++i)value+=dot(a[i],b[i]);return value;
 }
 double norm(const std::vector<Vec3> &v) {
-    double value=0;for(auto entry:v){require(finite(entry),"Nonfinite patch vector");value=std::hypot(value,std::hypot(entry.x,entry.y,entry.z));}return value;
+    double value=0;for(auto entry:v){require(finite(entry),"Nonfinite patch vector");value=banjo::pm::hypot(value,banjo::pm::hypot(entry.x,entry.y,entry.z));}return value;
 }
 void zeroFixed(std::vector<Vec3> &v,const std::vector<std::array<bool,3>> &fixed) {
     for(std::size_t i=0;i<v.size();++i)for(unsigned a=0;a<3;++a)if(fixed[i][a])setComponent(v[i],a,0);

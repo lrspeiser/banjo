@@ -1,5 +1,6 @@
 #pragma once
 #include "fastlattice/FastLattice.hpp"
+#include "numeric/PortableMath.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -30,15 +31,15 @@ struct ContactAccuracyDifference {
     bool error_is_vector{};
 };
 inline double contactRotationDistance(Quat a,Quat b) {
-    const double an=std::hypot(std::hypot(a.w,a.x),std::hypot(a.y,a.z));
-    const double bn=std::hypot(std::hypot(b.w,b.x),std::hypot(b.y,b.z));
+    const double an=banjo::pm::hypot(banjo::pm::hypot(a.w,a.x),banjo::pm::hypot(a.y,a.z));
+    const double bn=banjo::pm::hypot(banjo::pm::hypot(b.w,b.x),banjo::pm::hypot(b.y,b.z));
     if(!std::isfinite(an)||!std::isfinite(bn)||an<=0||bn<=0)
         throw std::invalid_argument("contact accuracy source rotation is invalid");
     const double aw=a.w/an,ax=a.x/an,ay=a.y/an,az=a.z/an;
     const double bw=b.w/bn,bx=b.x/bn,by=b.y/bn,bz=b.z/bn;
-    const double minus=std::hypot(std::hypot(aw-bw,ax-bx),std::hypot(ay-by,az-bz));
-    const double plus=std::hypot(std::hypot(aw+bw,ax+bx),std::hypot(ay+by,az+bz));
-    return 4*std::asin(std::min(1.0,.5*std::min(minus,plus)));
+    const double minus=banjo::pm::hypot(banjo::pm::hypot(aw-bw,ax-bx),banjo::pm::hypot(ay-by,az-bz));
+    const double plus=banjo::pm::hypot(banjo::pm::hypot(aw+bw,ax+bx),banjo::pm::hypot(ay+by,az+bz));
+    return 4*banjo::pm::asin(std::min(1.0,.5*std::min(minus,plus)));
 }
 class ContactAccuracyComparison {
 public:

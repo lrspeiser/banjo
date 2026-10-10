@@ -1,4 +1,5 @@
 #include "thermal/ThermalKernel.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -217,7 +218,7 @@ PairExchangeResult exchangePairExact(
     const double rate_per_s = conductance_w_k * (1.0 / c1 + 1.0 / c2);
     const double exponent = rate_per_s * dt_s;
     const double one_minus_decay =
-        std::isfinite(exponent) ? -std::expm1(-exponent) : 1.0;
+        std::isfinite(exponent) ? -banjo::pm::expm1(-exponent) : 1.0;
     const double equilibrium_first_energy = combined_energy * (c1 / combined_capacity);
     requireFiniteResult(equilibrium_first_energy, "equilibrium energy");
     double transfer =
@@ -256,7 +257,7 @@ ReactionResult reactAdiabatic(
 
     const double exponent = reaction.maximum_rate_per_s * dt_s;
     const double reacted_fraction =
-        std::isfinite(exponent) ? -std::expm1(-exponent) : 1.0;
+        std::isfinite(exponent) ? -banjo::pm::expm1(-exponent) : 1.0;
     const double kinetic_limit_kg = state.remaining_fuel_kg * reacted_fraction;
     const double oxygen_limit_kg =
         state.available_oxygen_kg / reaction.oxygen_required_kg_per_kg_fuel;

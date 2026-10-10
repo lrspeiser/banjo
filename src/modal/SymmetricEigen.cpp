@@ -1,4 +1,5 @@
 #include "modal/SymmetricEigen.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -114,7 +115,7 @@ void tridiagonalQL(std::vector<double> &d, std::vector<double> &e, ColumnMajor &
             if (m == l) break;
             if (++iterations > 200) throw std::runtime_error("symmetric QL did not converge");
             double g = (d[l + 1] - d[l]) / (2.0 * e[l]);
-            double r = std::hypot(g, 1.0);
+            double r = banjo::pm::hypot(g, 1.0);
             g = d[m] - d[l] + e[l] / (g + (g >= 0.0 ? std::abs(r) : -std::abs(r)));
             double s = 1.0, c = 1.0, p = 0.0;
             std::size_t i = m;
@@ -122,7 +123,7 @@ void tridiagonalQL(std::vector<double> &d, std::vector<double> &e, ColumnMajor &
             while (i-- > l) {
                 const double f = s * e[i];
                 const double b = c * e[i];
-                r = std::hypot(f, g);
+                r = banjo::pm::hypot(f, g);
                 e[i + 1] = r;
                 if (r == 0.0) {
                     d[i + 1] -= p;
@@ -256,7 +257,7 @@ RankOneUpdateStats updateRankOne(
     for (std::size_t idx : order) {
         if (!active[idx]) continue;
         if (previous < n && std::abs(d[idx] - d[previous]) <= tol) {
-            const double r = std::hypot(zt[previous], zt[idx]);
+            const double r = banjo::pm::hypot(zt[previous], zt[idx]);
             const double c = zt[previous] / r, s = zt[idx] / r;
             rotateColumns(vectors, previous, idx, c, s);
             for (auto *state : co_transform) {

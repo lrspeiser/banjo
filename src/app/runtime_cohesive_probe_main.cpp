@@ -1,4 +1,5 @@
 #include "rigid/JoltWorld.hpp"
+#include "numeric/PortableMath.hpp"
 #include "physics/CohesiveInterface.hpp"
 #include "material/MaterialCatalog.hpp"
 #include <Jolt/Jolt.h>
@@ -66,7 +67,7 @@ int main(int argc,char **argv){try {
         }
         const double actual_speed=world.snapshot(2).linear_velocity_m_s.x-world.snapshot(1).linear_velocity_m_s.x;
         const double oracle_error=fracture?std::abs(actual_speed-std::sqrt(2*(e0-work)/mu))/speed:
-            std::abs(history.opening_m-q0*std::cos(omega*dt*count))/q0;
+            std::abs(history.opening_m-q0*banjo::pm::cos(omega*dt*count))/q0;
         out<<materialPresetName(preset)<<','<<8*sizeof(JPH::Real)<<','<<offset<<','<<(fracture?"separation":"elastic")<<','<<count<<','<<dt*count<<','<<history.opening_m<<','<<response.separated<<','<<response.dissipated_energy_j<<','<<e0<<','<<max_e<<','<<transfer_error<<','<<absolute_transfer_error<<','<<max_splitting_error<<','<<max_p<<','<<oracle_error<<','<<jolt_surfaces<<','<<contact_events<<'\n';
         if(count==1024) {
             const bool accurate=fracture?(response.separated&&std::abs(response.dissipated_energy_j-work)<work*1e-12&&max_e<work*1e-4&&oracle_error<1e-5):

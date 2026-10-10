@@ -1,4 +1,5 @@
 #include "platform/VoxelImpactWorld.hpp"
+#include "numeric/PortableMath.hpp"
 #include "rigid/JoltWorld.hpp"
 #include "rigid/RigidComponent.hpp"
 #include "physics/BoxSweep.hpp"
@@ -355,7 +356,7 @@ struct VoxelImpactWorld::Impl {
         grid(1,sheet,{.4,thickness,.4},{0,.5+thickness/2,0},n,1,n,false);
         const auto enabled=d.value("ball_enabled",Json(true));if(!enabled.is_boolean())throw std::invalid_argument("ball_enabled must be boolean");
         if(enabled.get<bool>()){
-            const double diameter=std::cbrt(mass/(makeReferenceMaterial(ball).density_kg_m3*.5));
+            const double diameter=banjo::pm::cbrt(mass/(makeReferenceMaterial(ball).density_kg_m3*.5));
             grid(2,ball,{diameter,diameter,diameter},{x,.5+thickness+height+diameter/2,z},4,4,4,true);
         }
         if(internal.size()>4096)throw std::invalid_argument("voxel neighbour budget exceeded");
@@ -559,7 +560,7 @@ struct VoxelImpactWorld::Impl {
                 m={dot(torque,frame.translation_axes_world[0]),dot(torque,frame.translation_axes_world[1]),dot(torque,frame.translation_axes_world[2])};
             }
             const double tensile=std::max(0.,-f.x)/b.area+std::abs(m.y)*b.height/(2*b.iy)+std::abs(m.z)*b.width/(2*b.iz);
-            const double shear=std::hypot(f.y,f.z)/b.area+std::abs(m.x)*std::max(b.width,b.height)/(2*(b.iy+b.iz));
+            const double shear=banjo::pm::hypot(f.y,f.z)/b.area+std::abs(m.x)*std::max(b.width,b.height)/(2*(b.iy+b.iz));
             const double ratio=std::max(tensile/b.strength,shear/b.shear);peak_stress_ratio=std::max(peak_stress_ratio,ratio);
             if(b.brittle&&ratio>=1&&b.energy>=b.gc*b.area){
                 const double work=b.gc*b.area;fracture+=work;discarded_elastic+=b.energy-work;

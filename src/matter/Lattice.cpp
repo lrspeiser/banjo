@@ -1,4 +1,5 @@
 #include "matter/Lattice.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -381,7 +382,7 @@ LatticeAsset generateVoxelLattice(
               node_by_grid.contains({g.x, g.y, g.z + 1}) && node_by_grid.contains({g.x, g.y, g.z - 1}));
     }
 
-    asset.recipe = {0.5 * h * std::cbrt(static_cast<double>(asset.nodes.size())), h,
+    asset.recipe = {0.5 * h * banjo::pm::cbrt(static_cast<double>(asset.nodes.size())), h,
                     recipe.neighbor_horizon_cells, 1U};
     asset.total_mass_kg = asset.represented_volume_m3 * material.density_kg_m3;
     Vec3 weighted_center{};
@@ -420,7 +421,7 @@ LatticeResolutionLimit measureLatticeResolutionLimit(
     }
     if (limit.fastest_mode_angular_frequency_rad_s > 0.0) {
         limit.fastest_mode_period_s =
-            2.0 * std::acos(-1.0) / limit.fastest_mode_angular_frequency_rad_s;
+            2.0 * banjo::pm::acos(-1.0) / limit.fastest_mode_angular_frequency_rad_s;
         limit.explicit_substep_limit_s = 2.0 / limit.fastest_mode_angular_frequency_rad_s;
     }
     return limit;

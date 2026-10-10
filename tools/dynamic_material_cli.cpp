@@ -1,4 +1,5 @@
 #include "MaterialJson.hpp"
+#include "numeric/PortableMath.hpp"
 #include "physics/SpherePatchWorld.hpp"
 
 #include <algorithm>
@@ -126,7 +127,7 @@ Json runCase(const Request &request, const material_json::Material &material) {
     for (std::size_t i = 0; i < definition.reference_positions_m.size(); ++i)
         if (definition.reference_positions_m[i].y == 0)
             definition.fixed_components[i] = {true, true, true};
-    const double pi = std::acos(-1.);
+    const double pi = banjo::pm::acos(-1.);
     const double sphere_mass = 4. / 3 * pi * request.radius * request.radius * request.radius *
                                request.sphere_density;
     const Vec3 center{request.offset_x,

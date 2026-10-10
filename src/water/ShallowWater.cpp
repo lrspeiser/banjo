@@ -1,4 +1,5 @@
 #include "water/ShallowWater.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -526,7 +527,7 @@ double ShallowWater::waveSpeed() const {
     for (const Inflow &inflow : inflows_) {
         const int faces = inflow.to - inflow.from + 1;
         const double q = inflow.discharge_m3_s / (faces * grid_.dx);
-        const double h = std::cbrt(q * q / g);
+        const double h = banjo::pm::cbrt(q * q / g);
         if (h > 0.0) fastest = std::max(fastest, q / h + std::sqrt(g * h));
     }
     return std::max(fastest, farSideSpeed());
@@ -577,7 +578,7 @@ void ShallowWater::substep(double dt) {
                 ledger_.impulse_in_x_n_s += impulse_x_[c];
                 ledger_.impulse_in_z_n_s += impulse_z_[c];
             } else {
-                ledger_.impulse_dropped_n_s += std::hypot(impulse_x_[c], impulse_z_[c]);
+                ledger_.impulse_dropped_n_s += banjo::pm::hypot(impulse_x_[c], impulse_z_[c]);
             }
             impulse_x_[c] = 0.0;
             impulse_z_[c] = 0.0;
@@ -640,7 +641,7 @@ void ShallowWater::substep(double dt) {
             if (!(q > 0.0)) return;
             // Water arriving at this rate is at least critically deep: it
             // cannot be thinner than that and still carry the discharge.
-            const double critical = std::cbrt(q * q / g);
+            const double critical = banjo::pm::cbrt(q * q / g);
             const double h_ref = std::max(h, critical);
             // Flux along the axis: positive into the domain for the west and
             // south edges, negative for the east and north.
@@ -773,7 +774,7 @@ void ShallowWater::substep(double dt) {
                     if (n2 > 0.0 && speed > 0.0) {
                         // Manning, implicit in the friction: it can slow the
                         // water to a stop and never past it.
-                        const double factor = 1.0 + dt * g * n2 * speed / (h * std::cbrt(h));
+                        const double factor = 1.0 + dt * g * n2 * speed / (h * banjo::pm::cbrt(h));
                         qx_[c] /= factor;
                         qz_[c] /= factor;
                         u /= factor;
@@ -833,7 +834,7 @@ void ShallowWater::substep(double dt) {
     for (const Inflow &inflow : inflows_) {
         const int faces = inflow.to - inflow.from + 1;
         const double q = inflow.discharge_m3_s / (faces * dx);
-        const double h = std::cbrt(q * q / g);
+        const double h = banjo::pm::cbrt(q * q / g);
         if (h > 0.0) speed_ = std::max(speed_, q / h + std::sqrt(g * h));
     }
     speed_ = std::max(speed_, farSideSpeed());

@@ -1,4 +1,5 @@
 #include "fracture/BrittleBondSolver.hpp"
+#include "numeric/PortableMath.hpp"
 #include "fracture/BondFailure.hpp"
 #include "physics/MechanicalAccounting.hpp"
 
@@ -102,7 +103,7 @@ void accumulateContactStats(SphereMaterialContactStats &out,
 // Radial pair damping is translation/rotation invariant and exchanges equal,
 // opposite central impulses. It must not damp whole-object motion in a vacuum.
 double dampInternalBonds(ActiveMatter &matter, double dt) {
-    const double fraction = 1.0 - std::exp(-matter.material.bond_damping * dt);
+    const double fraction = 1.0 - banjo::pm::exp(-matter.material.bond_damping * dt);
     double loss = 0.0;
     if (fraction <= 0.0) return loss;
     for (std::size_t i = 0; i < matter.bonds.size(); ++i) {

@@ -1,4 +1,5 @@
 #include "fastlattice/PreciseRigidScene.hpp"
+#include "numeric/PortableMath.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <array>
@@ -111,7 +112,7 @@ void takeBackWhatEarlierPartsClaim(const std::vector<Solid> &solids, Moments &mo
             const auto cells = [&](double side) { return std::max(1.0, std::ceil(side / h)); };
             double count = cells(span.x) * cells(span.y) * cells(span.z);
             if (count > kPairBudget) {
-                h *= std::cbrt(count / kPairBudget);
+                h *= banjo::pm::cbrt(count / kPairBudget);
                 count = cells(span.x) * cells(span.y) * cells(span.z);
             }
             spent += count;

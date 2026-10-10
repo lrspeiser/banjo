@@ -1,4 +1,5 @@
 #include "physics/DoubleRigidDynamics.hpp"
+#include "numeric/PortableMath.hpp"
 #include "physics/ContactTensor.hpp"
 #include "core/RigidPrimitive.hpp"
 #include <algorithm>
@@ -14,7 +15,7 @@ Quat product(Quat a,Quat b){return {a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z,
     a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w};}
 void require(bool ok,const char *why){if(!ok)throw std::invalid_argument(why);}
 void rotation(Quat q){
-    const double n=std::hypot(std::hypot(q.w,q.x),std::hypot(q.y,q.z));
+    const double n=banjo::pm::hypot(banjo::pm::hypot(q.w,q.x),banjo::pm::hypot(q.y,q.z));
     require(std::isfinite(n)&&std::abs(n-1)<=1e-10,"double rigid orientation must be unit length");
 }
 void validate(const DoubleRigidState &s){
@@ -60,16 +61,16 @@ Quat driftDoubleRigidOrientation(Quat q,Vec3 momentum,const Mat3 &inertia,double
     }
     const auto axis=[&](unsigned i,double h){
         const Vec3 column{c.m[0][i],c.m[1][i],c.m[2][i]};
-        const double magnitude=std::hypot(column.x,column.y,column.z);
+        const double magnitude=banjo::pm::hypot(column.x,column.y,column.z);
         const Vec3 unit=column/magnitude,l=conjugate(q).rotate(momentum);
         const double angle=.5*h*magnitude*magnitude*dot(unit,l);
         require(std::isfinite(angle)&&std::abs(2*angle)<=.25,"double rigid rotation step needs refinement");
-        const double sn=std::sin(angle);q=product(q,{std::cos(angle),sn*unit.x,sn*unit.y,sn*unit.z});
+        const double sn=banjo::pm::sin(angle);q=product(q,{banjo::pm::cos(angle),sn*unit.x,sn*unit.y,sn*unit.z});
     };
     axis(0,.5*dt);axis(1,.5*dt);axis(2,dt);axis(1,.5*dt);axis(0,.5*dt);
     // Normalizing orientation removes accumulated quaternion roundoff only;
     // spin momentum is untouched and resulting energy error stays in the audit.
-    const double n=std::hypot(std::hypot(q.w,q.x),std::hypot(q.y,q.z));
+    const double n=banjo::pm::hypot(banjo::pm::hypot(q.w,q.x),banjo::pm::hypot(q.y,q.z));
     require(std::isfinite(n)&&n>0,"double rigid rotation overflow");
     return {q.w/n,q.x/n,q.y/n,q.z/n};
 }

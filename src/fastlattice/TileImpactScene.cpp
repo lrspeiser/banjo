@@ -1,4 +1,5 @@
 #include "fastlattice/TileImpactScene.hpp"
+#include "numeric/PortableMath.hpp"
 #include "matter/LatticeMerge.hpp"
 
 #include "fastlattice/Refracture.hpp"
@@ -52,13 +53,13 @@ V3<double> toV3(const Vec3 &v) { return {v.x, v.y, v.z}; }
 // at [30, 0, 45], [20, 35, -50] and [-60, 25, 10]: every cell, and every ray
 // cast down and up onto the shape, to 0.0 mm.
 Vec3 rotateDegrees(const Vec3 &v, const Vec3 &degrees) {
-    const double to_rad = std::acos(-1.0) / 180.0;
+    const double to_rad = banjo::pm::acos(-1.0) / 180.0;
     Vec3 p = v;
-    const double cx = std::cos(degrees.x * to_rad), sx = std::sin(degrees.x * to_rad);
+    const double cx = banjo::pm::cos(degrees.x * to_rad), sx = banjo::pm::sin(degrees.x * to_rad);
     p = {p.x, p.y * cx - p.z * sx, p.y * sx + p.z * cx};
-    const double cy = std::cos(degrees.y * to_rad), sy = std::sin(degrees.y * to_rad);
+    const double cy = banjo::pm::cos(degrees.y * to_rad), sy = banjo::pm::sin(degrees.y * to_rad);
     p = {p.x * cy + p.z * sy, p.y, -p.x * sy + p.z * cy};
-    const double cz = std::cos(degrees.z * to_rad), sz = std::sin(degrees.z * to_rad);
+    const double cz = banjo::pm::cos(degrees.z * to_rad), sz = banjo::pm::sin(degrees.z * to_rad);
     p = {p.x * cz - p.y * sz, p.x * sz + p.y * cz, p.z};
     return p;
 }
@@ -67,10 +68,10 @@ Vec3 rotateDegrees(const Vec3 &v, const Vec3 &degrees) {
 } // namespace
 
 void rotationQuaternion(const Vec3 &degrees, double out[4]) {
-    const double h = std::acos(-1.0) / 360.0;
-    const double cx = std::cos(degrees.x * h), sx = std::sin(degrees.x * h);
-    const double cy = std::cos(degrees.y * h), sy = std::sin(degrees.y * h);
-    const double cz = std::cos(degrees.z * h), sz = std::sin(degrees.z * h);
+    const double h = banjo::pm::acos(-1.0) / 360.0;
+    const double cx = banjo::pm::cos(degrees.x * h), sx = banjo::pm::sin(degrees.x * h);
+    const double cy = banjo::pm::cos(degrees.y * h), sy = banjo::pm::sin(degrees.y * h);
+    const double cz = banjo::pm::cos(degrees.z * h), sz = banjo::pm::sin(degrees.z * h);
     out[0] = cz * cy * cx - sz * sy * sx;
     out[1] = cz * cy * sx + sz * sy * cx;
     out[2] = cz * sy * cx - sz * cy * sx;
@@ -261,7 +262,7 @@ StepSettings<double> buildSettings(const TileImpactSetup &setup, const Vec3 &ori
     s.gravity = toV3(r.gravity_m_s2);
     s.constraint_iterations = std::max(1U, r.constraint_iterations);
     s.damping_fraction = setup.compiled.bond_damping > 0.0
-        ? 1.0 - std::exp(-setup.compiled.bond_damping * dt_s) : 0.0;
+        ? 1.0 - banjo::pm::exp(-setup.compiled.bond_damping * dt_s) : 0.0;
     // A many-object scene has no rigid striker: every object is lattice, and
     // the one that was "dropped" is simply the one given a velocity.
     s.sphere_enabled = setup.multi_body ? 0 : 1;
@@ -575,7 +576,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                             const double t = h > 0.0 ? (local.y + 0.5 * h) / h : 0.0;
                             const double r = 0.5 * (part.dimensions_m.z +
                                                     t * (part.dimensions_m.x - part.dimensions_m.z));
-                            inside = std::hypot(local.x, local.z) <= r;
+                            inside = banjo::pm::hypot(local.x, local.z) <= r;
                         }
                     } else {
                         inside = std::abs(local.x) <= half.x && std::abs(local.y) <= half.y &&
@@ -735,7 +736,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     s.ball_ground = combineContactMaterials(compileContactMaterial(s.ball_material), compileContactMaterial(s.ground_material));
     s.tile_tile = combineContactMaterials(compileContactMaterial(s.tile_material), compileContactMaterial(s.tile_material));
 
-    const double volume = 4.0 / 3.0 * std::numbers::pi * std::pow(r.ball_radius_m, 3.0);
+    const double volume = 4.0 / 3.0 * std::numbers::pi * banjo::pm::pow(r.ball_radius_m, 3.0);
     s.sphere_world.center = {r.ball_offset_x_m, s.tile_top_y + r.ball_radius_m + r.ball_gap_m, r.ball_offset_z_m};
     s.sphere_world.velocity = {0.0, -r.ball_speed_m_s, 0.0};
     s.sphere_world.angular_velocity = {0.0, 0.0, 0.0};
@@ -882,7 +883,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             centroid = centroid / static_cast<double>(first.size());
             m.first_failure_centroid_m = centroid;
             m.first_failure_depth_m = setup.tile_top_y - centroid.y;
-            m.first_failure_radius_m = std::hypot(centroid.x - r.ball_offset_x_m, centroid.z - r.ball_offset_z_m);
+            m.first_failure_radius_m = banjo::pm::hypot(centroid.x - r.ball_offset_x_m, centroid.z - r.ball_offset_z_m);
         }
     }
 
@@ -964,7 +965,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             for (std::size_t i = 0; i < N; ++i) {
                 const double x = state.x0[3 * i], z = state.x0[3 * i + 2];
                 if (x <= x_low + 1.0e-9 || x >= x_high - 1.0e-9) { ends += u[3 * i + 1]; ++end_count; }
-                const double radius = std::hypot(origin.x + x - r.ball_offset_x_m,
+                const double radius = banjo::pm::hypot(origin.x + x - r.ball_offset_x_m,
                                                  origin.z + z - r.ball_offset_z_m);
                 const double key = radius - 1.0e-6 * state.x0[3 * i + 1];
                 if (key < best) { best = key; strike = i; }
@@ -998,7 +999,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             double best = std::numeric_limits<double>::infinity();
             for (std::size_t i = 0; i < N; ++i) {
                 const Vec3 rest = origin + Vec3{state.x0[3 * i], state.x0[3 * i + 1], state.x0[3 * i + 2]};
-                const double radius = std::hypot(rest.x - r.ball_offset_x_m, rest.z - r.ball_offset_z_m);
+                const double radius = banjo::pm::hypot(rest.x - r.ball_offset_x_m, rest.z - r.ball_offset_z_m);
                 const double key = radius - 1.0e-6 * rest.y;
                 if (key < best) { best = key; strike = i; }
             }
@@ -1356,7 +1357,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
     report.enabled = r.refracture;
     MatterBodyId next_body_id = 1000U + static_cast<MatterBodyId>(build.rigid_fragments.size());
     const MaterialDefinition second_material = makeReferenceMaterial(r.second_ball_material, r.material_seed);
-    const double second_mass = 4.0 / 3.0 * std::numbers::pi * std::pow(r.second_ball_radius_m, 3.0) *
+    const double second_mass = 4.0 / 3.0 * std::numbers::pi * banjo::pm::pow(r.second_ball_radius_m, 3.0) *
                                second_material.density_kg_m3;
     bool second_inserted = false;
     if (second_strike) {
@@ -1419,7 +1420,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
         for (std::size_t i = 0; i < N; ++i) {
             if (cell_fragment[i] < 0) continue;
             const Vec3 &p = probe.cell_positions[i];
-            if (std::hypot(p.x - r.second_ball_offset_x_m, p.z - r.second_ball_offset_z_m) > reach) continue;
+            if (banjo::pm::hypot(p.x - r.second_ball_offset_x_m, p.z - r.second_ball_offset_z_m) > reach) continue;
             top = std::max(top, p.y + 0.5 * r.cell_size_m);
         }
         // ... nor inside a striker that is already resting under the axis.
@@ -1427,7 +1428,7 @@ TileImpactResult runTileImpact(const TileImpactRequest &request, std::string *lo
             if (!world.contains(id)) continue;
             const RigidSnapshot ball = world.snapshot(id);
             const double radius = id == kBallId ? r.ball_radius_m : r.second_ball_radius_m;
-            if (std::hypot(ball.center_of_mass_world_m.x - r.second_ball_offset_x_m,
+            if (banjo::pm::hypot(ball.center_of_mass_world_m.x - r.second_ball_offset_x_m,
                            ball.center_of_mass_world_m.z - r.second_ball_offset_z_m) > reach + radius)
                 continue;
             top = std::max(top, ball.center_of_mass_world_m.y + radius);

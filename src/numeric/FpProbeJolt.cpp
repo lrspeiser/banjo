@@ -22,4 +22,12 @@ bool joltUsesFusedMultiplyAdd() {
 #endif
 }
 
+bool joltCrossPlatformDeterministic() {
+#ifdef JPH_CROSS_PLATFORM_DETERMINISTIC
+    return true;
+#else
+    return false;
+#endif
+}
+
 } // namespace banjo::fp

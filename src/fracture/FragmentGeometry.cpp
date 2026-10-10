@@ -1,4 +1,5 @@
 #include "fracture/FragmentGeometry.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <array>
@@ -137,7 +138,7 @@ struct FaceDefinition {
         return 0.0;
     }
     const double volume_m3 = mass_kg / density_kg_m3;
-    return std::cbrt(3.0 * volume_m3 / (4.0 * std::numbers::pi));
+    return banjo::pm::cbrt(3.0 * volume_m3 / (4.0 * std::numbers::pi));
 }
 
 } // namespace

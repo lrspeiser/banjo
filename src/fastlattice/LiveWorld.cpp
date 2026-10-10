@@ -1,4 +1,5 @@
 #include "fastlattice/LiveWorld.hpp"
+#include "numeric/PortableMath.hpp"
 #include "machines/Circuit.hpp"
 #include "fastlattice/ToolTerrain.hpp"
 #include "fastlattice/NativeToolUse.hpp"
@@ -322,9 +323,9 @@ struct StrokeHand {
     if (c > 0.9995)
         return unit(Quat{a.w + t * (b.w - a.w), a.x + t * (b.x - a.x), a.y + t * (b.y - a.y),
                          a.z + t * (b.z - a.z)});
-    const double angle = std::acos(std::clamp(c, -1.0, 1.0));
-    const double wa = std::sin((1.0 - t) * angle) / std::sin(angle);
-    const double wb = std::sin(t * angle) / std::sin(angle);
+    const double angle = banjo::pm::acos(std::clamp(c, -1.0, 1.0));
+    const double wa = banjo::pm::sin((1.0 - t) * angle) / banjo::pm::sin(angle);
+    const double wb = banjo::pm::sin(t * angle) / banjo::pm::sin(angle);
     return unit(Quat{wa * a.w + wb * b.w, wa * a.x + wb * b.x, wa * a.y + wb * b.y, wa * a.z + wb * b.z});
 }
 } // namespace
@@ -1822,18 +1823,18 @@ struct LiveWorld::Impl {
         const double h = (sun.hour - 12.0) * 15.0 * kRadPerDeg;       // the hour angle, 0 at noon
         const double latitude = (90.0 - sun.noon_elevation_deg) * kRadPerDeg;
         // East, up and north, the world's +x, +y and -z.
-        const double east = -std::sin(h);
-        const double up = std::cos(latitude) * std::cos(h);
-        const double north = -std::sin(latitude) * std::cos(h);
+        const double east = -banjo::pm::sin(h);
+        const double up = banjo::pm::cos(latitude) * banjo::pm::cos(h);
+        const double north = -banjo::pm::sin(latitude) * banjo::pm::cos(h);
         sun.toward = Vec3{east, up, -north};
-        sun.elevation_deg = std::asin(std::clamp(up, -1.0, 1.0)) / kRadPerDeg;
-        sun.azimuth_deg = std::atan2(sun.toward.x, sun.toward.z) / kRadPerDeg;
+        sun.elevation_deg = banjo::pm::asin(std::clamp(up, -1.0, 1.0)) / kRadPerDeg;
+        sun.azimuth_deg = banjo::pm::atan2(sun.toward.x, sun.toward.z) / kRadPerDeg;
         if (sun.azimuth_deg < 0.0) sun.azimuth_deg += 360.0;
         if (up > 0.0) {
             // The air mass, as flat layers of air: 1 overhead, 1/sin of the
             // elevation lower down; the Meinel model's 38 at the horizon.
             const double air = std::min(1.0 / up, 38.0);
-            sun.irradiance_w_m2 = sun.zenith_irradiance_w_m2 * std::pow(0.7, std::pow(air, 0.678) - 1.0);
+            sun.irradiance_w_m2 = sun.zenith_irradiance_w_m2 * banjo::pm::pow(0.7, banjo::pm::pow(air, 0.678) - 1.0);
         } else {
             sun.irradiance_w_m2 = 0.0;
         }
@@ -2127,9 +2128,9 @@ struct LiveWorld::Impl {
         p.said.speed_m_s = length(Vec3{at.linear_velocity_m_s.x, 0.0, at.linear_velocity_m_s.z});
         const Vec3 forward = at.orientation_world.rotate(p.forward_local);
         const Vec3 left = at.orientation_world.rotate(p.left_local);
-        p.said.pitch_deg = std::asin(std::clamp(forward.y, -1.0, 1.0)) * kDegPerRad;
-        p.said.roll_deg = std::asin(std::clamp(left.y, -1.0, 1.0)) * kDegPerRad;
-        p.heading_rad = std::atan2(forward.x, forward.z);
+        p.said.pitch_deg = banjo::pm::asin(std::clamp(forward.y, -1.0, 1.0)) * kDegPerRad;
+        p.said.roll_deg = banjo::pm::asin(std::clamp(left.y, -1.0, 1.0)) * kDegPerRad;
+        p.heading_rad = banjo::pm::atan2(forward.x, forward.z);
         p.said.at_m = at.center_of_mass_world_m;
         p.velocity = at.linear_velocity_m_s;
         p.spin = at.angular_velocity_rad_s;
@@ -2156,7 +2157,7 @@ struct LiveWorld::Impl {
         if (!(p.said.toward_m > 1e-6) || length(nose) < 1e-6) return;
         nose = normalized(nose);
         const Vec3 beside = cross(Vec3{0.0, 1.0, 0.0}, nose);   // its left, across the ground
-        p.said.bearing_deg = std::atan2(dot(to, beside), dot(to, nose)) * kDegPerRad;
+        p.said.bearing_deg = banjo::pm::atan2(dot(to, beside), dot(to, nose)) * kDegPerRad;
     }
     // What a program's machine does next, from what the last kept step left it
     // reading, and what its wheels are told for it. A "sit" program decides for
@@ -2267,7 +2268,7 @@ struct LiveWorld::Impl {
             if (s.asked == "facing" || s.asked == "approaching") {
                 const double dx = s.asked_toward_m.x - s.at_m.x, dz = s.asked_toward_m.z - s.at_m.z;
                 const double away = std::sqrt(dx * dx + dz * dz);
-                double off = std::atan2(dx, dz) - p.heading_rad;
+                double off = banjo::pm::atan2(dx, dz) - p.heading_rad;
                 while (off > kPi) off -= 2.0 * kPi;
                 while (off <= -kPi) off += 2.0 * kPi;
                 const double off_deg = off * kDegPerRad;
@@ -2723,7 +2724,7 @@ struct LiveWorld::Impl {
                     at = world->snapshot(body_of[found->second]).center_of_mass_world_m;
                 const double dx = s.asked_toward_m.x - at.x, dz = s.asked_toward_m.z - at.z;
                 const double away = std::sqrt(dx * dx + dz * dz);
-                double off = std::atan2(dx, dz) - p.heading_rad;
+                double off = banjo::pm::atan2(dx, dz) - p.heading_rad;
                 while (off > kPi) off -= 2.0 * kPi;
                 while (off < -kPi) off += 2.0 * kPi;
                 const double off_deg = off * 180.0 / kPi;
@@ -3450,7 +3451,7 @@ struct LiveWorld::Impl {
         }
         // Necessary quasi-static limits, not a certificate of dynamic balance.
         // Use the actual assembly mass/lever and existing actor/hand caps.
-        return length(load) <= hand_strength_n && std::hypot(moment.x, moment.z) <= kWalkMostTorqueNm;
+        return length(load) <= hand_strength_n && banjo::pm::hypot(moment.x, moment.z) <= kWalkMostTorqueNm;
     }
     std::map<std::string, Vec3> ground_aims;   // by actor: setGroundAim
     std::map<std::string, std::optional<Vec3>> ground_actions;
@@ -3471,7 +3472,7 @@ struct LiveWorld::Impl {
             const RayHit hit = world->castRay(now.center_of_mass_world_m, Vec3{0, -1, 0},
                                               kWalkSupportReachM + (player.stepping ? kMostStepM : 0.0), player.id);
             player.stepping = false;
-            player.supported = hit.hit && up.y > std::cos(kWalkMostTiltRad);
+            player.supported = hit.hit && up.y > banjo::pm::cos(kWalkMostTiltRad);
             // Down with something under it -- fallen on the ground, or on a
             // river bed -- it gets up before anything else. Not driven: its
             // base keeps its friction to pivot on.
@@ -3481,7 +3482,7 @@ struct LiveWorld::Impl {
                 const Vec3 w = now.angular_velocity_rad_s;
                 const Vec3 axis = cross(up, Vec3{0, 1, 0});
                 const double s = length(axis);
-                const double angle = std::acos(std::max(-1.0, std::min(1.0, up.y)));
+                const double angle = banjo::pm::acos(std::max(-1.0, std::min(1.0, up.y)));
                 const Vec3 tilt = s > 1e-12 ? (angle / s) * axis : Vec3{1, 0, 0} * angle;
                 torque = kWalkUprightGain * tilt - kWalkUprightDamping * Vec3{w.x, 0, w.z};
                 const double most = length(torque);
@@ -3598,9 +3599,9 @@ struct LiveWorld::Impl {
                 const Vec3 w = now.angular_velocity_rad_s;
                 const Vec3 axis = cross(up, Vec3{0, 1, 0});
                 const double s = length(axis);
-                const Vec3 tilt = s > 1e-12 ? (std::asin(std::min(1.0, s)) / s) * axis : Vec3{};
+                const Vec3 tilt = s > 1e-12 ? (banjo::pm::asin(std::min(1.0, s)) / s) * axis : Vec3{};
                 const Vec3 ahead = now.orientation_world.rotate(Vec3{0, 0, 1});
-                const double yaw = std::atan2(ahead.x, ahead.z);
+                const double yaw = banjo::pm::atan2(ahead.x, ahead.z);
                 const double turn = std::remainder(player.walk_heading - yaw, 2 * 3.14159265358979323846);
                 const double own_yaw_inertia = world->mechanicalState(player.id).inertia_world_kg_m2.m[1][1];
                 const double yaw_scale = own_yaw_inertia > 0 ? 1 + carry_yaw_inertia / own_yaw_inertia : 1;
@@ -5720,7 +5721,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             // V(now + 2d) = V(now)/(1-consumed). Ratios avoid dividing by a
             // tiny volume. The largest dimension provides a bounded bracket.
             double low = 0;
-            double high = 0.5 * std::max({now.x, now.y, now.z}) * (std::cbrt(1.0 / retained) - 1.0);
+            double high = 0.5 * std::max({now.x, now.y, now.z}) * (banjo::pm::cbrt(1.0 / retained) - 1.0);
             for (int k = 0; k < 80; ++k) {
                 const double depth = 0.5 * (low + high);
                 const double ratio = (now.x / (now.x + 2 * depth)) *
@@ -8662,7 +8663,7 @@ bool LiveWorld::setSun(double elevation_deg, double azimuth_deg, double irradian
     sun.irradiance_w_m2 = irradiance_w_m2;
     sun.zenith_irradiance_w_m2 = irradiance_w_m2;
     const double el = elevation_deg * kRadPerDeg, az = azimuth_deg * kRadPerDeg;
-    sun.toward = Vec3{std::cos(el) * std::sin(az), std::sin(el), std::cos(el) * std::cos(az)};
+    sun.toward = Vec3{banjo::pm::cos(el) * banjo::pm::sin(az), banjo::pm::sin(el), banjo::pm::cos(el) * banjo::pm::cos(az)};
     return true;
 }
 
@@ -12098,7 +12099,7 @@ double tippingUsed(const std::vector<std::array<double, 2>> &outline, double px,
     double worst = 0.0;
     for (std::size_t k = 0; k < outline.size(); ++k) {
         const auto &p = outline[k], &q = outline[(k + 1) % outline.size()];
-        const double ex = q[0] - p[0], ez = q[1] - p[1], length = std::hypot(ex, ez);
+        const double ex = q[0] - p[0], ez = q[1] - p[1], length = banjo::pm::hypot(ex, ez);
         if (!(length > 0.0)) continue;
         const double nx = ez / length, nz = -ex / length;  // outwards, anticlockwise
         const double inside = p[0] * nx + p[1] * nz;       // the middle's distance in from the edge
@@ -12127,7 +12128,7 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
     // the one it was built in, and a thing is built standing the way it stands
     // -- a stool on its feet, a plank flat, a cup on its base. Then, below,
     // square to the ground under it.
-    const Quat turn{std::cos(0.5 * yaw_rad), 0.0, std::sin(0.5 * yaw_rad), 0.0};
+    const Quat turn{banjo::pm::cos(0.5 * yaw_rad), 0.0, banjo::pm::sin(0.5 * yaw_rad), 0.0};
     const auto [low, high] = impl_->world->shapeBoundsTurned(id, turn);
     // Its own box, in its own axes: its footprint whichever way it is turned.
     const auto [own_low, own_high] = impl_->world->shapeBoundsTurned(id, Quat{});
@@ -12227,14 +12228,14 @@ LivePlacement LiveWorld::placement(const std::string &name, const Vec3 &on_world
     // `square` false keeps it upright: the host putting a thing of several
     // parts down as one shape asks for each part as it stands in that shape.
     Quat stand = turn;
-    const double steepest = std::hypot(along_x, along_z);
+    const double steepest = banjo::pm::hypot(along_x, along_z);
     if (square && plane && steepest > 1e-4 && steepest <= 1.0) {
         const Vec3 n = normalized(turn.rotate(Vec3{-along_x, 1.0, -along_z}));
-        const double s = std::hypot(n.x, n.z);
-        const double half = 0.5 * std::atan2(s, n.y);
+        const double s = banjo::pm::hypot(n.x, n.z);
+        const double half = 0.5 * banjo::pm::atan2(s, n.y);
         // About the level line of that slope, by its steepness: its own up to
         // the ground's.
-        stand = compose(Quat{std::cos(half), std::sin(half) * n.z / s, 0.0, -std::sin(half) * n.x / s}, turn);
+        stand = compose(Quat{banjo::pm::cos(half), banjo::pm::sin(half) * n.z / s, 0.0, -banjo::pm::sin(half) * n.x / s}, turn);
         // Its underside 2 mm clear of that plane, square to it; the plane is
         // where it stands over its middle, which the point may be a dip under.
         out.at_m = Vec3{on_world_m.x, (*rests)[2] + (kClearM - low.y) / n.y, on_world_m.z};
@@ -13888,7 +13889,7 @@ LiveWorld::DigClearance LiveWorld::digClearance(unsigned program, double ax, dou
         const auto [low, high] = I.world->shapeBoundsTurned(id, at.orientation_world);
         const auto lo = low + at.center_of_mass_world_m, hi = high + at.center_of_mass_world_m;
         for (const double x : {lo.x, hi.x}) for (const double z : {lo.z, hi.z})
-            out.stand_off_m = std::max(out.stand_off_m, std::hypot(x-origin.x,z-origin.z) + margin);
+            out.stand_off_m = std::max(out.stand_off_m, banjo::pm::hypot(x-origin.x,z-origin.z) + margin);
         // Conservative rectangle around a trench; a diagonal trench can be
         // refused even when its narrower swept capsule misses the assembly.
         if (std::max(ax,bx)+margin >= lo.x && std::min(ax,bx)-margin <= hi.x &&
@@ -15446,7 +15447,7 @@ void LiveWorld::prepareCuts(double dt_s) {
             const auto inOwnSlit = [&](const Vec3 &p) {
                 if (kerfs_here == nullptr || !grid.holds(p)) return false;
                 for (const auto &kerf : *kerfs_here) {
-                    if (std::abs(dot(kerf.w, f_local)) < std::cos(5.0 * kPiBlade / 180.0)) continue;
+                    if (std::abs(dot(kerf.w, f_local)) < banjo::pm::cos(5.0 * kPiBlade / 180.0)) continue;
                     const Vec3 d = p - kerf.origin;
                     if (std::abs(dot(d, kerf.w)) > kerf.half_width) continue;
                     if (kerf.covers(dot(d, kerf.u), dot(d, kerf.v), 1e-9)) return true;
@@ -15560,7 +15561,7 @@ void LiveWorld::prepareCuts(double dt_s) {
                 const Vec3 into = -1.0 * surface;
                 const double v_in = dot(a, into);
                 const double push_in = dot(intent, into);
-                const double sin_half_bevel = std::sin(0.5 * blade.bevel_deg * kPiBlade / 180.0);
+                const double sin_half_bevel = banjo::pm::sin(0.5 * blade.bevel_deg * kPiBlade / 180.0);
                 std::string kind;
                 bool bites = false;
                 if (!(target_material.yield_strength_pa > 0.0)) {
@@ -15601,7 +15602,7 @@ void LiveWorld::prepareCuts(double dt_s) {
                 std::vector<Impl::Kerf> &list = I.kerfs[target_name];
                 std::size_t kerf_index = list.size();
                 for (std::size_t k = 0; k < list.size(); ++k) {
-                    if (std::abs(dot(list[k].w, f_local)) < std::cos(5.0 * kPiBlade / 180.0)) continue;
+                    if (std::abs(dot(list[k].w, f_local)) < banjo::pm::cos(5.0 * kPiBlade / 180.0)) continue;
                     if (std::abs(dot(origin - list[k].origin, list[k].w)) > list[k].half_width) continue;
                     kerf_index = k;
                     break;
@@ -15657,7 +15658,7 @@ void LiveWorld::prepareCuts(double dt_s) {
             // edge is resting: it follows the blade.
             if (kerf.swept.empty()) {
                 const Vec3 origin = toLocal(centroid);
-                const bool moved = std::abs(dot(kerf.w, f_local)) < std::cos(kPiBlade / 180.0) ||
+                const bool moved = std::abs(dot(kerf.w, f_local)) < banjo::pm::cos(kPiBlade / 180.0) ||
                                    std::abs(dot(origin - kerf.origin, kerf.w)) > 0.0005;
                 kerf.origin = origin;
                 kerf.u = t_local;
@@ -15698,7 +15699,7 @@ void LiveWorld::prepareCuts(double dt_s) {
             if (v_n_plus > kCreep) length_eff = swept_area / (v_n_plus * dt_s);
             length_eff = std::min(length_eff, edge_length);
             double c_n = 1.0, c_t = 0.0;
-            if (std::hypot(v_n_plus, a_t) >= kCreep) {
+            if (banjo::pm::hypot(v_n_plus, a_t) >= kCreep) {
                 const double denominator = v_n_plus * v_n_plus + a_t * a_t + kCreep * kCreep;
                 c_n = (v_n_plus * v_n_plus + kCreep * kCreep) / denominator;
                 c_t = v_n_plus * std::abs(a_t) / denominator;
@@ -16918,7 +16919,7 @@ void LiveWorld::endPhysicalHitStep() {
         const auto pose=I.world->snapshot(I.body_of[I.holding]);
         const double qdot=pose.orientation_world.w*hit.swing_from.w+pose.orientation_world.x*hit.swing_from.x+
             pose.orientation_world.y*hit.swing_from.y+pose.orientation_world.z*hit.swing_from.z;
-        state.swing_rotation_rad=std::max(state.swing_rotation_rad,2*std::acos(std::clamp(std::abs(qdot),0.0,1.0)));
+        state.swing_rotation_rad=std::max(state.swing_rotation_rad,2*banjo::pm::acos(std::clamp(std::abs(qdot),0.0,1.0)));
         for(const auto &point:toolPoints())if(point.id==state.point_id) {
             const auto body=I.index_of.find(point.body);
             if(body!=I.index_of.end()) {
@@ -16941,7 +16942,7 @@ void LiveWorld::endPhysicalHitStep() {
         if(hit.stage==1 && ready) {
             const auto &q=state.stroke.facings_wxyz[3];
             const auto &r=actual.orientation_world;
-            const double error=2*std::acos(std::clamp(std::abs(q.w*r.w+q.x*r.x+q.y*r.y+q.z*r.z),0.0,1.0));
+            const double error=2*banjo::pm::acos(std::clamp(std::abs(q.w*r.w+q.x*r.x+q.y*r.y+q.z*r.z),0.0,1.0));
             ready=error<.08 && length(hand().grip_velocity_m_s)<.3;
             if(!ready && I.time_s-hit.stage_started_s<3.5)return;
             if(!ready)state.reason="windup_blocked";

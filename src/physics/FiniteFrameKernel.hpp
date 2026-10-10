@@ -6,6 +6,16 @@
 #else
 #define BANJO_FRAME_HD
 #endif
+// The host's arithmetic is the same on every platform (numeric/PortableMath.hpp);
+// a device keeps its own intrinsics.
+#if defined(__CUDACC__) || defined(__CUDACC_RTC__)
+#define BANJO_FRAME_ATAN2 atan2
+#define BANJO_FRAME_TAN tan
+#else
+#include "numeric/PortableMath.hpp"
+#define BANJO_FRAME_ATAN2 ::banjo::pm::atan2
+#define BANJO_FRAME_TAN ::banjo::pm::tan
+#endif
 namespace banjo {
 struct FrameVector { double x{},y{},z{}; };
 struct FrameQuaternion { double w{1},x{},y{},z{}; };
@@ -23,9 +33,9 @@ BANJO_FRAME_HD inline FrameQuaternion frameMultiply(FrameQuaternion a,FrameQuate
 struct FrameRotationStrain { FrameVector angle;FrameVector gradient[3];double branch_angle{}; };
 BANJO_FRAME_HD inline FrameRotationStrain frameRotationStrainUnchecked(FrameQuaternion a,FrameQuaternion b){
     auto q=frameMultiply({a.w,-a.x,-a.y,-a.z},b);if(q.w<0)q={-q.w,-q.x,-q.y,-q.z};
-    const FrameVector v{q.x,q.y,q.z};const double sine=sqrt(frameDot(v,v)),angle=2*atan2(sine,q.w);
+    const FrameVector v{q.x,q.y,q.z};const double sine=sqrt(frameDot(v,v)),angle=2*BANJO_FRAME_ATAN2(sine,q.w);
     const auto phi=frameScale(v,sine>1e-14?angle/sine:2);const double t2=frameDot(phi,phi);
-    const double coefficient=t2<1e-8?1./12+t2/720+t2*t2/30240:(1-.5*angle/tan(.5*angle))/t2;
+    const double coefficient=t2<1e-8?1./12+t2/720+t2*t2/30240:(1-.5*angle/BANJO_FRAME_TAN(.5*angle))/t2;
     FrameRotationStrain out;out.angle=phi;out.branch_angle=angle;
     const FrameVector axes[]{{1,0,0},{0,1,0},{0,0,1}};
     for(unsigned i=0;i<3;++i)out.gradient[i]=frameRotate(a,frameAdd(frameAdd(axes[i],frameScale(frameCross(phi,axes[i]),.5)),frameScale(frameCross(phi,frameCross(phi,axes[i])),coefficient)));

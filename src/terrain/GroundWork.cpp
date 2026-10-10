@@ -1,4 +1,5 @@
 #include "terrain/GroundWork.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include "material/MaterialCatalog.hpp"
 
@@ -37,21 +38,21 @@ BearingFactors bearingFactors(double friction_angle_deg) {
         f.ngamma = 0.0;
         return f;
     }
-    const double t = std::tan(kPi / 4.0 + phi / 2.0);
-    f.nq = std::exp(kPi * std::tan(phi)) * t * t;
-    f.nc = (f.nq - 1.0) / std::tan(phi);
-    f.ngamma = 2.0 * (f.nq + 1.0) * std::tan(phi);
+    const double t = banjo::pm::tan(kPi / 4.0 + phi / 2.0);
+    f.nq = banjo::pm::exp(kPi * banjo::pm::tan(phi)) * t * t;
+    f.nc = (f.nq - 1.0) / banjo::pm::tan(phi);
+    f.ngamma = 2.0 * (f.nq + 1.0) * banjo::pm::tan(phi);
     return f;
 }
 
 double passiveCoefficient(double friction_angle_deg) {
-    const double t = std::tan(kPi / 4.0 + radians(std::clamp(friction_angle_deg, 0.0, 60.0)) / 2.0);
+    const double t = banjo::pm::tan(kPi / 4.0 + radians(std::clamp(friction_angle_deg, 0.0, 60.0)) / 2.0);
     return t * t;
 }
 
 double pointThicknessAt(const ToolPointShape &point, double depth_m) {
     const double tip = std::min(kTipThicknessM, point.thickness_m);
-    const double grown = tip + 2.0 * std::max(0.0, depth_m) * std::tan(radians(0.5 * point.angle_deg));
+    const double grown = tip + 2.0 * std::max(0.0, depth_m) * banjo::pm::tan(radians(0.5 * point.angle_deg));
     return std::min(point.thickness_m, grown);
 }
 

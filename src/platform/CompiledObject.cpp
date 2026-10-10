@@ -1,4 +1,5 @@
 #include "platform/CompiledObject.hpp"
+#include "numeric/PortableMath.hpp"
 #include <algorithm>
 #include <numeric>
 #include <numbers>
@@ -56,20 +57,20 @@ CompiledObject compileObject(const RigidPrimitive &shape,const MaterialDefinitio
         else {s.collision.kind=PrimitiveKind::Box;s.collision.dimensions_m=spacing;s.intrinsic_inertia=s.collision.inertia(mass);}
         o.samples.push_back(s);
     }
-    const double area=std::pow(spacing.x*spacing.y*spacing.z,2./3)/6;
+    const double area=banjo::pm::pow(spacing.x*spacing.y*spacing.z,2./3)/6;
     for(unsigned a=0;a<o.samples.size();++a)for(unsigned b=a+1;b<o.samples.size();++b){
         const Vec3 d=o.samples[b].center_m-o.samples[a].center_m;
-        const double grid=std::pow(d.x/spacing.x,2)+std::pow(d.y/spacing.y,2)+std::pow(d.z/spacing.z,2);
+        const double grid=banjo::pm::pow(d.x/spacing.x,2)+banjo::pm::pow(d.y/spacing.y,2)+banjo::pm::pow(d.z/spacing.z,2);
         if(grid>2.01)continue;
         // A smooth seeded field sampled at the bond midpoint gives persistent,
         // spatially correlated strength variation. No per-collision reroll.
         const Vec3 p=(o.samples[a].center_m+o.samples[b].center_m)*.5;
-        double field=0;for(unsigned axis=0;axis<3;++axis){const double phase=double(mix(seed+axis)>>11)*0x1.0p-53*2*std::numbers::pi;field+=std::sin(component(p,axis)/component(spacing,axis)+phase)/3;}
+        double field=0;for(unsigned axis=0;axis<3;++axis){const double phase=double(mix(seed+axis)>>11)*0x1.0p-53*2*std::numbers::pi;field+=banjo::pm::sin(component(p,axis)/component(spacing,axis)+phase)/3;}
         o.links.push_back({a,b,normalized(d),length(d),area,material.young_modulus_pa*area/length(d),material.tensile_strength_pa*(1+material.strength_variation*field),material.fracture_energy_j_m2*area});
     }
     // Declared local predictor step: one eighth of a cell spring half-period.
     // A pulse advances 64 such steps, separate from the gameplay timestep.
-    o.response_duration_s=std::numbers::pi/8*std::sqrt(mass/(material.young_modulus_pa*std::cbrt(spacing.x*spacing.y*spacing.z)));
+    o.response_duration_s=std::numbers::pi/8*std::sqrt(mass/(material.young_modulus_pa*banjo::pm::cbrt(spacing.x*spacing.y*spacing.z)));
     o.initial_factor=factor(o,std::vector<unsigned char>(o.links.size(),1));return o;
 }
 CompiledDamage::CompiledDamage(CompiledObject object):object_(std::move(object)),live_(object_.links.size(),1),factor_(object_.initial_factor){}

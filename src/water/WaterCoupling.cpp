@@ -1,4 +1,5 @@
 #include "water/WaterCoupling.hpp"
+#include "numeric/PortableMath.hpp"
 #include "water/CompoundWaterSurface.hpp"
 
 #include <algorithm>
@@ -310,7 +311,7 @@ const std::vector<WaterCoupling::Patch> &WaterCoupling::patchesOf(const BodyInWa
         const int lat = 14, lon = 28;
         const auto point = [&](int i, int j) {
             const double theta = kPi * i / lat, phi = 2.0 * kPi * j / lon;
-            return Vec3{std::sin(theta) * std::cos(phi), std::cos(theta), std::sin(theta) * std::sin(phi)};
+            return Vec3{banjo::pm::sin(theta) * banjo::pm::cos(phi), banjo::pm::cos(theta), banjo::pm::sin(theta) * banjo::pm::sin(phi)};
         };
         std::vector<std::array<Vec3, 3>> triangles;
         for (int i = 0; i < lat; ++i)
@@ -322,7 +323,7 @@ const std::vector<WaterCoupling::Patch> &WaterCoupling::patchesOf(const BodyInWa
         double unit_volume = 0.0;
         for (const auto &t : triangles) unit_volume += dot(t[0], cross(t[1], t[2])) / 6.0;
         const double r = 0.5 * b.dimensions_m.x;
-        const double scale = r * std::cbrt((4.0 / 3.0 * kPi) / std::abs(unit_volume));
+        const double scale = r * banjo::pm::cbrt((4.0 / 3.0 * kPi) / std::abs(unit_volume));
         for (const auto &t : triangles) {
             Patch patch;
             patch.corner[0] = scale * t[0];

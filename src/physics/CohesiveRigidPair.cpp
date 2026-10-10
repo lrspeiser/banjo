@@ -1,4 +1,5 @@
 #include "physics/CohesiveRigidPair.hpp"
+#include "numeric/PortableMath.hpp"
 #include "physics/DoubleRigidDynamics.hpp"
 #include <cmath>
 #include <algorithm>
@@ -124,7 +125,7 @@ Result adaptiveAdvance(const CohesiveInterfaceLaw &law,const State &initial,doub
         const auto compare=[&](const CohesiveRigidBody &x,const CohesiveRigidBody &y){
             const double qdot=x.orientation.w*y.orientation.w+x.orientation.x*y.orientation.x+x.orientation.y*y.orientation.y+x.orientation.z*y.orientation.z;
             const double sign=qdot<0?-1:1;const auto qx=x.orientation,qy=y.orientation;
-            const double qdistance=std::sqrt(std::pow(qx.w-sign*qy.w,2)+std::pow(qx.x-sign*qy.x,2)+std::pow(qx.y-sign*qy.y,2)+std::pow(qx.z-sign*qy.z,2));
+            const double qdistance=std::sqrt(banjo::pm::pow(qx.w-sign*qy.w,2)+banjo::pm::pow(qx.x-sign*qy.x,2)+banjo::pm::pow(qx.y-sign*qy.y,2)+banjo::pm::pow(qx.z-sign*qy.z,2));
             error=std::max({error,length(x.center_m-y.center_m)/distance_scale,length(x.velocity_m_s-y.velocity_m_s)/speed_scale,length(x.angular_momentum_kg_m2_s-y.angular_momentum_kg_m2_s)/angular_scale,qdistance});
         };compare(a.a,b.a);compare(a.b,b.b);return error;
     };

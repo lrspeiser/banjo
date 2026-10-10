@@ -100,18 +100,20 @@ void objectsKeepTheProfile(const std::string &where, const fp::Observations &o, 
 
 void theBuildsObjectsKeepTheProfile() {
     const fp::Inputs in = runtimeInputs();
-    check(std::string(fp::profile()) == "banjo-cpu-precise-v1",
-          std::string("the build says it is banjo-cpu-precise-v1 (") + fp::profile() + ")");
+    check(std::string(fp::profile()) == "banjo-cpu-precise-v2",
+          std::string("the build says it is banjo-cpu-precise-v2 (") + fp::profile() + ")");
     objectsKeepTheProfile("banjo_core", fp::observeCore(in), in);
     objectsKeepTheProfile("banjo_runtime", fp::observeRuntime(in), in);
     objectsKeepTheProfile("Jolt", fp::observeJolt(in), in);
     const float fused = std::fma(in.near_one_up_f, in.near_one_down_f, in.minus_one_f);
     const float jolt = fp::joltFusedMultiplyAdd(in.near_one_up_f, in.near_one_down_f, in.minus_one_f);
-    if (fp::joltUsesFusedMultiplyAdd()) {
-        check(jolt == fused, "Jolt's explicit FMA (JPH_USE_FMADD) is fused, as asked (" + hex(jolt) + ")");
-    } else {
-        check(jolt == 0.0f, "Jolt, built without FMA, multiplies and adds (" + hex(jolt) + ")");
-    }
+    (void)fused;
+    // v2: Jolt is built cross-platform deterministic, which turns its FMA
+    // intrinsics off, so its "fused" multiply-add multiplies and then adds, on
+    // every platform alike.
+    check(fp::joltCrossPlatformDeterministic(), "Jolt is built JPH_CROSS_PLATFORM_DETERMINISTIC");
+    check(!fp::joltUsesFusedMultiplyAdd(), "Jolt uses no FMA instructions (JPH_USE_FMADD is off)");
+    check(jolt == 0.0f, "Jolt's multiply-add multiplies and adds, unfused (" + hex(jolt) + ")");
 }
 
 // The flywheel room of motor_tests: an iron post fixed in place, and an iron

@@ -1,4 +1,5 @@
 #include "physics/SpherePatchWorld.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -86,7 +87,7 @@ Metrics runCase(std::ostream &out, const char *name, const SmallStrainLaw &law,
                 double time_step_fraction, unsigned refinement) {
     constexpr double radius = .012, iron_density = 7870;
     const double sphere_mass =
-        (4.0 / 3.0) * std::acos(-1.0) * radius * radius * radius * iron_density;
+        (4.0 / 3.0) * banjo::pm::acos(-1.0) * radius * radius * radius * iron_density;
     auto definition = supportedBrick(law, refinement);
     constexpr double clearance = .0005;
     constexpr Vec3 gravity{0, -9.81, 0};

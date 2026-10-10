@@ -5,7 +5,7 @@
                                      [--manifest PATH] [--quiet]
 
 Every C++ file a build compiles -- ours, Jolt's, anything else in the link --
-must compile under the build's numerical profile, banjo-cpu-precise-v1
+must compile under the build's numerical profile, banjo-cpu-precise-v2
 (cmake/FloatingPointModel.cmake says what it is, docs/floating-point-model.md
 why). CMake is not second-guessed here: its File API reply is read after it
 has generated the build. For each configuration it lists every target, every
@@ -27,7 +27,10 @@ requirements already resolved. Then:
   calls that change the floating-point environment; each use found must be one
   listed below as allowed;
 - every file that can include Jolt's headers must see Jolt's own JPH_
-  definitions, so Jolt's inline code takes the same paths in every object.
+  definitions, so Jolt's inline code takes the same paths in every object;
+- Jolt itself must be built JPH_CROSS_PLATFORM_DETERMINISTIC: the profile
+  promises the same results on every platform, and Jolt keeps that promise only
+  in that mode.
 
 A floating-point option this script does not know is reported, never skipped.
 Exit 0 when every file keeps the profile, 1 when any does not, 2 when the
@@ -42,7 +45,7 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-PROFILE = "banjo-cpu-precise-v1"
+PROFILE = "banjo-cpu-precise-v2"
 COMPILED_TYPES = {"STATIC_LIBRARY", "SHARED_LIBRARY", "MODULE_LIBRARY", "OBJECT_LIBRARY", "EXECUTABLE"}
 
 
@@ -601,6 +604,10 @@ def audit(build, configs_wanted, all_configs):
         if jolt_defines is not None:
             jolt_root = next((d for d in jolt_includes if (Path(d) / "Jolt" / "Jolt.h").is_file()), None)
             result["jolt_definitions"][name] = jolt_defines
+            if "JPH_CROSS_PLATFORM_DETERMINISTIC" not in jolt_defines:
+                violations.append({"configuration": name, "target": "Jolt", "file": "(target)",
+                                   "problem": "Jolt is not built JPH_CROSS_PLATFORM_DETERMINISTIC, which "
+                                              f"{PROFILE} requires (CMakeLists.txt sets it before Jolt is fetched)"})
             for target_name, defines, sees, files in groups_seeing_jolt:
                 if jolt_root and jolt_root in sees and defines != jolt_defines:
                     missing = sorted(set(jolt_defines) - set(defines))

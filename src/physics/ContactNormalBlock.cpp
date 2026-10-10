@@ -1,4 +1,5 @@
 #include "physics/ContactNormalBlock.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -39,8 +40,8 @@ std::array<double,16> principalInverse(const std::array<double,16> &k, unsigned 
             const double off=a[4*p+r];largest=std::max(largest,std::abs(off));
             if(std::abs(off)<=8*eps*scale)continue;
             const double tau=(a[4*r+r]-a[4*p+p])/(2*off);
-            const double t=std::copysign(1.,tau)/(std::abs(tau)+std::hypot(1.,tau));
-            const double c=1/std::hypot(1.,t),s=t*c;
+            const double t=std::copysign(1.,tau)/(std::abs(tau)+banjo::pm::hypot(1.,tau));
+            const double c=1/banjo::pm::hypot(1.,t),s=t*c;
             a[4*p+p]-=t*off;a[4*r+r]+=t*off;a[4*p+r]=a[4*r+p]=0;
             for(unsigned j=0;j<n;++j)if(j!=p&&j!=r){
                 const double x=a[4*j+p],y=a[4*j+r];

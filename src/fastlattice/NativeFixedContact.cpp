@@ -1,4 +1,5 @@
 #include "fastlattice/NativeFixedContact.hpp"
+#include "numeric/PortableMath.hpp"
 #include <cmath>
 #include <algorithm>
 #include <limits>
@@ -214,7 +215,7 @@ NativeFixedSurfaceTransfer applyNativeFixedSurfaceTransfer(JoltWorld &world,Latt
     // Double-reference reproduction bounds; native float roundoff is still
     // independently admitted by the existing source budget. Preflight all of
     // these and the cumulative target ledger before either system is written.
-    const auto norm=[](Vec3 v){return std::hypot(v.x,v.y,v.z);};
+    const auto norm=[](Vec3 v){return banjo::pm::hypot(v.x,v.y,v.z);};
     if(norm(out.target_impulse_error_n_s)>1e-10*(1+norm(contact.impulse_to_node_n_s))||
        norm(out.target_angular_error_kg_m2_s)>1e-10*(1+norm(expected_moment))||
        !std::isfinite(out.target_work_error_j)||std::abs(out.target_work_error_j)>1e-10*(1+std::abs(expected_work)))

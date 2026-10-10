@@ -1,4 +1,5 @@
 #include "modal/ModalFracture.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include "fracture/ConnectedComponents.hpp"
 #include "physics/ConservativeStepInternal.hpp"
@@ -43,7 +44,7 @@ void evolve(const ModalBasis &basis, const std::vector<double> &force, const Mod
             const double w2 = omega2[k];
             const double w = std::sqrt(w2);
             const double s = f / w2;
-            const double c = std::cos(w * dt), sn = std::sin(w * dt);
+            const double c = banjo::pm::cos(w * dt), sn = banjo::pm::sin(w * dt);
             const double a = q - s;
             out.q[k] = s + a * c + qdot / w * sn;
             out.qdot[k] = -a * w * sn + qdot * c;
@@ -61,7 +62,7 @@ void impulseWeights(const ModalBasis &basis, double dt, std::vector<double> &wei
         if (basis.isRigidMode(k)) weights[k] = dt;
         else {
             const double w = std::sqrt(omega2[k]);
-            weights[k] = std::sin(w * dt) / w;
+            weights[k] = banjo::pm::sin(w * dt) / w;
         }
     }
 }

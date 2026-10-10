@@ -1,4 +1,5 @@
 #include "physics/ContactMechanics.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <cmath>
 #include <numbers>
@@ -29,13 +30,13 @@ HertzSphereImpactResult projectHertzSphereImpact(
     const double stiffness_coefficient =
         (4.0 / 3.0) * input.effective_modulus_pa *
         std::sqrt(input.reduced_radius_m);
-    result.maximum_indent_m = std::pow(
+    result.maximum_indent_m = banjo::pm::pow(
         (5.0 * input.reduced_mass_kg * input.normal_speed_m_s *
          input.normal_speed_m_s) /
             (4.0 * stiffness_coefficient),
         0.4);
     result.peak_force_n = stiffness_coefficient *
-                          std::pow(result.maximum_indent_m, 1.5);
+                          banjo::pm::pow(result.maximum_indent_m, 1.5);
     result.contact_radius_m = std::sqrt(
         input.reduced_radius_m * result.maximum_indent_m);
     const double contact_area =

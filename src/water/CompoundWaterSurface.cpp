@@ -1,4 +1,5 @@
 #include "water/CompoundWaterSurface.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <array>
@@ -72,14 +73,14 @@ Solid solid(const CompoundWaterPart &part, double patch_m) {
         const int n = std::clamp(int(std::ceil(2*pi*h.x/patch_m)), 48, 128);
         // Preserve pi*r*r exactly in the polygon's area, rather than losing
         // buoyancy with an inscribed cylinder. Radius error <= 0.143% at n=48.
-        const double r = h.x * std::sqrt(2*pi/(n*std::sin(2*pi/n)));
+        const double r = h.x * std::sqrt(2*pi/(n*banjo::pm::sin(2*pi/n)));
         const int ny = std::clamp(int(std::ceil(2*h.y/patch_m)), 1, 24);
         const int nr = std::clamp(int(std::ceil(r/patch_m)), 1, 24);
         plane(ey, {0,h.y,0}); plane(-ey, {0,-h.y,0});
         for (int k = 0; k < n; ++k) {
             const double a = 2*pi*k/n, b = 2*pi*(k+1)/n;
-            const Vec3 u{r*std::cos(a),0,r*std::sin(a)}, v{r*std::cos(b),0,r*std::sin(b)};
-            plane({std::cos((a+b)/2),0,std::sin((a+b)/2)}, u);
+            const Vec3 u{r*banjo::pm::cos(a),0,r*banjo::pm::sin(a)}, v{r*banjo::pm::cos(b),0,r*banjo::pm::sin(b)};
+            plane({banjo::pm::cos((a+b)/2),0,banjo::pm::sin((a+b)/2)}, u);
             for (int j = 0; j < ny; ++j) {
                 const Vec3 low{0,-h.y+2*h.y*j/ny,0}, high{0,-h.y+2*h.y*(j+1)/ny,0};
                 face(u+low, u+high, v+high, v+low);

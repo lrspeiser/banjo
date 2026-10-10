@@ -1,4 +1,5 @@
 #include "physics/GripPull.hpp"
+#include "numeric/PortableMath.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -65,7 +66,7 @@ namespace {
     const Vec3 axis{d.x, d.y, d.z};
     const double s = length(axis);
     if (!(s > 1e-12)) return {};
-    return (2.0 * std::atan2(s, d.w) / s) * axis;
+    return (2.0 * banjo::pm::atan2(s, d.w) / s) * axis;
 }
 
 [[nodiscard]] GripPull gripPull(const RigidMechanicalState &held, const Vec3 &grip_local,

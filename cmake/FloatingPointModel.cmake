@@ -11,9 +11,15 @@
 # MotionProperties::GetInverseInertiaForRotation while our tetrahedron contact
 # ran Jolt's /fp:fast GJK and EPA (docs/floating-point-model.md).
 #
-# So every C++ object in the build compiles to one profile, banjo-cpu-precise-v1:
+# So every C++ object in the build compiles to one profile, banjo-cpu-precise-v2:
 # IEEE arithmetic in the order the source writes it, no fused multiply-add the
-# source did not ask for, no reassociation, special values kept.
+# source did not ask for, no reassociation, special values kept -- and the same
+# results on every platform: Jolt built CROSS_PLATFORM_DETERMINISTIC (no FMA
+# intrinsics, its cross-platform code paths; set in CMakeLists.txt before Jolt
+# is fetched, and the audit requires it), and every transcendental function the
+# engine's physics calls taken from src/numeric/PortableMath.hpp, correctly
+# rounded and computed without the C library, rather than from each platform's
+# own libm. v1 was the same compiler options without those two.
 #
 #   MSVC's cl         /fp:precise, never /fp:fast, /fp:strict or /fp:contract
 #   GCC, and Clang    -fno-fast-math -ffp-contract=off, and nothing else from
@@ -23,9 +29,9 @@
 #
 # The options go on this directory before Jolt is added, so on Jolt's command
 # lines they come after Jolt's own /fp:fast (-ffp-contract=fast) and win.
-# Explicit fused multiply-adds -- std::fma, Jolt's FMA intrinsics under
-# JPH_USE_FMADD -- are instructions the source asked for, the same in every
-# object, and stay.
+# Explicit fused multiply-adds -- std::fma -- are instructions the source asked
+# for, the same in every object, and stay. Jolt's own (JPH_USE_FMADD) are off
+# under CROSS_PLATFORM_DETERMINISTIC.
 #
 # Nothing here predicts what CMake will generate. The build has a target,
 # banjo_fp_model_audit, that every compiled target waits for. It reads what
@@ -36,7 +42,7 @@
 
 include_guard(GLOBAL)
 
-set(BANJO_FP_PROFILE "banjo-cpu-precise-v1")
+set(BANJO_FP_PROFILE "banjo-cpu-precise-v2")
 set(_banjo_fp_auditor "${CMAKE_CURRENT_LIST_DIR}/../scripts/check-fp-model.py")
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")

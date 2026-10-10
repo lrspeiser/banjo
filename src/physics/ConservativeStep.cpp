@@ -1,4 +1,5 @@
 #include "physics/ConservativeStep.hpp"
+#include "numeric/PortableMath.hpp"
 #include "physics/ConservativeStepInternal.hpp"
 #include "physics/MechanicalAccounting.hpp"
 #include "physics/ElasticNewton.hpp"
@@ -15,8 +16,8 @@ bool finite(Vec3 v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::is
 
 Quat detail::advanceSphereOrientation(Quat q, Vec3 omega, double dt) {
     const double speed = length(omega), half_angle = .5 * dt * speed;
-    const double scale = speed > 1e-14 ? std::sin(half_angle) / speed : .5 * dt;
-    const Quat delta{std::cos(half_angle), scale * omega.x, scale * omega.y, scale * omega.z};
+    const double scale = speed > 1e-14 ? banjo::pm::sin(half_angle) / speed : .5 * dt;
+    const Quat delta{banjo::pm::cos(half_angle), scale * omega.x, scale * omega.y, scale * omega.z};
     Quat result{delta.w*q.w - delta.x*q.x - delta.y*q.y - delta.z*q.z,
         delta.w*q.x + delta.x*q.w + delta.y*q.z - delta.z*q.y,
         delta.w*q.y - delta.x*q.z + delta.y*q.w + delta.z*q.x,

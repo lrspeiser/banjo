@@ -1,4 +1,5 @@
 #include "fastlattice/Refracture.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include <algorithm>
 #include <array>
@@ -73,8 +74,8 @@ Mat3 closestRotation(const Mat3 &a) {
         if (!(angle > 1.0e-14)) break;
         const Vec3 axis = omega / angle;
         const double half = 0.5 * angle;
-        const double sine = std::sin(half);
-        q = multiplyQuat({std::cos(half), axis.x * sine, axis.y * sine, axis.z * sine}, q);
+        const double sine = banjo::pm::sin(half);
+        q = multiplyQuat({banjo::pm::cos(half), axis.x * sine, axis.y * sine, axis.z * sine}, q);
         const double norm = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
         if (!(norm > 0.0)) return rotationMatrix({1.0, 0.0, 0.0, 0.0});
         q = {q.w / norm, q.x / norm, q.y / norm, q.z / norm};

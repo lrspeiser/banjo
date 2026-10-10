@@ -1,4 +1,5 @@
 #include "fastlattice/MaterialContactRegion.hpp"
+#include "numeric/PortableMath.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numeric>
@@ -48,7 +49,7 @@ MaterialContactRegion MaterialContactTopology::select(std::uint32_t seed,
             if(!movable(other)){++out.clamped_edge_visits;continue;}
             const Vec3 relative=position(other)-origin;
             if(!finite(relative))throw std::invalid_argument("nonfinite material contact neighbour");
-            if(std::hypot(relative.x,relative.y,relative.z)>settings.radius_m)continue;
+            if(banjo::pm::hypot(relative.x,relative.y,relative.z)>settings.radius_m)continue;
             next.push_back(other);
         }
         std::sort(next.begin(),next.end());next.erase(std::unique(next.begin(),next.end()),next.end());

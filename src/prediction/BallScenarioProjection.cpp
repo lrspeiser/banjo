@@ -1,4 +1,5 @@
 #include "prediction/BallScenarioProjection.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include "core/Plane.hpp"
 #include "material/MaterialCompiler.hpp"
@@ -258,7 +259,7 @@ ScenarioProjection projectBallScenario(const BallScenarioInput &input) {
                   incline.gravity_normal_m_s2
             : std::numeric_limits<double>::infinity();
     incline.no_slip_angle_limit_degrees =
-        std::atan(
+        banjo::pm::atan(
             incline.available_static_friction *
             (1.0 + input.sphere_inertia_factor) /
             input.sphere_inertia_factor) *

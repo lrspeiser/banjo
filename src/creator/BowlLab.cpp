@@ -1,9 +1,10 @@
 #include "creator/BowlLab.hpp"
+#include "numeric/PortableMath.hpp"
 #include <nlohmann/json.hpp>
 #include <numbers>
 #include <stdexcept>
 namespace banjo {
-namespace { Quat rotation(const BowlSettings &s){double a=s.tilt_degrees*std::numbers::pi/360;return {std::cos(a),0,0,std::sin(a)};} }
+namespace { Quat rotation(const BowlSettings &s){double a=s.tilt_degrees*std::numbers::pi/360;return {banjo::pm::cos(a),0,0,banjo::pm::sin(a)};} }
 BowlLab::BowlLab(CreatorWorld stock):stock_(std::move(stock)){configure(settings_);}
 bool BowlLab::collect(MaterialPreset material){if(running_)throw std::logic_error("pause before collecting");return stock_.collect(std::string(materialPresetName(material))+"-pile");}
 ObjectRecipe BowlLab::craftRecipe(MaterialPreset material) const{
@@ -28,7 +29,7 @@ void BowlLab::configure(BowlSettings settings){
     for(const auto &o:stock_.objects()){
         if(o.recipe.shape!="sphere"||o.recipe.radius_m!=.045||i>=9)throw std::invalid_argument("bowl stock requires at most nine 45 mm radius spheres");
         const double angle=2*std::numbers::pi*(i%3)/3+(i>=6?.45:0),radial=i<3?.115:(i<6?.82:1.0)*settings.radius_m;
-        const double x=radial*std::cos(angle),z=radial*std::sin(angle);
+        const double x=radial*banjo::pm::cos(angle),z=radial*banjo::pm::sin(angle);
         const auto normal=normalized(Vec3{-2*settings.depth_m*x/(settings.radius_m*settings.radius_m),1,-2*settings.depth_m*z/(settings.radius_m*settings.radius_m)});
         auto position=bowlPoint(settings,x,z)+rotation(settings).rotate(normal)*(o.recipe.radius_m+.005);
         Vec3 velocity;

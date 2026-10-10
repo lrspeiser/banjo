@@ -12,6 +12,7 @@
 // valley), slumping across a seam (each field settles on its own), and a
 // smooth or cut surface (only the column surface tiles without a gap).
 #include "terrain/Environment.hpp"
+#include "numeric/PortableMath.hpp"
 
 #include "material/Material.hpp"
 #include "rigid/JoltWorld.hpp"
@@ -146,7 +147,7 @@ std::vector<Environment::Grown> Environment::growToward(JoltWorld *world, double
             if ((dx == 0 && dz == 0) || regionIndex(rx, rz) != -2) continue;
             const double x_lo = v.x0 - 0.5 * v.dx + rx * v.nx * v.dx, x_hi = x_lo + v.nx * v.dx;
             const double z_lo = v.z0 - 0.5 * v.dx + rz * v.nz * v.dx, z_hi = z_lo + v.nz * v.dx;
-            const double away = std::hypot(std::max({0.0, x_lo - x, x - x_hi}), std::max({0.0, z_lo - z, z - z_hi}));
+            const double away = banjo::pm::hypot(std::max({0.0, x_lo - x, x - x_hi}), std::max({0.0, z_lo - z, z - z_hi}));
             if (away > within_m) continue;
             Grown grown;
             grow_x_ = x;
@@ -193,7 +194,7 @@ bool Environment::addRegion(JoltWorld *world, int rx, int rz, Grown *grown) {
             const int cx = chunk % r.field->chunksX(), cz = chunk / r.field->chunksX();
             const double mx = rg.xOf(std::min(rg.nx - 1, cx * TerrainField::kChunkCells + 15));
             const double mz = rg.zOf(std::min(rg.nz - 1, cz * TerrainField::kChunkCells + 15));
-            const double away = std::isfinite(grow_x_) ? std::hypot(mx - grow_x_, mz - grow_z_) : chunk;
+            const double away = std::isfinite(grow_x_) ? banjo::pm::hypot(mx - grow_x_, mz - grow_z_) : chunk;
             order.emplace_back(away, chunk);
         }
         std::stable_sort(order.begin(), order.end());

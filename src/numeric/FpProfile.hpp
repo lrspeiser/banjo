@@ -11,7 +11,7 @@
 
 namespace banjo::fp {
 
-// "banjo-cpu-precise-v1": what the build was compiled to.
+// "banjo-cpu-precise-v2": what the build was compiled to.
 [[nodiscard]] const char *profile();
 
 // FNV-1a of profile(). A numerical cache -- the valley's ground, the scenario
@@ -68,5 +68,7 @@ struct Observations {
 // Jolt, and whether Jolt was built to use FMA instructions for it.
 [[nodiscard]] float joltFusedMultiplyAdd(float a, float b, float c);
 [[nodiscard]] bool joltUsesFusedMultiplyAdd();
+// Whether Jolt was built JPH_CROSS_PLATFORM_DETERMINISTIC, as v2 requires.
+[[nodiscard]] bool joltCrossPlatformDeterministic();
 
 } // namespace banjo::fp
