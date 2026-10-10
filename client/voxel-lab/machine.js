@@ -821,7 +821,10 @@ function startGhost(p, index) {
   ghost = {p, index, was: index < placements.length ? placements[index] : null, follow: true, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {}};
   view.classList.add('placing');
-  renderTray(); renderPlaced();
+  renderTray(); renderPlaced(); renderGhostBar();
+  // Where the ghost is: in sight (a phone's page has scrolled down to the tray).
+  const seen = view.getBoundingClientRect();
+  if (seen.top < -40 || seen.bottom > innerHeight + 40) view.scrollIntoView({block: 'start'});
   if (!ghost.was) {
     const rect = renderer.domElement.getBoundingClientRect();
     const at = sceneHit(rect.left + rect.width / 2, rect.top + rect.height / 2);
@@ -834,6 +837,7 @@ function endGhost() {
   ghost = null; draggingGhost = null;
   clearGhostMeshes(); ghostGroup.position.set(0, 0, 0);
   view.classList.remove('placing');
+  renderGhostBar();
 }
 
 function cancelGhost() { if (!ghost) return; endGhost(); renderTray(); renderPlaced(); }
@@ -844,7 +848,28 @@ function setGhostDown() {
   endGhost(); renderTray(); renderPlaced(); scheduleRebuild(0);
 }
 
+// The same controls over the scene, next to the ghost: on a phone the list
+// of pieces is a scroll away from the scene.
+function renderGhostBar() {
+  const bar = $('ghost-bar');
+  bar.hidden = !ghost;
+  if (!ghost) { bar.replaceChildren(); return; }
+  const turns = [['yaw_deg', '⟲ turn', '⟳ turn'], ['pitch_deg', 'tip ▲', 'tip ▼'], ['roll_deg', '⟲ roll', '⟳ roll']]
+    .filter(([key]) => turnKnob(ghost.p, key));
+  const row = [];
+  for (const [key, up, down] of turns) {
+    const word = key === 'yaw_deg' ? 'Turn' : key === 'pitch_deg' ? 'Tip' : 'Roll';
+    row.push(button(up, () => turnGhost(key, 15), {ariaLabel: `${word} it on 15 degrees`}),
+             button(down, () => turnGhost(key, -15), {ariaLabel: `${word} it back 15 degrees`}));
+  }
+  row.push(button('✓ Set down', setGhostDown, {className: 'down', disabled: !ghost.fits || ghost.busy}),
+           button('✕', cancelGhost, {ariaLabel: 'Throw the ghost away', title: 'Throw the ghost away'}));
+  bar.replaceChildren(...row);
+}
+
 function showGhostState() {
+  const bar = document.querySelector('#ghost-bar .down');
+  if (bar && ghost) bar.disabled = !ghost.fits || ghost.busy || !ghost.answered;
   const state = $('ghost-state'), down = $('ghost-down');
   if (!ghost || !state) return;
   state.className = 'ghost-state ' + (ghost.fits ? 'fits' : 'refused');
