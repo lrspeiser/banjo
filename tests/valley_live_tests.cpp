@@ -1207,8 +1207,12 @@ void nativePlayersWalkOnFlatGroundAndStop() {
     // so its accounts are checked on one seamless floor (below).
 
     // One anchored slab: level, no seams, so its own push is the only
-    // horizontal force and its accounts must close.
-    Json slab=nativePlayerScene();slab["bodies"].push_back(box("floor","concrete",{40,.2,40},{0,-.1,0},true));
+    // horizontal force and its accounts must close. Big enough for the walk
+    // (x from 0 to about 5 m) and no bigger: an anchored box is latticed like
+    // any other, and the 40 x 40 m slab this was -- 5 million 40 mm cells,
+    // three hundred times a room's 16,000-cell cap -- took 17 GB to hold and
+    // 35 GB to open, which a 16 GB CI runner cannot give.
+    Json slab=nativePlayerScene();slab["bodies"].push_back(box("floor","concrete",{8,.2,2},{3.5,-.1,0},true));
     auto flat=open(slab,{},{0,-9.81,0});flat->spawnNativePlayer("walker",{0,.01,0});
     walkFor(*flat,"walker",{},1);
     const auto rest=nativePlayerOf(*flat,"walker");
@@ -1222,6 +1226,7 @@ void nativePlayersWalkOnFlatGroundAndStop() {
     const auto stopped=nativePlayerOf(*flat,"walker");
     require(length(stopped.state.linear_velocity_m_s)<.05,"it stops when asked");
     require(stopped.state.center_of_mass_world_m.x>4,"it went somewhere");
+    require(stopped.state.center_of_mass_world_m.x<7,"and stopped on the slab");
     run(*flat,1.0);                                         // request lapses: passive
     const auto passive=nativePlayerOf(*flat,"walker");
     require(passive.walk_remaining_s==0 && !passive.supported,"a lapsed request drives nothing");
@@ -1361,7 +1366,9 @@ void nativePlayerLetsGoOfWhatItCannotReach() {
     // grip -- a player digging was flung 184 m off the map (2026-10-04). An
     // arm reaches so far: past that the hand lets go, and the body stays.
     Json scene=nativePlayerScene();
-    scene["bodies"].push_back(box("floor","concrete",{20,.2,20},{0,-.1,0},true));
+    // Floor enough for the swing and the walk away (x from 1.3 back to about
+    // -8 m): a 20 x 20 m slab was 1.25 million 40 mm cells and 8.6 GB to open.
+    scene["bodies"].push_back(box("floor","concrete",{12,.2,4},{-3.5,-.1,0},true));
     scene["bodies"].push_back(box("wall","concrete",{.2,2.0,2.0},{1.2,1.0,0},true));
     scene["bodies"].push_back(box("crate","oak",{.32,.32,.32},{.92,1.2,0}));
     auto world=open(scene,{},{0,-9.81,0});

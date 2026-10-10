@@ -399,7 +399,10 @@ void aPickSwungOutThereBreaksTheRegionsGround() {
     require(in.depth_m > 0.0, "the point went into the region's ground");
     require(out.kind == "broke out" && out.loosened.total() > 0.0, "the pry broke the region's ground out");
     require(std::abs(gained) < 1e-12, "measured column material remains physical before collection");
-    double physical=0;for(const auto &body:Json::parse(world->groundDebrisJson()).at("bodies"))
+    // Name the parsed document: a range-for over .at() of a temporary dangles
+    // once the temporary dies (before C++23's P2718, which GCC 13 lacks).
+    const Json debris=Json::parse(world->groundDebrisJson());
+    double physical=0;for(const auto &body:debris.at("bodies"))
         physical+=body.at("volumes").at("soil_m3").get<double>()+body.at("volumes").at("sand_m3").get<double>();
     require(std::abs(physical-out.loosened.total())<1e-12,"measured region wedge retains its actual native matter");
     require(std::abs(ledger.dug.soil_m3 + ledger.dug.sand_m3 - physical) < 1e-12, "and came out of the region");
