@@ -30,7 +30,12 @@ requirements already resolved. Then:
   definitions, so Jolt's inline code takes the same paths in every object;
 - Jolt itself must be built JPH_CROSS_PLATFORM_DETERMINISTIC: the profile
   promises the same results on every platform, and Jolt keeps that promise only
-  in that mode.
+  in that mode;
+- no engine source under src/ or tools/ calls the C library's transcendental
+  functions (std::sin ... std::hypot): each platform's libm rounds them its own
+  way, so the engine takes them from src/numeric/PortableMath.hpp instead. The
+  viewer's drawing, the assistant's prompt text and the tests' own oracles are
+  outside the engine and listed below.
 
 A floating-point option this script does not know is reported, never skipped.
 Exit 0 when every file keeps the profile, 1 when any does not, 2 when the
@@ -637,6 +642,13 @@ def audit(build, configs_wanted, all_configs):
                 violations.append({"configuration": "*", "target": "*", "file": f"{path}:{line}",
                                    "problem": f"{pattern}: {text[:120]}"})
     result["files_searched"] = len(scan_files)
+    # The engine's transcendental functions are its own, the same everywhere.
+    calls = libm_calls(source_dir)
+    result["libm_calls"] = [{"file": f, "line": n, "text": t[:160]} for f, n, t in calls]
+    for f, n, t in calls:
+        violations.append({"configuration": "*", "target": "*", "file": f"{os.path.relpath(f, source_dir)}:{n}",
+                           "problem": "calls the C library's transcendental functions, which each platform "
+                                      f"rounds its own way; use banjo::pm (numeric/PortableMath.hpp): {t[:100]}"})
     return result
 
 
@@ -703,6 +715,42 @@ def vs_cross_check(build, name, family, prefix, suffix, expected, source_dir, vi
     return checked
 
 
+# The C library's transcendental functions: each platform rounds them its own
+# way. Engine code takes them from numeric/PortableMath.hpp (banjo::pm::).
+LIBM_CALL = re.compile(r"\bstd::(sin|cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|asinh|acosh|atanh|exp|exp2|expm1|"
+                       r"log|log2|log10|log1p|pow|cbrt|hypot|erf|erfc|tgamma|lgamma)\s*\(|"
+                       r"\b(sinf|cosf|tanf|expf|logf|powf|atan2f|acosf|asinf|cbrtf|hypotf)\s*\(")
+# Where a libm call is not engine physics, and why.
+LIBM_OUTSIDE_ENGINE = (
+    ("src/viewer/", "the raylib viewer draws; it computes no world state"),
+    ("src/creator/codexassistant.cpp", "text in a prompt for the assistant, not a call"),
+)
+
+
+def libm_calls(source_dir):
+    """Calls to the C library's transcendental functions in the engine's own
+    sources (src/ and tools/), as (file, line, text)."""
+    hits = []
+    root = Path(source_dir)
+    for base in (root / "src", root / "tools"):
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*")):
+            if path.suffix.lower() not in (".cpp", ".hpp", ".h", ".inl", ".cc", ".cxx"):
+                continue
+            posix = path.as_posix().lower()
+            if any(part in posix for part, _ in LIBM_OUTSIDE_ENGINE):
+                continue
+            try:
+                text = strip_comments(path.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+            for number, line in enumerate(text.splitlines(), start=1):
+                if LIBM_CALL.search(line):
+                    hits.append((str(path), number, line.strip()))
+    return hits
+
+
 def report(result, quiet):
     lines = []
     compiler = result["compiler"]
@@ -716,6 +764,7 @@ def report(result, quiet):
     uses = result["source_uses"]
     lines.append(f"  {result['files_searched']} sources and headers searched: "
                  f"{len(uses['allowed'])} allowed uses, {len(uses['refused'])} refused")
+    lines.append(f"  engine calls to the C library's transcendental functions: {len(result.get('libm_calls', []))}")
     if result["environment"]:
         lines.append(f"  environment: {result['environment']}")
     violations = result["violations"]
