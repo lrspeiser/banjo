@@ -405,6 +405,17 @@ class Light(unittest.TestCase):
         self.assertAlmostEqual(math.tan(math.radians(lamp['half_angle_deg'])), 0.00525, places=9)
         self.assertEqual(lamp['visible_share'], 1.0)
         self.assertEqual(mw.compile_spec(laser_machine(band='infrared'))['light']['lamps'][0]['visible_share'], 0.0)
+        # Turned as a whole, the beam turns with its housing: a quarter turn
+        # about the vertical takes +x to -z, and tipped up 30 degrees it rises.
+        spec = laser_machine(lens=True)
+        spec['kits'][0]['turned'] = {'yaw_deg': 90, 'pitch_deg': 30, 'about_m': [-0.81, 0.575, 0.0]}
+        spec['kits'][2]['turned'] = {'yaw_deg': 90, 'about_m': [0.5, 0.575, 0.89]}
+        c = mw.compile_spec(spec)
+        axis = next(lp for lp in c['light']['lamps'] if lp['name'] == 'laser')['axis']
+        want = [0.0, math.sin(math.radians(30)), -math.cos(math.radians(30))]
+        self.assertTrue(all(abs(a - b) < 1e-6 for a, b in zip(axis, want)), axis)
+        lens_axis = c['light']['lenses'][0]['axis']
+        self.assertTrue(all(abs(a - b) < 1e-6 for a, b in zip(lens_axis, [1.0, 0.0, 0.0])), lens_axis)
 
         def refused(change, words):
             spec = laser_machine()
