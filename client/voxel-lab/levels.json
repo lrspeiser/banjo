@@ -793,6 +793,41 @@
      "foot_height_m": 0.3,
      "z_m": 0.0
     }
+   ],
+   "milestones": [
+    {
+     "title": "The ball hits the lever",
+     "done_when": {
+      "hits": [
+       "your ramp 1 ball",
+       "lever"
+      ]
+     },
+     "focus": [
+      "lever"
+     ]
+    },
+    {
+     "title": "The lever closes the switch",
+     "done_when": {
+      "switch_closed": "firing circuit"
+     },
+     "focus": [
+      "lever"
+     ]
+    },
+    {
+     "title": "The cannon fires",
+     "done_when": {
+      "moved_m": {
+       "part": "cannon ball",
+       "m": 0.3
+      }
+     },
+     "focus": [
+      "cannon ball"
+     ]
+    }
    ]
   },
   {

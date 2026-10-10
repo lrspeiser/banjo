@@ -136,6 +136,21 @@ class Engine(unittest.TestCase):
                     self.assertEqual(empty['worked'], 0, f"{level['id']} is solved with no pieces at all")
 
     @need_engine
+    def test_the_engines_search_finds_the_chain_from_a_ramp_in_the_wrong_place(self):
+        # The model's own first try, a ramp over the lever: the ball flies past
+        # it. Scattered starts, then one knob at a time, every step a real run.
+        level = mg.level_by_id('chain')
+        start = [{'piece': 'ramp', 'x_m': 0.5, 'top_height_m': 1.0, 'run_m': 1.0, 'foot_height_m': 0.05, 'z_m': 0.0}]
+        with tempfile.TemporaryDirectory() as logs:
+            reh = lambda c: mw.rehearse(c, ENGINE, Path(logs), seconds=level['time_s'] + 0.5, wall_limit_s=60)
+            self.assertGreater(mg.miss_m(level, reh(mw.compile_spec(mg.compose(level, start)[0]))), 3.0,
+                               'the start misses the lever and every step after it')
+            placed, run, runs = mg.refine(level, start, reh, budget=48, scatter=16, seed=3)
+        print(f'\n  chain found in {runs} runs: {placed}')
+        self.assertEqual(mg.miss_m(level, run), 0.0)
+        self.assertTrue(all(row['done'] for row in run['stations']), 'every step of the chain happened')
+
+    @need_engine
     def test_a_misplaced_piece_fails_for_a_physical_reason(self):
         # The knife set too high swings over the rope and into the weight's arm.
         level = mg.level_by_id('cut')

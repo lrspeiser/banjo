@@ -350,7 +350,7 @@ def respond_level(message, level, placements, mode='hint', last_run=None, call=N
     if not built:
         raise mg.LevelRefused(tried[-1]['refused'] if tried else ['The model placed nothing'])
     nearest = min(built, key=lambda t: t['miss'])
-    placed, r, runs = mg.refine(level, nearest['placements'], rehearse)
+    placed, r, runs = mg.refine(level, nearest['placements'], rehearse, budget=48, scatter=16)
     spec, checked, cost = mg.compose(level, placed)
     row = (r.get('stations') or [{}])[0]
     reached = mg.miss_m(level, r) == 0

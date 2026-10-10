@@ -175,12 +175,33 @@ def compose(level, placements):
     goal = level['goal']['station']['done_when']
     rule = next(iter(goal.values()))
     wanted = rule.get('part') if isinstance(rule, dict) else rule
-    if isinstance(wanted, str):
-        names = {p['name'] for p in mw.compile_spec(dict(spec, stations=[]))['parts']}
-        if wanted not in names:
-            raise LevelRefused([level['goal'].get('needs', f'the goal is about {wanted}, which is not here yet')])
+    compiled = mw.compile_spec(dict(spec, stations=[]))
+    names = {p['name'] for p in compiled['parts']}
+    if isinstance(wanted, str) and wanted not in names:
+        raise LevelRefused([level['goal'].get('needs', f'the goal is about {wanted}, which is not here yet')])
     spec['stations'] = [dict(level['goal']['station'], title=level['goal']['title'], focus=level['goal'].get('focus', []))]
+    # The steps on the way, after the goal: shown on the page as the chain's
+    # stations, and what the engine's search steers by. One about a part
+    # that is not placed yet is left out.
+    joints = {j['name'] for j in compiled['joints']}
+    circuits = {c['name'] for c in compiled['circuits']}
+    for m in level.get('milestones', []):
+        if all(x in names or x in joints or x in circuits for x in _named(m['done_when'])):
+            spec['stations'].append({'title': m['title'], 'done_when': m['done_when'], 'focus': m.get('focus', [])})
     return spec, checked, cost
+
+
+def _named(rule):
+    """The parts, joints and circuits a station rule names."""
+    out = []
+    for value in rule.values():
+        if isinstance(value, str):
+            out.append(value)
+        elif isinstance(value, list):
+            out += [v for v in value if isinstance(v, str)]
+        elif isinstance(value, dict):
+            out += [value[k] for k in ('part', 'joint', 'photocell') if isinstance(value.get(k), str)]
+    return out
 
 
 def stars(level, checked, cost, goal_at_s, helped=False):
@@ -229,18 +250,32 @@ def miss_m(level, rehearsal):
     """How far from the goal a rehearsal ended up: 0 when the goal happened
     in time, otherwise how near the goal zone the part came (or 1 m when the
     goal is not a zone)."""
-    row = (rehearsal.get('stations') or [{}])[0]
+    rows = rehearsal.get('stations') or [{}]
+    row = rows[0]
     if row.get('done') and row.get('at_s') is not None and row['at_s'] <= level['time_s']:
         return 0.0
+    # A chain: one metre for every step on the way not reached, and for the
+    # first of them, how near its two parts came (a "hits" step) -- so a
+    # ball that misses the lever by 5 cm is nearer than one that misses by
+    # 50, though neither tipped it.
+    titles = [m['title'] for m in level.get('milestones', [])]
+    missed = [r.get('title') for r in rows[1:] if r.get('title') in titles and not r.get('done')]
+    if missed:
+        close = {c['station']: c['centres_m'] for c in rehearsal.get('closest_approach') or []}
+        return len(missed) + min(1.0, close.get(missed[0], 1.0)) + 0.001
     near = rehearsal.get('zone_nearest_m') or {}
     return near.get(level['goal']['title'], 1.0) + 0.001
 
 
-def refine(level, placements, rehearse, budget=24):
+def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
     """Starting from `placements`, move one knob at a time and keep a move
     when the engine says the goal came nearer -- a plain coordinate search,
-    every step of it a real run. Returns (placements, rehearsal, runs) for the
-    best found; the goal happened when miss_m of it is 0."""
+    every step of it a real run. With `scatter`, that many random settings of
+    the same pieces' knobs are tried first and the search starts from the
+    best of them all: nearness can mislead (a ball flying past a lever comes
+    near its middle from a ramp in quite the wrong place), and a few starts
+    spread over the ranges get past that. Returns (placements, rehearsal,
+    runs) for the best found; the goal happened when miss_m of it is 0."""
     best = [{k: v for k, v in p.items() if k != 'cost'} for p in placements]
     spec, _, _ = compose(level, best)
     best_run = rehearse(mw.compile_spec(spec))
@@ -248,6 +283,24 @@ def refine(level, placements, rehearse, budget=24):
     tray = {t['piece']: t for t in level['tray']}
     knobs = [(i, key, rule) for i, p in enumerate(best) for key, rule in tray[p['piece']]['knobs'].items()
              if 'choices' not in rule]
+    rng = random.Random(seed)
+    for _ in range(scatter):
+        if best_miss == 0 or runs >= budget:
+            break
+        trial_p = copy.deepcopy(best)
+        for i, key, rule in knobs:
+            step = rule.get('step', 0.01)
+            trial_p[i][key] = round(round(rng.uniform(rule['min'], rule['max']) / step) * step, 4)
+        try:
+            spec, _, _ = compose(level, trial_p)
+            compiled = mw.compile_spec(spec)
+        except (LevelRefused, mw.MachineRefused):
+            continue
+        run = rehearse(compiled)
+        runs += 1
+        miss = miss_m(level, run)
+        if miss < best_miss:
+            best, best_run, best_miss = trial_p, run, miss
     for fraction in (0.12, 0.05, 0.02):
         improved = True
         while improved and best_miss > 0 and runs < budget:
@@ -271,6 +324,23 @@ def refine(level, placements, rehearse, budget=24):
                     miss = miss_m(level, run)
                     if miss < best_miss - 1e-4:
                         best, best_run, best_miss, improved = trial_p, run, miss, True
+                        # Going the right way: keep going while it helps.
+                        while best_miss > 0 and runs < budget:
+                            ahead = copy.deepcopy(best)
+                            ahead[i][key] = round(min(rule['max'], max(rule['min'], ahead[i][key] + step)), 4)
+                            if ahead[i][key] == best[i][key]:
+                                break
+                            try:
+                                spec, _, _ = compose(level, ahead)
+                                compiled = mw.compile_spec(spec)
+                            except (LevelRefused, mw.MachineRefused):
+                                break
+                            run = rehearse(compiled)
+                            runs += 1
+                            miss = miss_m(level, run)
+                            if miss >= best_miss - 1e-4:
+                                break
+                            best, best_run, best_miss = ahead, run, miss
                         break
         if best_miss == 0:
             break
