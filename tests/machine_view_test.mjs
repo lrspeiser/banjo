@@ -3,7 +3,7 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments} from '../client/voxel-lab/machine-view.mjs';
 
 const body = (name, extra = {}) => ({name, shape: 'box', material: 'oak', dimensions_m: [.1, .1, .1], position_m: [0, 0, 0],
   orientation_wxyz: [1, 0, 0, 0], revision: 0, ...extra});
@@ -39,4 +39,12 @@ assert.deepEqual(focusPoint([{done: true}, {done: false}], stations, bodies), {i
 assert.deepEqual(stationPoint(stations[0], bodies), [1, 0, 0], 'any station can be looked at, done or not');
 assert.equal(stationPoint({focus: ['nothing here']}, bodies), null);
 assert.deepEqual(focusPoint([{done: true}, {done: true}, {done: false}], stations, bodies), {index: 1, at: [3, 0, 0]});
-console.log('PASS machine page draws engine frames, measured heat colours and the next unmeasured station');
+// Light: each leg of each traced ray is a segment, in metres, brightest where
+// the engine measured the most power.
+const beams = beamSegments([{light: 1, mm: [0, 1000, 0, 0, 500, 0, 500, 1000, 0], w: [4, 1]}, {light: 1, mm: [0, 0, 0], w: []}]);
+assert.equal(beams.legs, 2, 'two legs; a path with one corner draws nothing');
+assert.deepEqual([...beams.positions.slice(0, 6)], [0, 1, 0, 0, .5, 0]);
+assert.ok(beams.colors[0] > beams.colors[6], 'the stronger leg is brighter');
+assert.ok(beams.colors[6] > 0, 'a faint leg still shows');
+assert.equal(beamSegments(undefined).legs, 0);
+console.log('PASS machine page draws engine frames, measured heat colours, light beams and the next unmeasured station');

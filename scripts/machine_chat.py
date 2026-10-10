@@ -83,7 +83,8 @@ Declaration (JSON object, schema "{mw.SCHEMA}"):
                drum as it turns the "winds" way, pulling the load; it pulls and never pushes) ],
   "batteries": [ {{"name": str, "in": part, "capacity_j": n, "voltage_v": n, "max_power_w": n}} ],
   "circuits": [ {{"name": str, "battery": battery name,
-                 "switch": {{"hinge": hinge joint name, "closed_at_or_above_deg": n}} or null (always closed),
+                 "switch": {{"hinge": hinge joint name, "closed_at_or_above_deg": n}}, or
+                           {{"photocell": light sensor name, "closed_at_or_above_w": n}}, or null (always closed),
                  "coil": {{"heats": part, "resistance_ohm": n}}}} ],
   "torches": [ {{"target": part, "power_w": n, "seconds": n}} ],
   "spouts": [ {{"name": str, "at_m": [x, y, z] (the mouth, in the air over the flume's ground), "direction": [0, -1, 0],
@@ -95,6 +96,7 @@ Declaration (JSON object, schema "{mw.SCHEMA}"):
                  {{"turned_deg": {{"joint": hinge name, "deg": n}}}} (total turning, e.g. a wheel),
                  {{"slid_m": {{"joint": slide name, "m": n}}}}, {{"switch_closed": circuit}},
                  {{"hotter_than_k": {{"part": name, "k": n}}}}, {{"parted": part}}, {{"broke": part}},
+                 {{"lit_w": {{"photocell": name, "w": n}}}}, {{"shaded_w": {{"photocell": name, "w": n}}}},
                  "focus": [part]}} ] }}
 A part may also be "shape": "compound": one exact rigid body of "parts": [{{"shape": "box"|"cylinder", "size_m":
 [x, y, z] (a cylinder is [diameter, length, diameter] along its own y), "at_m": local centre, "turn_deg": local}}].
@@ -103,6 +105,9 @@ Kits expand into ordinary parts and joints; prefer them for layout:
 {kits}
 A circuit's coil heats the part it is wound on (heat flows in as I^2 R). A switch that follows a hinge is closed while
 that hinge's measured angle is at or beyond its reading; the engine measures the angle every step.
+
+Light (the engine follows rays of light; it reflects, bends, focuses, warms and works sensors):
+{mw.LIGHT_HELP}
 
 Rules the server enforces (a declaration that breaks one is refused and sent back to you):
 - Nothing goes into the ground: a part's lowest point is at or above the ground under it (y = 0, or the trench bed

@@ -394,6 +394,35 @@ void whatAbsorbsLightIsHeatedByIt() {
     require(std::abs(board_j - o.joules.heated) < 1e-9 * board_j, "and that is what the board absorbed");
     const double residual_j = o.joules.residual();
     require(std::abs(residual_j) < 1e-9 * o.joules.sent, "the joule ledger closes");
+
+    // An exact rigid body (a precise compound) absorbs too, but the heat
+    // network cannot hold one: what it absorbs is counted as warming nothing,
+    // and the network is not handed it.
+    TileImpactRequest request;
+    request.cell_size_m = 0.02;
+    request.backend = BackendKind::CpuParallel;
+    request.bodies = {box("board", MaterialPreset::Oak, {0.3, 0.02, 0.3}, {0.0, 0.5, 0.0})};
+    request.precise_rigid_scene_json =
+        nlohmann::json::array({{{"name", "exact board"}, {"material", "oak"}, {"position_m", {1.0, 0.011, 0.0}},
+                                {"parts", nlohmann::json::array({{{"name", "plank"},
+                                                                  {"dimensions_m", {0.3, 0.02, 0.3}},
+                                                                  {"center_local_m", {0.0, 0.0, 0.0}}}})}}})
+            .dump();
+    auto mixed = LiveWorld::open(request);
+    require(mixed->setSun(90.0, 0.0, 1000.0), "the sun would not go up");
+    require(mixed->sunlight("sun", {{{0.0, 0.5, 0.0}, {0.3, 0.04, 0.3}}, {{1.0, 0.03, 0.0}, {0.3, 0.06, 0.3}}}, 0.01) != 0,
+            "sunlight on both");
+    for (int i = 0; i < 240; ++i) tick(*mixed);
+    const LiveOptics m = mixed->optics();
+    const double mixed_heater_j =
+        nlohmann::json::parse(mixed->thermoReport(false)).at("ledger").at("heater_in_j").get<double>();
+    std::cout << "    beside it an exact oak board absorbs " << m.watts.unheated << " W that warms nothing; the heat "
+              << "network took " << mixed_heater_j << " J, all of it the ordinary board's\n";
+    require(std::abs(m.watts.unheated - 45.0) < 1e-6, "the exact board absorbs half its sunlight, warming nothing");
+    require(std::abs(mixed_heater_j - m.joules.heated) < 1e-9 * mixed_heater_j &&
+                std::abs(m.joules.heated - 45.0) < 1e-6,
+            "and only the ordinary board's light reaches the heat network");
+    require(std::abs(m.joules.residual()) < 1e-9 * m.joules.sent, "the joule ledger closes");
 }
 
 // ---- 7. a heat lamp burns an oak cord ------------------------------------------
