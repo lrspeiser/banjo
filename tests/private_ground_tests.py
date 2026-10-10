@@ -452,11 +452,18 @@ class PrivateGround(unittest.TestCase):
             while time.monotonic()<deadline:
                 if p.evaluate('Boolean('+expr+')'):return
                 time.sleep(.1)
-            self.fail(expr+'; '+str(p.evaluate('document.querySelector("#picked")?.textContent')))
+            self.fail(expr+'; '+str(p.evaluate('({panel:document.querySelector("#machine-panel")?.innerText,said:document.querySelector("#world-action-toast")?.textContent})')))
         def click(selector):
-            spot=p.evaluate('(()=>{const b=document.querySelector('+json.dumps(selector)+');b.scrollIntoView({block:"center"});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()')
-            for kind in ('mousePressed','mouseReleased'):
-                p.send('Input.dispatchMouseEvent',{'type':kind,'button':'left','clickCount':1,**spot})
+            # Press only once the button itself is under the pointer: the
+            # machine panel is redrawn with every reply. Held 0.2 s like a
+            # person's click, which the panel's redraw must not swallow.
+            under=('(()=>{const b=document.querySelector('+json.dumps(selector)+');if(!b||b.disabled)return null;b.scrollIntoView({block:"center"});'
+                   'const r=b.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2,e=document.elementFromPoint(x,y);'
+                   'return e && b.contains(e) ? {x,y} : null})()')
+            wait(under);spot=p.evaluate(under)
+            p.send('Input.dispatchMouseEvent',{'type':'mousePressed','button':'left','clickCount':1,**spot})
+            time.sleep(.2)
+            p.send('Input.dispatchMouseEvent',{'type':'mouseReleased','button':'left','clickCount':1,**spot})
         def select_machine():
             # The machine's own controls, opened as a person does: look at it
             # and press E. The Details rail that showed the picked card is gone
@@ -467,7 +474,10 @@ class PrivateGround(unittest.TestCase):
             wait('banjoRoom.world.aim?.name==='+body)
             p.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'KeyE','key':'e'})
             p.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'KeyE','key':'e'})
-            wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away")')
+            # Until the rail has slid all the way in: a press mid-slide lands on a
+            # button that moves out from under the pointer before the release.
+            wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away") && '
+                 '(r=>!r.getAnimations().length && Math.abs(r.getBoundingClientRect().right-innerWidth)<1)(document.querySelector("#panel"))')
             wait('(()=>{const b=document.querySelector("#machine-panel [data-process-recipe] button");if(!b)return false;b.scrollIntoView({block:"center"});'
                  'const r=b.getBoundingClientRect(),e=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !!e && b.contains(e)})()')
         # What an action came to shows on the action line over the room.

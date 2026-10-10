@@ -255,7 +255,10 @@ class GoodsJourney(unittest.TestCase):
                         'Selecting a machine must not unfold the rail')
         wait(rover_part)
         key('KeyE','e')
-        wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away")')
+        # Until the rail has slid all the way in: a press mid-slide lands on a
+        # button that moves out from under the pointer before the release.
+        wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away") && '
+             '(r=>!r.getAnimations().length && Math.abs(r.getBoundingClientRect().right-innerWidth)<1)(document.querySelector("#panel"))')
         self.assertEqual(['machine-panel'],page.evaluate(
             '[...document.querySelector("#panel").children].filter(e=>getComputedStyle(e).display!=="none").map(e=>e.id)'),
             "A machine's controls have the rail to themselves: no chat, no inspector")
@@ -454,7 +457,10 @@ class GoodsJourney(unittest.TestCase):
             wait('banjoRoom.world.machines?.programs?.find(p=>p.body==="rover")?.parts.includes(banjoRoom.world.aim?.name)')
             page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'KeyE','key':'e'})
             page.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'KeyE','key':'e'})
-            wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away")')
+            # Until the rail has slid all the way in: a press mid-slide lands on a
+            # button that moves out from under the pointer before the release.
+            wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away") && '
+                 '(r=>!r.getAnimations().length && Math.abs(r.getBoundingClientRect().right-innerWidth)<1)(document.querySelector("#panel"))')
             wait('document.querySelector("#machine-panel .rover-card")?.checkVisibility()')
         controls()
         probes=page.evaluate('banjoRoom.world.machines.programs.find(p=>p.body==="rover").sensors')
@@ -1020,7 +1026,10 @@ class GoodsJourney(unittest.TestCase):
         wait('banjoRoom.world.aim?.name==='+body)
         page.send('Input.dispatchKeyEvent',{'type':'keyDown','code':'KeyE','key':'e'})
         page.send('Input.dispatchKeyEvent',{'type':'keyUp','code':'KeyE','key':'e'})
-        wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away")')
+        # Until the rail has slid all the way in: a press mid-slide lands on a
+        # button that moves out from under the pointer before the release.
+        wait('document.body.classList.contains("machine-open") && !document.body.classList.contains("panel-away") && '
+             '(r=>!r.getAnimations().length && Math.abs(r.getBoundingClientRect().right-innerWidth)<1)(document.querySelector("#panel"))')
         click('#machine-panel [data-input-delivery] button')
         wait('document.querySelector("#machine-panel [data-deliver-substance=\\"copper ore\\"]:not(:disabled)")')
         click('#machine-panel [data-deliver-substance="copper ore"]')

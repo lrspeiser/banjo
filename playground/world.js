@@ -3112,9 +3112,11 @@ function showProgramPanel(p) {
   // What the machine is fed and which recipe it works are its own controls,
   // the same ones the picked card draws: Load from Inventory, Choose recipe.
   // The picked card no longer opens (eaf9e306), so without them here a
-  // smelter could not be loaded from the World at all.
+  // smelter could not be loaded from the World at all. They go above the
+  // readings: those change and rewrap with every reply, and buttons below
+  // them moved under a pointer about to press them.
   let feed=$("mp-feed");
-  if(!feed) {feed=document.createElement("div");feed.id="mp-feed";$("mp-holds").before(feed);}
+  if(!feed) {feed=document.createElement("div");feed.id="mp-feed";$("machine-panel").querySelector(".mp-read").before(feed);}
   const routine=world.brains.get(p.name)?.routine;
   // Not while the recipe list is in use: remaking it would shut its dropdown.
   if(!(feed.contains(document.activeElement) && document.activeElement.tagName==="SELECT"))
