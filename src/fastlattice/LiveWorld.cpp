@@ -758,6 +758,24 @@ struct LiveWorld::Impl {
     // the same array the batch lane keeps, because buildFragmentLattice reads
     // it that way. Rewritten whenever a body is replaced by its pieces.
     std::vector<Vec3> cell_offset_m;
+    // Which way each cell's grid runs in its body's frame: the turn that takes
+    // the axes of the lattice it was cut from onto the body's own. The cells of
+    // one body all share it. It is the scene's own turn for its part to begin
+    // with -- nothing for anything cut from the world's grid, the box's
+    // rotation_deg for a tilted box built in its own frame
+    // (TileImpactSetup::part_lattice_turn) -- and it is carried along every
+    // time a body is made again from where its cells are in the world, because
+    // a new body faces the world's own way: a piece of something that had been
+    // turned has its cells turned by that much in its frame. Everything that
+    // finds a cell from a point asks along these axes (CellGrid).
+    std::vector<Quat> cell_turn;
+    // The turn body `i`'s cells lie along (cell_turn), or none for a body with
+    // no cells.
+    [[nodiscard]] Quat latticeTurn(std::size_t i) const {
+        if (i >= nodes_of.size() || nodes_of[i].empty() || nodes_of[i].front() >= cell_turn.size())
+            return Quat{};
+        return cell_turn[nodes_of[i].front()];
+    }
     // How far a point in a body's own frame stands off that body's matter: the
     // distance to its nearest cell centre. Next to nothing for a pin through
     // the middle of a cell, half a cell for one on a face -- and for a pin put
@@ -4932,6 +4950,12 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     }
 
     impl.cell_offset_m.assign(setup.matter.nodes.size(), Vec3{});
+    // Each cell's grid runs the way its part's was built: the bodies made below
+    // face the world's own way, so the scene's turn is theirs too.
+    impl.cell_turn.assign(setup.matter.nodes.size(), Quat{});
+    for (std::size_t node = 0; node < setup.part_of_node.size() && node < impl.cell_turn.size(); ++node)
+        if (setup.part_of_node[node] < setup.part_lattice_turn.size())
+            impl.cell_turn[node] = setup.part_lattice_turn[setup.part_of_node[node]];
     impl.part_cells.assign(setup.part_bodies.size(), 0);
     for (const std::uint32_t part : setup.part_of_node)
         if (part < impl.part_cells.size()) ++impl.part_cells[part];
@@ -5278,6 +5302,14 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             fragment.mass_properties.linear_velocity_m_s = {};
             fragment.mass_properties.angular_velocity_rad_s = {};
             for (std::size_t k = 0; k < nodes.size(); ++k) impl.cell_offset_m[nodes[k]] = offsets[k];
+            // And the way its cells' grid runs among those offsets, as it was
+            // saved. Not saved means none, which is also how a world saved
+            // before cells carried a turn was read: every body's grid along its
+            // own axes. (One with a tilted box in it does not open into this
+            // build at all -- that box's cells are not where they were, and the
+            // fingerprint above says so.)
+            const Quat lattice = b.contains("lattice_wxyz") ? quatFrom(b.at("lattice_wxyz")) : Quat{};
+            for (const std::uint32_t node : nodes) impl.cell_turn[node] = lattice;
             impl.limits_of.push_back(fragmentFractureLimits(setup.matter, nodes, definition->density_kg_m3,
                                                             definition->young_modulus_pa,
                                                             definition->yield_strength_pa,
@@ -7521,6 +7553,13 @@ namespace {
                 a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
                 a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w};
 }
+// The same, kept a unit quaternion. A cell's grid turn is composed again every
+// time its body is made again from its cells, so it must not drift in length.
+[[nodiscard]] Quat turnedBy(const Quat &a, const Quat &b) {
+    const Quat q = compose(a, b);
+    const double norm = std::sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
+    return norm > 0.0 ? Quat{q.w / norm, q.x / norm, q.y / norm, q.z / norm} : Quat{};
+}
 } // namespace
 
 std::vector<LiveBodyPose> LiveWorld::poses(bool with_geometry) const {
@@ -9604,13 +9643,18 @@ void LiveWorld::surveyLoads() {
         if (nodes.empty()) return best;
         const RigidSnapshot pose = impl_->world->snapshot(impl_->body_of[body]);
         const double cell = impl_->request.cell_size_m;
-        // Which of its own axes is up. One that is not square to the ground is
-        // tipping, and is not at rest under anything.
+        // Which of its grid's axes is up -- its cells' own, which are its body's
+        // unless it was built or made again turned (Impl::cell_turn). One that
+        // is not square to the ground is tipping, and is not at rest under
+        // anything.
+        const Quat lattice = impl_->latticeTurn(body);
+        const Quat grid_in_world = compose(pose.orientation_world, lattice);
+        const Quat to_grid = conjugateOf(lattice);
         int up = -1;
         double up_sign = 1.0;
         for (int axis = 0; axis < 3; ++axis) {
             const Vec3 unit{axis == 0 ? 1.0 : 0.0, axis == 1 ? 1.0 : 0.0, axis == 2 ? 1.0 : 0.0};
-            const double y = pose.orientation_world.rotate(unit).y;
+            const double y = grid_in_world.rotate(unit).y;
             if (std::abs(y) > 0.996) { up = axis; up_sign = y > 0.0 ? 1.0 : -1.0; }
         }
         if (up < 0) return best;
@@ -9623,9 +9667,10 @@ void LiveWorld::surveyLoads() {
         const double reach = std::max(kWhisker, 0.25 * cell);
         for (const std::uint32_t node : nodes) {
             const Vec3 offset = impl_->cell_offset_m[node];
+            const Vec3 along = to_grid.rotate(offset - first);
             Cell c{};
             for (int axis = 0; axis < 3; ++axis)
-                c.at[axis] = std::llround((part(offset, axis) - part(first, axis)) / cell);
+                c.at[axis] = std::llround(part(along, axis) / cell);
             c.at[up] = static_cast<long long>(up_sign) * c.at[up];
             const Vec3 world = pose.center_of_mass_world_m + pose.orientation_world.rotate(offset);
             const double ground = impl_->environment ? impl_->environment->groundHeightAt(world.x, world.z)
@@ -11566,6 +11611,17 @@ std::size_t LiveWorld::applyPending() {
                                                impl_->shapeTurn(body));
             }
         }
+    // And which way each cell's grid will run in whatever it ends up in: the
+    // pose that placed it in the island, on top of the way it ran in its body's
+    // frame. What comes out of the island is made facing the world's own way,
+    // so a piece of something turned has its cells turned by that much in its
+    // new frame -- read before the bodies go, while their poses can be asked.
+    std::unordered_map<std::uint32_t, Quat> turn_going_in;
+    for (const std::size_t body : island_bodies) {
+        const Quat placed = beforeOf(body).orientation_world;
+        for (const std::uint32_t node : impl_->nodes_of[body])
+            turn_going_in[node] = turnedBy(placed, impl_->cell_turn[node]);
+    }
     // And if a part still has nobody -- it was not in the island at all -- the
     // thing that was struck is the honest answer for whose piece this is.
     const LiveBodyPose fell_from = impl_->described[which];
@@ -11635,6 +11691,8 @@ std::size_t LiveWorld::applyPending() {
             if (part < counted.size()) ++counted[part];
             impl_->cell_offset_m[node] = island.matter.nodes[local].position_world_m -
                                          fragment.mass_properties.center_of_mass_world_m;
+            if (const auto turn = turn_going_in.find(node); turn != turn_going_in.end())
+                impl_->cell_turn[node] = turn->second;
         }
         const std::size_t dominant = static_cast<std::size_t>(
             std::max_element(counted.begin(), counted.end()) - counted.begin());
@@ -12447,12 +12505,14 @@ double LiveWorld::hullArea(std::size_t body) const {
     if (cached != impl_->hull_area_of.end() && cached->second.first == nodes.size())
         return cached->second.second;
     // A face is open when no cell of the same body sits against it. Cells lie
-    // on one grid, so their offsets differ by whole cells; rounding from the
-    // first one puts a bent body back on it too.
+    // on one grid, so their offsets differ by whole cells along its axes
+    // (Impl::cell_turn); rounding from the first one puts a bent body back on
+    // it too.
     std::set<std::tuple<long, long, long>> at;
     const Vec3 origin = impl_->cell_offset_m[nodes.front()];
+    const Quat to_grid = conjugateOf(impl_->latticeTurn(body));
     for (const std::uint32_t node : nodes) {
-        const Vec3 o = (impl_->cell_offset_m[node] - origin) / cell;
+        const Vec3 o = to_grid.rotate(impl_->cell_offset_m[node] - origin) / cell;
         at.insert({std::lround(o.x), std::lround(o.y), std::lround(o.z)});
     }
     std::size_t faces = 0;
@@ -12903,18 +12963,24 @@ LiveWorld::MatterRecord &LiveWorld::recordOf(std::size_t body) const {
         record.round = pose.shape == "sphere";
         if (const auto tilt = I.tilt_of.find(pose.name); tilt != I.tilt_of.end()) record.turn = tilt->second;
     } else {
-        // The cells' own box, in the body's frame: a piece, a join, a cone.
+        // The cells' own box, along their grid (Impl::cell_turn) -- the body's
+        // own axes unless it was made turned: a piece, a join, a cone. Along
+        // the body's axes, a piece of a tilted plate would be measured against
+        // a box bigger than the plate.
         const double cell = I.request.cell_size_m;
+        const Quat lattice = I.latticeTurn(body);
+        const Quat to_grid = conjugateOf(lattice);
         Vec3 low{}, high{};
         bool first = true;
         for (const std::uint32_t node : I.nodes_of[body]) {
-            const Vec3 &at = I.cell_offset_m[node];
+            const Vec3 at = to_grid.rotate(I.cell_offset_m[node]);
             if (first) { low = high = at; first = false; continue; }
             low = {std::min(low.x, at.x), std::min(low.y, at.y), std::min(low.z, at.z)};
             high = {std::max(high.x, at.x), std::max(high.y, at.y), std::max(high.z, at.z)};
         }
         record.box_m = high - low + Vec3{cell, cell, cell};
-        record.centre_m = 0.5 * (low + high);
+        record.centre_m = lattice.rotate(0.5 * (low + high));
+        record.turn = lattice;
     }
     return I.matter_of.emplace(pose.name, record).first->second;
 }
@@ -13425,6 +13491,9 @@ std::size_t LiveWorld::reformFromCells(std::size_t which) {
             parent_nodes.push_back(node);
             I.cell_offset_m[node] =
                 island.matter.nodes[local].position_world_m - fragment.mass_properties.center_of_mass_world_m;
+            // Made again facing the world's way: its cells' grid turns with the
+            // pose that laid them out (Impl::cell_turn).
+            I.cell_turn[node] = turnedBy(snap.orientation_world, I.cell_turn[node]);
         }
         LiveBodyPose piece{};
         piece.name = whole ? parent.name : parent.name + " piece " + std::to_string(k + 1);
@@ -14264,21 +14333,106 @@ constexpr double kPiBlade = 3.14159265358979323846;
     return m;
 }
 
+// The same rotation when the points lie in a plane: a blade one cell thick.
+//
+// `correlation` is the sum of (new point) times (old point) transposed, both
+// about their middles, and the turn R that took the old onto the new makes it
+// R S, S being the old points' spread. A plane of points has no spread across
+// it, so the correlation has no inverse and Higham's iteration above stops on
+// its first step and hands back the correlation itself, which is not a
+// rotation. A blade built in its own frame IS such a plane (a tilted one was a
+// staircase, and never was). Its two strong directions settle the turn within
+// the plane, and the third is the one square to both: R v = (correlation v) /
+// |correlation v| for each direction v of the spread, so two of them are
+// enough. Nothing when the points are fewer than a plane (a line, a point).
+[[nodiscard]] std::optional<Mat3> planarRotation(const Mat3 &correlation) {
+    // The spread's directions: the eigenvectors of correlation^T correlation
+    // (which is S^2), by Jacobi's rotations.
+    Mat3 a{};
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c)
+            for (int k = 0; k < 3; ++k) a.m[r][c] += correlation.m[k][r] * correlation.m[k][c];
+    Mat3 v{};
+    for (int i = 0; i < 3; ++i) v.m[i][i] = 1.0;
+    const double scale = a.m[0][0] + a.m[1][1] + a.m[2][2];
+    if (!(scale > 0.0)) return std::nullopt;
+    for (int sweep = 0; sweep < 50; ++sweep) {
+        const double off = a.m[0][1] * a.m[0][1] + a.m[0][2] * a.m[0][2] + a.m[1][2] * a.m[1][2];
+        if (off <= 1e-30 * scale * scale) break;
+        for (int p = 0; p < 2; ++p)
+            for (int q = p + 1; q < 3; ++q) {
+                const double apq = a.m[p][q];
+                if (std::abs(apq) <= 1e-300) continue;
+                const double theta = (a.m[q][q] - a.m[p][p]) / (2.0 * apq);
+                const double t = (theta >= 0.0 ? 1.0 : -1.0) / (std::abs(theta) + std::sqrt(theta * theta + 1.0));
+                const double c = 1.0 / std::sqrt(t * t + 1.0), s = t * c;
+                a.m[p][p] -= t * apq;
+                a.m[q][q] += t * apq;
+                a.m[p][q] = a.m[q][p] = 0.0;
+                for (int r = 0; r < 3; ++r) {
+                    if (r == p || r == q) continue;
+                    const double arp = a.m[r][p], arq = a.m[r][q];
+                    a.m[r][p] = a.m[p][r] = c * arp - s * arq;
+                    a.m[r][q] = a.m[q][r] = s * arp + c * arq;
+                }
+                for (int r = 0; r < 3; ++r) {
+                    const double vrp = v.m[r][p], vrq = v.m[r][q];
+                    v.m[r][p] = c * vrp - s * vrq;
+                    v.m[r][q] = s * vrp + c * vrq;
+                }
+            }
+    }
+    int order[3] = {0, 1, 2};
+    std::sort(order, order + 3, [&](int i, int j) { return a.m[i][i] > a.m[j][j]; });
+    const auto column = [&](int i) { return Vec3{v.m[0][i], v.m[1][i], v.m[2][i]}; };
+    const Vec3 v1 = normalized(column(order[0])), v2_raw = column(order[1]);
+    // Two strong directions, or there is no plane to settle a turn in.
+    if (!(a.m[order[1]][order[1]] > 1e-12 * a.m[order[0]][order[0]])) return std::nullopt;
+    const Vec3 v2 = normalized(v2_raw - dot(v2_raw, v1) * v1);
+    const Vec3 u1 = normalized(correlation * v1);
+    const Vec3 hv2 = correlation * v2;
+    const Vec3 u2 = normalized(hv2 - dot(hv2, u1) * u1);
+    const Vec3 v3 = cross(v1, v2), u3 = cross(u1, u2);
+    Mat3 turn{};
+    const Vec3 us[3] = {u1, u2, u3}, vs[3] = {v1, v2, v3};
+    for (int k = 0; k < 3; ++k) {
+        const double uk[3] = {us[k].x, us[k].y, us[k].z}, vk[3] = {vs[k].x, vs[k].y, vs[k].z};
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c) turn.m[r][c] += uk[r] * vk[c];
+    }
+    return turn;
+}
+
 // A body's cells, looked up by where they are in its own frame. One body's
 // cells sit on the grid of the lattice they were cut from, so rounding a point
 // to the nearest centre finds the cell whose cube holds it.
+//
+// That grid runs along the body's own axes only when the lattice was cut along
+// them. A tilted box is built in its own frame and turned, and a piece of
+// anything made again after it had turned keeps the turn in its new frame, so
+// the grid runs along `turn` (Impl::cell_turn): a point is rounded along those
+// axes, and a cell's cube, its faces and its centre are those axes' too.
+// Rounded along the body's own, a tilted plate's cells were found or missed
+// depending on where along a face the point was.
 struct CellGrid {
     Vec3 anchor{};
     double cell{1.0};
+    // The grid's axes in the body's frame, and the way back.
+    Quat turn{}, back{};
     std::unordered_map<std::int64_t, std::uint32_t> at;
     [[nodiscard]] static std::int64_t key(long long x, long long y, long long z) {
         constexpr long long kOffset = 1LL << 20;
         return ((x + kOffset) << 42) | ((y + kOffset) << 21) | (z + kOffset);
     }
+    // A point of the body's frame along the grid's axes, from the anchor.
+    [[nodiscard]] Vec3 onGrid(const Vec3 &local) const { return back.rotate(local - anchor); }
+    // A direction along the grid's axes, in the body's frame.
+    [[nodiscard]] Vec3 axis(const Vec3 &along_grid) const { return turn.rotate(along_grid); }
     void place(const Vec3 &local, long long &x, long long &y, long long &z) const {
-        x = std::llround((local.x - anchor.x) / cell);
-        y = std::llround((local.y - anchor.y) / cell);
-        z = std::llround((local.z - anchor.z) / cell);
+        const Vec3 g = onGrid(local);
+        x = std::llround(g.x / cell);
+        y = std::llround(g.y / cell);
+        z = std::llround(g.z / cell);
     }
     [[nodiscard]] bool holds(const Vec3 &local) const {
         long long x = 0, y = 0, z = 0;
@@ -14286,15 +14440,17 @@ struct CellGrid {
         return at.count(key(x, y, z)) != 0;
     }
     [[nodiscard]] Vec3 centre(long long x, long long y, long long z) const {
-        return anchor + cell * Vec3{static_cast<double>(x), static_cast<double>(y),
-                                    static_cast<double>(z)};
+        return anchor + turn.rotate(cell * Vec3{static_cast<double>(x), static_cast<double>(y),
+                                                static_cast<double>(z)});
     }
 };
 
 [[nodiscard]] CellGrid gridOf(const std::vector<std::uint32_t> &nodes,
-                              const std::vector<Vec3> &offsets, double cell) {
+                              const std::vector<Vec3> &offsets, const Quat &turn, double cell) {
     CellGrid grid;
     grid.cell = cell;
+    grid.turn = turn;
+    grid.back = conjugateOf(turn);
     if (nodes.empty()) return grid;
     grid.anchor = offsets[nodes.front()];
     grid.at.reserve(nodes.size() * 2);
@@ -14375,11 +14531,12 @@ void findCrossings(KerfT &kerf, const std::vector<std::uint32_t> &nodes,
 [[nodiscard]] Vec3 faceCrossed(const CellGrid &grid, const Vec3 &outside, const Vec3 &inside) {
     long long x = 0, y = 0, z = 0;
     grid.place(inside, x, y, z);
-    const Vec3 off = outside - grid.centre(x, y, z);
+    // Measured along the grid's axes, whose faces the cell's are.
+    const Vec3 off = grid.back.rotate(outside - grid.centre(x, y, z));
     const double ax = std::abs(off.x), ay = std::abs(off.y), az = std::abs(off.z);
-    if (ax >= ay && ax >= az) return {off.x >= 0.0 ? 1.0 : -1.0, 0.0, 0.0};
-    if (ay >= az) return {0.0, off.y >= 0.0 ? 1.0 : -1.0, 0.0};
-    return {0.0, 0.0, off.z >= 0.0 ? 1.0 : -1.0};
+    if (ax >= ay && ax >= az) return grid.axis({off.x >= 0.0 ? 1.0 : -1.0, 0.0, 0.0});
+    if (ay >= az) return grid.axis({0.0, off.y >= 0.0 ? 1.0 : -1.0, 0.0});
+    return grid.axis({0.0, 0.0, off.z >= 0.0 ? 1.0 : -1.0});
 }
 
 } // namespace
@@ -14438,7 +14595,7 @@ unsigned LiveWorld::blade(const std::string &body, const Vec3 &heel_world_m,
     // The edge has to be ON the body. An edge floating beside it would cut what
     // the body itself never reaches.
     const double cell = I.request.cell_size_m;
-    const CellGrid grid = gridOf(I.nodes_of[which], I.cell_offset_m, cell);
+    const CellGrid grid = gridOf(I.nodes_of[which], I.cell_offset_m, I.latticeTurn(which), cell);
     const Vec3 inward = -0.25 * cell * made.facing_local;
     const auto onBody = [&](const Vec3 &local) {
         // A point on a face, an edge or a corner of the body's cells is on the
@@ -15365,7 +15522,15 @@ void LiveWorld::prepareCuts(double dt_s) {
                 for (int r = 0; r < 3; ++r)
                     for (int c = 0; c < 3; ++c) correlation.m[r][c] += av[r] * bv[c];
             }
-            const Mat3 turn = nearestRotation(correlation);
+            // A blade one cell thick is a plane of cells, which leaves the
+            // correlation without an inverse (planarRotation says why).
+            double size = 0.0;
+            for (int r = 0; r < 3; ++r)
+                for (int c = 0; c < 3; ++c) size += correlation.m[r][c] * correlation.m[r][c];
+            size = std::sqrt(size);
+            const bool flat = std::abs(correlation.determinant()) <= 1e-9 * size * size * size;
+            const std::optional<Mat3> in_plane = flat ? planarRotation(correlation) : std::nullopt;
+            const Mat3 turn = in_plane ? *in_plane : nearestRotation(correlation);
             const auto carry = [&](const Vec3 &p) { return turn * (p - was_centre) + now_centre; };
             blade.heel_local = carry(blade.heel_local);
             blade.tip_local = carry(blade.tip_local);
@@ -15423,7 +15588,8 @@ void LiveWorld::prepareCuts(double dt_s) {
                     for (long long dy = -1; dy <= 1; ++dy)
                         for (long long dz = -1; dz <= 1; ++dz) {
                             if (!grid.at.count(CellGrid::key(x + dx, y + dy, z + dz))) continue;
-                            const Vec3 off = p - grid.centre(x + dx, y + dy, z + dz);
+                            // Along the target's grid, whose cubes these are.
+                            const Vec3 off = grid.back.rotate(p - grid.centre(x + dx, y + dy, z + dz));
                             const double reach = cell - 0.002;
                             if (std::abs(off.x) < reach && std::abs(off.y) < reach &&
                                 std::abs(off.z) < reach)
@@ -15470,7 +15636,7 @@ void LiveWorld::prepareCuts(double dt_s) {
             const double gap = length(ts.center_of_mass_world_m - (heel + along_edge * t));
             if (gap > target_reach + sweep && !was_engaged && I.exempt.count(key) == 0) continue;
 
-            const CellGrid grid = gridOf(I.nodes_of[j], I.cell_offset_m, cell);
+            const CellGrid grid = gridOf(I.nodes_of[j], I.cell_offset_m, I.latticeTurn(j), cell);
             const auto held_kerfs = I.kerfs.find(target_name);
             const std::vector<Impl::Kerf> *kerfs_here =
                 held_kerfs == I.kerfs.end() ? nullptr : &held_kerfs->second;
@@ -15485,13 +15651,13 @@ void LiveWorld::prepareCuts(double dt_s) {
                 return grid.holds(p) && !alreadyCut(kerfs_here, p);
             };
             // The outward normal of the target's surface nearest a point in its
-            // uncut matter: the shortest way out along the target's own axes,
-            // which are its cells' faces, to a twentieth of a cell. Two cells
-            // from anywhere out, the edge's own facing stands in.
+            // uncut matter: the shortest way out along the axes of the target's
+            // grid, which are its cells' faces, to a twentieth of a cell. Two
+            // cells from anywhere out, the edge's own facing stands in.
             const auto nearestFace = [&](const Vec3 &p) {
-                const Vec3 axes[6] = {Vec3{1.0, 0.0, 0.0}, Vec3{-1.0, 0.0, 0.0},
-                                      Vec3{0.0, 1.0, 0.0}, Vec3{0.0, -1.0, 0.0},
-                                      Vec3{0.0, 0.0, 1.0}, Vec3{0.0, 0.0, -1.0}};
+                const Vec3 axes[6] = {grid.axis({1.0, 0.0, 0.0}), grid.axis({-1.0, 0.0, 0.0}),
+                                      grid.axis({0.0, 1.0, 0.0}), grid.axis({0.0, -1.0, 0.0}),
+                                      grid.axis({0.0, 0.0, 1.0}), grid.axis({0.0, 0.0, -1.0})};
                 const double step = 0.05 * cell;
                 constexpr int kMost = 40;
                 int best = kMost + 1;
@@ -16030,7 +16196,7 @@ void LiveWorld::settleCuts(double dt_s) {
 
         // Where it bought it: along each engaged part of the edge's ACTUAL path
         // through uncut matter this step, scaled so that exactly `area` is cut.
-        const CellGrid grid = gridOf(I.nodes_of[tj->second], I.cell_offset_m, cell);
+        const CellGrid grid = gridOf(I.nodes_of[tj->second], I.cell_offset_m, I.latticeTurn(tj->second), cell);
         const Quat to_target = conjugateOf(ts.orientation_world);
         // One part of the edge's advance this step: the pieces of uncut matter
         // it crossed, each as (u, v_low, v_high) in the kerf's plane, in the
@@ -16045,7 +16211,7 @@ void LiveWorld::settleCuts(double dt_s) {
         double actual = 0.0;
         const auto uncut = [&](const Vec3 &q) { return grid.holds(q) && !alreadyCut(&list, q); };
         // The blade's own steel, where it is now, asked in the target's frame.
-        const CellGrid steel = gridOf(I.nodes_of[bi->second], I.cell_offset_m, cell);
+        const CellGrid steel = gridOf(I.nodes_of[bi->second], I.cell_offset_m, I.latticeTurn(bi->second), cell);
         const Quat to_blade_now = conjugateOf(bs.orientation_world);
         const auto underSteel = [&](const Vec3 &q) {
             const Vec3 world = ts.center_of_mass_world_m + ts.orientation_world.rotate(q);
@@ -16332,7 +16498,7 @@ void LiveWorld::settleCuts(double dt_s) {
                 const Vec3 xo = conjugateOf(so.orientation_world)
                                     .rotate(ts.center_of_mass_world_m +
                                             ts.orientation_world.rotate(x) - so.center_of_mass_world_m);
-                in_matter = gridOf(I.nodes_of[other], I.cell_offset_m, cell).holds(xo);
+                in_matter = gridOf(I.nodes_of[other], I.cell_offset_m, I.latticeTurn(other), cell).holds(xo);
             }
             if (!in_matter) continue;
             I.world->removeJoint(joint.rigid);
@@ -16460,6 +16626,9 @@ std::size_t LiveWorld::splitCut(std::size_t which) {
             parent_nodes.push_back(node);
             I.cell_offset_m[node] = island.matter.nodes[local].position_world_m -
                                     fragment.mass_properties.center_of_mass_world_m;
+            // A piece faces the world's way: its cells' grid turns with the
+            // pose that laid them out (Impl::cell_turn).
+            I.cell_turn[node] = turnedBy(snap.orientation_world, I.cell_turn[node]);
         }
         LiveBodyPose piece{};
         piece.name = parent.name + " piece " + std::to_string(k + 1);
@@ -17540,6 +17709,12 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                 b["from"] = I.request.bodies[I.setup->part_bodies[part].front()].name;
         }
         if (const auto tilt = I.tilt_of.find(d.name); tilt != I.tilt_of.end()) b["tilt_wxyz"] = savedQuat(tilt->second);
+        // Which way its cells' grid runs among its offsets, when that is not
+        // along its own axes: a tilted box's, and a piece of anything that had
+        // turned before it was made again from its cells.
+        if (const Quat lattice = I.latticeTurn(i);
+            lattice.w != 1.0 || lattice.x != 0.0 || lattice.y != 0.0 || lattice.z != 0.0)
+            b["lattice_wxyz"] = savedQuat(lattice);
         std::vector<Vec3> offsets;
         offsets.reserve(nodes.size());
         for (const std::uint32_t node : nodes) offsets.push_back(I.cell_offset_m[node]);

@@ -417,6 +417,45 @@ std::size_t weakenDeclaredJoints(LatticeAsset &asset,
     return weakened;
 }
 
+// Whether a box is a whole number of cells along every side: what the box
+// generator asks of a box (BoxLattice.cpp cellCount), by the same test, so a
+// tilted box goes to it exactly when a square one of its size would.
+bool wholeCells(const Vec3 &dimensions_m, double cell_m) {
+    for (const double extent : {dimensions_m.x, dimensions_m.y, dimensions_m.z}) {
+        const double cells = extent / cell_m;
+        const double rounded = std::round(cells);
+        if (rounded < 1.0 || std::abs(cells - rounded) > 1.0e-6 * std::max(1.0, rounded)) return false;
+    }
+    return true;
+}
+
+// Turn a lattice built in its own frame about its own centre of mass. Its bonds
+// join the same cells at the same rest lengths, so only where the cells are
+// and the inertia they make change; a merge then places it as it would any
+// other.
+void turnLattice(LatticeAsset &asset, const Quat &turn) {
+    const Vec3 middle = asset.rest_center_of_mass_m;
+    for (LatticeNodeRest &node : asset.nodes)
+        node.local_position_m = middle + turn.rotate(node.local_position_m - middle);
+    // I' = R I R^T, R's columns being where the three axes go.
+    const Vec3 columns[3] = {turn.rotate({1.0, 0.0, 0.0}), turn.rotate({0.0, 1.0, 0.0}),
+                             turn.rotate({0.0, 0.0, 1.0})};
+    const auto entry = [&](int row, int column) {
+        const Vec3 &c = columns[column];
+        return row == 0 ? c.x : row == 1 ? c.y : c.z;
+    };
+    const Mat3 was = asset.rest_inertia_kg_m2;
+    Mat3 turned{};
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) {
+            double sum = 0.0;
+            for (int a = 0; a < 3; ++a)
+                for (int b = 0; b < 3; ++b) sum += entry(i, a) * was.m[a][b] * entry(j, b);
+            turned.m[i][j] = sum;
+        }
+    asset.rest_inertia_kg_m2 = turned;
+}
+
 } // namespace
 
 std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &request) {
@@ -520,7 +559,23 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
             // authored as.
             const bool tilted = body.rotation_deg.x != 0.0 || body.rotation_deg.y != 0.0 ||
                                 body.rotation_deg.z != 0.0;
-            const bool voxelised = group.size() > 1 || body.shape != BodyShape::Box || tilted;
+            // A tilted box on its own is built in its own frame, exactly as a
+            // square one is, and turned into place. Voxelised onto the world's
+            // grid it was a staircase: its outermost cells reached its faces or
+            // fell short of them by up to a cell depending on where it happened
+            // to stand, so an edge laid on the face of a tilted plate was on its
+            // matter in one place and off it a few millimetres along, and what
+            // broke, dented, cut and heated was the staircase rather than the
+            // slab. Built in its own frame, every outermost cell is half a cell
+            // in from its face whatever the angle, and its bonds are the square
+            // box's own, cell for cell. A box that is not a whole number of
+            // cells along each side is refused by the box generator, square or
+            // not, so it keeps the shared grid as before; and a join is a union
+            // of shapes on one grid, which is what lets their cells meet.
+            const bool own_frame = group.size() == 1 && body.shape == BodyShape::Box && tilted &&
+                                   !body.subtract && wholeCells(body.dimensions_m, r.cell_size_m);
+            const bool voxelised = !own_frame && (group.size() > 1 || body.shape != BodyShape::Box || tilted);
+            Quat lattice_turn{};
             if (voxelised) {
                 // Voxelise every shape in the group onto the one shared grid
                 // and take the union. A cell two shapes both claim appears
@@ -618,6 +673,14 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                                                 compiled)
                         : generateBoxTileLattice({body.dimensions_m, r.cell_size_m, r.neighbor_horizon_cells},
                                                  compiled);
+                if (own_frame) {
+                    // Turned about its own middle by the same quaternion its
+                    // collision shape is turned by, so cells and shape agree.
+                    double q[4];
+                    rotationQuaternion(body.rotation_deg, q);
+                    lattice_turn = Quat{q[0], q[1], q[2], q[3]};
+                    turnLattice(asset, lattice_turn);
+                }
             }
             if (asset.nodes.empty())
                 throw std::invalid_argument("body \"" + body.name + "\" is smaller than one cell");
@@ -629,6 +692,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
             s.part_definitions.push_back(definition);
             s.part_materials.push_back(compiled);
             s.part_assets.push_back(std::move(asset));
+            s.part_lattice_turn.push_back(lattice_turn);
         }
         // A declared joint that reached no bond at all did nothing and said
         // nothing: the parts may not touch, or one may not be in a join group.

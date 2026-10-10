@@ -277,7 +277,7 @@ void requireCarriedExactly(const nlohmann::json &saved, const nlohmann::json &no
             require(b->at("awake").get<bool>(), "the " + name + " was said to be woken, and is asleep");
         for (const char *key : {"material", "shape", "dimensions_m", "revision", "color_rgba", "anchored", "fragment",
                                 "dent_m", "dent_at_m", "body_id", "friction", "restitution", "rolling_resistance",
-                                "from", "tilt_wxyz", "offsets_b64", "pose", "parked"}) {
+                                "from", "tilt_wxyz", "lattice_wxyz", "offsets_b64", "pose", "parked"}) {
             require(a->contains(key) == b->contains(key), "the " + name + "'s " + key + " is in only one of the two");
             if (a->contains(key))
                 require(a->at(key) == b->at(key), "the " + name + "'s " + key + " differs: " + a->at(key).dump() +

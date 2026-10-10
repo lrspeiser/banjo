@@ -26,6 +26,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -1780,6 +1781,72 @@ void aTurnedBoxThatComesThroughARunKeepsItsTurn() {
     require(onBar(30.0) && !onBar(0.0), "the bar's collision shape came back square");
 }
 
+// A tilted box is built to its faces, wherever it stands.
+//
+// A box built turned was voxelised onto the world's grid of cells: a staircase
+// whose outermost cells reached its faces, or fell short of them by up to a
+// cell, depending on where it happened to stand -- so an edge laid along the
+// face of a tilted plate was on its matter in one place and refused as "not on
+// its matter" a few millimetres along. Its cells are now built in its own
+// frame, exactly as a square box's are, and turned with it: every cell is a
+// whole number of cells and a half in from a face, the outermost half a cell
+// in, the count is the square box's, and it is the same at every angle and
+// every place. And an edge laid on any of its faces is on its matter.
+void aTiltedBoxIsBuiltToItsFacesWhereverItStands() {
+    const double cell = 0.02;
+    const Vec3 size{1.0, 0.1, 0.2};   // turnedPlank's: 50 by 5 by 10 cells
+    const int across[3] = {50, 5, 10};
+    std::size_t checked = 0, edges = 0;
+    for (const Vec3 &turn : {Vec3{30.0, 0.0, 45.0}, Vec3{0.0, 0.0, 20.0}, Vec3{20.0, 35.0, -50.0},
+                             Vec3{0.0, 90.0, 0.0}, Vec3{-60.0, 25.0, 10.0}})
+        for (const Vec3 &shift : {Vec3{}, Vec3{0.0031, 0.0077, -0.0123}, Vec3{0.013, -0.004, 0.0049},
+                                  Vec3{-0.0101, 0.0019, 0.0171}}) {
+            TileImpactRequest r = turnedPlank(turn, true);
+            r.bodies[0].center_m = r.bodies[0].center_m + shift;
+            const auto live = LiveWorld::open(r);
+            // Its cells in its own frame: structureJson says them in the frame
+            // poses() says it faces in, about its middle.
+            const nlohmann::json report = nlohmann::json::parse(live->structureJson("plank"));
+            const nlohmann::json &cells = report.at("cells_local_m");
+            require(cells.size() == 50U * 5U * 10U,
+                    "a plank built turned has " + std::to_string(cells.size()) + " cells, not the 2500 of the "
+                    "same plank built square");
+            std::set<std::tuple<long, long, long>> seen;
+            for (const nlohmann::json &c : cells) {
+                long at[3];
+                for (int k = 0; k < 3; ++k) {
+                    const double half = 0.5 * (k == 0 ? size.x : k == 1 ? size.y : size.z);
+                    // Cells in from the low face, less the half a cell to its centre.
+                    const double in = (c.at(k).get<double>() + half) / cell - 0.5;
+                    at[k] = std::lround(in);
+                    require(std::abs(in - static_cast<double>(at[k])) < 1e-6,
+                            "a cell of a plank built turned is not a whole number of cells and a half from its "
+                            "face: it is a staircase of the world's grid");
+                    require(at[k] >= 0 && at[k] < across[k], "a cell of a plank built turned is outside it");
+                }
+                seen.insert({at[0], at[1], at[2]});
+            }
+            require(seen.size() == cells.size(), "two cells of a plank built turned are in one place");
+            ++checked;
+            // An edge along the middle of its top face, facing out of it, and
+            // one along its long bottom edge, facing down its side: on its
+            // matter both, wherever it stands.
+            const LiveBodyPose plank = named(live->poses(), "plank");
+            const Quat q = quatOf(plank.orientation_wxyz);
+            const auto world = [&](const Vec3 &local) { return plank.position_m + q.rotate(local); };
+            const unsigned top = live->blade("plank", world({-0.4, 0.05, 0.0}), world({0.4, 0.05, 0.0}),
+                                             q.rotate({0.0, 1.0, 0.0}), 0.004, 0.0002, 30.0, world({0.0, 0.0, 0.0}));
+            require(top != 0, "an edge on the top face of a plank built turned was refused: " + live->bladeRefusal());
+            const unsigned side = live->blade("plank", world({-0.4, -0.05, 0.1}), world({0.4, -0.05, 0.1}),
+                                              q.rotate({0.0, 0.0, 1.0}), 0.004, 0.0002, 30.0,
+                                              world({0.0, 0.0, 0.0}));
+            require(side != 0, "an edge along a corner of a plank built turned was refused: " + live->bladeRefusal());
+            edges += 2;
+        }
+    std::cout << "  " << checked << " planks built turned, at five angles in four places: every cell a whole "
+              << "number of cells and a half in from its faces; " << edges << " edges laid on them, all taken\n";
+}
+
 } // namespace
 
 // Set aside and brought back (LiveWorld::park and unpark): the inventory's bag.
@@ -2355,6 +2422,54 @@ void aWorldSavedComesBackAsItStood() {
               << "were left (" << moved->restored().why << ")\n";
 }
 
+// A tilted pane that broke, saved and opened again, is the same room, and its
+// pieces' cells keep the way their grid runs.
+//
+// A tilted box's cells lie along its own grid, turned in its frame, and each
+// piece of it that breaks off carries that turn in its new frame (the grid a
+// blade, a load survey and the heat find cells along). The turn goes into
+// the saved world with each body and comes back out exactly.
+void aBrokenTiltedPaneComesBackWithItsGrid() {
+    // Lying on the floor, turned 30 degrees about the upright: its faces are
+    // square to no axis of the world's grid but the vertical.
+    const Vec3 turn{0.0, 30.0, 0.0};
+    TileImpactRequest r = ballOntoGlass(1.5);
+    r.bodies[0].rotation_deg = turn;
+    const auto live = LiveWorld::open(r);
+    live->foreseeCollisions(0.0);
+    stepAnswering(*live, 720);
+    std::size_t pieces = 0;
+    for (const LiveBodyPose &pose : live->poses())
+        if (pose.name.rfind("pane piece ", 0) == 0) ++pieces;
+    require(pieces > 1, "the tilted pane did not break, so this proves nothing about its pieces");
+    std::string why;
+    const std::string first = live->snapshot(why);
+    require(!first.empty(), "the room could not be saved: " + why);
+    double tilt[4];
+    rotationQuaternion(turn, tilt);
+    std::size_t turned = 0;
+    for (const nlohmann::json &body : nlohmann::json::parse(first).at("bodies")) {
+        if (body.at("name").get<std::string>().rfind("pane piece ", 0) != 0) continue;
+        require(body.contains("lattice_wxyz"), "a piece of the tilted pane was saved without its cells' turn");
+        const nlohmann::json &q = body.at("lattice_wxyz");
+        // The pane lay still where it was built until it broke, so its pieces'
+        // cells run as the pane's did, to within the little it had settled.
+        const double agree = std::abs(q.at(0).get<double>() * tilt[0] + q.at(1).get<double>() * tilt[1] +
+                                      q.at(2).get<double>() * tilt[2] + q.at(3).get<double>() * tilt[3]);
+        require(agree > std::cos(0.5 * 0.5 * std::acos(-1.0) / 180.0),
+                "a piece of the tilted pane does not run along the pane's grid, to half a degree");
+        ++turned;
+    }
+    const auto back = LiveWorld::open(r, first);
+    require(back->restored().tier == "whole", "the room did not come back whole: " + back->restored().why);
+    requireSameWorld(*live, *back, "the room with the broken tilted pane, opened again");
+    const std::string second = back->snapshot(why);
+    require(!second.empty(), "the room opened again could not be saved: " + why);
+    requireSameSaved(first, second, "the room with the broken tilted pane, opened again and saved");
+    std::cout << "  a pane turned 30 degrees broke into " << pieces << " pieces; " << turned
+              << " saved with their cells' turn, and the room came back the same\n";
+}
+
 // A world is not saved while something it cannot carry is under way -- a break
 // being worked out, an edge in a cut -- and is once that is over. A cut block
 // comes back with its kerf and its severed bonds.
@@ -2607,6 +2722,8 @@ int main(int argc, char **argv) {
         std::cout << "[PASS] a hand holding a turned thing as it is does not turn it\n";
         aTurnedBoxThatComesThroughARunKeepsItsTurn();
         std::cout << "[PASS] a turned box that comes through a run whole keeps its turn\n";
+        aTiltedBoxIsBuiltToItsFacesWhereverItStands();
+        std::cout << "[PASS] a tilted box is built to its faces wherever it stands, and takes an edge on any\n";
         whatAThingIsMadeOfDecidesHowItBounces();
         std::cout << "[PASS] what a thing is made of decides how it bounces\n";
         aRayFindsWhatItActuallyHits();
@@ -2623,6 +2740,8 @@ int main(int argc, char **argv) {
         std::cout << "[PASS] a hot thing set aside keeps exactly what it holds, and burns on once it is back\n";
         aWorldSavedComesBackAsItStood();
         std::cout << "[PASS] a world saved comes back as it stood, and goes on from there\n";
+        aBrokenTiltedPaneComesBackWithItsGrid();
+        std::cout << "[PASS] a broken tilted pane comes back with its pieces' grid\n";
         aWorldIsNotSavedWhileSomethingIsUnderWay();
         std::cout << "[PASS] a world is not saved while a break or a cut is under way, and is once it is over\n";
         return 0;

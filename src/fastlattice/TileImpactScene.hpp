@@ -69,8 +69,12 @@ struct SceneBody {
     // then y, then x about the world's fixed axes (rotationQuaternion, qx qy
     // qz). Without it every object is axis aligned and a ramp has to be
     // built as a staircase of boxes, which collide with each other and with
-    // whatever stands on them. A tilted body is voxelised through its rotation
-    // and collides as a rotated box rather than as the staircase its cells make.
+    // whatever stands on them. A tilted body collides as a rotated box. A
+    // tilted box on its own, a whole number of cells along each side, has its
+    // cells built in its own frame and turned with it, so they fill it to its
+    // faces as a square box's do (TileImpactSetup::part_lattice_turn); any
+    // other tilted shape, and a tilted part of a join, is voxelised onto the
+    // shared grid through its rotation.
     Vec3 rotation_deg{};
     // Held in place: scenery rather than an object. A ramp, a table or a
     // wall has nothing under it and otherwise simply falls to the ground,
@@ -312,6 +316,16 @@ struct TileImpactSetup {
     // Which bodies each part was built from. One entry for a plain body,
     // several for a joined group, whose first body names and colours it.
     std::vector<std::vector<std::size_t>> part_bodies;
+    // Which way each part's cells are laid out against the scene's own axes:
+    // the turn that takes the lattice the part was built on onto where its
+    // cells are. Identity for a part cut from the world's grid -- a join, a
+    // ball, a cone -- and for a box built square. A tilted box is built in its
+    // own frame, exactly as a square one is, and then turned, so its outermost
+    // cells sit half a cell inside each of its faces at any angle; its cells
+    // then lie on its OWN grid, turned by its rotation_deg, and anything that
+    // finds a cell from a point has to ask along these axes (LiveWorld's
+    // CellGrid). One entry per part, in part order.
+    std::vector<Quat> part_lattice_turn;
     // How many bonds a declared joint was applied to. Read by the tests, which
     // is the only thing that reads it: no host is told, and a joint that
     // reaches nothing is caught by the refusal below rather than by this

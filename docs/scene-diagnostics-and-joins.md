@@ -186,9 +186,12 @@ The refusal was right and three capabilities were missing behind it.
 
 - `rotation_deg` turns a body about its own centre: about its own x axis, then
   its own y, then its own z, which is z, then y, then x about the world's axes.
-  It is voxelised through the rotation and collides as a rotated box, not as the
-  staircase its cells make, so a ball rolls down a ramp rather than bouncing on
-  every step.
+  It collides as a rotated box, so a ball rolls down a ramp rather than bouncing
+  on the steps of a staircase of cells. A tilted box on its own that is a whole
+  number of cells along each side has its cells built in its own frame, as a
+  square box's are, and turned with it, so they fill it to its faces wherever
+  it stands; anything else tilted -- a part of a join, a cone, a box of odd
+  size -- is voxelised through the rotation onto the shared grid.
 - `anchored` makes a body scenery. Without it the ramp fell to the floor in
   0.24 s and took the ball with it. An anchored body still collides and still
   breaks; it just does not move.
