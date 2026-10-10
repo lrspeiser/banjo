@@ -98,7 +98,7 @@ GasRegionDeclaration readRegion(const json &node) {
     const std::string where = "gas region \"" + node.value("name", std::string("?")) + "\"";
     onlyKeys(node, {"name", "contents", "temperature_k", "pressure_pa", "balance", "volume_m3", "height_m",
                     "piston", "container", "axis", "area_m2", "wall_conductance_w_k", "vent_area_m2",
-                    "vent_open", "vessel", "vent_axis"},
+                    "vent_open", "vessel", "vent_axis", "opens_at_stroke_m"},
              where);
     GasRegionDeclaration d;
     d.name = text(node, "name", "", where);
@@ -118,6 +118,7 @@ GasRegionDeclaration readRegion(const json &node) {
     // The nozzle: name a vessel and the jet pushes it the other way.
     d.vessel = text(node, "vessel", "", where);
     d.vent_axis = vector3(node, "vent_axis", d.vent_axis, where);
+    d.opens_at_stroke_m = number(node, "opens_at_stroke_m", 0.0, where);
     return d;
 }
 
@@ -293,6 +294,8 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                           {"carrying_kg", contentsOf(b.carrying_kg)},
                           {"carrying_k", b.carrying_k},
                           {"contents_kg", contentsOf(b.contents_kg)}});
+        // Light's heat held in spots on it towards taking matter away.
+        if (b.spot_j != 0.0) bodies.back()["spot_j"] = b.spot_j;
         // Set aside with its body (ThermoWorld::park): held as it was put away.
         if (b.parked) bodies.back()["set_aside"] = true;
     }
@@ -341,6 +344,11 @@ std::string reportJson(const ThermoWorld &world, bool with_model) {
                    {"work_to_atmosphere_j", l.work_to_atmosphere_j},
                    {"mechanical_in_j", l.mechanical_in_j},
                    {"numerical_j", l.numerical_j},
+                   // Lit spots, told apart; none is a crossing of its own.
+                   {"spot_in_j", l.spot_in_j},
+                   {"taken_by_light_j", l.taken_j},
+                   {"spot_returned_j", l.returned_j},
+                   {"taken_by_light_kg", l.taken_kg},
                    {"residual_j", l.residualJ()},
                    {"mass_residual_kg", l.massResidualKg()},
                    {"out_of_range_steps", l.out_of_range_steps}};

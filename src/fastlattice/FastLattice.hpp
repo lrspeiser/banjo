@@ -15,6 +15,7 @@
 #include "fastlattice/MaterialContactRegion.hpp"
 #include "fracture/ActiveMatter.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -118,6 +119,12 @@ struct RunControl {
     std::uint32_t max_frames{};
     // CUDA: substeps per kernel launch (0 = whole run in one launch).
     std::uint64_t steps_per_launch{};
+    // Read between substeps by the parallel CPU backend (the others run to
+    // their end): once it is true the run stops where it is, exit reason 7.
+    // For a run whose answer nobody will use -- a guess about a collision
+    // that did not come -- so that binning it does not mean waiting it out.
+    // Never set for a run whose answer is applied. Null never stops a run.
+    const std::atomic<bool> *abandon{nullptr};
 };
 
 constexpr unsigned kPhaseCount = 16;
@@ -209,7 +216,8 @@ struct RunStatus {
     bool energy_audited{};
     // 0 none/max_steps of the last call, 1 cascade quiet, 2 no failure by the
     // deadline, 3 max_steps reached, 4 removed energy flat, 5 nothing near
-    // failing, 6 the energy the island had is spent.
+    // failing, 6 the energy the island had is spent, 7 abandoned
+    // (RunControl::abandon).
     unsigned exit_reason{};
     unsigned launches{};
     double kernel_seconds{};   // CUDA event time over all launches
@@ -365,8 +373,9 @@ public:
 
 // The same phases on a thread pool, bit identical to the serial backend: the
 // independent per-node and per-bond phases are split, the Gauss-Seidel sweep
-// and the sphere contact pass stay serial because their order is physics.
-// threads = 0 asks for the hardware concurrency; spins = 0 takes the default
+// keeps its colour order and the contact passes stay serial because their
+// order is physics. threads = 0 asks for defaultLatticeThreadCount(); a run
+// uses fewer when the machine's cores are busy. spins = 0 takes the default
 // number of pause instructions an idle worker spins before yielding.
 [[nodiscard]] std::unique_ptr<LatticeBackend> makeParallelCpuLatticeBackend(
     const LatticeSchedule &schedule, Precision precision, unsigned threads, unsigned spins = 0);
@@ -378,10 +387,11 @@ public:
 // The thread count the machine would allow if it were idle.
 [[nodiscard]] unsigned defaultLatticeThreadCount();
 
-// What makeParallelCpuLatticeBackend actually uses when asked for 0: the
-// default, halved until an empty dispatch is cheap on this machine as it is
-// loaded right now, and 1 if even two threads are not worth it. The choice
-// changes speed only; the backend is bit identical at every thread count.
+// The default, halved until an empty dispatch is cheap on this machine as it
+// is loaded right now, and 1 if even two threads are not worth it. For tools
+// that report it; the backend does not probe (it watches its own waits
+// instead). The choice changes speed only; the backend is bit identical at
+// every thread count.
 [[nodiscard]] unsigned calibratedLatticeThreadCount(unsigned spins);
 
 // Throws std::runtime_error when the build has no CUDA backend or no device.

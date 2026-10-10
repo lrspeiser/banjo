@@ -227,7 +227,11 @@ class Navigation(unittest.TestCase):
         self.assertIsNone(page.evaluate('document.querySelector("#panel-details")'))
         page.evaluate('[...document.querySelectorAll("#world-quickbar button")].find(b=>b.textContent==="Chat /").click()')
         wait('document.body.classList.contains("chat-open") && getComputedStyle(document.querySelector("#talk")).display!=="none"')
-        self.assertTrue(page.evaluate('getComputedStyle(document.querySelector("#details")).display==="none" && getComputedStyle(document.querySelector("#panel [data-game-menu]")).display==="none"'))
+        # Not shown: Details sits in a section the chat hides. Its own display
+        # was "none" only while the taps above had pinned some ground, which
+        # hides the hover card; a second tap on the same ground now lets the
+        # pin go, so ask whether it is drawn, not what its own style says.
+        self.assertTrue(page.evaluate('!document.querySelector("#details").checkVisibility() && getComputedStyle(document.querySelector("#panel [data-game-menu]")).display==="none"'))
         page.evaluate('window.beforeReload=true;location.reload()')
         wait('!window.beforeReload && window.banjoRoom?.ready()')
         time.sleep(.3)

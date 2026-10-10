@@ -61,6 +61,21 @@ Two general links were missing between the circuit model and the rest of the wor
 
 Measured in the default machine: the battery gave 25,238.6 J, of which 1,118.3 J heated its own internals and 24,120.27 J left through the coil; the heat network received exactly 24,120.27 J. `tests/circuit_tests.cpp` adds a test in which a bar swinging on a hinge closes its switch past -20°: the coil's 953.829 J out equals the 953.829 J into the peg, and it equals I²R times the time the switch was closed.
 
+## Light
+
+A machine can now have a sun, mirrors, lamps and light sensors, and a circuit's switch can
+follow a sensor. The engine follows rays of light through the parts' own shapes: polished
+aluminium or iron reflects them, glass and ice bend and focus them, and whatever absorbs them
+is warmed by them through the heat network. The page draws the rays. The details,
+measurements and limits are in [optics-checkpoint.md](optics-checkpoint.md).
+
+Measured in a rehearsal (`tests/machine_world_tests.py`, class `Light`): a glass ball rolls to
+a stop over a light sensor 8 mm across; the overhead sun focused through it reads 0.72 W there,
+twenty times the open sun, and closes the switch of a heating coil on a rope; the rope parts at
+16.5 s. Without the ball the switch never closes. Heat in the engine is held per body, so the
+focused spot cannot itself set the rope alight: a 100 mm glass ball passes about 1.35 W, and
+the rope needs about 400 W.
+
 ## How honest each station is
 
 | Station | Engine law | Maturity |

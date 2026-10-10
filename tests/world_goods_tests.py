@@ -644,7 +644,11 @@ class GoodsJourney(unittest.TestCase):
             page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get('+json.dumps(name)+').mesh.position;r.standAt(p.x,p.y+1.62,p.z+1.1);r.lookAt(p.x,p.y,p.z)})()')
             x,y=page.evaluate('(()=>{const b=document.querySelector("canvas").getBoundingClientRect();return [b.x+b.width/2,b.y+b.height/2]})()')
             page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':x,'y':y})
-            wait('banjoRoom.world.aim?.name==='+json.dumps(name))
+            # The player's eye settles after standAt (it is a body since
+            # 2026-10-04), and a view aimed before that can pass under the
+            # 50 mm pick: look again from where it came to rest.
+            wait('(()=>{const r=banjoRoom,p=r.world.bodies.get('+json.dumps(name)+').mesh.position;'
+                 'r.lookAt(p.x,p.y,p.z);return r.world.aim?.name==='+json.dumps(name)+'})()')
             # Alt+click inspects without starting/stopping a machine or lifting a tool.
             for kind in ('mousePressed','mouseReleased'):
                 page.send('Input.dispatchMouseEvent',{'type':kind,'x':x,'y':y,'button':'left','clickCount':1,'modifiers':1})

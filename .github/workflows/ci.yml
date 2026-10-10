@@ -158,6 +158,11 @@ jobs:
           node --test tests/material_lab_client_tests.mjs
 
       - name: Test core and material laws
+        # Suites CMake marks BANJO_BROWSER_TESTS=required (playable recipes, the
+        # metal shovel game) drive Chrome too, as the playground step does.
+        env:
+          BANJO_CHROME: /usr/bin/google-chrome
+          BANJO_CHROME_ARGS: "--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader"
         run: >-
           ctest --test-dir build/ci --output-on-failure --no-tests=error
           --output-junit ${{ github.workspace }}/ctest-results.xml

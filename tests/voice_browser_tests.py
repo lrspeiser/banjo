@@ -79,8 +79,17 @@ def test_voice_routes_guide_lab_and_rover_with_audio_off(self):
     self.screenshot('voice-lab-landscape.png')
     self.page.send('Page.navigate',{'url':self.base+f'/world?world={world}'})
     self.wait('window.banjoRoom?.ready()')
-    self.page.evaluate('banjoRoom.pick(banjoRoom.world.machines.programs.find(p=>p.kind==="roam").body)')
-    self.open_rail();self.click('.rover-card button:not([data-rover-command])')
+    # The rover's own controls, opened as a player opens them: look at it
+    # and press E. Details, which this opened, went with the inspector rail
+    # (eaf9e306).
+    self.page.evaluate('(()=>{const r=banjoRoom,b=r.world.machines.programs.find(p=>p.kind==="roam").body,'
+                       'p=r.world.bodies.get(b).mesh.position;r.standAt(p.x+.8,p.y+1.1,p.z+.5);r.lookAt(p.x,p.y,p.z);})()')
+    self.wait('(()=>{const r=banjoRoom,q=r.world.machines.programs.find(p=>p.kind==="roam"),'
+              'p=r.world.bodies.get(q.body).mesh.position;r.lookAt(p.x,p.y,p.z);return q.parts.includes(r.world.aim?.name)})()')
+    for kind in ('keyDown','keyUp'):
+        self.page.send('Input.dispatchKeyEvent',{'type':kind,'code':'KeyE','key':'e','windowsVirtualKeyCode':69})
+    self.wait('document.body.classList.contains("machine-open")');self.wait_rail_shown()
+    self.click('#machine-panel .rover-card button:not([data-rover-command])')
     with mock.patch.object(voice_api,'client_secret',return_value={'value':'synthetic-ephemeral'}):
         hold(self,'stop',touch=True)
         self.wait('document.querySelector("#chat").textContent.includes("Stopping. I will hold here") && document.querySelector("#voice-talk").dataset.voiceState==="idle"')

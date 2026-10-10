@@ -99,16 +99,26 @@ class GuidanceContract(unittest.TestCase):
 
 
 def longer(candidate):
-    """The same personal tool with a longer handle, reaching further back.
-    The opening tool is a Workshop construction (custom kind) since the
-    inorganic catalogue, so it has parts to edit rather than a length_m."""
+    """The same personal tool with a longer reach, 1 m instead of its own.
+    The guide's opening tool is the Personal field pick (playable_recipes
+    'field-pick'): its length is a parameter and its arm sits at the end of
+    it, so both move. A Workshop construction (custom kind) has a handle part
+    to lengthen instead."""
     from copy import deepcopy
     edited=deepcopy(candidate)
-    for part in edited['component_overrides']['@construction']['added']:
-        if part['name']=='handle':
-            grown=1.-part['size_m'][0];part['size_m'][0]=1.;part['center_m'][0]-=grown/2
-            return edited
-    raise AssertionError('the opening tool has no handle to lengthen')
+    overrides=edited.get('component_overrides') or {}
+    if '@construction' in overrides:
+        for part in overrides['@construction']['added']:
+            if part['name']=='handle':
+                grown=1.-part['size_m'][0];part['size_m'][0]=1.;part['center_m'][0]-=grown/2
+                return edited
+        raise AssertionError('the opening tool has no handle to lengthen')
+    if edited.get('kind')=='field-pick':
+        section=float(edited['parameters']['section_m'])
+        edited['parameters']['length_m']=1.
+        if 'arm' in overrides:overrides['arm']['center_m'][0]=(1.-section)/2
+        return edited
+    raise AssertionError('the opening tool is neither a field pick nor a construction: '+str(edited.get('kind')))
 
 @unittest.skipUnless(fixture.hub.RUNNER.is_file() and fixture.hub.ENGINE.is_file(),'native world engine not built')
 class PrivateGuidance(unittest.TestCase):
@@ -224,8 +234,12 @@ class PrivateGuidance(unittest.TestCase):
         self.assertGreater(during_work['draft_project']['build_readiness']['energy_required_j'],
             plan['quote']['supply_required_j'])
         self.assertNotIn('job',self.post('/api/world/guidance',{},world,peer['token'])['next_action']['destination'])
-        self.post('/api/world/fabrication/wait',{**ctx,'seconds':1},world)
-        finished=self.post('/api/world/guidance',{},world)
+        # The metal pick takes about 1.1 s to make (565 J); the wood one took
+        # under a second. Wait a second at a time until the work is done.
+        for _ in range(10):
+            self.post('/api/world/fabrication/wait',{**ctx,'seconds':1},world)
+            finished=self.post('/api/world/guidance',{},world)
+            if finished['build_readiness']['status']!='Making':break
         self.assertEqual('Output ready',finished['build_readiness']['status'])
         self.assertEqual('Collect your finished workpiece',finished['next_action']['label'])
         print('shared guidance: private source, exact funding, seven chat screens; wall_s=',round(time.monotonic()-began,3))

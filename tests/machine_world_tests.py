@@ -42,13 +42,23 @@ def need_engine(test):
 
 
 def engine_turn(v, degrees):
-    """TileImpactScene rotateDegrees, written out again independently."""
+    """A body's turn as the engine makes it (TileImpactScene
+    rotationQuaternion, R = Rx Ry Rz: about the world's z first), written out
+    again independently: v turned about z, then y, then x."""
     x, y, z = v
     a = [math.radians(d) for d in degrees]
-    y, z = y * math.cos(a[0]) - z * math.sin(a[0]), y * math.sin(a[0]) + z * math.cos(a[0])
-    x, z = x * math.cos(a[1]) + z * math.sin(a[1]), -x * math.sin(a[1]) + z * math.cos(a[1])
     x, y = x * math.cos(a[2]) - y * math.sin(a[2]), x * math.sin(a[2]) + y * math.cos(a[2])
+    x, z = x * math.cos(a[1]) + z * math.sin(a[1]), -x * math.sin(a[1]) + z * math.cos(a[1])
+    y, z = y * math.cos(a[0]) - z * math.sin(a[0]), y * math.sin(a[0]) + z * math.cos(a[0])
     return [x, y, z]
+
+
+def quaternion_turn(q, v):
+    """v turned by the unit quaternion q = [w, x, y, z]."""
+    w, qv = q[0], q[1:]
+    t = [2 * (qv[1] * v[2] - qv[2] * v[1]), 2 * (qv[2] * v[0] - qv[0] * v[2]), 2 * (qv[0] * v[1] - qv[1] * v[0])]
+    c = [qv[1] * t[2] - qv[2] * t[1], qv[2] * t[0] - qv[0] * t[2], qv[0] * t[1] - qv[1] * t[0]]
+    return [v[i] + w * t[i] + c[i] for i in range(3)]
 
 
 def part(name, size, at, **kw):
@@ -145,12 +155,18 @@ class Declaration(unittest.TestCase):
         self.assertAlmostEqual(q[3], math.sin(math.pi / 4), places=12)
 
     def test_rotation_matches_the_engine(self):
+        # The matrix the checks use, the quaternion the scene is built with
+        # (which the engine reports back as the body's orientation:
+        # test_a_two_axis_turn_is_the_one_the_engine_reports), and the turn
+        # written out by hand all agree.
         for degrees in ([30, 0, 45], [20, 35, -50], [-60, 25, 10], [0, 90, 0], [0, 0, -20]):
             r = mw.rotation(degrees)
+            q = mw.quaternion_of_turn(degrees)
             for v in ([1, 0, 0], [0, 1, 0], [0.3, -0.2, 0.9]):
                 mine = [sum(r[i][j] * v[j] for j in range(3)) for i in range(3)]
-                for a, b in zip(mine, engine_turn(v, degrees)):
+                for a, b, c in zip(mine, engine_turn(v, degrees), quaternion_turn(q, v)):
                     self.assertAlmostEqual(a, b, places=12)
+                    self.assertAlmostEqual(a, c, places=12)
 
     def test_refuses_what_cannot_be_built_honestly(self):
         base = {'schema': mw.SCHEMA, 'cell_m': 0.02}
@@ -200,6 +216,25 @@ class Declaration(unittest.TestCase):
 
 
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_a_two_axis_turn_is_the_one_the_engine_reports(self):
+        """The turn the declaration's checks use is the engine's own: a plank
+        turned about two axes faces where the engine says it does."""
+        turn = [30, 0, 45]
+        spec = {'schema': mw.SCHEMA, 'parts': [part('plank', [0.4, 0.02, 0.2], [0, 1, 0], turn_deg=turn, fixed=True)]}
+        with tempfile.TemporaryDirectory() as logs:
+            session = mw.MachineSession(mw.compile_spec(spec), ENGINE, Path(logs), paced=False)
+            try:
+                q = session.bodies['plank']['orientation_wxyz']
+            finally:
+                session.close()
+        r = mw.rotation(turn)
+        for v in ([1, 0, 0], [0, 1, 0], [0, 0, 1]):
+            mine = [sum(r[i][j] * v[j] for j in range(3)) for i in range(3)]
+            for a, b in zip(mine, quaternion_turn(q, v)):
+                self.assertAlmostEqual(a, b, places=4)   # the engine's reply is rounded to 1e-5
+
+
     @need_engine
     def test_default_machine_runs_every_built_station_in_order_and_hands_heat_over_exactly(self):
         with tempfile.TemporaryDirectory() as logs:
@@ -264,14 +299,382 @@ class Engine(unittest.TestCase):
                 xyz = frame['parcels']['xyz_mm']
                 self.assertEqual(len(xyz) % 3, 0)
                 self.assertEqual(len(xyz) // 3, pour['parcels'])
+                # Over the flume's ground (x within 4.95 m, z within 2.95 m),
+                # no higher than the spout's mouth and no lower than the bed:
+                # water splashes off the paddles onto the banks as well.
                 for k in range(0, len(xyz), 3):
-                    self.assertTrue(-2600 <= xyz[k] <= -800 and -600 <= xyz[k + 1] <= 1100 and 700 <= xyz[k + 2] <= 1300,
+                    self.assertTrue(-4950 <= xyz[k] <= 4950 and -600 <= xyz[k + 1] <= 1100 and -2950 <= xyz[k + 2] <= 2950,
                                     xyz[k:k + 3])
                 quiet = session.frame(session.seq, 0)
                 self.assertEqual(quiet['bodies'], [])
                 self.assertTrue(host.close(opened['session'])['closed'])
                 with self.assertRaises(LookupError):
                     host.get(opened['session'])
+            finally:
+                host.close_all()
+
+
+# ---- light (docs/optics-checkpoint.md) ---------------------------------------------
+
+def lens_machine(lens=True):
+    """A glass ball rolls along two rails to a stop; there the overhead sun,
+    focused through it, lands on a light sensor 4 mm across under the rails.
+    The sensor's switch closes a coil on a rope, which burns, and a weight
+    falls. Without the ball the open sun on the sensor (0.05 W) is a sixth of
+    what closes the switch."""
+    tilt, rail_top, x_rest, x0 = -1.5, 0.30, 0.30, -0.30
+    t = math.tan(math.radians(tilt))
+    lift = math.sqrt(0.05 ** 2 - 0.02 ** 2)           # a 100 mm ball on rails 40 mm apart
+    centre_rest = rail_top + x_rest * t + lift
+    focus = centre_rest - 0.0675                       # its focus, 17.5 mm beyond its far side
+    parts = [
+        part('rail north', [0.8, 0.02, 0.02], [0.0, rail_top - 0.01, -0.03], turn_deg=[0, 0, tilt], fixed=True),
+        part('rail south', [0.8, 0.02, 0.02], [0.0, rail_top - 0.01, 0.03], turn_deg=[0, 0, tilt], fixed=True),
+        part('stop', [0.04, 0.06, 0.12], [x_rest + 0.07, centre_rest, 0.0], fixed=True),
+        part('sensor plate', [0.12, 0.02, 0.12], [x_rest, focus - 0.01, 0.0], material='concrete', fixed=True),
+        part('battery box', [0.2, 0.1, 0.2], [0.6, 0.05, 0.6], material='concrete', fixed=True)]
+    if lens:
+        parts.append({'name': 'lens', 'shape': 'sphere', 'material': 'glass', 'size_m': [0.1, 0.1, 0.1],
+                      'at_m': [x0, rail_top + x0 * t + lift + 0.001, 0.0], 'velocity_m_s': [0.25, 0, 0]})
+    return {
+        'schema': mw.SCHEMA, 'title': 'A burning glass', 'cell_m': 0.02,
+        'sun': {'elevation_deg': 90, 'azimuth_deg': 180, 'irradiance_w_m2': 1000},
+        'parts': parts,
+        'kits': [{'kit': 'hanging_weight', 'name': 'weight', 'post_m': [1.2, 0, 0], 'drop_m': 0.5, 'peg_size_m': 0.02,
+                  'peg_length_m': 0.3, 'weight_size_m': 0.16, 'weight_material': 'iron', 'side': '+z',
+                  'holds_shear_n': 800, 'hang': 'rope', 'rope_m': 0.3}],
+        'batteries': [{'name': 'battery', 'in': 'battery box', 'capacity_j': 200000, 'voltage_v': 48,
+                       'max_power_w': 3000}],
+        'light': {'sunlight': {'through': [{'center_m': [x_rest, centre_rest - 0.03, 0.0], 'size_m': [0.14, 0.14, 0.14]}],
+                               'spacing_m': 0.003},
+                  'photocells': [{'name': 'eye', 'on': 'sensor plate', 'at_m': [x_rest, focus, 0.0], 'normal': [0, 1, 0],
+                                  'area_m2': math.pi * 0.004 ** 2}]},
+        'circuits': [{'name': 'heater', 'battery': 'battery', 'switch': {'photocell': 'eye', 'closed_at_or_above_w': 0.3},
+                      'coil': {'heats': 'weight rope', 'resistance_ohm': 0.8}}],
+        'stations': [
+            {'title': 'Sunlight through the glass ball lights the sensor', 'done_when': {'lit_w': {'photocell': 'eye', 'w': 0.3}},
+             'focus': ['sensor plate']},
+            {'title': 'The switch closes', 'done_when': {'switch_closed': 'heater'}, 'focus': ['battery box']},
+            {'title': 'The coil burns the rope', 'done_when': {'parted': 'weight rope'}, 'focus': ['weight rope']},
+            {'title': 'The weight falls', 'done_when': {'hits': ['weight', 'the ground']}, 'focus': ['weight']}]}
+
+
+def laser_machine(mirror=True, watts=5000.0, band='visible', beam_width=0.0105, lens=False):
+    """Level 6's laser with one mirror: a laser fires along +x at 0.575 m, 4.5 kW
+    of light in a beam about 1 cm wide a metre out; a polished aluminium plate
+    turned 45 degrees about the vertical sends it along +z onto an oak rope
+    1 m on, 20 mm square, holding a 13.6 kg iron weight over a bin."""
+    parts = [part('battery box', [0.1, 0.1, 0.1], [-1.0, 0.05, 0.3], material='iron', fixed=True),
+             part('bin left', [0.04, 0.12, 0.3], [0.3, 0.06, 1.0], material='concrete', fixed=True),
+             part('bin right', [0.04, 0.12, 0.3], [0.7, 0.06, 1.0], material='concrete', fixed=True)]
+    if mirror:
+        # Its face is 10 mm in front of its middle: set back so the beam
+        # leaves it along the rope's line.
+        parts.append(part('mirror', [0.02, 0.2, 0.2], [0.5 + 0.01 * math.sqrt(2.0), 0.575, 0.0], material='aluminum',
+                          turn_deg=[0, 45, 0], fixed=True))
+    return {
+        'schema': mw.SCHEMA, 'title': 'A laser off a mirror', 'cell_m': 0.02, 'parts': parts,
+        'kits': [{'kit': 'laser', 'name': 'laser', 'at_m': [-0.81, 0.575, 0.0], 'aim': [1, 0, 0], 'battery': 'battery',
+                  'watts': watts, 'efficiency': 0.9, 'beam_width_m': beam_width, 'band': band},
+                 {'kit': 'hanging_weight', 'name': 'weight', 'post_m': [0.5, 0, 1.235], 'drop_m': 0.4, 'side': '-z',
+                  'hang': 'rope', 'rope_m': 0.1, 'weight_material': 'iron', 'weight_size_m': 0.12}]
+        # A convex glass lens 60 mm across, faces of radius 100 mm, its back
+        # focus about 93 mm on: 0.1 m before the rope.
+        + ([{'kit': 'lens', 'name': 'lens', 'at_m': [0.5, 0.575, 0.89], 'axis': [0, 0, 1]}] if lens else []),
+        'batteries': [{'name': 'battery', 'in': 'battery box', 'capacity_j': 1e6, 'voltage_v': 48,
+                       'max_power_w': 10000}],
+        'light': {'mirrors': ['mirror']} if mirror else {},
+        'stations': [{'title': 'The beam burns through the rope', 'done_when': {'cut': 'weight rope'},
+                      'focus': ['weight rope']},
+                     {'title': 'The weight is in the bin',
+                      'done_when': {'in_zone': {'part': 'weight', 'at_m': [0.5, 0.08, 1.0], 'size_m': [0.36, 0.16, 0.34]}},
+                      'focus': ['weight']}]}
+
+
+class Light(unittest.TestCase):
+    def test_a_laser_kit_is_a_narrow_lamp_on_a_housing(self):
+        c = mw.compile_spec(laser_machine())
+        housing = next(p for p in c['parts'] if p['name'] == 'laser housing')
+        self.assertTrue(housing['fixed'])
+        lamp = next(lp for lp in c['light']['lamps'] if lp['name'] == 'laser')
+        self.assertEqual(lamp['on'], 'laser housing')
+        self.assertEqual(lamp['axis'], [1.0, 0.0, 0.0])
+        # 5000 W drawn, 0.9 of it light: 270 lumens a watt drawn at 300 a watt of light.
+        self.assertAlmostEqual(lamp['watts'] * lamp['efficacy_lm_w'] / lamp['radiant_efficacy_lm_w'], 4500.0)
+        # 10.5 mm wide a metre out: half of that over a metre.
+        self.assertAlmostEqual(math.tan(math.radians(lamp['half_angle_deg'])), 0.00525, places=9)
+        self.assertEqual(lamp['visible_share'], 1.0)
+        self.assertEqual(mw.compile_spec(laser_machine(band='infrared'))['light']['lamps'][0]['visible_share'], 0.0)
+        # Turned as a whole, the beam turns with its housing: a quarter turn
+        # about the vertical takes +x to -z, and tipped up 30 degrees it rises.
+        spec = laser_machine(lens=True)
+        spec['kits'][0]['turned'] = {'yaw_deg': 90, 'pitch_deg': 30, 'about_m': [-0.81, 0.575, 0.0]}
+        spec['kits'][2]['turned'] = {'yaw_deg': 90, 'about_m': [0.5, 0.575, 0.89]}
+        c = mw.compile_spec(spec)
+        axis = next(lp for lp in c['light']['lamps'] if lp['name'] == 'laser')['axis']
+        want = [0.0, math.sin(math.radians(30)), -math.cos(math.radians(30))]
+        self.assertTrue(all(abs(a - b) < 1e-6 for a, b in zip(axis, want)), axis)
+        lens_axis = c['light']['lenses'][0]['axis']
+        self.assertTrue(all(abs(a - b) < 1e-6 for a, b in zip(lens_axis, [1.0, 0.0, 0.0])), lens_axis)
+
+        def refused(change, words):
+            spec = laser_machine()
+            change(spec['kits'][0])
+            with self.assertRaises(mw.MachineRefused) as caught:
+                mw.compile_spec(spec)
+            self.assertIn(words, str(caught.exception))
+        refused(lambda k: k.update(band='ultraviolet'), 'band is "visible" or "infrared"')
+        refused(lambda k: k.pop('battery'), 'needs the battery')
+        refused(lambda k: k.pop('aim'), 'needs aim')
+        refused(lambda k: k.update(watts=9000), 'watts')
+
+    @need_engine
+    def test_a_laser_off_one_mirror_burns_a_rope_and_drops_a_weight_into_a_bin(self):
+        with tempfile.TemporaryDirectory() as logs:
+            r = mw.rehearse(mw.compile_spec(laser_machine()), ENGINE, Path(logs), seconds=10, wall_limit_s=200)
+        self.assertIsNone(r['error'])
+        self.assertTrue(all(row['done'] for row in r['stations']), r['stations'])
+        cut, binned = [row['at_s'] for row in r['stations']]
+        # About 1.8 kW of the beam is absorbed on the rope, most of it on the
+        # one cell it is centred on, which costs about 3.5 kJ to char through.
+        self.assertLess(cut, 4.0)
+        self.assertLess(cut, binned)
+        texts = ' | '.join(e['text'] for e in r['events'])
+        self.assertIn('the light charred', texts)
+        self.assertIn('the light burned weight rope through', texts)
+        # Without the mirror the beam goes past, and the weight hangs.
+        with tempfile.TemporaryDirectory() as logs:
+            r = mw.rehearse(mw.compile_spec(laser_machine(mirror=False)), ENGINE, Path(logs), seconds=4,
+                            wall_limit_s=120)
+        self.assertIsNone(r['error'])
+        self.assertFalse(any(row['done'] for row in r['stations']), r['stations'])
+
+    @need_engine
+    def test_a_convex_lens_focuses_a_laser_to_a_smaller_spot_and_the_rope_burns_sooner(self):
+        """A beam 2 cm wide a metre out is about 5 cm across at the rope, and
+        puts less than half of itself on it, over three cells; a convex lens in
+        its way brings it to a spot a few millimetres across on the rope."""
+        def run(lens):
+            spec = mw.compile_spec(laser_machine(beam_width=0.021, lens=lens))
+            with tempfile.TemporaryDirectory() as logs:
+                session = mw.MachineSession(spec, ENGINE, Path(logs), paced=False)
+                try:
+                    session.play(True)
+                    with session.lock:
+                        while session.t < 0.2 and not session.error:
+                            session.lock.wait(0.05)
+                    light = mw.probe_light(session)
+                finally:
+                    session.close()
+                rope = next(b for b in light['lit'] if b['name'] == 'weight rope')
+                r = mw.rehearse(spec, ENGINE, Path(logs), seconds=15, wall_limit_s=200)
+            self.assertIsNone(r['error'])
+            return rope['spot'], r['stations'][0]['at_s'], light['lenses']
+        plain, plain_s, _ = run(False)
+        focused, focused_s, lenses = run(True)
+        self.assertEqual(len(lenses), 1)
+        # Its focal length is the engine's, from the lens's shape.
+        self.assertAlmostEqual(lenses[0]['focal_length_m'], 0.0967, delta=0.002)
+        self.assertLess(focused['area_mm2'], 0.25 * plain['area_mm2'])
+        self.assertGreater(focused['w'], 1.5 * plain['w'])
+        self.assertIsNotNone(plain_s)
+        self.assertIsNotNone(focused_s)
+        self.assertLess(focused_s, 0.7 * plain_s)
+
+    def test_light_is_declared_and_what_cannot_be_built_is_refused(self):
+        c = mw.compile_spec(lens_machine())
+        self.assertEqual(c['light']['sun']['irradiance_w_m2'], 1000.0)
+        self.assertEqual([p['name'] for p in c['light']['photocells']], ['eye'])
+        self.assertEqual(c['circuits'][0]['switch'], {'photocell': 'eye', 'closed_at_or_above_w': 0.3})
+        self.assertIsNone(mw.compile_spec(mw.default_spec())['light'], 'a machine with no light has none')
+
+        def refused(change, words):
+            spec = lens_machine()
+            change(spec)
+            with self.assertRaises(mw.MachineRefused) as caught:
+                mw.compile_spec(spec)
+            self.assertIn(words, str(caught.exception))
+        refused(lambda s: s.pop('sun'), 'sunlight needs a sun')
+        refused(lambda s: s['light'].update(mirrors=['stop']), 'only a metal')
+        refused(lambda s: s['circuits'][0]['switch'].update(photocell='nobody'), 'switch.photocell must name a photocell')
+        refused(lambda s: s['light']['sunlight'].update(spacing_m=0.002, through=[{'center_m': [0, 1, 0],
+                                                                                     'size_m': [1, 1, 1]}]), 'at most 8,192')
+        refused(lambda s: s['stations'][0]['done_when']['lit_w'].update(photocell='nobody'), 'lit_w needs a photocell')
+
+    def test_a_mirror_kit_turns_its_face_to_send_the_sun_to_its_target(self):
+        spec = {'schema': mw.SCHEMA, 'sun': {'elevation_deg': 55, 'azimuth_deg': 200, 'irradiance_w_m2': 1000},
+                'parts': [part('target', [0.1, 0.1, 0.1], [2.0, 0.6, -1.0], fixed=True)],
+                'kits': [{'kit': 'mirror', 'name': 'heliostat', 'at_m': [0.0, 0.5, 0.0], 'size_m': [0.3, 0.3],
+                          'aim_at': 'target'}]}
+        # The kit's part is declared before the plain parts, so aim at a point
+        # the target stands on instead; and at the target by name after it.
+        spec['kits'][0].pop('aim_at')
+        spec['kits'][0]['aim_m'] = [2.0, 0.6, -1.0]
+        c = mw.compile_spec(spec)
+        plate = next(p for p in c['parts'] if p['name'] == 'heliostat')
+        self.assertEqual(c['light']['mirrors'], ['heliostat'])
+        normal = mw.rotation(plate['turn_deg'])
+        n = [normal[i][1] for i in range(3)]                       # the plate's own +y, turned
+        el, az = math.radians(55), math.radians(200)
+        down = [-math.cos(el) * math.sin(az), -math.sin(el), -math.cos(el) * math.cos(az)]
+        d = sum(a * b for a, b in zip(down, n))
+        out = [down[i] - 2 * d * n[i] for i in range(3)]
+        want = [2.0, 0.1, -1.0]
+        cos = sum(a * b for a, b in zip(out, want)) / math.sqrt(sum(a * a for a in want))
+        self.assertGreater(cos, 1 - 1e-9, 'the sun off the mirror goes to its target')
+        refused = dict(spec, sun=None)
+        refused.pop('sun')
+        with self.assertRaises(mw.MachineRefused):
+            mw.compile_spec(refused)
+
+    def test_a_light_gate_kit_makes_a_beam_and_a_sensor(self):
+        spec = {'schema': mw.SCHEMA,
+                'parts': [part('battery box', [0.2, 0.1, 0.2], [0, 0.05, 1], material='concrete', fixed=True)],
+                'batteries': [{'name': 'battery', 'in': 'battery box', 'capacity_j': 1e4, 'voltage_v': 12}],
+                'kits': [{'kit': 'light_gate', 'name': 'gate', 'from_m': [-0.5, 0, 0], 'to_m': [0.5, 0, 0],
+                          'height_m': 0.3, 'battery': 'battery'}]}
+        c = mw.compile_spec(spec)
+        self.assertEqual([lp['name'] for lp in c['light']['lamps']], ['gate lamp'])
+        self.assertEqual([p['name'] for p in c['light']['photocells']], ['gate eye'])
+        self.assertEqual(c['light']['lamps'][0]['axis'], [1.0, 0.0, 0.0])
+
+    @need_engine
+    def test_sunlight_through_a_glass_ball_works_the_switch_that_burns_the_rope(self):
+        with tempfile.TemporaryDirectory() as logs:
+            r = mw.rehearse(mw.compile_spec(lens_machine()), ENGINE, Path(logs), seconds=30, wall_limit_s=200)
+            self.assertIsNone(r['error'])
+            self.assertTrue(all(row['done'] for row in r['stations']), r['stations'])
+            times = [row['at_s'] for row in r['stations']]
+            self.assertEqual(times, sorted(times), 'stations happened out of order')
+            # Lit only once the ball has rolled over the sensor, not by the
+            # open sun at the start.
+            self.assertGreater(times[0], 1.0)
+            texts = ' | '.join(e['text'] for e in r['events'])
+            self.assertIn('heater: switch closed', texts)
+            self.assertIn('weight rope came off', texts)
+        # Without the ball the same sun on the same sensor is not enough.
+        with tempfile.TemporaryDirectory() as logs:
+            bare = mw.MachineSession(mw.compile_spec(lens_machine(lens=False)), ENGINE, Path(logs), paced=False)
+            try:
+                bare.play(True)
+                with bare.lock:
+                    while bare.t < 3.0 and not bare.error:
+                        bare.lock.wait(0.1)
+                    eye = bare.readouts['light']['photocells'][0]
+                    closed = bare.readouts['circuits'][0]['closed']
+            finally:
+                bare.close()
+            self.assertFalse(closed, 'the open sun closed the switch')
+            # The rays it catches, 3 mm apart, each carrying 1000 W/m2 x 9 mm2:
+            # about 0.05 W on its 50 mm2, and at most a third of the 0.3 W that
+            # closes the switch.
+            self.assertGreater(eye['peak_w'], 0.0)
+            self.assertLess(eye['peak_w'], 0.1)
+
+    @need_engine
+    def test_a_ball_through_a_light_gate_darkens_its_sensor(self):
+        spec = {'schema': mw.SCHEMA, 'cell_m': 0.02,
+                'parts': [part('battery box', [0.2, 0.1, 0.2], [0, 0.05, 1], material='concrete', fixed=True),
+                          part('block', [0.1, 0.24, 0.1], [0.0, 0.12, 0.0], material='concrete', fixed=True),
+                          {'name': 'ball', 'shape': 'sphere', 'material': 'oak', 'size_m': [0.1, 0.1, 0.1],
+                           'at_m': [0.0, 1.0, 0.0]}],
+                'batteries': [{'name': 'battery', 'in': 'battery box', 'capacity_j': 1e5, 'voltage_v': 12}],
+                'kits': [{'kit': 'light_gate', 'name': 'gate', 'from_m': [-0.5, 0, 0], 'to_m': [0.5, 0, 0],
+                          'height_m': 0.3, 'battery': 'battery'}],
+                'circuits': [{'name': 'alarm', 'battery': 'battery',
+                              'switch': {'photocell': 'gate eye', 'closed_at_or_below_w': 1.0},
+                              'coil': {'heats': 'battery box', 'resistance_ohm': 10}}],
+                'stations': [{'title': 'The beam reaches the eye', 'done_when': {'lit_w': {'photocell': 'gate eye', 'w': 2}}},
+                             {'title': 'The ball breaks the beam', 'done_when': {'shaded_w': {'photocell': 'gate eye', 'w': 1}}},
+                             {'title': 'The alarm closes', 'done_when': {'switch_closed': 'alarm'}}]}
+        with tempfile.TemporaryDirectory() as logs:
+            r = mw.rehearse(mw.compile_spec(spec), ENGINE, Path(logs), seconds=2, wall_limit_s=60)
+        self.assertIsNone(r['error'])
+        self.assertTrue(all(row['done'] for row in r['stations']), r['stations'])
+        # Its underside falls 0.65 m to the beam's 0.3 m: 0.36 s, seen within a
+        # trace (four steps) and a reply.
+        self.assertAlmostEqual(r['stations'][1]['at_s'], math.sqrt(2 * 0.65 / 9.81), delta=0.04)
+        # It comes to rest on the block in the beam, and the alarm stays on.
+        self.assertGreaterEqual(r['stations'][2]['at_s'], r['stations'][1]['at_s'])
+
+    @need_engine
+    def test_mirrors_aimed_at_a_part_add_their_light_on_it(self):
+        """A dark target in the sun, and 0, 1 or 3 mirror kits aimed at it: each
+        mirror adds, on the target, about what falls on the mirror times its
+        reflectance, and the target absorbs half (it is oak)."""
+        def absorbed(count):
+            spec = {'schema': mw.SCHEMA, 'cell_m': 0.02,
+                    'sun': {'elevation_deg': 60, 'azimuth_deg': 0, 'irradiance_w_m2': 1000},
+                    'parts': [part('target', [0.4, 0.4, 0.04], [0, 0.5, 1.5], fixed=True)],
+                    'kits': [{'kit': 'mirror', 'name': f'mirror {k}', 'at_m': [-0.6 + 0.6 * k, 0.5, 0.0],
+                              'size_m': [0.2, 0.2], 'aim_m': [0, 0.5, 1.5]} for k in range(count)],
+                    'light': {'sunlight': {'through': ['target'] + [f'mirror {k}' for k in range(count)],
+                                           'spacing_m': 0.01}}}
+            with tempfile.TemporaryDirectory() as logs:
+                session = mw.MachineSession(mw.compile_spec(spec), ENGINE, Path(logs), paced=False)
+                try:
+                    light = session.readouts['light']
+                finally:
+                    session.close()
+            return next((b['absorbed_w'] for b in light['lit'] if b['name'] == 'target'), 0.0), light
+        alone, _ = absorbed(0)
+        one, _ = absorbed(1)
+        three, light = absorbed(3)
+        # The sun stands 60 degrees up over +z, behind the target, so the face
+        # the mirrors see is in its own shadow. Each mirror, 0.2 m square, is
+        # turned square to the bisector of the sun and the target, so it takes
+        # 1000 W/m2 x 0.04 m2 x cos(half the angle between them) and reflects
+        # 0.925 of it (0.92 visible, 0.93 infrared); the whole beam lands on the
+        # target's face and the oak absorbs half.
+        sun = [0.0, math.sin(math.radians(60)), math.cos(math.radians(60))]
+
+        def landed(k):
+            to = [0.6 - 0.6 * k, 0.0, 1.5]
+            n = math.sqrt(sum(c * c for c in to))
+            cos_half = math.sqrt(0.5 * (1 + sum(a * b / n for a, b in zip(sun, to))))
+            return 0.5 * 1000 * 0.04 * cos_half * (0.46 * 0.92 + 0.54 * 0.93)
+        self.assertAlmostEqual(one - alone, landed(0), delta=0.08 * landed(0))
+        self.assertAlmostEqual(three - alone, sum(landed(k) for k in range(3)), delta=0.08 * sum(landed(k) for k in range(3)))
+        self.assertLess(abs(light['residual_w']), 1e-9 * light['sent_w'])
+
+    @need_engine
+    def test_light_goes_on_through_the_pieces_of_a_broken_pane(self):
+        spec = {'schema': mw.SCHEMA, 'cell_m': 0.02,
+                'sun': {'elevation_deg': 70, 'azimuth_deg': 90, 'irradiance_w_m2': 1000},
+                'kits': [{'kit': 'plate_on_supports', 'name': 'pane', 'at_m': [0, 0.3, 0], 'size_m': [0.48, 0.02, 0.28],
+                          'material': 'glass', 'span': 'z'}],
+                'parts': [{'name': 'ball', 'shape': 'sphere', 'material': 'iron', 'size_m': [0.1, 0.1, 0.1],
+                           'at_m': [0, 1.2, 0], 'velocity_m_s': [0, -3, 0]}],
+                'light': {'sunlight': {'through': [{'center_m': [0, 0.31, 0], 'size_m': [0.5, 0.06, 0.3]}],
+                                       'spacing_m': 0.01}},
+                'stations': [{'title': 'The pane breaks', 'done_when': {'broke': 'pane'}}]}
+        with tempfile.TemporaryDirectory() as logs:
+            session = mw.MachineSession(mw.compile_spec(spec), ENGINE, Path(logs), paced=False)
+            try:
+                session.play(True)
+                with session.lock:
+                    while session.t < 1.5 and not session.error:
+                        session.lock.wait(0.1)
+                    light = session.readouts['light']
+                    broke = session.readouts['stations'][0]['done']
+            finally:
+                session.close()
+        self.assertTrue(broke, 'the ball broke the pane')
+        pieces = [b for b in light['lit'] if b['name'].startswith('pane piece')]
+        self.assertTrue(pieces, light['lit'])
+        self.assertLess(abs(light['residual_w']), 1e-9 * light['sent_w'])
+        self.assertLess(abs(light['joules']['residual']), 1e-9 * light['joules']['sent'])
+
+    @need_engine
+    def test_a_live_machine_sends_its_rays_to_draw(self):
+        with tempfile.TemporaryDirectory() as logs:
+            host = mw.MachineHost(ENGINE, logs)
+            try:
+                opened = host.open(lens_machine())
+                light = opened['readouts']['light']
+                self.assertGreater(light['sent_w'], 10.0)
+                self.assertTrue(light['paths'] and all(len(p['mm']) % 3 == 0 for p in light['paths']))
+                self.assertLess(abs(light['residual_w']), 1e-9 * light['sent_w'])
             finally:
                 host.close_all()
 
@@ -344,6 +747,56 @@ class Chat(unittest.TestCase):
         prompt = mc.system_prompt()
         for name in list(mw.KITS) + list(mw.MATERIALS):
             self.assertIn(name, prompt)
+
+
+class Host(unittest.TestCase):
+    def test_a_full_site_says_busy_and_takes_only_an_idle_players_world(self):
+        """Nobody's game is ended while they play it: with every world in use,
+        a newcomer is told the site is busy; a world whose player has done
+        nothing for IDLE_S, or whose page has stopped asking, makes room."""
+        made = []
+
+        class Stand:   # an engine world, without the engine
+            def __init__(self, compiled, exe, logs):
+                self.id, self.closed = f'world {len(made)}', False
+                self.last_used = self.last_action = time.monotonic()
+                made.append(self)
+
+            def frame(self, after, wait_ms):
+                return {'ok': True}
+
+            def close(self):
+                self.closed = True
+        spec = mw.default_spec()
+        real = mw.MachineSession
+        mw.MachineSession = Stand
+        try:
+            with tempfile.TemporaryDirectory() as logs:
+                host = mw.MachineHost(Path('engine'), Path(logs), limit=2)
+                host.open(spec)
+                host.open(spec)
+                with self.assertRaises(mw.SiteBusy) as caught:
+                    host.open(spec)
+                self.assertIn('in use by people playing', str(caught.exception))
+                self.assertFalse(any(w.closed for w in made))
+                # Its page still polls (last_used is fresh), but its player has
+                # done nothing for three minutes: that world makes room.
+                made[0].last_action -= host.IDLE_S + 1
+                host.open(spec)
+                self.assertEqual([w.closed for w in made], [True, False, False])
+                # A page that has gone quiet (it polls every second) makes room
+                # first, whatever its player last did.
+                made[1].last_used -= host.QUIET_S + 1
+                host.open(spec)
+                self.assertTrue(made[1].closed)
+                self.assertEqual(len(host.sessions), 2)
+                # And one gone for GONE_S is closed even with room to spare.
+                made[2].last_used -= host.GONE_S + 1
+                host.limit = 5
+                host.open(spec)
+                self.assertTrue(made[2].closed)
+        finally:
+            mw.MachineSession = real
 
 
 if __name__ == '__main__':

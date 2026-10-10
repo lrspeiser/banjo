@@ -517,15 +517,23 @@ class PageJourney(unittest.TestCase):
         self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
         time.sleep(0.1)
 
-    def open_details(self):
-        """The side panel, opened as a person opens it: it starts folded away
-        (body.panel-away), and Details on the bottom bar slides it in. Waits
-        until it is all on screen, so that a click does not land mid-slide."""
-        if self.js("document.body.classList.contains('panel-away')"):
-            self.click_selector("#panel-details")
-        self.assertTrue(self.wait_for("!document.body.classList.contains('panel-away') && Math.abs("
-                                      "document.getElementById('panel').getBoundingClientRect().right - innerWidth) < 1", 10),
-                        "Details did not bring the panel out")
+    def click_rover(self, command):
+        """The rover's one action on its card: Start, Stop or Recover. A rover's
+        controls are one compact card (1572c275: "one Start/Stop/Recover
+        action"), not a program's On and Off, which it no longer shows."""
+        selector = f"#machine-panel [data-rover-command={command}]"
+        self.assertTrue(self.wait_for(f"!!document.querySelector({json.dumps(selector)})", 15),
+                        f"the rover's card offers no {command}: {self.situation()}")
+        self.when_still(selector)
+        self.click_selector(selector)
+
+    STATUS_SAID = "document.querySelector('#machine-panel [data-rover-status]')?.textContent"
+
+    def rover_says(self, program):
+        """Whether the rover's card says what its program says of itself: its
+        status, then its own reason when it gives one."""
+        return (f"((t, p) => !!t && (p.why ? t.endsWith(' · ' + p.why) : !t.includes(' · ')))("
+                f"document.querySelector('#machine-panel [data-rover-status]')?.textContent, {program})")
 
     def touch_and_cancel(self, element_id):
         """A finger put on a button and taken away by the browser -- a scroll,
@@ -1228,12 +1236,28 @@ class ClickingWithTheMouse(PageJourney):
                         f"the cursor is not on the rover: {self.situation()}")
         self.assertTrue(self.js("document.getElementById('machine-panel').hidden"),
                         "its panel was open before the click")
+        # ONE click says THAT ONE: since eaf9e306 a click selects a machine
+        # (a box round it, and the action line saying so) and opens nothing,
+        # the side view being no longer an inspector. What the side view
+        # marks for E -- the rover's panel -- is then one key away.
         self.click_at(rx, ry)
-        self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 15),
-                        f"ONE click did not open the rover's panel: {self.situation()}")
+        self.assertTrue(self.wait_for("banjoRoom.picked().name === 'rover' && banjoRoom.picked().outlined", 15),
+                        f"ONE click did not select the rover: {self.situation()}")
+        self.assertTrue(self.wait_for("(t => !!t && !t.hidden && t.textContent.startsWith('Rover selected'))"
+                                      "(document.getElementById('world-action-toast'))", 10),
+                        f"the click did not say what it selected: {self.situation()}")
+        self.assertTrue(self.js("document.body.classList.contains('panel-away')"),
+                        "selecting the rover opened the side view")
         self.assertFalse(self.js("!!document.pointerLockElement"),
                          "a click took the pointer lock; nothing should ask for it now")
-        print("\n   one click on the rover opened its panel, and the pointer was not taken", flush=True)
+        # The cursor is still on the rover, and E does what the side view marks.
+        self.assertTrue(self.offering("Open the rover's panel"),
+                        f"the side view does not mark the rover's panel for E: {self.situation()}")
+        self.press_e()
+        self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 15),
+                        f"E did not open the rover's panel: {self.situation()}")
+        print("\n   one click on the rover selected it and E opened its panel; the pointer was not taken",
+              flush=True)
 
     def test_dragging_looks_around_and_does_not_act(self):
         self.open_the_mine()
@@ -1595,12 +1619,16 @@ class ARoverRoamsTheShore(PageJourney):
         self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 10),
                         f"E did not open the rover's panel: {self.situation()}")
         text = lambda element_id: self.js(f"document.getElementById({json.dumps(element_id)}).textContent")
-        self.assertEqual(text("mp-kind"), "Machine with a program")
+        # A rover's panel is its one compact card (1572c275): its picture,
+        # status, energy, cargo, Talk to rover and one Start/Stop/Recover.
+        self.assertEqual(text("mp-kind"), "Rover")
+        self.assertTrue(self.js("!!document.querySelector('#machine-panel .rover-card')?.checkVisibility()"),
+                        "the rover's panel does not show its card")
         self.assertEqual(self.js("getComputedStyle(document.querySelector('#machine-panel .mp-drive')).display"),
                          "none", "a program's panel offers its wheels' directions")
-        self.click("mp-on")
+        self.click_rover("start")
         self.assertTrue(self.wait_for(f"{program}.power === true", 15),
-                        f"On did not reach the rover's program: {self.situation()}")
+                        f"Start did not reach the rover's program: {self.situation()}")
         # Forty seconds of its world, however long the page takes to draw them.
         began = self.js("banjoRoom.status().time_s")
         path, wet, seen, was = 0.0, 0.0, [], self.position("rover")
@@ -1642,14 +1670,13 @@ class ARoverRoamsTheShore(PageJourney):
         # The panel says why, and it is still roaming: the reason it gave a
         # moment ago is not the reason now. Ask the page to compare the two
         # itself, so both come from one instant instead of two round-trips apart.
-        agrees = (f"document.getElementById('mp-condition').textContent === "
-                  f"({program}.power ? ({program}.why || 'nothing in its way') : 'off')")
-        self.assertTrue(self.wait_for(agrees, 10),
-                        f"the panel does not say the program's own reason: it shows "
-                        f"{text('mp-condition')!r} for a program that says {self.js(program + '.why')!r}")
-        self.click("mp-off")
+        self.assertTrue(self.wait_for(self.rover_says(program), 10),
+                        f"the card does not say the program's own reason: it shows "
+                        f"{self.js(self.STATUS_SAID)!r}"
+                        f" for a program that says {self.js(program + '.why')!r}")
+        self.click_rover("stop")
         self.assertTrue(self.wait_for(f"{program}.doing === 'stopped'", 15),
-                        f"Off did not reach the rover's program: {self.situation()}")
+                        f"Stop did not reach the rover's program: {self.situation()}")
         # Wait for it to really stop, by the engine's own reading rather than
         # by the drawing (stood_still): measured from a fixed two seconds and
         # the mesh, this saw anything from 0 to 155 mm of leftover slide.
@@ -1697,13 +1724,16 @@ class ARoverRestsInTheSun(PageJourney):
         self.press_e()
         self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 10),
                         f"E did not open the rover's panel: {self.situation()}")
-        self.click("mp-on")
+        self.click_rover("start")
         self.assertTrue(self.wait_for(f"{program}.power === true", 15),
-                        f"On did not reach the rover's program: {self.situation()}")
+                        f"Start did not reach the rover's program: {self.situation()}")
         self.assertTrue(self.wait_for(f"{program}.doing === 'resting'", 240),
                         f"its battery never ran low enough to rest: {self.situation()}")
-        text = lambda element_id: self.js(f"document.getElementById({json.dumps(element_id)}).textContent")
-        self.assertEqual(text("mp-condition"), "its battery is low, so it rests while its panel charges it")
+        # Its card says why, in its program's own words (1572c275: a rover's
+        # controls are one compact card, its status and reason on one line).
+        self.assertTrue(self.wait_for(f"({self.STATUS_SAID} || '').endsWith("
+                                      "' · its battery is low, so it rests while its panel charges it')", 10),
+                        f"the card does not say why it rests: {self.js(self.STATUS_SAID)!r}")
         # Wait for it to really stop, by the engine's own reading rather than
         # by the drawing (stood_still). Measured from a fixed wait and the
         # drawn mesh, this failed about a third of the time two ways at once:
@@ -1741,9 +1771,9 @@ class ARoverRestsInTheSun(PageJourney):
         self.assertIn("solar panel on rover", listed)
         self.assertIn("has taken in", listed)
         self.assertLess(math.dist(self.js(f"{program}.at_m"), rest), 0.02, "resting, it moved")
-        self.click("mp-off")
+        self.click_rover("stop")
         self.assertTrue(self.wait_for(f"{program}.doing === 'stopped'", 15),
-                        f"Off did not reach the rover's program: {self.situation()}")
+                        f"Stop did not reach the rover's program: {self.situation()}")
         self.no_page_errors("after the rover rested in the sun")
 
 
@@ -1785,9 +1815,9 @@ class ARoverRestsThroughTheNight(PageJourney):
         self.press_e()
         self.assertTrue(self.wait_for("!document.getElementById('machine-panel').hidden", 10),
                         f"E did not open the rover's panel: {self.situation()}")
-        self.click("mp-on")
+        self.click_rover("start")
         self.assertTrue(self.wait_for(f"{program}.power === true", 15),
-                        f"On did not reach the rover's program: {self.situation()}")
+                        f"Start did not reach the rover's program: {self.situation()}")
         # The sun sets at six, twenty seconds of the room's time in.
         self.assertTrue(self.wait_for("banjoRoom.world.sun.elevation_deg < 0", 240),
                         f"the sun never set: {self.situation()}")
@@ -1805,8 +1835,9 @@ class ARoverRestsThroughTheNight(PageJourney):
                         + self.js("document.getElementById('machine-list').innerText")[:200])
         self.assertTrue(self.wait_for(f"{program}.doing === 'resting'", 240),
                         f"its battery never ran low enough to rest: {self.situation()}")
-        text = lambda element_id: self.js(f"document.getElementById({json.dumps(element_id)}).textContent")
-        self.assertEqual(text("mp-condition"), "its battery is low and the sun is down, so it rests until morning")
+        self.assertTrue(self.wait_for(f"({self.STATUS_SAID} || '').endsWith("
+                                      "' · its battery is low and the sun is down, so it rests until morning')", 10),
+                        f"the card does not say why it rests: {self.js(self.STATUS_SAID)!r}")
         self.wait_world(2.0)          # brought to rest on its brakes
         rest = self.position("rover")
         taken = self.js(f"{store}.taken_j")
@@ -1817,9 +1848,9 @@ class ARoverRestsThroughTheNight(PageJourney):
         self.assertEqual(self.js(f"{store}.taken_j"), taken, "in the night its battery took something in")
         self.assertLessEqual(light["sky"], 0.5, "the night's sky is lit as the day's")
         self.assertLess(math.dist(self.position("rover"), rest), 0.02, "resting, it moved")
-        self.click("mp-off")
+        self.click_rover("stop")
         self.assertTrue(self.wait_for(f"{program}.doing === 'stopped'", 15),
-                        f"Off did not reach the rover's program: {self.situation()}")
+                        f"Stop did not reach the rover's program: {self.situation()}")
         self.no_page_errors("after the rover rested through the night")
 
 
@@ -2987,7 +3018,12 @@ class TheMineShowsWhatEachThingHolds(PageJourney):
                                       f"{json.dumps(machine)}", 10),
                         "the panel opened on "
                         + repr(self.js("document.getElementById('mp-name').textContent")))
-        self.click_where("#mp-on")
+        # A rover's panel is its compact card, whose Start is its On
+        # (1572c275); every other machine keeps the On button.
+        if self.js("document.getElementById('machine-panel').classList.contains('compact-rover')"):
+            self.click_rover("start")
+        else:
+            self.click_where("#mp-on")
         self.assertTrue(self.wait_for("banjoRoom.world.machines.programs.some((p) => p.name === "
                                       f"{json.dumps(machine)} && p.power === true)", 20),
                         f"On did not reach {machine}: the panel said "
@@ -3021,18 +3057,19 @@ class TheMineShowsWhatEachThingHolds(PageJourney):
         self.assertIsNone(self.holder(at_open, "Smelter Intake")["full"],
                           "a heap has no capacity, so it must have no bar")
 
-        # -- the panel is in the side view, under the conversation -------------
+        # -- the panel is in the side view, and has it to itself ---------------
+        # The side view was the conversation with the machine's panel under it
+        # until eaf9e306 made it the conversation only; a machine's controls,
+        # opened on purpose, now have it to themselves (no chat, no inspector).
         self.switch_on("rover")
         self.assertEqual(self.js("document.getElementById('machine-panel').parentElement.id"), "panel",
                          "the machine panel is not in the side view")
         self.assertTrue(self.js("document.body.classList.contains('machine-open')"))
-        where = self.js("(() => { const p = document.getElementById('machine-panel').getBoundingClientRect(),"
-                        " t = document.getElementById('talk').getBoundingClientRect(),"
-                        " d = document.getElementById('details').getBoundingClientRect();"
-                        " return {left: p.left, width: p.width, under_chat: p.top >= t.bottom - 1,"
-                        " over_details: p.bottom <= d.top + 1, inner: innerWidth}; })()")
-        self.assertTrue(where["under_chat"], f"the panel is not under the conversation: {where}")
-        self.assertTrue(where["over_details"], f"the panel is not above what you look at: {where}")
+        where = self.js("(() => { const p = document.getElementById('machine-panel').getBoundingClientRect();"
+                        " return {left: p.left, width: p.width, inner: innerWidth,"
+                        " others: [...document.getElementById('panel').children].filter(e => e.id !== 'machine-panel'"
+                        " && getComputedStyle(e).display !== 'none').map(e => e.id || e.tagName)}; })()")
+        self.assertEqual([], where["others"], f"the panel shares the side view: {where}")
         self.assertGreater(where["left"], where["inner"] - 400,
                            f"the panel is not in the right-hand column: {where}")
         self.assertGreater(where["width"], 100, f"the panel has no room: {where}")
@@ -3193,60 +3230,86 @@ class ClickingSomethingKeepsIt(PageJourney):
         moved = math.hypot(after[0] - before[0], after[1] - before[1])
         self.assertGreater(moved, 0.3, f"A no longer strafes: it moved {moved:.2f} m")
 
+    def click_the_middle(self):
+        """A click on what the crosshair is on, with the mouse, as a person
+        clicks: moved there, down and up."""
+        x, y = self.js("(() => { const r = document.getElementById('stage').getBoundingClientRect();"
+                       " return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+        self.page.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+        time.sleep(0.15)
+        for kind in ("mousePressed", "mouseReleased"):
+            self.page.send("Input.dispatchMouseEvent", {"type": kind, "x": x, "y": y, "button": "left",
+                                                        "clickCount": 1})
+            time.sleep(0.05)
+
+    def action_line(self):
+        return "document.getElementById('world-action-toast')"
+
     def test_clicking_a_machine_keeps_it_in_the_panel_and_draws_a_box_round_it(self):
         self.open_rover_room()
-        self.js("(banjoRoom.pick('rover'), true)")
-        self.assertTrue(self.wait_for("!document.getElementById('picked').hidden", 15),
-                        "clicking the rover showed nothing")
-        # The panel starts folded away; Details shows what was clicked.
-        self.open_details()
-        said = self.js("document.getElementById('picked').innerText")
-        self.assertIn("Rover", said)
-        # The battery is a picture with a percentage, not a sentence.
-        self.assertTrue(self.js("!!document.querySelector('#picked .battery')"),
-                        "no battery symbol")
-        self.assertRegex(said, r"\d+%", "the battery does not say how full it is")
-        # And the words about the same battery are gone: it is said once.
-        self.assertNotIn("a battery,", said, "the battery is written out as well as drawn")
+        self.assertTrue(self.wait_for("banjoRoom.world.bodies.has('rover')", 60), "the rover never arrived")
+        x, y, z = self.at_rest("rover")
+        self.js(f"(banjoRoom.standAt({x + 0.3}, {y + 1.4}, {z - 1.9}), banjoRoom.lookAt({x}, {y + 0.05}, {z}), true)")
+        self.assertTrue(self.wait_for("banjoRoom.world.aim && banjoRoom.world.aim.name === 'rover'", 15),
+                        f"the crosshair is not on the rover: {self.situation()}")
+        # A click says THAT ONE. Since eaf9e306 the side view is the
+        # conversation and never an inspector, so what was clicked is a box
+        # round it in the room and the action line saying what it is.
+        self.click_the_middle()
+        self.assertTrue(self.wait_for("banjoRoom.picked().name === 'rover'", 15),
+                        f"clicking the rover did not select it: {self.situation()}")
+        self.assertTrue(self.wait_for(f"(t => !!t && !t.hidden && t.textContent.startsWith('Rover selected'))"
+                                      f"({self.action_line()})", 10),
+                        f"the click did not say what it selected: {self.situation()}")
+        self.assertTrue(self.js("document.body.classList.contains('panel-away')"),
+                        "selecting the rover opened the side view")
         # A box round it in the room, following it.
         self.assertTrue(self.wait_for("banjoRoom.picked().outlined", 10),
                         "nothing was drawn round what was clicked")
+        # Its battery is in its own controls, once, as a meter with a
+        # reading: E on it, and the card says it (1572c275's rover card).
+        self.press_e()
+        self.assertTrue(self.wait_for("!!document.querySelector('#machine-panel .rover-card progress')"
+                                      "?.checkVisibility()", 15),
+                        f"the rover's controls show no energy meter: {self.situation()}")
+        said = self.js("document.querySelector('#machine-panel .rover-card').innerText")
+        self.assertRegex(said, r"Energy · ([\d.,]+ [kM]?J / [\d.,]+ [kM]?J|\d+%)", "the battery does not say how full it is")
+        self.assertEqual(1, said.count("Energy"), "the battery is said more than once")
+        self.click("mp-close")
+        self.assertTrue(self.wait_for("document.body.classList.contains('panel-away')", 10))
         # It stays about the rover even though the view has moved on.
         self.js("(banjoRoom.lookAt(20, 0, 20), true)")
         time.sleep(1.0)
         self.assertEqual(self.js("banjoRoom.picked().name"), "rover",
                          "looking away let go of what was clicked")
-        self.assertTrue(self.js("document.getElementById('details').hidden"),
-                        "the hovering view is still up beside the pinned one")
+        self.assertTrue(self.js("banjoRoom.picked().outlined"), "the box went when the view moved on")
 
     def test_clicking_land_says_what_it_is_made_of(self):
         self.open_rover_room()
-        self.js("(banjoRoom.pickGround(-4.8, 0, 4.1), true)")
-        self.assertTrue(self.wait_for("!document.getElementById('picked').hidden", 15),
-                        "clicking the ground showed nothing")
-        # The panel starts folded away, and the beds are under their own
-        # disclosure in it (f978d1af): Details, then Ground layers.
-        self.open_details()
-        self.click_selector("#picked details > summary")
-        self.assertTrue(self.wait_for("document.querySelector('#picked details').open", 5), "Ground layers did not open")
-        # And it stays open while the card is built again: walking changes how far away it says it is.
-        self.js("(banjoRoom.standAt(banjoRoom.camera.position.x + 0.5, banjoRoom.camera.position.y, banjoRoom.camera.position.z), true)")
-        time.sleep(1.0)
-        self.assertTrue(self.js("document.querySelector('#picked details').open"), "Ground layers closed when the card was built again")
-        beds = json.loads(self.js(
-            "JSON.stringify([...document.querySelectorAll('#picked .pk-bed')]"
-            ".map(b => b.innerText))"))
-        self.assertTrue(beds, "the ground has no beds in the panel")
-        # Every bed says what it is and how thick, and each is drawn tall
-        # enough to read -- a 60 cm bed under 30 m of rock used to be 7 px.
-        for said in beds:
-            self.assertRegex(said, r"\d+ (cm|m)\b", f"a bed with no thickness: {said!r}")
-        tall = json.loads(self.js(
-            "JSON.stringify([...document.querySelectorAll('#picked .pk-bed')]"
-            ".map(b => b.getBoundingClientRect().height))"))
-        self.assertGreater(min(tall), 12, f"a bed too thin to read: {tall}")
-        self.assertIn("ore", self.js("document.getElementById('picked').innerText"),
-                      "the panel says nothing about ore either way")
+        # A plain click on open ground, empty-handed. Its layers used to be a
+        # card in the Details rail (f978d1af); that rail is gone (eaf9e306),
+        # and the click says them on the action line instead, top down.
+        y = self.js("banjoRoom.groundAt(-4.8, 4.1)")
+        self.js(f"(banjoRoom.standAt(-4.8, {y} + 1.62, 6.1), banjoRoom.lookAt(-4.8, {y}, 4.1), true)")
+        self.assertTrue(self.wait_for("!!banjoRoom.world.groundAim && !banjoRoom.world.aim", 15),
+                        f"the crosshair is not on open ground: {self.situation()}")
+        self.click_the_middle()
+        self.assertTrue(self.wait_for("!!banjoRoom.picked().at", 15), "clicking the ground selected nothing")
+        self.assertTrue(self.wait_for(f"(t => !!t && !t.hidden && t.textContent.includes(' ground: '))"
+                                      f"({self.action_line()})", 10),
+                        f"clicking the ground said nothing about it: {self.situation()}")
+        said = self.js(f"{self.action_line()}.textContent")
+        layers, _, minerals = said.rstrip(".").partition(" ground: ")[2].rpartition(" · ")
+        beds = [b for b in layers.split(" over ") if b != "more"]
+        self.assertTrue(beds, f"the ground has no beds: {said!r}")
+        # Every bed says how thick it is and what it is.
+        for bed in beds:
+            self.assertRegex(bed, r"^\d+(\.\d)? (cm|m) \w", f"a bed with no thickness: {bed!r} in {said!r}")
+        # And whether there is ore here, either way (the owner asked).
+        self.assertIn("ore", minerals + said, f"the ground says nothing about ore either way: {said!r}")
+        self.assertIsNone(self.js("banjoRoom.reveal()"), "the click drew something into the earth")
+        self.assertTrue(self.js("document.body.classList.contains('panel-away')"),
+                        "clicking the ground opened the side view")
 
     def test_escape_frees_cursor_and_preserves_the_selected_item(self):
         self.open_rover_room()
@@ -3430,9 +3493,12 @@ class TheHotListTakesWhatYouPutInIt(PageJourney):
             new DragEvent('drop', {{dataTransfer: dt, bubbles: true, cancelable: true}}));
           return true;
         }})()""")
+        # The bench is the Lab, which c3e79e92 put in the Build hub: Build is
+        # the selected screen, and its Lab is about the thing dropped.
         self.assertTrue(self.wait_for(
-            "[...document.querySelectorAll('.ws-tabs button')]"
-            ".some(b => b.dataset.tab === 'lab' && b.getAttribute('aria-selected') === 'true')",
+            "[...document.querySelectorAll('.ws-tabs [data-tab]')]"
+            ".some(b => b.dataset.tab === 'build' && b.getAttribute('aria-selected') === 'true')"
+            " && !document.getElementById('ws-hub-build').hidden",
             120),
             "dropping a thing on the Workshop did not open the bench")
         self.assertTrue(self.wait_for("!!document.querySelector('#ws-name')"
@@ -3450,17 +3516,29 @@ class CompactInventoryAndStableToolShape(PageJourney):
         self.assertTrue(self.wait_for("window.banjoRoom?.ready()",60),self.situation())
         self.assertFalse(self.js("!!document.querySelector('#tabs, #panel [role=tablist], #tab-settings')"))
         self.assertTrue(self.wait_for("document.querySelector('#mini-energy').textContent.includes(' J')"))
-        geometry = """(() => {
-          const b=banjoRoom.world.bodies.get('field pick');
-          return {cells:b.cells, mass:b.mass, design:!!b.mesh.userData.drawnToDesign,
-            vertices:[...b.mesh.geometry.attributes.position.array]};
-        })()"""
+        # The playable pick is an iron head on an aluminum haft (caeb6424):
+        # two bodies, each one part, each drawn as that part. The oak pick was
+        # one body, which had to be drawn to its design not to be a slab.
+        geometry = """(() => [...banjoRoom.world.bodies]
+          .filter(([n]) => n === 'field pick' || n.startsWith('field pick-'))
+          .map(([n, b]) => ({name:n, mass:b.mass,
+            vertices:[...b.mesh.geometry.attributes.position.array]})))()"""
         before = self.js(geometry)
-        self.assertTrue(before["cells"],"the first frame drew a slab instead of the pick")
-        self.assertTrue(before["design"],"the handle/head did not draw before pickup")
+        self.assertEqual(2,len(before),f"the pick is not its haft and its head: {[p['name'] for p in before]}")
+        self.assertTrue(all(p["vertices"] for p in before),"a part of the pick was not drawn")
         self.js("""(() => {const p=banjoRoom.world.bodies.get('field pick').mesh.position;
             banjoRoom.standAt(p.x,p.y+1.62,p.z+1.1);banjoRoom.lookAt(p.x,p.y,p.z);return true;})()""")
-        self.assertTrue(self.wait_for("banjoRoom.world.aim?.name==='field pick'",15),self.situation())
+        # The player is a body now (2026-10-04) and its eye settles after
+        # standAt, which can leave the ray under the 50 mm haft: look at the
+        # pick again until the crosshair is on it -- either part takes the
+        # whole tool (eaf9e306). fe774d52 met the same in the AI dig journey.
+        on_pick = "['field pick','field pick-g0'].includes(banjoRoom.world.aim?.name)"
+        for _ in range(12):
+            self.js("""(() => {const p=banjoRoom.world.bodies.get('field pick').mesh.position;
+                banjoRoom.lookAt(p.x,p.y,p.z);return true;})()""")
+            if self.wait_for(on_pick, 1.5):
+                break
+        self.assertTrue(self.wait_for(on_pick,5),self.situation())
         self.assertTrue(self.when_idle())
         self.press_e()
         self.assertTrue(self.wait_for("banjoRoom.held()?.name==='field pick'",20),self.situation())
@@ -3474,13 +3552,15 @@ class CompactInventoryAndStableToolShape(PageJourney):
         picture = self.js(f"document.querySelector('{hand} img').src")
         self.hover(hand)
         self.click_selector(f"{hand} button")
-        self.assertTrue(self.wait_for("!banjoRoom.held() && document.querySelector('#mini-products .mini-product small')?.textContent.startsWith('Bag')"),self.situation())
-        self.assertEqual(picture,self.js("document.querySelector('#mini-products .mini-product img').src"))
+        # The bag is the inventory strip over the room, right of the menu:
+        # the side rail's compact Inventory went with the rail (eaf9e306).
+        bagged = "#inventory-strip .strip-item[aria-label*='· Bag ']"
+        self.assertTrue(self.wait_for(f"!banjoRoom.held() && !!document.querySelector({json.dumps(bagged)})"),self.situation())
+        self.assertEqual(picture,self.js(f"document.querySelector({json.dumps(bagged + ' img')}).src"))
         self.page.send("Page.reload")
-        self.assertTrue(self.wait_for("window.banjoRoom?.ready() && !!document.querySelector('#mini-products .mini-product img')",30))
-        self.assertEqual(picture,self.js("document.querySelector('#mini-products .mini-product img').src"))
-        self.open_details()
-        self.click_selector("#mini-products .mini-product button")
+        self.assertTrue(self.wait_for(f"window.banjoRoom?.ready() && !!document.querySelector({json.dumps(bagged + ' img')})",30))
+        self.assertEqual(picture,self.js(f"document.querySelector({json.dumps(bagged + ' img')}).src"))
+        self.click_selector(bagged)
         self.assertTrue(self.wait_for("banjoRoom.held()?.name==='field pick'",20),self.situation())
         self.assertEqual(before,self.js(geometry),"equipping after reload changed the tool")
         self.open_world_menu("keys")
@@ -3496,7 +3576,8 @@ class CompactInventoryAndStableToolShape(PageJourney):
         self.assertTrue(self.wait_for("document.querySelector('#game-menu').open && document.querySelector('[data-world-menu=bench]').open"))
         self.assertTrue(self.wait_for("document.querySelector('#workbench-runs li') && !document.querySelector('#workbench-runs').textContent.includes('Looking for')"))
         self.click("game-menu-close")
-        self.click_selector("#mini-inventory header a")
+        # All of the inventory: the bottom bar's Inventory screen.
+        self.click_selector('#world-quickbar .game-tabs [data-screen="inventory"]')
         self.assertTrue(self.wait_for("!!document.querySelector('#ws-inv-grid [data-product]')",30))
         self.assertIn("field pick",self.js("document.querySelector('#ws-inv-grid').textContent.toLowerCase()"))
         self.assertFalse([event for event in self.page.events if event.get("method")=="Runtime.exceptionThrown"])

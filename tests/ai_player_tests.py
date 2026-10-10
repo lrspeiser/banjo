@@ -264,7 +264,10 @@ class AutonomousGuests(unittest.TestCase):
         self.app.store = room_store.RoomStore(Path(self.temp.name) / "rooms")
         self.app.hub = server.WorldHub(self.app)
         self.app.password = None; self.app.public_host = None
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", self.port), server.Handler)
+        # The server class the playground runs, with its listen backlog: a
+        # page opens more connections at once than socketserver's five, and
+        # this process also runs the world, so it accepts them slowly.
+        self.httpd = server.PlaygroundServer(("127.0.0.1", self.port), server.Handler)
         # Join in-flight requests before deleting the temporary SQLite/native
         # world. ThreadingHTTPServer otherwise detaches its request threads.
         self.httpd.daemon_threads = False

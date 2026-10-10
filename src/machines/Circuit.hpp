@@ -37,6 +37,17 @@ struct CircuitHingeSwitch {
     int sense{};            // +1: closed at or above; -1: closed at or below
 };
 
+// A switch worked by light (docs/optics-checkpoint.md): closed while the light
+// a named light sensor in the world reads is at or beyond a declared power. The
+// host sets it from the sensor's last reading before each solve; the circuit
+// never makes light.
+struct CircuitLightSwitch {
+    std::string branch;
+    std::string sensor;
+    double closed_w{};
+    int sense{};            // +1: closed at or above; -1: closed at or below
+};
+
 // One branch's Joule heat for one step, owed to a named world body.
 struct CircuitBodyHeat {
     std::string branch, body;
@@ -48,6 +59,7 @@ public:
     static Circuit read(const nlohmann::json &doc, bool restore = false);
     [[nodiscard]] const std::string &id() const { return id_; }
     [[nodiscard]] std::vector<CircuitHingeSwitch> hingeSwitches() const;
+    [[nodiscard]] std::vector<CircuitLightSwitch> lightSwitches() const;
     [[nodiscard]] std::vector<std::string> heatedBodies() const;
     [[nodiscard]] std::vector<CircuitBodyHeat> bodyHeat(const CircuitStep &step) const;
     // The world has no such body to warm this step (it burned away, say): the
@@ -87,6 +99,8 @@ private:
         unsigned follow_joint{};          // follows_hinge: 0 for a hand-worked switch
         double follow_rad{};
         int follow_sense{};
+        std::string follow_sensor;        // follows_light: "" for a switch not worked by light
+        double follow_w{};
     };
     std::string id_;
     unsigned store_{};

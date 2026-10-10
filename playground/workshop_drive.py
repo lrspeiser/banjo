@@ -145,7 +145,7 @@ class Drive:
                 "energy": self.energy(reading),
                 "doing": (program or {}).get("doing"), "why": (program or {}).get("why"),
                 "at_m": body.get("at_m"), "speed_m_s": body.get("speed_m_s"), "turn_deg": body.get("turn_deg"),
-                "fell_over": bool(body.get("turn_deg", 0.0) >= rooms.FELL_OVER_DEG),
+                "fell_over": rooms.fell_over(body),
                 "broke": reading.get("broke") or [], "frames_kept": len(frames)}
 
     def recording(self) -> dict[str, Any] | None:
@@ -206,7 +206,7 @@ def stop(app: Any, body: dict[str, Any] | None = None) -> dict[str, Any]:
         moved = (math.dist(body_now.get("at_m") or [0, 0, 0], start_at) if start_at and body_now.get("at_m") else None)
         says = (f"driven for {drive.t_s:.1f} s" + (f", {moved:.2f} m from where it stood" if moved is not None else "")
                 + (f", turned {body_now.get('turn_deg', 0):.0f} degrees" if body_now else "")
-                + ("; it fell over" if body_now.get("turn_deg", 0.0) >= rooms.FELL_OVER_DEG else ""))
+                + ("; it fell over" if rooms.fell_over(body_now) else ""))
     finally:
         drive.close()
         app.workshop_drive = None

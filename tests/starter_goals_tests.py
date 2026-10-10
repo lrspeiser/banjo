@@ -248,7 +248,12 @@ class StarterGoals(unittest.TestCase):
                     'request_id':f'wrong-stool-iron-{index}'},world)
             except urllib.error.HTTPError as failure:
                 raise AssertionError(failure.read().decode()) from failure
-        make_paid(self,world,alice['token'],candidate,[3,0],'wrong-stool-geometry')
+        # The world's terrain and goods are drawn afresh for every game, and a
+        # spot one draw leaves flat another leaves on a slope or a heap, where
+        # the 0.3 m stool is refused ("it tipped 170 degrees"). A player moves
+        # on from that spot; so does this, as the packed bench above does.
+        make_paid(self,world,alice['token'],candidate,[[3,0],[4.5,0],[3.5,2.5],[3.5,-3.],[2,0],[3,1],[3,-1]],
+                  'wrong-stool-geometry')
         self.assertFalse(self.post("/api/workshop/goals", {"chain":starter_goals.CHAIN}, world)["goals"][2]["complete"])
 
     def test_browser_completes_goals_in_market_recipes_and_world(self):

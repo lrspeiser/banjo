@@ -16,6 +16,7 @@ import http.client
 from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
+import socket
 import sys
 import threading
 import unittest
@@ -95,6 +96,40 @@ class ServedOverOneConnection(PlaygroundTestCase):
         self.assertEqual(response.status, 400)
         self.assertEqual(response.getheader("Connection"), "close")
         self.assertTrue(response.will_close)
+
+
+class TakesAPagesConnectionsAtOnce(PlaygroundTestCase):
+    """A page opens many connections at once -- its modules, then the
+    Workshop's, beside its own API calls -- and a busy server accepts them
+    more slowly than they come. socketserver queues five; past that Windows
+    refused the rest, and the Workshop's chat_actions.js came back
+    net::ERR_CONNECTION_REFUSED ("Failed to fetch dynamically imported
+    module"), so the Workshop never opened. The server keeps room for them.
+    """
+
+    def test_sixty_four_connections_made_before_any_is_accepted_are_all_answered(self):
+        app = self.make_app(mock.Mock(return_value=(plan_for("unsupported"), {"model": "fake-model"})))
+        httpd = playground_server.PlaygroundServer(("127.0.0.1", 0), playground_server.Handler)
+        httpd.app = app
+        self.addCleanup(httpd.server_close)
+        # Listening and not yet accepting: as busy as a server can be.
+        waiting = []
+        for _ in range(64):
+            sock = socket.create_connection(("127.0.0.1", httpd.server_port), timeout=3)
+            self.addCleanup(sock.close)
+            waiting.append(sock)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (httpd.shutdown(), thread.join(timeout=3)))
+        answered = 0
+        for sock in waiting:
+            sock.sendall(f"GET /workshop.js HTTP/1.1\r\nHost: 127.0.0.1:{httpd.server_port}\r\n"
+                         "Connection: close\r\n\r\n".encode())
+            reply = b""
+            while chunk := sock.recv(65536):
+                reply += chunk
+            answered += reply.startswith(b"HTTP/1.1 200")
+        self.assertEqual(64, answered)
 
 
 if __name__ == "__main__":

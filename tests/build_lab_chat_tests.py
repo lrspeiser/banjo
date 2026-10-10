@@ -39,6 +39,16 @@ for _name in dir(navigation.GameScreens):
 
 def test_selection_edit_save_review_reload_and_landscape(self):
     world,owner,app=self.setup_world();self.browser(world,owner)
+    # The pick's haft is aluminum (caeb6424) and the shared rack holds none
+    # (it held the oak this made the pick of): the player collects aluminum
+    # from a world pile first, as the paid tool journeys do.
+    sid=app.live.session.id
+    pile=next(p for p in app.brains.goods.stockpiles if p.get('holds',{}).get('aluminum',0)>=3.5)
+    x,z=pile['at_m']
+    floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':[x,z]},world)['survey']['ground_m']
+    got=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'lab-chat-aluminum',
+        'person':{'eyes_m':[x,floor+1.62,z],'facing':[0,0,-1]}},world)
+    self.assertGreaterEqual(got['collected'].get('aluminum',0),3.5,got)
     self.navigate(world,'workshop=1&tab=lab&material=rubber')
     self.assert_empty();self.click('#ws-first-tool')
     self.wait('document.querySelector("#ws-name").textContent.includes("field-pick")')
@@ -63,7 +73,12 @@ def test_selection_edit_save_review_reload_and_landscape(self):
         app.clock._tick(1)
     self.wait('document.querySelector("#ws-remake-start") && !document.querySelector("#ws-remake-start").disabled')
     self.click('#ws-remake-start');self.wait('!!document.querySelector("#ws-remake-step")')
-    self.click('#ws-remake-step');self.wait('!!document.querySelector("#ws-remake-collect")')
+    # The metal pick takes more than a second of work: run a second at a time.
+    for _ in range(5):
+        self.click('#ws-remake-step')
+        self.wait('!!document.querySelector("#ws-remake-collect") || !!document.querySelector("#ws-remake-step:not(:disabled)")')
+        if self.page.evaluate('!!document.querySelector("#ws-remake-collect")'):break
+    self.wait('!!document.querySelector("#ws-remake-collect")')
     self.click('#ws-remake-collect');self.wait('!!document.querySelector("#ws-inv-grid [data-product]")')
     self.assertIn('field-pick',self.page.evaluate('document.querySelector("#ws-inv-grid").textContent').lower())
     self.click('#ws-inv-grid [data-product] button');self.wait('document.querySelector("#ws-draft-save")?.offsetParent!==null')
@@ -93,10 +108,24 @@ def test_selection_edit_save_review_reload_and_landscape(self):
     self.screenshot('paid-pick-equipped-landscape.png')
     rover=self.page.evaluate('window.banjoRoom.world.machines.programs.find(p=>p.kind==="roam")?.body')
     self.assertIsNotNone(rover)
-    self.page.evaluate(f'window.banjoRoom.pick({json.dumps(rover)})')
-    self.open_rail();self.wait('!!document.querySelector(".rover-card [data-rover-command]")')
+    # The rover's controls, opened as a player with a tool in hand opens
+    # them: a click on a machine selects it rather than swinging at it, and
+    # opens its panel. Details, which this opened, went with the inspector
+    # rail (eaf9e306).
+    self.page.evaluate('(()=>{const r=window.banjoRoom,p=r.world.bodies.get(%s).mesh.position;'
+                       'r.standAt(p.x+.8,p.y+1.1,p.z+.5);r.lookAt(p.x,p.y,p.z);})()' % json.dumps(rover))
+    self.wait('(()=>{const r=window.banjoRoom,p=r.world.bodies.get(%s).mesh.position;r.lookAt(p.x,p.y,p.z);'
+              'return r.world.machines.programs.find(q=>q.body===%s)?.parts.includes(r.world.aim?.name)})()'
+              % (json.dumps(rover), json.dumps(rover)))
+    # With the cursor free, the first click in the room only takes the view
+    # back: holding a tool, it is consumed so it cannot dig (eaf9e306).
+    if self.page.evaluate('window.banjoRoom.controls().cursorFree'):
+        self.click('#stage');self.wait('!window.banjoRoom.controls().cursorFree')
+    self.click('#stage')
+    self.wait('document.body.classList.contains("machine-open")');self.wait_rail_shown()
+    self.wait('!!document.querySelector("#machine-panel .rover-card [data-rover-command]")')
     self.assertEqual(1,self.page.evaluate('Array.from(document.querySelectorAll(".rover-card")).filter(e=>e.offsetParent!==null).length'))
-    self.click('.rover-card button:not([data-rover-command])')
+    self.click('#machine-panel .rover-card button:not([data-rover-command])')
     self.wait('document.querySelector("#chat-recipient").value.startsWith("robot:")')
     self.click('#ask-text')
     self.page.evaluate('document.querySelector("#ask-text").value="stop";document.querySelector("#ask").requestSubmit()')
@@ -146,7 +175,9 @@ def test_world_help_is_explicit_and_refreshes_do_not_repeat_model_calls(self):
         self.page.send('Input.dispatchKeyEvent',{'type':'keyUp','key':'F1','code':'F1','windowsVirtualKeyCode':112})
         self.wait('!document.querySelector("#next-step").hidden && !!document.querySelector("#next-step button")')
         self.assertEqual([],calls,'Opening the next-action card is a status read')
-        self.open_rail()
+        # F1 brings the rail out for the next step alone; Details, which this
+        # opened, went with the inspector rail (eaf9e306).
+        self.wait('document.body.classList.contains("guide-open")');self.wait_rail_shown()
         self.click('#next-step button')
         self.wait('document.querySelector("#next-step").textContent.includes("Follow the available next action")')
         self.assertEqual(1,len(calls))

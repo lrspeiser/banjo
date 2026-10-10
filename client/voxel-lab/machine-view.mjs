@@ -75,6 +75,30 @@ export function stationPoint(machineStation, bodies) {
   return sum.map(v => v / points.length);
 }
 
+// The engine's traced rays of light as line segments to draw: each path is a
+// light's id, its corners in millimetres (x, y, z running) and the watts on each
+// leg. A leg is as bright as its share of the strongest leg, never fully dark,
+// so a faint reflection still shows where it goes. Returns flat positions in
+// metres (two points a leg) and colours (r, g, b, 0 to 1, per point).
+export function beamSegments(paths) {
+  const legs = [];
+  let strongest = 0;
+  for (const p of paths || []) {
+    const mm = p.mm || [], w = p.w || [];
+    for (let k = 0; k + 1 < mm.length / 3 && k < w.length; k++) {
+      legs.push([mm.slice(3 * k, 3 * k + 3), mm.slice(3 * k + 3, 3 * k + 6), w[k]]);
+      strongest = Math.max(strongest, w[k]);
+    }
+  }
+  const positions = new Float32Array(legs.length * 6), colors = new Float32Array(legs.length * 6);
+  legs.forEach(([a, b, w], i) => {
+    const glow = strongest > 0 ? .25 + .75 * Math.sqrt(Math.max(0, w) / strongest) : .25;
+    for (let j = 0; j < 3; j++) { positions[6 * i + j] = a[j] / 1000; positions[6 * i + 3 + j] = b[j] / 1000; }
+    for (const o of [0, 3]) { colors[6 * i + o] = glow; colors[6 * i + o + 1] = .85 * glow; colors[6 * i + o + 2] = .35 * glow; }
+  });
+  return {positions, colors, legs: legs.length};
+}
+
 export function describeTime(seconds) {
   if (!Number.isFinite(seconds)) return '–';
   return seconds < 60 ? seconds.toFixed(2) + ' s' : Math.floor(seconds / 60) + ' min ' + (seconds % 60).toFixed(1) + ' s';
