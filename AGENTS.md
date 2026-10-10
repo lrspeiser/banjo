@@ -26,6 +26,10 @@ Analytical projections are not cached fracture simulations. Automatic outcome re
 
 Keep simulation independent of rendering. Start with the CPU reference; optimize measured bottlenecks without changing the material law unnoticed. Support unit-bearing declarative authoring and bounded APIs rather than untrusted arbitrary GPU code.
 
+## Lab controls
+
+Keep action buttons attached to the 3D view: Run/Calculate, Stop/Pause, Replay, Reset, inspection and save/reopen. Secondary actions may use a clearly labelled disclosure beside the scene. Do not make users scroll through settings to find how to run an experiment. Verify visible touch targets and unobstructed observation labels on desktop and phone portrait/landscape. This is an owner requirement from October 9, 2026; see `docs/physics-lab-demonstration-contract.md`.
+
 ## Verification and reporting
 
 Material-dependent physics work must compare at least glass and oak (wood) under the same declared experiment conditions. Retain iron in the growing regression set now that it is part of the catalog and comparison work; adding a substance must expand coverage rather than replace earlier cases. Analytical point/spring oracles may remain material-neutral, but general material claims need the comparative scenarios. Record per-material results, timestep/resolution, conserved quantities, expected density/stiffness differences, and unsupported laws. Do not turn oak into a brittle preset or claim grain/plasticity by changing a display name. Maintain `docs/mechanics-scorecard.md` with evidence, limitations and concrete next steps at every physics checkpoint.

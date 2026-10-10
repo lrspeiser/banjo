@@ -77,7 +77,7 @@ Windows MSVC 19.44 Release, Python 3.13/NumPy 2.2.6 and WSL GCC 13.3 Release,
 Python 3.12/NumPy 1.26.4 pass the independent scalar controls. This is not
 cross-GPU determinism or physical phone verification.
 
-Windows thermal DLL SHA256:
+Standalone-stage Windows thermal DLL SHA256 (before the persistent-matter extension below):
 `7dee6d41209e1aa875a788e9399221033521320585db33497826701575db7558`.
 Windows native test executable SHA256:
 `11d4727cb52e25c9078595d63fef0b84bfc99a55f5dc01ca43fee42e7065d691`.
@@ -114,3 +114,82 @@ calibrated reaction kinetics and coupled fluid/mechanical/thermal work are absen
 No name-driven combustion, prescribed deformation, smoke or shatter animation
 fills those gaps. These systems require explicit shared ownership and conservative
 transfer before the eight-family object design can be considered complete.
+
+## Persistent matter/representation extension
+
+`scripts/thermal_matter_adapter.py` now attaches native fields directly to the
+coupled world's actual `ObjectRegistry.document()`. It reads finite occupied
+primitives, their immutable material/density and geometric volume, actual
+world/object/matter IDs and mechanical owner bindings. The infinite ground
+boundary has no fabricated finite heat capacity and is excluded. Fixed finite
+supports retain their real geometric material mass for thermal calculation;
+their prescribed mechanical motion remains externally constrained.
+
+`ThermalMatterTransfer` is compiled into `banjo_thermal_fields`. Its bounded
+native rebind accepts one-to-one persistent matter tokens and owner assignments,
+validates the full native thermal state, then copies every energy, species and
+law value exactly. It refuses missing or duplicated matter, invalid owners and
+invalid fields without touching either output. No averaging, heat injection,
+chemical change, time advancement or mechanical impulse occurs during transfer.
+Reordering output records is only storage remapping: the field associated with
+each persistent matter ID stays identical. Hash-token collisions are checked
+before invoking the native operation.
+
+The Python adapter exposes `ThermalMatterAdapter(registry, config, library=None)`,
+`advance(duration_s)`, `rebind(registry)`, `snapshot(bodies)`, `clone()`,
+`export_checkpoint()` and `restore(checkpoint, registry)`. Snapshot positions are
+read from current native body rows by their canonical body IDs. Owners may change
+while fields continue; rebind requires the thermal and mechanical clocks to agree.
+A private clone supports the enclosing world's atomic mechanical/field commit.
+Heating uses declared external work; the original solid mass and material energy
+remain attached to the same occupied matter while the rigid flight owner changes.
+There is no oxidizer/fuel mass added to moving bodies: reaction must be false in
+this first mechanical integration.
+
+Only original authored cubic-cell faces conduct in this adapter. Duplicate native
+cohesive quadrature records do not multiply a physical face's heat conductance.
+Contacts do not conduct heat. The immutable registry alone does not provide an
+evolving thermal fracture/plastic topology: the enclosing coupled runtime must
+refuse damaged/plastic interfaces with these fields until a qualified topology
+transfer is implemented. It must also distinguish scalar liquid-fraction
+inspection from an admitted mechanical solid-to-flow transition. Fixed mechanical
+constitutive properties are unchanged by temperature in this bounded stage.
+
+The retained `ThermalMechanics` curves apply to older layer/core section models
+and include explicit assumptions (including carbon-steel curves standing in for
+catalog iron). They are not simply applied to native cohesive/connector cells:
+changing their stiffness, rest state or load capacity requires a compatible
+constitutive law and accounted mechanical/thermal energy exchange. This adapter
+does not add name-only weakening or claim that earlier section laws establish
+that exchange.
+
+### Transfer verification
+
+`thermal_matter_adapter_test.py` runs real native coupled registries for matched
+glass/oak/iron/ice sheets and balls, at 10 mm sheet resolution and dt=1/960 s.
+Each registry has 12 finite material cells/objects in addition to the excluded
+infinite boundary. The actual initial ball owner changes from `coupled-world` to
+`isolated-rigid-flight`; exactly one field owner changes, and every field value
+survives unchanged through that rebind. The 2 W heater adds
+0.0020833333333333333 J during the step. Field energy residuals are respectively
+3.15e-12 J, -4.85e-13 J, -4.85e-13 J and -4.85e-13 J; species mass residuals are
+zero. This is the thermal transfer account, not a substitute for the enclosing
+mechanical pipeline's separate momentum/work/conservation checks.
+
+The test also checks heterogeneous fields under arbitrary instance order
+permutation, same-clock ownership, exact checkpoint/clone continuation,
+missing/duplicate matter and altered clock/budget refusals, an independent
+isolated heating oracle, and whole-interval restoration after a late native
+temperature refusal. `thermal_matter_transfer_tests.cpp` independently checks
+exact native per-ID copies, energy/species receipts and unchanged buffers on
+duplicate matter or invalid-owner rejection. Source registration includes both
+new C++ sources/tests: 354/354 at this extension.
+
+Extension Windows DLL SHA256:
+`05b2091fd2cf3c5bac32d7307c14e704fb10a2a5f76d2a6534fb073b65e28c79`.
+These extension native and actual-registry adapter tests pass on Windows MSVC
+Release and WSL GCC 13.3 Release; publication,
+runtime integration, normal browser verification and final revision identity
+must be recorded by the enclosing coupled checkpoint. The complete eight-family
+physics goal, fracture field transfer, coupled thermal expansion/weakening,
+reactive moving matter and phase-to-flow mechanics remain open.

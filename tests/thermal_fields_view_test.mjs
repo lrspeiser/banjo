@@ -15,3 +15,6 @@ context.session='native-session';vm.runInContext('controls()',context);assert(!b
 context.busy=true;vm.runInContext('controls()',context);assert(buttons.run.disabled);assert(buttons.reset.disabled);
 context.busy=false;context.running=true;vm.runInContext('controls()',context);assert(buttons.run.disabled);assert(!buttons.stop.disabled);
 console.log('3D field native observables, unsupported-law labels and executable session readiness guards passed');
+
+const sceneControls=html.match(/<div[^>]*id="view"[^>]*>([\s\S]*?)<output id="clock">/)[1];
+for(const id of ['run', 'step', 'stop', 'reset', 'ice-test', 'fuel-test', 'save', 'open'])assert(sceneControls.includes(`id="${id}"`),`${id} must stay next to the 3D view`);

@@ -10,6 +10,7 @@ Owner requirement, October 9, 2026. Banjo is an editable physics platform. The l
 4. Retain input, source/binary identity, matter/ownership, external reactions and work, numerical losses, conservation residuals and refusal reasons. A refused interval cannot partially install its candidate.
 5. Pass an independent analytical or constitutive oracle, conservation tests, timestep/resolution comparisons and regression tests through the actual HTTP/native path. Material claims retain matched glass, oak, iron and ice cases. Liquid-density controls alone do not prove solid material behavior.
 6. Be checked in an ordinary browser and a phone viewport. Native unit tests and static DOM checks cannot establish that the user sees the calculated response.
+7. Keep Run/Calculate, Stop/Pause, Replay, Reset and inspection/save actions attached to the 3D panel. Users must not scroll past a settings form to find the action that runs the scene. Secondary actions may use a clearly labelled disclosure beside the scene. Check desktop, phone portrait and phone landscape for visible touch targets and unobstructed observation labels.
 
 No precut shards, prescribed cracking, invented fragment velocities, flame animation or predetermined trajectories may fill a missing model. Playback of calculated states is presentation, not a substitute for calculating the response.
 
@@ -24,4 +25,4 @@ No precut shards, prescribed cracking, invented fragment velocities, flame anima
 | Activate explicit fuel and oxygen | Closed local reaction, retained products and chemical-to-thermal energy | Transport, calibrated kinetics, smoke and environmental combustion |
 | Inspect current sheet modes | Complete affine mode basis and continuous native contact envelope, without modifying the accepted world | Qualified reduced execution and branch/error/work guards |
 
-These separate reference experiments do not yet share conservative cross-system transfers. A coupled water-wheel, melting object or burning structure must close its entire matter, momentum and energy account before it is admitted. The eight-family representation objective remains open.
+Optional CPU thermal fields now retain the same matter IDs through rigid-flight/coupled-contact ownership changes, with a shared accepted clock and atomic save/reopen/rollback. They do not exchange heat with mechanical dissipation or change mechanical laws. Flow continues from a sealed accepted checkpoint with the same water provenance and cumulative budgets. These are bounded transfers, not general cross-system coupling. A coupled water-wheel, melting object or burning structure must close its entire matter, momentum and energy account before it is admitted. The eight-family representation objective remains open.

@@ -1,5 +1,21 @@
 // Read-only geometry/flight observations. These never change simulated poses.
-export function settingsDiffer(declaration,settings){return !declaration||Object.entries(settings).some(([key,value])=>declaration[key]!==value);}
+export function settingsDiffer(declaration,settings){
+  const same=(a,b)=>a===b||Boolean(a&&b&&typeof a==='object'&&typeof b==='object'&&Object.keys(a).length===Object.keys(b).length&&Object.keys(a).every(k=>Object.hasOwn(b,k)&&same(a[k],b[k])));
+  return !declaration||Object.entries(settings).some(([key,value])=>!same(declaration[key],value));
+}
+// Temperatures come from accepted fields bound to the exact mechanical matter.
+// Missing, stale or mismapped observations are unavailable, never guessed.
+export function temperatureObservations(state){
+ const fields=state?.thermal_fields;
+ if(!fields||!Number.isFinite(fields.time_s)||!Number.isFinite(state.time_s)||Math.abs(fields.time_s-state.time_s)>1e-12||!Array.isArray(fields.fields)||!fields.fields.length)return null;
+ const ids=new Set(),values=[];
+ for(const f of fields.fields){
+  if(!Number.isInteger(f.body_id)||f.body_id<0||f.body_id>=state.cells.length||ids.has(f.body_id)||typeof f.matter_id!=='string'||!Number.isFinite(f.temperature_k)||!Number.isFinite(f.thermal_energy_j)||!f.position_m?.every(Number.isFinite)||f.position_m.length!==3)return null;
+  const c=state.cells[f.body_id];if(c.shape==='plane'||f.position_m.some((v,j)=>Math.abs(v-c.position_m[j])>1e-12))return null;
+  ids.add(f.body_id);values.push({body_id:f.body_id,temperature_k:f.temperature_k});
+ }
+ return values;
+}
 export function remainingSteps(state){return state?Math.max(0,Math.round((2-state.time_s)/state.dt_s)):0;}
 export function computePace(ratio){
   if(!Number.isFinite(ratio)||ratio<=0)return 'Not measured';

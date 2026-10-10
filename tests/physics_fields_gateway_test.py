@@ -7,8 +7,9 @@ paths={}
 for kind,stem,env in [('mechanisms','banjo_mechanisms_cpu','BANJO_MECHANISMS_LIBRARY'),('flow','banjo_flow_cpu','BANJO_FLOW_LIBRARY'),('thermal-fields','banjo_thermal_fields','BANJO_THERMAL_FIELDS_LIBRARY')]:
  path=(a.library_dir/(stem+'.dll' if os.name=='nt' else 'lib'+stem+'.so')).resolve();assert path.is_file(),path;os.environ[env]=str(path);paths[kind]=path
 spec=importlib.util.spec_from_file_location('fields_gateway',ROOT/'scripts/voxel-lab.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+cpu_path=(a.library_dir/('banjo_coupled_cpu.dll' if os.name=='nt' else 'libbanjo_coupled_cpu.so')).resolve();assert cpu_path.is_file()
 with tempfile.TemporaryDirectory() as folder:
- server=module.Server(('127.0.0.1',0),a.native.resolve(),Path(folder),password='field-regression-only',public_host='test.example');threading.Thread(target=server.serve_forever,daemon=True).start();base=f'http://127.0.0.1:{server.server_port}'
+ server=module.Server(('127.0.0.1',0),a.native.resolve(),Path(folder),cpu_library=cpu_path,password='field-regression-only',public_host='test.example');threading.Thread(target=server.serve_forever,daemon=True).start();base=f'http://127.0.0.1:{server.server_port}'
  client=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
  def request(path,data=None,headers=None,auth=True):
   req=urllib.request.Request(base+path,None if data is None else json.dumps(data).encode(),headers or {'Content-Type':'application/json'})
@@ -37,6 +38,10 @@ with tempfile.TemporaryDirectory() as folder:
   assert 'frames' not in refusal,'unresolved mechanics must not publish a partial trajectory'
   code,raw=request(*payloads['flow']);flow=json.loads(raw);assert code==200 and flow['ok'] and len(flow['frames'])==5
   assert flow['native_sha256']==hashlib.sha256(paths['flow'].read_bytes()).hexdigest()
+  code,raw=request('/api/flow-reference',{'declaration':{'duration_s':.05,'frames':5},'checkpoint':flow['checkpoint']});continued=json.loads(raw)
+  assert code==200 and continued['ok'] and abs(continued['frames'][0]['account']['time_s']-.05)<1e-12 and abs(continued['frames'][-1]['account']['time_s']-.1)<1e-12
+  assert continued['definition']==flow['definition'] and abs(continued['frames'][-1]['account']['mass_residual_kg'])<1e-9
+  assert request('/api/flow-reference',{'declaration':{'density_kg_m3':1},'checkpoint':continued['checkpoint']})[0]==400
   assert request('/api/flow-reference',{'declaration':{'nx':0}})[0]==400
   assert request('/api/flow-reference',{'declaration':{},'unknown':1})[0]==400
   created=command({'op':'create','declaration':{'material':'ice','initial_temperature_k':273.15}});assert created['ok'];key=created['session']
@@ -54,6 +59,17 @@ with tempfile.TemporaryDirectory() as folder:
   assert any(row.get('request',{}).get('op')=='advance' and row['response']['state']['audit']['external_heat_j']>0 for row in rows)
   for session in (key,otherkey,reopened['session']):assert command({'op':'close','session':session})['ok']
   assert command({'op':'close','session':key})['already_closed']
+  for material in ('glass','oak','iron','ice'):
+   def coupled(payload):
+    code,raw=request('/api/coupled',payload);value=json.loads(raw);assert code==200,(code,value);return value
+   created=coupled({'op':'create','declaration':{'experiment':'freefall','ball_material':material,'height_m':10,'dt_s':1/240,'representation_policy':'partitioned-flight','contact_resolution':'phase-0.0625','thermal':{'heater_w':2,'heater_body_id':1}}});assert created['ok'];session=created['session']
+   advanced=coupled({'op':'advance','session':session,'steps':16});assert advanced['ok'];s=advanced['state'];f=s['thermal_fields']
+   assert abs(f['time_s']-s['time_s'])<1e-12 and f['fields'][0]['matter_id']==created['state']['thermal_fields']['fields'][0]['matter_id']
+   assert f['fields'][0]['position_m']==s['cells'][1]['position_m'] and f['audit']['external_heat_j']>0 and abs(f['audit']['energy_residual_j'])<1e-8
+   saved=coupled({'op':'export','session':session})['checkpoint'];restored=coupled({'op':'restore','checkpoint':saved});assert restored['ok']
+   assert coupled({'op':'export','session':restored['session']})['checkpoint']==saved
+   for key in (session,restored['session']):assert coupled({'op':'close','session':key})['ok']
+  print('Actual HTTP/native same-water continuation and four-material moving-field exact save/reopen passed')
   print('Three real HTTP/native families: auth/host/origin, unavailable binaries, strict refusals, thermal isolation/exact restore/logs/200-step bound and unsupported scheduler passed')
  finally:
   for session in list(server.sessions.values()):session.close()

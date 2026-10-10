@@ -10,7 +10,7 @@ HEADERS=('src/physics/FiniteFrameKernel.hpp','src/physics/CohesiveInterfaceKerne
  'src/material/ConnectorModeKernel.hpp','src/physics/MaterialHistoryKernel.hpp',
  'src/physics/NormalComplianceKernel.hpp','src/physics/CoupledGpuKernel.hpp','src/physics/CoupledFlightKernel.hpp')
 SOURCES=('scripts/cpu_coupled_world.py','scripts/coupled_solver.py','scripts/coupled_world.py',
- 'scripts/coupled_representations.py','scripts/object_registry.py','scripts/coupled_modes.py','src/physics/CoupledCpuApi.cpp',
+ 'scripts/coupled_representations.py','scripts/object_registry.py','scripts/coupled_modes.py','scripts/thermal_matter_adapter.py','src/physics/CoupledCpuApi.cpp',
  *HEADERS,'client/voxel-lab/material-laws.json')
 def disk_source_hash():
     h=hashlib.sha256()

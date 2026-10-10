@@ -41,6 +41,23 @@ Account Reference::account() const {
     a.ly_residual=a.ly-initial_.ly-a.wall_ly-a.numerical_ly;
     a.energy_residual=a.energy-initial_.energy-a.numerical_energy;return a;
 }
+Reference Reference::restore(const State& state) {
+    // Initial authoring depth bounds are not evolution bounds: a reflected
+    // pressure wave can legitimately stand higher than its initial column.
+    Reference world(state.settings,std::vector<Cell>(state.cells.size()));
+    for(Cell cell:state.cells)if(!finite(cell)||cell.h<0||cell.h>2*state.settings.nx*state.settings.nz
+       ||(cell.h==0&&(cell.qx!=0||cell.qz!=0))||(cell.h>0&&std::hypot(cell.qx,cell.qz)/cell.h>20))throw std::invalid_argument("invalid evolved flow state");
+    world.cells_=state.cells;const auto& a=state.initial;const auto& c=state.crossings;
+    for(double v:{a.mass,a.px,a.pz,a.ly,a.energy,c.time,c.wall_px,c.wall_pz,c.wall_ly,c.numerical_ly,c.numerical_energy})
+        if(!std::isfinite(v))throw std::invalid_argument("invalid flow continuation number");
+    if(a.mass<0||a.energy<0||c.time<0||c.time>1e6||c.steps>1000000000ULL||c.numerical_energy>1e-8*std::max(1.,a.energy))throw std::invalid_argument("invalid flow continuation account");
+    if((c.steps==0&&c.time!=0)||(c.steps>0&&c.time<=0)||c.time>0.02*static_cast<double>(c.steps)+1e-9)
+        throw std::invalid_argument("flow continuation clock outside step bounds");
+    world.initial_=a;world.crossings_=c;const auto result=world.account();const double tol=1e-9*std::max(1.,a.mass);
+    if(std::abs(result.mass_residual)>tol||std::abs(result.px_residual)>tol||std::abs(result.pz_residual)>tol||std::abs(result.ly_residual)>tol*state.settings.dx*(state.settings.nx+state.settings.nz)
+        ||std::abs(result.energy_residual)>1e-9*std::max(1.,a.energy))throw std::invalid_argument("flow continuation accounts inconsistent");
+    return world;
+}
 void Reference::step(double dt) {
     const auto before=totals(); std::vector<Cell> next=cells_; const int nx=settings_.nx,nz=settings_.nz;
     const double scale=dt/settings_.dx,jscale=settings_.density*dt*settings_.dx;
@@ -78,12 +95,12 @@ void Reference::step(double dt) {
     if(std::abs(a.mass_residual)>tol||std::abs(a.px_residual)>tol||std::abs(a.pz_residual)>tol||std::abs(a.ly_residual)>tol*settings_.dx*(nx+nz))
         throw std::runtime_error("flow mass/momentum account refused");
 }
-void Reference::advance(double seconds) {
+void Reference::advance(double seconds,std::uint64_t max_steps,std::uint64_t max_cell_updates) {
     if(!std::isfinite(seconds)||seconds<=0||seconds>5)throw std::invalid_argument("flow interval refused");
     Reference trial=*this; double remaining=seconds; std::uint64_t count=0;
     while(remaining>0){double speed=0;for(Cell c:trial.cells_){const double u=c.h>0?std::hypot(c.qx,c.qz)/c.h:0;speed=std::max(speed,u+std::sqrt(settings_.gravity*c.h));}
         const double dt=std::min({remaining,0.02,speed>0?settings_.cfl*settings_.dx/speed:0.02});
-        if(++count>20000||trial.crossings_.steps>=20000||trial.crossings_.steps>=8000000/static_cast<std::uint64_t>(settings_.nx*settings_.nz)||dt<1e-12)
+        if(++count>std::min<std::uint64_t>(max_steps,20000)||count>std::min<std::uint64_t>(max_cell_updates,8000000)/static_cast<std::uint64_t>(settings_.nx*settings_.nz)||dt<1e-12)
             throw std::runtime_error("bounded flow work/CFL interval refused");
         trial.step(dt);remaining-=dt;
     }*this=std::move(trial);

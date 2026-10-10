@@ -1,25 +1,25 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo · mechanisms</title><link rel="stylesheet" href="/mechanisms.css"></head><body>
-<header><strong>Banjo · Mechanisms</strong><nav><a href="/coupled">Impact</a><a href="/thermal-fields">Heat / reactions</a><a href="/flow">Flow</a></nav><output id="build">Checking source…</output></header>
-<main><section id="view" aria-label="Three dimensional native hinged body experiment"><output id="time-label">Create a native experiment</output><div id="view-actions"><button id="before" disabled>Before</button><button id="play" disabled>Play</button><button id="after" disabled>After</button><button id="fit">Follow body</button></div><p id="scene-note">Drag to orbit · Scroll to zoom<br>Reference grid has no collider</p></section>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo &middot; mechanisms</title><link rel="stylesheet" href="/mechanisms.css"></head><body>
+<header><strong>Banjo &middot; Mechanisms</strong><nav><a href="/coupled">Impact</a><a href="/thermal-fields">Heat / reactions</a><a href="/flow">Flow</a></nav><output id="build">Checking source…</output></header>
+<main><section id="view" aria-label="Three dimensional native hinged body experiment"><output id="time-label">Create a native experiment</output><div id="view-actions"><button id="calculate" type="submit" form="settings">Calculate &amp; play</button><button id="before" disabled>Before</button><button id="play" disabled>Play</button><button id="after" disabled>After</button><button id="fit">Follow body</button></div><div class="choices"><button id="pendulum">Gravity swing</button><button id="wake">Sleep &rarr; push</button><button id="release">Remove support</button></div><p id="scene-note">Drag to orbit &middot; Scroll to zoom<br>Reference grid has no collider</p></section>
 <aside><h1>Push, swing, release</h1><p>One occupied rigid bar on an ideal pin. Its angle is solved from gravity and your force. The pin is unbreakable in this reference.</p>
-<div class="choices"><button id="pendulum">Gravity swing</button><button id="wake">Sleep → push</button><button id="release">Remove support</button></div>
+
 <form id="settings"><div class="fields">
 <label>Material<select id="material"><option>glass</option><option>oak</option><option selected>iron</option><option>ice</option></select></label>
-<label>Density · kg/m³<input id="density" type="number" value="7870" min="100" max="30000" step="1"></label>
-<label>Length · m<input id="length" type="number" value="1" min=".1" max="2" step=".1"></label>
-<label>Width · m<input id="width" type="number" value=".12" min=".01" max=".5" step=".01"></label>
-<label>Thickness · m<input id="thickness" type="number" value=".05" min=".005" max=".5" step=".005"></label>
-<label>Initial angle · °<input id="angle" type="number" value="35" min="-150" max="150" step="1"></label>
-<label>Initial spin · rad/s<input id="omega" type="number" value="0" min="-10" max="10" step=".1"></label>
-<label>Gravity · m/s²<input id="gravity" type="number" value="9.81" min="0" max="20" step=".01"></label>
-<label>Tip force X · N<input id="force-x" type="number" value="0" min="-1000" max="1000" step="1"></label>
-<label>Tip force Y · N<input id="force-y" type="number" value="0" min="-1000" max="1000" step="1"></label>
-<label>Drive torque · N m<input id="torque" type="number" value="0" min="-1000" max="1000" step=".1"></label>
-<label>Apply load at · s<input id="load-time" type="number" value="0" min="0" max="10" step=".1"></label>
-<label>Remove support at · s<input id="release-time" type="number" value="10" min="0" max="10" step=".1"></label>
-<label>Duration · s<input id="duration" type="number" value="3" min=".1" max="5" step=".1"></label>
+<label>Density &middot; kg/m&sup3;<input id="density" type="number" value="7870" min="100" max="30000" step="1"></label>
+<label>Length &middot; m<input id="length" type="number" value="1" min=".1" max="2" step=".1"></label>
+<label>Width &middot; m<input id="width" type="number" value=".12" min=".01" max=".5" step=".01"></label>
+<label>Thickness &middot; m<input id="thickness" type="number" value=".05" min=".005" max=".5" step=".005"></label>
+<label>Initial angle &middot; &deg;<input id="angle" type="number" value="35" min="-150" max="150" step="1"></label>
+<label>Initial spin &middot; rad/s<input id="omega" type="number" value="0" min="-10" max="10" step=".1"></label>
+<label>Gravity &middot; m/s&sup2;<input id="gravity" type="number" value="9.81" min="0" max="20" step=".01"></label>
+<label>Tip force X &middot; N<input id="force-x" type="number" value="0" min="-1000" max="1000" step="1"></label>
+<label>Tip force Y &middot; N<input id="force-y" type="number" value="0" min="-1000" max="1000" step="1"></label>
+<label>Drive torque &middot; N m<input id="torque" type="number" value="0" min="-1000" max="1000" step=".1"></label>
+<label>Apply load at &middot; s<input id="load-time" type="number" value="0" min="0" max="10" step=".1"></label>
+<label>Remove support at &middot; s<input id="release-time" type="number" value="10" min="0" max="10" step=".1"></label>
+<label>Duration &middot; s<input id="duration" type="number" value="3" min=".1" max="5" step=".1"></label>
 <label>Physics step<select id="dt"><option value="0.008333333333333333">1 / 120 s</option><option value="0.004166666666666667">1 / 240 s</option><option value="0.0020833333333333333" selected>1 / 480 s</option><option value="0.0005208333333333333">1 / 1920 s</option></select></label>
-</div><button id="calculate" type="submit">Calculate &amp; play</button></form>
+</div></form>
 <label>Accepted physical time<input id="scrub" type="range" value="0" min="0" max="1" disabled></label>
 <output id="status" aria-live="polite">Editable native CPU reference; no prescribed animation or damping.</output>
 <dl id="metrics"></dl><details><summary>Measured scope and limits</summary><ul id="limits"><li>Exact equilibrium may sleep; tiny vibration stays awake.</li><li>No collisions, deformable attachment, fracture, fluid force or thermal coupling.</li></ul><p>The force arrow is the measured support impulse divided by the physics step; its length is normalized for inspection. The bar is one rigid occupied box, not simulated subvoxels. The colors identify material; they do not select a material law.</p></details>

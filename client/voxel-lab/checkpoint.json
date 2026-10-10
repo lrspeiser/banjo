@@ -1,8 +1,9 @@
 {
-  "title": "Mechanisms, water and heat/reactions: bounded 3D references; strong smash and coupling remain open",
+  "title": "Retained moving heat, continuing water and actions beside 3D; strong fracture remains open",
   "date": "2026-10-09",
-  "native_sha256": "a1eb6b91f4bbc3296bed53a637a8780108cc5037fbaec6c7c482ed69f6f72605",
+  "native_sha256": "736fa231999ddf1b578742de3dd97ce3fe6763c6406575d989b2ade526a39dca",
   "changes": [
+    "Optional CPU heat remains on the same moving matter through flight/contact, with shared clocks, exact save/reopen and atomic rollback. Temperature inspection uses real field observations. Water continues the same sealed accepted state with cumulative budgets. Run, replay, reset, inspection and save controls are beside the 3D scene on desktop and phones.",
     "Separate native 3D references: hinged bar with exact-equilibrium sleep/wake and support removal, conservative depth-averaged water, conduction/ice latent heat and closed fuel/oxygen/products. CPU contact forces now mark actual surface sample locations on both participants. These do not complete strong sheet impacts or cross-system coupling.",
     "Shared CPU/CUDA box closest-point geometry now preserves tiny exterior gaps in local coordinates instead of producing an invalid normal at a rounded boundary. The measured native regression passes, and four-material CPU/CUDA, parallel/reference and 10 m rigid controls retain their gates. The page lists usable checks and clearly marks full smash tests and remaining representation families unfinished.",
     "Representation workbench at /representations compiles adaptive occupied cubes and tests conservative CPU rigid/detail mappings and gravity-only flight. No internal/contact solver is connected there. Coupled lab now shows Before/Contact/After milestones and frames the ground in Full drop; the default test is plainly labeled a rigid rebound control.",
@@ -31,6 +32,11 @@
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
+    {
+      "label": "Persistent fields, continued water and adjacent controls",
+      "status": "passed",
+      "value": "20 scoped Windows CTests; 354/354 registered sources. Actual HTTP/native four-material retained heat and exact reopen; matched 10m heated/unheated rebound, combined energy residual below 8.2e-10 J; atomic late/phase refusals; bitwise split-flow continuation; executable browser-controller regressions and actual desktop/phone portrait/landscape 3D controls. No thermal weakening, damaged-field transport, phase-flow or strong-fracture qualification."
+    },
     {
       "label": "Parallel references and native spatial contact inspection",
       "status": "passed",
@@ -211,15 +217,17 @@
     "local_rigid_flight": true,
     "material_block_friction": true,
     "gpu_partitioned_flight": true,
-    "exact_coupled_checkpoint": true
+    "exact_coupled_checkpoint": true,
+    "persistent_cpu_thermal_matter": true,
+    "flow_checkpoint_continuation": true
   },
   "physics_revision": "94686b51560b5ccd3da9b8909be615afbc568648",
   "gpu_source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
   "gpu_worker_sha256": "cef064443c3a655dc4b10d6697a7e0eab67e4047d7f9bfc0f36f961a5ed453d6",
   "physx_source_sha256": "d1d30abfd67380a66fcf4664759e1917e50137bd7f6ef92bb160d0f1b5b5157f",
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
-  "gpu_coupled_source_sha256": "ae85f484987660d523ce56085fa5ec19c27725bfe9ecf0a0728b10dc5ed83069",
+  "gpu_coupled_source_sha256": "41042759a91de85e7cea44d0804c2e86bd3635e25fa01c71198cc45f51e03f87",
   "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling",
-  "cpu_coupled_source_sha256": "4cc758d717c706bf000f4f53de6ca780931d842c2f46957c75342300643a2dc1",
-  "cpu_hosted_scope": "Explicit compiled CPU reference for the same material/contact equations; bounded rigid rebound and low-energy sheet controls. Strong fracture and all-family realtime remain open."
+  "cpu_coupled_source_sha256": "ffe59e642674790d5c356a88113cbaeefe924e6b5d588d1556d5b7097ea1fc30",
+  "cpu_hosted_scope": "Explicit compiled CPU reference; optional inert conduction fields bound to stable matter through flight/contact. Mechanical properties remain constant; damage/plastic/phase transfers refuse. Strong fracture and all-family realtime remain open."
 }

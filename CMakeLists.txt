@@ -315,7 +315,7 @@ if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
     # Bounded field/mechanism references used by the editable 3D lab. These
     # are real compiled adapters; complete inter-family coupling stays gated.
     add_library(banjo_thermal_fields SHARED src/thermal/ThermalFieldApi.cpp
-        src/thermal/ThermalKernel.cpp src/thermal/EnthalpyLaw.cpp)
+        src/thermal/ThermalKernel.cpp src/thermal/EnthalpyLaw.cpp src/thermal/ThermalMatterTransfer.cpp)
     target_include_directories(banjo_thermal_fields PUBLIC src)
     target_compile_definitions(banjo_thermal_fields PRIVATE BANJO_THERMAL_FIELDS_BUILD)
     target_compile_features(banjo_thermal_fields PRIVATE cxx_std_17)
@@ -857,6 +857,11 @@ endif()
 
 if(BANJO_BUILD_TESTS)
     if(TARGET banjo_thermal_fields)
+        add_executable(banjo_thermal_matter_transfer_tests tests/thermal_matter_transfer_tests.cpp)
+        target_link_libraries(banjo_thermal_matter_transfer_tests PRIVATE banjo_thermal_fields)
+        banjo_enable_warnings(banjo_thermal_matter_transfer_tests)
+        add_test(NAME banjo_thermal_matter_transfer_tests COMMAND banjo_thermal_matter_transfer_tests)
+        set_tests_properties(banjo_thermal_matter_transfer_tests PROPERTIES TIMEOUT 60 LABELS "thermal;representation;experimental")
         add_executable(banjo_thermal_field_api_tests tests/thermal_field_api_tests.cpp)
         target_link_libraries(banjo_thermal_field_api_tests PRIVATE banjo_thermal_fields)
         banjo_enable_warnings(banjo_thermal_field_api_tests)
@@ -2270,6 +2275,19 @@ if(BANJO_BUILD_TESTS)
                 BANJO_THERMAL_FIELDS_LIBRARY=$<TARGET_FILE:banjo_thermal_fields>
                 ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/thermal_fields_test.py)
             set_tests_properties(banjo_thermal_fields_tests PROPERTIES TIMEOUT 60 LABELS "thermal;phase;reaction;experimental")
+            add_test(NAME banjo_thermal_matter_adapter_tests COMMAND ${CMAKE_COMMAND} -E env
+                BANJO_THERMAL_FIELDS_LIBRARY=$<TARGET_FILE:banjo_thermal_fields>
+                BANJO_COUPLED_CPU_LIBRARY=$<TARGET_FILE:banjo_coupled_cpu>
+                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/thermal_matter_adapter_test.py)
+            set_tests_properties(banjo_thermal_matter_adapter_tests PROPERTIES TIMEOUT 60 LABELS "thermal;representation;experimental")
+            add_test(NAME banjo_coupled_thermal_matter_tests COMMAND ${CMAKE_COMMAND} -E env
+                BANJO_THERMAL_FIELDS_LIBRARY=$<TARGET_FILE:banjo_thermal_fields>
+                BANJO_COUPLED_CPU_LIBRARY=$<TARGET_FILE:banjo_coupled_cpu>
+                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/coupled_thermal_matter_test.py)
+            set_tests_properties(banjo_coupled_thermal_matter_tests PROPERTIES TIMEOUT 180 LABELS "thermal;representation;cpu;experimental")
+            add_test(NAME banjo_flow_continuation_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/flow_continuation_test.py $<TARGET_FILE:banjo_flow_cpu>)
+            set_tests_properties(banjo_flow_continuation_tests PROPERTIES TIMEOUT 60 LABELS "flow;representation;experimental")
             add_test(NAME banjo_flow_reference_api_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/flow_reference_api_test.py $<TARGET_FILE:banjo_flow_cpu>)
             set_tests_properties(banjo_flow_reference_api_tests PROPERTIES TIMEOUT 30 LABELS "flow;field;api")

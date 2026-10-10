@@ -18,7 +18,17 @@ The native [reference](../src/flow/FlowReference.cpp) evolves the flat-bed Saint
 
 Each face has one Rusanov flux, applied oppositely to neighbors. Reflecting ghost states impose fixed-wall normal boundary conditions; actual boundary momentum flux supplies the external wall impulse and torque account. Static walls perform zero work. Gravity appears in the hydrostatic pressure and column potential energy, rather than a second vertical particle force. Positive depth is maintained by a declared CFL maximum 0.2; negative depth is refused, never clamped or secretly replenished. No physical viscosity or environmental drag is present.
 
-The represented material is one conserved liquid volume, with one matter ID. Eulerian column IDs identify control volumes, **not persistent particles**: water crosses between them. Phase is explicitly liquid but no solid-to-liquid transfer is qualified. No mass is silently normalized. Definition hash includes the source identity and grid/density/gravity; instance ID is separate. Each response carries SHA256 of the actual loaded native library and physics source. The native [API](../src/flow/FlowCpuApi.cpp) copies results out only after the complete bounded experiment passes. Failure leaves output buffers and accepted input unchanged.
+The represented material is one conserved liquid volume, with one persistent instance-derived matter ID. Eulerian column IDs identify control volumes, **not persistent particles**: water crosses between them. Phase is explicitly liquid but no solid-to-liquid transfer is qualified. No mass is silently normalized. Definition hash includes the source identity and grid/density/gravity; instance ID is separate and stays unchanged through continuation. Each response carries SHA256 of the actual loaded native library and physics source. The native [API](../src/flow/FlowCpuApi.cpp) copies results out only after the complete bounded experiment passes. Failure leaves output buffers and accepted input unchanged.
+
+## Persistent continuation and restart
+
+`Reference::State` retains settings, current cells, original mass/P/L/energy reference, accepted time, solver step count, cumulative wall reactions and numerical terms. `Reference::restore` checks finite state, clock/step bounds and all reference balances before admission. This does not reinitialize the original energy or impulse accounts. The new bounded `banjo_flow_continue` API returns actual frames and continuation together; each output remains untouched if any frame fails. Legacy `banjo_flow_run` remains supported and uses the same calculation path.
+
+Python `run(declaration, library=None, checkpoint=None)` emits a versioned, checksummed checkpoint with exact IEEE754 binary64 encoding. Continuing accepts only duration/frame-count overrides; grid, density, gravity and initial reference budgets cannot be edited. Original initial cells and stable instance/matter/control-volume IDs remain. Stale source/binary, changed original budgets or inconsistent counters/owner mapping refuse. Source or loaded library changes require server restart rather than claiming the new disk identity for old executable code. As with the existing laboratory checkpoint format, checksums and balance validation are corruption/consistency checks, not cryptographic proof of a unique earlier physical trajectory.
+
+The 20,000-substep/eight-million-column-update work ceiling applies once to the **current transaction**, across all returned output intervals. Accepted cumulative physical solver counts survive restart and do not create a permanent lifetime execution cap. The law, CFL and every accepted physical update remain unchanged.
+
+[Four continuation tests](../tests/flow_continuation_test.py) compare 61 frames through one second, reopen/continue for another 61 frames, and compare every frame/cell/account bit-for-bit with one 121-frame two-second native run. Original reference and cumulative wall/angular/numerical energy accounts match, with persistent IDs and input checkpoint unchanged. An additional reflected-wave experiment starts with valid 2 m depth and 1 m/s horizontal velocity, reaches 2.4085 m depth, and continues exactly like its one-shot reference. Evolving columns are not incorrectly subjected to the 2 m **initial authoring** limit; restore uses the mass-derived `2 × column count` maximum height and checks original total mass/energy/momentum. Native malformed restore and actual-loop whole-request budget failures leave frame, account and continuation output buffers untouched. These tests do not establish solid-to-flow, enthalpy advection or shared coupled-world ownership.
 
 ## Conservation and numerical terms
 
@@ -28,7 +38,7 @@ The default release loses about 134.32 J out of 753.408 J over two seconds. This
 
 ## Bounds and measured verification
 
-Native settings: at most 4096 columns (`2..128` in each dimension), `dx 0.01..1 m`, density `1..20000 kg/m³`, gravity `0..20 m/s²`, depth `0..2 m`, initial and evolving speed at most `20 m/s`. A request advances at most five seconds, with at most 20,000 cumulative CFL substeps and eight million column-updates for the **whole experiment**, including every output interval. At most 241 render frames and 300,000 column-frames are returned. An exhausted bound refuses rather than changing the law or extrapolating. Actual-loop budget tests run a costly 128×32-column, 0.01 m setup until refusal and verify zero committed time/cell change plus unchanged native output buffers.
+Native settings: at most 4096 columns (`2..128` in each dimension), `dx 0.01..1 m`, density `1..20000 kg/m³`, gravity `0..20 m/s²`, initial depth `0..2 m`, initial and evolving speed at most `20 m/s`. Evolving depth may exceed the initial authoring limit after a pressure wave; continuation checks the retained original mass bound. A request advances at most five seconds, with at most 20,000 cumulative CFL substeps and eight million column-updates for the **whole transaction**, including every output interval. At most 241 render frames and 300,000 column-frames are returned. An exhausted bound refuses rather than changing the law or extrapolating. Actual-loop budget tests run a costly 128×32-column, 0.01 m setup until refusal and verify zero committed time/cell change plus unchanged native output buffers.
 
 Windows MSVC 19.44, Release; Python 3.13.5. Separate build `build/flow-reference-agent`. CMake targets `banjo_flow_cpu` and `banjo_flow_reference_tests` compile both new source files; source registration passed 352/352 at verification. [Native tests](../tests/flow_reference_tests.cpp) pass:
 
@@ -46,8 +56,8 @@ Default 48×24 columns, `dx=0.1 m`, left third at `h=0.2 m`, rest dry, 1000 kg/m
 |---|---:|
 | Initial / retained mass | 768 kg |
 | Two physical seconds, 121 frames | 240 CFL substeps |
-| Native solve + native output writes | 0.00914 wall s |
-| Python validation, native solve, receipt construction | 0.0671 wall s |
+| Native solve + native output writes | 0.00994 wall s |
+| Python validation, native solve, receipt/checkpoint construction | 0.0751 wall s |
 | Mass residual | −2.61e−12 kg |
 | Horizontal momentum residual | 8.64e−12 N·s |
 | Angular residual | 3.41e−12 N·m·s |
@@ -55,7 +65,7 @@ Default 48×24 columns, `dx=0.1 m`, left third at `h=0.2 m`, rest dry, 1000 kg/m
 
 Single measurements, not a network/browser or complete-world realtime qualification. Serialization, network, client construction and rendering cost must be measured in the integrated website. This small reference is markedly faster than physical time; that says nothing about the slow detailed-sheet impact solver.
 
-Verified local flow DLL SHA256: `48e6b642ea1d164d25fc6b30c26dd82ee752b47d5be45114587a53e73567cdfc`. Physics source SHA256: `036561c902c3c3528b6309e17b604ebff8f7c6dd6836773fe49e54c0fda8a267`. These identify the independent agent build; the parent must record the actual delivered checkpoint binaries separately.
+Verified local flow DLL SHA256: `515daf26b0d47cc8488c0d4baedb346ca556818941d34f18fca23c8b844b284c`. Physics source SHA256: `5f69616e83e6eb10313e4157eda9e2406f471288d4c29017ac92ab86eac85828`. These identify the independent agent build; the parent must record the actual delivered checkpoint binaries separately.
 
 ## Remaining work
 

@@ -20,3 +20,6 @@ const falling=structuredClone(receipt);falling.frames.push({...frame(2,0,'rigid-
 for(const aspect of [1.8,.85]){const f=mechanismMotionFrame(falling,aspect);assert.ok(f.center[1]<0);assert.ok(f.distance>8);for(const state of falling.frames){const d=Math.hypot(...state.com_m.map((v,j)=>v-f.center[j]))+.51;assert.ok(d<f.distance*Math.sin(Math.PI/8)*Math.min(1,aspect),'full accepted fall must fit the fixed camera');}}
 assert.ok(js.includes('if(followBody)target.fromArray'),'default camera must not cancel visible free fall');
 console.log('Full physical fall remains visible at desktop and phone aspects');
+
+const sceneControls=html.match(/<section[^>]*id="view"[^>]*>([\s\S]*?)<\/section>/)[1];
+for(const id of ['calculate', 'pendulum', 'wake', 'release', 'play', 'before', 'after'])assert(sceneControls.includes(`id="${id}"`),`${id} must stay next to the 3D view`);

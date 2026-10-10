@@ -7,7 +7,7 @@ from object_registry import ObjectRegistry,CHECKPOINT_SCHEMA,open_checkpoint,sea
 ROOT=Path(__file__).resolve().parents[1]
 
 def declaration(raw,*,device="cuda:0",pipeline="parallel",linear="cupy-reference",pipelines=("parallel","serial-reference"),linears=("cupy-reference","native-cusolver"),representations=("coupled-reference","partitioned-flight")):
-    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device=device,pipeline=pipeline,newton_strategy='ranked',line_search='batch-tail',linear_backend=linear,contact_resolution='reference',representation_policy='coupled-reference')
+    defaults=dict(material='glass',ball_material='iron',ball_mass_kg=.01,height_m=.02,dt_s=1/960,experiment='sheet',device=device,pipeline=pipeline,newton_strategy='ranked',line_search='batch-tail',linear_backend=linear,contact_resolution='reference',representation_policy='coupled-reference',thermal=None)
     if not isinstance(raw,dict) or set(raw)-set(defaults):raise ValueError('Unknown coupled scene field')
     d=defaults|raw
     if d['device']!=device or d['experiment'] not in ('sheet','freefall'):raise ValueError('Only the explicit selected device and sheet/freefall experiments are admitted')
@@ -17,6 +17,8 @@ def declaration(raw,*,device="cuda:0",pipeline="parallel",linear="cupy-reference
     if d['linear_backend'] not in linears:raise ValueError('Unknown coupled linear backend')
     if d['contact_resolution'] not in ('reference','phase-0.25','phase-0.125','phase-0.0625'):raise ValueError('Unknown contact timestep policy')
     if d['representation_policy'] not in representations:raise ValueError('Unknown representation policy')
+    if d['thermal'] is not None and (device!='cpu' or not isinstance(d['thermal'],dict)):
+        raise ValueError('Persistent thermal matter requires the explicit native CPU field backend; no CUDA fallback')
     for name in ('material','ball_material'):
         if d[name] not in ('glass','oak','iron','ice'):raise ValueError('Unknown declared material')
     for name,lo,hi in (('ball_mass_kg',.001,1.),('height_m',.001,10.)):
@@ -61,6 +63,13 @@ class CoupledWorld:
         self.eval=self.evaluator_type(bodies,edges,pipeline=self.d['pipeline'],newton_strategy=self.d['newton_strategy'],line_search=self.d['line_search'],linear_backend=self.d['linear_backend']);self.ticks=0;self.time=0.;self.step_s=0.;self.last_ms=0.;self.histories=np.zeros((len(edges),32))
         self.representations=self.flight_partition(self.eval,self.evaluator_type) if self.d['representation_policy']=='partitioned-flight' else None
         self.registry=ObjectRegistry(np.array(bodies),np.array(edges).reshape(-1,70),self.meta,profiles,world_id)
+        self.fields=None
+        if self.d['thermal'] is not None:
+            from thermal_matter_adapter import ThermalMatterAdapter
+            self.fields=ThermalMatterAdapter(self.registry.document(),self.d['thermal'])
+            self.d['thermal']=copy.deepcopy(self.fields.config)
+            if any(f['liquid_fraction']>0 for f in self.fields.snapshot()['fields']):
+                raise ValueError('Solid-to-flow phase transfer is not qualified; initial liquid state refused')
         self.unattached_spheres=[o['body_ids'][0] for o in self.registry.binding_state()['instances'] if o['single_sphere']]
         self.P_ground=np.zeros(3);self.L_ground=np.zeros(3);self.max_residual=0.;self.fracture=self.plastic=self.return_excess=0.;self.total_iterations=0;self.microsteps=0
         baseline=self.eval.evaluate(self.eval.bodies[:,14:20],1e-12,gravity=0)
@@ -86,6 +95,7 @@ class CoupledWorld:
         saved_host={key:(getattr(self,key).copy() if isinstance(getattr(self,key),np.ndarray) else getattr(self,key)) for key in host_keys}
         saved_modes=(self.representations.mode,self.representations.reason,copy.deepcopy(self.representations.transitions)) if self.representations else None
         saved_registry=self.registry.binding_state()
+        saved_fields=self.fields.clone() if self.fields else None
         accounts=[];started=time.perf_counter();updates=0;trials=0;refusals=[];last_solver_failure=None;schedule=None
         try:
             for host_tick in range(steps):
@@ -153,6 +163,14 @@ class CoupledWorld:
                         if len(sites)!=int(ledger[7]):raise TrialFailure('Contact receipt does not reconstruct native active-site count')
                         for key,index in (('contact_energy_before_j',4),('contact_energy_after_j',5)):
                             if not math.isclose(sum(s[key] for s in sites),float(ledger[index]),rel_tol=1e-12,abs_tol=1e-20):raise TrialFailure('Contact receipt does not reconstruct native contact energy')
+                    field_state=None
+                    if self.fields:
+                        if any((s[5]>0 if k!=1 else s[14]>0) for k,s in zip(self.to_host(self.eval.edges[:,2]),history)):
+                            raise TrialFailure('Thermal transfer through damage/plastic topology is not qualified; complete interval restored')
+                        self.fields.advance(h)
+                        field_state=self.fields.snapshot(ending)
+                        if any(f['liquid_fraction']>0 for f in field_state['fields']):
+                            raise TrialFailure('Solid-to-flow phase transfer is not qualified; complete interval restored')
                     self.eval.bodies[:,23:26]+=h*(self.eval.bodies[:,14:17]+velocity[:,:3])/2
                     self.eval.bodies[:,7:14]=out['poses'];self.eval.bodies[:,14:20]=velocity
                     if self.eval.m:self.eval.edges[:,35:67]=out['history']
@@ -166,6 +184,7 @@ class CoupledWorld:
                         ground_impulse_n_s=reaction.tolist(),ground_torque_impulse_n_m_s=reaction_torque.tolist(),ledger=ledger.tolist(),iterations=iterations,equation_residual=equation,
                         poses_wxyz=ending[:,7:14].tolist(),velocities=ending[:,14:20].tolist(),material_history=history.tolist(),newton_start=copy.deepcopy(self.eval.last_solve),contact_schedule=schedule,
                         coordinate_rebases=coordinate_rebases,
+                        **({'thermal_fields':field_state} if field_state else {}),
                         **({'representation':representation} if self.representations else {})))
             self.histories=history;self.ticks+=steps;self.time+=steps*self.d['dt_s'];self.microsteps+=updates;self.total_iterations+=sum(a['iterations'] for a in accounts)
             self.fracture+=sum(a['ledger'][2] for a in accounts) if self.material_model!='connector-plastic' else 0
@@ -177,6 +196,10 @@ class CoupledWorld:
             if self.representations:self.representations.commit_modes(accounts,self.time-steps*self.d['dt_s'])
             sphere=self.representations.sphere if self.representations and self.representations.mode=='rigid-free-flight' else None
             self.registry.bind(self.time,sphere)
+            if self.fields:
+                # Mechanics and the independent material field share matter and
+                # one accepted clock. Neither result is published alone.
+                self.fields.rebind(self.registry.document())
             self.last_ms=(time.perf_counter()-started)*1000;self.step_s+=self.last_ms/1000;self.accepted=self._snapshot(ending);return self.snapshot()
         except Exception as error:
             restored=False
@@ -185,6 +208,7 @@ class CoupledWorld:
             for key,value in saved_host.items():setattr(self,key,value)
             if saved_modes:self.representations.mode,self.representations.reason,self.representations.transitions=saved_modes
             self.registry.restore_bindings(saved_registry)
+            self.fields=saved_fields
             self.rejected=dict(error=str(error),accepted_time_s=self.time,interval_rolled_back=restored,accepted_snapshot_preserved=True,
                 failed_interval_substeps=updates,trial_attempts=trials,subdivision_refusals=refusals,
                 last_solver_failure=last_solver_failure,last_trial_accounts=accounts[-4:],contact_timestep_policy=self.d['contact_resolution'],
@@ -211,7 +235,15 @@ class CoupledWorld:
         for row,b in zip(self.meta,bodies):cells.append(row|dict(position_m=b[7:10].tolist(),quaternion_wxyz=b[10:14].tolist(),velocity_m_s=b[14:17].tolist(),angular_velocity_rad_s=b[17:20].tolist()))
         kinds=self.to_host(self.eval.edges[:,2]).astype(int) if self.eval.m else []
         separated=int(sum(s[6]>0 for k,s in zip(kinds,self.histories) if k!=1));yielded=int(sum(s[14]>0 for k,s in zip(kinds,self.histories) if k==1))
+        thermal=self.fields.snapshot(bodies) if self.fields else None
+        mechanical_account=energy+self.stored_j+self.contact_j+self.fracture+self.plastic+self.return_excess
+        combined=(dict(mechanical_energy_and_work_j=mechanical_account,
+            thermal_energy_j=math.fsum(f['thermal_energy_j'] for f in thermal['fields']),
+            initial_energy_j=self.initial_energy+self.fields.initial_energy,external_heat_j=thermal['audit']['external_heat_j'],
+            residual_j=mechanical_account-self.initial_energy+thermal['audit']['energy_residual_j'],
+            scope='Inert fields and temperature-independent mechanics; storage/dissipation counted once; heater work explicit; no thermal-mechanical energy exchange') if thermal else None)
         return dict(schema=self.state_schema,declaration=copy.deepcopy(self.d),time_s=self.time,dt_s=self.d['dt_s'],ticks=self.ticks,cells=cells,history_arrays=self.histories.tolist(),objects=self.registry.summary(),
+            **({'thermal_fields':thermal,'combined_energy_account':combined} if thermal else {}),
             diagnostics=dict(dynamic_mass_kg=float(bodies[:,1].sum()),mechanical_j=energy,material_stored_j=self.stored_j,contact_stored_j=self.contact_j,
                 global_energy_residual_j=energy+self.stored_j+self.contact_j+self.fracture+self.plastic+self.return_excess-self.initial_energy,
                 momentum_n_s=p.tolist(),angular_momentum_n_m_s=l.tolist(),
@@ -224,7 +256,7 @@ class CoupledWorld:
                     scope='Swept collision-free rigid sphere with fixed surroundings only; coupled material worlds request one host tick')}
                 if self.representations else {}),
             qualification=dict(backend=self.backend_name,gpu=self.gpu,device=self.device,dtype='float64',source_sha256=self.hash,complete_physics_validated=False,realtime_qualified=False,
-                scope='Experimental finite rigid-cell isotropic inertia; declared mixed-mode cohesive/6-mode plastic interfaces and frictionless normal compliance. No calibrated bulk/grain/J2/thermal law or CCD qualification.'))
+                scope='Experimental finite rigid-cell isotropic inertia; declared mixed-mode cohesive/6-mode plastic interfaces and frictionless normal compliance. Optional CPU conduction retains fields on unchanged matter; no thermal weakening, expansion, contact heat, reactive moving matter, fracture transport or phase-flow coupling. No calibrated bulk/grain/J2 or CCD qualification.'))
 
     def snapshot(self):
         out=copy.deepcopy(self.accepted)
@@ -242,12 +274,13 @@ class CoupledWorld:
         return seal(dict(schema=CHECKPOINT_SCHEMA,source_sha256=self.hash,declaration=copy.deepcopy(self.d),registry=self.registry.document(),
             native=dict(bodies=self.to_host(self.eval.bodies).tolist(),edges=self.to_host(self.eval.edges).tolist()),continuation=continuation,
             representation=bindings,trial_evaluations=self.snapshot()['performance']['trial_evaluations'],stopped_failure=stopped,
+            thermal_fields=self.fields.export_checkpoint() if self.fields else None,
             scope='Exact accepted native state; private caches rebuilt. Past render frames/full rejection witnesses remain in the original journal.'))
 
     @classmethod
     def from_checkpoint(cls,payload):
         saved=open_checkpoint(payload)
-        expected={'schema','source_sha256','declaration','registry','native','continuation','representation','trial_evaluations','stopped_failure','scope'}
+        expected={'schema','source_sha256','declaration','registry','native','continuation','representation','trial_evaluations','stopped_failure','thermal_fields','scope'}
         if set(saved)!=expected or saved['source_sha256']!=cls.source_hash():raise ValueError('Checkpoint schema or physics source is stale')
         # Construct privately. The worker installs it after every check passes.
         candidate=cls(saved['declaration'],world_id=saved['registry']['world_id'])
@@ -292,6 +325,12 @@ class CoupledWorld:
             owner='isolated-rigid-flight' if sphere is not None and instance['body_ids']==[sphere] else 'coupled-world'
             if instance['solver_binding']!=owner:raise ValueError('Representation has duplicate or mismatched matter owner')
         cls.array_api.copyto(candidate.eval.bodies,cls.array_api.asarray(b));cls.array_api.copyto(candidate.eval.edges,cls.array_api.asarray(e))
+        if bool(saved['thermal_fields'])!=bool(candidate.fields):raise ValueError('Thermal representation continuation differs')
+        if candidate.fields:
+            from thermal_matter_adapter import ThermalMatterAdapter
+            candidate.fields=ThermalMatterAdapter.restore(saved['thermal_fields'],candidate.registry.document())
+            if any(f['liquid_fraction']>0 for f in candidate.fields.snapshot()['fields']):raise ValueError('Solid-to-flow phase transfer is not qualified in reopened matter')
+            if candidate.fields.config!=candidate.d['thermal']:raise ValueError('Restored thermal law declaration differs')
         baseline=candidate.eval.evaluate(candidate.eval.bodies[:,14:20],1e-12,gravity=0)
         if int(baseline['faults'][0]):raise ValueError('Restored native geometry/history refused')
         ledger=cls.to_host(baseline['ledger'])[0]

@@ -373,9 +373,9 @@ class Handler(BaseHTTPRequestHandler):
       from mechanisms import run_experiment
       r=run_experiment(data,library)
      else:
-      if set(data)!={'declaration'}:raise ValueError('Invalid flow declaration')
+      if set(data) not in ({'declaration'},{'declaration','checkpoint'}):raise ValueError('Invalid flow declaration')
       from flowing_matter import run
-      r=run(data['declaration'],library)
+      r=run(data['declaration'],library,checkpoint=data.get('checkpoint'))
     finally:self.server.field_busy.release()
     self.send(200,json.dumps(r,separators=(',',':'),allow_nan=False).encode());return
    if self.path not in ('/api/world','/api/gpu','/api/coupled','/api/thermal-fields'):raise ValueError('Unknown endpoint')

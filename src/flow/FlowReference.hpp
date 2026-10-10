@@ -16,11 +16,14 @@ struct Account {
 };
 class Reference {
 public:
+    struct State { Settings settings; std::vector<Cell> cells; Account initial, crossings; };
     Reference(Settings settings, std::vector<Cell> cells);
-    void advance(double seconds); // atomic: failed request leaves all accepted state unchanged
+    void advance(double seconds, std::uint64_t max_steps=20000, std::uint64_t max_cell_updates=8000000); // atomic
     const Settings& settings() const { return settings_; }
     const std::vector<Cell>& cells() const { return cells_; }
     Account account() const;
+    State state() const { return {settings_,cells_,initial_,crossings_}; }
+    static Reference restore(const State& state);
 private:
     void step(double dt);
     Account totals() const;
