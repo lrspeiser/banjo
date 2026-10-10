@@ -38,6 +38,23 @@ GAME_POSTS={'/login','/api/machine'}
 
 class SessionExpired(ValueError):pass
 
+class Allowance:
+ """How many of something one visitor may ask for in an hour, and everyone
+ in a day: what keeps a public site's chat (which spends the model's key)
+ and its engine trials from being run without end. Counted in memory, so a
+ restart starts the counts again."""
+ def __init__(self,per_hour,per_day,what):
+  self.per_hour,self.per_day,self.what=per_hour,per_day,what;self.lock=threading.Lock();self.recent={};self.day=[]
+ def take(self,who):
+  now=time.time()
+  with self.lock:
+   self.day=[t for t in self.day if now-t<86400]
+   mine=self.recent[who]=[t for t in self.recent.get(who,[]) if now-t<3600]
+   if len(self.day)>=self.per_day:raise ValueError(f'The {self.what} has been used {self.per_day} times today, as much as this site allows; try again tomorrow')
+   if len(mine)>=self.per_hour:raise ValueError(f'That is {self.per_hour} {self.what} requests from here in an hour, as many as this site allows; try again in {int((3600-(now-mine[0]))//60)+1} minutes')
+   mine.append(now);self.day.append(now)
+   if len(self.recent)>10000:self.recent={k:v for k,v in self.recent.items() if v and now-v[-1]<3600}
+
 # Bound disk use while retaining every accepted microstep of the two-second
 # coupled experiment. The old 32 MB bound stopped a 10 m drop before contact.
 JOURNAL_COMPRESSED_LIMIT=128_000_000
@@ -261,9 +278,16 @@ class Session:
   if self.worker_stderr:self.worker_stderr.close()
 class Server(ThreadingHTTPServer):
  daemon_threads=True
- def __init__(self,address,native,logs,checkpoint_path=None,gpu_python=None,cpu_library=None,password=None,public_host=None,site='all'):
-  refusal=access_gate.refusal(address[0],password)
+ def __init__(self,address,native,logs,checkpoint_path=None,gpu_python=None,cpu_library=None,password=None,public_host=None,site='all',public=False):
+  # Public: deliberately open to anyone, with no password -- only for the
+  # game (--site game), where the chat and the trials are rationed instead.
+  if public and site!='game':raise ValueError('only the game (--site game) may be public with no password')
+  if public:password=None
+  refusal=None if public else access_gate.refusal(address[0],password)
   if refusal:raise ValueError(refusal)
+  self.public=public
+  self.chat_allowance=Allowance(int(os.environ.get('BANJO_CHAT_PER_HOUR','12')),int(os.environ.get('BANJO_CHAT_PER_DAY','400')),'chat') if public else None
+  self.trial_allowance=Allowance(int(os.environ.get('BANJO_TRIALS_PER_HOUR','30')),int(os.environ.get('BANJO_TRIALS_PER_DAY','2000')),'reliability check') if public else None
   if site not in ('all','game'):raise ValueError('site is all or game')
   self.site=site
   self.app=SimpleNamespace(password=password,public_host=public_host,sessions=set(),login_destination='/play' if site=='game' else '/machine')
@@ -468,6 +492,11 @@ class Handler(BaseHTTPRequestHandler):
   except SessionExpired as e:self.send(410,json.dumps({'ok':False,'error':str(e),'code':'session_expired'}).encode())
   except RuntimeError as e:self.send(422,json.dumps({'ok':False,'error':str(e),'code':'physics_refused'}).encode())
   except (ValueError,TypeError,KeyError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
+ def visitor(self):
+  # Who is asking, for the allowances. Behind a host's proxy (Render) the
+  # visitor is the first address it forwarded; otherwise the socket's.
+  forwarded=self.headers.get('X-Forwarded-For','') if self.server.public else ''
+  return forwarded.split(',')[0].strip() or self.client_address[0]
  def machine(self,body):
   # One live machine world per session; every response is the engine's own
   # measured state. A refused declaration answers with its problems in words.
@@ -490,6 +519,7 @@ class Handler(BaseHTTPRequestHandler):
     r=host.get(data.get('session')).frame(after,wait)
    elif op=='close':r=host.close(data.get('session'))
    elif op=='chat':
+    if self.server.chat_allowance:self.server.chat_allowance.take(self.visitor())
     if not self.server.chat_busy.acquire(blocking=False):raise ValueError('Two chat requests are already being worked on; try again shortly')
     try:
      if data.get('level'):
@@ -513,6 +543,7 @@ class Handler(BaseHTTPRequestHandler):
     rows=(s.readouts or {}).get('stations') or [{}]
     r={'ok':True,**machine_game.stars(level,game['checked'],game['cost'],rows[0].get('at_s') if rows[0].get('done') else None,game['helped'])}
    elif op=='trial':
+    if self.server.trial_allowance:self.server.trial_allowance.take(self.visitor())
     if not self.server.chat_busy.acquire(blocking=False):raise ValueError('The engine is busy with another trial; try again shortly')
     try:r={'ok':True,**machine_game.trial(machine_game.level_by_id(data.get('level')),data.get('placements') or [],host.exe,host.logs,runs=3)}
     finally:self.server.chat_busy.release()
@@ -525,8 +556,8 @@ class Handler(BaseHTTPRequestHandler):
   except (ValueError,TypeError,KeyError,RuntimeError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def log_message(self,*args):pass
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--native',type=Path,required=True);p.add_argument('--gpu-python',type=Path);p.add_argument('--cpu-library',type=Path);p.add_argument('--host',default='127.0.0.1');p.add_argument('--logs',type=Path,default=ROOT/'build/voxel-world-logs');p.add_argument('--port',type=int,default=18893);p.add_argument('--site',choices=['all','game'],default='all',help='game: serve only the puzzles and the sandbox, as deployed');a=p.parse_args()
- server=Server((a.host,a.port),a.native.resolve(strict=True),a.logs,gpu_python=a.gpu_python.resolve(strict=True) if a.gpu_python else None,cpu_library=a.cpu_library.resolve(strict=True) if a.cpu_library else None,password=os.environ.get('BANJO_PASSWORD'),public_host=os.environ.get('BANJO_PUBLIC_HOST'),site=a.site)
+ p=argparse.ArgumentParser();p.add_argument('--native',type=Path,required=True);p.add_argument('--gpu-python',type=Path);p.add_argument('--cpu-library',type=Path);p.add_argument('--host',default='127.0.0.1');p.add_argument('--logs',type=Path,default=ROOT/'build/voxel-world-logs');p.add_argument('--port',type=int,default=18893);p.add_argument('--site',choices=['all','game'],default='all',help='game: serve only the puzzles and the sandbox, as deployed');p.add_argument('--public',action='store_true',help='the game open to anyone with no password (needs --site game); its chat and trials are rationed');a=p.parse_args()
+ server=Server((a.host,a.port),a.native.resolve(strict=True),a.logs,gpu_python=a.gpu_python.resolve(strict=True) if a.gpu_python else None,cpu_library=a.cpu_library.resolve(strict=True) if a.cpu_library else None,password=os.environ.get('BANJO_PASSWORD'),public_host=os.environ.get('BANJO_PUBLIC_HOST'),site=a.site,public=a.public)
  print(f'Voxel world http://127.0.0.1:{a.port}/',flush=True)
  try:server.serve_forever()
  finally:

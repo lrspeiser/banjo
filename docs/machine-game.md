@@ -46,7 +46,7 @@ Level 6 is slow for a real laser: the engine spreads a body's heat through the w
 
 ## The site
 
-The deployed site is the game and nothing else: `scripts/voxel-lab.py --site game` (the Dockerfile's command) serves `/play`, the sandbox `/machine` it is built on, and what those pages load; `/` goes to `/play`; every other page and API answers 404. The other labs stay in the code and run locally without `--site game`.
+The deployed site is the game and nothing else, open to anyone with no login: `scripts/voxel-lab.py --site game --public` (the Dockerfile's command) serves `/play`, the sandbox `/machine` it is built on, and what those pages load; `/` goes to `/play`; every other page and API answers 404. With no password in front of it, what costs money or a lot of engine time is rationed instead: the chat (which spends the model's key) to 12 requests per visitor an hour and 400 a day, and the reliability check to 30 per visitor an hour and 2,000 a day (BANJO_CHAT_PER_HOUR, BANJO_CHAT_PER_DAY, BANJO_TRIALS_PER_HOUR, BANJO_TRIALS_PER_DAY). The server holds at most four live machines at once; a fifth visitor's machine closes the one used longest ago. `--public` is refused without `--site game`. The other labs stay in the code and run locally without these switches.
 
 ## Real time
 
