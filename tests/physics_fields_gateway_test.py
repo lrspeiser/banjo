@@ -32,6 +32,9 @@ with tempfile.TemporaryDirectory() as folder:
   code,raw=request(*payloads['mechanisms']);mechanism=json.loads(raw);assert code==200 and mechanism['schema']=='banjo-mechanism-reference-1' and len(mechanism['frames'])>1
   assert mechanism['native_sha256']==hashlib.sha256(paths['mechanisms'].read_bytes()).hexdigest()
   assert request('/api/mechanisms/run',{'duration_s':float('nan')})[0]==400
+  code,raw=request('/api/mechanisms/run',{'density_kg_m3':100.,'length_m':.1,'width_m':.01,'thickness_m':.005,'force_x_n':1000.,'dt_s':1/120,'duration_s':.1})
+  refusal=json.loads(raw);assert code==422 and refusal['code']=='physics_refused' and 'Native mechanism refused' in refusal['error']
+  assert 'frames' not in refusal,'unresolved mechanics must not publish a partial trajectory'
   code,raw=request(*payloads['flow']);flow=json.loads(raw);assert code==200 and flow['ok'] and len(flow['frames'])==5
   assert flow['native_sha256']==hashlib.sha256(paths['flow'].read_bytes()).hexdigest()
   assert request('/api/flow-reference',{'declaration':{'nx':0}})[0]==400

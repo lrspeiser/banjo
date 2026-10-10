@@ -440,6 +440,7 @@ class Handler(BaseHTTPRequestHandler):
    else:raise ValueError('Unknown operation')
    self.send(200,json.dumps(r,separators=(',',':')).encode())
   except SessionExpired as e:self.send(410,json.dumps({'ok':False,'error':str(e),'code':'session_expired'}).encode())
+  except RuntimeError as e:self.send(422,json.dumps({'ok':False,'error':str(e),'code':'physics_refused'}).encode())
   except (ValueError,TypeError,KeyError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def log_message(self,*args):pass
 if __name__=='__main__':
