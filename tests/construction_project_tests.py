@@ -296,6 +296,11 @@ class PlacementJourney(unittest.TestCase):
         the build guide, fastened or not. Returns world, app, table, person."""
         world,owner,app=self.setup_world(legacy_process=True)
         recipe=self.post('/api/workshop/goals',{'chain':'first-workshop-v1'},world)['recipe']
+        # The work table is iron in a playable world (caeb6424) and the
+        # starter rack holds 6.2 kg of it: gather the rest from the world's
+        # finite sources first, as goal_chains_tests does for this table.
+        import goal_chains_tests as chains
+        chains.acquire_material(self,world,owner['token'],'iron',12.,'support-table-iron')
         ctx=self.post('/api/world/workshop/context',{},world)
         lamp=next(b for b in app.live.session.state['bodies'] if b['name']=='camp light')
         lx,_,lz=lamp['position_m']

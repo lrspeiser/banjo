@@ -185,8 +185,17 @@ class PlayerMaterials(unittest.TestCase):
         first=self.post('/api/workshop/goals',{},world)
         pile=app.brains.goods.by_name(first['goals'][0]['guide']['resource']);at=pile['at_m']
         floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':at},world)['survey']['ground_m']
-        self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'layer-wood',
+        self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'layer-metal',
             'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[1,0,0]}},world)
+        # The guided pile is one metal; the personal pick is iron with an
+        # aluminum haft (playable_recipes). Gather the rest of its bill from
+        # the world's finite sources, as goal_chains_tests does.
+        import goal_chains_tests as chains
+        ctx=self.post('/api/world/workshop/context',{},world)
+        bill=self.post('/api/world/fabrication/plan_make',{'session':ctx['session'],'scene':ctx['scene'],
+            'candidate':first['recipe']},world)['missing_materials_kg']
+        for material,kg in sorted(bill.items()):
+            if kg>1e-10:chains.acquire_material(self,world,token,material,kg,'layer-'+material)
         built=camp.make_paid(self,world,token,first['recipe'],[-1.4,-.6],'layer-pick')
         self.assertTrue(built['resources_charged']);root=built['root_body']
         sid=app.live.session.id;target=[.3,.025];x,z=target[0]-getattr(self,'contact_distance',1.2),.025

@@ -97,6 +97,19 @@ class GuidanceContract(unittest.TestCase):
         self.assertEqual(context,sent['server_observations'])
 
 
+
+def longer(candidate):
+    """The same personal tool with a longer handle, reaching further back.
+    The opening tool is a Workshop construction (custom kind) since the
+    inorganic catalogue, so it has parts to edit rather than a length_m."""
+    from copy import deepcopy
+    edited=deepcopy(candidate)
+    for part in edited['component_overrides']['@construction']['added']:
+        if part['name']=='handle':
+            grown=1.-part['size_m'][0];part['size_m'][0]=1.;part['center_m'][0]-=grown/2
+            return edited
+    raise AssertionError('the opening tool has no handle to lengthen')
+
 @unittest.skipUnless(fixture.hub.RUNNER.is_file() and fixture.hub.ENGINE.is_file(),'native world engine not built')
 class PrivateGuidance(unittest.TestCase):
     setUp=fixture.AutonomousGuests.setUp
@@ -113,22 +126,28 @@ class PrivateGuidance(unittest.TestCase):
         world,owner,app=self.setup_world();peer=self.join(world,'Other player')
         began=time.monotonic()
         first=self.post('/api/world/guidance',{},world)
-        self.assertEqual('get-tool-wood',first['goal']['id'])
+        self.assertEqual('get-tool-metal',first['goal']['id'])
         self.assertIn(first['next_action']['verb'],('move','collect'))
         self.assertTrue(first['next_action']['destination'].get('resource'))
         market=self.post('/api/workshop/market',{},world)
         self.assertEqual(first['next_action'],market['guidance']['player']['next_action'])
-        # Stock comes from an actual finite source through ordinary collection.
-        sid=app.live.session.id;name=first['next_action']['destination']['resource']
-        pile=app.brains.goods.by_name(name);x,z=pile['at_m']
-        y=self.post('/api/live/act',{'session':sid,'op':'survey','at':[x,z]},world)['survey']['ground_m']
-        self.post('/api/world/goods/collect',{'session':sid,'pile':name,'request_id':'guidance-collect',
-            'person':{'eyes_m':[x,y+1.62,z],'facing':[1,0,0]}},world)
-        ready=self.post('/api/world/guidance',{},world)
+        # Stock comes from actual finite sources through ordinary collection,
+        # one guided source at a time: the metal pick is iron with an
+        # aluminum haft, so the guide sends the player to each in turn.
+        sid=app.live.session.id;ready=first
+        for visit in range(3):
+            name=(ready['next_action'].get('destination') or {}).get('resource')
+            if ready['goal']['id']!='get-tool-metal' and ready['build_readiness'].get('status')!='Supplies missing':break
+            self.assertTrue(name,ready['next_action'])
+            pile=app.brains.goods.by_name(name);x,z=pile['at_m']
+            y=self.post('/api/live/act',{'session':sid,'op':'survey','at':[x,z]},world)['survey']['ground_m']
+            self.post('/api/world/goods/collect',{'session':sid,'pile':name,'request_id':f'guidance-collect-{visit}',
+                'person':{'eyes_m':[x,y+1.62,z],'facing':[1,0,0]}},world)
+            ready=self.post('/api/world/guidance',{},world)
         self.assertEqual('make-own-tool',ready['goal']['id'])
         self.assertEqual('Fund materials',ready['build_readiness']['status'])
         self.assertFalse(ready['build_readiness']['ready_to_start'])
-        self.assertEqual('get-tool-wood',self.post('/api/world/guidance',{},world,peer['token'])['goal']['id'])
+        self.assertEqual('get-tool-metal',self.post('/api/world/guidance',{},world,peer['token'])['goal']['id'])
         authored={**ready['project']['candidate'],'design_id':'field-pick-g0-v1','purpose':'Field pick'}
         focused=self.post('/api/world/guidance',{'action':'select-project','project':{
             'name':'My first pick','candidate':authored,
@@ -143,7 +162,7 @@ class PrivateGuidance(unittest.TestCase):
             source=next(s for s in state['stock_sources'] if s['pool']=='personal' and s['material']==line['substance'])
             self.post('/api/world/fabrication/fund_stock',{**ctx,'material':line['substance'],
                 'mass_kg':line['fund_kg'],'pool':'personal','rack_hash':source['rack_hash'],
-                'revision':state['state']['revision'],'request_id':'guidance-fund-wood'},world)
+                'revision':state['state']['revision'],'request_id':'guidance-fund-'+line['substance']},world)
         reading=self.post('/api/world/fabrication/review_plan',{**ctx,'plan_id':plan['plan_id']},world)
         self.assertEqual('Fund energy',reading['build_readiness']['status'])
         state=self.post('/api/world/fabrication/state',ctx,world)
@@ -152,7 +171,12 @@ class PrivateGuidance(unittest.TestCase):
         self.post('/api/world/fabrication/connect_energy',{**ctx,'store':source['id'],
             'store_hash':source['store_hash'],'power_w':watts,'revision':state['state']['revision'],
             'request_id':'guidance-connect'},world)
-        self.post('/api/world/fabrication/wait',{**ctx,'seconds':1},world)
+        # Energy arrives at the connected power: wait as long as the quote
+        # takes at that power (the metal pick needs more than one second's).
+        import math
+        seconds=max(1,math.ceil(plan['quote']['supply_required_j']/watts))
+        while seconds:
+            step=min(10,seconds);self.post('/api/world/fabrication/wait',{**ctx,'seconds':step},world);seconds-=step
         state=self.post('/api/world/fabrication/state',ctx,world)
         source=next(s for s in state['energy_sources'] if s['connected'])
         self.post('/api/world/fabrication/fund_energy',{**ctx,'store_hash':source['store_hash'],
@@ -191,7 +215,7 @@ class PrivateGuidance(unittest.TestCase):
         try:self.assertIsNone(player_guidance.selected_project(app,owner['id'],app.room.fabrication_record))
         finally:fixture.server.workshop_library.REQUEST_OWNER.reset(scope)
         from copy import deepcopy
-        edited=deepcopy(ready['project']['candidate']);edited['parameters']['length_m']=1.
+        edited=longer(ready['project']['candidate'])
         scope=fixture.server.workshop_library.REQUEST_OWNER.set(owner['id'])
         try:during_work=player_guidance.for_design(app,edited)
         finally:fixture.server.workshop_library.REQUEST_OWNER.reset(scope)
@@ -210,8 +234,7 @@ class PrivateGuidance(unittest.TestCase):
         from copy import deepcopy
         world,owner,app=self.setup_world();peer=self.join(world,'Other player')
         baseline=self.post('/api/world/guidance',{},world)
-        candidate=deepcopy(baseline['project']['candidate'])
-        candidate['parameters']['length_m']=1.
+        candidate=longer(baseline['project']['candidate'])
         project={'name':'Longer personal pick','candidate':candidate,
             'selection':{'source':'recipe','id':'Personal field pick'}}
         before=deepcopy(app.room.fabrication_record)

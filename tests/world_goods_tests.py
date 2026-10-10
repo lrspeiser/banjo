@@ -150,7 +150,10 @@ class GoodsJourney(unittest.TestCase):
                 answer=self.post('/api/world/machine',request,world)
                 self.assertEqual('grip',answer['hand']['mode']);self.assertFalse(answer['program']['power'])
                 self.assertEqual(800,answer['strength_n']);self.assertEqual(60,answer['torque_n_m'])
-                self.assertAlmostEqual(43.54712,answer['assembly_mass_kg'],places=3)
+                # The inorganic starter rover: 43.7416 kg of iron and 5 kg of
+                # glass (docs/inorganic-generated-world-checkpoint.md); the
+                # 43.5471 kg here was the retired oak-wheel rover.
+                self.assertAlmostEqual(48.74162,answer['assembly_mass_kg'],places=3)
                 repeated=self.post('/api/world/machine',request,world)
                 self.assertEqual(answer['hand'],repeated['hand'],'Retry retains the same grip and accumulated work')
                 with self.assertRaises(urllib.error.HTTPError):self.post('/api/world/machine',request,world,other['token'])
@@ -826,20 +829,23 @@ class GoodsJourney(unittest.TestCase):
 
     def test_raw_material_collection_credits_personal_build_stock_and_preserves_shared_stock(self):
         world,owner,app,source,output,person=self.batch(process=False)
-        pile=next(p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('oak',0)>25)
+        # A playable world holds only inorganic stock (game_materials, since
+        # caeb6424): the loose recovered aluminum is its raw build material.
+        pile=next(p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('aluminum',0)>25)
         at=pile['at_m'];sid=app.live.session.id
         floor=app.live.act({'session':sid,'op':'survey','at':at})['survey']['ground_m']
-        initial=pile['holds']['oak']
+        initial=pile['holds']['aluminum']
+        def shared():
+            token=workshop_library.REQUEST_OWNER.set(owner['id'])
+            try:return {r['material']:r['shared_kg'] for r in workshop_library.rack(app)['materials']}
+            finally:workshop_library.REQUEST_OWNER.reset(token)
+        shared_before=shared()
         answer=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],
-            'request_id':'collect-oak','person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)
-        self.assertEqual({'oak':initial},answer['collected'])
+            'request_id':'collect-aluminum','person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world)
+        self.assertEqual({'aluminum':initial},answer['collected'])
         self.assertEqual({},pile['holds'])
-        self.assertEqual({'oak':initial},self.personal(app,owner))
-        token=workshop_library.REQUEST_OWNER.set(owner['id'])
-        try:
-            oak=next(r for r in workshop_library.rack(app)['materials'] if r['material']=='oak')
-            self.assertEqual(12.4,oak['shared_kg'])
-        finally:workshop_library.REQUEST_OWNER.reset(token)
+        self.assertEqual({'aluminum':initial},self.personal(app,owner))
+        self.assertEqual(shared_before,shared(),'Personal collection leaves the shared rack as it was')
 
     def delivery_fixture(self):
         world,owner,app,source,output,_=self.batch(process=False)

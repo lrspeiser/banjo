@@ -28,7 +28,11 @@ def validate_project(value):
     except (TypeError,ValueError) as error:raise ValueError('Project must contain finite JSON design inputs') from error
     # Leave room for the action envelope within the existing 32 KiB HTTP limit.
     if len(encoded.encode('utf-8'))>24*1024:raise ValueError('Project exceeds the 24 KiB authoring budget')
-    workshop_components.design_from_spec(candidate)
+    # A design the Workshop cannot assemble -- a parameter its kind does not
+    # take, a wrong type -- is a bad request like any other here, not an
+    # exception that drops the player's connection without an answer.
+    try:workshop_components.design_from_spec(candidate)
+    except (KeyError,TypeError) as error:raise ValueError(f'Project design is not buildable: {error}') from error
     selection=value.get('selection')
     if selection is not None and (not isinstance(selection,dict) or set(selection)!={'source','id'}
         or selection['source'] not in ('carried','recipe','saved','library')

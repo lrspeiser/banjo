@@ -43,6 +43,18 @@ class GeneratedRovers(unittest.TestCase):
                     and name.endswith(' foundation') and name.removesuffix(' foundation') in installs}
                 self.assertTrue(supports,'Generated processors must retain their authored foundation sources')
                 seen_supports=set()
+                # The authored layout is exact: each processor stands on its
+                # pad's top, so the generator itself overlaps nothing.
+                authored={b['name']:b for b in app.room.spec['precise_rigid_bodies']}
+                for pair in supports:
+                    machine,pad=sorted(pair,key=lambda n:n.endswith(' foundation'))
+                    worst=max(min(hi[1],high[1])-max(lo[1],low[1])
+                        for lo,hi in (precise_rigid.bounds([p],authored[machine]['position_m'],
+                            authored[machine].get('orientation_wxyz',[1,0,0,0])) for p in authored[machine]['parts'])
+                        for low,high in (precise_rigid.bounds([p],authored[pad]['position_m'],
+                            authored[pad].get('orientation_wxyz',[1,0,0,0])) for p in authored[pad]['parts'])
+                        if lo[0]<high[0] and hi[0]>low[0] and lo[2]<high[2] and hi[2]>low[2])
+                    self.assertLessEqual(worst,1e-9,(seed,machine,pad,'authored support overlaps its pad'))
                 for b in state['bodies']:
                     for p in b.get('rigid_parts_local') or []:
                         lo,hi=precise_rigid.bounds([p],b['position_m'],b['orientation_wxyz'])
@@ -54,10 +66,16 @@ class GeneratedRovers(unittest.TestCase):
                         pair=frozenset((name,other))
                         if pair in supports:
                             # Initial native contact gave 2.83585e-7 m of
-                            # vertical roundoff at the mill foot. This new
-                            # support assertion allows 1 micrometre only;
-                            # unrelated horizontal/corridor margins stay exact.
-                            self.assertLessEqual(min(hi[1],high[1])-max(lo[1],low[1]),1e-6,
+                            # vertical roundoff at the mill foot: 1 micrometre
+                            # is allowed for it. live_world_run's tidy() also
+                            # rounds each reported position_m to 1e-5 m, so two
+                            # bodies' positions read here can disagree by up to
+                            # one such step with no overlap at all (1.1e-6 m on
+                            # Linux, -6.4e-6 m at the other mill). The exact
+                            # authored layout is held to 1e-9 m above; the
+                            # native reading gets its own resolution on top.
+                            # Unrelated horizontal/corridor margins stay exact.
+                            self.assertLessEqual(min(hi[1],high[1])-max(lo[1],low[1]),1e-6+1e-5,
                                 (seed,name,other,'support vertical overlap exceeds initial contact roundoff',lo,hi,low,high))
                             seen_supports.add(pair);continue
                         self.assertFalse(lo[0]<high[0]+.3499 and hi[0]>low[0]-.3499 and
