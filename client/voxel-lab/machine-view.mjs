@@ -60,12 +60,19 @@ export function focusPoint(stations, machineStations, bodies) {
     for (let i = machineStations.length - 1; i >= 0; i--) if ((machineStations[i].focus || []).length) { index = i; break; }
   }
   if (index < 0) return null;
-  const names = new Set(machineStations[index].focus);
+  const at = stationPoint(machineStations[index], bodies);
+  return at ? {index, at} : null;
+}
+
+// Where one station's parts are now: the middle of the bodies it names
+// (pieces of a broken one count as it), or nothing when none is there.
+export function stationPoint(machineStation, bodies) {
+  const names = new Set(machineStation?.focus || []);
   const points = [];
   for (const b of bodies.values()) if (names.has(b.name) || names.has(family(b.name))) points.push(b.position_m);
   if (!points.length) return null;
   const sum = points.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0]);
-  return {index, at: sum.map(v => v / points.length)};
+  return sum.map(v => v / points.length);
 }
 
 export function describeTime(seconds) {

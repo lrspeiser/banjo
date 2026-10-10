@@ -3,7 +3,7 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, materialColor, describeTime} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime} from '../client/voxel-lab/machine-view.mjs';
 
 const body = (name, extra = {}) => ({name, shape: 'box', material: 'oak', dimensions_m: [.1, .1, .1], position_m: [0, 0, 0],
   orientation_wxyz: [1, 0, 0, 0], revision: 0, ...extra});
@@ -36,5 +36,7 @@ const bodies = new Map([['a', body('a', {position_m: [1, 0, 0]})], ['glass plate
   ['glass plate piece 2', body('glass plate piece 2', {position_m: [4, 0, 0]})]]);
 assert.deepEqual(focusPoint([{done: false}, {done: false}], stations, bodies), {index: 0, at: [1, 0, 0]});
 assert.deepEqual(focusPoint([{done: true}, {done: false}], stations, bodies), {index: 1, at: [3, 0, 0]}, 'pieces stand in for the broken part');
+assert.deepEqual(stationPoint(stations[0], bodies), [1, 0, 0], 'any station can be looked at, done or not');
+assert.equal(stationPoint({focus: ['nothing here']}, bodies), null);
 assert.deepEqual(focusPoint([{done: true}, {done: true}, {done: false}], stations, bodies), {index: 1, at: [3, 0, 0]});
 console.log('PASS machine page draws engine frames, measured heat colours and the next unmeasured station');

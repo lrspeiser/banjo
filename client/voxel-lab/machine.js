@@ -1,5 +1,5 @@
 import * as THREE from '/three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, describeTime} from '/machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime} from '/machine-view.mjs';
 
 // The machine page. It asks the server to build a declaration, then shows
 // what the engine measures, frame by frame. It never moves a body itself.
@@ -248,6 +248,7 @@ function renderStations() {
   const current = live.findIndex((s, i) => !s.done && machine.stations[i] && machine.stations[i].done_when);
   machine.stations.forEach((s, i) => {
     const li = document.createElement('li');
+    li.dataset.index = String(i); li.title = 'Look at this station';
     const state = live[i];
     if (state && state.done) li.className = 'done'; else if (i === current && playing) li.className = 'current';
     const head = document.createElement('div'); head.className = 'head';
@@ -456,6 +457,15 @@ $('start').addEventListener('click', () => setPlaying(!playing).catch(e => { $('
 $('reset').addEventListener('click', () => build(spec).catch(() => {}));
 $('speed').addEventListener('change', () => { if (session) api({op: 'play', session, running: playing, speed: Number($('speed').value)}).catch(() => {}); });
 $('follow').addEventListener('click', () => { follow = !follow; $('follow').setAttribute('aria-pressed', String(follow)); if (!follow) goal.copy(target); });
+// Press a station to look at it. The list is drawn again with every frame, so
+// the press is taken on the list itself, as it starts, not as a click.
+$('stations').addEventListener('pointerdown', e => {
+  const li = e.target.closest('li[data-index]');
+  const at = li && machine ? stationPoint(machine.stations[Number(li.dataset.index)], world.bodies) : null;
+  if (!at) return;
+  follow = false; $('follow').setAttribute('aria-pressed', 'false');
+  goal.set(at[0], Math.max(.25, at[1]), at[2]); distance = 2.6;
+});
 $('build-json').addEventListener('click', () => {
   let next;
   try { next = JSON.parse($('spec').value); } catch (e) { $('clock').textContent = 'That is not valid JSON: ' + e.message; return; }

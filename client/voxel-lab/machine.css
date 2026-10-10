@@ -34,7 +34,7 @@ h1{font-size:22px;margin:0 0 6px}h2{font-size:15px;margin:18px 0 8px;color:#cfe2
 #chat-log .you{background:#20394a}#chat-log .model{background:#1d2f27;border-left:3px solid #6fc39a}
 #chat-log .refused{background:#3a2621;border-left:3px solid #f2a07a}
 #stations{padding-left:0;list-style:none;margin:0;display:grid;gap:6px}
-#stations li{border:1px solid #344c5b;border-radius:8px;padding:8px 10px;background:#172c37}
+#stations li{border:1px solid #344c5b;border-radius:8px;padding:8px 10px;background:#172c37;cursor:pointer}
 #stations li.done{border-color:#4f9874}#stations li.current{border-color:#c9a35a}
 #stations .head{display:flex;justify-content:space-between;gap:8px;font-weight:600}
 #stations .shows{font-size:13px;color:#d7e3ea;margin:3px 0}
