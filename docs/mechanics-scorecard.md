@@ -1106,3 +1106,10 @@ controls on Windows/WSL Linux, including reactions, work and P/L. Primitive
 two-second calculation is locally faster than wall time; this does not qualify
 Render speed, strong fracture or full-world realtime. General contact, detailed
 ball deformation, awake-island performance and remaining families stay open.
+
+**Contact precision, October 9 (implemented shared CPU/CUDA repair; strong fracture/realtime OPEN):**
+[Stable origin/displacement contact and independent controls](contact-precision-checkpoint.md)
+retain sub-ULP compression through actual geometry and restore matched supported
+roots without relaxing physical gates. Glass/oak/iron/ice numerical contact,
+restart and independent rigid-drop controls remain comparative. Strong impacts,
+detailed ball response and the other representation families remain unfinished.

@@ -17,8 +17,48 @@ BANJO_DG_HD inline FrameVector dgRead3(const double *p){return {p[0],p[1],p[2]};
 BANJO_DG_HD inline FrameQuaternion dgRead4(const double *p){return {p[0],p[1],p[2],p[3]};}
 BANJO_DG_HD inline void dgWrite3(double *p,FrameVector v){p[0]=v.x;p[1]=v.y;p[2]=v.z;}
 BANJO_DG_HD inline void dgWrite4(double *p,FrameQuaternion q){p[0]=q.w;p[1]=q.x;p[2]=q.y;p[3]=q.z;}
-struct DGPose { FrameVector p;FrameQuaternion q; };
-BANJO_DG_HD inline DGPose dgPose(const double *b){return {dgRead3(b+7),dgRead4(b+10)};}
+// Preserve the low part of the existing origin/displacement representation.
+// Collapsing it to a world-space double before subtracting a touching surface
+// quantizes the compression spring and can prevent Newton from finding a root.
+struct DGScalar { double hi{},lo{}; };
+BANJO_DG_HD inline DGScalar dgSum(double a,double b){
+    const double s=a+b,v=s-a;return {s,(a-(s-v))+(b-v)};
+}
+BANJO_DG_HD inline DGScalar dgAccAdd(DGScalar a,DGScalar b){
+    const auto s=dgSum(a.hi,b.hi);return dgSum(s.hi,s.lo+a.lo+b.lo);
+}
+BANJO_DG_HD inline DGScalar dgAccSub(DGScalar a,DGScalar b){return dgAccAdd(a,{-b.hi,-b.lo});}
+BANJO_DG_HD inline DGScalar dgProduct(double a,double b){
+    const double p=a*b;
+    if(a==0||b==0||a==1||a==-1||b==1||b==-1)return {p,0};
+    const double split=134217729.,ca=split*a,cb=split*b;
+    const double ah=ca-(ca-a),al=a-ah,bh=cb-(cb-b),bl=b-bh;
+    return {p,((ah*bh-p)+ah*bl+al*bh)+al*bl};
+}
+BANJO_DG_HD inline DGScalar dgAccScale(DGScalar a,double b){return dgAccAdd(dgProduct(a.hi,b),{a.lo*b,0});}
+BANJO_DG_HD inline double dgValue(DGScalar a){return a.hi+a.lo;}
+struct DGPosition { DGScalar x,y,z; };
+struct DGPose { FrameVector p;FrameQuaternion q;FrameVector low{}; };
+BANJO_DG_HD inline DGPosition dgPosition(DGPose a){return {{a.p.x,a.low.x},{a.p.y,a.low.y},{a.p.z,a.low.z}};}
+BANJO_DG_HD inline DGPosition dgRelative(DGPose a,DGPose b){
+    const auto x=dgPosition(a),y=dgPosition(b);return {dgAccSub(x.x,y.x),dgAccSub(x.y,y.y),dgAccSub(x.z,y.z)};
+}
+BANJO_DG_HD inline FrameVector dgPositionValue(DGPosition a){return {dgValue(a.x),dgValue(a.y),dgValue(a.z)};}
+BANJO_DG_HD inline DGScalar dgDotAcc(DGPosition a,FrameVector n){return dgAccAdd(dgAccAdd(dgAccScale(a.x,n.x),dgAccScale(a.y,n.y)),dgAccScale(a.z,n.z));}
+BANJO_DG_HD inline DGScalar dgLengthAcc(DGPosition a){
+    const auto square=[](DGScalar x){return dgAccAdd(dgProduct(x.hi,x.hi),{2*x.hi*x.lo+x.lo*x.lo,0});};
+    const auto s=dgAccAdd(dgAccAdd(square(a.x),square(a.y)),square(a.z));const double r=sqrt(s.hi);
+    if(r==0)return {r,0};
+    return dgSum(r,dgValue(dgAccSub(s,dgProduct(r,r)))/(2*r));
+}
+BANJO_DG_HD inline DGPose dgPositionPose(DGPosition a,FrameQuaternion q){return {{a.x.hi,a.y.hi,a.z.hi},q,{a.x.lo,a.y.lo,a.z.lo}};}
+BANJO_DG_HD inline DGPose dgAddPosition(DGPose a,FrameVector b){
+    const auto p=dgPosition(a);return dgPositionPose({dgAccAdd(p.x,{b.x,0}),dgAccAdd(p.y,{b.y,0}),dgAccAdd(p.z,{b.z,0})},a.q);
+}
+BANJO_DG_HD inline DGPose dgPose(const double *b){
+    const auto origin=dgRead3(b+20),u=dgRead3(b+23);
+    return dgPositionPose({dgSum(origin.x,u.x),dgSum(origin.y,u.y),dgSum(origin.z,u.z)},dgRead4(b+10));
+}
 BANJO_DG_HD inline FrameVector dgRotationChange(FrameQuaternion q,FrameQuaternion reference,FrameVector anchor){
     const auto relative=frameMultiply(q,{reference.w,-reference.x,-reference.y,-reference.z});
     const auto original=frameRotate(reference,anchor),t=frameScale(frameCross({relative.x,relative.y,relative.z},original),2);
@@ -62,39 +102,42 @@ BANJO_DG_HD inline DGContact dgContact(const double *a,const double *b,DGPose pa
     DGContact out;const int sa=static_cast<int>(a[0]),sb=static_cast<int>(b[0]);
     if(sa==0){out=dgContact(b,a,pb,pa);auto old=out.gradient;out.gradient={old.force_b,old.torque_b,old.force_a,old.torque_a};return out;}
     if(sb==0){
-        const auto n=frameRotate(pb.q,{0,1,0});FrameVector point=pa.p;double radius=0;
-        if(sa==2)radius=a[4];
-        else for(unsigned j=0;j<3;++j){const auto axis=frameRotate(pa.q,dgAxis(j));const double amount=a[4+j]*dgSign(frameDot(axis,n));point=dgSub(point,frameScale(axis,amount));radius+=a[4+j]*fabs(frameDot(axis,n));}
-        out.gap=frameDot(dgSub(pa.p,pb.p),n)-radius;
+        const auto n=frameRotate(pb.q,{0,1,0});FrameVector point=pa.p;
+        if(sa!=2)for(unsigned j=0;j<3;++j){const auto axis=frameRotate(pa.q,dgAxis(j));const double amount=a[4+j]*dgSign(frameDot(axis,n));point=dgSub(point,frameScale(axis,amount));}
+        DGScalar extent{sa==2?a[4]:0,0};
+        if(sa!=2)for(unsigned j=0;j<3;++j)extent=dgAccAdd(extent,dgProduct(a[4+j],fabs(frameDot(frameRotate(pa.q,dgAxis(j)),n))));
+        out.gap=dgValue(dgAccSub(dgDotAcc(dgRelative(pa,pb),n),extent));
         const auto negative=frameScale(n,-1);out.gradient={n,frameCross(dgSub(point,pa.p),n),negative,frameCross(dgSub(point,pb.p),negative)};return out;
     }
-    if(sa==2&&sb==2){const auto d=dgSub(pa.p,pb.p);const double r=dgLength(d);const auto n=frameScale(d,1/r);out.gap=r-a[4]-b[4];out.gradient={n,{},frameScale(n,-1),{}};return out;}
+    if(sa==2&&sb==2){const auto relative=dgRelative(pa,pb);const auto d=dgPositionValue(relative);const auto r=dgLengthAcc(relative);const auto n=frameScale(d,1/dgValue(r));out.gap=dgValue(dgAccSub(dgAccSub(r,{a[4],0}),{b[4],0}));out.gradient={n,{},frameScale(n,-1),{}};return out;}
     if(sa==1&&sb==2){out=dgContact(b,a,pb,pa);auto old=out.gradient;out.gradient={old.force_b,old.torque_b,old.force_a,old.torque_a};return out;}
     if(sa==2){
-        const auto d=dgSub(pa.p,pb.p);FrameVector lever{},difference{},normal{};double inside=1e300;unsigned face=0;double values[3];FrameVector axes[3];bool exterior=false;
-        for(unsigned j=0;j<3;++j){axes[j]=frameRotate(pb.q,dgAxis(j));const double value=frameDot(d,axes[j]);values[j]=value;
+        const auto relative=dgRelative(pa,pb);const auto d=dgPositionValue(relative);FrameVector lever{},difference{},normal{};double inside=1e300;unsigned face=0;double values[3];FrameVector axes[3];bool exterior=false;
+        for(unsigned j=0;j<3;++j){axes[j]=frameRotate(pb.q,dgAxis(j));const auto coordinate=dgDotAcc(relative,axes[j]);const double value=dgValue(coordinate);values[j]=value;
             const double clamped=value<-b[4+j]?-b[4+j]:value>b[4+j]?b[4+j]:value;
             lever=frameAdd(lever,frameScale(axes[j],clamped));
             // Form the closest-point residual in box coordinates. Adding a
             // tiny gap to a world center and then subtracting can erase it,
             // leaving an exterior point with zero distance and a NaN normal.
-            difference=frameAdd(difference,frameScale(axes[j],value-clamped));
-            if(fabs(value)>b[4+j])exterior=true;const double depth=b[4+j]-fabs(value);if(depth<inside){inside=depth;face=j;}}
+            const double depth=dgValue(dgAccSub({b[4+j],0},dgAccScale(coordinate,value<0?-1:1)));
+            const double delta=depth<0?dgValue(dgAccSub(coordinate,{clamped,0})):0;
+            difference=frameAdd(difference,frameScale(axes[j],delta));
+            if(depth<0)exterior=true;if(depth<inside){inside=depth;face=j;}}
         double distance=dgLength(difference);
         if(exterior)normal=frameScale(difference,1/distance);
         else {normal=frameScale(axes[face],values[face]<0?-1:1);distance=-inside;lever=frameAdd(d,frameScale(normal,inside));}
         out.gap=distance-a[4];const auto negative=frameScale(normal,-1);out.gradient={normal,{},negative,frameCross(lever,negative)};return out;
     }
     FrameVector axes_a[3],axes_b[3];for(unsigned j=0;j<3;++j){axes_a[j]=frameRotate(pa.q,dgAxis(j));axes_b[j]=frameRotate(pb.q,dgAxis(j));}
-    const auto d=dgSub(pb.p,pa.p);out.gap=-1e300;
+    const auto relative=dgRelative(pb,pa);const auto d=dgPositionValue(relative);out.gap=-1e300;
     for(unsigned index=0;index<15;++index){
         FrameVector n;double norm=1;unsigned ia=0,ib=0;
         if(index<3)n=axes_a[index];else if(index<6)n=axes_b[index-3];
         else {ia=(index-6)/3;ib=(index-6)%3;n=frameCross(axes_a[ia],axes_b[ib]);norm=dgLength(n);if(norm<1e-10)continue;n=frameScale(n,1/norm);}
         const double sign=frameDot(d,n)<0?-1:1;n=frameScale(n,sign);
-        FrameVector support_a{},support_b{};double radius=0;
-        for(unsigned j=0;j<3;++j){support_a=frameAdd(support_a,frameScale(axes_a[j],a[4+j]*dgSign(frameDot(axes_a[j],n))));support_b=frameAdd(support_b,frameScale(axes_b[j],b[4+j]*dgSign(frameDot(axes_b[j],n))));radius+=a[4+j]*fabs(frameDot(axes_a[j],n))+b[4+j]*fabs(frameDot(axes_b[j],n));}
-        const double gap=frameDot(d,n)-radius;if(gap<=out.gap)continue;
+        FrameVector support_a{},support_b{};DGScalar radius{};
+        for(unsigned j=0;j<3;++j){support_a=frameAdd(support_a,frameScale(axes_a[j],a[4+j]*dgSign(frameDot(axes_a[j],n))));support_b=frameAdd(support_b,frameScale(axes_b[j],b[4+j]*dgSign(frameDot(axes_b[j],n))));radius=dgAccAdd(radius,dgAccAdd(dgProduct(a[4+j],fabs(frameDot(axes_a[j],n))),dgProduct(b[4+j],fabs(frameDot(axes_b[j],n)))));}
+        const double gap=dgValue(dgAccSub(dgDotAcc(relative,n),radius));if(gap<=out.gap)continue;
         FrameVector ga=frameScale(frameCross(support_a,n),-1),gb=frameScale(frameCross(support_b,n),-1);
         const auto t=dgSub(d,frameAdd(support_a,support_b));
         if(index<3)ga=frameAdd(ga,frameCross(n,t));
@@ -119,7 +162,7 @@ BANJO_DG_HD inline DGContact dgSurfaceContact(const double *a,const double *b,DG
     components[v]=((site/2)%2?1:-1)*a[4+v]/sqrt(3.);
     local=dgRead3(components);const auto lever=frameRotate(pa.q,local);
     double point[30]{};point[0]=2; // zero-radius sphere is the sample point
-    auto out=dgContact(point,b,{frameAdd(pa.p,lever),pa.q},pb);
+    auto out=dgContact(point,b,dgAddPosition(pa,lever),pb);
     out.gradient.torque_a=frameCross(lever,out.gradient.force_a);return out;
 }
 BANJO_DG_HD inline void dgAdd(double *forces,unsigned a,unsigned b,FiniteFrameWrenches w){
@@ -131,7 +174,7 @@ BANJO_DG_HD inline void dgAdd(double *forces,unsigned a,unsigned b,FiniteFrameWr
 // ledger: U0,U1,D increment,return excess,contact U0/U1,correction norm^2,
 // contacts,maximum compression,material work,work mismatch,reserved.
 struct DGTrialBody { DGPose initial,ending,midpoint;FrameVector displacement,turn; };
-static_assert(sizeof(DGTrialBody)==27*sizeof(double),"CUDA trial-body layout");
+static_assert(sizeof(DGTrialBody)==36*sizeof(double),"CUDA trial-body layout");
 static_assert(sizeof(FiniteFrameWrenches)==12*sizeof(double),"CUDA wrench layout");
 BANJO_DG_HD inline DGTrialBody dgPrepareTrial(const double *b,const double *v,double h){
     DGTrialBody result;auto &initial=result.initial,&ending=result.ending,&midpoint=result.midpoint;
@@ -139,9 +182,11 @@ BANJO_DG_HD inline DGTrialBody dgPrepareTrial(const double *b,const double *v,do
     initial=dgPose(b);
         const auto vm=frameScale(frameAdd(dgRead3(b+14),dgRead3(v)),.5),wm=frameScale(frameAdd(dgRead3(b+17),dgRead3(v+3)),.5);
         displacement=b[1]>0?frameScale(vm,h):FrameVector{};turn=b[1]>0?frameScale(wm,h):FrameVector{};
-        ending.p=frameAdd(dgRead3(b+20),frameAdd(dgRead3(b+23),displacement));
+        const auto origin=dgRead3(b+20),u=dgRead3(b+23);
+        ending=dgPositionPose({dgAccAdd({origin.x,0},dgSum(u.x,displacement.x)),dgAccAdd({origin.y,0},dgSum(u.y,displacement.y)),dgAccAdd({origin.z,0},dgSum(u.z,displacement.z))},initial.q);
         const auto theta=turn;ending.q=dgUnit(frameMultiply(dgUnit({1,.5*theta.x,.5*theta.y,.5*theta.z}),initial.q));
-        midpoint={frameScale(frameAdd(initial.p,ending.p),.5),dgUnit({initial.q.w+ending.q.w,initial.q.x+ending.q.x,initial.q.y+ending.q.y,initial.q.z+ending.q.z})};
+        const auto pi=dgPosition(initial),pe=dgPosition(ending);
+        midpoint=dgPositionPose({dgAccScale(dgAccAdd(pi.x,pe.x),.5),dgAccScale(dgAccAdd(pi.y,pe.y),.5),dgAccScale(dgAccAdd(pi.z,pe.z),.5)},dgUnit({initial.q.w+ending.q.w,initial.q.x+ending.q.x,initial.q.y+ending.q.y,initial.q.z+ending.q.z}));
     return result;
 }
 // Independent contributions use exactly the reference constitutive and

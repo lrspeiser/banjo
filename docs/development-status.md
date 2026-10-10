@@ -2040,3 +2040,10 @@ enable public testing on Render without a CUDA fallback. Four-material rigid
 drop/refinement and low-energy sheet controls pass on Windows and WSL Linux;
 strong impacts, internal ball fracture and full-world realtime stay open.
 The publishing commit must be checked live on Render before claiming access.
+
+**Contact precision, October 9 (implemented shared CPU/CUDA repair; strong fracture/realtime OPEN):**
+[Stable origin/displacement contact and independent controls](contact-precision-checkpoint.md)
+retain sub-ULP compression through actual geometry and restore matched supported
+roots without relaxing physical gates. Glass/oak/iron/ice numerical contact,
+restart and independent rigid-drop controls remain comparative. Strong impacts,
+detailed ball response and the other representation families remain unfinished.

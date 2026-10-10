@@ -1,0 +1,17 @@
+{
+  "schema": "banjo.contact-precision-checkpoint.v1",
+  "parent_main": "8f0bfb766f9c3120dad0c89a298d51939a2484bb",
+  "cpu_source": "75333eee056757393d87c651f96f4d96d03a9e68037c44ad983b0824eb29d13c",
+  "scoped_windows_ctests": 16,
+  "scoped_windows_all_passed": true,
+  "scoped_windows_elapsed_s": 459.82,
+  "linux_cpu_controls_passed": true,
+  "source_registration": {
+    "on_disk": 346,
+    "registered": 346
+  },
+  "full_repository_ci_claimed": false,
+  "full_strong_fracture_qualified": false,
+  "realtime_world_qualified": false,
+  "public_deployment_verified_at_publication": false
+}

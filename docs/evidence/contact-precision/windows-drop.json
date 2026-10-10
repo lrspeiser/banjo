@@ -1,0 +1,982 @@
+{
+  "source_sha256": "f5d242fe2c3d35db8b0fab103770d758876da0657be7e507748916e3d0ed8561",
+  "scope": "10 m primitive / fixed plane, frictionless linear compliance; no fracture admission",
+  "runs": [
+    {
+      "material": "glass",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "glass",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.25",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999998,
+      "wall_s": 0.15358470001956448,
+      "contacts": 13,
+      "coordinate_rebases": 14,
+      "max_position_error_m": 2.234856953583845e-06,
+      "max_velocity_error_m_s": 0.13129665530096446,
+      "max_P_residual_n_s": 7.639816744734398e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.830812591861815,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": 1.5816912224408952e-09,
+        "momentum_n_s": [
+          0.0,
+          0.839458422411306,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 1.0207005241014144e-09,
+        "ground_impulse_n_s": [
+          0.0,
+          2.801458422554874,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "glass",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "glass",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.0625",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999998,
+      "wall_s": 0.1811714000068605,
+      "contacts": 50,
+      "coordinate_rebases": 51,
+      "max_position_error_m": 1.4001908552832793e-07,
+      "max_velocity_error_m_s": 0.008313551226300397,
+      "max_P_residual_n_s": 3.4359476600151645e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.830812590178887,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": -1.0123635263425967e-10,
+        "momentum_n_s": [
+          0.0,
+          0.8394582755774359,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 1.745394939689504e-10,
+        "ground_impulse_n_s": [
+          0.0,
+          2.801458275566855,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "glass",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "glass",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.25",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999971,
+      "wall_s": 0.559846100048162,
+      "contacts": 13,
+      "coordinate_rebases": 14,
+      "max_position_error_m": 2.2113679215327885e-06,
+      "max_velocity_error_m_s": 0.13104336031564756,
+      "max_P_residual_n_s": 1.774948056362311e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.830812590207039,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": -7.30846494434445e-11,
+        "momentum_n_s": [
+          0.0,
+          0.8394584206480622,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 1.957420892040318e-10,
+        "ground_impulse_n_s": [
+          0.0,
+          2.801458420607326,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "glass",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "glass",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.0625",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999971,
+      "wall_s": 0.5924126000027172,
+      "contacts": 50,
+      "coordinate_rebases": 51,
+      "max_position_error_m": 1.40026667385609e-07,
+      "max_velocity_error_m_s": 0.008305493327911861,
+      "max_P_residual_n_s": 2.99496291129771e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.83081259056275,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": 2.8262725493277685e-10,
+        "momentum_n_s": [
+          0.0,
+          0.8394582756053718,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 1.525393145129783e-10,
+        "ground_impulse_n_s": [
+          0.0,
+          2.8014582756477227,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "oak",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "oak",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.25",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999998,
+      "wall_s": 0.1640919999917969,
+      "contacts": 13,
+      "coordinate_rebases": 14,
+      "max_position_error_m": 4.7592518638663714e-06,
+      "max_velocity_error_m_s": 0.13052536522214364,
+      "max_P_residual_n_s": 1.9285022686477062e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.841813158838935,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": 2.134186161129037e-10,
+        "momentum_n_s": [
+          0.0,
+          0.839493214338265,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 2.6906210592869684e-10,
+        "ground_impulse_n_s": [
+          0.0,
+          2.8014932143217353,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "oak",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "oak",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.0625",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999998,
+      "wall_s": 0.17967480001971126,
+      "contacts": 50,
+      "coordinate_rebases": 51,
+      "max_position_error_m": 3.0011840778645173e-07,
+      "max_velocity_error_m_s": 0.008271482286247966,
+      "max_P_residual_n_s": 3.5978940882994156e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.841813158627001,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": 1.4850343177386094e-12,
+        "momentum_n_s": [
+          0.0,
+          0.8394929020239268,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 2.141566923796745e-10,
+        "ground_impulse_n_s": [
+          0.0,
+          2.8014929020409993,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "oak",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "oak",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.25",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999971,
+      "wall_s": 0.5781486000050791,
+      "contacts": 12,
+      "coordinate_rebases": 13,
+      "max_position_error_m": 4.860905006877304e-06,
+      "max_velocity_error_m_s": 0.1328678090944413,
+      "max_P_residual_n_s": 1.22849780150791e-10,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.84181315897478,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": 3.4926372904919845e-10,
+        "momentum_n_s": [
+          0.0,
+          0.839493221466968,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 1.7041349997803934e-09,
+        "ground_impulse_n_s": [
+          0.0,
+          2.8014932213333736,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "oak",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "oak",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.0625",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999971,
+      "wall_s": 0.5951902000233531,
+      "contacts": 51,
+      "coordinate_rebases": 52,
+      "max_position_error_m": 2.9960509817932294e-07,
+      "max_velocity_error_m_s": 0.008275271311009469,
+      "max_P_residual_n_s": 9.367910981109924e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.841813159577429,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": 9.519123267409668e-10,
+        "momentum_n_s": [
+          0.0,
+          0.8394929020558456,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 1.3121226145537679e-09,
+        "ground_impulse_n_s": [
+          0.0,
+          2.8014929020311596,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "iron",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.25",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999998,
+      "wall_s": 0.14994899998418987,
+      "contacts": 13,
+      "coordinate_rebases": 14,
+      "max_position_error_m": 1.5577385705985417e-06,
+      "max_velocity_error_m_s": 0.1309291741042582,
+      "max_P_residual_n_s": 9.93817767438095e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.824200856196184,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": -9.992824345772533e-10,
+        "momentum_n_s": [
+          0.0,
+          0.8394495329651686,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 1.3624571471027025e-09,
+        "ground_impulse_n_s": [
+          0.0,
+          2.8014495330320766,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "iron",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.0625",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999998,
+      "wall_s": 0.18238000001292676,
+      "contacts": 50,
+      "coordinate_rebases": 51,
+      "max_position_error_m": 9.882716556821869e-08,
+      "max_velocity_error_m_s": 0.008302418775275378,
+      "max_P_residual_n_s": 3.096129853668241e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.824200857516107,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": 3.206412912959422e-10,
+        "momentum_n_s": [
+          0.0,
+          0.8394494308833954,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 1.275797245625654e-10,
+        "ground_impulse_n_s": [
+          0.0,
+          2.8014494309585385,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "iron",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.25",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999971,
+      "wall_s": 0.5639125000452623,
+      "contacts": 13,
+      "coordinate_rebases": 14,
+      "max_position_error_m": 1.5516265130376697e-06,
+      "max_velocity_error_m_s": 0.13035320434080422,
+      "max_P_residual_n_s": 9.895688051449765e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.824200857626884,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": 4.3141845651462063e-10,
+        "momentum_n_s": [
+          0.0,
+          0.8394495326392246,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 1.3487370942311117e-09,
+        "ground_impulse_n_s": [
+          0.0,
+          2.801449532768396,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "iron",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.0625",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999971,
+      "wall_s": 0.5813028999837115,
+      "contacts": 50,
+      "coordinate_rebases": 51,
+      "max_position_error_m": 9.87004180310205e-08,
+      "max_velocity_error_m_s": 0.008285342338081314,
+      "max_P_residual_n_s": 2.914613940257151e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.824200856996008,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": -1.9945822771205712e-10,
+        "momentum_n_s": [
+          0.0,
+          0.8394494308373881,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 1.4448531260313757e-10,
+        "ground_impulse_n_s": [
+          0.0,
+          2.8014494309031654,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "ice",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "ice",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.25",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999998,
+      "wall_s": 0.15817079995758832,
+      "contacts": 13,
+      "coordinate_rebases": 14,
+      "max_position_error_m": 5.429781804948584e-06,
+      "max_velocity_error_m_s": 0.13028402493535296,
+      "max_P_residual_n_s": 1.2630525609218468e-10,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.839074776342486,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": 1.576621500021247e-09,
+        "momentum_n_s": [
+          0.0,
+          0.8395027625487157,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 1.7124166529214335e-09,
+        "ground_impulse_n_s": [
+          0.0,
+          2.8015027624427336,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "ice",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "ice",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.004166666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.0625",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999998,
+      "wall_s": 0.176095400005579,
+      "contacts": 50,
+      "coordinate_rebases": 51,
+      "max_position_error_m": 3.4482545144592956e-07,
+      "max_velocity_error_m_s": 0.008280134338251699,
+      "max_P_residual_n_s": 6.850183313524283e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.83907477524263,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": 4.767652939108302e-10,
+        "momentum_n_s": [
+          0.0,
+          0.8395024063406655,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 5.4867932419711e-10,
+        "ground_impulse_n_s": [
+          0.0,
+          2.8015024066510126,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "ice",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "ice",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.25",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999971,
+      "wall_s": 0.5564134999876842,
+      "contacts": 12,
+      "coordinate_rebases": 13,
+      "max_position_error_m": 5.526759539599483e-06,
+      "max_velocity_error_m_s": 0.1319150308810073,
+      "max_P_residual_n_s": 4.031517992146805e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.839074773412543,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": -1.3533210108107596e-09,
+        "momentum_n_s": [
+          0.0,
+          0.8395027691310549,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 4.5640380363920485e-10,
+        "ground_impulse_n_s": [
+          0.0,
+          2.801502769093993,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    },
+    {
+      "material": "ice",
+      "conditions": {
+        "material": "glass",
+        "ball_material": "ice",
+        "ball_mass_kg": 0.1,
+        "height_m": 10,
+        "dt_s": 0.0010416666666666667,
+        "experiment": "freefall",
+        "device": "cpu",
+        "pipeline": "serial-reference",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "phase-0.0625",
+        "representation_policy": "partitioned-flight"
+      },
+      "physical_s": 1.9999999999999971,
+      "wall_s": 0.5850959999952465,
+      "contacts": 51,
+      "coordinate_rebases": 52,
+      "max_position_error_m": 3.4354892306557124e-07,
+      "max_velocity_error_m_s": 0.008267320927264343,
+      "max_P_residual_n_s": 5.3131953241064456e-11,
+      "max_L_residual_n_m_s": 0.0,
+      "diagnostics": {
+        "dynamic_mass_kg": 0.1,
+        "mechanical_j": 9.839074774365827,
+        "material_stored_j": 0.0,
+        "contact_stored_j": 0.0,
+        "global_energy_residual_j": -4.000373365897758e-10,
+        "momentum_n_s": [
+          0.0,
+          0.8395024061886869,
+          0.0
+        ],
+        "angular_momentum_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "fracture_work_j": 0.0,
+        "plastic_work_j": 0.0,
+        "numerical_return_excess_j": 0.0,
+        "separated_sites": 0,
+        "yielded_faces": 0,
+        "interfaces": 0,
+        "maximum_energy_residual_j": 4.2948933298703196e-10,
+        "ground_impulse_n_s": [
+          0.0,
+          2.801502406303352,
+          0.0
+        ],
+        "ground_torque_impulse_n_m_s": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "resume_exact": true
+    }
+  ]
+}

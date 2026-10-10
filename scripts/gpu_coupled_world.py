@@ -238,7 +238,7 @@ class CoupledEvaluator(CoupledNewton):
         if batch not in self.storage:
             self.storage[batch]=dict(poses=cp.zeros((batch,self.n,7),dtype=cp.float64),residual=cp.zeros((batch,self.n,6),dtype=cp.float64),
                 history=cp.zeros((batch,self.m,32),dtype=cp.float64),forces=cp.zeros((batch,self.n,6),dtype=cp.float64),ledger=cp.zeros((batch,12),dtype=cp.float64),faults=cp.zeros(batch,dtype=cp.int32))
-            if self.pipeline=='parallel':self.storage[batch].update(prepared=cp.empty((batch,self.n,27),dtype=cp.float64),
+            if self.pipeline=='parallel':self.storage[batch].update(prepared=cp.empty((batch,self.n,36),dtype=cp.float64),
                 contributions=cp.empty((batch,self.rows,12),dtype=cp.float64),work=cp.empty((batch,self.rows,12),dtype=cp.float64),
                 active=cp.empty((batch,self.rows),dtype=cp.uint8),pair_active=cp.empty((batch,self.pair_count),dtype=cp.uint8),
                 initial_pair_active=cp.empty(self.pair_count,dtype=cp.uint8),

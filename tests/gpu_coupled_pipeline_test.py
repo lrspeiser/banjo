@@ -34,7 +34,11 @@ def rounded_surface_boundary():
     '''
     module=cp.RawModule(code=code,options=('--std=c++17','--fmad=false'))
     out=cp.empty(13,dtype=cp.float64);module.get_function('boundary')((1,),(1,),(out,))
-    result=cp.asnumpy(out);assert np.isfinite(result).all() and result[0]>0
+    result=cp.asnumpy(out);assert np.isfinite(result).all()
+    # Independent 80-digit arithmetic on the implemented rotated lever/axes
+    # places the unrounded sample inside. The earlier positive distance was a
+    # consequence of rounding the surface point into its world center first.
+    assert abs(result[0]-(-4.760854624018894e-19))<1e-31
     assert abs(np.linalg.norm(result[1:4])-1)<1e-14
     assert np.linalg.norm(result[1:4]+result[7:10])<1e-14
     return dict(gap_m=float(result[0]),finite_normal=True,unit_normal=True,force_reaction=True)

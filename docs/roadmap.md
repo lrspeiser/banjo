@@ -1381,3 +1381,10 @@ Every checkpoint should state: source commit/branch; implemented change; reprodu
 provides the web test path. Verify its publishing revision and browser flow live.
 Next physics acceptance remains complete matched strong sheet/ball impacts and
 refinement, then efficient awake material solving and the unfinished families.
+
+**Contact precision, October 9 (implemented shared CPU/CUDA repair; strong fracture/realtime OPEN):**
+[Stable origin/displacement contact and independent controls](contact-precision-checkpoint.md)
+retain sub-ULP compression through actual geometry and restore matched supported
+roots without relaxing physical gates. Glass/oak/iron/ice numerical contact,
+restart and independent rigid-drop controls remain comparative. Strong impacts,
+detailed ball response and the other representation families remain unfinished.

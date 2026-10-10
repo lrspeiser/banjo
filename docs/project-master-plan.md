@@ -865,3 +865,10 @@ Terrain-world carrying now uses a shared native mass budget for held objects, st
 connects the lab to the existing public service with an explicit native CPU
 reference. Bounded drop/low-energy controls and saved scenes are testable;
 strong sheet fracture and the complete eight-family platform remain open.
+
+**Contact precision, October 9 (implemented shared CPU/CUDA repair; strong fracture/realtime OPEN):**
+[Stable origin/displacement contact and independent controls](contact-precision-checkpoint.md)
+retain sub-ULP compression through actual geometry and restore matched supported
+roots without relaxing physical gates. Glass/oak/iron/ice numerical contact,
+restart and independent rigid-drop controls remain comparative. Strong impacts,
+detailed ball response and the other representation families remain unfinished.

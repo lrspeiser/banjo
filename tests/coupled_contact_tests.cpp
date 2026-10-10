@@ -42,8 +42,35 @@ int main(){try{
                       {1,3.3444898121104495e-15,-1.612270849281483e-15,1.935251965707791e-15}};
         const auto result=dgSurfaceContact(sample.data(),box.data(),a,b,12);
         require(std::isfinite(result.gradient.force_a.y),"finite exterior sample normal at a rounded world boundary");
-        require(result.gap>0,"local exterior distance is retained");
+        // 80-digit Decimal evaluation of the implemented (FP64) rotated lever
+        // and box axes puts the unrounded sample slightly INSIDE the box.
+        // The old positive gap belonged to the prematurely rounded point.
+        require(fabs(result.gap-(-4.760854624018894e-19))<1e-31,"unrounded surface gap agrees with independent high-precision geometry");
         require(fabs(dgLength(result.gradient.force_a)-1)<1e-14,"exterior sample has a unit normal");
+    }
+    // A displacement smaller than the ULP of the published center must still
+    // change physical compression. Test plane/box and point/box paths, positive
+    // and negative increments, common translations and density-derived laws.
+    for(double shift:{0.,1.,100.})for(double movement:{-1e-18,1e-18}){
+        std::array<double,30> moving{},fixed{};
+        moving[0]=1;moving[1]=.0025;moving[2]=moving[1]*.01*.01/6;moving[3]=70e9;
+        moving[4]=moving[5]=moving[6]=.005;
+        moving[8]=moving[21]=shift+.005;moving[10]=moving[26]=1;
+        fixed[0]=0;fixed[3]=211e9;fixed[8]=fixed[21]=shift;fixed[10]=fixed[26]=1;
+        double v[6]{};v[1]=2*movement;
+        const auto p=dgPrepareTrial(moving.data(),v,1),q=dgPrepareTrial(fixed.data(),v,1);
+        const auto before=dgContact(moving.data(),fixed.data(),p.initial,q.initial);
+        const auto after=dgContact(moving.data(),fixed.data(),p.ending,q.ending);
+        require(fabs((after.gap-before.gap)-movement)<1e-30,"sub-ULP plane compression follows authoritative displacement");
+        // Direct surface sample toward an adjacent touching cube, without
+        // relying on a quantized world-space closest point.
+        fixed[0]=1;fixed[4]=fixed[5]=fixed[6]=.005;
+        fixed[8]=fixed[21]=shift;
+        moving[8]=moving[21]=shift+.01;
+        const auto a=dgPrepareTrial(moving.data(),v,1),b=dgPrepareTrial(fixed.data(),v,1);
+        const auto c0=dgSurfaceContact(moving.data(),fixed.data(),a.initial,b.initial,8);
+        const auto c1=dgSurfaceContact(moving.data(),fixed.data(),a.ending,b.ending,8);
+        require(fabs((c1.gap-c0.gap)-movement)<1e-30,"sub-ULP sampled cube compression follows authoritative displacement");
     }
     std::mt19937_64 rng(91843);std::uniform_real_distribution<double> random(-1,1);
     for(unsigned i=0;i<300;++i){std::array<double,30>a{},b{};a[0]=2;b[0]=i%3;a[4]=.008;b[4]=.012;b[5]=.017;b[6]=.023;

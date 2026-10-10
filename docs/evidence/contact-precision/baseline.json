@@ -1,0 +1,159 @@
+{
+  "baseline_revision": "8f0bfb766f9c3120dad0c89a298d51939a2484bb",
+  "current_source": "75333eee056757393d87c651f96f4d96d03a9e68037c44ad983b0824eb29d13c",
+  "baseline_binary_sha256": "513812fe215e659c3d68de06f5694a8b98c21d920ab3dfb7bfc481cf71f2dcb1",
+  "current_binary_sha256": "669093445fce92fcfd8bfb5a877dcf2d32baca57ce2616cb53f2379abb3b1d8f",
+  "initial_root_comparisons": [
+    {
+      "material": "glass",
+      "dt_s": 0.004166666666666667,
+      "baseline": {
+        "accepted_root": false,
+        "error": "Coupled Newton line search did not reduce the equation residual",
+        "equation_residual": 1.3999910824001724e-10,
+        "wall_s": 0.44454810000024736
+      },
+      "current": {
+        "accepted_root": true,
+        "iterations": 3,
+        "equation_residual": 3.793333279670186e-11,
+        "wall_s": 0.20269219996407628
+      }
+    },
+    {
+      "material": "oak",
+      "dt_s": 0.004166666666666667,
+      "baseline": {
+        "accepted_root": true,
+        "iterations": 3,
+        "equation_residual": 3.961633607415228e-11,
+        "wall_s": 0.1079535000026226
+      },
+      "current": {
+        "accepted_root": true,
+        "iterations": 3,
+        "equation_residual": 1.1469811207363944e-11,
+        "wall_s": 0.20894859998952597
+      }
+    },
+    {
+      "material": "iron",
+      "dt_s": 0.004166666666666667,
+      "baseline": {
+        "accepted_root": false,
+        "error": "Coupled Newton line search did not reduce the equation residual",
+        "equation_residual": 1.122568667921003e-10,
+        "wall_s": 0.8621195000014268
+      },
+      "current": {
+        "accepted_root": true,
+        "iterations": 3,
+        "equation_residual": 4.7251328470255166e-11,
+        "wall_s": 0.21159829996759072
+      }
+    },
+    {
+      "material": "ice",
+      "dt_s": 0.004166666666666667,
+      "baseline": {
+        "accepted_root": true,
+        "iterations": 3,
+        "equation_residual": 2.988044414952073e-11,
+        "wall_s": 0.18298049998702481
+      },
+      "current": {
+        "accepted_root": true,
+        "iterations": 3,
+        "equation_residual": 6.4455114985250454e-12,
+        "wall_s": 0.211192199960351
+      }
+    }
+  ],
+  "tiny_contact_oracle": [
+    {
+      "material": "glass",
+      "translation_m": 0.0,
+      "displacement_m": -1e-18,
+      "force_n": 5.256227758007118e-10,
+      "contact_energy_j": 5.256227758007118e-28
+    },
+    {
+      "material": "glass",
+      "translation_m": 1.0,
+      "displacement_m": -1e-18,
+      "force_n": 5.256227758007158e-10,
+      "contact_energy_j": 5.256227758007158e-28
+    },
+    {
+      "material": "glass",
+      "translation_m": 100.0,
+      "displacement_m": -1e-18,
+      "force_n": 5.256227758005215e-10,
+      "contact_energy_j": 5.256227758005215e-28
+    },
+    {
+      "material": "oak",
+      "translation_m": 0.0,
+      "displacement_m": -1e-18,
+      "force_n": 1.1354260089686101e-10,
+      "contact_energy_j": 1.13542600896861e-28
+    },
+    {
+      "material": "oak",
+      "translation_m": 1.0,
+      "displacement_m": -1e-18,
+      "force_n": 1.1354260089686187e-10,
+      "contact_energy_j": 1.1354260089686188e-28
+    },
+    {
+      "material": "oak",
+      "translation_m": 100.0,
+      "displacement_m": -1e-18,
+      "force_n": 1.1354260089681989e-10,
+      "contact_energy_j": 1.1354260089681991e-28
+    },
+    {
+      "material": "iron",
+      "translation_m": 0.0,
+      "displacement_m": -1e-18,
+      "force_n": 1.055e-09,
+      "contact_energy_j": 1.055e-27
+    },
+    {
+      "material": "iron",
+      "translation_m": 1.0,
+      "displacement_m": -1e-18,
+      "force_n": 1.0550000000000082e-09,
+      "contact_energy_j": 1.0550000000000083e-27
+    },
+    {
+      "material": "iron",
+      "translation_m": 100.0,
+      "displacement_m": -1e-18,
+      "force_n": 1.054999999999618e-09,
+      "contact_energy_j": 1.0549999999996182e-27
+    },
+    {
+      "material": "ice",
+      "translation_m": 0.0,
+      "displacement_m": -1e-18,
+      "force_n": 8.631818181818184e-11,
+      "contact_energy_j": 8.631818181818185e-29
+    },
+    {
+      "material": "ice",
+      "translation_m": 1.0,
+      "displacement_m": -1e-18,
+      "force_n": 8.63181818181825e-11,
+      "contact_energy_j": 8.63181818181825e-29
+    },
+    {
+      "material": "ice",
+      "translation_m": 100.0,
+      "displacement_m": -1e-18,
+      "force_n": 8.631818181815059e-11,
+      "contact_energy_j": 8.631818181815059e-29
+    }
+  ],
+  "baseline_oracle_failure": "('glass', 0.0, np.float64(3.9543462631505047e-10), 5.256227758007118e-10)"
+}

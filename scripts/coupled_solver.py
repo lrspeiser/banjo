@@ -20,7 +20,7 @@ class CoupledNewton:
             details=dict(dt_s=h,gravity_m_s2=gravity,equation_tolerance=tolerance,iterations=trace,
                 initial_bodies=self.to_host(self.bodies).tolist(),initial_edges=self.to_host(self.edges).tolist(),
                 iterate_weighted_velocity=self.to_host(y).tolist(),finite_difference_weighted_scale=1e-12,
-                finite_difference_displacement_floor_kg_half_m=1e-16,
+                finite_difference_displacement_floor_kg_half_m=1e-17,
                 newton_strategy=self.newton_strategy,line_search=self.line_search,linear_backend=self.linear_backend,starting_fractions=list(fractions),starting_scores=start_scores,
                 attempted_fractions=[fractions[i] for i in order[:start_index+1]])
             if last_trial is not None:
@@ -68,12 +68,15 @@ class CoupledNewton:
             # Energy-weighted finite cells have sub-micrometre cohesive ranges.
             # A 1e-7 sqrt(J) perturbation crossed compression/damage branches
             # and produced a secant matrix rather than the local Jacobian.
-            # Independent derivative/refinement tests bound this FP64 scale.
-            # Midpoint translation/turn changes by h*delta/2. At microsecond
-            # steps the velocity-only scale falls below contact-position ULPs.
-            # Keep a declared weighted displacement floor, without changing
-            # the force law, nonlinear tolerance or accepted velocities.
-            epsilon=xp.maximum(1e-12*xp.maximum(1.,abs(y)),2e-16/h)
+            # Contact now retains origin/displacement low parts instead of
+            # rounding the compression into world coordinates. The previous
+            # 1e-16 weighted displacement floor can now create a nonlocal
+            # secant at microsecond steps. Retain the 1e-12 velocity scale and
+            # a finer 1e-17 displacement floor for finite-frame arithmetic;
+            # independent roots and refinement controls retain the tolerance.
+            # Midpoint translation/turn changes by h*delta/2. This is private
+            # numerical differentiation, never an accepted velocity assignment.
+            epsilon=xp.maximum(1e-12*xp.maximum(1.,abs(y)),2e-17/h)
             perturbed=xp.repeat(y[None],2*count,axis=0)
             ids=xp.arange(count);perturbed[ids,ids]+=epsilon;perturbed[count+ids,ids]-=epsilon
             diff,r,_=trials(perturbed,base=out)
