@@ -1,5 +1,15 @@
 """Actual endpoint block impacts, retained refusal, and original-cell work records.
 Completion here is a regression gate, not a material calibration/conservation pass.
+
+Requalified for floating-point profile banjo-cpu-precise-v2, the same arithmetic
+on Windows and Linux (docs/floating-point-model.md). Under v1 the glass sheet
+struck by the iron ball at 1/1920 s with material restitution was refused by
+the energy gate on Windows: twist work at the contact made energy. That was an
+outcome of one platform's arithmetic: on Linux the same run went on. Under v2 it
+completes on both, its accounts closed, and is checked as a completed run. The
+refusal the material-restitution law still meets on every platform -- an ice
+ball onto an ice sheet, where the normal contact work makes the energy -- is
+the retained reference, with the same witness checks.
 """
 import json, math, subprocess, sys, time
 from pathlib import Path
@@ -33,7 +43,9 @@ def run(declaration, expected_refusal=False):
             measured=rejected['work']['contact_work_j']
             assert abs(sources['sum_j']-measured)<1e-10
             assert abs(sum(sources[k] for k in ['normal_j','friction_j','twist_j'])-measured)<1e-10
-            assert sources['twist_j']>0 and sources['normal_j']<0 and sources['friction_j']<0
+            # Where the energy came from: the normal contact made it, friction
+            # took some away (the v1 glass/iron case made it by twist instead).
+            assert sources['normal_j']>0 and sources['friction_j']<0
             strongest=max(sources['contacts'],key=lambda c:c['twist_j'])
             dot=lambda a,b:sum(x*y for x,y in zip(a,b))
             impulse=dot(strongest['twist_impulse_n_m_s'],strongest['normal'])
@@ -55,8 +67,9 @@ def run(declaration, expected_refusal=False):
     finally:
         proc.stdin.close();proc.wait(timeout=10)
 
-run({'sheet':'glass','ball':'iron','dt_s':1/1920,'contact_law':'material-restitution'},True)
+run({'sheet':'ice','ball':'ice','dt_s':1/1920,'contact_law':'material-restitution'},True)
+run({'sheet':'glass','ball':'iron','dt_s':1/1920,'contact_law':'material-restitution'})
 for dt in [1/960,1/1920]:
     for material in ['glass','oak','iron','ice']:
         run({'sheet':material,'ball':'iron','dt_s':dt,'contact_law':'material-block-friction'})
-print('PASS retained reference refusal and eight complete endpoint block impacts; calibration/convergence/realtime OPEN',flush=True)
+print('PASS retained reference refusal (ice on ice), the glass/iron restitution impact completed, and eight complete endpoint block impacts; calibration/convergence/realtime OPEN',flush=True)

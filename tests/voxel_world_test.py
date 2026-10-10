@@ -52,21 +52,32 @@ for declaration in [{'sheet':'glass','ball':'ice'},{'sheet':'glass','ball':'alum
  assert after['objects'][0]['broken_faces']>0,'changed experiment failed to break sheet'
  assert after['objects'][0]['max_travel_m']>.03,'fracture did not move voxels'
 assert all(r['diagnostics']['dynamic_mass_kg']>0 for r in results)
-# Glass ball is a retained qualification failure, not an advertised working choice.
+# The glass ball was a retained qualification failure under floating-point
+# profile v1: refused by the energy gate at 1.4-1.5 s on Windows, while on Linux
+# the same declaration went on. Under banjo-cpu-precise-v2, the same arithmetic
+# on every platform (docs/floating-point-model.md), it completes on both:
+# checked as an experiment like the others, every account above at every
+# output, and both the sheet and the ball break.
+_,after=experiment({'ball':'glass'},1.5)
+assert after['objects'][0]['pieces']>1 and after['objects'][0]['broken_faces']>0,'glass ball did not break the sheet'
+assert after['objects'][1]['pieces']>1 and after['objects'][1]['broken_faces']>0,'glass ball did not break itself'
+# An ice ball onto an ice sheet is the retained qualification failure under v2:
+# it reaches the energy gate's smallest step and is refused there, on every
+# platform, with the accepted state kept.
 proc=subprocess.Popen([str(exe),'--serve'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,text=True)
 try:
  def raw(command):
   proc.stdin.write(json.dumps(command)+'\n');proc.stdin.flush();return json.loads(proc.stdout.readline())
- reply=raw({'op':'create','declaration':{'ball':'glass'}})
+ reply=raw({'op':'create','declaration':{'sheet':'ice','ball':'ice'}})
  for i in range(90):
   reply=raw({'op':'advance','steps':16})
   if not reply['ok']:break
- assert not reply['ok'] and 'energy gate refused' in reply['error'],'retained glass-ball failure unexpectedly changed; requalify before advertising'
+ assert not reply['ok'] and 'energy gate refused' in reply['error'],'retained ice-ball failure unexpectedly changed; requalify before advertising'
  assert 1.4<reply['state']['time_s']<1.5
  assert raw({'op':'snapshot'})['state']==reply['state'],'refusal did not retain accepted state'
  rejected=reply['state']['step_work']['last_rejected_trial']
  assert rejected and rejected['depth']==14 and 0<rejected['dt_s']<1e-6,'minimum-step refusal lacks actual work evidence'
- print(json.dumps({'retained_glass_ball_refusal':rejected}),flush=True)
- print('KNOWN BLOCKED: glass ball reaches impact then refuses native energy increase; retained state verified',flush=True)
+ print(json.dumps({'retained_ice_ball_refusal':rejected}),flush=True)
+ print('KNOWN BLOCKED: ice ball onto an ice sheet reaches impact then refuses native energy increase; retained state verified',flush=True)
 finally:proc.terminate();proc.wait(timeout=5)
-print('PASS native voxel world: 11 completed comparative/control/refinement experiments + retained glass-ball refusal; realism/convergence unqualified',flush=True)
+print('PASS native voxel world: 12 completed comparative/control/refinement experiments (the glass ball among them) + retained ice-ball refusal; realism/convergence unqualified',flush=True)
