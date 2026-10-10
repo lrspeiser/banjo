@@ -27,21 +27,54 @@ import qa_browser
 import knowledge_tests
 
 
+def game_pick_room():
+    """The playable game's own Field pick, laid out as the world builder lays it.
+
+    A named world plays the inorganic game (caeb6424): its pick is an aluminum
+    haft and an iron head, field-pick@2, and the graph it is judged by is the
+    game's. The oak pick of knowledge_tests.PICK_ROOM is a laboratory fixture
+    that graph no longer counts, so a named-world test cannot use it.
+    """
+    import playable_recipes, workshop_install
+    from mcp import workshop_components
+    design,overrides=workshop_components.design_from_spec(playable_recipes.recipe('field-pick'))
+    plan=workshop_install.fixed_lattice_plan(design,overrides,root='pick',cell_m=.05,
+        position_m=[0.,0.],floor_of=lambda _:1.)
+    return {'cell_m':.05,'bodies':plan['bodies'],'joints':plan['matter'].get('joints',[]),
+            'tool_points':[plan['tool']['point']],'interactions':[plan['tool']['profile']]}
+
+
+def in_bag(shown,body):
+    """Whether a body is in a player's hands or bag, as Inventory shows them.
+
+    The game's pick is two native groups, aluminum haft and iron head
+    (caeb6424); the bag names the item after either, and lists both as parts.
+    """
+    items=[*shown.get('stowed',[]),*shown.get('hands',{}).values()]
+    return any(body==item['id'] or body in (item.get('parts') or []) for item in items if item)
+
+
+def pick_dig(**fields):
+    """A closed ground-work record of game_pick_room's pick, which the engine
+    names by its grip body."""
+    return knowledge_tests.closed('broke out',tool='pick',**fields)
+
+
 class ControllerBoundaries(unittest.TestCase):
     def test_older_personal_success_is_reconciled_on_load_without_awarding_a_peer(self):
         with tempfile.TemporaryDirectory() as folder:
             owner, peer = 'a'*32, 'b'*32
             path=Path(folder)/'players'/owner/'journal.json'
             journal=server.progression.Journal(path,owner=owner)
-            journal.add_evidence(server.progression.evidence_from(knowledge_tests.closed('broke out'),
-                session_id='old-native',spec=knowledge_tests.PICK_ROOM,registry=server.registry(),
+            app=SimpleNamespace(world_id='c'*32,store=SimpleNamespace(folder=folder),journal_lock=threading.RLock())
+            journal.add_evidence(server.progression.evidence_from(pick_dig(),
+                session_id='old-native',spec=game_pick_room(),registry=server.registry(app),
                 at='2026-09-30T00:00:00Z'))
             self.assertNotIn('using-ground-tools',journal.knows())
-            app=SimpleNamespace(world_id='c'*32,store=SimpleNamespace(folder=folder),journal_lock=threading.RLock())
             recovered=server.journal_of(app,owner)
             self.assertIn('using-ground-tools',recovered.knows())
             self.assertEqual(set(),server.journal_of(app,peer).knows())
-            self.assertNotIn('study-example',recovered.standing_of('one-piece-wooden-pick')['demonstrated'])
+            self.assertNotIn('study-example',recovered.standing_of('field-pick')['demonstrated'])
             saved=recovered.copy();app.player_journals.pop(owner)
             self.assertEqual(saved,server.journal_of(app,owner).copy(),'reload must not award twice')
 
@@ -180,24 +213,25 @@ class ControllerBoundaries(unittest.TestCase):
     def test_named_ground_work_is_attributed_to_the_striking_player_and_tool(self):
         with tempfile.TemporaryDirectory() as temp:
             alice, bob = "a" * 32, "b" * 32
-            session = SimpleNamespace(id="fixture", room_spec=knowledge_tests.PICK_ROOM,
-                state={"t":4,"player_hands": {alice: {"holding": "pick haft"}, bob: {"holding": "other tool"}}})
+            room = game_pick_room()
+            session = SimpleNamespace(id="fixture", room_spec=room,
+                state={"t":4,"player_hands": {alice: {"holding": "pick"}, bob: {"holding": "other tool"}}})
             app = SimpleNamespace(world_id="c" * 32, journal_lock=threading.RLock(), player_journals={},
-                store=room_store.RoomStore(temp), room=SimpleNamespace(spec=knowledge_tests.PICK_ROOM,
+                store=room_store.RoomStore(temp), room=SimpleNamespace(spec=room,
                     player_records={alice:{},bob:{}}),
                 live=SimpleNamespace(session=session))
             for owner in (alice, bob):
                 scope = server.workshop_library.REQUEST_OWNER.set(owner)
                 try: server.note_strike(app, {"t": 3.1})
                 finally: server.workshop_library.REQUEST_OWNER.reset(scope)
-            server.hear(app, session, {"ground_work": [knowledge_tests.closed("broke out")]})
+            server.hear(app, session, {"ground_work": [pick_dig()]})
             self.assertEqual({},server.journal_of(app,alice).data['evidence'])
             self.assertEqual([alice],[r['owner'] for r in app.room.player_evidence_pending])
             # This unit boundary uses an explicit source-save fixture. The
             # actual native/restart path is tested in AutonomousGuests.
             app.room.world_record={'t_s':4}
             app.room.player_learning_durable_ids={r['evidence']['id'] for r in app.room.player_evidence_pending}
-            server.player_learning.saved(app,server.journal_of,server.registry())
+            server.player_learning.saved(app,server.journal_of,server.registry(app))
             self.assertEqual(1, len(server.journal_of(app, alice).data["evidence"]))
             self.assertEqual({}, server.journal_of(app, bob).data["evidence"])
             scope = server.workshop_library.REQUEST_OWNER.set(bob)
@@ -205,10 +239,10 @@ class ControllerBoundaries(unittest.TestCase):
                 self.assertIs(server.journal_of(app), server.journal_of(app, bob))
                 self.assertIsNot(server.journal_of(app), server.journal_of(app, shared=True))
             finally: server.workshop_library.REQUEST_OWNER.reset(scope)
-            server.hear(app, session, {"ground_work": [knowledge_tests.closed("broke out")]})
-            server.player_learning.saved(app,server.journal_of,server.registry())
+            server.hear(app, session, {"ground_work": [pick_dig()]})
+            server.player_learning.saved(app,server.journal_of,server.registry(app))
             self.assertEqual(1, len(server.journal_of(app, alice).data["evidence"]))
-            server.hear(app, session, {"ground_work": [knowledge_tests.closed("broke out", at_s=20)]})
+            server.hear(app, session, {"ground_work": [pick_dig(at_s=20)]})
             self.assertEqual(1, len(server.journal_of(app, alice).data["evidence"]))
 
 
@@ -391,19 +425,31 @@ class AutonomousGuests(unittest.TestCase):
         profile['ai']={'controller':human['id'],'mode':'reference','status':'paused',
                        'decisions':0,'history':[],'memory':{}}
         sid=app.live.session.id
-        pile=next(p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get('oak',0)>25)
-        at=pile['at_m'];floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':at},world)['survey']['ground_m']
-        collected=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],'request_id':'ai-collect-real-oak',
-            'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world,guest['token'])['collected']['oak']
+        # The game's pick is an aluminum haft and an iron head (caeb6424):
+        # 2.7 kg of aluminum and 2.95125 kg of iron. The guest collects its own
+        # of each from the world's loose metal; a collect takes a whole pile.
+        collected={}
+        for material,needed in (('iron',2.95125),('aluminum',2.7)):
+            piles=sorted((p for p in app.brains.goods.stockpiles if (p.get('holds') or {}).get(material,0)>0),
+                         key=lambda p:-p['holds'][material])
+            for index,pile in enumerate(piles):
+                if collected.get(material,0)>=needed:break
+                at=pile['at_m'];floor=self.post('/api/live/act',{'session':sid,'op':'survey','at':at},world)['survey']['ground_m']
+                got=self.post('/api/world/goods/collect',{'session':sid,'pile':pile['name'],
+                    'request_id':f'ai-collect-real-{material}-{index}',
+                    'person':{'eyes_m':[at[0],floor+1.62,at[1]],'facing':[0,0,-1]}},world,guest['token'])['collected']
+                for name,kg in got.items():collected[name]=collected.get(name,0)+kg
+            # Collecting takes what the piles hold; at least what the pick needs.
+            self.assertGreaterEqual(collected.get(material,0),needed)
         common={'session':sid,'scene':app.room.scene}
         self.post('/api/world/fabrication/configure',{**common,'settings':settings(stock_kg={},energy_j=0),
             'request_id':'ai-empty-process-fixture'},world)
         candidate=self.post('/api/world/workshop/what_made',{'body':'field pick'},world)['recipe']
         initial=self.post('/api/world/fabrication/state',common,world,guest['token'])
         self.assertEqual(10000,next(s['max_power_w'] for s in initial['energy_sources'] if s['max_power_w']>0))
-        personal=next(s for s in initial['stock_sources'] if s['pool']=='personal' and s['material']=='oak')
-        # Collecting takes what the pile holds; at least what the pick needs.
-        self.assertGreater(collected,2.);self.assertAlmostEqual(collected,personal['mass_kg'],places=9)
+        personal={s['material']:s['mass_kg'] for s in initial['stock_sources'] if s['pool']=='personal'}
+        for material in ('iron','aluminum'):
+            self.assertAlmostEqual(collected[material],personal[material],places=9)
         shared=[s for s in initial['stock_sources'] if s['pool']=='shared']
         human_stock=self.post('/api/world/fabrication/state',common,world)['stock_sources']
         lost={'fund_stock','fund_energy','start_make','commit','before-commit'};phases=[];requests=[];advancing_meters=[]
@@ -469,14 +515,22 @@ class AutonomousGuests(unittest.TestCase):
         self.assertEqual(1,len(app.room.fabrication_record['jobs']))
         job=app.room.fabrication_record['jobs'][ident]
         self.assertEqual('installed',job['status']);self.assertEqual(guest['id'],job['make_source']['owner'])
-        self.assertAlmostEqual(1.925,job['product_kg'],places=6)
-        self.assertAlmostEqual(192.5,job['required_j'],places=6)
-        self.assertEqual(1,len(app.room.fabrication_record['stock_imports']))
-        self.assertEqual(1,len(app.room.fabrication_record['energy_imports']))
+        self.assertAlmostEqual(5.65125,job['product_kg'],places=6)
+        self.assertAlmostEqual(565.125,job['required_j'],places=6)
+        # One import of the guest's own stock per metal in the pick.
+        self.assertEqual(2,len(app.room.fabrication_record['stock_imports']))
+        # The bench draws at most its 500 W over the native time since the last
+        # draw, so the metal pick's 565 J can take more than one transfer (the
+        # oak pick's 192.5 J took one). A replayed lost acknowledgement must
+        # still import nothing twice: the transfers add up to the work, no more.
+        imports=app.room.fabrication_record['energy_imports'].values()
+        self.assertAlmostEqual(job['required_j'],sum(p['joules'] for p in imports),places=6)
         common={'session':app.live.session.id,'scene':app.room.scene}
         final=self.post('/api/world/fabrication/state',common,world,guest['token'])
-        self.assertAlmostEqual(collected-job['stock_kg'],next(s['mass_kg'] for s in final['stock_sources']
-            if s['pool']=='personal' and s['material']=='oak'),places=6)
+        self.assertEqual({'iron','aluminum'},set(job['stock_materials_kg']))
+        for material,spent in job['stock_materials_kg'].items():
+            self.assertAlmostEqual(collected[material]-spent,next(s['mass_kg'] for s in final['stock_sources']
+                if s['pool']=='personal' and s['material']==material),places=6)
         self.assertEqual(shared,[s for s in final['stock_sources'] if s['pool']=='shared'])
         self.assertEqual(human_stock,self.post('/api/world/fabrication/state',common,world)['stock_sources'])
         self.assertFalse(any('/workshop/preview' in path or '/workshop/commit' in path for path,_ in requests))
@@ -487,7 +541,7 @@ class AutonomousGuests(unittest.TestCase):
             'advancing_native_meter_operations':sorted(set(advancing_meters)),
             'native_dt_s':1/240,'cell_m':.05,'lost_writes_replayed':['fund_stock','fund_energy','start_make','commit'],
             'interrupted_preview_refreshed':True,
-            'own_stock_spent_kg':job['stock_kg'],'source_power_w':10000,'shared_rack_unchanged':True,
+            'own_stock_spent_kg':job['stock_materials_kg'],'source_power_w':10000,'shared_rack_unchanged':True,
             'human_rack_unchanged':True,'native_output':job['root_body'],'configured_fixture':True}
         (out/'paid-make.json').write_text(json.dumps(report,indent=2));print('\n    paid AI Make: '+json.dumps(report))
 
@@ -502,7 +556,10 @@ class AutonomousGuests(unittest.TestCase):
         self.post('/api/world/fabrication/configure',{**common,'settings':settings(stock_kg={},energy_j=0),
             'request_id':'unsupported-ai-empty-process'},world)
         initial=deepcopy(app.room.fabrication_record);installs=deepcopy(app.room.workshop_installs)
-        candidate={'kind':'solar-array','parameters':{'primary_use':{'label':'Push','steps':[{'do':'push_forward'}]}},'component_overrides':{}}
+        # The template's own default material is the retired oak; a named world
+        # refuses that before it reaches the mixed-mechanics check this tests.
+        candidate={'kind':'solar-array','parameters':{'material':'iron',
+            'primary_use':{'label':'Push','steps':[{'do':'push_forward'}]}},'component_overrides':{}}
         design,_=ai_actions.workshop_components.design_from_spec(candidate)
         candidate['component_overrides']={p.name:{'mechanics':{'model':'rigid'}} for p in design.parts}
         candidate['component_overrides'][design.parts[-1].name]['mechanics']={'model':'lattice'}
@@ -527,17 +584,18 @@ class AutonomousGuests(unittest.TestCase):
                        'decisions':0,'history':[],'memory':{}}
         # Authored test supplies enter through actual nearby collection and SQL
         # receipts; the generated solar battery is the energy source.
-        pile=app.brains.goods.put(0,0,{'oak':25.,'iron':25.,'copper':.5,'copper wire':.6},named='paid machine test supplies')['onto']
+        # Aluminum and iron, as the game's metals: oak is not playable (caeb6424).
+        pile=app.brains.goods.put(0,0,{'aluminum':25.,'iron':25.,'copper':.5,'copper wire':.6},named='paid machine test supplies')['onto']
         floor=self.post('/api/live/act',{'session':app.live.session.id,'op':'survey','at':[0,0]},world)['survey']['ground_m']
         # One collection takes what the pile holds.
         taken=self.post('/api/world/goods/collect',{'session':app.live.session.id,'pile':pile,
             'request_id':'ai-machine-collect-0','person':{'eyes_m':[0,floor+1.62,0],'facing':[0,0,-1]}},world,guest['token'])['collected']
-        self.assertEqual({'oak':25.,'iron':25.,'copper':.5,'copper wire':.6},taken)
+        self.assertEqual({'aluminum':25.,'iron':25.,'copper':.5,'copper wire':.6},taken)
         common={'session':app.live.session.id,'scene':app.room.scene}
         self.post('/api/world/fabrication/configure',{**common,'settings':settings(stock_kg={},energy_j=0),
             'request_id':'ai-machine-empty-process'},world)
         human_stock=self.post('/api/world/fabrication/state',common,world)['stock_sources']
-        candidate=rigid_machine('oak','iron');ident='ai-mixed-paid-machine';phases=[]
+        candidate=rigid_machine('aluminum','iron');ident='ai-mixed-paid-machine';phases=[]
         stop=threading.Event()
         for decision in range(35):
             action={'verb':'build','recipe':{'candidate':candidate}} if not decision else {'verb':'continue-build'}
@@ -548,8 +606,8 @@ class AutonomousGuests(unittest.TestCase):
         else:self.fail('Machine did not finish: '+str(phases))
         job=app.room.fabrication_record['jobs'][ident]
         self.assertEqual('installed',job['status']);self.assertEqual(guest['id'],job['make_source']['owner'])
-        self.assertEqual({'oak','iron'},set(job['stock_materials_kg']))
-        self.assertEqual({'oak','iron','copper','copper wire'},set(p['material'] for p in app.room.fabrication_record['stock_imports'].values()))
+        self.assertEqual({'aluminum','iron'},set(job['stock_materials_kg']))
+        self.assertEqual({'aluminum','iron','copper','copper wire'},set(p['material'] for p in app.room.fabrication_record['stock_imports'].values()))
         self.assertEqual({'copper':.5,'copper wire':.6},job['assembly_goods_kg'])
         self.assertEqual({'copper':0.,'copper wire':0.},app.room.fabrication_record['goods_stock_kg'])
         self.assertEqual(2,phases.count('fund_goods'))
@@ -616,7 +674,10 @@ class AutonomousGuests(unittest.TestCase):
                 return answer
             inventory('take_up'); inventory('stow'); inventory('equip')
             owned=self.post('/api/world/inventory/shown',{'session':session},world)
-            self.assertTrue(any((h or {}).get('name')=='field pick' for h in owned['hands'].values()))
+            # The game's pick is two native groups, aluminum haft and iron head
+            # (caeb6424); the bag may name the item after either, and lists both.
+            self.assertTrue(any('field pick' in ((h or {}).get('parts') or [(h or {}).get('name')])
+                                for h in owned['hands'].values()),owned['hands'])
             journal=server.journal_of(app,owner['id'])
             if terrain_choice == 1:
                 with mock.patch.object(app.store,'save',return_value=False):
@@ -762,9 +823,11 @@ class AutonomousGuests(unittest.TestCase):
         world, owner, app = self.setup_world()
         skills = self.post("/api/workshop/skills",{},world)
         tree = {t["id"]:t for t in skills["techniques"]}
-        self.assertFalse(tree["rough-shaping-wood"]["within_reach"])
-        self.assertIn("Missing example",tree["rough-shaping-wood"]["earned_by"][0]["says"])
-        self.assertIn("Making One-piece wooden pick is not available yet", tree["rough-shaping-wood"]["earned_by"][0]["says"])
+        # The game's graph has no wood shaping since caeb6424 (its One-piece
+        # wooden pick and shape-wood process went with oak), so its "Missing
+        # example" route is no longer here to read; knowledge_tests keeps that
+        # route under the historical graph.
+        self.assertNotIn("rough-shaping-wood",tree)
         self.assertFalse(tree["burning-lime"]["within_reach"])
         self.assertIn("Missing equipment",tree["burning-lime"]["earned_by"][0]["says"])
         copper = tree["smelting-copper"]
@@ -854,16 +917,17 @@ class AutonomousGuests(unittest.TestCase):
         for terrain_choice,goods_seed in ((1,851269742),(0,1)):
             with mock.patch.object(server.secrets,'randbelow',side_effect=[terrain_choice,goods_seed-1]):
                 world,owner,app=self.setup_world()
-            # Explicit scarcity fixture: removes loose wood and trader stock. No player
-            # supplies, knowledge, goals or native outcomes are granted.
+            # Explicit scarcity fixture: removes loose iron and trader iron, the
+            # pick's head metal since the game went inorganic (caeb6424). No
+            # player supplies, knowledge, goals or native outcomes are granted.
             self.post('/api/workshop/market',{},world)
             with server.workshop_library._connect(app) as db:
-                db.execute("UPDATE market_stock SET remaining=0 WHERE item_id='oak-stock'")
-            for pile in app.brains.goods.stockpiles: pile.get('holds',{}).pop('oak',None)
+                db.execute("UPDATE market_stock SET remaining=0 WHERE item_id='iron-stock'")
+            for pile in app.brains.goods.stockpiles: pile.get('holds',{}).pop('iron',None)
             bot=self.post('/api/world/ai',{'action':'start','mode':'reference'},world)
             final=self.wait_character(world,bot['id'])
             self.assertEqual('blocked',final['character']['status'])
-            self.assertIn('no oak lot in stock',final['character']['message'])
+            self.assertIn('no iron lot in stock',final['character']['message'])
             self.assertFalse(final['goals']['complete'])
             self.assertEqual(set(),server.journal_of(app,bot['id']).knows())
             self.assertEqual(['wait'],[e['action'] for e in final['character']['history']])
@@ -894,8 +958,7 @@ class AutonomousGuests(unittest.TestCase):
         self.assertTrue(all(isinstance(v,(float,int)) for v in final['character']['pose']['eyes_m']))
         self.assertIn('using-ground-tools',{s['id'] for s in final['skills'] if s['known']})
         self.assertGreaterEqual(sum(s['known'] for s in final['skills']),2)
-        bag=final['state']['inventory']['record']
-        self.assertIn(final['goals']['product_body'],[*bag['stowed'],*bag['hands'].values()])
+        self.assertTrue(in_bag(final['state']['inventory'],final['goals']['product_body']),final['state']['inventory'])
         human = self.post("/api/world/inventory/shown", {"session": final["state"]["session"]}, world)
         self.assertEqual([], human["record"]["stowed"])
         self.assertEqual(0, self.post("/api/workshop/market", {}, world)["balance_j"])
@@ -903,11 +966,15 @@ class AutonomousGuests(unittest.TestCase):
         bot_profile = app.room.player_records[bot["id"]]
         self.assertNotIn(bot_profile["token"], json.dumps(final))
         # Controlled journal fixture checks ownership/routing, not earned physics.
-        server.journal_of(app, bot["id"]).learn("rough-shaping-wood", {"kind": "unit-fixture"}, "test")
+        # It names a technique of the game's own graph that this world cannot
+        # teach (it has no lime kiln); rough-shaping-wood left the game with oak.
+        fixture = "burning-lime"
+        self.assertFalse(next(s for s in final["skills"] if s["id"] == fixture)["known"])
+        server.journal_of(app, bot["id"]).learn(fixture, {"kind": "unit-fixture"}, "test")
         bot_tree = self.post("/api/world/ai", {"action": "watch", "id": bot["id"]}, world)["skills"]
-        self.assertTrue(next(s for s in bot_tree if s["id"] == "rough-shaping-wood")["known"])
+        self.assertTrue(next(s for s in bot_tree if s["id"] == fixture)["known"])
         self.assertFalse(next(s for s in self.post("/api/workshop/skills", {}, world)["techniques"]
-                              if s["id"] == "rough-shaping-wood")["known"])
+                              if s["id"] == fixture)["known"])
         headers = {"X-Banjo-World": world, "X-Banjo-Player": owner["token"]}
         with urllib.request.urlopen(urllib.request.Request(self.base + "/api/knowledge", headers=headers)) as response:
             self.assertEqual([], json.load(response)["techniques"])
@@ -916,9 +983,8 @@ class AutonomousGuests(unittest.TestCase):
         self.post("/api/world/open", {}, world)
         restored = self.post("/api/world/ai", {"action": "watch", "id": bot["id"]}, world)
         self.assertTrue(restored["goals"]["complete"])
-        bag=restored['state']['inventory']['record']
-        self.assertIn(restored['goals']['product_body'],[*bag['stowed'],*bag['hands'].values()])
-        self.assertTrue(next(s for s in restored["skills"] if s["id"] == "rough-shaping-wood")["known"])
+        self.assertTrue(in_bag(restored['state']['inventory'],restored['goals']['product_body']),restored['state']['inventory'])
+        self.assertTrue(next(s for s in restored["skills"] if s["id"] == fixture)["known"])
 
     def test_pause_during_model_call_executes_no_choice_and_foreign_guest_cannot_control(self):
         world, owner, app = self.setup_world()
@@ -1050,9 +1116,13 @@ class AutonomousGuests(unittest.TestCase):
                 time.sleep(.15)
             self.fail('Browser did not reach '+expression)
         page.send('Page.navigate',{'url':self.base+f'/world?world={world}&workshop=1&tab=market'})
-        wait('document.querySelector("#ws-market-recipe h3")?.textContent === "Personal field pick" && document.querySelectorAll("#ws-market-offers li").length === 6')
+        # The game's Market (caeb6424): iron, aluminum, glass, copper and wire;
+        # no oak or rubber. The pick's iron is covered by the world's shared
+        # rack and its 2.7 kg of aluminum is to buy.
+        wait('document.querySelector("#ws-market-recipe h3")?.textContent === "Personal field pick" && document.querySelectorAll("#ws-market-offers li").length === 5')
         self.assertIn('Stock to buy',page.evaluate('document.querySelector("#ws-market-recipe").textContent'))
-        self.assertIn('Covered',page.evaluate('document.querySelector("[data-market-gap=oak]").textContent'))
+        self.assertIn('Covered',page.evaluate('document.querySelector("[data-market-gap=iron]").textContent'))
+        self.assertIn('missing',page.evaluate('document.querySelector("[data-market-gap=aluminum]").textContent'))
         self.assertEqual(0,page.evaluate('document.querySelectorAll("[data-market-supply-goal]").length'))
         self.assertFalse(page.evaluate('document.querySelector("#ws-market-recipe details").open'))
         visitor_token=page.evaluate('localStorage.getItem("banjo.player.'+world+'")')
@@ -1065,11 +1135,12 @@ class AutonomousGuests(unittest.TestCase):
         wait('!document.querySelector("#ws-market-bank").disabled')
         page.evaluate('document.querySelector("#ws-market-bank").click()')
         wait('document.querySelector("#ws-market-balance").textContent === "200 J"')
-        page.evaluate('document.querySelector("[data-market-item=oak-stock] button").click()')
-        wait('document.querySelector("#ws-market-balance").textContent === "80 J"')
+        # One 0.5 kg aluminum lot at its full-stock 190 J.
+        page.evaluate('document.querySelector("[data-market-item=aluminum-stock] button").click()')
+        wait('document.querySelector("#ws-market-balance").textContent === "10 J"')
         guidance=self.post('/api/workshop/market',{},world,visitor_token)['guidance']
         plan=guidance['plan']
-        self.assertAlmostEqual(.5,plan['lines'][0]['personal_kg'])
+        self.assertAlmostEqual(.5,next(l for l in plan['lines'] if l['substance']=='aluminum')['personal_kg'])
         self.assertEqual(0,self.post('/api/workshop/market',{},world,owner['token'])['balance_j'])
         output=ROOT/'build/market-guidance';output.mkdir(parents=True,exist_ok=True)
         import base64
@@ -1081,7 +1152,7 @@ class AutonomousGuests(unittest.TestCase):
         self.assertFalse([e for e in page.events if e.get('method')=='Runtime.exceptionThrown'])
         (output/'receipt.json').write_text(json.dumps({'world_seed':self.app.hub.metadata(world)['terrain_seed'],
             'plan_after_purchase':plan,'supply_goal_after_purchase':guidance['supply_goal'],
-            'wallet_j':380,'other_guest_wallet_j':0,
+            'wallet_j':self.post('/api/workshop/market',{},world,visitor_token)['balance_j'],'other_guest_wallet_j':0,
             'learned_by_navigation':[],'provider_calls':0},indent=2),encoding='utf-8')
 
     def test_browser_dig_shows_personal_progress_achievement_fade_and_skills_completion(self):
@@ -1112,7 +1183,11 @@ class AutonomousGuests(unittest.TestCase):
         token=page.evaluate(f'localStorage.getItem("banjo.player.{world}")')
         page.evaluate('(()=>{const r=banjoRoom,p=r.world.bodies.get("field pick").mesh.position;'
             'r.standAt(p.x,p.y+1.62,p.z+1.1);r.lookAt(p.x,p.y,p.z)})()')
-        wait('banjoRoom.world.aim?.name==="field pick"')
+        # The walking camera settles onto the ground where it stands, a few
+        # centimetres off the height it was put at; a view aimed before that
+        # passes under the 50 mm pick. Look again from where it came to rest.
+        wait('(()=>{const r=banjoRoom,p=r.world.bodies.get("field pick").mesh.position;'
+             'r.lookAt(p.x,p.y,p.z);return r.world.aim?.name==="field pick"})()')
         key('KeyE','e')
         wait('banjoRoom.held()?.name==="field pick" && banjoRoom.use().mode==="tool-ready"')
         page.evaluate('banjoRoom.standAt(-.9,banjoRoom.groundAt(-.9,.025)+1.62,.025)')
@@ -1154,19 +1229,29 @@ class AutonomousGuests(unittest.TestCase):
         page.send('Page.reload',{})
         wait('banjoRoom?.ready() && document.querySelector("#tool-skill output")?.textContent==="1 / 1"')
         self.assertTrue(page.evaluate('document.querySelector("#unlocked").hidden'),'reload must not replay achievement')
-        # Open the folded panel with Details, as a player would, to reach the link.
-        page.evaluate('document.querySelector("#panel-details").click()')
-        wait('!document.body.classList.contains("panel-away") && (r=>r.right<=innerWidth && r.left>=0)(document.querySelector("#tool-skill .skill-link").getBoundingClientRect())')
-        # And has stopped sliding: a click mid-slide lands where the link was.
-        last=None
-        for _ in range(60):
-            now=page.evaluate('(()=>{const b=document.querySelector("#tool-skill .skill-link").getBoundingClientRect();return [b.x,b.y]})()')
-            if now==last:break
-            last=now;time.sleep(.1)
-        box=page.evaluate('(()=>{const b=document.querySelector("#tool-skill .skill-link").getBoundingClientRect();return {x:b.x+b.width/2,y:b.y+b.height/2}})()')
-        for kind in ('mousePressed','mouseReleased'):
-            page.send('Input.dispatchMouseEvent',{'type':kind,**box,'button':'left','clickCount':1})
-        wait('new URLSearchParams(location.search).get("technique")==="using-ground-tools" && document.querySelector("#ws-tree-about .ws-tree-state")?.textContent==="Learned ✓ · No further action needed"')
+        # Details, which held the tool box's Skills link, was retired with the
+        # World inspector rail (eaf9e306, docs/world-pickup-chat-checkpoint.md).
+        # A player now reaches Skills by World's own Progress tab and picks the
+        # skill on the tree, so this presses those, as a pointer would.
+        def press(selector):
+            # Once the control has stopped moving: a press mid-slide lands
+            # where it was.
+            last=None
+            for _ in range(60):
+                now=page.evaluate('(b=>[b.x,b.y,b.width,b.height])(document.querySelector('
+                                  +json.dumps(selector)+').getBoundingClientRect())')
+                if now==last:break
+                last=now;time.sleep(.1)
+            x,y,width,height=now
+            for kind in ('mousePressed','mouseReleased'):
+                page.send('Input.dispatchMouseEvent',{'type':kind,'x':x+width/2,'y':y+height/2,
+                    'button':'left','clickCount':1})
+        progress='#world-quickbar [data-screen="progress"]'
+        wait('document.querySelector('+json.dumps(progress)+')?.offsetParent')
+        press(progress)
+        wait('document.querySelector("[data-technique=using-ground-tools]")?.offsetParent')
+        press('[data-technique="using-ground-tools"]')
+        wait('document.querySelector("#ws-tree-about .ws-tree-state")?.textContent==="Learned ✓ · No further action needed"')
         self.assertEqual(1,page.evaluate('document.querySelectorAll("#ws-tree-about .ws-tree-todo li").length'))
         self.assertNotIn('Missing example',page.evaluate('document.querySelector("#ws-tree-about").innerText'))
         self.assertNotIn('One-piece wooden pick',page.evaluate('document.querySelector("#ws-tree-about").innerText'))
@@ -1201,7 +1286,7 @@ class AutonomousGuests(unittest.TestCase):
         wait('!!document.querySelector("[data-technique=using-ground-tools]") && [...document.querySelectorAll(".ws-tree-todo a")].some(a=>a.textContent==="Go to tool")')
         self.assertEqual(1,page.evaluate('document.querySelectorAll("#ws-tree-about .ws-tree-todo li").length'))
         self.assertIn('Aim at dry soil or sand',page.evaluate('document.querySelector("#ws-tree-about").innerText'))
-        self.assertIn('dig once. Use: Left mouse / J.',page.evaluate('document.querySelector("#ws-tree-about").innerText'))
+        self.assertIn('use it until material comes loose. Use: Left mouse / J.',page.evaluate('document.querySelector("#ws-tree-about").innerText'))
         self.assertNotIn('Missing example',page.evaluate('document.querySelector("#ws-tree-about").innerText'))
         self.assertIsNotNone(app.live.session, 'Skills must resolve loaded native equipment, not an empty session')
         viewer=page.evaluate('localStorage.getItem("banjo.player.'+world+'")')
