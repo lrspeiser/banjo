@@ -76,8 +76,10 @@ MAX_STRIKER_KG = 500.0
 #: it has to be as small as that allows, because whatever it falls through it
 #: arrives with. Say `from_m` and it is a thing DROPPED on it instead.
 WEIGHT_GAP_M = 0.001
-#: Turned further than this from how it was put down, a thing is not standing
+#: Tipped further than this from how it was put down, a thing is not standing
 #: any more. Two right angles would be upside down; half of one is already over.
+#: It is the tilt that counts (`_tilt_deg`), not the whole turn: a machine that
+#: turns round on its wheels is still standing.
 FELL_OVER_DEG = 45.0
 #: A break is worked out between steps and the engine can ask for several in a
 #: row. More than this in one step is a runaway, not a result.
@@ -469,6 +471,24 @@ def _turn_deg(a, b) -> float:
         return [v / n for v in q]
     dot = abs(sum(x * y for x, y in zip(unit(a), unit(b))))
     return math.degrees(2.0 * math.acos(max(-1.0, min(1.0, dot))))
+
+
+def _tilt_deg(a, b) -> float:
+    """How far a thing has tipped between two orientations: the angle its up,
+    as it was put down in `b`, has swung away from up by `a`. A turn about the
+    upright is not a tilt -- a rover turned round on its wheels has gone
+    nowhere near over, and `_turn_deg` counted that as falling over, so a
+    machine driven round a corner at the bench was told it fell.
+    """
+    def unit(q):
+        n = math.sqrt(sum(v * v for v in q)) or 1.0
+        return [v / n for v in q]
+    (w1, x1, y1, z1), (w2, x2, y2, z2) = unit(a), unit(b)
+    # The turn from b to a in the world's frame, a * conj(b); its x and z are
+    # what move the up axis, whose height after it is 1 - 2 (x^2 + z^2).
+    x = -w1 * x2 + x1 * w2 - y1 * z2 + z1 * y2
+    z = -w1 * z2 - x1 * y2 + y1 * x2 + z1 * w2
+    return math.degrees(math.acos(max(-1.0, min(1.0, 1.0 - 2.0 * (x * x + z * z)))))
 
 
 class Bench:
@@ -881,6 +901,9 @@ class Bench:
                                                                     [0, 0, 0]), 5),
                                        "turn_deg": round(_turn_deg(
                                            b.get("orientation_wxyz") or [1.0, 0.0, 0.0, 0.0],
+                                           self.at_the_start.get(b["name"]) or [1.0, 0.0, 0.0, 0.0]), 3),
+                                       "tilt_deg": round(_tilt_deg(
+                                           b.get("orientation_wxyz") or [1.0, 0.0, 0.0, 0.0],
                                            self.at_the_start.get(b["name"]) or [1.0, 0.0, 0.0, 0.0]), 3)}
                            for b in poses.get("bodies") or []},
                 "broke": self.broke(), "dented": self.dented(), "took_it": self.took_it(),
@@ -890,6 +913,12 @@ class Bench:
                 "motors": machines.get("motors") or [],
                 "controls": machines.get("controls") or [],
                 "programs": machines.get("programs") or []}
+
+
+def fell_over(body: dict[str, Any]) -> bool:
+    """Whether a body as `Bench.reading` gives it has gone over: tipped past
+    FELL_OVER_DEG, however far it has turned round on what it stands on."""
+    return float(body.get("tilt_deg", 0.0) or 0.0) >= FELL_OVER_DEG
 
 
 def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: Any = None, day: Any = None,
@@ -935,7 +964,7 @@ def try_it(app: Any, candidate: dict[str, Any], *, seconds: float = 10.0, sun: A
             raise ValueError(f"a bench does up to {MAX_ORDERS} things to a machine in one run")
         ended = room.run(seconds, orders)
         deck = made.get("root_body") or ""
-        fell = ended["bodies"].get(deck, {}).get("turn_deg", 0.0) >= FELL_OVER_DEG
+        fell = fell_over(ended["bodies"].get(deck, {}))
         answer = {"schema": SCHEMA, "made": {k: made.get(k) for k in
                                              ("root_body", "root_bodies", "mass_kg", "cells", "design_id")},
                   "ran_for_s": round(seconds, 3), "turned_on": bool(turned_on), "did": did,
@@ -1115,7 +1144,7 @@ def _says(made: dict[str, Any], began: dict[str, Any], ended: dict[str, Any],
         went = math.dist(body["at_m"], was)
         turned = body.get("turn_deg") or 0.0
         if fell:
-            said.append(f"it went over: {turned:.0f} degrees from how it was put down, "
+            said.append(f"it went over: {body.get('tilt_deg', turned):.0f} degrees from how it was put down, "
                         f"and it is {body['at_m'][1]:.2f} m up")
         elif went >= 0.01:
             said.append(f"it is {body['at_m'][1]:.2f} m up, has moved {went * 1000:.0f} mm "

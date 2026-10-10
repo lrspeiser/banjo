@@ -547,6 +547,13 @@ window.machineView = ({azimuth: a, elevation: e, distance: d, at} = {}) => {
   if (Array.isArray(at) && at.length === 3) { goal.set(...at); target.copy(goal); }
 };
 
+// And where a point in the world is on the page, for a script that clicks
+// where a person would (tests of placing a piece by clicking).
+window.machineScreenPoint = point => {
+  const p = new THREE.Vector3(...point).project(camera), rect = renderer.domElement.getBoundingClientRect();
+  return [rect.left + (p.x + 1) / 2 * rect.width, rect.top + (1 - p.y) / 2 * rect.height];
+};
+
 function resize() {
   const w = view.clientWidth, h = view.clientHeight;
   renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
@@ -559,7 +566,7 @@ renderer.domElement.addEventListener('pointerdown', e => { pointers.set(e.pointe
 renderer.domElement.addEventListener('pointerup', e => { pointers.delete(e.pointerId); pinch = 0; });
 renderer.domElement.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); pinch = 0; });
 renderer.domElement.addEventListener('pointermove', e => {
-  const last = pointers.get(e.pointerId); if (!last) return;
+  const last = pointers.get(e.pointerId); if (!last || draggingGhost) return;
   if (pointers.size === 2) {
     pointers.set(e.pointerId, [e.clientX, e.clientY]);
     const [a, b] = [...pointers.values()], gap = Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -570,7 +577,7 @@ renderer.domElement.addEventListener('pointermove', e => {
   elevation = Math.min(1.45, Math.max(.05, elevation + (e.clientY - last[1]) * .006));
   pointers.set(e.pointerId, [e.clientX, e.clientY]);
 });
-renderer.domElement.addEventListener('wheel', e => { e.preventDefault(); distance = Math.min(40, Math.max(.4, distance * Math.exp(e.deltaY * .001))); }, {passive: false});
+renderer.domElement.addEventListener('wheel', e => { e.preventDefault(); if (ghost && (e.shiftKey || e.altKey)) return; distance =Math.min(40, Math.max(.4, distance * Math.exp(e.deltaY * .001))); }, {passive: false});
 
 function render() {
   requestAnimationFrame(render);
@@ -582,6 +589,7 @@ function render() {
   camera.position.set(target.x + distance * Math.cos(elevation) * Math.sin(azimuth), target.y + distance * Math.sin(elevation),
                       target.z + distance * Math.cos(elevation) * Math.cos(azimuth));
   camera.lookAt(target);
+  if (LEVEL_MODE) for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name);
   renderer.render(scene, camera);
   renderLabels();
 }
@@ -660,6 +668,232 @@ const params = new URLSearchParams(location.search);
 const LEVEL_MODE = location.pathname === '/play' || params.has('level');
 let levels = [], level = null, placements = [], placedCost = [], helped = false, scored = false, lastRun = null, rebuildTimer = null;
 
+// ---- the ghost: a piece before it is set down ------------------------------------
+// A see-through copy of a piece. It follows the pointer over the scene until
+// a click pins it; pinned, it can be dragged, its knobs changed and turned
+// any way, and then set down. It is nothing in the engine meanwhile: the
+// server compiles it where it would go (set down on what is there, turned as
+// it is turned) and says why it could not go there. Blue fits, red does not
+// (green is the level's own: where the goal is).
+// Only when it is set down does the engine build it.
+let ghost = null, pressedAt = null, draggingGhost = null;
+const raycaster = new THREE.Raycaster();
+const ghostLook = {
+  fits: new THREE.MeshStandardMaterial({color: 0x6cc6ff, transparent: true, opacity: .35, depthWrite: false, roughness: .6}),
+  refused: new THREE.MeshStandardMaterial({color: 0xff5f5f, transparent: true, opacity: .4, depthWrite: false, roughness: .6})};
+const ghostEdge = {fits: new THREE.LineBasicMaterial({color: 0xcdeeff}), refused: new THREE.LineBasicMaterial({color: 0xffc2c2})};
+const ghostGroup = new THREE.Group();
+scene.add(ghostGroup);
+const TURN_KEYS = {q: ['yaw_deg', 1], e: ['yaw_deg', -1], r: ['pitch_deg', 1], f: ['pitch_deg', -1], z: ['roll_deg', -1], c: ['roll_deg', 1]};
+
+function ghostName() { return ghost ? `your ${ghost.p.piece} ${ghost.index + 1}` : ''; }
+// The piece picked up is hidden while its ghost is out; Cancel shows it again.
+function hiddenPiece(name) { return Boolean(ghost && ghost.was) && (name === ghostName() || name.startsWith(ghostName() + ' ')); }
+function ghostPlacements() { const list = placements.slice(); list[ghost.index] = ghost.p; return list; }
+
+// A knob set as its slider would set it: on its step, within its range.
+function setKnob(p, key, v) {
+  const r = trayItem(p.piece).knobs[key];
+  if (!r || r.choices || !Number.isFinite(v)) return false;
+  if (r.turning) v = ((v + 180) % 360 + 360) % 360 - 180;
+  const step = r.step || 0.01;
+  const next = Number(Math.min(r.max, Math.max(r.min, Math.round(v / step) * step)).toFixed(4));
+  if (next === p[key]) return false;
+  p[key] = next;
+  return true;
+}
+
+function sceneHit(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  const solid = [ground, ...[...meshes].filter(([name, m]) => m.visible && !hiddenPiece(name)).map(([, m]) => m)];
+  const hits = raycaster.intersectObjects(solid, true);
+  return hits.length ? hits[0].point : null;
+}
+
+function ghostHit(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  return raycaster.intersectObjects(ghostGroup.children, true).some(h => h.object.isMesh);
+}
+
+// Put the ghost's middle where the pointer meets the scene (less where on
+// the ghost it was taken hold of, when it is dragged).
+function moveGhostTo(clientX, clientY, hold = {x: 0, z: 0}) {
+  const at = ghost && sceneHit(clientX, clientY);
+  if (!at) return;
+  const moved = [setKnob(ghost.p, 'x_m', at.x - hold.x), setKnob(ghost.p, 'z_m', at.z - hold.z)].some(Boolean);
+  if (moved) { followGhost(); showGhostKnobs(); askGhost(); }
+}
+
+// The knob that turns a piece about an axis: the free one, or for the turn
+// about the vertical a piece's own (a mirror's angle).
+function turnKnob(p, key) {
+  const knobs = trayItem(p.piece).knobs;
+  if (knobs[key]) return key;
+  return key === 'yaw_deg' ? Object.keys(knobs).find(k => knobs[k].turning && k !== 'pitch_deg' && k !== 'roll_deg') : undefined;
+}
+
+function turnGhost(key, by) {
+  const k = ghost && turnKnob(ghost.p, key);
+  if (k && setKnob(ghost.p, k, (ghost.p[k] || 0) + by)) { showGhostKnobs(); askGhost(); }
+}
+
+// The ghost as last compiled, moved at once by however far its knobs have
+// moved since; the server's answer then sets it down again.
+function followGhost() {
+  if (!ghost || !ghost.drawnAt) return;
+  ghostGroup.position.set((ghost.p.x_m ?? 0) - ghost.drawnAt.x, 0, (ghost.p.z_m ?? 0) - ghost.drawnAt.z);
+}
+
+function clearGhostMeshes() {
+  for (const c of [...ghostGroup.children]) { ghostGroup.remove(c); c.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+}
+
+function drawGhost(parts, fits) {
+  clearGhostMeshes();
+  const look = fits ? ghostLook.fits : ghostLook.refused, edge = fits ? ghostEdge.fits : ghostEdge.refused;
+  const turn = (o, deg) => o.rotation.set(...deg.map(d => d * Math.PI / 180), 'XYZ');   // R = Rx Ry Rz, as the engine turns
+  const solid = (geometry, at, deg) => {
+    const mesh = new THREE.Mesh(geometry, look);
+    mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 30), edge));
+    mesh.position.set(...at); turn(mesh, deg);
+    return mesh;
+  };
+  for (const part of parts) {
+    if (part.shape === 'compound') {
+      const body = new THREE.Group();
+      body.position.set(...part.at_m); turn(body, part.turn_deg);
+      for (const sub of part.parts) body.add(solid(sub.shape === 'cylinder'
+        ? new THREE.CylinderGeometry(sub.size_m[0] / 2, sub.size_m[0] / 2, sub.size_m[1], 20)
+        : new THREE.BoxGeometry(...sub.size_m), sub.at_m, sub.turn_deg));
+      ghostGroup.add(body);
+    } else if (part.shape === 'sphere') ghostGroup.add(solid(new THREE.SphereGeometry(part.size_m[0] / 2, 24, 16), part.at_m, part.turn_deg));
+    else if (part.shape === 'cone') ghostGroup.add(solid(new THREE.ConeGeometry(part.size_m[0] / 2, part.size_m[1], 24), part.at_m, part.turn_deg));
+    else ghostGroup.add(solid(new THREE.BoxGeometry(...part.size_m), part.at_m, part.turn_deg));
+  }
+  followGhost();
+}
+
+// One question to the server at a time; a change made meanwhile asks again
+// when the answer comes.
+async function askGhost() {
+  if (!ghost) return;
+  if (ghost.busy) { ghost.again = true; return; }
+  const g = ghost, sent = {x: g.p.x_m ?? 0, z: g.p.z_m ?? 0};
+  g.busy = true; g.again = false;
+  try {
+    const r = await api({op: 'level_ghost', level: level.id, placements: ghostPlacements(), index: g.index});
+    if (ghost !== g) return;
+    Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, drawnAt: sent, answered: true});
+    drawGhost(r.parts, r.fits);
+  } catch (e) {
+    if (ghost === g) Object.assign(g, {fits: false, problems: e.data && e.data.problems ? e.data.problems : [e.message], answered: true});
+  } finally {
+    g.busy = false;
+    if (ghost === g) { showGhostState(); if (g.again) askGhost(); }
+  }
+}
+
+// A piece from the tray (index after the rest) or one picked up (its own
+// index): a ghost of it, following the pointer, starting where the middle of
+// the view meets the scene.
+function startGhost(p, index) {
+  endGhost();
+  ghost = {p, index, was: index < placements.length ? placements[index] : null, follow: true, fits: true, problems: [],
+           drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {}};
+  view.classList.add('placing');
+  renderTray(); renderPlaced();
+  if (!ghost.was) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const at = sceneHit(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    if (at) { setKnob(ghost.p, 'x_m', at.x); setKnob(ghost.p, 'z_m', at.z); showGhostKnobs(); }
+  }
+  askGhost();
+}
+
+function endGhost() {
+  ghost = null; draggingGhost = null;
+  clearGhostMeshes(); ghostGroup.position.set(0, 0, 0);
+  view.classList.remove('placing');
+}
+
+function cancelGhost() { if (!ghost) return; endGhost(); renderTray(); renderPlaced(); }
+
+function setGhostDown() {
+  if (!ghost || !ghost.fits || ghost.busy || !ghost.answered) return;
+  if (ghost.was) placements[ghost.index] = ghost.p; else placements.push(ghost.p);
+  endGhost(); renderTray(); renderPlaced(); scheduleRebuild(0);
+}
+
+function showGhostState() {
+  const state = $('ghost-state'), down = $('ghost-down');
+  if (!ghost || !state) return;
+  state.className = 'ghost-state ' + (ghost.fits ? 'fits' : 'refused');
+  state.textContent = ghost.follow ? 'Move the pointer over the scene; click to put it there. '
+    : '';
+  state.textContent += ghost.fits ? 'It fits here.' : ghost.problems.join('; ');
+  if (down) down.disabled = !ghost.fits || ghost.busy;
+  const head = $('ghost-cost');
+  if (head && ghost.cost != null) head.textContent = ` · costs ${ghost.cost}`;
+}
+
+function showGhostKnobs() {
+  if (!ghost) return;
+  for (const [key, [input, shown]] of Object.entries(ghost.inputs)) {
+    if (String(input.value) !== String(ghost.p[key])) input.value = ghost.p[key];
+    shown.textContent = String(ghost.p[key]) + (trayItem(ghost.p.piece).knobs[key].turning ? '°' : '');
+  }
+}
+
+window.machineGhostState = () => ghost ? {p: {...ghost.p}, index: ghost.index, fits: ghost.fits, problems: ghost.problems,
+  follow: ghost.follow, busy: ghost.busy, answered: ghost.answered, parts: ghostGroup.children.length} : null;
+
+// Over the scene: a ghost that follows goes where the pointer is; a press on
+// a pinned ghost drags it; a click (a press that does not move) pins a
+// following ghost, or moves a pinned one there. Any other drag turns the view.
+renderer.domElement.addEventListener('pointerdown', e => {
+  pressedAt = [e.clientX, e.clientY];
+  if (ghost && !ghost.follow && ghostHit(e.clientX, e.clientY)) {
+    const at = sceneHit(e.clientX, e.clientY);
+    draggingGhost = at ? {x: at.x - (ghost.p.x_m ?? 0), z: at.z - (ghost.p.z_m ?? 0)} : {x: 0, z: 0};
+  }
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!ghost) return;
+  if (draggingGhost) moveGhostTo(e.clientX, e.clientY, draggingGhost);
+  else if (ghost.follow && !e.buttons) moveGhostTo(e.clientX, e.clientY);
+});
+renderer.domElement.addEventListener('pointerup', e => {
+  const click = pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6;
+  if (ghost && click && !draggingGhost) {
+    moveGhostTo(e.clientX, e.clientY);
+    if (ghost.follow) { ghost.follow = false; renderPlaced(); showGhostState(); }
+  }
+  draggingGhost = null; pressedAt = null;
+});
+// Turning by hand: Shift and the wheel turns it, Alt and the wheel tips it.
+renderer.domElement.addEventListener('wheel', e => {
+  if (!ghost || !(e.shiftKey || e.altKey)) return;
+  e.preventDefault();
+  turnGhost(e.altKey ? 'pitch_deg' : 'yaw_deg', Math.sign(e.deltaY || e.deltaX) * -15);
+}, {passive: false});
+document.addEventListener('keydown', e => {
+  if (!ghost || e.ctrlKey || e.metaKey || e.target.closest('input, textarea, select')) return;
+  const key = e.key.toLowerCase(), step = e.shiftKey ? 1 : 15;
+  const nudge = {arrowleft: ['x_m', -1], arrowright: ['x_m', 1], arrowup: ['z_m', -1], arrowdown: ['z_m', 1]}[key];
+  if (TURN_KEYS[key]) turnGhost(TURN_KEYS[key][0], TURN_KEYS[key][1] * step);
+  else if (nudge) {
+    const rule = trayItem(ghost.p.piece).knobs[nudge[0]];
+    if (rule && setKnob(ghost.p, nudge[0], (ghost.p[nudge[0]] ?? 0) + nudge[1] * (rule.step || 0.01) * (e.shiftKey ? 10 : 1))) {
+      followGhost(); showGhostKnobs(); askGhost();
+    }
+  } else if (key === 'enter' && !e.target.closest('button')) setGhostDown();
+  else if (key === 'escape') cancelGhost();
+  else return;
+  e.preventDefault();
+});
+
 function bestStars(id) { try { return Number(localStorage.getItem('banjo-level-' + id) || 0); } catch { return 0; } }
 function keepStars(id, n) { try { if (n > bestStars(id)) localStorage.setItem('banjo-level-' + id, String(n)); } catch { /* private window */ } }
 
@@ -681,48 +915,117 @@ function trayItem(piece) { return level.tray.find(t => t.piece === piece); }
 function renderTray() {
   const ul = $('tray'); ul.replaceChildren();
   for (const t of level.tray) {
-    const used = placements.filter(p => p.piece === t.piece).length, count = t.count || 1;
-    const li = document.createElement('li');
-    const price = t.cost_per ? `${t.cost} + ${t.cost_per.each} per ${t.cost_per.unit} ${t.cost_per.knob === 'length' ? 'm of length' : t.cost_per.knob}` : `${t.cost}`;
+    const used = placements.filter(p => p.piece === t.piece).length + (ghost && !ghost.was && ghost.p.piece === t.piece ? 1 : 0);
+    const count = t.count || 1, li = document.createElement('li');
+    const per = t.cost_per ? (t.cost_per.say || `${t.cost_per.each} per ${t.cost_per.unit} of ${t.cost_per.knob}`) : '';
+    const price = t.cost_per ? (t.cost ? `${t.cost} + ${per}` : per) : `${t.cost}`;
     li.append(Object.assign(document.createElement('span'), {textContent: `${t.piece} — costs ${price} · ${count - used} of ${count} left`}));
     const add = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Add', disabled: used >= count});
     add.addEventListener('click', () => {
       const p = {piece: t.piece};
       for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
-      placements.push(p); renderTray(); renderPlaced(); scheduleRebuild(0);
+      startGhost(p, placements.length);
     });
     li.append(add); ul.append(li);
   }
 }
 
+function button(text, onClick, extra = {}) {
+  const b = Object.assign(document.createElement('button'), {type: 'button', textContent: text}, extra);
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+// A knob's control: a slider (or a list of choices) that changes the piece
+// and then calls changed().
+function knobControl(p, key, rule, what, changed) {
+  const label = Object.assign(document.createElement('label'), {className: 'knob'});
+  label.append(Object.assign(document.createElement('span'), {textContent: rule.label || key}));
+  let input;
+  const shown = Object.assign(document.createElement('output'), {textContent: String(p[key]) + (rule.turning ? '°' : '')});
+  if (rule.choices) {
+    input = document.createElement('select');
+    for (const c of rule.choices) input.append(Object.assign(document.createElement('option'), {value: c, textContent: c}));
+    input.value = p[key];
+    input.addEventListener('change', () => { p[key] = input.value; shown.textContent = input.value; changed(); });
+  } else {
+    input = Object.assign(document.createElement('input'), {type: 'range', min: rule.min, max: rule.max, step: rule.step || 0.01, value: p[key]});
+    input.addEventListener('input', () => { p[key] = Number(input.value); shown.textContent = input.value + (rule.turning ? '°' : ''); changed(); });
+  }
+  input.setAttribute('aria-label', `${rule.label || key} of ${what}`);
+  label.append(input, shown);
+  return {label, input, shown};
+}
+
+function describeKnobs(p, t) {
+  const turned = Object.entries(t.knobs).filter(([k, r]) => r.turning && p[k]).map(([k, r]) => `${r.label || k} ${p[k]}°`);
+  const rest = Object.entries(t.knobs).filter(([k, r]) => !r.turning && p[k] != null && !(r.free && !p[k]))
+    .map(([k, r]) => `${(r.label || k).replace(/ \(.*\)$/, '')} ${p[k]}`);
+  return [...rest, ...turned].join(' · ');
+}
+
+// The ghost, in the list where the piece is (or will be): its knobs, its
+// turning, and Set it down / Cancel.
+function ghostItem() {
+  const p = ghost.p, t = trayItem(p.piece), what = ghostName();
+  const li = Object.assign(document.createElement('li'), {className: 'ghost-piece'});
+  const head = Object.assign(document.createElement('div'), {className: 'piece-head'});
+  const title = Object.assign(document.createElement('strong'), {textContent: `${what} — ghost, not set down yet`});
+  title.append(Object.assign(document.createElement('span'), {id: 'ghost-cost'}));
+  head.append(title);
+  const follow = button(ghost.follow ? 'Following the pointer' : 'Follow the pointer', () => {
+    ghost.follow = !ghost.follow; renderPlaced(); showGhostState();
+  });
+  follow.setAttribute('aria-pressed', String(ghost.follow));
+  const actions = Object.assign(document.createElement('div'), {className: 'ghost-actions'});
+  actions.append(follow, button('Set it down', setGhostDown, {id: 'ghost-down', disabled: true}), button('Cancel', cancelGhost));
+  li.append(head, actions, Object.assign(document.createElement('p'), {id: 'ghost-state', className: 'ghost-state'}));
+  ghost.inputs = {};
+  const turning = Object.assign(document.createElement('fieldset'), {className: 'turning'});
+  turning.append(Object.assign(document.createElement('legend'), {textContent: 'Turn it (degrees)'}));
+  for (const [key, rule] of Object.entries(t.knobs)) {
+    const c = knobControl(p, key, rule, what, () => { followGhost(); askGhost(); });
+    ghost.inputs[key] = [c.input, c.shown];
+    if (!rule.turning) { li.append(c.label); continue; }
+    // − and + by 15 degrees either side of the slider; the slider for the rest.
+    const row = Object.assign(document.createElement('div'), {className: 'turn-row'});
+    const word = rule.label.split(' ')[0];
+    row.append(button('−15°', () => turnGhost(key, -15), {ariaLabel: `${word} back 15 degrees`}), c.label,
+               button('+15°', () => turnGhost(key, 15), {ariaLabel: `${word} on 15 degrees`}));
+    turning.append(row);
+  }
+  if (turning.children.length > 1) {
+    turning.append(button('Square it up', () => {
+      for (const [key, rule] of Object.entries(t.knobs)) if (rule.turning) setKnob(p, key, 0);
+      showGhostKnobs(); askGhost();
+    }), Object.assign(document.createElement('p'), {className: 'legend',
+      textContent: 'Keys: Q/E turn · R/F tip · Z/C roll (with Shift, 1°) · arrows move it · Enter sets it down · Esc cancels. ' +
+                   'Shift+wheel turns it, Alt+wheel tips it. Drag the pinned ghost to move it; click anywhere to put it there.'}));
+    li.append(turning);
+  }
+  return li;
+}
+
 function renderPlaced() {
   const ol = $('placed'); ol.replaceChildren();
   placements.forEach((p, i) => {
+    if (ghost && ghost.was && ghost.index === i) { ol.append(ghostItem()); return; }
     const t = trayItem(p.piece), li = document.createElement('li');
     const head = Object.assign(document.createElement('div'), {className: 'piece-head'});
     head.append(Object.assign(document.createElement('strong'), {textContent: `your ${p.piece} ${i + 1}${placedCost[i] != null ? ' · costs ' + placedCost[i] : ''}`}));
-    const remove = Object.assign(document.createElement('button'), {type: 'button', textContent: 'Remove'});
-    remove.addEventListener('click', () => { placements.splice(i, 1); renderTray(); renderPlaced(); scheduleRebuild(0); });
-    head.append(remove); li.append(head);
-    for (const [key, rule] of Object.entries(t.knobs)) {
-      const label = Object.assign(document.createElement('label'), {className: 'knob'});
-      label.append(Object.assign(document.createElement('span'), {textContent: rule.label || key}));
-      let input;
-      const shown = Object.assign(document.createElement('output'), {textContent: String(p[key])});
-      if (rule.choices) {
-        input = document.createElement('select');
-        for (const c of rule.choices) input.append(Object.assign(document.createElement('option'), {value: c, textContent: c}));
-        input.value = p[key];
-        input.addEventListener('change', () => { p[key] = input.value; shown.textContent = input.value; scheduleRebuild(); });
-      } else {
-        input = Object.assign(document.createElement('input'), {type: 'range', min: rule.min, max: rule.max, step: rule.step || 0.01, value: p[key]});
-        input.addEventListener('input', () => { p[key] = Number(input.value); shown.textContent = input.value; scheduleRebuild(); });
-      }
-      input.setAttribute('aria-label', `${rule.label || key} of your ${p.piece} ${i + 1}`);
-      label.append(input, shown); li.append(label);
-    }
+    const actions = Object.assign(document.createElement('div'), {className: 'ghost-actions'});
+    // Picked up, it becomes a ghost again: moved, changed, turned, set down.
+    actions.append(button('Pick up', () => startGhost({...p}, i), {ariaLabel: `Pick up your ${p.piece} ${i + 1}`}),
+                   button('Remove', () => {
+                     if (ghost) endGhost();
+                     placements.splice(i, 1); renderTray(); renderPlaced(); scheduleRebuild(0);
+                   }, {ariaLabel: `Remove your ${p.piece} ${i + 1}`}));
+    head.append(actions);
+    li.append(head, Object.assign(document.createElement('p'), {className: 'knob-summary', textContent: describeKnobs(p, t)}));
     ol.append(li);
   });
+  if (ghost && !ghost.was) ol.append(ghostItem());
+  if (ghost) { showGhostKnobs(); showGhostState(); }
   const total = placedCost.reduce((a, b) => a + (b || 0), 0);
   $('cost-line').textContent = placements.length ? `Cost ${Math.round(total * 10) / 10} of a budget of ${level.budget} (par ${level.par}).` : 'Add a piece from the tray.';
 }
@@ -764,6 +1067,7 @@ async function score(row) {
 
 async function chooseLevel(id) {
   level = levels.find(l => l.id === id) || levels[0];
+  endGhost();
   placements = []; placedCost = []; helped = false; lastRun = null;
   history_.replaceState(null, '', '/play?level=' + level.id);
   $('title').textContent = `${levels.indexOf(level) + 1}. ${level.title}`;
@@ -783,6 +1087,7 @@ async function askLevel(mode) {
     const r = await api({op: 'chat', level: level.id, placements, mode, message, last_run: lastRun});
     say('model', r.reply);
     if (mode === 'build' && Array.isArray(r.placements)) {
+      endGhost();
       placements = r.placements.map(p => { const q = {...p}; delete q.cost; return q; });
       helped = true; renderTray(); renderPlaced();
       if (r.rehearsal) say(r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.goal_at_s != null
@@ -807,8 +1112,15 @@ async function startGame() {
   levels = r.levels;
   await chooseLevel(params.get('level'));
 }
-$('run').addEventListener('click', () => rebuildLevel(true).catch(() => {}));
+// A ghost is not in the machine yet: set it down (or cancel it) before a run.
+function ghostInTheWay() {
+  if (!ghost) return false;
+  $('verdict').textContent = `Set your ${ghost.p.piece} down first (or cancel it): a ghost is not part of the machine yet.`;
+  return true;
+}
+$('run').addEventListener('click', () => { if (!ghostInTheWay()) rebuildLevel(true).catch(() => {}); });
 $('trial').addEventListener('click', async () => {
+  if (ghostInTheWay()) return;
   $('trial').disabled = true;
   $('verdict').textContent = 'Running it three times, each loose part nudged by a millimetre or two…';
   try {

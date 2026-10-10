@@ -4118,6 +4118,24 @@ def remember_ground(app,body,answer=None):
         room_store.keep(app,room)
 
 
+class PlaygroundServer(ThreadingHTTPServer):
+    """The server, with room for the connections a page opens at once.
+
+    socketserver queues five connections that it has not yet accepted. A
+    world page opens many at once -- its modules, then the Workshop's, beside
+    its own API calls -- and while the server is busy (a room's machines, a
+    design compiling) it accepts more slowly than they arrive. Past five,
+    Windows refuses the rest outright: the Workshop's chat_actions.js came
+    back net::ERR_CONNECTION_REFUSED, "Failed to fetch dynamically imported
+    module: /workshop.js", and the Workshop never opened (one to three times
+    in four runs of workshop_browser_tests on a loaded machine; measured with
+    Chrome's Network.loadingFailed). Linux drops the excess instead and the
+    browser retries a second later. 128 is the backlog web servers commonly
+    take; the system clips it to its own most.
+    """
+    request_queue_size = 128
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port",type=int,default=8765)
@@ -4181,7 +4199,7 @@ def main():
     # room and expects it to stay as it left it, and for anybody who wants
     # the old behaviour back without a rebuild.
     if os.environ.get("BANJO_WORLD_CLOCK","1")!="0": app.clock.start()
-    server=ThreadingHTTPServer((args.host,args.port),Handler);server.app=app
+    server=PlaygroundServer((args.host,args.port),Handler);server.app=app
     print(f"Banjo playground: http://127.0.0.1:{args.port}"
           +(f" -- listening on {args.host}, behind a password" if app.password else ""),flush=True)
     # Asked to stop -- a host redeploying, a service manager -- the server stops

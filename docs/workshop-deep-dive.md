@@ -624,7 +624,9 @@ What that fixed, and what came out of doing it:
   force: an iron cube of the mass asked for, let go a millimetre above it, that
   presses through real contact and can slide off.
 - **2.3 It reads orientation.** Done: every body reports `turn_deg` from where
-  it was put down, and past 45 degrees the answer is "it went over".
+  it was put down, and `tilt_deg`, how far its up has swung from up; tipped
+  past 45 degrees the answer is "it went over". It was the whole turn until
+  2026-10-10, and a machine driven round a corner was told it fell.
 - **2.4 It reports fracture.** Done -- and doing it found a real error in the
   reading. The engine names what MIGHT give way in `breakable`; the failure run
   then says `held`, `dented` or `broke`. Counting every run as a break called a

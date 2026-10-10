@@ -201,8 +201,10 @@ def compile_design(design, overrides=None, *, root: str = "assembly") -> dict[st
         # already applies when it writes a design's joints down (adopted()).
         # Without this only a real axle could be a pin here, and a bench design
         # cannot draw one: a swivel is a part butted under a flat face.
-        if found and "axis" not in found and found.get("normal"):
-            found = dict(found, axis=list(found["normal"]))
+        if found and ("axis" in found or found.get("normal")):
+            # Signed one way for every bearing, so a mirrored pair of wheels
+            # told the same thing turns the same way (turning_axis).
+            found = dict(found, axis=list(workshop_construction.turning_axis(found)))
         if not found or "axis" not in found:
             raise ValueError(f"The bearing between {joint['a']} and {joint['b']} has nothing to turn on: they "
                              f"neither share a shaft nor meet on a face")

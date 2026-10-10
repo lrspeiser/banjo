@@ -425,6 +425,31 @@ def interface(a: WirePart, b: WirePart) -> dict[str, Any] | None:
     return shaft_engagement(a, b) or contact_patch(a, b)
 
 
+def turning_axis(how: dict[str, Any]) -> tuple[float, float, float]:
+    """The axis a bearing turns about, from how its two parts meet: a shaft's
+    own, else the normal of the face they meet on -- signed the same way for
+    every bearing, its first component that is not zero (x, then y, then z)
+    positive.
+
+    A motor turns its bearing's part about this axis, so its sign is which way
+    "forward" turns it. A face's normal points from one part to the other, and
+    a machine's two sides are mirror images: a wheel against the outside of
+    its left mount meets it on +x and the right one's on -x. Signed by the
+    face, told the same thing, the two wheels turned opposite ways and a
+    machine driven forward spun on the spot, and one told to turn went
+    straight (measured on the chat-built robot at the bench: both wheels told
+    direction 1 turned +x and -x against its deck and it went round once in
+    about five seconds). A shaft's sign is the way its part was turned to lie,
+    which is the same arbitrariness. Signed this way, a mirrored pair turns
+    together, as the rover's stubs, both laid along +x, always did.
+    """
+    axis = tuple(float(v) for v in (how.get("axis") if how.get("form") == "cylindrical" else how["normal"]))
+    for v in axis:
+        if abs(v) > 1e-9:
+            return axis if v > 0 else tuple(-x for x in axis)
+    return axis
+
+
 # ---------------------------------------------------------------------------
 # The construction block
 # ---------------------------------------------------------------------------
@@ -840,9 +865,10 @@ def joints(design: WorkshopDesign) -> list[dict[str, Any]]:
         else:
             row["open"] = False
             row["interface"] = {k: _rounded(v) for k, v in how.items()}
-            if joint["kind"] == "bearing" and how["form"] != "cylindrical":
-                # A turning joint on a flat face turns about that face's normal.
-                row["interface"]["axis"] = _rounded(how["normal"])
+            if joint["kind"] == "bearing":
+                # A turning joint on a flat face turns about that face's normal,
+                # and every bearing's axis is signed one way (turning_axis).
+                row["interface"]["axis"] = _rounded(turning_axis(how))
         out.append(row)
     return out
 

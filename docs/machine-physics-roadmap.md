@@ -11,6 +11,7 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 | Physics | How a machine asks for it | Measured (tests/machine_physics_tests.py) |
 |---|---|---|
 | Rigid bodies: rolling, sliding, falling, toppling, friction, rolling resistance | parts, kits | Marble run, dominoes, falling weight in the default machine |
+| Turning a whole kit any way | `"turned": {"yaw_deg", "pitch_deg", "roll_deg", "about_m", "clear_ground"}` on any kit: its parts, joints, gas, edges and lamps all turn about `about_m`; with `clear_ground` it is lifted to stand on the ground | A cannon turned 20 degrees fires 20 degrees off its line; a knife pendulum turned 30 degrees still cuts its rope (tests/machine_game_tests.py) |
 | Hinges, fixings, ropes (ties), springs, slides, a rope wound on a drum | `joints` | Lever, rope and gate |
 | Gears | a `gear` joint between two hinges, teeth on each | A motor turns a 12-tooth wheel 1189 degrees; the 24-tooth wheel turns back 594 |
 | Pulleys (block and tackle) | a `pulley` joint with a ratio | 2:1: the counterweight falls 0.538 m, the load rises 0.269 m |
