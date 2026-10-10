@@ -53,6 +53,8 @@ class CpuCoupledEvaluator(CoupledNewton):
         self.lib.banjo_coupled_cpu_abi.restype=u
         if self.lib.banjo_coupled_cpu_abi()!=1:raise RuntimeError('Unknown CPU trial ABI')
         self.lib.banjo_coupled_cpu_trials.argtypes=[p,u,p,u,p,u,d,d,p,p,p,p,p,i];self.lib.banjo_coupled_cpu_trials.restype=ctypes.c_int
+        self.lib.banjo_coupled_cpu_material_trials.argtypes=[p,u,p,u,p,u,d,d,p,p,p,p,p,i];self.lib.banjo_coupled_cpu_material_trials.restype=ctypes.c_int
+        self.lib.banjo_coupled_cpu_contact_stiffness.argtypes=[p,u,u,p];self.lib.banjo_coupled_cpu_contact_stiffness.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_local_trials.argtypes=[p,u,p,u,p,p,i,u,d,d,p,p,p,p,p,i];self.lib.banjo_coupled_cpu_local_trials.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_schedule.argtypes=[p,u,d,d,d,d,p];self.lib.banjo_coupled_cpu_schedule.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_flight.argtypes=[p,u,u,d,d,d,p,p,p,p,p];self.lib.banjo_coupled_cpu_flight.restype=ctypes.c_int
@@ -81,6 +83,14 @@ class CpuCoupledEvaluator(CoupledNewton):
         idx=int(np.argmin(out[:,0]));row=out[idx]
         if not 0<row[0]<=h:raise TrialFailure('Invalid CPU contact timestep estimate')
         return dict(step_s=float(row[0]),frequency_rad_s=float(row[1]),excitation_m_s=float(row[2]),pair=self.pairs[idx].tolist(),velocity_tolerance_m_s=velocity_tolerance)
+    def evaluate_material(self,velocity,h,gravity=-9.81):
+        """Private native history/material preparation, not accepted motion."""
+        v=np.ascontiguousarray(velocity,dtype=np.float64).reshape(-1,self.n,6);batch=len(v)
+        if not 1<=batch<=384:raise ValueError('Material preparation batch exceeds its bound')
+        out=dict(poses=np.zeros((batch,self.n,7)),residual=np.zeros((batch,self.n,6)),history=np.zeros((batch,self.m,32)),forces=np.zeros((batch,self.n,6)),ledger=np.zeros((batch,12)),faults=np.zeros(batch,dtype=np.int32))
+        code=self.lib.banjo_coupled_cpu_material_trials(self.bodies,self.n,self.edges,self.m,v,batch,h,gravity,*(out[k] for k in ('poses','residual','history','forces','ledger','faults')))
+        if code:raise ValueError('Native material preparation declaration refused')
+        return out
     def flight_bounds(self,sphere,h,gravity,travel_bound,bounds):
         buffers=[np.empty(n) for n in (7,6,6,6)]
         if self.lib.banjo_coupled_cpu_flight(self.bodies,self.n,sphere,h,gravity,travel_bound,bounds,*buffers):raise TrialFailure('CPU swept flight refused')
@@ -99,6 +109,11 @@ class CpuCoupledEvaluator(CoupledNewton):
         capacity=len(self.pairs)*48;rows=np.empty((capacity,34))
         count=self.lib.banjo_coupled_cpu_contact_differential(self.bodies,self.n,capacity,rows)
         if count<0 or count>capacity or not np.isfinite(rows[:count]).all():raise ValueError('Native contact differential refused')
+        return rows[:count].copy()
+    def contact_stiffness(self):
+        capacity=len(self.pairs)*48;rows=np.empty(capacity)
+        count=self.lib.banjo_coupled_cpu_contact_stiffness(self.bodies,self.n,capacity,rows)
+        if count<0 or count>capacity or not np.isfinite(rows[:count]).all():raise ValueError('Native contact stiffness refused')
         return rows[:count].copy()
     def interaction_sites(self,velocity,h):
         v=np.ascontiguousarray(velocity,dtype=np.float64).reshape(self.n,6)

@@ -1,0 +1,140 @@
+{
+  "schema": "banjo.contact-branch-verification.v1",
+  "curvature_directional_cases": 288,
+  "maximum_curvature_absolute_error": 3.456129642892547e-09,
+  "materials": {
+    "glass": {
+      "material_one_sided_defect": 0.5017452060055003,
+      "material_symmetry_defect": 1.3550583671105462e-12,
+      "material_refinement_relative": 1.5467911713524039e-12,
+      "material_irreversible_sample_changes": 0,
+      "material_force_rows": 72,
+      "branches": {
+        "open": {
+          "compressed_sites": 20,
+          "touching_sites": 96,
+          "geometric_curvature_norm": 1.5474792611973795e-08,
+          "stationary_force_residual_n_nm": 8.498374721940739e-18,
+          "stationary_contact_energy_residual_j": 0.0,
+          "negative_modes": 1,
+          "maximum_omega_squared_s2": 106172347396884.34
+        },
+        "closed": {
+          "compressed_sites": 20,
+          "touching_sites": 96,
+          "geometric_curvature_norm": 1.5474792611973795e-08,
+          "stationary_force_residual_n_nm": 8.498374721940739e-18,
+          "stationary_contact_energy_residual_j": 0.0,
+          "negative_modes": 1,
+          "maximum_omega_squared_s2": 106369262515162.69
+        }
+      },
+      "execution_admitted": false,
+      "material_candidate_valid": false,
+      "full_reaction_maps_retained": false,
+      "broad_contact_events_qualified": false,
+      "wall_s": 0.04168100003153086,
+      "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+    },
+    "oak": {
+      "material_one_sided_defect": 0.5017452060055004,
+      "material_symmetry_defect": 1.3526498540018992e-12,
+      "material_refinement_relative": 1.5478617392090812e-12,
+      "material_irreversible_sample_changes": 0,
+      "material_force_rows": 72,
+      "branches": {
+        "open": {
+          "compressed_sites": 20,
+          "touching_sites": 96,
+          "geometric_curvature_norm": 3.3427931254052283e-09,
+          "stationary_force_residual_n_nm": 3.6799042000400975e-18,
+          "stationary_contact_energy_residual_j": 0.0,
+          "negative_modes": 2,
+          "maximum_omega_squared_s2": 12133982559643.93
+        },
+        "closed": {
+          "compressed_sites": 20,
+          "touching_sites": 96,
+          "geometric_curvature_norm": 3.3427931254052283e-09,
+          "stationary_force_residual_n_nm": 3.6799042000400975e-18,
+          "stationary_contact_energy_residual_j": 0.0,
+          "negative_modes": 0,
+          "maximum_omega_squared_s2": 12260595526033.209
+        }
+      },
+      "execution_admitted": false,
+      "material_candidate_valid": false,
+      "full_reaction_maps_retained": false,
+      "broad_contact_events_qualified": false,
+      "wall_s": 0.04336979996878654,
+      "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+    },
+    "iron": {
+      "material_one_sided_defect": 2.6509696243489533e-12,
+      "material_symmetry_defect": 7.356261925180785e-14,
+      "material_refinement_relative": 7.0467440108089554e-06,
+      "material_irreversible_sample_changes": 0,
+      "material_force_rows": 72,
+      "branches": {
+        "open": {
+          "compressed_sites": 20,
+          "touching_sites": 96,
+          "geometric_curvature_norm": 3.106011945689024e-08,
+          "stationary_force_residual_n_nm": 0.0,
+          "stationary_contact_energy_residual_j": 0.0,
+          "negative_modes": 3,
+          "maximum_omega_squared_s2": 1301313628014.8547
+        },
+        "closed": {
+          "compressed_sites": 20,
+          "touching_sites": 96,
+          "geometric_curvature_norm": 3.106011945689024e-08,
+          "stationary_force_residual_n_nm": 0.0,
+          "stationary_contact_energy_residual_j": 0.0,
+          "negative_modes": 2,
+          "maximum_omega_squared_s2": 1991417479806.1663
+        }
+      },
+      "execution_admitted": false,
+      "material_candidate_valid": false,
+      "full_reaction_maps_retained": false,
+      "broad_contact_events_qualified": false,
+      "wall_s": 0.02459009998710826,
+      "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+    },
+    "ice": {
+      "material_one_sided_defect": 0.501745206005496,
+      "material_symmetry_defect": 1.513446989826863e-12,
+      "material_refinement_relative": 1.505600841918104e-12,
+      "material_irreversible_sample_changes": 0,
+      "material_force_rows": 72,
+      "branches": {
+        "open": {
+          "compressed_sites": 20,
+          "touching_sites": 96,
+          "geometric_curvature_norm": 2.5412825010182925e-09,
+          "stationary_force_residual_n_nm": 7.359808400080195e-18,
+          "stationary_contact_energy_residual_j": 0.0,
+          "negative_modes": 0,
+          "maximum_omega_squared_s2": 762352436757.0709
+        },
+        "closed": {
+          "compressed_sites": 20,
+          "touching_sites": 96,
+          "geometric_curvature_norm": 2.5412825010182925e-09,
+          "stationary_force_residual_n_nm": 7.359808400080195e-18,
+          "stationary_contact_energy_residual_j": 0.0,
+          "negative_modes": 1,
+          "maximum_omega_squared_s2": 879666493789.9994
+        }
+      },
+      "execution_admitted": false,
+      "material_candidate_valid": false,
+      "full_reaction_maps_retained": false,
+      "broad_contact_events_qualified": false,
+      "wall_s": 0.04272780002793297,
+      "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+    }
+  },
+  "scope": "Native private endpoint curvature/material separation, no reduced execution or realtime claim"
+}

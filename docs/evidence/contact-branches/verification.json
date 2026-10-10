@@ -1,0 +1,26 @@
+{
+  "schema": "banjo.contact-branch-checkpoint.v1",
+  "base_revision": "839b59a8ff5e3b92cd0031f439fbe876fc9c3e0b",
+  "environment": "Windows-11-10.0.26200-SP0",
+  "scope": "Private native endpoint preparation; no accepted reduced motion or realtime qualification",
+  "cpp_target": "banjo_coupled_cpu",
+  "registered_sources": 354,
+  "windows_scoped_tests": [
+    "coupled_contact",
+    "cpu_coupled_modes",
+    "contact_observation",
+    "contact_branch",
+    "coupled_view",
+    "cpu_local_jacobian",
+    "cpu_coupled_world",
+    "cpu_high_drop"
+  ],
+  "linux_scoped_tests": [
+    "contact_branch",
+    "cpu_coupled_modes"
+  ],
+  "actual_http_gateway": "passed",
+  "full_repository_regression": false,
+  "windows_additional_ctest_wall_s": 136.4,
+  "local_browser": "Native new branch results beside 3D sheet; unchanged t=0; phone 390x844 controls visible"
+}

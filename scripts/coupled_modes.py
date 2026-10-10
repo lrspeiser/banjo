@@ -209,10 +209,11 @@ class ModeBasis:
             reference_energy_residual_j=float(e1-e0))
         if hasattr(self,'full_force'):
             result['affine_wrench_impulse']=self.full_force*h+self.full_force_tangent@result['integrated_displacement']
+            result['affine_dynamic_impulse_residual']=result['affine_wrench_impulse'][self.dynamic_dofs]-self.mass*(velocity-self.velocity)
         return result
 
 
-def _samples(evaluator, bodies, edges, delta):
+def _samples(evaluator, bodies, edges, delta, *, material_only=False):
     """Reach each private sample along a real native trial, then read its force.
 
     Assigning a perturbed pose while leaving old material history in place is
@@ -223,7 +224,8 @@ def _samples(evaluator, bodies, edges, delta):
     for j, dof in enumerate(e.dynamic):
         velocities[j, dof//6, dof%6] += 2*delta[j]/1e-6
         velocities[n+j, dof//6, dof%6] -= 2*delta[j]/1e-6
-    path = e.evaluate(velocities, 1e-6)
+    evaluate=e.evaluate_material if material_only else e.evaluate
+    path = evaluate(velocities, 1e-6)
     if np.any(path['faults']): raise ValueError('Native derivative path refused: '+str(path['faults'].tolist()))
     forces = []
     irreversible_changes = 0
@@ -238,9 +240,16 @@ def _samples(evaluator, bodies, edges, delta):
             for i, edge in enumerate(edges):
                 cols = slice(0, 12) if edge[2] == 1 else slice(5, 7)
                 irreversible_changes += int(not np.array_equal(path['history'][k, i, cols], edge[35:67][cols]))
-            out = e.evaluate(e.bodies[:, 14:20], 1e-6)
+            out = evaluate(e.bodies[:, 14:20], 1e-6)
             if out['faults'][0]: raise ValueError('Native stationary derivative sample refused')
-            forces.append(out['forces'][0].ravel().copy())
+            force=out['forces'][0].copy()
+            if material_only and dof%6>=3:
+                # Pull world torques back into the frozen Cayley chart. A
+                # world-wrench derivative is not a symmetric energy Hessian.
+                turn=np.zeros(3);turn[dof%6-3]=sign*delta[j]
+                jacobian=(np.eye(3)+.5*_skew(turn))/(1+np.dot(turn,turn)/4)
+                force[dof//6,3:]=jacobian.T@force[dof//6,3:]
+            forces.append(force.ravel().copy())
     finally:
         e.bodies[:] = bodies; e.edges[:] = edges
     return np.asarray(forces), irreversible_changes
@@ -262,6 +271,109 @@ def _rotation(q):
 
 def _box_gap(q):
     return np.linalg.norm(np.maximum(q,0),axis=1)+np.minimum(np.max(q,axis=1),0)
+
+
+def contact_gap_hessian(row,bodies):
+    """Exact smooth face/plane gap Hessian in the frozen Cayley pose chart.
+
+    This chart curvature is different from differentiating world torques.
+    Box feature ties and primitive contacts refuse, not silently symmetrize.
+    """
+    a,b=int(row[0]),int(row[1]);owner=int(row[3])
+    if owner not in (a,b):raise ValueError('Surface-site curvature requires native point/plane or point/box geometry')
+    target=b if owner==a else a;shape=int(row[15])
+    if shape not in (0,1):raise ValueError('Unsupported target curvature')
+    if np.any(abs(np.sum(bodies[[owner,target],10:14]**2,axis=1)-1)>128*np.finfo(float).eps):
+        raise ValueError('Curvature requires normalized native orientations')
+    n=row[19:22] if owner==a else row[25:28];lever=row[6:9];relative=row[9:12]
+    if shape==1:
+        q=row[31:34];order=np.argsort(q);axis=int(order[-1])
+        allowance=128*np.finfo(float).eps*(abs(q).sum()+np.linalg.norm(relative)+row[16:19].sum())
+        if q[axis]>0 or q[axis]-q[order[-2]]<=allowance or abs(row[12+axis])<=allowance:
+            raise ValueError('Nonsmooth/exterior box feature needs qualified curvature')
+        declared=_rotation(bodies[target,10:14])[:,axis]*(-1 if row[12+axis]<0 else 1)
+        if not np.allclose(n,declared,rtol=0,atol=128*np.finfo(float).eps):raise ValueError('Native target feature/gradient differs')
+    h=np.zeros((12,12));eye=np.eye(3)
+    def angular(v):return .5*(np.outer(n,v)+np.outer(v,n))-np.dot(n,v)*eye
+    h[3:6,3:6]=angular(lever);h[9:12,9:12]=angular(relative)
+    h[3:6,9:12]=np.dot(n,lever)*eye-np.outer(n,lever);h[9:12,3:6]=h[3:6,9:12].T
+    h[:3,9:12]=-_skew(n);h[9:12,:3]=h[:3,9:12].T
+    h[6:9,9:12]=_skew(n);h[9:12,6:9]=h[6:9,9:12].T
+    if owner==b:
+        order=np.r_[np.arange(6,12),np.arange(6)];h=h[np.ix_(order,order)]
+    return h
+
+
+def contact_branch_model(evaluator, *, touching):
+    """Conditional endpoint-potential tangent, never a native world response.
+
+    Open and closed choices at exact zero remain explicit. Already compressed
+    sites retain their geometric preload curvature and current native force.
+    Broad SAT and constitutive/event qualification are required separately.
+    """
+    if touching not in ('open','closed'):raise ValueError('Touching contact needs an explicit branch choice')
+    rows=evaluator.contact_differential();stiffness=evaluator.contact_stiffness()
+    if len(rows)!=len(stiffness):raise ValueError('Native contact stiffness mapping differs')
+    size=evaluator.n*6;force=np.zeros(size);matrix=np.zeros((size,size));energy=0.;compressed=zero=0
+    geometric_norm=0.
+    for row,k in zip(rows,stiffness):
+        if row[5]>0 or row[4]>0:continue
+        gap=row[4]
+        if gap==0:
+            zero+=1
+            if touching=='open':continue
+        else:compressed+=1
+        ids=np.r_[np.arange(int(row[0])*6,int(row[0])*6+6),np.arange(int(row[1])*6,int(row[1])*6+6)]
+        g=row[19:31];h=contact_gap_hessian(row,evaluator.bodies)
+        curvature=k*(np.outer(g,g)+gap*h)
+        force[ids]+=-k*gap*g;matrix[np.ix_(ids,ids)]+=curvature;energy+=.5*k*gap*gap
+        geometric_norm+=float(np.linalg.norm(k*gap*h))
+    if not np.isfinite(matrix).all() or not np.isfinite(force).all() or not math.isfinite(energy):raise ValueError('Nonfinite branch potential')
+    return dict(force=force,stiffness=matrix,energy_j=energy,compressed_sites=compressed,touching_sites=zero,
+        touching_choice=touching,geometric_curvature_norm=geometric_norm,
+        scope='Native smooth endpoint potential in frozen Cayley coordinates; explicit touching branch, not an accepted timestep')
+
+
+def prepare_contact_branches(evaluator,bodies,edges,delta):
+    """Separate native constitutive sampling from conditional contact Hessians."""
+    started=time.perf_counter();e=evaluator
+    baseline=e.evaluate_material(-bodies[:,14:20],1e-6)
+    if baseline['faults'][0]:raise ValueError('Native material baseline refused')
+    f=baseline['forces'][0].ravel();weights=e.active_weights;matrices=[];changed=0
+    for factor in (1.,.5):
+        samples,changes=_samples(e,bodies,edges,delta*factor,material_only=True);changed+=changes
+        up=-(samples[:len(delta)]-f)/(delta[:,None]*factor);down=-(f-samples[len(delta):])/(delta[:,None]*factor)
+        matrices.append(((up+down)/2).T)
+    raw=matrices[-1]
+    scaled=raw[e.dynamic]/weights[:,None]/weights[None,:]
+    sides=(up-down).T[e.dynamic]/weights[:,None]/weights[None,:]
+    norm=max(np.linalg.norm(scaled),1)
+    result=dict(material_one_sided_defect=float(np.linalg.norm(sides)/norm),
+        material_symmetry_defect=float(np.linalg.norm(scaled-scaled.T)/norm),
+        material_refinement_relative=float(np.linalg.norm((matrices[0][e.dynamic]-raw[e.dynamic])/weights[:,None]/weights[None,:])/norm),
+        material_irreversible_sample_changes=changed,material_force_rows=len(f),branches={},execution_admitted=False)
+    # Keep both declared choices. Event continuation must choose a consistent
+    # branch; these preparations do not choose it on the user's behalf.
+    full=e.evaluate(-bodies[:,14:20],1e-6)
+    if full['faults'][0]:raise ValueError('Native full baseline refused')
+    for choice in ('open','closed'):
+        contact=contact_branch_model(e,touching=choice)
+        difference=f+contact['force']-full['forces'][0].ravel()
+        energy_error=contact['energy_j']-full['ledger'][0,4]
+        if np.linalg.norm(difference)>1e-9 or abs(energy_error)>1e-20+1e-12*abs(contact['energy_j']):
+            raise ValueError('Separated endpoint potential does not reconstruct native stationary response')
+        combined=raw+contact['stiffness'][:,e.dynamic]
+        symmetric=(combined[e.dynamic]+combined[e.dynamic].T)/2
+        basis=ModeBasis(np.repeat(bodies[:,1:3],3,axis=1).ravel()[e.dynamic],symmetric,
+            f[e.dynamic]+contact['force'][e.dynamic],bodies[:,14:20].ravel()[e.dynamic])
+        result['branches'][choice]=dict(compressed_sites=contact['compressed_sites'],touching_sites=contact['touching_sites'],
+            geometric_curvature_norm=contact['geometric_curvature_norm'],
+            stationary_force_residual_n_nm=float(np.linalg.norm(difference)),stationary_contact_energy_residual_j=float(energy_error),
+            negative_modes=int(np.sum(basis.eigenvalues<0)),maximum_omega_squared_s2=float(np.max(basis.eigenvalues)))
+    result.update(material_candidate_valid=changed==0 and result['material_one_sided_defect']<=1e-6 and result['material_symmetry_defect']<=1e-6 and result['material_refinement_relative']<=1e-6,
+        full_reaction_maps_retained=False,broad_contact_events_qualified=False,wall_s=time.perf_counter()-started,
+        scope='Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified')
+    return result
 
 
 def contact_envelope(basis, evaluator, h):
@@ -395,6 +507,7 @@ def prepare(evaluator, *, source_identity, world_body_ids=None):
     basis.full_force=force.copy();basis.full_force_tangent=-matrices[-1].copy()
     basis.native_bodies=bodies.copy();basis.native_edges=edges.copy();basis.dynamic_dofs=e.dynamic.copy();basis.world_body_ids=ids
     guard=contact_envelope(basis,e,1/240)
+    branch_preparation=prepare_contact_branches(e,bodies,edges,delta)
     identity = hashlib.sha256()
     for a in (bodies,edges):identity.update(a.tobytes())
     identity.update(json.dumps(ids,separators=(',',':')).encode())
@@ -415,6 +528,8 @@ def prepare(evaluator, *, source_identity, world_body_ids=None):
         mass_scaled_force_norm_sqrt_j_per_s=float(np.linalg.norm(force[e.dynamic]/weights)),baseline_contact_energy_j=float(baseline['ledger'][0,4]),
         baseline_material_energy_j=float(baseline['ledger'][0,0]),
         affine_probe_dt_s=1/240,affine_reference_energy_residual_j=probe['reference_energy_residual_j'],
+        affine_dynamic_impulse_residual_n_s=float(np.linalg.norm(probe['affine_dynamic_impulse_residual'])),
+        contact_branch_preparation=branch_preparation,
         continuous_contact_envelope=guard['summary'],
         execution_admitted=False,reason='Continuous branch/contact bounds, nonlinear trajectory error and full reaction/work transfers are not qualified',
         build_wall_s=time.perf_counter()-started)

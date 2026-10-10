@@ -100,6 +100,54 @@ BANJO_CPU_EXPORT int banjo_coupled_cpu_trials(const double* b,unsigned n,const d
         poses+7*n*i,residual+6*n*i,history?history+32*m*i:nullptr,forces+6*n*i,ledger+12*i);
     return 0;
 }
+// Read-only constitutive preparation: exact native material/history transport
+// and original gather order, deliberately without contact. Not a world solver.
+BANJO_CPU_EXPORT int banjo_coupled_cpu_material_trials(const double* b,unsigned n,const double* e,unsigned m,
+    const double* v,unsigned batch,double h,double gy,double* poses,double* residual,
+    double* history,double* forces,double* ledger,int* faults){
+    if(!batch||batch>384||!scene(b,n,e,m,h,gy)||!finite(v,6*n*batch)||!poses||!residual||
+       (!history&&m)||!forces||!ledger||!faults)return -1;
+    for(unsigned k=0;k<batch;++k){
+        std::array<banjo::DGTrialBody,banjo::dgMaxBodies> p{};
+        const double* velocity=v+6*n*k;double* pose=poses+7*n*k,*f=forces+6*n*k,*l=ledger+12*k;
+        double* s=history?history+32*m*k:nullptr,*r=residual+6*n*k;
+        for(unsigned j=0;j<12;++j)l[j]=0;
+        for(unsigned i=0;i<n;++i){p[i]=banjo::dgPrepareTrial(b+30*i,velocity+6*i,h);
+            banjo::dgWrite3(pose+7*i,p[i].ending.p);banjo::dgWrite4(pose+7*i+3,p[i].ending.q);
+            banjo::dgWrite3(f+6*i,banjo::frameScale({0,gy,0},b[30*i+1]));banjo::dgWrite3(f+6*i+3,{});
+        }
+        int fault=0;
+        for(unsigned i=0;i<m;++i){const double* edge=e+70*i;const auto row=material(b,edge,p.data());
+            if(row.fault!=1)std::memcpy(s+32*i,row.history.data(),32*sizeof(double));
+            fault=gather(row,static_cast<unsigned>(edge[0]),static_cast<unsigned>(edge[1]),f,l);if(fault)break;
+        }
+        faults[k]=fault?fault:finish(b,n,m,velocity,h,pose,r,s,f,l);
+    }
+    return 0;
+}
+// Native site stiffness in the exact contact-geometry row order. Read-only;
+// an open or touching site is not thereby declared an active response.
+BANJO_CPU_EXPORT int banjo_coupled_cpu_contact_stiffness(const double* b,unsigned n,unsigned capacity,double* out){
+    if(!scene(b,n,nullptr,0,1e-12,0)||!out)return -1;
+    unsigned count=0;
+    for(unsigned a=0;a<n;++a)for(unsigned c=a+1;c<n;++c)
+        if(b[30*a+1]>0||b[30*c+1]>0)count+=banjo::dgContactSiteCount(b+30*a,b+30*c);
+    if(capacity<count)return -1;
+    // Check the complete request before touching caller output.
+    for(unsigned a=0;a<n;++a)for(unsigned c=a+1;c<n;++c){
+        if(b[30*a+1]==0&&b[30*c+1]==0)continue;
+        const auto sites=banjo::dgContactSiteCount(b+30*a,b+30*c);
+        const auto k=banjo::dgContactStiffness(b+30*a,b+30*c,sites);
+        if(!std::isfinite(k)||k<=0)return -1;
+    }
+    unsigned at=0;
+    for(unsigned a=0;a<n;++a)for(unsigned c=a+1;c<n;++c){
+        if(b[30*a+1]==0&&b[30*c+1]==0)continue;
+        const auto sites=banjo::dgContactSiteCount(b+30*a,b+30*c);
+        std::fill(out+at,out+at+sites,banjo::dgContactStiffness(b+30*a,b+30*c,sites));at+=sites;
+    }
+    return static_cast<int>(at);
+}
 BANJO_CPU_EXPORT int banjo_coupled_cpu_local_trials(const double* b,unsigned n,const double* e,unsigned m,
     const double* base,const double* v,const int* changed,unsigned batch,double h,double gy,
     double* poses,double* residual,double* history,double* forces,double* ledger,int* faults){

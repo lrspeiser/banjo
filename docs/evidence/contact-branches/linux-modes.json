@@ -1,0 +1,2623 @@
+{
+  "schema": "banjo.cpu-mode-preparation-evidence.v1",
+  "implementation_sha256": "e8dcb0fea740f6ff0658cab9533c76ff3063f0345898198f418d06f898203345",
+  "runs": [
+    {
+      "material": "glass",
+      "declaration": {
+        "material": "glass",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 10.0,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cpu",
+        "pipeline": "local-jacobian",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight",
+        "thermal": null
+      },
+      "initial": {
+        "schema": "banjo.native-mode-preparation.v1",
+        "state_key": "eacccd457fe9c9c1a7a450bda9a4e2a96cd3ce3c15f76611016049ef2ba5ed07",
+        "source_identity": "e8dcb0fea740f6ff0658cab9533c76ff3063f0345898198f418d06f898203345",
+        "world_body_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "dynamic_dofs": 54,
+        "retained_modes": 54,
+        "mass_kg": 0.022500000000000006,
+        "inertia_kg_m2": [
+          0.0,
+          0.0,
+          0.0,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08
+        ],
+        "physical_state_unchanged": true,
+        "reference": "All-mode local affine native-force tangent; symmetrization measured explicitly",
+        "linearization_symmetry_relative": 5.023592825635047e-08,
+        "derivative_refinement_relative": 4.371447634769039e-08,
+        "one_sided_derivative_defect": [
+          0.49362639216777177,
+          0.4936263875968505
+        ],
+        "derivative_irreversible_changes": 0,
+        "eigen_residual_relative": 1.3303032870960757e-15,
+        "orthogonality_residual": 9.329595182415516e-15,
+        "uncertain_modes": 3,
+        "negative_eigenvalues": 0,
+        "minimum_omega_squared_s2": 0.005613380631918156,
+        "maximum_omega_squared_s2": 106270259062600.03,
+        "fastest_frequency_rad_s": 10308746.726086544,
+        "mass_scaled_force_norm_sqrt_j_per_s": 1.4714999635275943,
+        "baseline_contact_energy_j": 7.117823273670906e-27,
+        "baseline_material_energy_j": 0.0,
+        "affine_probe_dt_s": 0.004166666666666667,
+        "affine_reference_energy_residual_j": 8.885729236409477e-27,
+        "affine_dynamic_impulse_residual_n_s": 1.6748601432504038e-10,
+        "contact_branch_preparation": {
+          "material_one_sided_defect": 0.5017452060054997,
+          "material_symmetry_defect": 1.355058367110545e-12,
+          "material_refinement_relative": 1.5467911713524027e-12,
+          "material_irreversible_sample_changes": 0,
+          "material_force_rows": 72,
+          "branches": {
+            "open": {
+              "compressed_sites": 20,
+              "touching_sites": 96,
+              "geometric_curvature_norm": 1.5474792611973788e-08,
+              "stationary_force_residual_n_nm": 8.498374721940739e-18,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 2,
+              "maximum_omega_squared_s2": 106172347396884.27
+            },
+            "closed": {
+              "compressed_sites": 20,
+              "touching_sites": 96,
+              "geometric_curvature_norm": 1.5474792611973788e-08,
+              "stationary_force_residual_n_nm": 8.498374721940739e-18,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 2,
+              "maximum_omega_squared_s2": 106369262515162.69
+            }
+          },
+          "execution_admitted": false,
+          "material_candidate_valid": false,
+          "full_reaction_maps_retained": false,
+          "broad_contact_events_qualified": false,
+          "wall_s": 0.03828070603776723,
+          "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+        },
+        "continuous_contact_envelope": {
+          "horizon_s": 0.004166666666666667,
+          "native_sites": 2808,
+          "always_separated_sites": 2692,
+          "always_compressed_sites": 0,
+          "possible_contact_changes": 116,
+          "legacy_possible_contact_changes": 116,
+          "correlated_sites_checked": 116,
+          "mean_gap_width_ratio": 0.08476966225288123,
+          "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+          "maximum_rotation_remainder_m": 6.969171351404851e-19,
+          "maximum_initial_gap_speed_m_s": 0.0,
+          "body_translation_bound_m": [
+            0.0,
+            0.0,
+            0.0,
+            4.235434098827856e-10,
+            4.2716545332089326e-10,
+            4.235434098857184e-10,
+            4.3203209202966823e-10,
+            4.3494147911659104e-10,
+            4.3203209203262984e-10,
+            4.235434098856535e-10,
+            4.2716545332377727e-10,
+            4.235434098885923e-10
+          ],
+          "body_rotation_chord_bound": [
+            0.0,
+            0.0,
+            0.0,
+            1.6232584120734649e-09,
+            1.40507445517252e-09,
+            1.6232584119600551e-09,
+            5.40154274620924e-10,
+            1.173617829438604e-15,
+            5.401542743226236e-10,
+            1.623258411804479e-09,
+            1.4050744548777128e-09,
+            1.6232584116907005e-09
+          ],
+          "unresolved_pairs": [
+            {
+              "world_body_ids": [
+                1,
+                3
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -4.223077955279813e-10,
+              "maximum_upper_gap_m": 0.03343284799698168
+            },
+            {
+              "world_body_ids": [
+                1,
+                4
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -4.231590308503361e-10,
+              "maximum_upper_gap_m": 0.02615943995723568
+            },
+            {
+              "world_body_ids": [
+                1,
+                5
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -4.2230779553171497e-10,
+              "maximum_upper_gap_m": 0.03343284799698168
+            },
+            {
+              "world_body_ids": [
+                2,
+                9
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -4.22307795530752e-10,
+              "maximum_upper_gap_m": 0.03343284799698168
+            },
+            {
+              "world_body_ids": [
+                2,
+                10
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -4.2315903085407265e-10,
+              "maximum_upper_gap_m": 0.02615943995723568
+            },
+            {
+              "world_body_ids": [
+                2,
+                11
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -4.223077955344931e-10,
+              "maximum_upper_gap_m": 0.03343284799698168
+            },
+            {
+              "world_body_ids": [
+                3,
+                4
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.8521393641159012e-12,
+              "maximum_upper_gap_m": 0.010000000885013523
+            },
+            {
+              "world_body_ids": [
+                3,
+                6
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.304709638178945e-12,
+              "maximum_upper_gap_m": 0.010000000884297125
+            },
+            {
+              "world_body_ids": [
+                4,
+                5
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.8521393641065163e-12,
+              "maximum_upper_gap_m": 0.010000000885013523
+            },
+            {
+              "world_body_ids": [
+                4,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.056334430603171e-12,
+              "maximum_upper_gap_m": 0.010000000883950075
+            },
+            {
+              "world_body_ids": [
+                5,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.304709638189219e-12,
+              "maximum_upper_gap_m": 0.010000000884297125
+            },
+            {
+              "world_body_ids": [
+                6,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.5595249203360696e-12,
+              "maximum_upper_gap_m": 0.010000000875370983
+            },
+            {
+              "world_body_ids": [
+                6,
+                9
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.30470963815465e-12,
+              "maximum_upper_gap_m": 0.010000000884297125
+            },
+            {
+              "world_body_ids": [
+                7,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.5595249203265055e-12,
+              "maximum_upper_gap_m": 0.010000000875370983
+            },
+            {
+              "world_body_ids": [
+                7,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.056334430579647e-12,
+              "maximum_upper_gap_m": 0.010000000883950075
+            },
+            {
+              "world_body_ids": [
+                8,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.30470963816692e-12,
+              "maximum_upper_gap_m": 0.010000000884297125
+            },
+            {
+              "world_body_ids": [
+                9,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.8521393641231326e-12,
+              "maximum_upper_gap_m": 0.010000000885013523
+            },
+            {
+              "world_body_ids": [
+                10,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.852139364113909e-12,
+              "maximum_upper_gap_m": 0.010000000885013523
+            }
+          ],
+          "execution_admitted": false,
+          "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+          "wall_s": 0.007948450976982713
+        },
+        "execution_admitted": false,
+        "reason": "Continuous branch/contact bounds, nonlinear trajectory error and full reaction/work transfers are not qualified",
+        "build_wall_s": 0.2807347630150616,
+        "accepted_time_s": 0.0,
+        "excluded_sphere_id": 12,
+        "current_native_surface_gap_m": 10.0,
+        "separation_scope": "Current instant only; this is not a future contact admission"
+      },
+      "loaded": {
+        "schema": "banjo.native-mode-preparation.v1",
+        "state_key": "bb3f16fa1ba13ca63df1552ff8bc9a1c3299cb248a0ae096aee61ab313a8f012",
+        "source_identity": "e8dcb0fea740f6ff0658cab9533c76ff3063f0345898198f418d06f898203345",
+        "world_body_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "dynamic_dofs": 54,
+        "retained_modes": 54,
+        "mass_kg": 0.022500000000000006,
+        "inertia_kg_m2": [
+          0.0,
+          0.0,
+          0.0,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08,
+          4.1666666666666676e-08
+        ],
+        "physical_state_unchanged": true,
+        "reference": "All-mode local affine native-force tangent; symmetrization measured explicitly",
+        "linearization_symmetry_relative": 1.1343525862248059e-09,
+        "derivative_refinement_relative": 2.60032981299459e-13,
+        "one_sided_derivative_defect": [
+          6.619727677675238e-12,
+          3.2826195473297618e-12
+        ],
+        "derivative_irreversible_changes": 0,
+        "eigen_residual_relative": 1.2954706735886886e-15,
+        "orthogonality_residual": 1.1238165547784855e-14,
+        "uncertain_modes": 3,
+        "negative_eigenvalues": 2,
+        "minimum_omega_squared_s2": -0.011631118906169398,
+        "maximum_omega_squared_s2": 106552439488337.3,
+        "fastest_frequency_rad_s": 10322424.109110093,
+        "mass_scaled_force_norm_sqrt_j_per_s": 1.4714884863999875,
+        "baseline_contact_energy_j": 7.287411123203836e-11,
+        "baseline_material_energy_j": 4.2583711147083664e-13,
+        "affine_probe_dt_s": 0.004166666666666667,
+        "affine_reference_energy_residual_j": -1.0891400199324847e-24,
+        "affine_dynamic_impulse_residual_n_s": 3.556317077755009e-11,
+        "contact_branch_preparation": {
+          "material_one_sided_defect": 3.2980491052003233e-12,
+          "material_symmetry_defect": 2.1594404667640718e-13,
+          "material_refinement_relative": 2.6041394392880243e-13,
+          "material_irreversible_sample_changes": 0,
+          "material_force_rows": 72,
+          "branches": {
+            "open": {
+              "compressed_sites": 68,
+              "touching_sites": 0,
+              "geometric_curvature_norm": 2.4036410299632047,
+              "stationary_force_residual_n_nm": 2.5637018321686495e-17,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 1,
+              "maximum_omega_squared_s2": 106552439461247.16
+            },
+            "closed": {
+              "compressed_sites": 68,
+              "touching_sites": 0,
+              "geometric_curvature_norm": 2.4036410299632047,
+              "stationary_force_residual_n_nm": 2.5637018321686495e-17,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 1,
+              "maximum_omega_squared_s2": 106552439461247.16
+            }
+          },
+          "execution_admitted": false,
+          "material_candidate_valid": true,
+          "full_reaction_maps_retained": false,
+          "broad_contact_events_qualified": false,
+          "wall_s": 0.037448481016326696,
+          "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+        },
+        "continuous_contact_envelope": {
+          "horizon_s": 0.004166666666666667,
+          "native_sites": 2808,
+          "always_separated_sites": 2692,
+          "always_compressed_sites": 0,
+          "possible_contact_changes": 116,
+          "legacy_possible_contact_changes": 116,
+          "correlated_sites_checked": 116,
+          "mean_gap_width_ratio": 0.06704840635107365,
+          "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+          "maximum_rotation_remainder_m": 1.5476836453973826e-17,
+          "maximum_initial_gap_speed_m_s": 2.1432242699953505e-07,
+          "body_translation_bound_m": [
+            0.0,
+            0.0,
+            0.0,
+            2.9077637659038324e-10,
+            3.3113771908189754e-10,
+            2.907763735016881e-10,
+            4.0803965402194587e-10,
+            4.5968048803709965e-10,
+            4.0803965275865077e-10,
+            2.907760029391549e-10,
+            3.3113740885886955e-10,
+            2.907760008662589e-10
+          ],
+          "body_rotation_chord_bound": [
+            0.0,
+            0.0,
+            0.0,
+            3.3111946099810235e-08,
+            3.1001953915934713e-08,
+            3.311194609182899e-08,
+            1.1519940789802225e-08,
+            4.705798922883622e-14,
+            1.1519940770378602e-08,
+            3.311194599701016e-08,
+            3.100195380734878e-08,
+            3.311194599150745e-08
+          ],
+          "unresolved_pairs": [
+            {
+              "world_body_ids": [
+                1,
+                3
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -2.634083635475724e-10,
+              "maximum_upper_gap_m": 0.0334328490365732
+            },
+            {
+              "world_body_ids": [
+                1,
+                4
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -2.4639707541262845e-10,
+              "maximum_upper_gap_m": 0.02615944063270893
+            },
+            {
+              "world_body_ids": [
+                1,
+                5
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -2.634083635954373e-10,
+              "maximum_upper_gap_m": 0.03343284903657319
+            },
+            {
+              "world_body_ids": [
+                2,
+                9
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -2.6340836376395087e-10,
+              "maximum_upper_gap_m": 0.03343284903657283
+            },
+            {
+              "world_body_ids": [
+                2,
+                10
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -2.4639707574409926e-10,
+              "maximum_upper_gap_m": 0.026159440632708617
+            },
+            {
+              "world_body_ids": [
+                2,
+                11
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -2.6340836381172013e-10,
+              "maximum_upper_gap_m": 0.033432849036572815
+            },
+            {
+              "world_body_ids": [
+                3,
+                4
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -6.61028209684833e-11,
+              "maximum_upper_gap_m": 0.01000000133753882
+            },
+            {
+              "world_body_ids": [
+                3,
+                6
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.7709556911794151e-10,
+              "maximum_upper_gap_m": 0.010000001289966766
+            },
+            {
+              "world_body_ids": [
+                4,
+                5
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -6.610282120108968e-11,
+              "maximum_upper_gap_m": 0.010000001337538816
+            },
+            {
+              "world_body_ids": [
+                4,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.7702154736458812e-10,
+              "maximum_upper_gap_m": 0.010000001274679341
+            },
+            {
+              "world_body_ids": [
+                5,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.7709556912891267e-10,
+              "maximum_upper_gap_m": 0.010000001289966762
+            },
+            {
+              "world_body_ids": [
+                6,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -6.588273328208766e-11,
+              "maximum_upper_gap_m": 0.010000001047394616
+            },
+            {
+              "world_body_ids": [
+                6,
+                9
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.7709557141915237e-10,
+              "maximum_upper_gap_m": 0.01000000128996639
+            },
+            {
+              "world_body_ids": [
+                7,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -6.588273359574205e-11,
+              "maximum_upper_gap_m": 0.010000001047394614
+            },
+            {
+              "world_body_ids": [
+                7,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.770215496463286e-10,
+              "maximum_upper_gap_m": 0.01000000127467903
+            },
+            {
+              "world_body_ids": [
+                8,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.7709557140875556e-10,
+              "maximum_upper_gap_m": 0.010000001289966387
+            },
+            {
+              "world_body_ids": [
+                9,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -6.610282096808268e-11,
+              "maximum_upper_gap_m": 0.010000001337538133
+            },
+            {
+              "world_body_ids": [
+                10,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -6.61028212064717e-11,
+              "maximum_upper_gap_m": 0.01000000133753813
+            }
+          ],
+          "execution_admitted": false,
+          "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+          "wall_s": 0.008082017011474818
+        },
+        "execution_admitted": false,
+        "reason": "Continuous branch/contact bounds, nonlinear trajectory error and full reaction/work transfers are not qualified",
+        "build_wall_s": 0.29063372797099873,
+        "accepted_time_s": 0.004166666666666667,
+        "excluded_sphere_id": 12,
+        "current_native_surface_gap_m": 9.999914844196505,
+        "separation_scope": "Current instant only; this is not a future contact admission"
+      },
+      "comparison": [
+        {
+          "dt_s": 2e-07,
+          "equation_residual": 6.127513584897421e-11,
+          "mass_weighted_displacement_error_sqrt_kg_m": 2.7361676201397472e-17,
+          "velocity_error_sqrt_j": 1.4346262381614252e-10,
+          "affine_energy_residual_j": 1.8143800820083272e-29
+        },
+        {
+          "dt_s": 1e-07,
+          "equation_residual": 2.5179350429836218e-11,
+          "mass_weighted_displacement_error_sqrt_kg_m": 2.0597528398359937e-18,
+          "velocity_error_sqrt_j": 2.922139912829201e-11,
+          "affine_energy_residual_j": 7.099748146989106e-30
+        },
+        {
+          "dt_s": 5e-08,
+          "equation_residual": 2.0250361033043148e-11,
+          "mass_weighted_displacement_error_sqrt_kg_m": 5.118981693645326e-19,
+          "velocity_error_sqrt_j": 1.987558768579598e-11,
+          "affine_energy_residual_j": 1.1832913578315177e-30
+        }
+      ]
+    },
+    {
+      "material": "oak",
+      "declaration": {
+        "material": "oak",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 10.0,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cpu",
+        "pipeline": "local-jacobian",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight",
+        "thermal": null
+      },
+      "initial": {
+        "schema": "banjo.native-mode-preparation.v1",
+        "state_key": "d0a735d2c821574ad89e67a27e7e82ffb54cb7b3729e130a19bb4f5dea330e7c",
+        "source_identity": "e8dcb0fea740f6ff0658cab9533c76ff3063f0345898198f418d06f898203345",
+        "world_body_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "dynamic_dofs": 54,
+        "retained_modes": 54,
+        "mass_kg": 0.006300000000000001,
+        "inertia_kg_m2": [
+          0.0,
+          0.0,
+          0.0,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08
+        ],
+        "physical_state_unchanged": true,
+        "reference": "All-mode local affine native-force tangent; symmetrization measured explicitly",
+        "linearization_symmetry_relative": 3.3551270248151036e-07,
+        "derivative_refinement_relative": 2.919591748355629e-07,
+        "one_sided_derivative_defect": [
+          0.458694754445406,
+          0.4586947101825094
+        ],
+        "derivative_irreversible_changes": 0,
+        "eigen_residual_relative": 1.2935634979505177e-15,
+        "orthogonality_residual": 9.954700980464266e-15,
+        "uncertain_modes": 3,
+        "negative_eigenvalues": 1,
+        "minimum_omega_squared_s2": -0.0006476225112466185,
+        "maximum_omega_squared_s2": 12195404354752.969,
+        "fastest_frequency_rad_s": 3492191.912646407,
+        "mass_scaled_force_norm_sqrt_j_per_s": 0.7786445959571536,
+        "baseline_contact_energy_j": 1.5375592619358303e-27,
+        "baseline_material_energy_j": 0.0,
+        "affine_probe_dt_s": 0.004166666666666667,
+        "affine_reference_energy_residual_j": -4.0389678347315804e-26,
+        "affine_dynamic_impulse_residual_n_s": 2.811845385017104e-10,
+        "contact_branch_preparation": {
+          "material_one_sided_defect": 0.5017452060055003,
+          "material_symmetry_defect": 1.352649854001898e-12,
+          "material_refinement_relative": 1.547861739209081e-12,
+          "material_irreversible_sample_changes": 0,
+          "material_force_rows": 72,
+          "branches": {
+            "open": {
+              "compressed_sites": 20,
+              "touching_sites": 96,
+              "geometric_curvature_norm": 3.342793125405229e-09,
+              "stationary_force_residual_n_nm": 3.6799042000400975e-18,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 2,
+              "maximum_omega_squared_s2": 12133982559643.924
+            },
+            "closed": {
+              "compressed_sites": 20,
+              "touching_sites": 96,
+              "geometric_curvature_norm": 3.342793125405229e-09,
+              "stationary_force_residual_n_nm": 3.6799042000400975e-18,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 1,
+              "maximum_omega_squared_s2": 12260595526033.205
+            }
+          },
+          "execution_admitted": false,
+          "material_candidate_valid": false,
+          "full_reaction_maps_retained": false,
+          "broad_contact_events_qualified": false,
+          "wall_s": 0.03764711495023221,
+          "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+        },
+        "continuous_contact_envelope": {
+          "horizon_s": 0.004166666666666667,
+          "native_sites": 2808,
+          "always_separated_sites": 2692,
+          "always_compressed_sites": 0,
+          "possible_contact_changes": 116,
+          "legacy_possible_contact_changes": 116,
+          "correlated_sites_checked": 116,
+          "mean_gap_width_ratio": 0.07890288525097096,
+          "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+          "maximum_rotation_remainder_m": 8.778485957676934e-18,
+          "maximum_initial_gap_speed_m_s": 0.0,
+          "body_translation_bound_m": [
+            0.0,
+            0.0,
+            0.0,
+            5.741141622651373e-10,
+            6.027371161747269e-10,
+            5.741141622682613e-10,
+            6.459753421295509e-10,
+            6.707947003239219e-10,
+            6.459753421328421e-10,
+            5.74114162268464e-10,
+            6.027371161781723e-10,
+            5.741141622715965e-10
+          ],
+          "body_rotation_chord_bound": [
+            0.0,
+            0.0,
+            0.0,
+            1.406217726538432e-08,
+            1.2285726287420982e-08,
+            1.4062177265277662e-08,
+            4.665386025281227e-09,
+            6.668430402245174e-16,
+            4.665386024931815e-09,
+            1.4062177265032636e-08,
+            1.2285726287024645e-08,
+            1.4062177264925913e-08
+          ],
+          "unresolved_pairs": [
+            {
+              "world_body_ids": [
+                1,
+                3
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -5.64863937650122e-10,
+              "maximum_upper_gap_m": 0.03343284865335855
+            },
+            {
+              "world_body_ids": [
+                1,
+                4
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -5.699555219094009e-10,
+              "maximum_upper_gap_m": 0.0261594404903662
+            },
+            {
+              "world_body_ids": [
+                1,
+                5
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -5.64863937654161e-10,
+              "maximum_upper_gap_m": 0.03343284865335855
+            },
+            {
+              "world_body_ids": [
+                2,
+                9
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -5.648639376532819e-10,
+              "maximum_upper_gap_m": 0.03343284865335855
+            },
+            {
+              "world_body_ids": [
+                2,
+                10
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -5.699555219139815e-10,
+              "maximum_upper_gap_m": 0.0261594404903662
+            },
+            {
+              "world_body_ids": [
+                2,
+                11
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -5.648639376573312e-10,
+              "maximum_upper_gap_m": 0.03343284865335855
+            },
+            {
+              "world_body_ids": [
+                3,
+                4
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.584573816053163e-11,
+              "maximum_upper_gap_m": 0.010000001474761095
+            },
+            {
+              "world_body_ids": [
+                3,
+                6
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.7373938762004255e-11,
+              "maximum_upper_gap_m": 0.010000001468810237
+            },
+            {
+              "world_body_ids": [
+                4,
+                5
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.584573816044242e-11,
+              "maximum_upper_gap_m": 0.010000001474761095
+            },
+            {
+              "world_body_ids": [
+                4,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.546607206563685e-11,
+              "maximum_upper_gap_m": 0.010000001464521563
+            },
+            {
+              "world_body_ids": [
+                5,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.7373938762082585e-11,
+              "maximum_upper_gap_m": 0.010000001468810237
+            },
+            {
+              "world_body_ids": [
+                6,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.3468043415714934e-11,
+              "maximum_upper_gap_m": 0.010000001389296785
+            },
+            {
+              "world_body_ids": [
+                6,
+                9
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.73739387618054e-11,
+              "maximum_upper_gap_m": 0.010000001468810237
+            },
+            {
+              "world_body_ids": [
+                7,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.3468043415628928e-11,
+              "maximum_upper_gap_m": 0.010000001389296785
+            },
+            {
+              "world_body_ids": [
+                7,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.546607206543738e-11,
+              "maximum_upper_gap_m": 0.010000001464521563
+            },
+            {
+              "world_body_ids": [
+                8,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.737393876188563e-11,
+              "maximum_upper_gap_m": 0.010000001468810237
+            },
+            {
+              "world_body_ids": [
+                9,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.5845738160580237e-11,
+              "maximum_upper_gap_m": 0.010000001474761095
+            },
+            {
+              "world_body_ids": [
+                10,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.5845738160491567e-11,
+              "maximum_upper_gap_m": 0.010000001474761095
+            }
+          ],
+          "execution_admitted": false,
+          "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+          "wall_s": 0.0079988400102593
+        },
+        "execution_admitted": false,
+        "reason": "Continuous branch/contact bounds, nonlinear trajectory error and full reaction/work transfers are not qualified",
+        "build_wall_s": 0.2801793119870126,
+        "accepted_time_s": 0.0,
+        "excluded_sphere_id": 12,
+        "current_native_surface_gap_m": 10.0,
+        "separation_scope": "Current instant only; this is not a future contact admission"
+      },
+      "loaded": {
+        "schema": "banjo.native-mode-preparation.v1",
+        "state_key": "85078d6eff821887dd5bcfe1a99e31ef843e8c43df8ab9f96b513e101b89acb6",
+        "source_identity": "e8dcb0fea740f6ff0658cab9533c76ff3063f0345898198f418d06f898203345",
+        "world_body_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "dynamic_dofs": 54,
+        "retained_modes": 54,
+        "mass_kg": 0.006300000000000001,
+        "inertia_kg_m2": [
+          0.0,
+          0.0,
+          0.0,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08,
+          1.166666666666667e-08
+        ],
+        "physical_state_unchanged": true,
+        "reference": "All-mode local affine native-force tangent; symmetrization measured explicitly",
+        "linearization_symmetry_relative": 6.232747114758438e-09,
+        "derivative_refinement_relative": 3.2733930483430315e-13,
+        "one_sided_derivative_defect": [
+          6.537901740021869e-12,
+          3.3465141355932703e-12
+        ],
+        "derivative_irreversible_changes": 0,
+        "eigen_residual_relative": 1.2571161170050495e-15,
+        "orthogonality_residual": 1.072655489075833e-14,
+        "uncertain_modes": 3,
+        "negative_eigenvalues": 1,
+        "minimum_omega_squared_s2": -0.00585173288313059,
+        "maximum_omega_squared_s2": 12226181055593.738,
+        "fastest_frequency_rad_s": 3496595.637987575,
+        "mass_scaled_force_norm_sqrt_j_per_s": 0.7786358013728608,
+        "baseline_contact_energy_j": 2.8728473381896627e-11,
+        "baseline_material_energy_j": 9.94107990287344e-13,
+        "affine_probe_dt_s": 0.004166666666666667,
+        "affine_reference_energy_residual_j": -2.619890389672094e-25,
+        "affine_dynamic_impulse_residual_n_s": 1.178497149247974e-11,
+        "contact_branch_preparation": {
+          "material_one_sided_defect": 3.4327260358703013e-12,
+          "material_symmetry_defect": 3.2802294792953773e-13,
+          "material_refinement_relative": 3.277183345059337e-13,
+          "material_irreversible_sample_changes": 0,
+          "material_force_rows": 72,
+          "branches": {
+            "open": {
+              "compressed_sites": 68,
+              "touching_sites": 0,
+              "geometric_curvature_norm": 0.662520574654521,
+              "stationary_force_residual_n_nm": 1.3055804213628846e-17,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 1,
+              "maximum_omega_squared_s2": 12226181038385.932
+            },
+            "closed": {
+              "compressed_sites": 68,
+              "touching_sites": 0,
+              "geometric_curvature_norm": 0.662520574654521,
+              "stationary_force_residual_n_nm": 1.3055804213628846e-17,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 1,
+              "maximum_omega_squared_s2": 12226181038385.932
+            }
+          },
+          "execution_admitted": false,
+          "material_candidate_valid": true,
+          "full_reaction_maps_retained": false,
+          "broad_contact_events_qualified": false,
+          "wall_s": 0.03710872703231871,
+          "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+        },
+        "continuous_contact_envelope": {
+          "horizon_s": 0.004166666666666667,
+          "native_sites": 2808,
+          "always_separated_sites": 2692,
+          "always_compressed_sites": 0,
+          "possible_contact_changes": 116,
+          "legacy_possible_contact_changes": 116,
+          "correlated_sites_checked": 116,
+          "mean_gap_width_ratio": 0.06452360646781416,
+          "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+          "maximum_rotation_remainder_m": 4.2599394955719095e-17,
+          "maximum_initial_gap_speed_m_s": 3.2489292786544413e-07,
+          "body_translation_bound_m": [
+            0.0,
+            0.0,
+            0.0,
+            4.079241573523728e-10,
+            4.753334850866993e-10,
+            4.0792414745779114e-10,
+            6.157743336367859e-10,
+            6.953204842749623e-10,
+            6.157743342448369e-10,
+            4.0792380345401496e-10,
+            4.75333169905394e-10,
+            4.0792380200308154e-10
+          ],
+          "body_rotation_chord_bound": [
+            0.0,
+            0.0,
+            0.0,
+            5.498328464743553e-08,
+            5.178524240256666e-08,
+            5.498328463139212e-08,
+            1.8040504416900273e-08,
+            4.5949696816708895e-14,
+            1.8040504363325548e-08,
+            5.498328439859655e-08,
+            5.1785242125477106e-08,
+            5.498328437824593e-08
+          ],
+          "unresolved_pairs": [
+            {
+              "world_body_ids": [
+                1,
+                3
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -3.644939848033779e-10,
+              "maximum_upper_gap_m": 0.03343285002232902
+            },
+            {
+              "world_body_ids": [
+                1,
+                4
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -3.329877506765906e-10,
+              "maximum_upper_gap_m": 0.026159441400978648
+            },
+            {
+              "world_body_ids": [
+                1,
+                5
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -3.6449398492358947e-10,
+              "maximum_upper_gap_m": 0.03343285002232901
+            },
+            {
+              "world_body_ids": [
+                2,
+                9
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -3.6449398540568444e-10,
+              "maximum_upper_gap_m": 0.03343285002232865
+            },
+            {
+              "world_body_ids": [
+                2,
+                10
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -3.329877514629657e-10,
+              "maximum_upper_gap_m": 0.026159441400978325
+            },
+            {
+              "world_body_ids": [
+                2,
+                11
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -3.644939855261714e-10,
+              "maximum_upper_gap_m": 0.03343285002232865
+            },
+            {
+              "world_body_ids": [
+                3,
+                4
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.0063257976240396e-10,
+              "maximum_upper_gap_m": 0.010000002078479512
+            },
+            {
+              "world_body_ids": [
+                3,
+                6
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -2.82356968655009e-10,
+              "maximum_upper_gap_m": 0.010000002012363897
+            },
+            {
+              "world_body_ids": [
+                4,
+                5
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.0063258027667996e-10,
+              "maximum_upper_gap_m": 0.010000002078479502
+            },
+            {
+              "world_body_ids": [
+                4,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -2.822703468123058e-10,
+              "maximum_upper_gap_m": 0.010000001992275024
+            },
+            {
+              "world_body_ids": [
+                5,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -2.823569686422298e-10,
+              "maximum_upper_gap_m": 0.010000002012363887
+            },
+            {
+              "world_body_ids": [
+                6,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -9.915729457308877e-11,
+              "maximum_upper_gap_m": 0.010000001596351706
+            },
+            {
+              "world_body_ids": [
+                6,
+                9
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -2.8235697581460055e-10,
+              "maximum_upper_gap_m": 0.01000000201236354
+            },
+            {
+              "world_body_ids": [
+                7,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -9.915729508970474e-11,
+              "maximum_upper_gap_m": 0.010000001596351706
+            },
+            {
+              "world_body_ids": [
+                7,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -2.8227035397205684e-10,
+              "maximum_upper_gap_m": 0.010000001992274703
+            },
+            {
+              "world_body_ids": [
+                8,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -2.823569758380072e-10,
+              "maximum_upper_gap_m": 0.010000002012363538
+            },
+            {
+              "world_body_ids": [
+                9,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.0063257971060876e-10,
+              "maximum_upper_gap_m": 0.010000002078478837
+            },
+            {
+              "world_body_ids": [
+                10,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.0063258026852087e-10,
+              "maximum_upper_gap_m": 0.010000002078478835
+            }
+          ],
+          "execution_admitted": false,
+          "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+          "wall_s": 0.008841803995892406
+        },
+        "execution_admitted": false,
+        "reason": "Continuous branch/contact bounds, nonlinear trajectory error and full reaction/work transfers are not qualified",
+        "build_wall_s": 0.2952325719525106,
+        "accepted_time_s": 0.004166666666666667,
+        "excluded_sphere_id": 12,
+        "current_native_surface_gap_m": 9.999914844426861,
+        "separation_scope": "Current instant only; this is not a future contact admission"
+      },
+      "comparison": [
+        {
+          "dt_s": 2e-07,
+          "equation_residual": 9.25293626376028e-12,
+          "mass_weighted_displacement_error_sqrt_kg_m": 1.1322238933121481e-17,
+          "velocity_error_sqrt_j": 5.892744878582341e-11,
+          "affine_energy_residual_j": -2.0214560696288428e-30
+        },
+        {
+          "dt_s": 1e-07,
+          "equation_residual": 5.026615004237558e-11,
+          "mass_weighted_displacement_error_sqrt_kg_m": 2.512437713293893e-18,
+          "velocity_error_sqrt_j": 4.8699399166645686e-11,
+          "affine_energy_residual_j": 9.367723249499515e-31
+        },
+        {
+          "dt_s": 5e-08,
+          "equation_residual": 8.413511185647343e-12,
+          "mass_weighted_displacement_error_sqrt_kg_m": 1.601399991478262e-19,
+          "velocity_error_sqrt_j": 6.139087562851314e-12,
+          "affine_energy_residual_j": 1.7256332301709633e-31
+        }
+      ]
+    },
+    {
+      "material": "iron",
+      "declaration": {
+        "material": "iron",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 10.0,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cpu",
+        "pipeline": "local-jacobian",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight",
+        "thermal": null
+      },
+      "initial": {
+        "schema": "banjo.native-mode-preparation.v1",
+        "state_key": "1ac4b09406171927539ff3ae935e8a1d991df04c2f7310e36a33a66d4aeb90ae",
+        "source_identity": "e8dcb0fea740f6ff0658cab9533c76ff3063f0345898198f418d06f898203345",
+        "world_body_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "dynamic_dofs": 54,
+        "retained_modes": 54,
+        "mass_kg": 0.07083000000000002,
+        "inertia_kg_m2": [
+          0.0,
+          0.0,
+          0.0,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07
+        ],
+        "physical_state_unchanged": true,
+        "reference": "All-mode local affine native-force tangent; symmetrization measured explicitly",
+        "linearization_symmetry_relative": 1.913162382017286e-06,
+        "derivative_refinement_relative": 5.91277119322446e-06,
+        "one_sided_derivative_defect": [
+          0.4015130835090122,
+          0.4015113688358958
+        ],
+        "derivative_irreversible_changes": 0,
+        "eigen_residual_relative": 1.1494025262970615e-15,
+        "orthogonality_residual": 1.0640200877061508e-14,
+        "uncertain_modes": 3,
+        "negative_eigenvalues": 0,
+        "minimum_omega_squared_s2": 3.4923560291160883e-06,
+        "maximum_omega_squared_s2": 1605856681230.814,
+        "fastest_frequency_rad_s": 1267224.005940076,
+        "mass_scaled_force_norm_sqrt_j_per_s": 2.61082415102142,
+        "baseline_contact_energy_j": 1.4286488142153753e-26,
+        "baseline_material_energy_j": 0.0,
+        "affine_probe_dt_s": 0.004166666666666667,
+        "affine_reference_energy_residual_j": -3.877409121342317e-26,
+        "affine_dynamic_impulse_residual_n_s": 7.903307251978207e-09,
+        "contact_branch_preparation": {
+          "material_one_sided_defect": 2.650969624348954e-12,
+          "material_symmetry_defect": 7.356261925180787e-14,
+          "material_refinement_relative": 7.046744010808958e-06,
+          "material_irreversible_sample_changes": 0,
+          "material_force_rows": 72,
+          "branches": {
+            "open": {
+              "compressed_sites": 20,
+              "touching_sites": 96,
+              "geometric_curvature_norm": 3.106011945689024e-08,
+              "stationary_force_residual_n_nm": 0.0,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 1,
+              "maximum_omega_squared_s2": 1301313628014.8552
+            },
+            "closed": {
+              "compressed_sites": 20,
+              "touching_sites": 96,
+              "geometric_curvature_norm": 3.106011945689024e-08,
+              "stationary_force_residual_n_nm": 0.0,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 2,
+              "maximum_omega_squared_s2": 1991417479806.1648
+            }
+          },
+          "execution_admitted": false,
+          "material_candidate_valid": false,
+          "full_reaction_maps_retained": false,
+          "broad_contact_events_qualified": false,
+          "wall_s": 0.025585755007341504,
+          "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+        },
+        "continuous_contact_envelope": {
+          "horizon_s": 0.004166666666666667,
+          "native_sites": 2808,
+          "always_separated_sites": 2692,
+          "always_compressed_sites": 0,
+          "possible_contact_changes": 116,
+          "legacy_possible_contact_changes": 116,
+          "correlated_sites_checked": 116,
+          "mean_gap_width_ratio": 0.07209507861736227,
+          "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+          "maximum_rotation_remainder_m": 4.196998497711656e-17,
+          "maximum_initial_gap_speed_m_s": 0.0,
+          "body_translation_bound_m": [
+            0.0,
+            0.0,
+            0.0,
+            7.45885169772112e-10,
+            8.560474728851244e-10,
+            7.458851697721132e-10,
+            1.0522527016085158e-09,
+            1.1352800137613374e-09,
+            1.052252701608516e-09,
+            7.458851697721227e-10,
+            8.560474728851323e-10,
+            7.458851697721202e-10
+          ],
+          "body_rotation_chord_bound": [
+            0.0,
+            0.0,
+            0.0,
+            4.610542245941612e-08,
+            3.944012547614763e-08,
+            4.610542245941603e-08,
+            1.2392303527812722e-08,
+            2.7146997627724616e-17,
+            1.2392303527812696e-08,
+            4.61054224594153e-08,
+            3.9440125476146864e-08,
+            4.610542245941545e-08
+          ],
+          "unresolved_pairs": [
+            {
+              "world_body_ids": [
+                1,
+                3
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -7.204268459764355e-10,
+              "maximum_upper_gap_m": 0.03343285012811012
+            },
+            {
+              "world_body_ids": [
+                1,
+                4
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -7.607936765384175e-10,
+              "maximum_upper_gap_m": 0.026159441636021626
+            },
+            {
+              "world_body_ids": [
+                1,
+                5
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -7.204268459764361e-10,
+              "maximum_upper_gap_m": 0.03343285012811012
+            },
+            {
+              "world_body_ids": [
+                2,
+                9
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -7.204268459764459e-10,
+              "maximum_upper_gap_m": 0.03343285012811012
+            },
+            {
+              "world_body_ids": [
+                2,
+                10
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -7.607936765384282e-10,
+              "maximum_upper_gap_m": 0.026159441636021626
+            },
+            {
+              "world_body_ids": [
+                2,
+                11
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -7.204268459764427e-10,
+              "maximum_upper_gap_m": 0.03343285012811012
+            },
+            {
+              "world_body_ids": [
+                3,
+                4
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -5.083353102927518e-11,
+              "maximum_upper_gap_m": 0.010000002573255843
+            },
+            {
+              "world_body_ids": [
+                3,
+                6
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.2300525501866572e-10,
+              "maximum_upper_gap_m": 0.010000002594868131
+            },
+            {
+              "world_body_ids": [
+                4,
+                5
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -5.083353102927547e-11,
+              "maximum_upper_gap_m": 0.010000002573255843
+            },
+            {
+              "world_body_ids": [
+                4,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.1385408570985224e-10,
+              "maximum_upper_gap_m": 0.010000002604449519
+            },
+            {
+              "world_body_ids": [
+                5,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.2300525501866565e-10,
+              "maximum_upper_gap_m": 0.010000002594868131
+            },
+            {
+              "world_body_ids": [
+                6,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.5773734356329885e-11,
+              "maximum_upper_gap_m": 0.010000002380179267
+            },
+            {
+              "world_body_ids": [
+                6,
+                9
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.2300525501866663e-10,
+              "maximum_upper_gap_m": 0.010000002594868131
+            },
+            {
+              "world_body_ids": [
+                7,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.577373435633004e-11,
+              "maximum_upper_gap_m": 0.010000002380179267
+            },
+            {
+              "world_body_ids": [
+                7,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.1385408570985253e-10,
+              "maximum_upper_gap_m": 0.010000002604449519
+            },
+            {
+              "world_body_ids": [
+                8,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.2300525501866572e-10,
+              "maximum_upper_gap_m": 0.010000002594868131
+            },
+            {
+              "world_body_ids": [
+                9,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -5.083353102927522e-11,
+              "maximum_upper_gap_m": 0.010000002573255843
+            },
+            {
+              "world_body_ids": [
+                10,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -5.083353102927691e-11,
+              "maximum_upper_gap_m": 0.010000002573255843
+            }
+          ],
+          "execution_admitted": false,
+          "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+          "wall_s": 0.0075672659440897405
+        },
+        "execution_admitted": false,
+        "reason": "Continuous branch/contact bounds, nonlinear trajectory error and full reaction/work transfers are not qualified",
+        "build_wall_s": 0.26402284699724987,
+        "accepted_time_s": 0.0,
+        "excluded_sphere_id": 12,
+        "current_native_surface_gap_m": 10.0,
+        "separation_scope": "Current instant only; this is not a future contact admission"
+      },
+      "loaded": {
+        "schema": "banjo.native-mode-preparation.v1",
+        "state_key": "9679cb3fb0278c27641309a0afaebce511c74d077f07ed08569c78bb12116862",
+        "source_identity": "e8dcb0fea740f6ff0658cab9533c76ff3063f0345898198f418d06f898203345",
+        "world_body_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "dynamic_dofs": 54,
+        "retained_modes": 54,
+        "mass_kg": 0.07083000000000002,
+        "inertia_kg_m2": [
+          0.0,
+          0.0,
+          0.0,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07,
+          1.311666666666667e-07
+        ],
+        "physical_state_unchanged": true,
+        "reference": "All-mode local affine native-force tangent; symmetrization measured explicitly",
+        "linearization_symmetry_relative": 4.179879651251242e-07,
+        "derivative_refinement_relative": 5.167941365795928e-06,
+        "one_sided_derivative_defect": [
+          2.400707441208541e-06,
+          8.347010863781252e-06
+        ],
+        "derivative_irreversible_changes": 0,
+        "eigen_residual_relative": 1.2044242329612077e-15,
+        "orthogonality_residual": 1.0231225742639233e-14,
+        "uncertain_modes": 3,
+        "negative_eigenvalues": 1,
+        "minimum_omega_squared_s2": -0.002022509970090715,
+        "maximum_omega_squared_s2": 1707628314548.783,
+        "fastest_frequency_rad_s": 1306762.5318124113,
+        "mass_scaled_force_norm_sqrt_j_per_s": 2.610790162703929,
+        "baseline_contact_energy_j": 2.611532746940799e-10,
+        "baseline_material_energy_j": 1.2400045854973294e-10,
+        "affine_probe_dt_s": 0.004166666666666667,
+        "affine_reference_energy_residual_j": 4.968837626760848e-26,
+        "affine_dynamic_impulse_residual_n_s": 4.902599233183161e-10,
+        "contact_branch_preparation": {
+          "material_one_sided_defect": 1.0609192358692666e-05,
+          "material_symmetry_defect": 5.606345754994267e-09,
+          "material_refinement_relative": 6.5798441502311455e-06,
+          "material_irreversible_sample_changes": 0,
+          "material_force_rows": 72,
+          "branches": {
+            "open": {
+              "compressed_sites": 68,
+              "touching_sites": 0,
+              "geometric_curvature_norm": 5.713070182283082,
+              "stationary_force_residual_n_nm": 1.0590372885348364e-16,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 2,
+              "maximum_omega_squared_s2": 1707628262179.8499
+            },
+            "closed": {
+              "compressed_sites": 68,
+              "touching_sites": 0,
+              "geometric_curvature_norm": 5.713070182283082,
+              "stationary_force_residual_n_nm": 1.0590372885348364e-16,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 2,
+              "maximum_omega_squared_s2": 1707628262179.8499
+            }
+          },
+          "execution_admitted": false,
+          "material_candidate_valid": false,
+          "full_reaction_maps_retained": false,
+          "broad_contact_events_qualified": false,
+          "wall_s": 0.023641912965103984,
+          "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+        },
+        "continuous_contact_envelope": {
+          "horizon_s": 0.004166666666666667,
+          "native_sites": 2808,
+          "always_separated_sites": 2692,
+          "always_compressed_sites": 0,
+          "possible_contact_changes": 116,
+          "legacy_possible_contact_changes": 116,
+          "correlated_sites_checked": 116,
+          "mean_gap_width_ratio": 0.06587206217243641,
+          "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+          "maximum_rotation_remainder_m": 3.562543931404818e-17,
+          "maximum_initial_gap_speed_m_s": 3.7881742834606784e-07,
+          "body_translation_bound_m": [
+            0.0,
+            0.0,
+            0.0,
+            4.300642719587168e-10,
+            5.295160800745827e-10,
+            4.301873552611049e-10,
+            7.43201852622109e-10,
+            8.316396037654742e-10,
+            7.432023951824607e-10,
+            4.3015133631593e-10,
+            5.295158569808109e-10,
+            4.300909030659011e-10
+          ],
+          "body_rotation_chord_bound": [
+            0.0,
+            0.0,
+            0.0,
+            4.9652164986317403e-08,
+            4.638813787640946e-08,
+            4.9651512179782786e-08,
+            1.3777125281833953e-08,
+            1.3036125260270765e-10,
+            1.3777109440627763e-08,
+            4.965151423288729e-08,
+            4.63881367850315e-08,
+            4.9652169688404115e-08
+          ],
+          "unresolved_pairs": [
+            {
+              "world_body_ids": [
+                1,
+                3
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -4.046745349180965e-10,
+              "maximum_upper_gap_m": 0.03343284983374135
+            },
+            {
+              "world_body_ids": [
+                1,
+                4
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -4.1999409156348384e-10,
+              "maximum_upper_gap_m": 0.026159441193470096
+            },
+            {
+              "world_body_ids": [
+                1,
+                5
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -4.04674562595987e-10,
+              "maximum_upper_gap_m": 0.03343284983383787
+            },
+            {
+              "world_body_ids": [
+                2,
+                9
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -4.0467456689782584e-10,
+              "maximum_upper_gap_m": 0.03343284983380193
+            },
+            {
+              "world_body_ids": [
+                2,
+                10
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -4.199940837898716e-10,
+              "maximum_upper_gap_m": 0.026159441193469836
+            },
+            {
+              "world_body_ids": [
+                2,
+                11
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -4.046745885551321e-10,
+              "maximum_upper_gap_m": 0.033432849833768166
+            },
+            {
+              "world_body_ids": [
+                3,
+                4
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.317104294660445e-11,
+              "maximum_upper_gap_m": 0.010000002085461257
+            },
+            {
+              "world_body_ids": [
+                3,
+                6
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -8.66555620640349e-11,
+              "maximum_upper_gap_m": 0.010000002187517173
+            },
+            {
+              "world_body_ids": [
+                4,
+                5
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.317104321260962e-11,
+              "maximum_upper_gap_m": 0.010000002085574191
+            },
+            {
+              "world_body_ids": [
+                4,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -8.553346113618107e-11,
+              "maximum_upper_gap_m": 0.010000002229029742
+            },
+            {
+              "world_body_ids": [
+                5,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -8.665554236039631e-11,
+              "maximum_upper_gap_m": 0.010000002187630547
+            },
+            {
+              "world_body_ids": [
+                6,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -2.5093304625638352e-11,
+              "maximum_upper_gap_m": 0.010000001826202427
+            },
+            {
+              "world_body_ids": [
+                6,
+                9
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -8.665556096370301e-11,
+              "maximum_upper_gap_m": 0.010000002187594123
+            },
+            {
+              "world_body_ids": [
+                7,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -2.5093302521620786e-11,
+              "maximum_upper_gap_m": 0.010000001826202722
+            },
+            {
+              "world_body_ids": [
+                7,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -8.553345660232378e-11,
+              "maximum_upper_gap_m": 0.010000002229029505
+            },
+            {
+              "world_body_ids": [
+                8,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -8.665554300355422e-11,
+              "maximum_upper_gap_m": 0.01000000218754432
+            },
+            {
+              "world_body_ids": [
+                9,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.317102315318061e-11,
+              "maximum_upper_gap_m": 0.010000002085537975
+            },
+            {
+              "world_body_ids": [
+                10,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.317099328460033e-11,
+              "maximum_upper_gap_m": 0.01000000208548773
+            }
+          ],
+          "execution_admitted": false,
+          "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+          "wall_s": 0.007736789993941784
+        },
+        "execution_admitted": false,
+        "reason": "Continuous branch/contact bounds, nonlinear trajectory error and full reaction/work transfers are not qualified",
+        "build_wall_s": 0.27136365603655577,
+        "accepted_time_s": 0.004166666666666667,
+        "excluded_sphere_id": 12,
+        "current_native_surface_gap_m": 9.999914844539203,
+        "separation_scope": "Current instant only; this is not a future contact admission"
+      },
+      "comparison": [
+        {
+          "dt_s": 2e-07,
+          "equation_residual": 2.0357634513228666e-11,
+          "mass_weighted_displacement_error_sqrt_kg_m": 3.1177952423039156e-17,
+          "velocity_error_sqrt_j": 1.6294089899813723e-10,
+          "affine_energy_residual_j": 4.69372238606502e-29
+        },
+        {
+          "dt_s": 1e-07,
+          "equation_residual": 8.901052119561327e-12,
+          "mass_weighted_displacement_error_sqrt_kg_m": 1.8858045642233246e-18,
+          "velocity_error_sqrt_j": 2.1532035712323306e-11,
+          "affine_energy_residual_j": -1.3016204936146695e-29
+        },
+        {
+          "dt_s": 5e-08,
+          "equation_residual": 9.205252852679675e-12,
+          "mass_weighted_displacement_error_sqrt_kg_m": 4.77319765422203e-19,
+          "velocity_error_sqrt_j": 1.8801245144633312e-11,
+          "affine_energy_residual_j": 5.127595883936577e-30
+        }
+      ]
+    },
+    {
+      "material": "ice",
+      "declaration": {
+        "material": "ice",
+        "ball_material": "iron",
+        "ball_mass_kg": 0.1,
+        "height_m": 10.0,
+        "dt_s": 0.004166666666666667,
+        "experiment": "sheet",
+        "device": "cpu",
+        "pipeline": "local-jacobian",
+        "newton_strategy": "ranked",
+        "line_search": "batch-tail",
+        "linear_backend": "numpy-reference",
+        "contact_resolution": "reference",
+        "representation_policy": "partitioned-flight",
+        "thermal": null
+      },
+      "initial": {
+        "schema": "banjo.native-mode-preparation.v1",
+        "state_key": "a764a5ffc9565440365cf628f0fa21a5de9da1fbec84875d8f5803555a7f68f4",
+        "source_identity": "e8dcb0fea740f6ff0658cab9533c76ff3063f0345898198f418d06f898203345",
+        "world_body_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "dynamic_dofs": 54,
+        "retained_modes": 54,
+        "mass_kg": 0.008253000000000002,
+        "inertia_kg_m2": [
+          0.0,
+          0.0,
+          0.0,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08
+        ],
+        "physical_state_unchanged": true,
+        "reference": "All-mode local affine native-force tangent; symmetrization measured explicitly",
+        "linearization_symmetry_relative": 2.774963178969386e-06,
+        "derivative_refinement_relative": 2.414741926040242e-06,
+        "one_sided_derivative_defect": [
+          0.17401908382830977,
+          0.1740158109962134
+        ],
+        "derivative_irreversible_changes": 0,
+        "eigen_residual_relative": 1.292138453340642e-15,
+        "orthogonality_residual": 1.0000627147300422e-14,
+        "uncertain_modes": 3,
+        "negative_eigenvalues": 1,
+        "minimum_omega_squared_s2": -0.00015689091418867569,
+        "maximum_omega_squared_s2": 807519154294.4857,
+        "fastest_frequency_rad_s": 898620.6954519163,
+        "mass_scaled_force_norm_sqrt_j_per_s": 0.8911994814141343,
+        "baseline_contact_energy_j": 1.168894484358035e-27,
+        "baseline_material_energy_j": 0.0,
+        "affine_probe_dt_s": 0.004166666666666667,
+        "affine_reference_energy_residual_j": 1.6155871338926322e-26,
+        "affine_dynamic_impulse_residual_n_s": 1.9900944433451995e-09,
+        "contact_branch_preparation": {
+          "material_one_sided_defect": 0.5017452060054948,
+          "material_symmetry_defect": 1.513446989826859e-12,
+          "material_refinement_relative": 1.5056008419181016e-12,
+          "material_irreversible_sample_changes": 0,
+          "material_force_rows": 72,
+          "branches": {
+            "open": {
+              "compressed_sites": 20,
+              "touching_sites": 96,
+              "geometric_curvature_norm": 2.5412825010182925e-09,
+              "stationary_force_residual_n_nm": 7.359808400080195e-18,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 2,
+              "maximum_omega_squared_s2": 762352436757.0709
+            },
+            "closed": {
+              "compressed_sites": 20,
+              "touching_sites": 96,
+              "geometric_curvature_norm": 2.5412825010182925e-09,
+              "stationary_force_residual_n_nm": 7.359808400080195e-18,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 2,
+              "maximum_omega_squared_s2": 879666493789.9995
+            }
+          },
+          "execution_admitted": false,
+          "material_candidate_valid": false,
+          "full_reaction_maps_retained": false,
+          "broad_contact_events_qualified": false,
+          "wall_s": 0.04235450300620869,
+          "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+        },
+        "continuous_contact_envelope": {
+          "horizon_s": 0.004166666666666667,
+          "native_sites": 2808,
+          "always_separated_sites": 2692,
+          "always_compressed_sites": 0,
+          "possible_contact_changes": 116,
+          "legacy_possible_contact_changes": 116,
+          "correlated_sites_checked": 116,
+          "mean_gap_width_ratio": 0.06604942912519718,
+          "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+          "maximum_rotation_remainder_m": 2.951635941254126e-16,
+          "maximum_initial_gap_speed_m_s": 0.0,
+          "body_translation_bound_m": [
+            0.0,
+            0.0,
+            0.0,
+            1.2277529324843795e-09,
+            1.4742625720633267e-09,
+            1.2277529324859785e-09,
+            1.9878900988248992e-09,
+            2.2273900267221405e-09,
+            1.987890098827076e-09,
+            1.2277529324860633e-09,
+            1.474262572065643e-09,
+            1.227752932487657e-09
+          ],
+          "body_rotation_chord_bound": [
+            0.0,
+            0.0,
+            0.0,
+            1.450611857974436e-07,
+            1.3450582809042795e-07,
+            1.4506118579742926e-07,
+            4.3631149362736744e-08,
+            1.4111791977002588e-17,
+            4.36311493623849e-08,
+            1.450611857969215e-07,
+            1.345058280898076e-07,
+            1.450611857969077e-07
+          ],
+          "unresolved_pairs": [
+            {
+              "world_body_ids": [
+                1,
+                3
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -1.1667773474700397e-09,
+              "maximum_upper_gap_m": 0.03343285463383488
+            },
+            {
+              "world_body_ids": [
+                1,
+                4
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -1.1545415685587778e-09,
+              "maximum_upper_gap_m": 0.026159445378276046
+            },
+            {
+              "world_body_ids": [
+                1,
+                5
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -1.1667773474723635e-09,
+              "maximum_upper_gap_m": 0.03343285463383488
+            },
+            {
+              "world_body_ids": [
+                2,
+                9
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -1.1667773474713626e-09,
+              "maximum_upper_gap_m": 0.03343285463383488
+            },
+            {
+              "world_body_ids": [
+                2,
+                10
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -1.154541568562675e-09,
+              "maximum_upper_gap_m": 0.026159445378276046
+            },
+            {
+              "world_body_ids": [
+                2,
+                11
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -1.1667773474736816e-09,
+              "maximum_upper_gap_m": 0.03343285463383488
+            },
+            {
+              "world_body_ids": [
+                3,
+                4
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.4368050579822757e-10,
+              "maximum_upper_gap_m": 0.010000005825315033
+            },
+            {
+              "world_body_ids": [
+                3,
+                6
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.9333530965992356e-10,
+              "maximum_upper_gap_m": 0.010000005752349031
+            },
+            {
+              "world_body_ids": [
+                4,
+                5
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.4368050579784922e-10,
+              "maximum_upper_gap_m": 0.010000005825315033
+            },
+            {
+              "world_body_ids": [
+                4,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.8828528164318113e-10,
+              "maximum_upper_gap_m": 0.010000005792631037
+            },
+            {
+              "world_body_ids": [
+                5,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.9333530966020594e-10,
+              "maximum_upper_gap_m": 0.010000005752349031
+            },
+            {
+              "world_body_ids": [
+                6,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.2595253058562657e-10,
+              "maximum_upper_gap_m": 0.010000004893554272
+            },
+            {
+              "world_body_ids": [
+                6,
+                9
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.9333530965896486e-10,
+              "maximum_upper_gap_m": 0.010000005752349031
+            },
+            {
+              "world_body_ids": [
+                7,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.2595253058524793e-10,
+              "maximum_upper_gap_m": 0.010000004893554272
+            },
+            {
+              "world_body_ids": [
+                7,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.8828528164217693e-10,
+              "maximum_upper_gap_m": 0.010000005792631037
+            },
+            {
+              "world_body_ids": [
+                8,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -3.933353096592427e-10,
+              "maximum_upper_gap_m": 0.010000005752349031
+            },
+            {
+              "world_body_ids": [
+                9,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.4368050579842212e-10,
+              "maximum_upper_gap_m": 0.010000005825315033
+            },
+            {
+              "world_body_ids": [
+                10,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.4368050579803846e-10,
+              "maximum_upper_gap_m": 0.010000005825315033
+            }
+          ],
+          "execution_admitted": false,
+          "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+          "wall_s": 0.0077364249737001956
+        },
+        "execution_admitted": false,
+        "reason": "Continuous branch/contact bounds, nonlinear trajectory error and full reaction/work transfers are not qualified",
+        "build_wall_s": 0.27705755800707266,
+        "accepted_time_s": 0.0,
+        "excluded_sphere_id": 12,
+        "current_native_surface_gap_m": 10.0,
+        "separation_scope": "Current instant only; this is not a future contact admission"
+      },
+      "loaded": {
+        "schema": "banjo.native-mode-preparation.v1",
+        "state_key": "19cf4b9782384a0bc63467a25abb3d7c9c50ca0b48c3d0a72b45e47e24cd1784",
+        "source_identity": "e8dcb0fea740f6ff0658cab9533c76ff3063f0345898198f418d06f898203345",
+        "world_body_ids": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "dynamic_dofs": 54,
+        "retained_modes": 54,
+        "mass_kg": 0.008253000000000002,
+        "inertia_kg_m2": [
+          0.0,
+          0.0,
+          0.0,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08,
+          1.5283333333333338e-08
+        ],
+        "physical_state_unchanged": true,
+        "reference": "All-mode local affine native-force tangent; symmetrization measured explicitly",
+        "linearization_symmetry_relative": 5.1684157897866136e-08,
+        "derivative_refinement_relative": 9.319471592157794e-13,
+        "one_sided_derivative_defect": [
+          7.1106388385710755e-12,
+          9.342240500201988e-12
+        ],
+        "derivative_irreversible_changes": 0,
+        "eigen_residual_relative": 1.1910348973070253e-15,
+        "orthogonality_residual": 1.0216574810966572e-14,
+        "uncertain_modes": 3,
+        "negative_eigenvalues": 1,
+        "minimum_omega_squared_s2": -0.012757287770608835,
+        "maximum_omega_squared_s2": 808029633907.171,
+        "fastest_frequency_rad_s": 898904.6856631525,
+        "mass_scaled_force_norm_sqrt_j_per_s": 0.8911775296960529,
+        "baseline_contact_energy_j": 6.621314012456452e-11,
+        "baseline_material_energy_j": 1.8695342049408067e-11,
+        "affine_probe_dt_s": 0.004166666666666667,
+        "affine_reference_energy_residual_j": -4.295604008722606e-26,
+        "affine_dynamic_impulse_residual_n_s": 2.2444482802364478e-11,
+        "contact_branch_preparation": {
+          "material_one_sided_defect": 1.0116178746419296e-11,
+          "material_symmetry_defect": 1.0328787809349571e-12,
+          "material_refinement_relative": 9.620353637410078e-13,
+          "material_irreversible_sample_changes": 0,
+          "material_force_rows": 72,
+          "branches": {
+            "open": {
+              "compressed_sites": 68,
+              "touching_sites": 0,
+              "geometric_curvature_norm": 0.8380436129900335,
+              "stationary_force_residual_n_nm": 1.542900899831653e-17,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 1,
+              "maximum_omega_squared_s2": 808029619480.1844
+            },
+            "closed": {
+              "compressed_sites": 68,
+              "touching_sites": 0,
+              "geometric_curvature_norm": 0.8380436129900335,
+              "stationary_force_residual_n_nm": 1.542900899831653e-17,
+              "stationary_contact_energy_residual_j": 0.0,
+              "negative_modes": 1,
+              "maximum_omega_squared_s2": 808029619480.1844
+            }
+          },
+          "execution_admitted": false,
+          "material_candidate_valid": true,
+          "full_reaction_maps_retained": false,
+          "broad_contact_events_qualified": false,
+          "wall_s": 0.0405032669659704,
+          "scope": "Private material/contact separation and explicit touching candidates; material branches, contact events and nonlinear transfers remain unqualified"
+        },
+        "continuous_contact_envelope": {
+          "horizon_s": 0.004166666666666667,
+          "native_sites": 2808,
+          "always_separated_sites": 2692,
+          "always_compressed_sites": 0,
+          "possible_contact_changes": 116,
+          "legacy_possible_contact_changes": 116,
+          "correlated_sites_checked": 116,
+          "mean_gap_width_ratio": 0.0631738543746646,
+          "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+          "maximum_rotation_remainder_m": 2.6100162485649447e-16,
+          "maximum_initial_gap_speed_m_s": 7.777315724900833e-07,
+          "body_translation_bound_m": [
+            0.0,
+            0.0,
+            0.0,
+            7.631943767801695e-10,
+            9.645437970555756e-10,
+            7.631943784160234e-10,
+            1.4851932034194378e-09,
+            1.690091581523658e-09,
+            1.4851932043827423e-09,
+            7.631943657063828e-10,
+            9.645437890729557e-10,
+            7.631943676466428e-10
+          ],
+          "body_rotation_chord_bound": [
+            0.0,
+            0.0,
+            0.0,
+            1.3432719736301398e-07,
+            1.325771670651451e-07,
+            1.3432719733811722e-07,
+            3.8369731833448023e-08,
+            8.608865615290177e-15,
+            3.8369731702850796e-08,
+            1.3432719751179637e-07,
+            1.3257716707694522e-07,
+            1.3432719749060064e-07
+          ],
+          "unresolved_pairs": [
+            {
+              "world_body_ids": [
+                1,
+                3
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -7.075008384701263e-10,
+              "maximum_upper_gap_m": 0.033432853597621257
+            },
+            {
+              "world_body_ids": [
+                1,
+                4
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -6.39004831078773e-10,
+              "maximum_upper_gap_m": 0.026159444356467904
+            },
+            {
+              "world_body_ids": [
+                1,
+                5
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -7.075008388890247e-10,
+              "maximum_upper_gap_m": 0.03343285359762129
+            },
+            {
+              "world_body_ids": [
+                2,
+                9
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -7.075008386378647e-10,
+              "maximum_upper_gap_m": 0.03343285359762125
+            },
+            {
+              "world_body_ids": [
+                2,
+                10
+              ],
+              "possible_site_changes": 2,
+              "minimum_lower_gap_m": -6.390048372044759e-10,
+              "maximum_upper_gap_m": 0.026159444356467897
+            },
+            {
+              "world_body_ids": [
+                2,
+                11
+              ],
+              "possible_site_changes": 4,
+              "minimum_lower_gap_m": -7.075008390970147e-10,
+              "maximum_upper_gap_m": 0.033432853597621284
+            },
+            {
+              "world_body_ids": [
+                3,
+                4
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.5412812758180095e-10,
+              "maximum_upper_gap_m": 0.010000004753846336
+            },
+            {
+              "world_body_ids": [
+                3,
+                6
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.78649967507671e-10,
+              "maximum_upper_gap_m": 0.010000004845766965
+            },
+            {
+              "world_body_ids": [
+                4,
+                5
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.541281291658879e-10,
+              "maximum_upper_gap_m": 0.010000004753846338
+            },
+            {
+              "world_body_ids": [
+                4,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.857005951497917e-10,
+              "maximum_upper_gap_m": 0.010000004975311718
+            },
+            {
+              "world_body_ids": [
+                5,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.786499679122024e-10,
+              "maximum_upper_gap_m": 0.010000004845766967
+            },
+            {
+              "world_body_ids": [
+                6,
+                7
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.4230964180687758e-10,
+              "maximum_upper_gap_m": 0.010000003834301847
+            },
+            {
+              "world_body_ids": [
+                6,
+                9
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.786499975895926e-10,
+              "maximum_upper_gap_m": 0.010000004845766974
+            },
+            {
+              "world_body_ids": [
+                7,
+                8
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.4230964330179334e-10,
+              "maximum_upper_gap_m": 0.010000003834301845
+            },
+            {
+              "world_body_ids": [
+                7,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.857006224963083e-10,
+              "maximum_upper_gap_m": 0.010000004975311724
+            },
+            {
+              "world_body_ids": [
+                8,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -4.786499976101111e-10,
+              "maximum_upper_gap_m": 0.010000004845766975
+            },
+            {
+              "world_body_ids": [
+                9,
+                10
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.5412812730991596e-10,
+              "maximum_upper_gap_m": 0.01000000475384632
+            },
+            {
+              "world_body_ids": [
+                10,
+                11
+              ],
+              "possible_site_changes": 8,
+              "minimum_lower_gap_m": -1.541281299983777e-10,
+              "maximum_upper_gap_m": 0.010000004753846322
+            }
+          ],
+          "execution_admitted": false,
+          "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+          "wall_s": 0.007816287979949266
+        },
+        "execution_admitted": false,
+        "reason": "Continuous branch/contact bounds, nonlinear trajectory error and full reaction/work transfers are not qualified",
+        "build_wall_s": 0.2975506220245734,
+        "accepted_time_s": 0.004166666666666667,
+        "excluded_sphere_id": 12,
+        "current_native_surface_gap_m": 9.999914845370274,
+        "separation_scope": "Current instant only; this is not a future contact admission"
+      },
+      "comparison": [
+        {
+          "dt_s": 2e-07,
+          "equation_residual": 2.0015168250728572e-11,
+          "mass_weighted_displacement_error_sqrt_kg_m": 8.02689946840652e-18,
+          "velocity_error_sqrt_j": 4.719914475794445e-11,
+          "affine_energy_residual_j": -9.860761315262648e-31
+        },
+        {
+          "dt_s": 1e-07,
+          "equation_residual": 3.524749718168226e-12,
+          "mass_weighted_displacement_error_sqrt_kg_m": 4.430159034790032e-19,
+          "velocity_error_sqrt_j": 5.243412769832037e-12,
+          "affine_energy_residual_j": 5.9164567891575885e-31
+        },
+        {
+          "dt_s": 5e-08,
+          "equation_residual": 3.291032705367546e-12,
+          "mass_weighted_displacement_error_sqrt_kg_m": 5.0941563752588426e-20,
+          "velocity_error_sqrt_j": 1.7496271096237557e-12,
+          "affine_energy_residual_j": 1.5777218104420236e-30
+        }
+      ]
+    }
+  ],
+  "scope": "Private affine preparation and analytical evolution; no world modal execution or full impact qualification"
+}

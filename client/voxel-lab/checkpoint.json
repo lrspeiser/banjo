@@ -1,8 +1,9 @@
 {
-  "title": "Correlated contact bounds and persistent physical fields; strong impact and reduced execution remain open",
+  "title": "Separate native contact branches and retained fields; reduced execution remains open",
   "date": "2026-10-09",
   "native_sha256": "736fa231999ddf1b578742de3dd97ce3fe6763c6406575d989b2ade526a39dca",
   "changes": [
+    "Inspect vibration basis beside the 3D scene now separates native material preparation from explicit opening/closing contact curvature, including compressed geometry and torque. Independent scalar-gap/potential tests pass; native stationary force and contact energy reconstruct across glass/oak/iron/ice. Material branch, refinement, nonlinear trajectory, endpoint-history and full reaction transfers still block reduced execution. No accepted physics law or convergence gate changed.",
     "Native relative contact differentials and correlated local-point bounds retain common motion, exact-frequency cancellation, finite Cayley rotations and sub-ULP axial gaps. Inspect vibration basis beside the 3D scene shows measured narrower gap uncertainty. All 54 modes and native histories remain; the sheet still has 116 uncertain sites and reduced motion is not admitted. No physical response law or tolerance changed.",
     "Optional CPU heat remains on the same moving matter through flight/contact, with shared clocks, exact save/reopen and atomic rollback. Temperature inspection uses real field observations. Water continues the same sealed accepted state with cumulative budgets. Run, replay, reset, inspection and save controls are beside the 3D scene on desktop and phones. Representation, CUDA contact and material-loading workbenches use the same adjacent action dock; thermal navigation closes only its owned session.",
     "Separate native 3D references: hinged bar with exact-equilibrium sleep/wake and support removal, conservative depth-averaged water, conduction/ice latent heat and closed fuel/oxygen/products. CPU contact forces now mark actual surface sample locations on both participants. These do not complete strong sheet impacts or cross-system coupling.",
@@ -226,7 +227,8 @@
     "exact_coupled_checkpoint": true,
     "persistent_cpu_thermal_matter": true,
     "flow_checkpoint_continuation": true,
-    "correlated_native_contact_bounds": true
+    "correlated_native_contact_bounds": true,
+    "native_contact_branch_inspection": true
   },
   "physics_revision": "5619cb0991e5170a377287eeb26378966a9dddfe",
   "gpu_source_sha256": "28b8d18071adbf9465a919766e0434de79efb1fc9879205788fa78858d0e00bd",
@@ -235,6 +237,6 @@
   "gpu_material_source_sha256": "439309fd656c70e3f3728fda7a7260aad16ecfe72c0f2f32d9c388b67690f559",
   "gpu_coupled_source_sha256": "41042759a91de85e7cea44d0804c2e86bd3635e25fa01c71198cc45f51e03f87",
   "gpu_representation_scope": "Experimental isolated rigid sphere plus continuously solved material island; no detailed sphere fracture, heat or fluid coupling",
-  "cpu_coupled_source_sha256": "da0215dd3e28bb3c1e9060cd0ca464ff93c6781d57320664f7b8712f5b5723bd",
+  "cpu_coupled_source_sha256": "f789c39609e33c4b7a0568487b5e3178052a5d600bc7bc8a042f1d7a48c4539b",
   "cpu_hosted_scope": "Explicit compiled CPU reference; optional inert conduction fields bound to stable matter through flight/contact. Mechanical properties remain constant; damage/plastic/phase transfers refuse. Strong fracture and all-family realtime remain open."
 }
