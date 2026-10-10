@@ -33,6 +33,8 @@ No full repository regression or complete-world realtime claim is made. New meas
 
 ## Remaining acceptance
 
+Hosted verification on `ae9db7eaf60a577804dd27a99f6b4b1bf0ceb22b` confirmed the published CPU image/source identity, all three native field libraries, mechanism wake/work, conservative evolving water, localized heater-driven reaction with exact reopen, and the 10 m primitive rebound with paired native contact samples. This does not qualify strong sheet fracture. A subsequent presentation guard disables heat advance/export before a native session exists, including the initial HTML loading window. Its Node regression executes the actual readiness function against loading, ready, busy and running states; physics laws and tolerances are unchanged.
+
 1. Reliable completed strong glass/oak/iron/ice impacts with converged damage and full work/reaction accounts.
 2. Detailed ball/fragment transfers with persistent occupied matter and constitutive history.
 3. Qualified reduced deformation and general articulated/contact graphs.
