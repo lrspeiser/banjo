@@ -186,7 +186,7 @@ bool Environment::addRegion(JoltWorld *world, int rx, int rz, Grown *grown) {
     Grown g{rx, rz, r.generate_ms, 0.0, 0.0, 0};
     if (world != nullptr && attached_) {
         // Its colliders a few at a time, nearest the one who grew it first
-        // (commitRegions gives the rest, kAttachBudgetMs a step), and then
+        // (commitRegions gives the rest, kAttachChunksPerStep a step), and then
         // the seams of the fields beside it.
         const Grid &rg = r.field->grid();
         std::vector<std::pair<double, int>> order;
@@ -201,7 +201,7 @@ bool Environment::addRegion(JoltWorld *world, int rx, int rz, Grown *grown) {
         for (const auto &[away, chunk] : order) r.unattached.push_back(chunk);
         r.seams_pending = true;
         const Clock::time_point ta = Clock::now();
-        attachSome(*world, k, kAttachBudgetMs);
+        attachSome(*world, k, kAttachChunksPerStep);
         g.colliders_ms = msSince(ta);
     }
     regions_added_.push_back(k);
@@ -209,12 +209,13 @@ bool Environment::addRegion(JoltWorld *world, int rx, int rz, Grown *grown) {
     return true;
 }
 
-void Environment::attachSome(JoltWorld &world, int k, double budget_ms) {
+void Environment::attachSome(JoltWorld &world, int k, int per_step) {
     StreamedRegion &r = *regions_[static_cast<std::size_t>(k)];
     const Clock::time_point t0 = Clock::now();
     const MaterialDefinition contact = groundContactMaterial();
+    const std::size_t most = static_cast<std::size_t>(std::max(per_step, 1));
     std::size_t done = 0;
-    while (done < r.unattached.size() && (done == 0 || msSince(t0) < budget_ms)) {
+    while (done < r.unattached.size() && done < most) {
         const int chunk = r.unattached[done++];
         // Its heights as they are now: it may have been dug before it got here.
         r.colliders[static_cast<std::size_t>(chunk)] = chunkHeightsOf(k, chunk);
@@ -222,7 +223,7 @@ void Environment::attachSome(JoltWorld &world, int k, double budget_ms) {
     }
     r.unattached.erase(r.unattached.begin(), r.unattached.begin() + static_cast<std::ptrdiff_t>(done));
     r.colliders_ms += msSince(t0);
-    if (!r.unattached.empty() || !r.seams_pending || (done > 0 && msSince(t0) >= budget_ms)) return;
+    if (!r.unattached.empty() || !r.seams_pending || done > 0) return;
     // The fields beside it had walls down to the floor along this edge,
     // facing nothing. They face this region now: rebuilt to meet it, a chunk
     // or two a step like the rest.
@@ -240,7 +241,7 @@ void Environment::attachSome(JoltWorld &world, int k, double budget_ms) {
         r.seam_queue = seamChunks(k, edge);
     }
     std::size_t rebuilt = 0;
-    while (rebuilt < r.seam_queue.size() && (rebuilt == 0 || msSince(t0) < budget_ms)) {
+    while (rebuilt < r.seam_queue.size() && rebuilt < most) {
         const auto [other, chunk] = r.seam_queue[rebuilt++];
         rebuildFieldChunks(world, other, {chunk}, nullptr);
     }
@@ -496,7 +497,7 @@ void Environment::regionEdited(JoltWorld *world, int k, const std::vector<std::s
 void Environment::commitRegions(JoltWorld &world, double dt_s) {
     for (int k = 0; k < static_cast<int>(regions_.size()); ++k) {
         StreamedRegion &r = *regions_[static_cast<std::size_t>(k)];
-        if (!r.unattached.empty() || r.seams_pending) attachSome(world, k, kAttachBudgetMs);
+        if (!r.unattached.empty() || r.seams_pending) attachSome(world, k, kAttachChunksPerStep);
         r.since_rebuild_s += dt_s;
         if (r.field->settled()) {
             r.ground_behind_s = 0.0;

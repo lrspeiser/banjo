@@ -271,12 +271,15 @@ public:
     // costs about 4.4 MB with its colliders (measured), so 48 are about 210 MB.
     static constexpr int kMostRegions = 48;
     static constexpr int kMostRegionsOut = 6;
-    // How long a step may spend giving a newly grown region its colliders:
-    // a whole region at once is about 70 ms, which is a hitch; a few
-    // milliseconds a step is not, and the 20 chunks are all there within a
-    // tenth of a second of world time -- long before anyone 10 m away walks
-    // onto them.
-    static constexpr double kAttachBudgetMs = 3.0;
+    // How much of a newly grown region a step gives colliders: a whole region
+    // at once is about 70 ms, which is a hitch; one of its 20 chunks a step
+    // (about 3.5 ms here) is not, and they are all there, seams too, within
+    // about a tenth of a second of world time -- long before anyone 10 m away
+    // walks onto them. A count, not a time: with a time budget a faster
+    // machine attached more of the region a step, and the same world grew
+    // differently on each (Windows and Linux on one desktop took 23 and 16
+    // steps, and a body walking there ended a millimetre apart).
+    static constexpr int kAttachChunksPerStep = 1;
     // Whether this ground can grow at all, and if not, why.
     [[nodiscard]] bool canStream(std::string *why = nullptr) const;
     [[nodiscard]] bool streaming() const { return streaming_; }
@@ -405,9 +408,9 @@ private:
     std::vector<std::array<Vec3,3>> columnTrianglesOf(int which, int chunk) const;
     std::vector<float> chunkHeightsOf(int which, int chunk) const;
     void attachRegion(JoltWorld &world, int k);
-    // Colliders for a grown region's waiting chunks, nearest first, until
-    // `budget_ms` is spent (one at least); then the seams beside it.
-    void attachSome(JoltWorld &world, int k, double budget_ms);
+    // Colliders for `per_step` of a grown region's waiting chunks, nearest
+    // first; once they are all there, as many of the seams beside it.
+    void attachSome(JoltWorld &world, int k, int per_step);
     // Where the region being grown is grown toward, for which chunks first.
     double grow_x_{std::numeric_limits<double>::quiet_NaN()};
     double grow_z_{std::numeric_limits<double>::quiet_NaN()};
