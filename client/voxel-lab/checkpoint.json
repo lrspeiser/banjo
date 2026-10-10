@@ -1,7 +1,7 @@
 {
   "title": "Conditional native material branches; reduced execution remains open",
-  "date": "2026-10-09",
-  "native_sha256": "736fa231999ddf1b578742de3dd97ce3fe6763c6406575d989b2ade526a39dca",
+  "date": "2026-10-10",
+  "native_sha256": "3b1b3a3b6030b288c42725d17b29564ca79bd5c58f64582ddade11f018511168",
   "changes": [
     "Native elastic opening/compression candidates retain cohesive shear and full support force maps. Inspect vibration basis shows their qualification beside the 3D scene. Five scoped Windows suites, compiled native API, HTTP gateway and source registration pass. Reduced motion, strong sheet impacts and complete realtime remain unfinished; this checkpoint is not yet verified on Render.",
     "Inspect vibration basis beside the 3D scene now separates native material preparation from explicit opening/closing contact curvature, including compressed geometry and torque. Independent scalar-gap/potential tests pass; native stationary force and contact energy reconstruct across glass/oak/iron/ice. Material branch, refinement, nonlinear trajectory, endpoint-history and full reaction transfers still block reduced execution. No accepted physics law or convergence gate changed.",
@@ -35,6 +35,16 @@
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
+    {
+      "label": "Resumed checkpoint verification",
+      "status": "passed",
+      "value": "Fresh Windows Release build (build/handoff-resume) of the CPU coupled, mechanism, flow and thermal libraries. Five scoped CTests pass in 23.7 s; protected CPU HTTP gateway passes; local server on 18893 restarted on these libraries with no restart pending; a real 10 m iron-ball drop calculated 2.0 physical s in 1.96 wall s through the HTTP API. All five lab pages run in an ordinary browser on desktop and phone portrait/landscape; the phone layouts no longer cover the scene. Render serves 831040cc (same code as 9173124e); hosted pages need the owner's password, so hosted physics was not re-run."
+    },
+    {
+      "label": "Continuous integration",
+      "status": "in progress",
+      "value": "Main CI had not passed in its last 100 runs. Fixed here: the Rust lint (boxed command variant) and the test-hub wait that was shorter than the runner's own 120 s budget, which made a slow drop-world suite fail and blocked the next tests. A Linux reproduction then reached the core ctest step, hidden for days behind the earlier failure, and found further Linux-only failures that remain open."
+    },
     {
       "label": "Conditional native material branches",
       "status": "passed",

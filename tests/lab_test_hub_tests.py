@@ -47,7 +47,10 @@ class TestHub(unittest.TestCase):
         with urllib.request.urlopen(self.base+path,timeout=4) as response:return response.read()
 
     def wait(self,key):
-        end=time.monotonic()+30
+        # Poll for as long as the runner itself lets a check run, plus process
+        # teardown. A shorter wait reported slow CI runners as unfinished tests
+        # and left the shared slot busy for every test after it.
+        end=time.monotonic()+self.server.test_runner.timeout_s+15
         while time.monotonic()<end:
             job=json.loads(self.get("/api/tests/"+key))
             if job["status"]=="completed":return job
@@ -115,11 +118,13 @@ class TestHub(unittest.TestCase):
 
     def test_timeout_and_missing_binary_never_pass_and_release_shared_slot(self):
         runner=self.server.test_runner
+        budget=runner.timeout_s
         runner.timeout_s=.05
-        with patch.object(runner,"_command",return_value=([sys.executable,"-c","import time; time.sleep(3)"],{})):
-            job=self.wait(self.post({"check":"registration"})["id"])
-            self.assertEqual(job["checks"][0]["status"],"error")
-        runner.timeout_s=60
+        try:
+            with patch.object(runner,"_command",return_value=([sys.executable,"-c","import time; time.sleep(3)"],{})):
+                job=self.wait(self.post({"check":"registration"})["id"])
+                self.assertEqual(job["checks"][0]["status"],"error")
+        finally:runner.timeout_s=budget
         with patch.object(runner,"_command",return_value=([str(Path(self.temp.name)/"missing.exe")],{})):
             job=self.wait(self.post({"check":"registration"})["id"])
             self.assertEqual(job["checks"][0]["status"],"unavailable")

@@ -29,3 +29,19 @@
 #view-more{position:absolute;bottom:122px;right:12px;z-index:4;max-width:calc(100% - 24px);margin:0}#view-more>summary{min-height:44px;padding:10px;background:#294c60;border:1px solid #63899d;border-radius:6px;cursor:pointer;list-style:none}#view-more .action-drawer{position:absolute;bottom:50px;right:0;width:min(440px,calc(100vw - 44px));max-height:60vh;overflow:auto;background:#142836;padding:12px;border:1px solid #63899d;border-radius:8px}#view-more .action-drawer p{font-size:12px}#view-more .action-drawer .buttons{margin:6px 0}#view-more .action-drawer button{min-height:44px}#temperature-legend{bottom:172px}#scene-note{bottom:172px}@media(min-width:751px){#view-more{bottom:66px}#temperature-legend,#scene-note{bottom:116px}}
 
 @media(max-height:500px){body{height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr)}main{height:100%;min-height:0}#view{min-height:0;height:100%}aside{min-height:0}}
+
+/* Phone landscape and other short windows: the 3D scene must stay visible
+   between the camera row and the action row, so overlays get one compact
+   band at the top and one at the bottom. Touch targets stay 44 px tall. */
+@media(max-height:500px) and (min-width:600px){
+header{min-height:0;padding:4px 12px;gap:12px;flex-wrap:nowrap;font-size:13px}header strong{font-size:16px}header span{display:none}#build{font-size:11px;margin-left:auto}
+main{grid-template-columns:minmax(0,1fr) 280px}aside{padding:12px}
+.camera-controls{top:6px;left:6px;right:6px}
+#drop-progress{top:54px;left:6px;right:236px;padding:4px 8px;font-size:12px;line-height:1.3}
+.impact-controls{top:54px;left:auto;right:6px;flex-wrap:nowrap}
+#primary-actions{bottom:6px;left:6px;right:150px;gap:4px;flex-wrap:nowrap}#primary-actions button{padding:6px 8px;font-size:12px;flex:1 1 auto;min-width:0}
+#view-more{bottom:6px;right:6px}#view-more>summary{padding:10px 8px;font-size:12px}
+#scene-note{display:none}#temperature-legend,#impact-legend{bottom:56px}
+}
+/* Phone portrait: a taller scene and the static hint removed from on top of it. */
+@media(max-width:750px) and (min-height:501px){#view{height:62dvh}#scene-note{display:none}#view-more{bottom:62px}#primary-actions{flex-wrap:nowrap;gap:4px}#primary-actions button{flex:1 1 auto;min-width:0;padding:8px 6px;font-size:12px}#temperature-legend,#impact-legend{bottom:112px}}

@@ -22,7 +22,12 @@ class GatewayTests(unittest.TestCase):
                 r=manager.request({'op':'create','material':'glass','pick':'iron','point_m':[.0007808484689576858,0,.0004226478800741229]})
                 key=r['session'];self.assertTrue(r['ok']);self.assertEqual(len(r['state']['positions']),800)
                 after=manager.request({'op':'advance','session':key})
-                self.assertFalse(after['ok']);self.assertIn('affine',after['error'])
+                # The same native contact stage refuses this interval on every
+                # platform; MSVC reaches the affine stencil bound first, GCC the
+                # manifold search budget. Either is a named physical refusal.
+                self.assertFalse(after['ok'])
+                self.assertTrue(any(reason in after['error'] for reason in
+                                    ('affine','manifold did not converge within its search budget')),after['error'])
                 self.assertLess(abs(after['state']['energy_residual_j']),1e-9)
                 records=[json.loads(line) for line in (Path(directory)/(key+'.jsonl')).read_text().splitlines()]
                 self.assertEqual(records[-1]['receipt'],after)

@@ -22,7 +22,8 @@ struct ObserveRequest {
 #[serde(untagged)]
 enum HostInput {
     Observe(ObserveRequest),
-    Command(TrustedRequest),
+    // Boxed: a trusted command is far larger than an observation request.
+    Command(Box<TrustedRequest>),
 }
 
 struct Configuration {
@@ -196,7 +197,7 @@ fn run() -> Result<(), String> {
                 send(frame)?;
             }
             Ok(Ok(HostInput::Command(request))) => {
-                let result = world.execute(request);
+                let result = world.execute(*request);
                 send(json!({"schema":"banjo.worker-result.v1","outcome":result,
                     "clock":world.clock(),"missed_deadlines":missed_deadlines}))?;
             }
