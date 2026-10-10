@@ -2251,18 +2251,28 @@ def _rotate(v: list[float], degrees: list[float], inverse: bool = False) -> list
     It used to turn x first, and a body tilted about two axes was then counted,
     seated and checked as a different body from the one the engine built: a
     plank at [30, 0, 45] shared 1,178 of its 2,490 cells with the engine's."""
-    order = [0, 1, 2] if inverse else [2, 1, 0]
-    p = list(v)
-    for axis in order:
+    return _turner(degrees, inverse)(v)
+
+
+def _turner(degrees: list[float], inverse: bool = False):
+    """_rotate as a function of v alone, its cosines and sines worked out once:
+    body_cell_set turns every cell of a tilted body by the same rotation."""
+    turns = []
+    for axis in ([0, 1, 2] if inverse else [2, 1, 0]):
         a = math.radians(-degrees[axis] if inverse else degrees[axis])
-        c, s = pm.cos(a), pm.sin(a)
-        if axis == 0:
-            p = [p[0], p[1] * c - p[2] * s, p[1] * s + p[2] * c]
-        elif axis == 1:
-            p = [p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c]
-        else:
-            p = [p[0] * c - p[1] * s, p[0] * s + p[1] * c, p[2]]
-    return p
+        turns.append((axis, pm.cos(a), pm.sin(a)))
+
+    def turn(v: list[float]) -> list[float]:
+        p = list(v)
+        for axis, c, s in turns:
+            if axis == 0:
+                p = [p[0], p[1] * c - p[2] * s, p[1] * s + p[2] * c]
+            elif axis == 1:
+                p = [p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c]
+            else:
+                p = [p[0] * c - p[1] * s, p[0] * s + p[1] * c, p[2]]
+        return p
+    return turn
 
 
 def body_cell_set(body: dict[str, Any], cell_mm: float) -> set[tuple[int, int, int]]:
@@ -2284,6 +2294,8 @@ def body_cell_set(body: dict[str, Any], cell_mm: float) -> set[tuple[int, int, i
         half = [widest, half[1], widest]
     reach = radius if sphere else math.dist(half, [0, 0, 0])
     cells: set[tuple[int, int, int]] = set()
+    turned = any(rotation)
+    unturn = _turner(rotation, inverse=True) if turned else None
     ranges = []
     # Axis-aligned boxes have exact per-axis bounds. A circumscribed cube
     # scans mostly empty space around thin panes and long posts; retain the
@@ -2298,7 +2310,7 @@ def body_cell_set(body: dict[str, Any], cell_mm: float) -> set[tuple[int, int, i
                 point = [(i + 0.5) * cell_mm - centre[0],
                          (j + 0.5) * cell_mm - centre[1],
                          (k + 0.5) * cell_mm - centre[2]]
-                local = _rotate(point, rotation, inverse=True) if any(rotation) else point
+                local = unturn(point) if turned else point
                 if sphere:
                     inside = math.dist(local, [0, 0, 0]) <= radius
                 elif cone:
