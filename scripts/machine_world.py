@@ -2246,8 +2246,8 @@ LIGHT_RULES = ('lit_w', 'shaded_w')
 MOST_SUN_RAYS = 8192        # the engine's own limit on the sunlight's rays
 METALS = ('aluminum', 'iron')
 
-LIGHT_HELP = '''"sun": {"elevation_deg": 0-90, "azimuth_deg": round from +z toward +x, "irradiance_w_m2": 0-1400 (a clear
-day is 1000)} -- the sun stands still where it is put.
+LIGHT_HELP = '''The machine's "sun" (azimuth_deg round from +z toward +x; a clear day is 1000 W/m2) stands still where it is
+put, and "light" traces its rays:
 "light": {"sunlight": {"through": [part name, or {"center_m": [..], "size_m": [..]}], "spacing_m": 0.002-0.05}
            (sunlight is traced as rays spacing_m apart only through these boxes, at most 8192 rays: put boxes round
            the lenses, mirrors, sensors and targets that matter, and a fine spacing (2-4 mm) where light is focused),

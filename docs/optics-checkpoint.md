@@ -9,7 +9,8 @@ lenses, light that heats what it lands on, and light sensors that work a switch.
 In a machine (`/machine`, schema `banjo.machine.v1`) you can now:
 
 - Put a **sun** in the sky: how high it stands, which way it lies, and how strongly it shines
-  (a clear day gives 1000 W on each square metre square to its beam).
+  (a clear day gives 1000 W on each square metre square to its beam). This is the machine's one
+  sun, the same one its solar panels use.
 - Let **sunlight** fall on chosen parts. You name the parts, or give boxes, that the light
   should reach (lenses, mirrors, sensors, targets), and how far apart the traced rays are.
 - Make a metal part (aluminium or iron) a **mirror**. The `mirror` kit turns a polished plate
@@ -246,7 +247,8 @@ A circuit branch may carry `follows_light: {sensor, closed_at_or_above_w | close
 Windows, MSVC Release, `banjo-cpu-precise-v1`. Passed: `banjo_optics_tests`,
 `banjo_live_world_tests`, `banjo_valley_live_tests`, `banjo_circuit_tests`,
 `banjo_solar_panel_tests`, `banjo_sun_day_tests`, `banjo_thermo_live_tests`,
-`banjo_machine_control_tests`, `tests/machine_world_tests.py` (all 23), and
+`banjo_machine_control_tests`, `tests/machine_world_tests.py` (all 25),
+`tests/machine_physics_tests.py` (main's machine pieces, after merging main) and
 `tests/machine_view_test.mjs`. The source-registration check and the floating-point audit pass.
 The page was run in a browser on a local server (port 18951). Not checked: Linux.
 
