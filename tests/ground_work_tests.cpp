@@ -877,7 +877,11 @@ ControlledPry controlledPry(int columns) {
     out.work = live.groundWork();
     for (std::size_t c = 0; c < field.grid().cells(); ++c)
         if (c != *column) near(field.height(c), .75, 0, "a controlled pry changed a column it was not given");
-    for (const auto &body : Json::parse(live.groundDebrisJson()).at("bodies"))
+    // Name the parsed document: a range-for over .at() of a temporary dangles
+    // once the temporary dies (before C++23's P2718, which GCC 13 lacks), and
+    // on Linux this read nothing at all.
+    const Json debris = Json::parse(live.groundDebrisJson());
+    for (const auto &body : debris.at("bodies"))
         out.released_kg += body.at("mass_kg").get<double>();
     return out;
 }

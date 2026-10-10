@@ -264,8 +264,11 @@ class Engine(unittest.TestCase):
                 xyz = frame['parcels']['xyz_mm']
                 self.assertEqual(len(xyz) % 3, 0)
                 self.assertEqual(len(xyz) // 3, pour['parcels'])
+                # Over the flume's ground (x within 4.95 m, z within 2.95 m),
+                # no higher than the spout's mouth and no lower than the bed:
+                # water splashes off the paddles onto the banks as well.
                 for k in range(0, len(xyz), 3):
-                    self.assertTrue(-2600 <= xyz[k] <= -800 and -600 <= xyz[k + 1] <= 1100 and 700 <= xyz[k + 2] <= 1300,
+                    self.assertTrue(-4950 <= xyz[k] <= 4950 and -600 <= xyz[k + 1] <= 1100 and -2950 <= xyz[k + 2] <= 2950,
                                     xyz[k:k + 3])
                 quiet = session.frame(session.seq, 0)
                 self.assertEqual(quiet['bodies'], [])
