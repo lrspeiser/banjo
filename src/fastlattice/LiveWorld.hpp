@@ -617,6 +617,103 @@ struct LiveLamp {
     double drawn_j{};                 // since it was made
 };
 
+// Light (docs/optics-checkpoint.md): a source whose rays the engine follows
+// through the world -- reflected by mirrors, bent and focused by glass and ice,
+// absorbed by what they land on, which they heat. Two kinds:
+//
+// - "sun": the room's sun (LiveSun) shining on the world, as parallel rays on a
+//   grid `spacing_m` apart across its beam. Only the rays that pass through one
+//   of the light's boxes -- `apertures`, given in the world -- are traced, so
+//   the light goes where the machine needs it; none given means the box round
+//   every body. A ray on the grid is traced once however many boxes it
+//   crosses. Each carries the sun's irradiance times the grid's square.
+// - "lamp": a lamp's (LiveLamp) light, from its middle, into a cone round
+//   `axis` (`half_angle_deg` up to 180: all round), as `rays` rays of equal
+//   power spread evenly over the cone's solid angle. Its power is the lamp's
+//   lumens over `radiant_efficacy_lm_w`, the lumens a watt of its light
+//   carries (white LED light about 300; a filament's, mostly infrared, about
+//   17), and `visible_share` of it is visible light, the rest near infrared
+//   (an LED's is all visible; a filament's about a tenth). The lamp's own part
+//   does not stop its light. Sunlight is 0.46 visible (kSunVisibleShare).
+struct LiveLight {
+    unsigned id{};
+    std::string name;
+    std::string kind;                   // "sun" or "lamp"
+    struct Box {
+        Vec3 center_m{}, size_m{};
+    };
+    std::vector<Box> apertures;         // sun
+    double spacing_m{};                 // sun
+    unsigned lamp{};                    // lamp
+    Vec3 axis_local{0.0, -1.0, 0.0};    // lamp: in its part's frame; in the world when pinned
+    double half_angle_deg{180.0};       // lamp
+    double radiant_efficacy_lm_w{300.0};
+    double visible_share{1.0};          // lamp: of its light, the share that is visible
+    unsigned rays{};                    // lamp: asked for
+    // As the last trace left it: the power it sent and how many rays carried it.
+    double power_w{};
+    unsigned traced{};
+    std::string why;                    // why it sends nothing, when it does not
+};
+
+// A light sensor (docs/optics-checkpoint.md): a flat round face of `area_m2`
+// on a part that reads the power of the light reaching it -- every ray that
+// lands on its part within the face's radius of its middle, coming at it from
+// in front. A circuit switch can follow it (`follows_light`).
+struct LivePhotocell {
+    unsigned id{};
+    std::string name;
+    std::string body;
+    Vec3 at_local_m{}, normal_local{};
+    double area_m2{};
+    // As the last trace left it: where it is, which way it faces, and the light
+    // reaching it; and since it was made, the light it has received.
+    Vec3 at_m{}, normal{};
+    double power_w{};
+    double received_j{};
+};
+
+// Where light went (docs/optics-checkpoint.md): the last trace, in watts, and
+// every kept step since light was first declared, in joules.
+//
+//     sent = heated + warms nothing + ground + escaped + scattered + unfollowed
+//            + bounce limit + lost + residual
+//
+// `heated` is what bodies absorbed and the heat network took as heat;
+// `unheated` what bodies absorbed that it cannot hold (an exact body, or one
+// gone): counted, warming nothing.
+struct LiveOpticsLedger {
+    double sent{}, heated{}, unheated{}, ground{}, escaped{}, scattered{}, unfollowed{}, bounce_limit{}, lost{};
+    [[nodiscard]] double residual() const {
+        return sent - (heated + unheated + ground + escaped + scattered + unfollowed + bounce_limit + lost);
+    }
+};
+struct LiveOptics {
+    bool declared{};
+    LiveOpticsLedger watts, joules;
+    struct Lit {
+        std::string body;
+        double absorbed_w{}, absorbed_j{};
+        bool heated{};                  // the heat network holds it
+    };
+    std::vector<Lit> bodies;            // everything light has reached
+    struct Path {
+        unsigned light{};
+        std::vector<Vec3> points;
+        std::vector<double> power_w;    // one a leg
+    };
+    std::vector<Path> paths;            // a few rays of the last trace, to draw
+    // What it costs: steps between traces, rays and Jolt ray casts in the last
+    // one, its wall time, and all traces' together.
+    unsigned trace_every_steps{4}, bounce_limit{16};
+    double follow_share{0.02};
+    unsigned drawn{48};
+    std::size_t rays{}, casts{}, legs{};
+    unsigned long long traces{};
+    double last_trace_ms{}, trace_ms{};
+    double t_s{};                       // the world's time of the last trace
+};
+
 // A powered breaker (docs/machine-world.md, "Breaking rock with a machine"): a
 // chisel on a part, wired to a store, that spends its store into whatever rock
 // its point is against. A pick swung by hand puts twenty-odd joules into rock a
@@ -2059,6 +2156,45 @@ public:
     // Switch a lamp on or off. False if there is no such lamp.
     bool switchLamp(unsigned id, bool on);
     [[nodiscard]] std::vector<LiveLamp> lamps() const;
+    // Light (LiveLight, docs/optics-checkpoint.md). Sunlight on a grid of rays
+    // `spacing_m` apart (1 mm to 1 m) through the given boxes (at most 64), or
+    // through the box round every body when none are given. Its boxes must not
+    // ask for more than 8192 rays: as the sun stands now, or however it could
+    // stand when there is no sun yet. There is one sunlight in a world (one
+    // sun, one grid); a second is refused. Returns its id, above zero, or 0
+    // when the numbers are not a light's.
+    unsigned sunlight(const std::string &name, const std::vector<LiveLight::Box> &apertures, double spacing_m);
+    // A lamp's light: `rays` (1 to 4096) into a cone of half angle
+    // `half_angle_deg` (above 0, up to 180) round `axis_world` (as things stand
+    // now; it turns with the lamp's part), at `radiant_efficacy_lm_w` lumens a
+    // watt of light (above 0, at most 683, the most any light can carry),
+    // `visible_share` (0 to 1) of it visible. 0 when there is no such lamp, or
+    // the numbers are not a light's.
+    unsigned lampLight(const std::string &name, unsigned lamp, const Vec3 &axis_world, double half_angle_deg,
+                       unsigned rays, double radiant_efficacy_lm_w, double visible_share = 1.0);
+    bool removeLight(unsigned id);
+    [[nodiscard]] std::vector<LiveLight> lights() const;
+    // A mirror finish on a part: polished, its surface reflects as a mirror
+    // its material's polished reflectance (optics/OpticalProperties) and
+    // absorbs the rest. Only a metal takes it (aluminium, iron): glass and ice
+    // are smooth already. The reason it cannot, in words, or "" when done.
+    std::string polish(const std::string &body, bool polished);
+    [[nodiscard]] bool polished(const std::string &body) const;
+    // A light sensor (LivePhotocell) on a part: its middle given where it is
+    // now in the world, its face looking along `normal_world`, of `area_m2`
+    // (above 0, at most 1). Returns its id, above zero, or 0.
+    unsigned photocell(const std::string &name, const std::string &body, const Vec3 &at_world_m,
+                       const Vec3 &normal_world, double area_m2);
+    [[nodiscard]] std::vector<LivePhotocell> photocells() const;
+    // How light is traced: every `trace_every_steps` steps (1 to 240), each
+    // ray meeting at most `bounce_limit` surfaces (1 to 64), a part split off
+    // followed while it carries `follow_share` (0 to 1) of its ray's power, and
+    // `drawn` rays (0 to 512) kept to draw. False, with nothing changed, for
+    // numbers out of range.
+    bool setLightTracing(unsigned trace_every_steps, unsigned bounce_limit, double follow_share, unsigned drawn);
+    // Trace now, from the world as it stands (a step traces when it is due).
+    void traceLight();
+    [[nodiscard]] LiveOptics optics() const;
     // How hard a named thing is to turn about an axis through its centre of
     // mass, kg m^2, from the inertia the solver uses. Zero if it is not there.
     [[nodiscard]] double inertiaAbout(const std::string &name, const Vec3 &axis_world) const;
@@ -2506,6 +2642,10 @@ private:
     // After an accepted step: the heat paths again at a stride, and the rigid
     // bodies told what they weigh now.
     void settleThermo();
+    // Light (docs/optics-checkpoint.md): trace when due, from the world as the
+    // step starts, and draw into the heat network every body the light now
+    // reaches -- before the network's state is saved for the step's trial.
+    void traceLightIfDue();
     // What one body can carry across a load running along `load_world` -- its
     // longest axis when null. See materialStates.
     [[nodiscard]] LiveMaterialState materialStateOf(std::size_t body, const Vec3 *load_world) const;

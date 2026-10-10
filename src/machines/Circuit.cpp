@@ -98,7 +98,7 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
     for (const auto &b : doc.at("branches")) {
         keys(b, {"id", "kind", "component", "a", "b", "thermal", "resistance_ohm", "alpha_per_k", "reference_k", "trip_k",
                  "fuse_a2_s", "gear_ratio", "motor", "closed", "failed", "used_a2_s", "current_a", "motor_current_a",
-                 "torque_n_m", "housing_reaction_n_m", "heats_body", "follows_hinge"});
+                 "torque_n_m", "housing_reaction_n_m", "heats_body", "follows_hinge", "follows_light"});
         Branch row;
         row.id = b.at("id"); row.kind = b.at("kind"); row.component = b.at("component");
         unique(ids, row.id);
@@ -134,6 +134,23 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
             require(std::abs(degrees) < 180.0, "a hinge switch reading is within half a turn");
             row.follow_joint = static_cast<unsigned>(f.at("joint").get<std::int64_t>());
             row.follow_rad = degrees * 3.14159265358979323846 / 180.0;
+            row.follow_sense = above ? 1 : -1;
+        }
+        if (b.contains("follows_light")) {
+            // A switch worked by light reaching a sensor in the world: closed
+            // at or above a reading in watts, or at or below one.
+            const auto &f = b.at("follows_light");
+            keys(f, {"sensor", "closed_at_or_above_w", "closed_at_or_below_w"});
+            require(row.kind == "switch", "only a switch follows light");
+            require(!b.contains("follows_hinge"), "a switch follows a hinge or light, not both");
+            require(f.at("sensor").is_string() && !f.at("sensor").get<std::string>().empty(),
+                    "follows_light names a light sensor");
+            const bool above = f.contains("closed_at_or_above_w"), below = f.contains("closed_at_or_below_w");
+            require(above != below, "follows_light closes at or above one reading, or at or below it");
+            const double watts = number(f, above ? "closed_at_or_above_w" : "closed_at_or_below_w");
+            require(watts >= 0.0 && watts <= 1.0e7, "a light switch reading is from 0 to 10 MW");
+            row.follow_sensor = f.at("sensor").get<std::string>();
+            row.follow_w = watts;
             row.follow_sense = above ? 1 : -1;
         }
         row.resistance = number(b, "resistance_ohm");
@@ -341,6 +358,12 @@ std::vector<CircuitHingeSwitch> Circuit::hingeSwitches() const {
         if (b.follow_joint) out.push_back({b.id, b.follow_joint, b.follow_rad, b.follow_sense});
     return out;
 }
+std::vector<CircuitLightSwitch> Circuit::lightSwitches() const {
+    std::vector<CircuitLightSwitch> out;
+    for (const auto &b : branches_)
+        if (!b.follow_sensor.empty()) out.push_back({b.id, b.follow_sensor, b.follow_w, b.follow_sense});
+    return out;
+}
 std::vector<std::string> Circuit::heatedBodies() const {
     std::vector<std::string> out;
     for (const auto &b : branches_) if (!b.body.empty()) out.push_back(b.body);
@@ -396,6 +419,9 @@ nlohmann::json Circuit::saved() const {
             row["follows_hinge"] = {{"joint", b.follow_joint},
                 {b.follow_sense > 0 ? "closed_at_or_above_deg" : "closed_at_or_below_deg",
                  b.follow_rad * 180.0 / 3.14159265358979323846}};
+        if (!b.follow_sensor.empty())
+            row["follows_light"] = {{"sensor", b.follow_sensor},
+                {b.follow_sense > 0 ? "closed_at_or_above_w" : "closed_at_or_below_w", b.follow_w}};
         if (last_.current_a.size() == branches_.size()) {
             row["current_a"] = last_.current_a[i]; row["motor_current_a"] = last_.motor_current_a[i];
             row["torque_n_m"] = last_.torque_n_m[i]; row["housing_reaction_n_m"] = -last_.torque_n_m[i];

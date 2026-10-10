@@ -3743,6 +3743,66 @@ RayHit JoltWorld::castRayIgnoring(const Vec3 &from_world_m, const Vec3 &directio
     return out;
 }
 
+SurfaceHit JoltWorld::castRayToSurface(const Vec3 &from_world_m, const Vec3 &direction, double max_distance_m,
+                                       std::span<const MatterBodyId> ignore_bodies) const {
+    SurfaceHit out{};
+    const double reach = banjo::length(direction);
+    if (!(reach > 0.0) || !(max_distance_m > 0.0)) return out;
+    const Vec3 along = (max_distance_m / reach) * direction;
+    const JPH::RRayCast ray{toJoltPosition(from_world_m), toJolt(along)};
+    JPH::RayCastResult result;
+    JPH::IgnoreMultipleBodiesFilter filter;
+    for (const auto id : ignore_bodies)
+        if (const auto ignored = impl_->bodies_.find(id); ignored != impl_->bodies_.end())
+            filter.IgnoreBody(ignored->second);
+    if (!impl_->physics_->GetNarrowPhaseQuery().CastRay(ray, result, {}, {}, filter)) return out;
+    out.hit = true;
+    out.distance_m = static_cast<double>(result.mFraction) * max_distance_m;
+    out.point_world_m = from_world_m + static_cast<double>(result.mFraction) * along;
+    // The normal from the very shape and sub-shape the ray met, read under the
+    // body's lock after the query has let go of its own.
+    JPH::BodyLockRead lock(impl_->physics_->GetBodyLockInterface(), result.mBodyID);
+    if (!lock.Succeeded()) return out;
+    const JPH::Body &body = lock.GetBody();
+    const JPH::Vec3 n = body.GetWorldSpaceSurfaceNormal(result.mSubShapeID2, toJoltPosition(out.point_world_m));
+    out.normal_world = banjo::normalized(Vec3{n.GetX(), n.GetY(), n.GetZ()}, Vec3{0.0, 1.0, 0.0});
+    const MatterBodyId id = body.GetUserData();
+    const auto found = impl_->bodies_.find(id);
+    out.named = found != impl_->bodies_.end() && found->second == result.mBodyID;
+    if (out.named) out.body_id = id;
+    return out;
+}
+
+SurfaceHit JoltWorld::castRayOutOf(MatterBodyId body_id, const Vec3 &from_world_m, const Vec3 &direction,
+                                   double max_distance_m) const {
+    SurfaceHit out{};
+    const auto found = impl_->bodies_.find(body_id);
+    const double reach = banjo::length(direction);
+    if (found == impl_->bodies_.end() || !(reach > 0.0) || !(max_distance_m > 0.0)) return out;
+    const Vec3 along = (max_distance_m / reach) * direction;
+    const JPH::RRayCast ray{toJoltPosition(from_world_m), toJolt(along)};
+    // From inside: the body is not solid to this ray (it would stop where it
+    // starts), and its surfaces are met from behind, which is where it leaves.
+    JPH::RayCastSettings settings;
+    settings.SetBackFaceMode(JPH::EBackFaceMode::CollideWithBackFaces);
+    settings.mTreatConvexAsSolid = false;
+    JPH::AllHitCollisionCollector<JPH::CastRayCollector> collector;
+    const JPH::TransformedShape shape = impl_->physics_->GetBodyInterface().GetTransformedShape(found->second);
+    shape.CastRay(ray, settings, collector);
+    const JPH::RayCastResult *nearest = nullptr;
+    for (const JPH::RayCastResult &hit : collector.mHits)
+        if (hit.mFraction > 0.0f && (nearest == nullptr || hit.mFraction < nearest->mFraction)) nearest = &hit;
+    if (nearest == nullptr) return out;
+    out.hit = true;
+    out.named = true;
+    out.body_id = body_id;
+    out.distance_m = static_cast<double>(nearest->mFraction) * max_distance_m;
+    out.point_world_m = from_world_m + static_cast<double>(nearest->mFraction) * along;
+    const JPH::Vec3 n = shape.GetWorldSpaceSurfaceNormal(nearest->mSubShapeID2, toJoltPosition(out.point_world_m));
+    out.normal_world = banjo::normalized(Vec3{n.GetX(), n.GetY(), n.GetZ()}, Vec3{0.0, 1.0, 0.0});
+    return out;
+}
+
 namespace {
 // A body's shape, read under the body's lock and held after it: the queries
 // that use it take locks of their own, and asking them while holding this one
