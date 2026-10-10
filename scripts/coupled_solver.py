@@ -41,7 +41,7 @@ class CoupledNewton:
             nonlocal last_trial
             values=values.reshape(-1,count);velocity=xp.broadcast_to(original,(len(values),len(original))).copy()
             velocity[:,self.dynamic]=values/self.active_weights
-            result=self.evaluate(velocity,h,gravity,_jacobian_base=base if self.pipeline=='parallel' else None)
+            result=self.evaluate(velocity,h,gravity,_jacobian_base=base if self.pipeline in ('parallel','local-jacobian') else None)
             last_trial=result,values,velocity.reshape(-1,self.n,6)
             return result,result['residual'].reshape(len(values),-1)[:,self.dynamic],velocity.reshape(-1,self.n,6)
         if self.newton_strategy=='ranked':

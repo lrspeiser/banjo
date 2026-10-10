@@ -39,7 +39,7 @@ class CpuCoupledEvaluator(CoupledNewton):
     def __init__(self,bodies,edges,pipeline='serial-reference',newton_strategy='ranked',line_search='batch-tail',linear_backend='numpy-reference'):
         self.n=len(bodies);self.m=len(edges)
         if not 1<=self.n<=32 or not 0<=self.m<=128:raise ValueError('Coupled scene exceeds reference capacity')
-        if pipeline!='serial-reference' or linear_backend!='numpy-reference':raise ValueError('CPU reference requires serial-reference / numpy-reference')
+        if pipeline not in ('serial-reference','local-jacobian') or linear_backend!='numpy-reference':raise ValueError('CPU reference requires a supported CPU pipeline / numpy-reference')
         if newton_strategy not in ('ranked','single-reference') or line_search not in ('batch-tail','serial-reference'):raise ValueError('Unknown nonlinear strategy')
         self.bodies=np.ascontiguousarray(bodies,dtype=np.float64).reshape(self.n,30)
         self.edges=np.ascontiguousarray(edges,dtype=np.float64).reshape(self.m,70)
@@ -53,14 +53,22 @@ class CpuCoupledEvaluator(CoupledNewton):
         self.lib.banjo_coupled_cpu_abi.restype=u
         if self.lib.banjo_coupled_cpu_abi()!=1:raise RuntimeError('Unknown CPU trial ABI')
         self.lib.banjo_coupled_cpu_trials.argtypes=[p,u,p,u,p,u,d,d,p,p,p,p,p,i];self.lib.banjo_coupled_cpu_trials.restype=ctypes.c_int
+        self.lib.banjo_coupled_cpu_local_trials.argtypes=[p,u,p,u,p,p,i,u,d,d,p,p,p,p,p,i];self.lib.banjo_coupled_cpu_local_trials.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_schedule.argtypes=[p,u,d,d,d,d,p];self.lib.banjo_coupled_cpu_schedule.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_flight.argtypes=[p,u,u,d,d,d,p,p,p,p,p];self.lib.banjo_coupled_cpu_flight.restype=ctypes.c_int
     def evaluate(self,velocity,h,gravity=-9.81,*,_jacobian_base=None):
         v=np.ascontiguousarray(velocity,dtype=np.float64).reshape(-1,self.n,6);batch=len(v)
         if not 1<=batch<=384:raise ValueError('Coupled trial batch exceeds reference bound')
         out=dict(poses=np.zeros((batch,self.n,7)),residual=np.zeros((batch,self.n,6)),history=np.zeros((batch,self.m,32)),forces=np.zeros((batch,self.n,6)),ledger=np.zeros((batch,12)),faults=np.zeros(batch,dtype=np.int32))
-        code=self.lib.banjo_coupled_cpu_trials(self.bodies,self.n,self.edges,self.m,v,batch,h,gravity,*(out[k] for k in ('poses','residual','history','forces','ledger','faults')))
+        buffers=tuple(out[k] for k in ('poses','residual','history','forces','ledger','faults'))
+        if self.pipeline=='local-jacobian' and _jacobian_base is not None:
+            base=np.ascontiguousarray(_jacobian_base['_velocity'],dtype=np.float64).reshape(self.n,6)
+            if batch!=2*len(self.dynamic):raise ValueError('Local Jacobian requires the declared single-DOF batch')
+            changed=np.ascontiguousarray(np.tile(self.dynamic//6,2),dtype=np.int32)
+            code=self.lib.banjo_coupled_cpu_local_trials(self.bodies,self.n,self.edges,self.m,base,v,changed,batch,h,gravity,*buffers)
+        else:code=self.lib.banjo_coupled_cpu_trials(self.bodies,self.n,self.edges,self.m,v,batch,h,gravity,*buffers)
         if code:raise ValueError('Native CPU trial declaration refused')
+        if batch==1:out['_velocity']=v.copy()
         self.evaluations+=batch;return out
     def contact_schedule(self,h,phase,gravity=-9.81,velocity_tolerance=1e-4):
         if not len(self.pairs):return dict(step_s=h,frequency_rad_s=0.,excitation_m_s=0.,pair=None)
@@ -80,7 +88,7 @@ class CpuCoupledWorld(CoupledWorld):
     to_host=staticmethod(host)
     evaluator_type=CpuCoupledEvaluator
     flight_partition=FlightPartition
-    declaration=staticmethod(lambda raw:declaration(raw,device='cpu',pipeline='serial-reference',linear='numpy-reference',pipelines=('serial-reference',),linears=('numpy-reference',)))
+    declaration=staticmethod(lambda raw:declaration(raw,device='cpu',pipeline='serial-reference',linear='numpy-reference',pipelines=('serial-reference','local-jacobian'),linears=('numpy-reference',)))
     source_hash=staticmethod(implementation_hash)
     device='cpu';gpu=False
     state_schema='banjo.cpu-coupled-finite-cells.v1'

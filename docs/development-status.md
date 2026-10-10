@@ -2053,3 +2053,9 @@ detailed ball response and the other representation families remain unfinished.
 repair the label-only phone experience. Five scoped suites and portrait/landscape
 browser checks pass. Public deployment must be verified; no physical-phone or
 new material-law qualification is claimed.
+
+**CPU material cost, October 9 (execution verified; full physics/realtime OPEN):**
+[Bounded local Jacobians and exact reference comparison](cpu-local-jacobian-checkpoint.md)
+reduce matched material-control cost about fourfold on Windows/WSL Linux.
+Ten scoped tests pass and the same 3D lab exposes both CPU choices. Strong
+refined sheet drops still refuse before impact; the eight-family goal remains open.

@@ -2232,6 +2232,10 @@ if(BANJO_BUILD_TESTS)
             set_tests_properties(banjo_gpu_contact_timing_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
         endif()
         if(TARGET banjo_coupled_cpu AND TARGET banjo_voxel_world_run)
+            add_test(NAME banjo_cpu_local_jacobian_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_local_jacobian_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
+                --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-local-jacobian-evidence.json)
+            set_tests_properties(banjo_cpu_local_jacobian_tests PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;material;contact")
             add_test(NAME banjo_cpu_coupled_world_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_coupled_world_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
                 --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-coupled-evidence.json)
