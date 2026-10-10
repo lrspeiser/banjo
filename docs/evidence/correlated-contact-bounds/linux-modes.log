@@ -1,0 +1,5 @@
+PASS glass native preparation / preload / all modes / unchanged next step
+PASS oak native preparation / preload / all modes / unchanged next step
+PASS iron native preparation / preload / all modes / unchanged next step
+PASS ice native preparation / preload / all modes / unchanged next step
+PASS native mode preparation, exact state/next-step retention and affine oracles

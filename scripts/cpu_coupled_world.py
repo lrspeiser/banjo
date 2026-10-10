@@ -58,6 +58,7 @@ class CpuCoupledEvaluator(CoupledNewton):
         self.lib.banjo_coupled_cpu_flight.argtypes=[p,u,u,d,d,d,p,p,p,p,p];self.lib.banjo_coupled_cpu_flight.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_separation.argtypes=[p,u,u,p];self.lib.banjo_coupled_cpu_separation.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_contact_geometry.argtypes=[p,u,u,p];self.lib.banjo_coupled_cpu_contact_geometry.restype=ctypes.c_int
+        self.lib.banjo_coupled_cpu_contact_differential.argtypes=[p,u,u,p];self.lib.banjo_coupled_cpu_contact_differential.restype=ctypes.c_int
         self.lib.banjo_coupled_cpu_contact_receipt.argtypes=[p,u,p,u,p,d,u,p,p];self.lib.banjo_coupled_cpu_contact_receipt.restype=ctypes.c_int
     def evaluate(self,velocity,h,gravity=-9.81,*,_jacobian_base=None):
         v=np.ascontiguousarray(velocity,dtype=np.float64).reshape(-1,self.n,6);batch=len(v)
@@ -93,6 +94,11 @@ class CpuCoupledEvaluator(CoupledNewton):
         capacity=len(self.pairs)*48;rows=np.empty((capacity,10))
         count=self.lib.banjo_coupled_cpu_contact_geometry(self.bodies,self.n,capacity,rows)
         if count<0 or count>capacity or not np.isfinite(rows[:count]).all():raise ValueError('Native contact geometry refused')
+        return rows[:count].copy()
+    def contact_differential(self):
+        capacity=len(self.pairs)*48;rows=np.empty((capacity,34))
+        count=self.lib.banjo_coupled_cpu_contact_differential(self.bodies,self.n,capacity,rows)
+        if count<0 or count>capacity or not np.isfinite(rows[:count]).all():raise ValueError('Native contact differential refused')
         return rows[:count].copy()
     def interaction_sites(self,velocity,h):
         v=np.ascontiguousarray(velocity,dtype=np.float64).reshape(self.n,6)

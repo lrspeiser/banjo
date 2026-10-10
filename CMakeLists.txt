@@ -2298,6 +2298,9 @@ if(BANJO_BUILD_TESTS)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_coupled_modes_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
                 --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-coupled-modes-evidence.json)
             set_tests_properties(banjo_cpu_coupled_modes_tests PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;material;representation")
+            add_test(NAME banjo_contact_observation_tests COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/contact_observation_test.py --library $<TARGET_FILE:banjo_coupled_cpu>)
+            set_tests_properties(banjo_contact_observation_tests PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;contact;representation")
             add_test(NAME banjo_cpu_local_jacobian_tests COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_local_jacobian_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
                 --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-local-jacobian-evidence.json)

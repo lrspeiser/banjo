@@ -45,7 +45,7 @@ Ordinary in-app browser checks show actual 3D water, mechanism wake and heat fie
 ## Next gates
 
 1. Close actual strong glass/oak/iron/ice sheet impacts, ball internal deformation and conservative fragment field transport. Do not substitute prerecorded fractures.
-2. Reduced execution must use the current native material law. Current mode preparation retains all 54 modes but has 116 uncertain contact sites and central tangents averaging open/closed contact. Native relative gap gradients, branch/event control, consistent endpoint reconstruction and full reaction/work audit are still required. The older modal lattice uses another law and cannot be substituted unchanged.
+2. Reduced execution must use the current native material law. Current mode preparation retains all 54 modes but has 116 uncertain contact sites and central tangents averaging open/closed contact. Native relative gap gradients and correlated bounds are now implemented in the [next checkpoint](correlated-contact-bounds-checkpoint.md); branch/event control, consistent endpoint reconstruction, nonlinear error and full reaction/work audit are still required. The older modal lattice uses another law and cannot be substituted unchanged.
 3. Add general articulated-world contacts, conservative phase/flow mapping, enthalpy transport and true 3D pouring/wheel forces.
 4. Add calibrated thermal expansion/weakening and reactive moving matter with full species/mass/energy accounts.
 5. Measure complete HTTP/browser delivery on hosted phone hardware before qualifying realtime.

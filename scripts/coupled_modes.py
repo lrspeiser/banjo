@@ -10,6 +10,52 @@ import time
 import numpy as np
 
 
+def _observed_interval(eigen, f, v0, h):
+    """One frequency's observed motion; combine exact degeneracies first."""
+    eps=np.finfo(float).eps
+    if eigen==0:
+        def q(t):return v0*t+.5*f*t*t
+        def v(t):return v0+f*t
+        stationary=np.divide(-v0,f,out=np.zeros_like(f),where=f!=0)
+        stationary=np.where((stationary>0)&(stationary<h),stationary,0)
+        qr=np.array([q(0),q(h),q(stationary)]);vr=np.array([v(0),v(h)])
+        qs=abs(v0)*h+.5*abs(f)*h*h;vs=abs(v0)+abs(f)*h
+        response=(.5*h*h,h,h,1.)
+    else:
+        rate=math.sqrt(abs(eigen));angle=rate*h
+        if eigen>0:
+            def q(t):return v0*np.sin(rate*t)/rate+f*2*np.sin(rate*t/2)**2/eigen
+            def v(t):return v0*np.cos(rate*t)+f*np.sin(rate*t)/rate
+            if angle>=2*math.pi:
+                center=f/eigen;amp=np.hypot(v0/rate,center);ampv=np.hypot(v0,f/rate)
+                qr=np.array([center-amp,center+amp]);vr=np.array([-ampv,ampv])
+            else:
+                def candidates(a,b):
+                    base=np.mod(np.arctan2(a,b),math.pi)
+                    angles=np.array([base,base+math.pi,base+2*math.pi])
+                    return [np.zeros_like(base),np.full_like(base,h),*np.where(angles<=angle+32*eps*max(1.,angle),angles/rate,0)]
+                qr=np.array([q(t) for t in candidates(v0/rate,-f/eigen)])
+                vr=np.array([v(t) for t in candidates(f/rate,v0)])
+            qs=abs(v0)/rate*min(1.,angle)+abs(f/eigen)*min(2.,angle*angle/2)
+            vs=abs(v0)+abs(f/rate)*min(1.,angle)
+            response=(min(.5*h*h,2/eigen),min(h,1/rate),min(h,1/rate),1.)
+        else:
+            def q(t):return v0*np.sinh(rate*t)/rate+f*2*np.sinh(rate*t/2)**2/(-eigen)
+            def v(t):return v0*np.cosh(rate*t)+f*np.sinh(rate*t)/rate
+            def stationary(a,b):
+                ratio=np.divide(-a,b,out=np.zeros_like(a),where=b!=0)
+                ratio=np.where((ratio>0)&(ratio<1),ratio,0)
+                t=np.arctanh(ratio)/rate
+                return np.where(t<=h,t,0)
+            qr=np.array([q(0),q(h),q(stationary(v0/rate,f/(-eigen)))])
+            vr=np.array([v(0),v(h),v(stationary(f/rate,v0))])
+            qs=abs(v0)/rate*math.sinh(angle)+abs(f/(-eigen))*2*math.sinh(angle/2)**2
+            vs=abs(v0)*math.cosh(angle)+abs(f/rate)*math.sinh(angle)
+            response=(2*math.sinh(angle/2)**2/(-eigen),math.sinh(angle)/rate,math.sinh(angle)/rate,math.cosh(angle))
+    return (np.min(qr,axis=0)-64*eps*qs,np.max(qr,axis=0)+64*eps*qs,
+        np.min(vr,axis=0)-64*eps*vs,np.max(vr,axis=0)+64*eps*vs,response)
+
+
 class ModeBasis:
     """All modes of a declared M x'' = F0 - K x reference, including unstable ones."""
     def __init__(self, mass, stiffness, force, velocity):
@@ -30,7 +76,7 @@ class ModeBasis:
         self.modal_force = self.vectors.T @ (self.force / self.root)
         self.modal_velocity = self.vectors.T @ (self.root * self.velocity)
 
-    def envelope(self, h):
+    def envelope(self, h, observations=None):
         """Continuous component bounds for this affine reference on [0,h].
 
         Includes interior extrema and every retained mode. Interval mapping
@@ -89,6 +135,32 @@ class ModeBasis:
             qlo.append(np.nextafter(min(qr)-qpad,-np.inf));qhi.append(np.nextafter(max(qr)+qpad,np.inf))
             vlo.append(np.nextafter(min(vr)-vpad,-np.inf));vhi.append(np.nextafter(max(vr)+vpad,np.inf))
         transform=self.vectors/self.root[:,None]
+        if observations is not None:
+            observations=np.asarray(observations,dtype=np.float64)
+            if observations.ndim!=2 or observations.shape[1]!=len(self.mass) or not 1<=len(observations)<=32768 or not np.isfinite(observations).all():
+                raise ValueError('Invalid bounded affine observation matrix')
+            # Project each physical observation BEFORE taking modal intervals.
+            # Bounding each body first loses common-motion cancellation.
+            transform_pad=64*eps*(abs(observations)@abs(transform))
+            transform=observations@transform
+            # Equal frequencies share a time function. Sum their observed
+            # coefficients before extrema; never merge merely close rates.
+            xlo=np.zeros(len(observations));xhi=xlo.copy();ulo=xlo.copy();uhi=xlo.copy()
+            scale_x=xlo.copy();scale_v=xlo.copy()
+            for eigen in np.unique(self.eigenvalues):
+                selected=self.eigenvalues==eigen;t=transform[:,selected]
+                f=t@self.modal_force[selected];v=t@self.modal_velocity[selected]
+                fpad=64*eps*(abs(t)@abs(self.modal_force[selected]))+transform_pad[:,selected]@abs(self.modal_force[selected])
+                vpad=64*eps*(abs(t)@abs(self.modal_velocity[selected]))+transform_pad[:,selected]@abs(self.modal_velocity[selected])
+                a,b,c,d,response=_observed_interval(float(eigen),f,v,h)
+                dx=response[0]*fpad+response[1]*vpad;dv=response[2]*fpad+response[3]*vpad
+                xlo+=a-dx;xhi+=b+dx;ulo+=c-dv;uhi+=d+dv
+                scale_x+=np.maximum(abs(a),abs(b))+dx;scale_v+=np.maximum(abs(c),abs(d))+dv
+            xlo=np.nextafter(xlo-64*eps*scale_x,-np.inf);xhi=np.nextafter(xhi+64*eps*scale_x,np.inf)
+            ulo=np.nextafter(ulo-64*eps*scale_v,-np.inf);uhi=np.nextafter(uhi+64*eps*scale_v,np.inf)
+            if not all(np.isfinite(a).all() for a in (xlo,xhi,ulo,uhi)):raise ValueError('Nonfinite projected affine envelope')
+            return dict(horizon_s=h,displacement_lower=xlo,displacement_upper=xhi,velocity_lower=ulo,velocity_upper=uhi,
+                scope='Continuous correlated observation reference with exact-frequency grouping; not certified nonlinear world motion')
         positive=np.maximum(transform,0);negative=np.minimum(transform,0)
         def mapped(lo,hi):
             lo=np.asarray(lo);hi=np.asarray(hi)
@@ -174,6 +246,24 @@ def _samples(evaluator, bodies, edges, delta):
     return np.asarray(forces), irreversible_changes
 
 
+def _skew(v):
+    v=np.asarray(v);out=np.zeros(v.shape[:-1]+(3,3))
+    out[...,0,1]=-v[...,2];out[...,0,2]=v[...,1];out[...,1,0]=v[...,2]
+    out[...,1,2]=-v[...,0];out[...,2,0]=-v[...,1];out[...,2,1]=v[...,0]
+    return out
+
+
+def _rotation(q):
+    w,x,y,z=q
+    return np.array([[1-2*(y*y+z*z),2*(x*y-w*z),2*(x*z+w*y)],
+        [2*(x*y+w*z),1-2*(x*x+z*z),2*(y*z-w*x)],
+        [2*(x*z-w*y),2*(y*z+w*x),1-2*(x*x+y*y)]])
+
+
+def _box_gap(q):
+    return np.linalg.norm(np.maximum(q,0),axis=1)+np.minimum(np.max(q,axis=1),0)
+
+
 def contact_envelope(basis, evaluator, h):
     """Native site sign checks conditional on the continuous affine motion.
 
@@ -192,27 +282,78 @@ def contact_envelope(basis, evaluator, h):
     translation=np.linalg.norm(travel[:,:3],axis=1)
     rotation=np.minimum(np.linalg.norm(travel[:,3:],axis=1),2.)
     if not np.isfinite(translation).all() or not np.isfinite(rotation).all():raise ValueError('Nonfinite affine body travel')
-    rows=evaluator.contact_geometry();owner=rows[:,3].astype(int)
+    rows=evaluator.contact_geometry();differential=evaluator.contact_differential();owner=rows[:,3].astype(int)
+    if not np.array_equal(rows[:,:6],differential[:,:6]):raise ValueError('Native contact differential mapping differs')
     if np.any(owner<0):raise ValueError('Affine contact envelope requires native surface sites; primitive pairs are not qualified')
     targets=np.where(owner==rows[:,0],rows[:,1],rows[:,0]).astype(int)
     width=translation[owner]+rotation[owner]*rows[:,9]+translation[targets]+rotation[targets]*np.linalg.norm(rows[:,6:9],axis=1)
     width+=64*np.finfo(float).eps*(abs(rows[:,4])+np.linalg.norm(rows[:,6:9],axis=1)+width)
     if not np.isfinite(width).all():raise ValueError('Nonfinite contact travel envelope')
-    lower=np.nextafter(rows[:,4]-width,-np.inf);upper=np.nextafter(rows[:,4]+width,np.inf)
+    legacy_lower=np.nextafter(rows[:,4]-width,-np.inf);legacy_upper=np.nextafter(rows[:,4]+width,np.inf)
+    selected=np.flatnonzero(~((legacy_lower>0)|(legacy_upper<0)))
+    if not len(selected):selected=np.arange(len(rows))
+    details=differential[selected];local_owner=owner[selected];local_targets=targets[selected]
+    # Correlated translation and world-turn observations at every native site.
+    # These are bounds on the declared affine/Cayley path, not native dynamics.
+    maps=np.zeros((evaluator.n*6,len(basis.dynamic_dofs)))
+    maps[basis.dynamic_dofs,np.arange(len(basis.dynamic_dofs))]=1
+    maps=maps.reshape(evaluator.n,6,-1)
+    relative_maps=maps[local_owner,:3]-maps[local_targets,:3]
+    lever=details[:,6:9];relative=details[:,9:12]
+    local_maps=relative_maps-_skew(lever)@maps[local_owner,3:]+_skew(relative)@maps[local_targets,3:]
+    rotations=np.array([_rotation(b[10:14]) for b in evaluator.bodies])
+    norm_error=abs(np.sum(evaluator.bodies[:,10:14]**2,axis=1)-1)
+    if np.any(norm_error>128*np.finfo(float).eps):raise ValueError('Correlated bounds require normalized native orientations')
+    local_maps=rotations[local_targets].transpose(0,2,1)@local_maps
+    projected=basis.envelope(h,np.concatenate((relative_maps.reshape(-1,len(basis.mass)),local_maps.reshape(-1,len(basis.mass)))))
+    split=len(selected)*3
+    relative_travel=np.linalg.norm(np.maximum(abs(projected['displacement_lower'][:split]),abs(projected['displacement_upper'][:split])).reshape(-1,3),axis=1)
+    # Exact Cayley remainder: ||C(t)-I-[t]x|| <= |t|²/2,
+    # ||C(t)-I|| <= min(|t|,2). Include the target-frame cross term.
+    angles=np.linalg.norm(travel[:,3:],axis=1)
+    remainder=.5*angles[local_owner]**2*np.linalg.norm(lever,axis=1)+.5*angles[local_targets]**2*np.linalg.norm(relative,axis=1)
+    remainder+=np.minimum(angles[local_targets],2)*(relative_travel+np.minimum(angles[local_owner],2)*np.linalg.norm(lever,axis=1))
+    coordinate=details[:,12:15];extent=details[:,16:19]
+    pad=64*np.finfo(float).eps*(abs(coordinate)+extent+np.linalg.norm(relative,axis=1)[:,None]+remainder[:,None])
+    pad+=4*(norm_error[local_owner]*np.linalg.norm(lever,axis=1)+norm_error[local_targets]*(np.linalg.norm(relative,axis=1)+relative_travel+2*np.linalg.norm(lever,axis=1)))[:,None]
+    dlo=projected['displacement_lower'][split:].reshape(-1,3)-remainder[:,None]-pad
+    dhi=projected['displacement_upper'][split:].reshape(-1,3)+remainder[:,None]+pad
+    # Avoid subtracting nearly equal absolute coordinates/half extents: native
+    # axial gaps retain sub-ULP compression in the origin/displacement state.
+    sign=np.where(coordinate<0,-1.,1.);qlow=details[:,31:34]+np.minimum(sign*dlo,sign*dhi)
+    qhigh=details[:,31:34]+np.maximum(sign*dlo,sign*dhi)
+    crosses=(coordinate+dlo<=0)&(coordinate+dhi>=0)
+    qlow=np.where(crosses,-extent,qlow)
+    # If the interval crosses zero, its farther endpoint supplies the maximum.
+    qhigh=np.where(crosses,np.maximum(abs(coordinate+dlo),abs(coordinate+dhi))-extent,qhigh)
+    correlated_lower=_box_gap(qlow);correlated_upper=_box_gap(qhigh)
+    plane=details[:,15]==0
+    correlated_lower[plane]=rows[selected[plane],4]+dlo[plane,1]
+    correlated_upper[plane]=rows[selected[plane],4]+dhi[plane,1]
+    if np.any(~((details[:,15]==1)|plane)):raise ValueError('Correlated site bounds require native box or plane targets')
+    lower=legacy_lower.copy();upper=legacy_upper.copy()
+    lower[selected]=np.maximum(lower[selected],np.nextafter(correlated_lower,-np.inf));upper[selected]=np.minimum(upper[selected],np.nextafter(correlated_upper,np.inf))
+    if not np.isfinite(lower).all() or not np.isfinite(upper).all() or np.any(lower>upper):raise ValueError('Inconsistent contact envelopes')
     clear=lower>0;compressed=upper<0;uncertain=~(clear|compressed)
     groups=[]
     for a,b in evaluator.pairs:
-        selected=(rows[:,0]==a)&(rows[:,1]==b)
-        count=int(np.sum(uncertain&selected))
+        pair_sites=(rows[:,0]==a)&(rows[:,1]==b)
+        count=int(np.sum(uncertain&pair_sites))
         if count:groups.append(dict(world_body_ids=[basis.world_body_ids[int(a)],basis.world_body_ids[int(b)]],
-            possible_site_changes=count,minimum_lower_gap_m=float(np.min(lower[selected])),maximum_upper_gap_m=float(np.max(upper[selected]))))
+            possible_site_changes=count,minimum_lower_gap_m=float(np.min(lower[pair_sites])),maximum_upper_gap_m=float(np.max(upper[pair_sites]))))
     summary=dict(horizon_s=h,native_sites=len(rows),always_separated_sites=int(clear.sum()),
         always_compressed_sites=int(compressed.sum()),possible_contact_changes=int(uncertain.sum()),
+        legacy_possible_contact_changes=int(np.sum(~((legacy_lower>0)|(legacy_upper<0)))),
+        correlated_sites_checked=len(selected),
+        mean_gap_width_ratio=float(np.mean((upper[selected]-lower[selected])/(legacy_upper[selected]-legacy_lower[selected]))),
+        bound_method='Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds',
+        maximum_rotation_remainder_m=float(np.max(remainder,initial=0)),
+        maximum_initial_gap_speed_m_s=float(np.max(abs(np.sum(differential[:,19:25]*evaluator.bodies[rows[:,0].astype(int),14:20]+differential[:,25:31]*evaluator.bodies[rows[:,1].astype(int),14:20],axis=1)),initial=0)),
         body_translation_bound_m=translation.tolist(),body_rotation_chord_bound=rotation.tolist(),
         unresolved_pairs=groups,execution_admitted=False,
         scope='Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified',
         wall_s=time.perf_counter()-started)
-    return dict(summary=summary,geometry=rows,lower_gap_m=lower,upper_gap_m=upper,envelope=bounds)
+    return dict(summary=summary,geometry=rows,native_differential=differential,lower_gap_m=lower,upper_gap_m=upper,envelope=bounds)
 
 
 def prepare(evaluator, *, source_identity, world_body_ids=None):

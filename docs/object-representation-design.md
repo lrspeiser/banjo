@@ -1,3 +1,5 @@
+**Implementation update, October 9:** [Correlated native contact bounds](correlated-contact-bounds-checkpoint.md) add read-only differentials and continuous all-mode affine/Cayley inspection. All 54 modes and authoritative history remain; 116 sites still have uncertain contact signs. This prerequisite does not admit reduced execution. Unilateral events, nonlinear error, endpoint history and full reaction/work transfer remain required.
+
 **Implementation update, October 9:** [Adaptive occupied-ball compiler and conservative CPU transfer reference](solid-representation-checkpoint.md) add geometry/full-inertia/history mappings and an inspectable 3D reference. This is not a GPU detailed-ball solver; contact/fracture, other families and realtime qualification remain open.
 
 **Implementation update, October 9:** [Bounded registry and exact scene restart](object-registry-checkpoint.md) implement stable installed definitions/instances/matter IDs and current primitive/cell graph continuation. The primitive 10 m contact control now runs; connected-sheet impacts and the remaining families/transfers below remain open.

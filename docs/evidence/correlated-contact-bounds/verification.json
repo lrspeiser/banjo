@@ -1,0 +1,633 @@
+{
+  "schema": "banjo.correlated-contact-verification.v1",
+  "base_revision": "1e3fa2509c4f07f4c8a2dbbde77613b2a43b4a76",
+  "windows": {
+    "environment": "Windows 11 / MSVC Release / NumPy CPU reference",
+    "implementation_sha256": "cfccc99779884eb545bb0e4c086de171747b8cfeb2c526e0498e4c54fc2cfb19",
+    "binary_sha256": "dd9af1ee61d4fe81d2f46df253fd7b5c4c8d918a168bfb3eeb6a1c2a3be21790",
+    "native_observation_derivatives": 6912,
+    "scoped_ctests": [
+      "banjo_coupled_contact_tests",
+      "banjo_cpu_local_jacobian_tests",
+      "banjo_cpu_coupled_modes_tests",
+      "banjo_contact_observation_tests",
+      "banjo_cpu_coupled_world_tests",
+      "banjo_cpu_high_drop_tests",
+      "banjo_coupled_view_tests"
+    ],
+    "final_five_suite_wall_s": 83.06,
+    "http_tests": [
+      "cpu_coupled_gateway_test.py",
+      "physics_fields_gateway_test.py"
+    ],
+    "modes_receipt": "windows-modes.json.gz",
+    "runs": [
+      {
+        "material": "glass",
+        "mass_kg": 0.022500000000000006,
+        "comparison": [
+          {
+            "dt_s": 2e-07,
+            "equation_residual": 7.742383061046564e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 2.536886195948905e-17,
+            "velocity_error_sqrt_j": 1.2630710269927284e-10,
+            "affine_energy_residual_j": -2.0658294955475247e-29
+          },
+          {
+            "dt_s": 1e-07,
+            "equation_residual": 7.652872914243129e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 4.392381627321465e-18,
+            "velocity_error_sqrt_j": 7.78739305776181e-11,
+            "affine_energy_residual_j": -1.4791141972893971e-31
+          },
+          {
+            "dt_s": 5e-08,
+            "equation_residual": 3.0602482368349176e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 9.900104419698898e-19,
+            "velocity_error_sqrt_j": 3.936117860557486e-11,
+            "affine_energy_residual_j": -1.4791141972893971e-31
+          }
+        ],
+        "states": {
+          "initial": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.0,
+            "build_wall_s": 0.2893476000172086,
+            "affine_reference_energy_residual_j": 7.270142102516845e-27,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.08476966225408873,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 6.969171351508139e-19,
+              "maximum_initial_gap_speed_m_s": 0.0,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.008528999984264374
+            }
+          },
+          "loaded": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.004166666666666667,
+            "build_wall_s": 0.3065187000320293,
+            "affine_reference_energy_residual_j": -4.17053262669395e-24,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.06689917911499918,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 1.548505217488301e-17,
+              "maximum_initial_gap_speed_m_s": 2.1432242686611905e-07,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.010361599968746305
+            }
+          }
+        }
+      },
+      {
+        "material": "oak",
+        "mass_kg": 0.006300000000000001,
+        "comparison": [
+          {
+            "dt_s": 2e-07,
+            "equation_residual": 5.337471239647096e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 1.3086284417868585e-17,
+            "velocity_error_sqrt_j": 8.253145812286616e-11,
+            "affine_energy_residual_j": 2.391234618951192e-30
+          },
+          {
+            "dt_s": 1e-07,
+            "equation_residual": 1.672920886849405e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 9.99772522842867e-19,
+            "velocity_error_sqrt_j": 1.8309452570171457e-11,
+            "affine_energy_residual_j": 2.2186712959340957e-31
+          },
+          {
+            "dt_s": 5e-08,
+            "equation_residual": 8.508472095528464e-12,
+            "mass_weighted_displacement_error_sqrt_kg_m": 1.6677549103943114e-19,
+            "velocity_error_sqrt_j": 6.483724936404899e-12,
+            "affine_energy_residual_j": -1.9721522630525295e-31
+          }
+        ],
+        "states": {
+          "initial": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.0,
+            "build_wall_s": 0.2885643999907188,
+            "affine_reference_energy_residual_j": 5.654554968624213e-26,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.0789028852582504,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 8.77848595767407e-18,
+              "maximum_initial_gap_speed_m_s": 0.0,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.008036600018385798
+            }
+          },
+          "loaded": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.004166666666666667,
+            "build_wall_s": 0.31194179999874905,
+            "affine_reference_energy_residual_j": -4.5059338010581255e-25,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.06452360602247828,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 4.259939511624441e-17,
+              "maximum_initial_gap_speed_m_s": 3.248929278750194e-07,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.01048369996715337
+            }
+          }
+        }
+      },
+      {
+        "material": "iron",
+        "mass_kg": 0.07083000000000002,
+        "comparison": [
+          {
+            "dt_s": 2e-07,
+            "equation_residual": 1.2974019276063335e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 3.1049840313696275e-17,
+            "velocity_error_sqrt_j": 1.6131760491575434e-10,
+            "affine_energy_residual_j": -2.879342304056693e-29
+          },
+          {
+            "dt_s": 1e-07,
+            "equation_residual": 1.2541906629997912e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 2.103523589305507e-18,
+            "velocity_error_sqrt_j": 2.5584951924007023e-11,
+            "affine_energy_residual_j": -6.7053176943786e-30
+          },
+          {
+            "dt_s": 5e-08,
+            "equation_residual": 1.538114164204962e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 5.634803364038086e-19,
+            "velocity_error_sqrt_j": 2.1842405960841656e-11,
+            "affine_energy_residual_j": -1.1832913578315177e-30
+          }
+        ],
+        "states": {
+          "initial": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.0,
+            "build_wall_s": 0.2799349999986589,
+            "affine_reference_energy_residual_j": 2.8434333556510326e-25,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.0720950786177495,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 4.196998497711986e-17,
+              "maximum_initial_gap_speed_m_s": 0.0,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.009021800011396408
+            }
+          },
+          "loaded": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.004166666666666667,
+            "build_wall_s": 0.2895785000291653,
+            "affine_reference_energy_residual_j": 2.048159011270574e-26,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.06588441882169263,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 3.562314190597744e-17,
+              "maximum_initial_gap_speed_m_s": 3.788174283466839e-07,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.008500600000843406
+            }
+          }
+        }
+      },
+      {
+        "material": "ice",
+        "mass_kg": 0.008253000000000002,
+        "comparison": [
+          {
+            "dt_s": 2e-07,
+            "equation_residual": 3.3166914928737844e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 7.519940757670793e-18,
+            "velocity_error_sqrt_j": 4.6544595431353304e-11,
+            "affine_energy_residual_j": -2.1693674893577825e-30
+          },
+          {
+            "dt_s": 1e-07,
+            "equation_residual": 3.4860800610885884e-12,
+            "mass_weighted_displacement_error_sqrt_kg_m": 4.2110408999943424e-19,
+            "velocity_error_sqrt_j": 4.7275882535383804e-12,
+            "affine_energy_residual_j": -5.9164567891575885e-31
+          },
+          {
+            "dt_s": 5e-08,
+            "equation_residual": 2.96358584575928e-12,
+            "mass_weighted_displacement_error_sqrt_kg_m": 5.21726857212513e-20,
+            "velocity_error_sqrt_j": 1.9374913525375458e-12,
+            "affine_energy_residual_j": 5.9164567891575885e-31
+          }
+        ],
+        "states": {
+          "initial": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.0,
+            "build_wall_s": 0.300467099994421,
+            "affine_reference_energy_residual_j": 1.6155871338926322e-27,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.0660494291252499,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 2.9516359412540697e-16,
+              "maximum_initial_gap_speed_m_s": 0.0,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.008149699948262423
+            }
+          },
+          "loaded": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.004166666666666667,
+            "build_wall_s": 0.31139899999834597,
+            "affine_reference_energy_residual_j": -5.393185629201861e-26,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.06317183595872405,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 2.6100273657563153e-16,
+              "maximum_initial_gap_speed_m_s": 7.777315725350756e-07,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.009328500018455088
+            }
+          }
+        }
+      }
+    ]
+  },
+  "source_registration": {
+    "registered": 354,
+    "total": 354
+  },
+  "limits": [
+    "Conditional affine/Cayley bounds, not nonlinear execution",
+    "116 uncertain sites remain for each material",
+    "No strong-impact or reduced/detailed transfer qualification",
+    "No complete delivery/realtime qualification"
+  ],
+  "linux": {
+    "environment": "WSL Ubuntu 24.04.4 LTS / Release / NumPy CPU reference",
+    "binary_sha256": "1f1f77947fb930cda6ce4a1d4859684836441c684611afbea45f7862657bdc4b",
+    "implementation_sha256": "fe4a9589e13e13cbafcbb5c6c95ca9f6b06b5b92f3d5b389dda16860a8ed8f7e",
+    "modes_receipt": "linux-modes.json.gz",
+    "observation_log": "linux-observation.log",
+    "modes_log": "linux-modes.log",
+    "native_observation_derivatives": 6912,
+    "note": "Fresh repeat after WSL restart removed the original /tmp receipt; physical ratios match the prior final run.",
+    "runs": [
+      {
+        "material": "glass",
+        "mass_kg": 0.022500000000000006,
+        "comparison": [
+          {
+            "dt_s": 2e-07,
+            "equation_residual": 6.127513584897421e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 2.7361676201397472e-17,
+            "velocity_error_sqrt_j": 1.4346262381614252e-10,
+            "affine_energy_residual_j": 1.8143800820083272e-29
+          },
+          {
+            "dt_s": 1e-07,
+            "equation_residual": 2.5179350429836218e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 2.0597528398359937e-18,
+            "velocity_error_sqrt_j": 2.922139912829201e-11,
+            "affine_energy_residual_j": 7.099748146989106e-30
+          },
+          {
+            "dt_s": 5e-08,
+            "equation_residual": 2.0250361033043148e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 5.118981693645326e-19,
+            "velocity_error_sqrt_j": 1.987558768579598e-11,
+            "affine_energy_residual_j": 1.1832913578315177e-30
+          }
+        ],
+        "states": {
+          "initial": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.0,
+            "build_wall_s": 0.23188788502011448,
+            "affine_reference_energy_residual_j": 8.885729236409477e-27,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.08476966225288123,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 6.969171351404851e-19,
+              "maximum_initial_gap_speed_m_s": 0.0,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.00793252297444269
+            }
+          },
+          "loaded": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.004166666666666667,
+            "build_wall_s": 0.24820448696846142,
+            "affine_reference_energy_residual_j": -1.0891400199324847e-24,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.06704840635107365,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 1.5476836453973826e-17,
+              "maximum_initial_gap_speed_m_s": 2.1432242699953505e-07,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.007630590989720076
+            }
+          }
+        }
+      },
+      {
+        "material": "oak",
+        "mass_kg": 0.006300000000000001,
+        "comparison": [
+          {
+            "dt_s": 2e-07,
+            "equation_residual": 9.25293626376028e-12,
+            "mass_weighted_displacement_error_sqrt_kg_m": 1.1322238933121481e-17,
+            "velocity_error_sqrt_j": 5.892744878582341e-11,
+            "affine_energy_residual_j": -2.0214560696288428e-30
+          },
+          {
+            "dt_s": 1e-07,
+            "equation_residual": 5.026615004237558e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 2.512437713293893e-18,
+            "velocity_error_sqrt_j": 4.8699399166645686e-11,
+            "affine_energy_residual_j": 9.367723249499515e-31
+          },
+          {
+            "dt_s": 5e-08,
+            "equation_residual": 8.413511185647343e-12,
+            "mass_weighted_displacement_error_sqrt_kg_m": 1.601399991478262e-19,
+            "velocity_error_sqrt_j": 6.139087562851314e-12,
+            "affine_energy_residual_j": 1.7256332301709633e-31
+          }
+        ],
+        "states": {
+          "initial": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.0,
+            "build_wall_s": 0.22628303902456537,
+            "affine_reference_energy_residual_j": -4.0389678347315804e-26,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.07890288525097096,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 8.778485957676934e-18,
+              "maximum_initial_gap_speed_m_s": 0.0,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.007498599996324629
+            }
+          },
+          "loaded": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.004166666666666667,
+            "build_wall_s": 0.25079603597987443,
+            "affine_reference_energy_residual_j": -2.619890389672094e-25,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.06452360646781416,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 4.2599394955719095e-17,
+              "maximum_initial_gap_speed_m_s": 3.2489292786544413e-07,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.007937205024063587
+            }
+          }
+        }
+      },
+      {
+        "material": "iron",
+        "mass_kg": 0.07083000000000002,
+        "comparison": [
+          {
+            "dt_s": 2e-07,
+            "equation_residual": 2.0357634513228666e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 3.1177952423039156e-17,
+            "velocity_error_sqrt_j": 1.6294089899813723e-10,
+            "affine_energy_residual_j": 4.69372238606502e-29
+          },
+          {
+            "dt_s": 1e-07,
+            "equation_residual": 8.901052119561327e-12,
+            "mass_weighted_displacement_error_sqrt_kg_m": 1.8858045642233246e-18,
+            "velocity_error_sqrt_j": 2.1532035712323306e-11,
+            "affine_energy_residual_j": -1.3016204936146695e-29
+          },
+          {
+            "dt_s": 5e-08,
+            "equation_residual": 9.205252852679675e-12,
+            "mass_weighted_displacement_error_sqrt_kg_m": 4.77319765422203e-19,
+            "velocity_error_sqrt_j": 1.8801245144633312e-11,
+            "affine_energy_residual_j": 5.127595883936577e-30
+          }
+        ],
+        "states": {
+          "initial": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.0,
+            "build_wall_s": 0.21992974897148088,
+            "affine_reference_energy_residual_j": -3.877409121342317e-26,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.07209507861736227,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 4.196998497711656e-17,
+              "maximum_initial_gap_speed_m_s": 0.0,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.0076191790285520256
+            }
+          },
+          "loaded": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.004166666666666667,
+            "build_wall_s": 0.23552862700307742,
+            "affine_reference_energy_residual_j": 4.968837626760848e-26,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.06587206217243641,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 3.562543931404818e-17,
+              "maximum_initial_gap_speed_m_s": 3.7881742834606784e-07,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.010101782972924411
+            }
+          }
+        }
+      },
+      {
+        "material": "ice",
+        "mass_kg": 0.008253000000000002,
+        "comparison": [
+          {
+            "dt_s": 2e-07,
+            "equation_residual": 2.0015168250728572e-11,
+            "mass_weighted_displacement_error_sqrt_kg_m": 8.02689946840652e-18,
+            "velocity_error_sqrt_j": 4.719914475794445e-11,
+            "affine_energy_residual_j": -9.860761315262648e-31
+          },
+          {
+            "dt_s": 1e-07,
+            "equation_residual": 3.524749718168226e-12,
+            "mass_weighted_displacement_error_sqrt_kg_m": 4.430159034790032e-19,
+            "velocity_error_sqrt_j": 5.243412769832037e-12,
+            "affine_energy_residual_j": 5.9164567891575885e-31
+          },
+          {
+            "dt_s": 5e-08,
+            "equation_residual": 3.291032705367546e-12,
+            "mass_weighted_displacement_error_sqrt_kg_m": 5.0941563752588426e-20,
+            "velocity_error_sqrt_j": 1.7496271096237557e-12,
+            "affine_energy_residual_j": 1.5777218104420236e-30
+          }
+        ],
+        "states": {
+          "initial": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.0,
+            "build_wall_s": 0.23260314401704818,
+            "affine_reference_energy_residual_j": 1.6155871338926322e-26,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.06604942912519718,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 2.951635941254126e-16,
+              "maximum_initial_gap_speed_m_s": 0.0,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.00787269399734214
+            }
+          },
+          "loaded": {
+            "physical_state_unchanged": true,
+            "accepted_time_s": 0.004166666666666667,
+            "build_wall_s": 0.25114871497498825,
+            "affine_reference_energy_residual_j": -4.295604008722606e-26,
+            "continuous_contact_envelope": {
+              "horizon_s": 0.004166666666666667,
+              "native_sites": 2808,
+              "always_separated_sites": 2692,
+              "always_compressed_sites": 0,
+              "possible_contact_changes": 116,
+              "legacy_possible_contact_changes": 116,
+              "correlated_sites_checked": 116,
+              "mean_gap_width_ratio": 0.0631738543746646,
+              "bound_method": "Correlated native local-point observations with finite Cayley remainder, intersected with absolute travel bounds",
+              "maximum_rotation_remainder_m": 2.6100162485649447e-16,
+              "maximum_initial_gap_speed_m_s": 7.777315724900833e-07,
+              "execution_admitted": false,
+              "scope": "Native site signs conditional on all-mode affine/Cayley geometry; broad SAT, constitutive branches and nonlinear trajectory error not qualified",
+              "wall_s": 0.007793840952217579
+            }
+          }
+        }
+      }
+    ]
+  }
+}

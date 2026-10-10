@@ -209,6 +209,57 @@ BANJO_CPU_EXPORT int banjo_coupled_cpu_contact_geometry(const double* b,unsigned
     }
     return static_cast<int>(k);
 }
+// Read-only native differential, canonical pair order. Rows (34 doubles):
+// a,b,site,sample owner (-1 primitive),gap,broad gap; sample lever xyz;
+// point relative to target xyz; target-local xyz; target shape; extents xyz;
+// d(gap)/d(a translation, a world turn, b translation, b world turn) (12);
+// compensated abs(local coordinate)-target half extent (3).
+// Geometry/gradients come from the existing contact law; no response is applied.
+BANJO_CPU_EXPORT int banjo_coupled_cpu_contact_differential(const double* b,unsigned n,
+    unsigned capacity,double* out){
+    if(!scene(b,n,nullptr,0,1e-12,0)||!out)return -1;
+    unsigned count=0;
+    for(unsigned a=0;a<n;++a)for(unsigned c=a+1;c<n;++c)
+        if(b[30*a+1]>0||b[30*c+1]>0)count+=banjo::dgContactSiteCount(b+30*a,b+30*c);
+    if(capacity<count)return -1;
+    try{
+        std::vector<double> rows(34*count);unsigned k=0;
+        for(unsigned a=0;a<n;++a)for(unsigned c=a+1;c<n;++c){
+            const auto ba=b+30*a,bc=b+30*c;if(ba[1]==0&&bc[1]==0)continue;
+            const auto pa=banjo::dgPose(ba),pc=banjo::dgPose(bc);
+            const auto broad=banjo::dgContact(ba,bc,pa,pc);
+            const unsigned sites=banjo::dgContactSiteCount(ba,bc);
+            const bool sa=static_cast<int>(ba[0])==1&&static_cast<int>(bc[0])!=2;
+            const bool sb=static_cast<int>(bc[0])==1&&static_cast<int>(ba[0])!=2;
+            for(unsigned site=0;site<sites;++site){
+                auto point=pa,target=pc;const double* target_body=bc;
+                banjo::FrameVector lever{};auto contact=broad;double owner=-1;bool swap=false;
+                if(sites>1){
+                    swap=sb&&(!sa||site>=24);const auto source=swap?bc:ba;
+                    point=swap?pc:pa;target=swap?pa:pc;target_body=swap?ba:bc;owner=swap?c:a;
+                    lever=banjo::dgSurfaceLever(source,point,site%24);
+                    contact=banjo::dgSurfaceContact(source,target_body,point,target,site%24);
+                    point=banjo::dgAddPosition(point,lever);
+                }
+                auto row=rows.data()+34*k++;row[0]=a;row[1]=c;row[2]=site;row[3]=owner;
+                row[4]=contact.gap;row[5]=broad.gap;banjo::dgWrite3(row+6,lever);
+                const auto relative=banjo::dgRelative(point,target);
+                banjo::dgWrite3(row+9,banjo::dgPositionValue(relative));
+                for(unsigned axis=0;axis<3;++axis){
+                    const auto coordinate=banjo::dgDotAcc(relative,banjo::frameRotate(target.q,banjo::dgAxis(axis)));
+                    row[12+axis]=banjo::dgValue(coordinate);row[16+axis]=target_body[4+axis];
+                    row[31+axis]=banjo::dgValue(banjo::dgAccSub(banjo::dgAccScale(coordinate,row[12+axis]<0?-1:1),{target_body[4+axis],0}));
+                }
+                row[15]=target_body[0];const auto g=contact.gradient;
+                const banjo::FrameVector values[]{swap?g.force_b:g.force_a,swap?g.torque_b:g.torque_a,
+                    swap?g.force_a:g.force_b,swap?g.torque_a:g.torque_b};
+                for(unsigned j=0;j<4;++j)banjo::dgWrite3(row+19+3*j,values[j]);
+            }
+        }
+        if(!finite(rows.data(),static_cast<unsigned>(rows.size())))return -1;
+        std::memcpy(out,rows.data(),rows.size()*sizeof(double));return static_cast<int>(k);
+    }catch(const std::bad_alloc&){return -1;}
+}
 BANJO_CPU_EXPORT int banjo_coupled_cpu_flight(const double* b,unsigned n,unsigned sphere,double h,double gy,
     double travel,double* bounds,double* poses,double* v,double* f,double* r){
     if(!scene(b,n,nullptr,0,h,gy)||sphere>=n||b[30*sphere]!=2||b[30*sphere+1]<=0||
