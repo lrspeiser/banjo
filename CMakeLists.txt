@@ -1860,7 +1860,9 @@ if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
             ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_player_tests.py -v)
-    set_tests_properties(banjo_ai_player_tests PROPERTIES TIMEOUT 900)
+    # The two reference explorers now run to their end (three paid jobs each)
+    # instead of failing early; 21 minutes on a fully loaded desktop.
+    set_tests_properties(banjo_ai_player_tests PROPERTIES TIMEOUT 1800)
     add_test(NAME banjo_ai_column_opening_tests
         COMMAND ${CMAKE_COMMAND} -E env
             BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
