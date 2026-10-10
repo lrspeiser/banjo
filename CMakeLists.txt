@@ -1451,6 +1451,15 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_circuit_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_circuit_tests)
             add_test(NAME banjo_circuit_tests COMMAND banjo_circuit_tests)
+            # The machine world: general parts built into one live world, the
+            # declaration checks, the chat's refusal and rehearsal loops, and an
+            # engine run of the default chain (docs/machine-world-checkpoint.md).
+            if(Python3_FOUND AND TARGET banjo_live_world_run)
+                add_test(NAME banjo_machine_world_tests COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_world_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
+                set_tests_properties(banjo_machine_world_tests PROPERTIES TIMEOUT 300
+                    ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
+            endif()
             target_link_libraries(banjo_motor_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_motor_tests)
             add_test(NAME banjo_motor_tests COMMAND banjo_motor_tests)
@@ -2398,6 +2407,9 @@ if(BANJO_BUILD_TESTS)
                 add_test(NAME banjo_coupled_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/coupled_view_test.mjs)
                 set_tests_properties(banjo_coupled_view_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")
+                add_test(NAME banjo_machine_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_view_test.mjs)
+                set_tests_properties(banjo_machine_view_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client;machine")
                 add_test(NAME banjo_scene_action_placement_tests COMMAND ${BANJO_NODE_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_action_placement_test.mjs)
                 set_tests_properties(banjo_scene_action_placement_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")

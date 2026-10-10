@@ -3,6 +3,7 @@
   "date": "2026-10-10",
   "native_sha256": "3b1b3a3b6030b288c42725d17b29564ca79bd5c58f64582ddade11f018511168",
   "changes": [
+    "New /machine page: a live chain reaction built from general parts (ramp, dominoes, lever, switch, battery, coil, burning peg, weight, glass plate). Press Start to watch the engine calculate it; type a request to have a language model build more from the same parts, checked and rehearsed in the engine first.",
     "Native elastic opening/compression candidates retain cohesive shear and full support force maps. Inspect vibration basis shows their qualification beside the 3D scene. Five scoped Windows suites, compiled native API, HTTP gateway and source registration pass. Reduced motion, strong sheet impacts and complete realtime remain unfinished; this checkpoint is not yet verified on Render.",
     "Inspect vibration basis beside the 3D scene now separates native material preparation from explicit opening/closing contact curvature, including compressed geometry and torque. Independent scalar-gap/potential tests pass; native stationary force and contact energy reconstruct across glass/oak/iron/ice. Material branch, refinement, nonlinear trajectory, endpoint-history and full reaction transfers still block reduced execution. No accepted physics law or convergence gate changed.",
     "Native relative contact differentials and correlated local-point bounds retain common motion, exact-frequency cancellation, finite Cayley rotations and sub-ULP axial gaps. Inspect vibration basis beside the 3D scene shows measured narrower gap uncertainty. All 54 modes and native histories remain; the sheet still has 116 uncertain sites and reduced motion is not admitted. No physical response law or tolerance changed.",
@@ -35,6 +36,11 @@
     "Glass/oak/iron/ice complete at both timesteps in the initial trial. Full convergence, large energy deficits, connected calculation speed and thermal/fluid/power laws remain unfinished."
   ],
   "checks": [
+    {
+      "label": "The machine (live chain reaction, chat building)",
+      "status": "passed",
+      "value": "/machine runs one live LiveWorld world built from general parts: marble, dominoes, a lever whose measured angle closes a switch, a 48 V battery and a coil that burns through an oak peg, a falling weight and a breaking glass plate. All seven built stations are checked off from engine measurements in order; coil heat out equals heat received exactly. A typed request is turned into a checked declaration by the model and rehearsed once in the engine before it is built. 13 machine tests, circuit tests, and an ordinary-browser run pass. Burning and glass breakage are experimental and uncalibrated; the water wheel is not in the shared world."
+    },
     {
       "label": "Resumed checkpoint verification",
       "status": "passed",

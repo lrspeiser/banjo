@@ -1,0 +1,55 @@
+{
+  "schema": "banjo.machine.v1",
+  "title": "Chain reaction",
+  "cell_m": 0.02,
+  "kits": [
+    {"kit": "ramp", "name": "ramp", "top_m": [-1.55, 0.76, 0], "bottom_m": [-0.45, 0.36, 0], "width_m": 0.2,
+     "material": "oak", "ball": {"name": "marble", "material": "iron", "diameter_m": 0.08}},
+    {"kit": "domino_row", "name": "domino", "start_m": [-0.15, 0, 0], "direction": "+x", "count": 8,
+     "spacing_m": 0.2, "size_m": [0.04, 0.4, 0.24], "material": "oak"},
+    {"kit": "lever", "name": "lever", "pivot_m": [1.85, 0.1, 0], "length_m": 0.8, "width_m": 0.2,
+     "limit_deg": 15, "along": "x", "material": "oak"},
+    {"kit": "hanging_weight", "name": "weight", "post_m": [3.2, 0, 0], "drop_m": 1.43, "peg_size_m": 0.02,
+     "peg_length_m": 0.3, "weight_size_m": 0.16, "weight_material": "iron", "side": "+z", "holds_shear_n": 800},
+    {"kit": "plate_on_supports", "name": "glass plate", "at_m": [3.2, 0.28, 0.235], "size_m": [0.48, 0.02, 0.28],
+     "material": "glass", "span": "z"}
+  ],
+  "parts": [
+    {"name": "battery box", "shape": "box", "material": "concrete", "size_m": [0.3, 0.2, 0.2],
+     "at_m": [2.4, 0.1, 0.5], "fixed": true}
+  ],
+  "batteries": [
+    {"name": "battery", "in": "battery box", "capacity_j": 200000, "voltage_v": 48, "max_power_w": 3000}
+  ],
+  "circuits": [
+    {"name": "heater", "battery": "battery",
+     "switch": {"hinge": "lever hinge", "closed_at_or_above_deg": 8},
+     "coil": {"heats": "weight peg", "resistance_ohm": 0.8}}
+  ],
+  "stations": [
+    {"title": "Marble run", "shows": "An iron marble rolls down an oak ramp.",
+     "law": "Gravity, contact friction and rolling resistance on rigid bodies", "maturity": "calculated",
+     "done_when": {"hits": ["marble", "domino 1"]}, "focus": ["marble"]},
+    {"title": "Dominoes", "shows": "Eight oak dominoes knock each other over.",
+     "law": "Rigid contacts pass momentum along the row; each one topples about its edge", "maturity": "calculated",
+     "done_when": {"hits": ["domino 8", "lever"]}, "focus": ["domino 4"]},
+    {"title": "Lever", "shows": "The last domino presses down one end of a hinged plank; the far end rises.",
+     "law": "A hinge: torque about a pin, between limits", "maturity": "calculated",
+     "done_when": {"hinge_beyond_deg": {"joint": "lever hinge", "deg": 8}}, "focus": ["lever"]},
+    {"title": "Electric switch", "shows": "Past 8 degrees the lever closes a switch. A 48 V battery drives current through a coil.",
+     "law": "DC circuit: Ohm's and Kirchhoff's laws; the coil's Joule heat goes into the peg", "maturity": "calculated",
+     "done_when": {"switch_closed": "heater"}, "focus": ["battery box"]},
+    {"title": "Burning peg", "shows": "The coil heats the oak peg holding the weight. Oak chars and burns, and loses strength as it heats.",
+     "law": "Heat conduction, oak combustion with oxygen, strength falling with temperature", "maturity": "experimental",
+     "done_when": {"parted": "weight peg"}, "focus": ["weight peg"]},
+    {"title": "Falling weight", "shows": "When the peg gives way, the iron weight drops.",
+     "law": "Gravity", "maturity": "calculated",
+     "done_when": {"hits": ["weight", "glass plate"]}, "focus": ["weight"]},
+    {"title": "Glass plate", "shows": "The weight lands on a glass plate resting on two supports.",
+     "law": "Bonded-cell fracture: whether it breaks is calculated; the number of pieces is not calibrated", "maturity": "experimental",
+     "done_when": {"broke": "glass plate"}, "focus": ["glass plate"]},
+    {"title": "Water wheel", "shows": "Next: pour water over a wheel and let it turn.",
+     "law": "Not in this shared world yet. A separate reference calculates particles of water on a wheel.", "maturity": "not built",
+     "done_when": null, "focus": []}
+  ]
+}

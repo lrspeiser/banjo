@@ -20,6 +20,11 @@ that turns ore into wire while you watch. You can talk to any of them. You can
 design a new one on a bench, drive it with the arrow keys, and install it in
 the world, where it breaks like everything else.
 
+> **New, 10 October 2026: the machine.** Open `/machine` on the lab server (`scripts/voxel-lab.py`) to watch a chain reaction
+> that the engine calculates live: a marble, dominoes, a lever that closes an electric switch, a coil that burns through an
+> oak peg, and a weight that breaks a glass plate. Type what you want to add and a language model builds it from the same
+> parts; the engine decides what happens. See [the machine checkpoint](docs/machine-world-checkpoint.md).
+
 > **Where this is, 4 October 2026.** Banjo is early and experimental, built
 > in the open, and it does not have a licence yet. A lot of physics is merged;
 > not all of it has reached the world you can walk around in, and this README

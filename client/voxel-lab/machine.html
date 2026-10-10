@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo Machine</title><link rel="stylesheet" href="/machine.css"></head><body>
+<header><strong>Banjo <span>Machine</span></strong><nav><a href="/coupled">Impact lab</a><a href="/mechanisms">Mechanisms</a><a href="/flow">Water</a><a href="/thermal-fields">Heat</a></nav><output id="build">Checking…</output></header>
+<main>
+<section id="view" aria-label="The machine in 3D, as the engine calculates it">
+<output id="clock">Setting up…</output>
+<div id="labels" aria-hidden="true"></div>
+<div id="scene-actions" class="scene-actions">
+<button id="start">Start</button><button id="reset">Set up again</button>
+<label class="speed">Speed<select id="speed" aria-label="Speed of world time"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+<button id="follow" aria-pressed="true">Follow</button>
+</div>
+<p id="scene-note">Drag to turn · Wheel or pinch to zoom · Every motion is calculated live</p>
+</section>
+<aside>
+<h1 id="title">Chain reaction</h1>
+<p class="lede">One world, one engine. Each station tests a different part of the physics, and each sets off the next. Nothing is animated: the engine calculates every contact, hinge, current, temperature and break as you watch.</p>
+<section class="chat" aria-label="Build with words">
+<h2>Build something</h2>
+<form id="chat-form"><textarea id="message" rows="3" maxlength="2000" placeholder="Describe what to build or change, e.g. “Add a second ramp with a rubber ball that knocks over a glass pane on a post.”"></textarea>
+<div class="chat-actions"><button id="send" type="submit">Build it</button><button id="undo" type="button" disabled>Undo</button></div></form>
+<output id="chat-status" aria-live="polite"></output>
+<ol id="chat-log"></ol>
+</section>
+<section aria-label="Stations"><h2>Stations</h2><ol id="stations"></ol></section>
+<section aria-label="Measured now"><h2>Measured now</h2><dl id="readings"></dl><p class="legend" id="heat-legend" hidden>Glow shows measured surface temperature: dull red near 600 K, orange near 900 K, yellow above 1100 K.</p></section>
+<section aria-label="What happened"><h2>What happened</h2><ol id="events"></ol></section>
+<details><summary>The machine as data</summary><p>This is the whole declaration. Edit it and build; the server checks it and the engine calculates the rest.</p><textarea id="spec" rows="14" spellcheck="false"></textarea><div class="chat-actions"><button id="build-json" type="button">Build from this</button></div><ul id="notes"></ul></details>
+<details><summary>How honest is each station?</summary><p><b>Calculated</b> uses the engine's tested laws for rigid bodies, hinges and DC circuits. <b>Experimental</b> is calculated but not calibrated against real material tests: oak burning and its loss of strength, and how glass breaks (whether it breaks is computed; the number of pieces is not calibrated). <b>Not built</b> is not in this shared world yet.</p><p>Breaking can take the engine longer than real time; the clock then shows how far world time is behind.</p></details>
+</aside>
+</main>
+<script type="module" src="/machine.js"></script></body></html>

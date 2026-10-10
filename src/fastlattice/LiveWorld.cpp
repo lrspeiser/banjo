@@ -1360,7 +1360,19 @@ struct LiveWorld::Impl {
     }
     void prepareCircuits(double dt) {
         circuit_steps.clear();
-        for (const auto &c : circuits) {
+        for (auto &c : circuits) {
+            // A switch worked by a pin is where the pin has got to at the start
+            // of this step, measured, never assumed. A pin that is gone leaves
+            // its switch open.
+            for (const auto &worked : c.hingeSwitches()) {
+                const auto *pin = motorPin(worked.joint);
+                bool closed = false;
+                if (pin && pin->rigid && world->hasJoint(pin->rigid)) {
+                    const double at = world->jointState(pin->rigid).at;
+                    closed = worked.sense > 0 ? at >= worked.closed_rad : at <= worked.closed_rad;
+                }
+                c.setSwitch(worked.branch, closed);
+            }
             const auto *store = energyStoreById(c.store());
             std::vector<machines::CircuitMotorInput> inputs;
             for (unsigned id : c.motors()) {
@@ -1372,6 +1384,16 @@ struct LiveWorld::Impl {
                     store->voltage_v * store->voltage_v / (m.said.stall_torque_n_m * m.said.no_load_rad_s), present});
             }
             circuit_steps.push_back(c.solve(dt, store->voltage_v, store->charge_j, store->max_power_w, inputs));
+            // A coil wound on a body: its Joule heat for exactly this step goes
+            // into that body's thermal parcel as a heater on the network's own
+            // clock. Declared before the trial and after the network's saved
+            // state, so a refused step takes the heat back with everything else.
+            for (const auto &owed : c.bodyHeat(circuit_steps.back())) {
+                if (thermo && thermo->holds(owed.body))
+                    thermo->heat({owed.body, owed.joules / dt, thermo->timeS(), dt,
+                                  "circuit " + c.id() + ": " + owed.branch});
+                else c.keepHeat(circuit_steps.back(), owed.branch);
+            }
             const auto &s = circuit_steps.back();
             for (std::size_t b = 0; b < c.size(); ++b) {
                 if (!c.motor(b)) continue;
@@ -8190,11 +8212,32 @@ std::string LiveWorld::drawEnergy(unsigned store, double joules) {
 
 unsigned LiveWorld::circuit(const std::string &declaration) {
     auto c = machines::Circuit::read(nlohmann::json::parse(declaration));
+    // What it reaches into must be in this world: the bodies its coils warm,
+    // and the pins that work its switches.
+    for (const std::string &body : c.heatedBodies()) {
+        if (impl_->index_of.find(body) == impl_->index_of.end())
+            throw std::invalid_argument("circuit: heats_body " + body + " is not in this world");
+        impl_->refuseExactHeat(body, "circuit");
+    }
+    for (const auto &worked : c.hingeSwitches()) {
+        const auto *pin = impl_->motorPin(worked.joint);
+        if (pin == nullptr || pin->kind != JoltWorld::JointKind::Hinge)
+            throw std::invalid_argument("circuit: switch " + worked.branch + " follows joint " +
+                                        std::to_string(worked.joint) + ", which is not a hinge in this world");
+    }
+    const auto warmed = c.heatedBodies();
     impl_->attachCircuit(std::move(c));
+    if (!warmed.empty()) {
+        thermo::ThermoWorld &network = ensureThermo();
+        for (const std::string &body : warmed) network.enroll(body);
+    }
     return static_cast<unsigned>(impl_->circuits.size());
 }
 void LiveWorld::circuitSwitch(unsigned id, const std::string &branch, bool closed) {
     if (!id || id > impl_->circuits.size()) throw std::invalid_argument("unknown circuit");
+    for (const auto &worked : impl_->circuits[id - 1].hingeSwitches())
+        if (worked.branch == branch)
+            throw std::invalid_argument("switch " + branch + " is worked by its hinge, not by hand");
     impl_->circuits[id - 1].setSwitch(branch, closed);
 }
 std::string LiveWorld::circuits() const {

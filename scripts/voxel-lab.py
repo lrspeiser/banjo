@@ -7,6 +7,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'playground'))
+# Its own folder too, for when another program loads this file as a module.
+if str(ROOT/'scripts') not in sys.path:sys.path.insert(1,str(ROOT/'scripts'))
 import access_gate
 from urllib.parse import urlsplit
 ASSETS={'/':'client/voxel-lab/index.html','/world.js':'client/voxel-lab/world.js','/playback.mjs':'client/voxel-lab/playback.mjs','/style.css':'client/voxel-lab/style.css','/three.module.js':'playground/vendor/three.module.js','/three.core.js':'playground/vendor/three.core.js','/gpu':'client/voxel-lab/gpu.html','/gpu.js':'client/voxel-lab/gpu.js','/gpu.css':'client/voxel-lab/gpu.css','/materials':'client/voxel-lab/materials.html','/materials.js':'client/voxel-lab/materials.js','/materials.css':'client/voxel-lab/materials.css'}
@@ -21,6 +23,9 @@ for route,stem in (('mechanisms','mechanisms'),('flow','flowing-matter'),('therm
  for ext in ('js','css'):ASSETS['/'+stem+'.'+ext]='client/voxel-lab/'+stem+'.'+ext
 ASSETS['/mechanisms-view.mjs']='client/voxel-lab/mechanisms-view.mjs'
 ASSETS['/flow-view.mjs']='client/voxel-lab/flow-view.mjs'
+# The machine: one live engine world built from general parts (machine_world.py).
+ASSETS.update({'/machine':'client/voxel-lab/machine.html','/machine.js':'client/voxel-lab/machine.js','/machine.css':'client/voxel-lab/machine.css',
+ '/machine-view.mjs':'client/voxel-lab/machine-view.mjs','/machine-default.json':'client/voxel-lab/machine-default.json'})
 
 class SessionExpired(ValueError):pass
 
@@ -250,7 +255,7 @@ class Server(ThreadingHTTPServer):
  def __init__(self,address,native,logs,checkpoint_path=None,gpu_python=None,cpu_library=None,password=None,public_host=None):
   refusal=access_gate.refusal(address[0],password)
   if refusal:raise ValueError(refusal)
-  self.app=SimpleNamespace(password=password,public_host=public_host,sessions=set(),login_destination='/coupled')
+  self.app=SimpleNamespace(password=password,public_host=public_host,sessions=set(),login_destination='/machine')
   super().__init__(address,Handler);self.native=native;self.logs=logs;logs.mkdir(parents=True,exist_ok=True);self.sessions={};self.lock=threading.Lock()
   self.checkpoint_path=checkpoint_path or ROOT/'client/voxel-lab/checkpoint.json';self.started_revision,_=repository_state()
   self.cpu_library=cpu_library
@@ -262,6 +267,8 @@ class Server(ThreadingHTTPServer):
    if self.field_libraries[key]:os.environ[env]=str(candidate)
   self.field_busy=threading.BoundedSemaphore(1)
   self.gpu_python=gpu_python;self.representation_busy=threading.BoundedSemaphore(1)
+  from machine_world import MachineHost,engine_path
+  self.machines=MachineHost(engine_path(native),logs/'machines');self.chat_busy=threading.BoundedSemaphore(2)
  def checkpoint_status(self):
   try:
    checkpoint=json.loads(self.checkpoint_path.read_text(encoding='utf8'))
@@ -315,7 +322,7 @@ class Handler(BaseHTTPRequestHandler):
   if access_gate.answered(self,'GET'):return
   path=self.path.split('?')[0]
   if path=='/world' or (path=='/' and self.server.cpu_library):
-   self.send_response(303);self.send_header('Location','/coupled');self.end_headers();return
+   self.send_response(303);self.send_header('Location','/machine');self.end_headers();return
   if path=='/api/checkpoint':
    try:self.send(200,json.dumps(self.server.checkpoint_status()).encode())
    except OSError:self.send(503,b'{"error":"Running native build cannot be inspected"}')
@@ -332,7 +339,7 @@ class Handler(BaseHTTPRequestHandler):
    except (BrokenPipeError,ConnectionResetError):pass
    return
   if path not in ASSETS:self.send(404,b'{}');return
-  kind={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','mjs':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8'}[ASSETS[path].rsplit('.',1)[1]]
+  kind={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','mjs':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','json':'application/json'}[ASSETS[path].rsplit('.',1)[1]]
   self.send(200,(ROOT/ASSETS[path]).read_bytes(),kind)
  def do_POST(self):
   try:
@@ -348,6 +355,7 @@ class Handler(BaseHTTPRequestHandler):
     if not 0<length<=4096:raise ValueError('Login request size invalid')
     if access_gate.answered(self,'POST',body):return
    elif access_gate.answered(self,'POST'):return
+   if self.path=='/api/machine':self.machine(body);return
    if self.path=='/api/representation':
     if not self.origin_allowed():raise ValueError('Cross-origin request refused')
     length=int(self.headers.get('Content-Length','0'))
@@ -443,6 +451,37 @@ class Handler(BaseHTTPRequestHandler):
   except SessionExpired as e:self.send(410,json.dumps({'ok':False,'error':str(e),'code':'session_expired'}).encode())
   except RuntimeError as e:self.send(422,json.dumps({'ok':False,'error':str(e),'code':'physics_refused'}).encode())
   except (ValueError,TypeError,KeyError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
+ def machine(self,body):
+  # One live machine world per session; every response is the engine's own
+  # measured state. A refused declaration answers with its problems in words.
+  from machine_world import MachineRefused
+  import machine_chat
+  host=self.server.machines
+  try:
+   if len(body)>65536:raise ValueError('Machine request size invalid')
+   data=json.loads(body)
+   if not isinstance(data,dict):raise ValueError('Command must be an object')
+   op=data.get('op')
+   if op=='open':r=host.open(data.get('spec'))
+   elif op=='check':
+    from machine_world import compile_spec
+    c=compile_spec(data.get('spec'));r={'ok':True,'parts':len(c['parts']),'cells':c['cells'],'notes':c['notes']}
+   elif op=='play':r=host.get(data.get('session')).play(bool(data.get('running')),data.get('speed'))
+   elif op=='frame':
+    after,wait=data.get('after',0),data.get('wait_ms',0)
+    if type(after) is not int or not 0<=after<=10**9 or type(wait) is not int or not 0<=wait<=250:raise ValueError('Invalid frame request')
+    r=host.get(data.get('session')).frame(after,wait)
+   elif op=='close':r=host.close(data.get('session'))
+   elif op=='chat':
+    if not self.server.chat_busy.acquire(blocking=False):raise ValueError('Two chat requests are already being worked on; try again shortly')
+    try:r=machine_chat.respond(data.get('message'),data.get('spec'),data.get('history'),rehearse=host.rehearse if data.get('rehearse',True) else None)
+    finally:self.server.chat_busy.release()
+   else:raise ValueError('Unknown machine operation')
+   self.send(200,json.dumps(r,separators=(',',':'),allow_nan=False).encode())
+  except MachineRefused as e:self.send(422,json.dumps({'ok':False,'error':'This machine cannot be built as written','problems':e.problems}).encode())
+  except LookupError as e:self.send(410,json.dumps({'ok':False,'error':str(e),'code':'session_expired'}).encode())
+  except machine_chat.ChatUnavailable as e:self.send(503,json.dumps({'ok':False,'error':str(e)}).encode())
+  except (ValueError,TypeError,KeyError,RuntimeError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def log_message(self,*args):pass
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--native',type=Path,required=True);p.add_argument('--gpu-python',type=Path);p.add_argument('--cpu-library',type=Path);p.add_argument('--host',default='127.0.0.1');p.add_argument('--logs',type=Path,default=ROOT/'build/voxel-world-logs');p.add_argument('--port',type=int,default=18893);a=p.parse_args()
@@ -451,4 +490,5 @@ if __name__=='__main__':
  try:server.serve_forever()
  finally:
   for s in server.sessions.values():s.close()
+  server.machines.close_all()
   server.server_close()

@@ -21,8 +21,10 @@ with tempfile.TemporaryDirectory() as folder:
         assert request('/api/checkpoint',auth=False)[0]==401
         for _ in range(20):assert request('/api/coupled',{'op':'create','declaration':{}},auth=False)[0]==401
         assert request('/login')[0]==200
-        # Login follows redirect to the protected lab with the same cookie.
-        code,html,headers=request('/login',{'password':'regression-only-password'});assert code==200 and b'Physics lab' in html
+        # Login follows redirect to the protected machine page with the same
+        # cookie; the physics lab stays one link away behind the same login.
+        code,html,headers=request('/login',{'password':'regression-only-password'});assert code==200 and b'Banjo Machine' in html
+        code,html,_=request('/coupled');assert code==200 and b'Physics lab' in html
         assert request('/api/checkpoint',headers={'Host':'attacker.example'})[0]==403
         assert request('/api/coupled',{'op':'create','declaration':{}},headers={'Content-Type':'application/json','Origin':'https://attacker.example'})[0]==400
         build=json.loads(request('/api/checkpoint')[1]);assert build['cpu_coupled_available'] and not build['gpu_available']

@@ -1143,6 +1143,14 @@ unsigned ThermoWorld::heat(const HeaterDeclaration &d) {
     return heater.id;
 }
 
+void ThermoWorld::enroll(const std::string &body) {
+    Impl &w = *impl_;
+    if (w.regionOf(body) >= 0 || w.lumpOf(body) != kNone) return;
+    require(w.shape(body) != nullptr, "there is nothing called \"" + body + "\" to heat");
+    require(w.activate(body) != kNone, body + " is made of something the model cannot hold: declare its contents");
+    w.couple();
+}
+
 void ThermoWorld::setVent(const std::string &region, bool open) {
     const int index = impl_->regionOf(region);
     require(index >= 0, "there is no gas region called " + region);

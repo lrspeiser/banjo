@@ -98,7 +98,7 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
     for (const auto &b : doc.at("branches")) {
         keys(b, {"id", "kind", "component", "a", "b", "thermal", "resistance_ohm", "alpha_per_k", "reference_k", "trip_k",
                  "fuse_a2_s", "gear_ratio", "motor", "closed", "failed", "used_a2_s", "current_a", "motor_current_a",
-                 "torque_n_m", "housing_reaction_n_m"});
+                 "torque_n_m", "housing_reaction_n_m", "heats_body", "follows_hinge"});
         Branch row;
         row.id = b.at("id"); row.kind = b.at("kind"); row.component = b.at("component");
         unique(ids, row.id);
@@ -107,7 +107,35 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
                 row.kind == "fuse" || row.kind == "motor", "unsupported branch " + row.kind);
         row.a = index(c.nodes_, b.at("a")); row.b = index(c.nodes_, b.at("b"));
         require(row.a != row.b, "branch terminals must differ");
-        row.thermal = index(heat_ids, b.at("thermal"));
+        if (b.contains("heats_body")) {
+            // Its Joule heat goes into a body in the world (a coil wound on a
+            // peg) instead of a lumped node here. Its resistance cannot follow
+            // that body's temperature yet, so no temperature law or trip.
+            require(row.kind == "resistor" && b.at("heats_body").is_string() &&
+                        !b.at("heats_body").get<std::string>().empty(),
+                    "heats_body names a world body, on a resistor");
+            row.body = b.at("heats_body").get<std::string>();
+            require(number(b, "alpha_per_k") == 0.0 && number(b, "trip_k") == 0.0,
+                    "a resistor heating a world body has a fixed resistance and no trip temperature");
+            row.thermal = b.contains("thermal") ? index(heat_ids, b.at("thermal")) : c.source_heat_;
+        } else {
+            row.thermal = index(heat_ids, b.at("thermal"));
+        }
+        if (b.contains("follows_hinge")) {
+            const auto &f = b.at("follows_hinge");
+            keys(f, {"joint", "closed_at_or_above_deg", "closed_at_or_below_deg"});
+            require(row.kind == "switch", "only a switch follows a hinge");
+            require(f.at("joint").is_number_integer() && f.at("joint").get<std::int64_t>() > 0 &&
+                        f.at("joint").get<std::int64_t>() <= std::numeric_limits<unsigned>::max(),
+                    "follows_hinge needs a joint id");
+            const bool above = f.contains("closed_at_or_above_deg"), below = f.contains("closed_at_or_below_deg");
+            require(above != below, "follows_hinge closes at or above one reading, or at or below it");
+            const double degrees = number(f, above ? "closed_at_or_above_deg" : "closed_at_or_below_deg");
+            require(std::abs(degrees) < 180.0, "a hinge switch reading is within half a turn");
+            row.follow_joint = static_cast<unsigned>(f.at("joint").get<std::int64_t>());
+            row.follow_rad = degrees * 3.14159265358979323846 / 180.0;
+            row.follow_sense = above ? 1 : -1;
+        }
         row.resistance = number(b, "resistance_ohm");
         row.alpha = number(b, "alpha_per_k"); row.reference_k = number(b, "reference_k", 293.15);
         row.trip_k = number(b, "trip_k"); row.fuse_limit = number(b, "fuse_a2_s");
@@ -146,6 +174,8 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
         c.elapsed_s_ = number(ledger, "elapsed_s"); c.source_j_ = number(ledger, "source_j");
         c.heat_j_ = number(ledger, "heat_j"); c.shaft_j_ = number(ledger, "shaft_j");
         c.ambient_j_ = number(ledger, "ambient_j");
+        c.exported_j_ = number(ledger, "exported_j");
+        require(c.exported_j_ >= 0.0, "invalid exported heat history");
         c.electrical_residual_j_ = number(ledger, "electrical_residual_j");
         c.thermal_residual_j_ = number(ledger, "thermal_residual_j");
         c.coupling_residual_j_ = number(ledger, "coupling_residual_j");
@@ -236,7 +266,8 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
         s.torque_n_m[i] = current * gain[i];
         s.motor_current_a[i] = command[i] != 0.0 ? current / command[i] : 0.0;
         s.branch_heat_j[i] = g[i] > 0.0 ? current * current / g[i] * dt : 0.0;
-        s.heat_j[b.thermal] += s.branch_heat_j[i];
+        if (b.body.empty()) s.heat_j[b.thermal] += s.branch_heat_j[i];
+        else s.exported_j += s.branch_heat_j[i];
         s.shaft_j[i] = emf[i] * current * dt;
         kcl[b.a] += current; kcl[b.b] -= current;
     }
@@ -247,8 +278,8 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
     s.heat_j[source_heat_] += std::max(0.0, source_loss);
     s.source_j = voltage * s.source_current_a * dt;
     s.electrical_residual_j = s.source_j - std::accumulate(s.heat_j.begin(), s.heat_j.end(), 0.0) -
-                              std::accumulate(s.shaft_j.begin(), s.shaft_j.end(), 0.0);
-    const double scale = 1.0 + std::abs(s.source_j) +
+                              std::accumulate(s.shaft_j.begin(), s.shaft_j.end(), 0.0) - s.exported_j;
+    const double scale = 1.0 + std::abs(s.source_j) + s.exported_j +
                         std::accumulate(s.heat_j.begin(), s.heat_j.end(), 0.0);
     require(std::isfinite(s.electrical_residual_j) && std::abs(s.electrical_residual_j) <= 1e-8 * scale &&
             s.max_kcl_a <= 1e-8 * (1.0 + std::abs(s.source_current_a)), "electrical conservation tolerance exceeded");
@@ -287,6 +318,7 @@ void Circuit::commit(const CircuitStep &s, double actual_work) {
     const double heat = std::accumulate(s.heat_j.begin(), s.heat_j.end(), 0.0);
     const double shaft = std::accumulate(s.shaft_j.begin(), s.shaft_j.end(), 0.0);
     elapsed_s_ += s.dt_s; source_j_ += s.source_j; heat_j_ += heat; shaft_j_ += actual_work; ambient_j_ += ambient;
+    exported_j_ += s.exported_j;
     electrical_residual_j_ += s.electrical_residual_j;
     thermal_residual_j_ += stored + ambient - heat;
     coupling_residual_j_ += actual_work - shaft;
@@ -302,6 +334,33 @@ void Circuit::addFrictionHeat(CircuitStep &s, std::size_t branch, double joules)
     require(std::isfinite(joules) && joules >= 0.0, "invalid friction heat");
     s.heat_j.at(branches_.at(branch).thermal) += joules;
     s.shaft_j.at(branch) -= joules;
+}
+std::vector<CircuitHingeSwitch> Circuit::hingeSwitches() const {
+    std::vector<CircuitHingeSwitch> out;
+    for (const auto &b : branches_)
+        if (b.follow_joint) out.push_back({b.id, b.follow_joint, b.follow_rad, b.follow_sense});
+    return out;
+}
+std::vector<std::string> Circuit::heatedBodies() const {
+    std::vector<std::string> out;
+    for (const auto &b : branches_) if (!b.body.empty()) out.push_back(b.body);
+    return out;
+}
+std::vector<CircuitBodyHeat> Circuit::bodyHeat(const CircuitStep &s) const {
+    require(s.branch_heat_j.size() == branches_.size(), "step does not belong to this circuit");
+    std::vector<CircuitBodyHeat> out;
+    for (std::size_t i = 0; i < branches_.size(); ++i)
+        if (!branches_[i].body.empty() && s.branch_heat_j[i] > 0.0)
+            out.push_back({branches_[i].id, branches_[i].body, s.branch_heat_j[i]});
+    return out;
+}
+void Circuit::keepHeat(CircuitStep &s, const std::string &branch) const {
+    const auto it = std::find_if(branches_.begin(), branches_.end(), [&](const auto &b) { return b.id == branch; });
+    require(it != branches_.end() && !it->body.empty(), "no world-heating branch " + branch);
+    const auto i = static_cast<std::size_t>(it - branches_.begin());
+    require(s.branch_heat_j.size() == branches_.size(), "step does not belong to this circuit");
+    s.exported_j -= s.branch_heat_j[i];
+    s.heat_j.at(it->thermal) += s.branch_heat_j[i];
 }
 std::vector<unsigned> Circuit::motors() const {
     std::vector<unsigned> out;
@@ -332,6 +391,11 @@ nlohmann::json Circuit::saved() const {
                  {"reference_k", b.reference_k}, {"trip_k", b.trip_k}, {"fuse_a2_s", b.fuse_limit},
                  {"used_a2_s", b.fuse_used}, {"failed", b.failed}, {"closed", b.closed}, {"gear_ratio", b.ratio}};
         if (b.motor) row["motor"] = b.motor;
+        if (!b.body.empty()) row["heats_body"] = b.body;
+        if (b.follow_joint)
+            row["follows_hinge"] = {{"joint", b.follow_joint},
+                {b.follow_sense > 0 ? "closed_at_or_above_deg" : "closed_at_or_below_deg",
+                 b.follow_rad * 180.0 / 3.14159265358979323846}};
         if (last_.current_a.size() == branches_.size()) {
             row["current_a"] = last_.current_a[i]; row["motor_current_a"] = last_.motor_current_a[i];
             row["torque_n_m"] = last_.torque_n_m[i]; row["housing_reaction_n_m"] = -last_.torque_n_m[i];
@@ -339,7 +403,8 @@ nlohmann::json Circuit::saved() const {
         d["branches"].push_back(row);
     }
     d["ledger"] = {{"elapsed_s", elapsed_s_}, {"source_j", source_j_}, {"heat_j", heat_j_}, {"shaft_j", shaft_j_},
-                   {"ambient_j", ambient_j_}, {"electrical_residual_j", electrical_residual_j_},
+                   {"ambient_j", ambient_j_}, {"exported_j", exported_j_},
+                   {"electrical_residual_j", electrical_residual_j_},
                    {"thermal_residual_j", thermal_residual_j_}, {"coupling_residual_j", coupling_residual_j_}};
     d["last"] = {{"voltage_v", last_.voltage_v}, {"source_current_a", last_.source_current_a},
                   {"power_limited", last_.limited}, {"max_kcl_a", last_.max_kcl_a}};

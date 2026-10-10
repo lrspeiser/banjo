@@ -415,6 +415,9 @@ public:
     [[nodiscard]] std::pair<double, double> release(const std::string &body,
                                                     const std::string &substance, double kg);
     unsigned heat(const HeaterDeclaration &declaration);
+    // Draw a body into the network now, as heat() would on its first heater:
+    // for a coil wound on it that will warm it from some later step.
+    void enroll(const std::string &body);
     void setVent(const std::string &region, bool open);
 
     // The forces for the step about to be taken, from the state as accepted.

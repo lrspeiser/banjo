@@ -216,12 +216,99 @@ void housingReactionAndConvergence() {
     }
     check(previous < .1, "fine-step whole-loop residual exceeds measured budget");
 }
+// A coil wound on a world body and a switch worked by a pin: the two links a
+// machine needs between its circuit and the rest of the world.
+json coilNetwork(unsigned store, unsigned pin) {
+    return {{"schema", "banjo.circuit.v1"}, {"id", "coil"}, {"nodes", {"p", "n", "in"}},
+        {"source", {{"store", store}, {"positive", "p"}, {"negative", "n"}, {"resistance_ohm", 0.05}, {"thermal", "pack"}}},
+        {"thermal_nodes", {{{"id", "pack"}, {"component", "battery"}, {"capacity_j_k", 500.0}}}},
+        {"branches", {{{"id", "lever switch"}, {"kind", "switch"}, {"component", "switch"}, {"a", "p"}, {"b", "in"},
+                        {"thermal", "pack"}, {"resistance_ohm", 0.001}, {"closed", false},
+                        {"follows_hinge", {{"joint", pin}, {"closed_at_or_below_deg", -20.0}}}},
+                       {{"id", "coil"}, {"kind", "resistor"}, {"component", "heating coil"}, {"a", "in"}, {"b", "n"},
+                        {"resistance_ohm", 1.0}, {"heats_body", "peg"}}}}};
+}
+void hingeSwitchAndBodyHeat() {
+    // The circuit alone: a world-heating branch leaves its own lumped nodes.
+    auto alone = Circuit::read(coilNetwork(1, 1));
+    alone.setSwitch("lever switch", true);
+    auto s = alone.solve(0.1, 24.0, 1.0e6, 0.0, {});
+    const double current = 24.0 / (0.05 + 0.001 + 1.0);
+    near(s.current_a[1], current, 1e-12, "coil current");
+    near(s.exported_j, current * current * 1.0 * 0.1, 1e-12, "exported coil heat");
+    near(s.electrical_residual_j, 0.0, 1e-12, "balance with exported heat");
+    const auto owed = alone.bodyHeat(s);
+    check(owed.size() == 1 && owed[0].body == "peg" && std::abs(owed[0].joules - s.exported_j) < 1e-12,
+          "coil heat not owed to its body");
+    auto kept = s; alone.keepHeat(kept, "coil");
+    near(kept.exported_j, 0.0, 1e-12, "kept heat still exported");
+    near(kept.heat_j[0], s.heat_j[0] + s.exported_j, 1e-12, "kept heat not in its node");
+    alone.commit(s, 0.0);
+    const auto saved = alone.saved();
+    near(saved["ledger"]["exported_j"], s.exported_j, 1e-12, "exported heat not on the ledger");
+    check(saved["branches"][1]["heats_body"] == "peg", "heats_body lost on save");
+    check(saved["branches"][0]["follows_hinge"]["joint"] == 1, "follows_hinge lost on save");
+    near(Circuit::read(saved, true).saved()["ledger"]["exported_j"], s.exported_j, 1e-12, "restore lost exported heat");
+    rejects([] { auto bad = coilNetwork(1, 1); bad["branches"][0]["heats_body"] = "peg"; Circuit::read(bad); });
+    rejects([] { auto bad = coilNetwork(1, 1); bad["branches"][1]["alpha_per_k"] = 0.004; Circuit::read(bad); });
+    rejects([] { auto bad = coilNetwork(1, 1); bad["branches"][1]["follows_hinge"] = {{"joint", 1}, {"closed_at_or_above_deg", 5}}; Circuit::read(bad); });
+    rejects([] { auto bad = coilNetwork(1, 1);
+                 bad["branches"][0]["follows_hinge"]["closed_at_or_above_deg"] = 5.0; Circuit::read(bad); });
+
+    // In a world: a bar swings down on its pin; past -20 degrees its switch
+    // closes and the coil warms an oak peg through the world's heat network.
+    TileImpactRequest r; r.cell_size_m = 0.05; r.backend = BackendKind::CpuParallel;
+    r.gravity_m_s2 = {0, -9.81, 0};
+    SceneBody post; post.name = "post"; post.shape = BodyShape::Box; post.material = MaterialPreset::Iron;
+    post.dimensions_m = {0.2, 0.2, 0.2}; post.center_m = {0, 1, 0}; post.anchored = true;
+    SceneBody bar = post; bar.name = "bar"; bar.material = MaterialPreset::Oak; bar.anchored = false;
+    bar.dimensions_m = {0.6, 0.05, 0.1}; bar.center_m = {0.45, 1.0, 0};
+    SceneBody peg = post; peg.name = "peg"; peg.material = MaterialPreset::Oak;
+    peg.dimensions_m = {0.1, 0.1, 0.1}; peg.center_m = {2.0, 0.5, 0};
+    r.bodies = {post, bar, peg};
+    auto w = LiveWorld::open(r);
+    const auto pin = w->hinge("post", "bar", {0.15, 1.0, 0}, {0, 0, 1});
+    const auto store = w->energyStore("battery", "post", 1.0e5, 1.0e5, 24, 0);
+    check(pin && store, "could not build the coil machine");
+    rejects([&] { auto bad = coilNetwork(store, pin); bad["branches"][1]["heats_body"] = "nothing here"; w->circuit(bad.dump()); });
+    rejects([&] { auto bad = coilNetwork(store, pin + 7); w->circuit(bad.dump()); });
+    const auto circuit = w->circuit(coilNetwork(store, pin).dump());
+    rejects([&] { w->circuitSwitch(circuit, "lever switch", true); });
+    double closed_at = -1.0, last_deg = 0.0;
+    for (int i = 0; i < 480; ++i) {
+        w->step(1.0 / 240);
+        const auto report = json::parse(w->circuits())[0];
+        for (const LiveJoint &j : w->joints()) if (j.id == pin) last_deg = j.at * 180.0 / 3.14159265358979323846;
+        if (closed_at < 0.0 && report["branches"][0]["closed"].get<bool>()) {
+            closed_at = (i + 1) / 240.0;
+            // Read at the start of the step that closed it, so the pin was at or past the
+            // reading one step before; after that step it is further on still.
+            check(last_deg <= -20.0, "switch closed before its pin reached -20 degrees");
+        }
+        if (closed_at < 0.0) near(report["ledger"]["source_j"], 0.0, 1e-12, "open switch drew current");
+    }
+    check(closed_at > 0.0, "the swinging bar never closed its switch");
+    const auto report = json::parse(w->circuits())[0];
+    const auto heat = json::parse(w->thermoReport(false));
+    const double exported = report["ledger"]["exported_j"], received = heat["ledger"]["heater_in_j"];
+    // Closed from the start of the step that first reported it closed, at a
+    // constant current (no power limit): I^2 R for exactly that long.
+    const double closed_for = 480.0 / 240.0 - closed_at + 1.0 / 240.0;
+    near(exported, current * current * 1.0 * closed_for, 1e-9 * exported, "coil heat differs from I^2 R t");
+    near(received, exported, 1e-9 * exported, "world heat network did not receive the coil's heat");
+    near(report["ledger"]["electrical_residual_j"], 0.0, 1e-8, "electrical balance in the world");
+    double peg_k = 0.0;
+    for (const auto &b : heat["bodies"]) if (b["name"] == "peg") peg_k = b["temperature_k"];
+    check(peg_k > 293.15 + 0.01, "the peg did not warm");
+    std::cout << "hinge switch closed at " << closed_at << " s; coil " << exported << " J out, " << received
+              << " J into the peg, now " << peg_k << " K\n";
+}
 }
 int main() {
     try {
         const auto start = std::chrono::steady_clock::now();
         circuitsAndHeat(); switchingFailureAndValidation(); liveLoopAndRestore(); stalledAndEmpty();
-        sharedMotorsAndGeneration(); housingReactionAndConvergence();
+        sharedMotorsAndGeneration(); housingReactionAndConvergence(); hingeSwitchAndBodyHeat();
         std::cout << "circuits passed in " << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() << " s\n";
         return 0;
     } catch (const std::exception &e) { std::cerr << e.what() << '\n'; return 1; }
