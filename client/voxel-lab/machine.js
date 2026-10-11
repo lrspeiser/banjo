@@ -1352,10 +1352,15 @@ function pictureInto(img, t) {
 
 // One question to the server at a time; a change made meanwhile asks again
 // when the answer comes.
-async function askGhost() {
+function askGhost() {
   if (!ghost) return;
-  if (ghost.busy) { ghost.again = true; return; }
-  const g = ghost, sent = {x: g.p.x_m ?? 0, z: g.p.z_m ?? 0}, snapping = Boolean(g.snapNext);
+  if (ghost.busy) { ghost.again = true; return ghost.check; }
+  const g = ghost;
+  g.check = checkGhost(g);
+  return g.check;
+}
+async function checkGhost(g) {
+  const sent = {x: g.p.x_m ?? 0, z: g.p.z_m ?? 0}, snapping = Boolean(g.snapNext);
   const setupStamp = JSON.stringify(ghostPlacements());
   g.busy = true; g.again = false; g.snapNext = false;
   try {
@@ -1436,11 +1441,15 @@ function endGhost() {
 
 function cancelGhost() { if (!ghost) return; endGhost(); renderTray(); renderPlaced(); schedulePreview(200); }
 
-function setGhostDown() {
-  if (!ghost || !ghost.fits || ghost.busy || !ghost.answered) return;
+function placeGhost() {
+  if (!ghost || !ghost.fits || ghost.busy || !ghost.answered) return false;
   remember();
   if (ghost.was) placements[ghost.index] = ghost.p; else placements.push(ghost.p);
-  endGhost(); renderTray(); renderPlaced(); scheduleRebuild(0);
+  endGhost(); renderTray(); renderPlaced();
+  return true;
+}
+function setGhostDown() {
+  if (placeGhost()) scheduleRebuild(0);
 }
 
 // The ghost's own controls, just below the scene and out of its way (the top
@@ -3387,8 +3396,7 @@ function sceneIntoView() {
   if (seen.top < -40 || seen.bottom > innerHeight + 40) view.scrollIntoView({block: 'start'});
 }
 
-// A ghost is not in the machine yet: set it down (or cancel it) before a run.
-// Said in the panel and on the ghost's own bar, which is in sight on a phone.
+// Checkpoints contain placed pieces, rather than an uncommitted adjustment.
 function ghostInTheWay() {
   if (!ghost) return false;
   const said = `Set your ${ghost.p.piece} down first (or cancel it): a ghost is not part of the machine yet.`;
@@ -3400,16 +3408,38 @@ function ghostInTheWay() {
 // A level's one button, over the scene: Run it builds the level afresh with
 // the pieces and plays it; while it plays it pauses, then continues; after
 // the run, Run again.
+let startingRun = false;
 async function runLevel() {
   const failed = e => { $('clock').textContent = e.message; };
-  if (playing) { setPlaying(false).catch(failed); return; }
-  if (ghostInTheWay()) return;
-  if (session && liveControlPending && !scored) {
-    try { await liveControlRequest; liveControlPending = false; await setPlaying(true); $('machine-control-status').textContent = 'Applied while running. Set up again restores the initial controls.'; } catch (e) { failed(e); }
-    return;
+  if (startingRun) return;
+  startingRun = true;
+  try {
+    if (playing) { await setPlaying(false); return; }
+    if (ghost) {
+      const g = ghost, sourceLevel = level;
+      // Edits queue another check; wait for the latest answer, not an older
+      // blue ghost. Cancelling or selecting another piece cancels this run.
+      while (ghost === g && g.busy) await g.check;
+      if (ghost !== g || level !== sourceLevel) return;
+      if (!placeGhost()) {
+        selectPhonePanel('controls'); showGhostState();
+        $('verdict').textContent = g.problems.join('; ') || 'This piece is not ready to place.';
+        return;
+      }
+      // Place and start in one rebuild, so a delayed setup cannot stop it.
+      sceneIntoView(); await rebuildLevel(true); return;
+    }
+    if (session && liveControlPending && !scored) {
+      await liveControlRequest; liveControlPending = false; await setPlaying(true);
+      $('machine-control-status').textContent = 'Applied while running. Set up again restores the initial controls.';
+      return;
+    }
+    if (session && world.t > 0 && !scored) { await setPlaying(true); return; }
+    sceneIntoView(); await rebuildLevel(true);
+  } catch (e) { failed(e); }
+  finally {
+    startingRun = false;
   }
-  if (session && world.t > 0 && !scored) { setPlaying(true).catch(failed); return; }
-  sceneIntoView(); rebuildLevel(true).catch(() => {});
 }
 $('solve').addEventListener('click', () => askLevel('build'));
 

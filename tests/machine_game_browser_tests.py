@@ -170,6 +170,88 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_run_places_new_and_adjusted_pieces_once_on_desktop_and_phones(self):
+        self.page.send('Network.enable')
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width!=1280)
+                self.press('Add a plank'); self.ghost()
+                self.press('Follow the pointer')
+                x,y=self.screen_point([.3,0,0])
+                self.mouse('mouseMoved',x,y); self.ghost()
+                self.mouse('mousePressed',x,y); self.mouse('mouseReleased',x,y)
+                self.slide('Cut to length of your plank 1',.7)
+                self.ghost()
+                self.page.events.clear()
+                self.click_visible('Run it')
+                self.wait('!window.machineGhostState()',5)
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                self.assertEqual(len(self.js('window.machinePlacements()')),1)
+                opens=[json.loads(e['params']['request']['postData']) for e in self.page.events if e['method']=='Network.requestWillBeSent' and e['params']['request']['url'].endswith('/api/machine') and e['params']['request'].get('postData') and json.loads(e['params']['request']['postData']).get('op')=='level_open']
+                self.assertEqual(len(opens),1,'placing and running uses one setup')
+                self.click_visible('Set up again'); self.wait(READY,30)
+                self.press('Pick up your plank 1'); self.ghost()
+                self.slide('Cut to length of your plank 1',.66)
+                # Two clicks while validation is in flight cannot duplicate it.
+                self.js("document.getElementById('start').click();document.getElementById('start').click()")
+                self.wait('!window.machineGhostState()',5)
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                self.assertEqual(len(self.js('window.machinePlacements()')),1)
+                self.assertEqual(self.js('window.machinePlacements()[0].length_m'),.66)
+                self.click_visible('Set up again'); self.wait(READY,30)
+                self.press('Undo'); self.wait(READY,30)
+                self.assertEqual(self.js('window.machinePlacements()[0].length_m'),.7)
+                # The same shortcut keeps a sandbox draft and saved version.
+                self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+                self.wait("document.getElementById('sandbox-screen')?.hidden===false",30)
+                self.press('Add New Design'); self.wait(READY,30)
+                self.press('Add a plank'); self.ghost()
+                if width!=1280: self.click_visible('Help')
+                self.click_visible('Run it')
+                self.wait("/World (?!0\\.00)[0-9.]+ s/.test(document.getElementById('clock').textContent)",30)
+                self.assertIsNone(self.js('window.machineGhostState()'))
+                self.assertEqual(len(self.js('window.machineDesign().draft.placements')),1)
+                self.click_visible('Pause'); self.click_visible('Set up again'); self.wait(READY,30)
+                self.press('Save version')
+                self.wait('window.machineDesign().versions.length===1',5)
+                self.assertEqual(len(self.js('window.machineDesign().versions[0].draft.placements')),1)
+
+    def test_run_waits_for_latest_placement_check_and_cancelling_cancels_the_run(self):
+        self.open('laser')
+        self.press('Add a mirror'); self.ghost()
+        self.slide('x of your mirror 1',-.35); self.slide('z of your mirror 1',0)
+        self.assertTrue(self.ghost()['fits'])
+        # Delay a real server answer so the ghost stays blue while its
+        # latest position is inside the wall. The queued answer must win.
+        self.js("""window.runOriginalFetch=window.fetch; window.runHoldCheck=true;
+            window.runCheckGate=new Promise(resolve=>window.releaseRunCheck=resolve);
+            window.fetch=async (...args)=>{const op=args[1]?.body && JSON.parse(args[1].body).op;
+              const hold=op==='level_ghost' && window.runHoldCheck;
+              if(hold)window.runHoldCheck=false;
+              const response=await window.runOriginalFetch(...args);
+              if(hold){await window.runCheckGate;window.runCheckResolved=true;} return response;};""")
+        self.slide('z of your mirror 1',.1)
+        self.slide('z of your mirror 1',.5)
+        self.press('Run it'); self.js('window.releaseRunCheck()')
+        self.wait("/120 mm into wall/.test(document.getElementById('verdict').textContent)",5)
+        self.assertFalse(self.ghost()['fits'])
+        self.assertEqual(self.js('window.machinePlacements()'),[])
+        self.assertTrue(self.js(READY))
+        self.page.send('Network.enable'); self.page.events.clear()
+        self.js("window.runCheckResolved=false;window.runHoldCheck=true;window.runCheckGate=new Promise(resolve=>window.releaseRunCheck=resolve)")
+        self.slide('z of your mirror 1',0)
+        self.press('Run it'); self.press('Cancel'); self.js('window.releaseRunCheck()')
+        self.wait('window.runCheckResolved',5)
+        self.page.evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))',await_promise=True)
+        self.wait("document.getElementById('ghost-bar').hidden",5)
+        self.assertEqual(self.js('window.machinePlacements()'),[])
+        self.assertTrue(self.js(READY))
+        opens=[e for e in self.page.events if e['method']=='Network.requestWillBeSent' and e['params']['request']['url'].endswith('/api/machine') and e['params']['request'].get('postData') and json.loads(e['params']['request']['postData']).get('op')=='level_open']
+        self.assertEqual(opens,[],'cancelling the pending piece cannot start another setup')
+        self.js('window.fetch=window.runOriginalFetch')
+
     def test_phone_tabs_scroll_independently_keep_run_visible_and_survive_rotation(self):
         for width,height in ((390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
@@ -234,7 +316,7 @@ class Puzzles(unittest.TestCase):
                 self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
                 for template,channel in [('Build your first circuit','wires'),('A tank that runs dry','water')]:
                     self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
-                    self.wait("!document.getElementById('sandbox-screen').hidden",30)
+                    self.wait("document.getElementById('sandbox-screen')?.hidden===false",30)
                     self.press('Start from '+template)
                     self.wait("window.machineFlowPreviewState()?.frames>2 && !document.getElementById('flow-preview').hidden",60)
                     setup=self.js('window.machinePlacements()')
@@ -278,7 +360,7 @@ class Puzzles(unittest.TestCase):
                     self.reveal_control("document.getElementById('designs-open')")
                     self.js("document.getElementById('designs-open').scrollIntoView({block:'center'})")
                     self.click_visible('All designs')
-                    self.wait("!document.getElementById('sandbox-screen').hidden",5)
+                    self.wait("document.getElementById('sandbox-screen')?.hidden===false",5)
                 self.open('easy-mirror',width,height,phone=width!=1280)
                 self.press('Add a mirror'); self.ghost()
                 self.wait('window.machineFlowPreviewState()?.frames>2',60)
@@ -605,11 +687,7 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(shown['goal_at_s'], 1.9)
         self.assertIn('after it hits your plank 1', shown['legend'])
         self.press('Run it')
-        self.assertIn('Set your plank down first', self.js("document.getElementById('verdict').textContent"))
-        self.press('Set it down')
         self.wait('!window.machineGhostState()', 5)
-        self.wait(READY, 90)
-        self.press('Run it')
         self.wait("Boolean(document.querySelector('#verdict .stars'))", 90)
         self.assertIn('★★★', self.js("document.getElementById('verdict').textContent"))
         # The goal says so, over the scene, and leads on to the next level.
@@ -675,7 +753,7 @@ class Puzzles(unittest.TestCase):
                 # A backdrop click dismisses, while content clicks do not.
                 self.mouse('mousePressed', 2, 2); self.mouse('mouseReleased', 2, 2); assert_closed(before)
                 self.page.send('Page.navigate', {'url': self.base + '/machine'})
-                self.wait("!document.getElementById('sandbox-screen').hidden", 60)
+                self.wait("document.getElementById('sandbox-screen')?.hidden===false", 60)
                 before = open_help(); self.click_visible('Close'); assert_closed(before)
                 self.press('Add New Design'); self.wait(READY, 60)
                 before = open_help(); self.click_visible('Close'); assert_closed(before)
@@ -732,6 +810,11 @@ class Puzzles(unittest.TestCase):
                                                               'mobile': False})
         self.page.send('Page.navigate', {'url': f'{self.base}/play'})
         self.wait("document.getElementById('levels-screen') && !document.getElementById('levels-screen').hidden", 90)
+        # Use distinct known progress: earlier tests also earn real wins,
+        # including the same 28.8 MJ result assigned to Tester below.
+        self.js("localStorage.setItem('banjo-play-save',JSON.stringify({current:'Player 1',players:{'Player 1':{levels:{gap:{stars:1,energy_j:12300000}}}}}))")
+        self.page.send('Page.navigate', {'url': f'{self.base}/play'})
+        self.wait("document.querySelector('.ls-list li')?.textContent.includes('Best win: 12.3 MJ')",30)
         self.assertEqual(self.js("document.querySelectorAll('.ls-list li').length"), self.level_count)
         self.js("document.querySelector('.ls-player input').value = 'Tester'")
         self.press('Add player')
@@ -746,6 +829,7 @@ class Puzzles(unittest.TestCase):
         self.assertIn('Best win: 28.8 MJ', self.js("document.querySelector('.ls-list li').textContent"))
         self.js("(() => { const p = document.getElementById('player-pick'); p.value = 'Player 1'; p.dispatchEvent(new Event('change')); })()")
         self.assertTrue(self.js("document.querySelector('.ls-summary').textContent.startsWith('Player 1:')"))
+        self.assertIn('Best win: 12.3 MJ',self.js("document.querySelector('.ls-list li').textContent"))
         self.assertNotIn('28.8 MJ', self.js("document.querySelector('.ls-list li').textContent"), 'Tester’s best is Tester’s')
         self.press('Play level 2, Cut it down')
         self.wait(READY, 90)
@@ -762,7 +846,7 @@ class Puzzles(unittest.TestCase):
         self.page.send('Page.navigate', {'url': f'{self.base}/play'})
         self.wait("document.querySelector('.ls-free') && !document.getElementById('levels-screen').hidden", 90)
         self.press('Sandbox: build anything')
-        self.wait("!document.getElementById('sandbox-screen').hidden", 10)
+        self.wait("document.getElementById('sandbox-screen')?.hidden===false", 10)
         self.press('Add New Design')
         self.wait(READY, 90)
         # An empty table to start from, whatever this player built before.
@@ -1228,6 +1312,11 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(g['problems'], ['your mirror 1 goes 120 mm into wall; move it'])
         self.assertTrue(self.js("document.getElementById('ghost-down').disabled"))
         self.assertIn('120 mm into wall', self.js("document.getElementById('ghost-state').textContent"))
+        self.press('Run it')
+        self.wait("/120 mm into wall/.test(document.getElementById('verdict').textContent)",5)
+        self.assertFalse(self.ghost()['fits'])
+        self.assertEqual(self.js('window.machinePlacements()'),[])
+        self.assertTrue(self.js(READY))
 
     def test_on_a_phone_the_scene_comes_into_view_and_its_bar_turns_and_sets_the_ghost_down(self):
         self.open('gap', 390, 844, phone=True)
