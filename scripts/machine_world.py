@@ -504,6 +504,70 @@ def _kit_ramp(k, problems, name):
     return parts, joints
 
 
+BEND_STEP_DEG = 22.5
+
+
+def bend_path(start, heading_deg, turn_deg, radius, drop):
+    """A bend's sections: [(their start, the way they run (degrees, 0 = +x,
+    on toward -z), their length across the ground, their drop)], and where
+    and which way it ends. Each section is a chord of the arc."""
+    n = max(1, math.ceil(abs(turn_deg) / BEND_STEP_DEG - 1e-9))
+    step = turn_deg / n
+    chord = 2.0 * radius * math.sin(math.radians(abs(step)) / 2.0)
+    p, out = list(start), []
+    for i in range(n):
+        way = heading_deg + (i + 0.5) * step
+        out.append((list(p), way, chord, drop / n))
+        h = math.radians(way)
+        p = [p[0] + chord * math.cos(h), p[1] - drop / n, p[2] - chord * math.sin(h)]
+    return out, p, heading_deg + turn_deg
+
+
+def _kit_bend(k, problems, name):
+    """A curved track: from start_m (the middle of its surface there),
+    running heading_deg (0 = +x, on toward -z), turning turn_deg (the same way
+    as a positive turn, toward -z from +x) round radius_m, and dropping drop_m.
+    It is straight sections -- a board with a rail each side -- one for every
+    22.5 degrees of turn, each a little longer than its piece of the arc
+    (overlap_m at either end) so that the boards and rails overlap at the
+    seams and leave nothing to catch on. A marble rolls on the boards' true
+    surfaces and is turned by the outer rail."""
+    start = _vec(k.get('start_m'), 3, name + ' start_m', problems)
+    start_way = _num(k, 'heading_deg', name, problems, 0.0, -360, 360)
+    turn = _num(k, 'turn_deg', name, problems, 90.0, -360, 360)
+    radius = _num(k, 'radius_m', name, problems, 0.3, 0.1, 3.0)
+    drop = _num(k, 'drop_m', name, problems, 0.05, 0.0, 2.0)
+    width = _num(k, 'width_m', name, problems, 0.08, 0.04, 0.4)
+    thick, rail_h, rail_w = 0.02, 0.06, 0.04
+    over = _num(k, 'overlap_m', name, problems, 0.02, 0.0, 0.1)
+    if abs(turn) < 1.0:
+        problems.append(name + ': a bend turns; a straight track is a ramp')
+    sections, _, _ = bend_path(start, start_way, turn, radius, drop)
+    parts = []
+    for i, (p, way, chord, fall) in enumerate(sections):
+        slope = math.degrees(math.atan2(fall, chord))
+        m = heading(way, -slope, 0.0)
+        normal, side = _mat_apply(m, [0.0, 1.0, 0.0]), _mat_apply(m, [0.0, 0.0, 1.0])
+        along = _mat_apply(m, [1.0, 0.0, 0.0])
+        h = math.radians(way)
+        # Longer only into the seams between sections, not past its two ends,
+        # where it meets the next piece.
+        back, ahead = (over if i > 0 else 0.0), (over if i < len(sections) - 1 else 0.0)
+        mid = [p[0] + 0.5 * chord * math.cos(h), p[1] - 0.5 * fall, p[2] - 0.5 * chord * math.sin(h)]
+        mid = [mid[j] + 0.5 * (ahead - back) * along[j] for j in range(3)]
+        length = math.hypot(chord, fall) + back + ahead
+        turn_deg = turn_of(m)
+        parts.append({'name': f'{name} {i + 1}', 'shape': 'box', 'material': k.get('material', 'oak'),
+                      'size_m': [length, thick, width], 'turn_deg': turn_deg, 'fixed': True,
+                      'at_m': [mid[j] - normal[j] * 0.5 * thick for j in range(3)]})
+        for tag, s in (('left', 1), ('right', -1)):
+            off = 0.5 * width + 0.5 * rail_w
+            parts.append({'name': f'{name} {i + 1} {tag} rail', 'shape': 'box', 'material': k.get('material', 'oak'),
+                          'size_m': [length, rail_h, rail_w], 'turn_deg': turn_deg, 'fixed': True,
+                          'at_m': [mid[j] + s * off * side[j] + normal[j] * 0.5 * rail_h for j in range(3)]})
+    return parts, []
+
+
 def _kit_flip_flop(k, problems, name):
     """A rocker that sends what drops on its middle one way, then the other:
     a trough (a base with a lip along each side) on a pin across its middle,
@@ -1143,7 +1207,7 @@ KITS = {'ramp': _kit_ramp, 'domino_row': _kit_domino_row, 'lever': _kit_lever,
         'hanging_weight': _kit_hanging_weight, 'plate_on_supports': _kit_plate,
         'pendulum': _kit_pendulum, 'block_tower': _kit_block_tower, 'water_wheel': _kit_water_wheel,
         'steam_engine': _kit_steam_engine, 'cannon': _kit_cannon, 'knife_pendulum': _kit_knife_pendulum,
-        'flip_flop': _kit_flip_flop}
+        'flip_flop': _kit_flip_flop, 'bend': _kit_bend}
 
 KIT_HELP = {
     'ramp': 'anchored plank from top_m down to bottom_m (centre of its upper surface at each end, metres), '
@@ -1158,6 +1222,10 @@ KIT_HELP = {
             '0.04 m from the foot and 0.06-0.10 m out past the outer face of the rail -- press that paddle down '
             '(drop something on it, a lever, a pull) and the flap lifts out of the way; it falls shut again unless '
             'stays_open',
+    'bend': 'a curved track: start_m [x, y, z] (the middle of its surface where it starts), heading_deg (the way it '
+            'starts: 0 is +x, 90 is -z), turn_deg (90 turns it from +x toward -z; negative the other way), radius_m, '
+            'drop_m (how much lower it ends), width_m. Straight sections "<name> 1", "<name> 2"... with rails, one for '
+            'every 22.5 degrees',
     'flip_flop': 'a rocker "<name>" on pin "<name> pin" that sends marbles dropped on its middle one way, then the '
                  'other: pivot_m [x, y, z] (drop them on this point from above, along z or straight down), tipped '
                  '"-x|+x" (the end that is down to start; the first marble goes the other way), tilt_deg (15), '
@@ -2724,10 +2792,10 @@ class MachineHost:
             raise LookupError('That machine is no longer running; build it again')
         return s
 
-    def rehearse(self, compiled):
+    def rehearse(self, compiled, **more):
         if self.exe is None:
             raise ValueError('The live world engine (banjo_live_world_run) is not built; no substitute is run')
-        return rehearse(compiled, self.exe, self.logs)
+        return rehearse(compiled, self.exe, self.logs, **more)
 
     def close(self, key):
         with self.lock:

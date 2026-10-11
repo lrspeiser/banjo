@@ -438,6 +438,78 @@ class FreeBuild(unittest.TestCase):
         with self.assertRaises(mw.MachineRefused):
             mg.compose(free, [block, plank, dict(link, b='your plank 9')])
 
+    def test_the_chat_builds_by_joining_pieces_and_the_server_lays_them_out(self):
+        # The model says which pieces and what each joins to; the server puts
+        # them there: marbles lined up on a shelf behind its gate, a trigger
+        # track's far end over the gate's paddle, a flip-flop under the shelf's
+        # end, a track running on from each of its ends -- then the whole build
+        # in the middle of the table.
+        free = self.FREE
+        answer = {'reply': 'A shelf of marbles, a trigger, and a flip-flop.', 'clear': True, 'add': [
+            {'piece': 'shelf', 'x_m': 1.5, 'z_m': 1.5, 'top_height_m': 0.8, 'run_m': 0.4, 'drop_m': 0.015,
+             'end': 'gate that stays open'},
+            {'piece': 'marble', 'join': {'to': 1, 'port': 'top end'}},
+            {'piece': 'marble', 'join': {'to': 1, 'port': 'top end'}},
+            {'piece': 'marble', 'join': {'to': 1, 'port': 'top end'}},
+            {'piece': 'track', 'run_m': 0.36, 'drop_m': 0.03, 'join': {'to': 1, 'port': 'gate paddle'}},
+            {'piece': 'marble', 'join': {'to': 5, 'port': 'top end'}},
+            {'piece': 'flipflop', 'join': {'to': 1, 'port': 'far end'}},
+            {'piece': 'track', 'run_m': 0.6, 'drop_m': 0.08, 'end': 'stop', 'join': {'to': 7, 'port': 'left end'}},
+            {'piece': 'track', 'run_m': 0.6, 'drop_m': 0.08, 'end': 'stop', 'join': {'to': 7, 'port': 'right end'}}]}
+        asked = []
+
+        def call(messages):
+            asked.append(messages)
+            return (answer if len(asked) > 1 else dict(answer, add=answer['add'] + [{'piece': 'spaceship'}])), {}
+        r = mc.respond_free('Hold three marbles up high, then split them two ways.', free, [], call=call)
+        self.assertEqual(len(asked), 2, 'a refused build is sent back once with why')
+        self.assertIn('spaceship is not a piece', asked[1][-1]['content'])
+        placed = r['placements']
+        self.assertEqual([p['piece'] for p in placed],
+                         ['shelf', 'marble', 'marble', 'marble', 'track', 'marble', 'flipflop', 'track', 'track'])
+        spec, checked, _ = mg.compose(free, placed)
+        compiled = mw.compile_spec(spec)
+        found = mg.ports(checked, compiled)
+        port = lambda i, name: next(q for q in found if q['piece'] == i and q['port'] == name)
+        # Marbles lined up from the shelf's top end, 4.5 cm apart.
+        xs = [placed[i]['x_m'] for i in (1, 2, 3)]
+        self.assertAlmostEqual(xs[0], port(0, 'top end')['at'][0] + 0.05, places=3)
+        self.assertAlmostEqual(xs[1] - xs[0], 0.045, places=3)
+        self.assertAlmostEqual(xs[2] - xs[1], 0.045, places=3)
+        # The trigger track's far end 5 cm short of the paddle and 6.5 cm over it.
+        paddle, far = port(0, 'gate paddle')['at'], port(4, 'far end')['at']
+        self.assertAlmostEqual(far[0], paddle[0] - 0.05, places=3)
+        self.assertAlmostEqual(far[1], paddle[1] + 0.065, places=3)
+        # The flip-flop's middle 4 cm past the shelf's far end, 11 cm under it; its
+        # tracks run on from its ends, away from it.
+        shelf_far, middle = port(0, 'far end')['at'], port(6, 'middle')['at']
+        self.assertAlmostEqual(middle[0], shelf_far[0] + 0.04, places=3)
+        self.assertAlmostEqual(middle[1], shelf_far[1], places=3)
+        for i, end in ((7, 'left end'), (8, 'right end')):
+            self.assertEqual(port(i, 'top end')['dir'], port(6, end)['dir'])
+        # And the whole build moved to the middle of the table.
+        boxes = [(sd['at_m'], mg._reach(sd)) for p in compiled['parts'] if mg.owner(p) for sd in mw.solids_of(p)]
+        for i in (0, 2):
+            middle_of = 0.5 * (min(c[i] - r[i] for c, r in boxes) + max(c[i] + r[i] for c, r in boxes))
+            self.assertLess(abs(middle_of), 0.011)
+
+    def test_a_bend_turns_a_track_and_its_ends_connect(self):
+        free = self.FREE
+        entry = {'piece': 'track', 'x_m': -0.6, 'z_m': 0.0, 'top_height_m': 0.6, 'run_m': 0.6, 'drop_m': 0.06, 'end': 'open'}
+        bend = {'piece': 'bend', 'x_m': 0.05, 'z_m': 0.05, 'top_height_m': 0.3, 'turn_deg': 90, 'radius_m': 0.3, 'drop_m': 0.04}
+        g = mg.ghost(free, [entry, bend], 1, snapping=True)
+        self.assertEqual((g['snap']['to'], g['snap']['port']), ('your track 1', 'far end'))
+        bend = dict(bend, **g['snap']['knobs'])
+        spec, checked, _ = mg.compose(free, [entry, bend])
+        compiled = mw.compile_spec(spec)
+        boards = [p for p in compiled['parts'] if p['name'].startswith('your bend 2 ') and 'rail' not in p['name']]
+        self.assertEqual(len(boards), 4, 'a section for every 22.5 degrees')
+        far = next(q for q in mg.ports(checked, compiled) if q['piece'] == 1 and q['port'] == 'far end')
+        # Turned 90 degrees to the left: it leaves toward -z, 0.3 m across and 0.3 m along from where it began.
+        self.assertAlmostEqual(far['dir'][2], -1.0, places=6)
+        self.assertAlmostEqual(far['at'][0] - bend['x_m'], 0.3, places=3)
+        self.assertAlmostEqual(far['at'][2] - bend['z_m'], -0.3, places=3)
+
     def test_the_example_is_built_as_it_is_written(self):
         spec, checked, cost = mg.compose(self.FREE, self.FREE['example'])
         c = mw.compile_spec(spec)
@@ -543,6 +615,88 @@ class Engine(unittest.TestCase):
                 self.assertGreater(tipped, 5.0)
             else:
                 self.assertLess(tipped, 1.0)
+
+    @need_engine
+    def test_marbles_held_on_a_shelf_are_split_three_ways_by_joined_pieces(self):
+        # Built from joins alone, as the chat builds: a shelf whose gate stays
+        # open, four marbles lined up on it, a trigger track over its paddle
+        # with a marble on it, a long track from the shelf, a flip-flop, and a
+        # second flip-flop on its right end; a track with a stop on each of the
+        # three ends left. Every marble let go ends on one of the three tracks.
+        free = mg.level_by_id('free')
+        add = [{'piece': 'shelf', 'top_height_m': 0.9, 'run_m': 0.4, 'drop_m': 0.015, 'end': 'gate that stays open'}]
+        add += [{'piece': 'marble', 'join': {'to': 1, 'port': 'top end'}}] * 3
+        add += [{'piece': 'track', 'run_m': 0.36, 'drop_m': 0.03, 'join': {'to': 1, 'port': 'gate paddle'}},
+                {'piece': 'marble', 'join': {'to': 5, 'port': 'top end'}},
+                {'piece': 'marble', 'join': {'to': 1, 'port': 'top end'}},
+                {'piece': 'track', 'run_m': 0.9, 'drop_m': 0.08, 'join': {'to': 1, 'port': 'far end'}},
+                {'piece': 'flipflop', 'join': {'to': 8, 'port': 'far end'}},
+                {'piece': 'track', 'run_m': 0.6, 'drop_m': 0.08, 'end': 'stop', 'join': {'to': 9, 'port': 'left end'}},
+                {'piece': 'flipflop', 'join': {'to': 9, 'port': 'right end'}},
+                {'piece': 'track', 'run_m': 0.6, 'drop_m': 0.08, 'end': 'stop', 'join': {'to': 11, 'port': 'left end'}},
+                {'piece': 'track', 'run_m': 0.6, 'drop_m': 0.08, 'end': 'stop', 'join': {'to': 11, 'port': 'right end'}}]
+        answer = {'reply': '', 'clear': True, 'add': add}
+        placed = mc.respond_free('Split them three ways.', free, [], call=lambda messages: (answer, {}))['placements']
+        spec, _, _ = mg.compose(free, placed)
+        compiled = mw.compile_spec(spec)
+        with tempfile.TemporaryDirectory() as logs:
+            s = mw.MachineSession(compiled, ENGINE, Path(logs), paced=False)
+            try:
+                s.play(True)
+                began = time.perf_counter()
+                while time.perf_counter() - began < 120:
+                    with s.lock:
+                        if s.t >= 10.0 or s.error:
+                            break
+                        s.lock.wait(0.05)
+                with s.lock:
+                    self.assertIsNone(s.error)
+                    ends = {n: mg.resting_on(compiled, s.bodies[n]['position_m'], 0.02)
+                            for n in ('your marble 2', 'your marble 3', 'your marble 4', 'your marble 7')}
+            finally:
+                s.close()
+        print(f'\n  three ways: {ends}')
+        self.assertTrue(set(ends.values()) <= {'your track 10', 'your track 12', 'your track 13'}, ends)
+        self.assertGreaterEqual(len(set(ends.values())), 2, 'they went more than one way')
+
+    @need_engine
+    def test_a_marble_goes_round_a_bend(self):
+        # Down a track, round a bend 90 degrees either way and onto the track
+        # snapped to its far end, to that track's stop.
+        free = mg.level_by_id('free')
+        for turn in (90, -90):
+            entry = {'piece': 'track', 'x_m': -0.6, 'z_m': 0.0, 'top_height_m': 0.6, 'run_m': 0.6, 'drop_m': 0.06,
+                     'end': 'open'}
+            bend = {'piece': 'bend', 'x_m': 0.05, 'z_m': 0.05, 'top_height_m': 0.3, 'turn_deg': turn, 'radius_m': 0.3,
+                    'drop_m': 0.04}
+            bend = dict(bend, **mg.ghost(free, [entry, bend], 1, snapping=True)['snap']['knobs'])
+            out = next(q for q in mg.ports(*[mg.check_placements(free, [entry, bend])[0],
+                                              mw.compile_spec(mg.compose(free, [entry, bend])[0])])
+                       if q['piece'] == 1 and q['port'] == 'far end')
+            leave = {'piece': 'track', 'x_m': out['at'][0] + 0.05, 'z_m': out['at'][2] + 0.05, 'top_height_m': 0.1,
+                     'run_m': 0.6, 'drop_m': 0.05, 'end': 'stop',
+                     'yaw_deg': round(math.degrees(math.atan2(-out['dir'][2], out['dir'][0])))}
+            leave = dict(leave, **mg.ghost(free, [entry, bend, leave], 2, snapping=True)['snap']['knobs'])
+            spec, _, _ = mg.compose(free, [entry, bend, leave, {'piece': 'marble', 'x_m': -0.55, 'z_m': 0.0}])
+            with tempfile.TemporaryDirectory() as logs:
+                s = mw.MachineSession(mw.compile_spec(spec), ENGINE, Path(logs), paced=False)
+                try:
+                    s.play(True)
+                    began = time.perf_counter()
+                    while time.perf_counter() - began < 120:
+                        with s.lock:
+                            if s.t >= 4.0 or s.error:
+                                break
+                            s.lock.wait(0.05)
+                    with s.lock:
+                        self.assertIsNone(s.error)
+                        end = s.bodies['your marble 4']['position_m']
+                finally:
+                    s.close()
+            stop = [leave['x_m'] + 0.56 * out['dir'][0], leave['z_m'] + 0.56 * out['dir'][2]]
+            print(f'\n  bend {turn}: the marble ended at {[round(v, 3) for v in end]}, the stop is at {[round(v, 3) for v in stop]}')
+            self.assertLess(math.hypot(end[0] - stop[0], end[2] - stop[1]), 0.05, 'at the stop of the track after the bend')
+            self.assertGreater(end[1], 0.05, 'on the track, not the ground')
 
     @need_engine
     def test_every_level_is_solved_by_its_solution_every_time_and_not_without_pieces(self):

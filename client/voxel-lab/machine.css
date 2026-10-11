@@ -127,6 +127,9 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 .level-done[hidden]{display:none}
 .attach-card{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:4;width:min(460px,calc(100% - 24px));padding:10px 12px;background:#142836f5;border:1px solid #ffd34d;border-radius:12px;box-shadow:0 10px 30px #000a;font-size:14px}
 .attach-card[hidden]{display:none}
+.share-link{width:100%;margin:0 0 8px;padding:6px 8px;background:#0f1d26;color:#cfe2ec;border:1px solid #4e6b7d;border-radius:6px;font:12px ui-monospace,Consolas,monospace}
+.share-link[hidden]{display:none}
+#free-actions{flex-wrap:wrap}
 .attach-card p{margin:0 0 6px}
 .attach-card .actions{display:flex;flex-wrap:wrap;gap:6px}
 .attach-card button{min-height:40px;padding:6px 10px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer;font:14px system-ui}

@@ -1923,6 +1923,59 @@
     }
    },
    {
+    "piece": "bend",
+    "count": 40,
+    "cost": 0,
+    "turns": [
+     "yaw_deg"
+    ],
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "top end x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "top_height_m": {
+      "min": 0.05,
+      "max": 2.0,
+      "default": 0.5,
+      "step": 0.01,
+      "label": "top end height"
+     },
+     "turn_deg": {
+      "min": -180,
+      "max": 180,
+      "default": 90,
+      "step": 22.5,
+      "label": "turns (degrees, + to the left)"
+     },
+     "radius_m": {
+      "min": 0.15,
+      "max": 1.0,
+      "default": 0.3,
+      "step": 0.01,
+      "label": "radius"
+     },
+     "drop_m": {
+      "min": 0.0,
+      "max": 0.5,
+      "default": 0.04,
+      "step": 0.01,
+      "label": "drop"
+     }
+    }
+   },
+   {
     "piece": "shelf",
     "count": 40,
     "cost": 0,

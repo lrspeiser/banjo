@@ -716,6 +716,7 @@ function say(kind, text) {
 
 $('chat-form').addEventListener('submit', async e => {
   e.preventDefault();
+  if (LEVEL_MODE && level && level.free) { askFree(); return; }
   if (LEVEL_MODE) { askLevel('hint'); return; }
   const message = $('message').value.trim();
   if (!message) return;
@@ -2176,12 +2177,29 @@ async function chooseLevel(id) {
     : `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s, on as little energy as you can `+
       `(par ${energyText(level.par_energy_j)}, pieces and run). It teaches ${level.teaches}.`;
   $('chat-log').replaceChildren();
-  // The chat helps with a level's goal; a free build has none to help with.
-  document.querySelector('.chat').hidden = Boolean(level.free);
+  // On a level the chat hints and places the tray's pieces; in a free build
+  // it builds what it is asked.
   $('free-actions').hidden = !level.free;
+  $('solve').hidden = Boolean(level.free);
+  $('send').textContent = level.free ? 'Build it' : 'Ask for a hint';
+  document.querySelector('.chat h2').textContent = level.free ? 'Build with words' : 'Ask for help';
+  $('message').placeholder = level.free
+    ? 'Say what to build, e.g. “Hold three marbles up high behind a gate, then split them three ways”'
+    : 'Ask about this level, e.g. “Why does my ball fall short?”';
+  $('share-link').hidden = true;
   if (level.free) {
     placements = ((me().free || {}).placements || []).map(p => ({...p}));
     me().last = 'free'; persist();
+    // Opened from a shared link: that build, in place of this one (Undo brings it back).
+    if (sharedBuild) {
+      const shared = sharedBuild; sharedBuild = null;
+      try {
+        const list = await unpackBuild(shared);
+        if (!placements.length || confirm(`Open the shared build (${list.length} pieces)? It takes the place of what is on your table; ↶ Undo brings yours back.`)) {
+          remember(); placements = list;
+        }
+      } catch { say('refused', 'That link does not hold a build this page can read.'); }
+    }
   }
   renderLevels(); renderTray(); renderPlaced();
   await rebuildLevel(false);
@@ -2196,6 +2214,77 @@ $('free-example').addEventListener('click', () => {
   if (placements.length && !confirm('Put the example on the table instead of your build?')) return;
   endGhost(); remember(); placements = level.example.map(p => ({...p})); renderTray(); renderPlaced();
   framedFree = false; rebuildLevel(false).catch(() => {});
+});
+
+// A free build from words: the model says which pieces and what each joins
+// to, the server works out where they go and rehearses it once in the engine.
+async function askFree() {
+  const message = $('message').value.trim();
+  if (!message) { $('message').focus(); return; }
+  $('send').disabled = true;
+  $('chat-status').textContent = 'Building it, then rehearsing it once in the engine (up to a minute)…';
+  say('you', message);
+  try {
+    const r = await api({op: 'chat', level: 'free', placements, message});
+    say('model', r.reply);
+    endGhost(); remember();
+    placements = r.placements.map(p => ({...p}));
+    renderTray(); renderPlaced();
+    const ended = (r.rehearsal && r.rehearsal.ended) || [];
+    if (ended.length) {
+      const onPieces = ended.filter(e => e.on && e.on !== 'the ground');
+      // A marble that opens a gate is spent on the floor: most on a piece is a build that works.
+      say(2 * onPieces.length > ended.length ? 'model' : 'refused', `Rehearsed once in the engine: ${onPieces.length} of ${ended.length} ` +
+        `marbles ended on a piece${onPieces.length ? ` (${[...new Set(onPieces.map(e => e.on))].join(', ')})` : ''}` +
+        (onPieces.length < ended.length ? `, ${ended.length - onPieces.length} on the ground` : '') + '. Run it to watch, and move what needs moving.');
+    }
+    $('message').value = '';
+    framedFree = false;
+    await rebuildLevel(false);
+  } catch (err) { say('refused', err.data && err.data.problems ? `${err.message}: ${err.data.problems.join('; ')}` : err.message); }
+  finally { $('send').disabled = false; $('chat-status').textContent = ''; }
+}
+
+// ---- sharing a build: all of it in a link ------------------------------------------
+// The pieces, squeezed (deflate) and written in the link's #build= -- which
+// the browser never sends to a server. Opening the link sets them out.
+let sharedBuild = (location.hash.match(/^#build=([A-Za-z0-9_-]+)$/) || [])[1] || null;
+async function packBuild(list) {
+  let bytes = new TextEncoder().encode(JSON.stringify(list)), tag = 'j';
+  if (window.CompressionStream) {
+    const squeezed = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    bytes = new Uint8Array(await new Response(squeezed).arrayBuffer()); tag = 'z';
+  }
+  let text = '';
+  for (const b of bytes) text += String.fromCharCode(b);
+  return tag + btoa(text).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+async function unpackBuild(packed) {
+  const b64 = packed.slice(1).replace(/-/g, '+').replace(/_/g, '/');
+  const bytes = Uint8Array.from(atob(b64 + '='.repeat((4 - b64.length % 4) % 4)), c => c.charCodeAt(0));
+  const json = packed[0] === 'z'
+    ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text()
+    : new TextDecoder().decode(bytes);
+  const list = JSON.parse(json);
+  if (!Array.isArray(list) || list.length > 200 || !list.every(p => p && typeof p === 'object' && typeof p.piece === 'string'))
+    throw new Error('not a build');
+  return list;
+}
+$('free-share').addEventListener('click', async () => {
+  const link = `${location.origin}/play?level=free#build=${await packBuild(placements)}`;
+  const box = $('share-link');
+  box.hidden = false; box.value = link; box.select();
+  let copied = false;
+  try { await navigator.clipboard.writeText(link); copied = true; } catch { /* no clipboard: the link is shown to copy */ }
+  $('verdict').textContent = copied ? 'A link to this build is copied: anyone who opens it gets these pieces on their table.'
+    : 'Copy this link: anyone who opens it gets these pieces on their table.';
+});
+window.machineShareLink = () => $('share-link').value;
+// A shared link opened in a tab already on the page changes only its #: the
+// page is not loaded again, so the build is read from it here.
+addEventListener('hashchange', () => {
+  const m = location.hash.match(/^#build=([A-Za-z0-9_-]+)$/);
+  if (m && LEVEL_MODE && freeLevel) { sharedBuild = m[1]; showLevelsScreen(false); chooseLevel('free').catch(() => {}); }
 });
 
 async function askLevel(mode) {
@@ -2274,9 +2363,6 @@ async function startGame() {
     const part = document.querySelector(`aside section[aria-label="${label}"]`);
     if (part) part.hidden = true;
   }
-  $('send').textContent = 'Ask for a hint';
-  $('message').placeholder = 'Ask about this level, e.g. “Why does my ball fall short?”';
-  document.querySelector('.chat h2').textContent = 'Ask for help';
   const r = await api({op: 'levels'});
   levels = r.levels; freeLevel = r.free || null;
   // /play on its own opens the levels screen, over the level this player is up to.

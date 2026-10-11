@@ -11,6 +11,7 @@ the reasons and nothing is built.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 import time
@@ -265,6 +266,174 @@ PIECE_HELP = {
 TURNING_HELP = ('Every piece can also be moved across with z_m and turned any way: yaw_deg about the vertical (a '
                 'positive turn takes +x toward -z), then pitch_deg tips its +x end up, then roll_deg turns it about '
                 'its length. Turning costs nothing; leave them at 0 unless turning helps.')
+
+
+FREE_HELP = {
+    'marble': 'a loose ball, set down at (x_m, z_m) on whatever is under it. Iron tips flip-flops and opens gates; '
+              'oak is too light for either',
+    'track': 'a chute with a rail each side: its top end at (x_m, top_height_m, z_m), running run_m the way yaw_deg '
+             'turns it (0 is +x, 90 is -z) and dropping drop_m to its far end; end is open (marbles roll off), stop '
+             '(they stay) or a gate',
+    'shelf': 'a short track tilted toward its gate: marbles set down on it roll to the gate and wait. The gate '
+             'opens when its paddle (port "gate paddle") is pressed down -- a marble dropped on it from a track '
+             'whose far end is joined to it',
+    'bend': 'a curved chute: its top end at (x_m, top_height_m, z_m), starting the way yaw_deg turns it, turning '
+            'turn_deg (90 turns it from +x toward -z; -90 the other way) round radius_m and dropping drop_m',
+    'flipflop': 'a rocker that sends marbles dropped on its middle one way, then the other: its ports "left end" '
+                'and "right end" are where marbles leave. Iron marbles only; marbles arriving together go the same '
+                'way',
+    'block': 'a fixed block of any size (a post, a wall, a stop), set down on what is under it',
+    'dominoes': 'a row of oak dominoes from (x_m, z_m) the way yaw_deg turns it',
+    'lever': 'a seesaw on a block standing on the ground',
+    'plank': 'a loose plank set down on what is under it',
+    'ramp': 'a ramp with an 8 cm iron ball at its top',
+    'cannon': 'a cannon that fires at fire_at_s',
+    'steam': 'a steam engine whose piston rises',
+}
+
+
+def free_prompt(level):
+    """The free build for the model: the table, the pieces and their knobs,
+    and how to join one piece to another so the server works out where it
+    goes."""
+    tray = []
+    for t in level['tray']:
+        if t.get('attach'):
+            continue
+        knobs = []
+        for key, rule in t['knobs'].items():
+            if 'choices' in rule:
+                knobs.append(f'{key}: one of {rule["choices"]}')
+            elif 'min' in rule:
+                knobs.append(f'{key} ({rule.get("label", key)}): {rule["min"]} to {rule["max"]}')
+        tray.append(f'- {t["piece"]}: {FREE_HELP.get(t["piece"], "")}. Knobs: ' + '; '.join(knobs))
+    tray = '\n'.join(tray)
+    return f"""You build marble runs and contraptions on the free build table in Banjo, a physics game. The engine
+calculates everything: you never decide an outcome. Metres; y is up and the ground is at y = 0; the table runs from
+-2 to 2 m in x and z.
+
+The pieces, as many as you like:
+{tray}
+
+JOIN pieces instead of working out where they go. A piece may have "join": {{"to": N, "port": P}}: N is the number of
+a piece (counting from 1: first the pieces already on the table, in order, then yours, in order), and P one of its
+ports. The server then puts your piece where the two connect, and works out its x_m, z_m and height itself:
+- a track, shelf or bend joined to a "far end", "left end" or "right end": its top end goes just under it, and
+  what rolls off drops onto it. Give its own run_m, drop_m (or turn_deg), yaw_deg (the way it runs) and end;
+- a track or bend joined to a "top end", a flip-flop's "middle" or a gate's "gate paddle": its far end goes just
+  above it, so what rolls off drops in there (onto the paddle opens the gate);
+- a flip-flop joined to a "far end", "left end" or "right end": its middle goes under it, its board behind;
+- a marble joined to a track's or shelf's "top end": it sits at the top of it.
+Ports: track, shelf and bend have "top end" and "far end" (a gate also "gate paddle"); a flip-flop has "middle",
+"left end" and "right end". A track or bend joined to a far end or a flip-flop's end starts the way the marble
+leaves it (its yaw_deg is set to that). To turn, join a bend there (turn_deg) and the next track to the bend's far
+end. Leave room: pieces may not go into each other, and a flip-flop's two ends need room either side of it.
+
+Marbles are iron unless asked for something else: leave material out. An oak or rubber marble is too light to
+tip a flip-flop or open a gate.
+
+Ways that work (measured in the engine):
+- To hold marbles up high and let them go together: a shelf with end "gate that stays open", and each marble
+  joined to the shelf's "top end" (they line up along it). To open the gate as the run starts: a short track
+  (run_m 0.36, drop_m 0.03) high above it with its far end joined to the shelf's "gate paddle", and one iron marble
+  joined to that track's "top end": it rolls down and drops on the paddle.
+- To send marbles two ways: from the shelf's "far end" a track (run_m 0.9, drop_m 0.08) joined to it, a
+  flip-flop joined to that track's "far end", and a track joined to the flip-flop's "left end" and another to its
+  "right end" (run_m 0.6, drop_m 0.08, end "stop" to keep them).
+- To split three ways: the same, with a second flip-flop joined to the first flip-flop's "right end" instead of a
+  track, and tracks joined to the first's "left end" and to both ends of the second. Measured: four marbles let go
+  from a shelf ended on all three tracks.
+- A track's end "stop" keeps what reaches it; dominoes in line with an open end are knocked down.
+
+Answer with ONE JSON object: {{"reply": "one or two plain sentences about what you built", "clear": true if you
+start from an empty table, "add": [{{"piece": ..., knob: value, ..., "join": {{"to": N, "port": P}}}}, ...]}}."""
+
+
+def respond_free(message, level, placements, call=None, rehearse=None):
+    """The free build from words: the model says which pieces and what each
+    joins to; the server works out where they go (machine_game.join_to),
+    checks the build and rehearses it once in the engine."""
+    import machine_game as mg
+    if not isinstance(message, str) or not message.strip():
+        raise ValueError('Say what to build')
+    if len(message) > MAX_MESSAGE:
+        raise ValueError(f'Keep a request under {MAX_MESSAGE} characters')
+    if call is None:
+        api_key, model = configuration()
+        if not api_key:
+            raise ChatUnavailable('No model is configured on this server (OPENAI_API_KEY)')
+        call = lambda messages: _call(api_key, model, messages, want='reply')
+    tray = {t['piece']: t for t in level['tray'] if not t.get('attach')}
+    messages = [{'role': 'system', 'content': free_prompt(level)},
+                {'role': 'user', 'content': json.dumps({'request': message, 'on_the_table': [
+                    dict(p, number=i + 1) for i, p in enumerate(placements)]})}]
+
+    def fit(p):
+        out = {'piece': p['piece']}
+        for key, rule in tray[p['piece']]['knobs'].items():
+            if key in p:
+                value = p[key]
+                if 'min' in rule and isinstance(value, (int, float)) and not isinstance(value, bool):
+                    value = min(rule['max'], max(rule['min'], value))
+                out[key] = value
+            elif key in ('x_m', 'z_m'):
+                # Where it stands is written down, so that moving the whole
+                # build to the middle of the table moves it too.
+                out[key] = rule.get('default', 0.0)
+        return out
+
+    # Joined pieces are laid out on a table as big as the world, then the
+    # whole build is moved to the middle of the real one: a chain of tracks
+    # that starts near an edge is not refused for running off it.
+    wide = copy.deepcopy(level)
+    for t in wide['tray']:
+        for key in ('x_m', 'z_m'):
+            if key in t['knobs']:
+                t['knobs'][key] = dict(t['knobs'][key], min=-mw.WORLD_HALF_M, max=mw.WORLD_HALF_M)
+
+    def built(answer):
+        placed = [] if answer.get('clear') else [dict(p) for p in placements]
+        mine = len(placed)
+        for p in answer.get('add') or []:
+            if not isinstance(p, dict) or p.get('piece') not in tray:
+                raise mg.LevelRefused([f'{p.get("piece") if isinstance(p, dict) else p!s} is not a piece'])
+            placed.append(fit(p))
+            join = p.get('join')
+            if isinstance(join, dict) and isinstance(join.get('to'), int) and 1 <= join['to'] < len(placed):
+                placed = mg.join_to(wide, placed, len(placed) - 1, join['to'] - 1, str(join.get('port')))
+        if not mine:
+            placed = mg.centred(wide, placed)
+        spec, checked, _ = mg.compose(level, placed)
+        return [{k: v for k, v in p.items() if k != 'cost'} for p in checked], mw.compile_spec(spec)
+    answer, usage = call(messages)
+    answer = _placements_answer(answer)
+    for attempt in range(3):
+        try:
+            placed, compiled = built(answer)
+            break
+        except (mg.LevelRefused, mw.MachineRefused) as e:
+            if attempt == 2:
+                raise
+            # Again, with what the server refused.
+            messages += [{'role': 'assistant', 'content': json.dumps(answer)},
+                         {'role': 'user', 'content': json.dumps({'refused': e.problems[:6],
+                                                                 'ask': 'Change the build so it fits and answer again.'})}]
+            answer, more = call(messages)
+            answer = _placements_answer(answer)
+            usage = _added(usage, more)
+    out = {'ok': True, 'reply': answer['reply'], 'placements': placed, 'usage': usage}
+    if rehearse is not None:
+        # Rehearsed once: where each marble ended, and on what.
+        marbles = [p for p in compiled['parts'] if p['shape'] == 'sphere' and not p['fixed']]
+        r = rehearse(compiled, track=[p['name'] for p in marbles])
+        ended = []
+        for p in marbles:
+            points = (r.get('paths', {}).get(p['name']) or {}).get('points') or []
+            if points:
+                ended.append({'marble': p['name'], 'on': mg.resting_on(compiled, points[-1][1:4], 0.5 * p['size_m'][0]),
+                              'at_m': [round(v, 2) for v in points[-1][1:4]]})
+        out['rehearsal'] = {'events': [e['text'] for e in r['events'][:20]], 'error': r.get('error'), 'ended': ended}
+    return out
 
 
 def _placements_answer(answer):

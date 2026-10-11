@@ -317,6 +317,15 @@ def _track(name, k, ctx=None):
     return {'kits': [_turned_kit(kit, k, top)]}
 
 
+def _bend(name, k, ctx=None):
+    """A curved track: its top end at (x_m, top_height_m, z_m), starting the
+    way it is turned (yaw_deg), turning turn_deg (positive to the left) round
+    radius_m and dropping drop_m."""
+    return {'kits': [{'kit': 'bend', 'name': name, 'start_m': [k['x_m'], k['top_height_m'], k.get('z_m', 0.0)],
+                      'heading_deg': k.get('yaw_deg', 0.0), 'turn_deg': k['turn_deg'], 'radius_m': k['radius_m'],
+                      'drop_m': k['drop_m']}]}
+
+
 def _flipflop(name, k, ctx=None):
     """A flip-flop on its pin at (x_m, height_m, z_m): marbles dropped on its
     middle go one way, then the other. It starts tipped left (its -x end
@@ -382,7 +391,8 @@ def _link(name, k, ctx=None):
 
 PIECES = {'plank': _plank, 'knife': _knife, 'cannon': _cannon, 'steam': _steam, 'ramp': _ramp, 'mirror': _mirror,
           'solar': _solar, 'tackle': _tackle, 'lens': _lens, 'marble': _marble, 'track': _track, 'shelf': _track,
-          'flipflop': _flipflop, 'block': _block, 'dominoes': _dominoes, 'lever': _lever, 'link': _link}
+          'flipflop': _flipflop, 'block': _block, 'dominoes': _dominoes, 'lever': _lever, 'link': _link,
+          'bend': _bend}
 
 
 class LevelRefused(ValueError):
@@ -772,6 +782,12 @@ def ports(checked, compiled):
             if barrier:
                 paddle = mw.solids_of(barrier)[3]['at_m']
                 add('gate paddle', 'trigger', [paddle[0], paddle[1] + 0.005, paddle[2]], fwd)
+        elif p['piece'] == 'bend':
+            top = [p['x_m'], p['top_height_m'], p.get('z_m', 0.0)]
+            _, end, way = mw.bend_path(top, p.get('yaw_deg', 0.0), p['turn_deg'], p['radius_m'], p['drop_m'])
+            h = math.radians(way)
+            add('top end', 'in', top, fwd)
+            add('far end', 'out', end, [math.cos(h), 0.0, -math.sin(h)])
         elif p['piece'] == 'flipflop':
             pin = [p['x_m'], p['height_m'], p.get('z_m', 0.0)]
             # Its board is behind it (-z before it is turned): marbles come in
@@ -779,14 +795,128 @@ def ports(checked, compiled):
             yaw = math.radians(p.get('yaw_deg', 0.0))
             toward_board = [-math.sin(yaw), 0.0, -math.cos(yaw)]
             add('middle', 'in', [pin[0], pin[1] + FLIP_DROP_M, pin[2]], toward_board)
+            # Its ends swing 3 cm up and down as it tips, and a marble leaves
+            # one slowly: what joins there goes just beyond the end and well
+            # below it -- a track's top end 14 cm out and 14 cm down, clear of
+            # the rocker and its board, as in the example that works.
             for sign, label in ((1, 'right end'), (-1, 'left end')):
-                add(label, 'out', [pin[0] + sign * 0.12 * fwd[0], pin[1] - 0.03, pin[2] + sign * 0.12 * fwd[2]],
+                add(label, 'out', [pin[0] + sign * 0.11 * fwd[0], pin[1] - 0.10, pin[2] + sign * 0.11 * fwd[2]],
                     [sign * v for v in fwd])
     return out
 
 
 FLIP_DROP_M = 0.11    # a track's far end this far over a flip-flop's pin drops onto its middle
 LEAD_M = 0.04         # and this far short of it, along the way it comes
+
+
+def _connect(p, m, q):
+    """The knobs that put port m of piece p where it connects to port q of
+    another piece -- moved by the gap between m and where m should be,
+    across by x_m and z_m and up by its height -- or None when the two do not
+    connect."""
+    rise_knob = 'height_m' if p['piece'] == 'flipflop' else 'top_height_m'
+
+    def moved_by(target):
+        return {'x_m': p['x_m'] + target[0] - m['at'][0], 'z_m': p.get('z_m', 0.0) + target[2] - m['at'][2],
+                rise_knob: p[rise_knob] + target[1] - m['at'][1]}
+    way = m['dir']
+    if m['port'] == 'top end' and q['kind'] == 'out':
+        # Under it and a little past it: what rolls off drops onto this.
+        return moved_by([q['at'][0] + 0.03 * q['dir'][0], q['at'][1] - 0.04, q['at'][2] + 0.03 * q['dir'][2]])
+    if m['port'] == 'far end' and q['kind'] in ('in', 'trigger'):
+        if q['port'] == 'top end':
+            return moved_by([q['at'][0] - 0.03 * way[0], q['at'][1] + 0.04, q['at'][2] - 0.03 * way[2]])
+        if q['kind'] == 'trigger':
+            # Short of the paddle: what rolls off flies on a little as it falls.
+            return moved_by([q['at'][0] - 0.05 * way[0], q['at'][1] + 0.065, q['at'][2] - 0.05 * way[2]])
+        return moved_by([q['at'][0] - LEAD_M * way[0], q['at'][1], q['at'][2] - LEAD_M * way[2]])
+    if p['piece'] == 'flipflop' and m['port'] == 'middle' and q['kind'] == 'out':
+        way = q['dir']
+        pin = [q['at'][0] + LEAD_M * way[0], q['at'][1] - FLIP_DROP_M, q['at'][2] + LEAD_M * way[2]]
+        # Its board behind it, where what comes in flies to.
+        return {'x_m': pin[0], 'z_m': pin[2], 'height_m': pin[1],
+                'yaw_deg': round(math.degrees(math.atan2(-way[0], -way[2])))}
+    return None
+
+
+def _seat(p, q):
+    """A marble at the top of a track: just in from its end."""
+    r = 0.5 * p.get('diameter_m', 0.04)
+    return {'x_m': q['at'][0] + (0.03 + r) * q['dir'][0], 'z_m': q['at'][2] + (0.03 + r) * q['dir'][2]}
+
+
+def join_to(level, placed, index, to, port):
+    """Piece `index` of `placed` moved to connect to port `port` of piece
+    `to`, however far apart they are: the placements with it moved. Raises
+    LevelRefused when there is no such port, or the two do not connect."""
+    _, checked, _, compiled = _assemble(level, placed[:index + 1], lenient=True)
+    found = ports(checked, compiled)
+    q = next((q for q in found if q['piece'] == to and q['port'] == port), None)
+    what = f'piece {index + 1}'
+    if q is None:
+        have = [r['port'] for r in found if r['piece'] == to]
+        raise LevelRefused([f'{what}: piece {to + 1} has no port "{port}"' + (f' (it has {", ".join(have)})' if have else '')])
+    p = checked[index]
+    if q['kind'] == 'out' and p['piece'] in ('track', 'shelf', 'bend'):
+        # It starts the way what leaves there goes: turned straight away, it
+        # would run into what it joins (a turn there is a bend's to make).
+        p = dict(p, yaw_deg=round(math.degrees(math.atan2(-q['dir'][2], q['dir'][0]))))
+        placed = list(placed)
+        placed[index] = dict(placed[index], yaw_deg=p['yaw_deg'])
+        _, checked, _, compiled = _assemble(level, placed[:index + 1], lenient=True)
+        found = ports(checked, compiled)
+    if p['piece'] == 'marble':
+        knobs = _seat(p, q) if q['port'] == 'top end' else None
+        if knobs:
+            # Marbles joined to the same top end line up along it, one behind
+            # another, rather than one on top of the other.
+            gap = p.get('diameter_m', 0.04) + 0.005
+            taken = [[o['x_m'], o.get('z_m', 0.0)] for o in checked[:index] if o['piece'] == 'marble']
+            for k in range(40):
+                at = [knobs['x_m'] + k * gap * q['dir'][0], knobs['z_m'] + k * gap * q['dir'][2]]
+                if all(math.dist(at, o) > 0.5 * gap for o in taken):
+                    knobs = {'x_m': at[0], 'z_m': at[1]}
+                    break
+    else:
+        knobs = next((k for m in found if m['piece'] == index for k in [_connect(p, m, q)] if k), None)
+    if not knobs:
+        raise LevelRefused([f'{what}: a {p["piece"]} does not join a {port}'])
+    out = list(placed)
+    out[index] = dict(placed[index], **{k: round(v, 4) for k, v in knobs.items()})
+    return out
+
+
+def centred(level, placed):
+    """A build moved across the ground so the middle of what it covers is at
+    the middle of the table: every piece's x_m and z_m, and the points its
+    joins are made at, by the same amount."""
+    _, _, _, compiled = _assemble(level, placed, lenient=True)
+    reach = [(sd['at_m'], _reach(sd)) for p in compiled['parts'] if owner(p) for sd in mw.solids_of(p)]
+    if not reach:
+        return placed
+    shift = [-round(0.5 * (min(c[i] - r[i] for c, r in reach) + max(c[i] + r[i] for c, r in reach)), 2) for i in (0, 2)]
+    out = []
+    for p in placed:
+        q = dict(p)
+        if 'x_m' in q:
+            q['x_m'], q['z_m'] = round(q['x_m'] + shift[0], 4), round(q.get('z_m', 0.0) + shift[1], 4)
+        for key in ('at_m', 'at_b_m'):
+            if isinstance(q.get(key), list):
+                q[key] = [round(q[key][0] + shift[0], 4), q[key][1], round(q[key][2] + shift[1], 4)]
+        out.append(q)
+    return out
+
+
+def resting_on(compiled, point, radius):
+    """The part a ball at `point` rests on (the first thing under it within 5
+    mm), or 'the ground', or None when it is in the air."""
+    if point[1] - radius < 0.005:
+        return 'the ground'
+    probe = {'name': 'probe', 'shape': 'sphere', 'size_m': [2 * radius + 0.01] * 3, 'at_m': list(point), 'turn_deg': [0, 0, 0]}
+    near = [(mw.overlap_depth(probe, sd), p['name']) for p in compiled['parts'] for sd in mw.solids_of(p)
+            if p['name'] != 'probe' and abs(sd['at_m'][0] - point[0]) < 2.0 and abs(sd['at_m'][2] - point[2]) < 2.0]
+    touching = [n for depth, n in near if depth > 0.0]
+    return touching[0] if touching else None
 
 
 def snap(level, placed, index, compiled):
@@ -804,39 +934,17 @@ def snap(level, placed, index, compiled):
 
     def near(a, b):
         return math.hypot(a[0] - b[0], a[2] - b[2]), abs(a[1] - b[1])
-    fwd = _forward(p)
     for m in mine:
         for q in theirs:
             d, rise = near(m['at'], q['at'])
-            if d > SNAP_M or rise > SNAP_RISE_M:
-                continue
-            if p['piece'] in ('track', 'shelf') and m['port'] == 'top end' and q['kind'] == 'out':
-                # Under it and a little past it: what rolls off drops onto this.
-                at = [q['at'][0] + 0.03 * q['dir'][0], q['at'][1] - 0.04, q['at'][2] + 0.03 * q['dir'][2]]
-                consider(d, {'x_m': at[0], 'z_m': at[2], 'top_height_m': at[1]}, q)
-            elif p['piece'] in ('track', 'shelf') and m['port'] == 'far end' and q['kind'] in ('in', 'trigger'):
-                if q['port'] == 'top end':
-                    far = [q['at'][0] - 0.03 * fwd[0], q['at'][1] + 0.04, q['at'][2] - 0.03 * fwd[2]]
-                elif q['kind'] == 'trigger':
-                    # Short of the paddle: what rolls off flies on a little as it falls.
-                    far = [q['at'][0] - 0.05 * fwd[0], q['at'][1] + 0.065, q['at'][2] - 0.05 * fwd[2]]
-                else:
-                    far = [q['at'][0] - LEAD_M * fwd[0], q['at'][1], q['at'][2] - LEAD_M * fwd[2]]
-                consider(d, {'x_m': far[0] - p['run_m'] * fwd[0], 'z_m': far[2] - p['run_m'] * fwd[2],
-                             'top_height_m': far[1] + p['drop_m']}, q)
-            elif p['piece'] == 'flipflop' and m['port'] == 'middle' and q['kind'] == 'out':
-                way = q['dir']
-                pin = [q['at'][0] + LEAD_M * way[0], q['at'][1] - FLIP_DROP_M, q['at'][2] + LEAD_M * way[2]]
-                # Its board behind it, where what comes in flies to.
-                yaw = math.degrees(math.atan2(-way[0], -way[2]))
-                consider(d, {'x_m': pin[0], 'z_m': pin[2], 'height_m': pin[1], 'yaw_deg': round(yaw)}, q)
+            knobs = _connect(p, m, q) if d <= SNAP_M and rise <= SNAP_RISE_M else None
+            if knobs:
+                consider(d, knobs, q)
     for q in theirs:
         if p['piece'] == 'marble' and q['port'] == 'top end':
-            # A marble at the top of a track: just in from its end.
-            r = 0.5 * p.get('diameter_m', 0.04)
             d, rise = near([p['x_m'], 0.0, p.get('z_m', 0.0)], q['at'])
             if d <= SNAP_M:
-                consider(d, {'x_m': q['at'][0] + (0.03 + r) * q['dir'][0], 'z_m': q['at'][2] + (0.03 + r) * q['dir'][2]}, q)
+                consider(d, _seat(p, q), q)
     if best is None:
         return None
     _, knobs, to = best

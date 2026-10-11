@@ -43,7 +43,8 @@ class Puzzles(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('machine_game_page', ROOT / 'scripts/voxel-lab.py')
         lab = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(lab)
-        cls.logs = tempfile.TemporaryDirectory()
+        # An engine still closing as the tests end holds its log open a moment.
+        cls.logs = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         # The game site as deployed: open to anyone, nothing else served.
         cls.server = lab.Server(('127.0.0.1', 0), ENGINE, Path(cls.logs.name), site='game', public=True)
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
@@ -220,10 +221,10 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(self.js("document.getElementById('title').textContent.startsWith('2. ')"))
 
     def test_the_free_build_has_every_piece_keeps_a_build_and_sets_out_the_example(self):
-        # The levels screen's free build: every piece, no count, no goal, no
-        # chat. A marble set down is kept for the player and is there again
-        # after a reload. The example goes on the table and runs: the gate is
-        # opened by a marble, and the marbles it held knock the dominoes down.
+        # The levels screen's free build: every piece, no count, no goal. A
+        # marble set down is kept for the player and is there again after a
+        # reload. The example goes on the table and runs: the gate is opened
+        # by a marble, and the marbles it held knock the dominoes down.
         self.page.send('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 860, 'deviceScaleFactor': 1,
                                                               'mobile': False})
         self.page.send('Page.navigate', {'url': f'{self.base}/play'})
@@ -237,7 +238,9 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(self.js("document.getElementById('title').textContent"), 'Free build')
         self.assertGreaterEqual(self.js("document.querySelectorAll('#scene-tray button').length"), 11)
         self.assertNotIn('left', self.js("document.getElementById('scene-tray').textContent"))
-        self.assertTrue(self.js("document.querySelector('.chat').hidden"))
+        # Its chat builds from words; there is no level to place pieces for.
+        self.assertEqual(self.js("document.getElementById('send').textContent"), 'Build it')
+        self.assertTrue(self.js("document.getElementById('solve').hidden"))
         self.press('Add a marble')
         self.ghost()
         self.press('Set it down')
@@ -334,6 +337,28 @@ class Puzzles(unittest.TestCase):
         self.press('Remove your track 1')
         self.wait('window.machinePlacements().length === 2', 10)
         self.assertEqual([q['piece'] for q in self.js('window.machinePlacements()')], ['track', 'marble'])
+
+    def test_a_build_is_shared_by_a_link(self):
+        # The example, shared: the link holds every piece, and opening it on
+        # an empty table sets them all out.
+        self.page.send('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 860, 'deviceScaleFactor': 1,
+                                                              'mobile': False})
+        self.page.send('Page.navigate', {'url': f'{self.base}/play?level=free'})
+        self.wait(f"document.getElementById('clock') && {READY}", 90)
+        self.js('window.confirm = () => true')
+        self.press('Set out the example')
+        self.wait(f"window.machinePlacements().length === 11 && {READY}", 60)
+        made = self.js('window.machinePlacements()')
+        self.press('Share this build')
+        self.wait("/#build=z/.test(window.machineShareLink())", 10)
+        link = self.js('window.machineShareLink()')
+        self.press('Clear the table')
+        self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
+        self.page.send('Page.navigate', {'url': link})
+        self.wait(f"document.getElementById('clock') && window.machinePlacements().length === 11 && {READY}", 90)
+        self.assertEqual(self.js('window.machinePlacements()'), made)
+        self.assertNotIn('#build', self.js('location.href'), 'the link is read once')
+        self.assertEqual(self.js("document.getElementById('send').textContent"), 'Build it', 'the chat builds here')
 
     def test_a_level_opens_before_its_goal_piece_and_a_missed_goal_starts_over(self):
         # Level 4's goal is its engine's piston: before there is one, the

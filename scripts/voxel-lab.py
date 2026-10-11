@@ -526,7 +526,10 @@ class Handler(BaseHTTPRequestHandler):
     if self.server.chat_allowance:self.server.chat_allowance.take(self.visitor())
     if not self.server.chat_busy.acquire(blocking=False):raise ValueError('Two chat requests are already being worked on; try again shortly')
     try:
-     if data.get('level'):
+     if data.get('level')=='free':
+      # The free build: the chat builds what it is asked, joined piece to piece.
+      r=machine_chat.respond_free(data.get('message'),machine_game.free_build(),data.get('placements') or [],rehearse=host.rehearse)
+     elif data.get('level'):
       # A puzzle: the chat hints, or places pieces from the tray -- nothing else.
       r=machine_chat.respond_level(data.get('message'),machine_game.level_by_id(data.get('level')),data.get('placements') or [],
        mode=data.get('mode','hint'),last_run=data.get('last_run'),rehearse=host.rehearse)
