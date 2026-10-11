@@ -869,6 +869,9 @@ if(BANJO_BUILD_TESTS)
             # declaration checks, the chat's refusal and rehearsal loops, and an
             # engine run of the default chain (docs/machine-world-checkpoint.md).
             if(Python3_FOUND AND TARGET banjo_live_world_run)
+                add_test(NAME banjo_machine_host_tests COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_host_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
+                set_tests_properties(banjo_machine_host_tests PROPERTIES TIMEOUT 30 LABELS "machine;http")
                 add_test(NAME banjo_machine_world_tests COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_world_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                 set_tests_properties(banjo_machine_world_tests PROPERTIES TIMEOUT 300

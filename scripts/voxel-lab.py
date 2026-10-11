@@ -1,7 +1,7 @@
 """The Rube Goldberg game's server: the levels (/play), the free build (/play?level=free)
 and the machine sandbox (/machine), each a live engine world (scripts/machine_world.py),
 with the chat that helps (scripts/machine_chat.py). Deployed as `--site game --public`."""
-import os,sys
+import os,re,sys
 from types import SimpleNamespace
 import argparse, hashlib, json, subprocess, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +18,18 @@ ASSETS={'/play':'client/voxel-lab/machine.html','/machine':'client/voxel-lab/mac
  '/three.module.js':'client/vendor/three.module.js','/three.core.js':'client/vendor/three.core.js'}
 GAME_ROUTES=set(ASSETS)|{'/api/checkpoint'}
 GAME_POSTS={'/login','/api/machine'}
+
+def public_hostnames(*values):
+ """Explicit hostnames only: the existing setting and additional aliases."""
+ hosts=set()
+ for value in values:
+  for name in (value or '').split(','):
+   name=name.strip().lower().rstrip('.')
+   if not name:continue
+   if not re.fullmatch(r'[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?',name):
+    raise ValueError('Public hosts are comma-separated hostnames, without URLs, ports or wildcards')
+   hosts.add(name)
+ return frozenset(hosts)
 
 class Allowance:
  """How many of something one visitor may ask for in an hour, and everyone
@@ -48,7 +60,7 @@ def repository_state():
   except (OSError,ValueError):return None,None
 class Server(ThreadingHTTPServer):
  daemon_threads=True
- def __init__(self,address,native,logs,password=None,public_host=None,site='all',public=False):
+ def __init__(self,address,native,logs,password=None,public_host=None,site='all',public=False,public_hosts=None):
   # Public: deliberately open to anyone, with no password -- only for the
   # game (--site game), where the chat and the trials are rationed instead.
   if public and site!='game':raise ValueError('only the game (--site game) may be public with no password')
@@ -63,7 +75,8 @@ class Server(ThreadingHTTPServer):
   self.preview_busy=threading.BoundedSemaphore(2)
   if site not in ('all','game'):raise ValueError('site is all or game')
   self.site=site
-  self.app=SimpleNamespace(password=password,public_host=public_host,sessions=set(),login_destination='/play')
+  self.app=SimpleNamespace(password=password,public_host=public_host,
+   public_hosts=public_hostnames(public_host,public_hosts),sessions=set(),login_destination='/play')
   super().__init__(address,Handler);self.native=native;self.logs=logs;logs.mkdir(parents=True,exist_ok=True);self.lock=threading.Lock()
   self.started_revision,_=repository_state()
   from machine_world import MachineHost,engine_path
@@ -82,8 +95,16 @@ class Handler(BaseHTTPRequestHandler):
    # Navigation can close a preview's connection while the engine finishes.
    self.close_connection=True
  def host_allowed(self):
-  host=urlsplit('//'+self.headers.get('Host','')).hostname
-  return host in access_gate.LOOPBACK or bool(self.server.app.public_host and host==self.server.app.public_host)
+  if len(self.headers.get_all('Host',[]))!=1:return False
+  try:
+   value=self.headers.get('Host','')
+   if any(c.isspace() for c in value):return False
+   parsed=urlsplit('//'+value)
+   if parsed.username is not None or parsed.password is not None or parsed.path or parsed.query or parsed.fragment:return False
+   parsed.port # Refuse malformed ports rather than dropping the connection.
+   host=(parsed.hostname or '').rstrip('.')
+  except ValueError:return False
+  return host in access_gate.LOOPBACK or host in self.server.app.public_hosts
  def origin_allowed(self):
   origin=self.headers.get('Origin')
   return origin is None or origin in ('http://'+self.headers.get('Host',''),'https://'+self.headers.get('Host',''))
@@ -231,7 +252,7 @@ if __name__=='__main__':
  p.add_argument('--site',choices=['all','game'],default='all',help='game: as deployed')
  p.add_argument('--public',action='store_true',help='the game open to anyone with no password (needs --site game); its chat and trials are rationed')
  a=p.parse_args()
- server=Server((a.host,a.port),a.native.resolve(strict=True),a.logs,password=os.environ.get('BANJO_PASSWORD'),public_host=os.environ.get('BANJO_PUBLIC_HOST'),site=a.site,public=a.public)
+ server=Server((a.host,a.port),a.native.resolve(strict=True),a.logs,password=os.environ.get('BANJO_PASSWORD'),public_host=os.environ.get('BANJO_PUBLIC_HOST'),public_hosts=os.environ.get('BANJO_PUBLIC_HOSTS'),site=a.site,public=a.public)
  print(f'Banjo http://127.0.0.1:{a.port}/play',flush=True)
  try:server.serve_forever()
  finally:

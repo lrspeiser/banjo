@@ -31,7 +31,8 @@ COPY --from=build /out/bin /app/bin
 ARG RENDER_GIT_COMMIT
 RUN python3 -c "import json,sys; json.dump({'revision': sys.argv[1] or None}, open('/app/bin/build-receipt.json', 'w'))" "${RENDER_GIT_COMMIT}"
 ENV PYTHONUNBUFFERED=1 \
-    BANJO_MACHINE_SESSIONS=10
+    BANJO_MACHINE_SESSIONS=10 \
+    BANJO_PUBLIC_HOSTS=banjo.is,www.banjo.is,banjo-f1sv.onrender.com
 EXPOSE 8080
 # On the port a host hands it in PORT -- Render sets one -- or else 8080.
 # --site game: the levels, the free build and the sandbox they are built on.

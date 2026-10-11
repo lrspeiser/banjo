@@ -50,12 +50,23 @@ players' feedback, under `/data/machine-logs`. Without a persistent disk at
   Command* empty so the image's own command runs.
 - **Environment:** `OPENAI_API_KEY` as a secret, for the chat; without it the
   chat says it is not available and the rest works. `OPENAI_MODEL` changes the
-  model from `gpt-5-mini`. `BANJO_PUBLIC_HOST` is the site's hostname
-  (`banjo-f1sv.onrender.com`): the server answers only to that name and to
-  localhost, so another site's page cannot drive it.
+  model from `gpt-5-mini`. `BANJO_PUBLIC_HOST` accepts the existing single
+  hostname setting. `BANJO_PUBLIC_HOSTS` adds a comma-separated list of exact
+  hostnames; the image defaults to `banjo.is,www.banjo.is,banjo-f1sv.onrender.com`.
+  Both settings are combined, so the existing Render environment need not change.
+  Other hostnames are refused; API requests still require their Origin to match
+  the request's own Host. Allowing aliases does not allow cross-origin requests
+  between them. Render redirects `www.banjo.is` to `banjo.is`.
 - **Health check path:** none is set, so Render waits for the port to open.
   `/play` would do; `/login` would not, since a public server has no login.
 - **Instance:** one CPU and 2 GB (`1c-2g`), with no persistent disk.
+
+The custom-domain fix was checked on October 11, 2026 with six HTTP regressions
+(`tests/machine_host_tests.py`, also registered with CTest): pages, assets and
+same-origin game API calls accept each configured alias; unrelated, malformed,
+duplicate and spoofed Host headers are refused. An allowed alias does not grant
+another origin API access. Existing browser checks for placing, running and
+sharing a machine also passed. This changes HTTP routing only, not the engine.
 
 ## Checking an image before deploying
 
