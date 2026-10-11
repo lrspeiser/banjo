@@ -306,8 +306,8 @@ function positionPowerLabels() {
   const clock = $('clock').getBoundingClientRect();
   const top = Math.max(8, clock.bottom - rect.top + 8);
   const status = $('power-status');
-  const bottom = rect.height - (status.hidden ? 10 : status.offsetHeight + 18);
-  const occupied = ['scene-tray','scene-actions','move-pad','machine-controls','preview-legend','edit-guide-label']
+  const bottom = status.hidden ? rect.height - 10 : status.getBoundingClientRect().top - rect.top - 8;
+  const occupied = ['scene-mode','scene-tray','scene-actions','move-pad','machine-controls','preview-legend','edit-guide-label']
     .map(id => $(id)).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !(pickedPowerPort && el.id === 'preview-legend'))
     .map(el => { const r = el.getBoundingClientRect(); return {x:r.left - rect.left,y:r.top - rect.top,w:r.width,h:r.height}; });
   // Place the larger meters first, then fit receiver buttons beside them.
@@ -1115,8 +1115,8 @@ const PAD = [['forward', '↑', 'Move it away from you'], ['left', '←', 'Move 
              ['back', '↓', 'Move it toward you'], ['up', '▲', 'Raise it'], ['down', '▼', 'Lower it']];
 let padAxes = '';
 // Looking around while a piece is placed: every drag and tap turns the view
-// and none moves the piece (the arrows still do). The switch in the middle
-// of the arrows, or Esc, goes back and forth; a new piece starts in the hand.
+// and none moves the piece (the arrows still do). View and Move in the
+// scene's corner, or Esc, goes back and forth; a new piece starts in Move.
 let looking = false;
 function setLooking(on) {
   looking = Boolean(on && ghost);
@@ -1128,6 +1128,9 @@ function setLooking(on) {
 function renderMovePad() {
   const pad = $('move-pad');
   pad.hidden = !LEVEL_MODE || !ghost;
+  $('scene-mode').hidden = pad.hidden;
+  $('mode-view').setAttribute('aria-pressed', String(looking));
+  $('mode-move').setAttribute('aria-pressed', String(!looking));
   padAxes = '';
   if (pad.hidden) { pad.replaceChildren(); return; }
   const high = heightKnobs(ghost.p).length > 0;
@@ -1135,11 +1138,11 @@ function renderMovePad() {
     const b = holdButton(glyph, () => moveGhostBy(dir, MOVE_STEP_M), {ariaLabel: say, title: say});
     b.dataset.dir = dir;
     return b;
-  }), button(looking ? '👁' : '✋', () => setLooking(!looking), {
-    className: 'mode', ariaLabel: looking ? 'Looking around: press to move the piece' : 'Moving the piece: press to look around',
-    title: looking ? 'Looking around (Esc): press to move the piece again' : 'Moving the piece (Esc): press to look around'}));
+  }));
   syncMovePad();
 }
+$('mode-view').addEventListener('click', () => setLooking(true));
+$('mode-move').addEventListener('click', () => setLooking(false));
 function syncMovePad() {
   const pad = $('move-pad');
   if (pad.hidden) return;
@@ -1286,7 +1289,7 @@ function updateEditGuide() {
   const x = (screen.x + 1) * view.clientWidth / 2 + 14, y = (1 - screen.y) * view.clientHeight / 2 + 16;
   // A wrapped toolbar can fill a short phone scene. Try spaces beside the
   // piece and the controls, rather than forcing the caption below every row.
-  const obstacles = [...view.querySelectorAll('#clock, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
+  const obstacles = [...view.querySelectorAll('#clock, #scene-mode, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
     .filter(e => e.offsetWidth && e.offsetHeight).map(e => e.getBoundingClientRect());
   let best = null;
   for (const [cx, cy] of [[x, y], [x, y - height - 40], [x - width - 30, y], [8, maxY], [maxX, maxY], [maxX, minY]]) {

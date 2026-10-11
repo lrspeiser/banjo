@@ -1244,6 +1244,29 @@ class Puzzles(unittest.TestCase):
         self.press('Energy details')
         self.assertTrue(self.js("document.getElementById('level-done-energy').hidden"))
 
+    def test_view_move_buttons_stay_in_the_scene_corner_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390),(320,568)):
+            with self.subTest(viewport=(width,height)):
+                self.open('cut',width,height,phone=width!=1280)
+                self.press('Add a knife'); p0=self.ghost()['p']
+                self.assertEqual(self.js("document.getElementById('mode-move').getAttribute('aria-pressed')"),'true')
+                self.assertEqual(self.js("document.querySelectorAll('#move-pad .mode').length"),0)
+                geometry=self.js("(() => {const r=document.getElementById('scene-mode').getBoundingClientRect(),v=document.getElementById('view').getBoundingClientRect();return {left:r.left-v.left,bottom:v.bottom-r.bottom,right:r.right<=v.right,top:r.top>=v.top};})()")
+                self.assertEqual(geometry,{'left':10,'bottom':10,'right':True,'top':True})
+                if width!=1280: self.click_visible('Help')
+                self.click_visible('View')
+                self.assertIn('looking',self.js("document.getElementById('view').className"))
+                self.assertEqual(self.js("document.getElementById('mode-view').getAttribute('aria-pressed')"),'true')
+                self.assertEqual(self.ghost()['p'],p0)
+                self.click_visible('Move')
+                self.assertNotIn('looking',self.js("document.getElementById('view').className"))
+                self.assertEqual(self.js("document.getElementById('mode-view').getAttribute('aria-pressed')"),'false')
+                self.assertEqual(self.ghost()['p'],p0)
+                self.key('Escape')
+                self.assertEqual(self.js("document.getElementById('mode-view').getAttribute('aria-pressed')"),'true')
+                self.click_visible('Move'); self.press('Cancel')
+                self.assertTrue(self.js("document.getElementById('scene-mode').hidden"))
+
     def test_the_eye_looks_around_without_moving_the_piece_and_esc_goes_back_to_the_hand(self):
         # Level 2's knife fills much of the view: in the hand, a drag across it
         # moves it; with the eye, the same drag turns the view and leaves it.
@@ -1261,7 +1284,7 @@ class Puzzles(unittest.TestCase):
                                                             'button': 'left', 'buttons': 1})
                 time.sleep(0.03)
             self.mouse('mouseReleased', x + 96, y)
-        self.press('Moving the piece: press to look around')
+        self.click_visible('View')
         self.assertIn('looking', self.js("document.getElementById('view').className"))
         turned = self.js('window.machineCamera().azimuth')
         drag()

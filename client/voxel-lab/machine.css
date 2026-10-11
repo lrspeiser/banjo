@@ -107,7 +107,12 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 .move-pad [data-dir=back]{grid-area:3/2}
 .move-pad [data-dir=up]{grid-area:1/3}
 .move-pad [data-dir=down]{grid-area:3/3}
-.move-pad .mode{grid-area:2/2;border-color:#e7f2f8;font-size:19px}
+.scene-mode{position:absolute;left:10px;bottom:10px;z-index:5;display:flex;gap:2px;padding:3px;background:#142836f2;border:1px solid #63899d;border-radius:8px;box-shadow:0 2px 8px #0006}
+.scene-mode button{min-width:64px;min-height:44px;padding:6px 10px;border:1px solid transparent;border-radius:5px;background:transparent;color:#e7f2f8;font:14px system-ui;cursor:pointer;touch-action:manipulation}
+.scene-mode button[aria-pressed=true]{background:#294c60;border-color:#9fdcff;box-shadow:inset 0 -3px #9fdcff;font-weight:600}
+.scene-mode button:focus-visible{outline:3px solid #fff;outline-offset:1px}
+#view:has(.scene-mode:not([hidden])) .power-status{bottom:72px}
+#view:has(.power-status:not([hidden])) #scene-note{display:none}
 #view.looking canvas{cursor:grab}
 .scene-tray small{font-weight:400;font-size:12px;opacity:.85}
 #placed button[aria-pressed="true"]{outline:2px solid #5fe08f}
@@ -351,7 +356,7 @@ aside{scroll-padding-top:min(var(--control-height,0px),calc(100% - 56px))}
   .control-panel .ghost-bar>.head{font-size:12px}
   .control-panel .ghost-bar .chips button{padding:4px 8px}
   .control-panel .ghost-bar>.head{display:none}
-  .control-panel .ghost-bar>.move-pad{grid-column:1/-1;grid-row:3;grid-template-columns:repeat(7,44px);grid-template-rows:44px;gap:3px}
+  .control-panel .ghost-bar>.move-pad{grid-column:1/-1;grid-row:3;grid-template-columns:repeat(6,44px);grid-template-rows:44px;gap:3px}
   .control-panel .move-pad button{grid-area:auto}
   .control-panel .ghost-bar>.knob-row{grid-column:1;grid-row:4}
   .control-panel .ghost-bar .knob-row output{display:none}
@@ -378,7 +383,7 @@ body.phone-panels #phone-tools{margin:0;border-top:1px solid #4e7287}
 body.phone-panels #control-panel:has(.ghost-bar:not([hidden]))>.scene-tray{display:none}
 body.phone-panels .control-panel .ghost-bar{gap:4px}
 body.phone-panels .control-panel .ghost-bar>.head{display:none}
-body.phone-panels .control-panel .ghost-bar>.move-pad{grid-column:1/-1;grid-row:3;grid-template-columns:repeat(7,44px);grid-template-rows:44px;gap:2px}
+body.phone-panels .control-panel .ghost-bar>.move-pad{grid-column:1/-1;grid-row:3;grid-template-columns:repeat(6,44px);grid-template-rows:44px;gap:2px}
 body.phone-panels .control-panel .move-pad button{grid-area:auto}
 body.phone-panels .control-panel .ghost-bar>.knob-row{grid-column:1;grid-row:4}
 body.phone-panels .control-panel .ghost-bar .knob-row output{display:none}
