@@ -883,12 +883,85 @@ void compoundObstaclesPreserveGapsAndInvalidateGeometry() {
     require(!std::isfinite(water.obstacles()[column]),"held union leaves no obstacle");
 }
 
+// A horizontal river drives an undershot wheel by the ordinary surface law.
+// No force depends on its name. This is an instantaneous coupling oracle;
+// the game regression separately advances the real hinge and useful load.
+void currentDrivesImmersedPaddlesAndReturnsTheirDragOnce() {
+    using namespace banjo;
+    constexpr double pi = 3.14159265358979323846;
+    Grid grid{80, 50, .1, -4, -2.5};
+    ShallowWater water(grid, std::vector<double>(grid.cells(), 0));
+    for (int j = 0; j < grid.nz; ++j)
+        for (int i = 0; i < grid.nx; ++i)
+            if (std::abs(grid.zOf(j)) <= .30 + 1e-12) {
+                water.setDepth(grid.at(i, j), 1.0);
+                water.setDischarge(grid.at(i, j), 1.0, 0.0);
+            }
+    water.resetLedger();
+    const double q = std::sqrt(.5);
+    std::vector<CompoundWaterPart> parts{
+        {{PrimitiveKind::Cylinder,.02,{.06,.55,.06}},{0,0,.25},{q,q,0,0}},
+        {{PrimitiveKind::Cylinder,.02,{.22,.36,.22}},{},{q,q,0,0}}};
+    for (int paddle = 0; paddle < 8; ++paddle) {
+        const double angle = 2 * pi * paddle / 8;
+        parts.push_back({{PrimitiveKind::Box,.02,{.30,.03,.36}},
+                         {.25 * std::cos(angle), .25 * std::sin(angle), 0},
+                         {std::cos(angle / 2),0,0,std::sin(angle / 2)}});
+    }
+    WaterCoupling coupling;
+    BodyInWater wheel;
+    wheel.name = "an ordinary compound";
+    wheel.shape = BodyInWater::Shape::Compound;
+    wheel.parts_local = &parts;
+    wheel.com_m = {0, 1.30, 0};
+    wheel.dimensions_m = {.8,.8,.6};
+    // The divergence theorem measures the closed union's volume, excluding
+    // overlapped faces; the comparative masses follow density and geometry.
+    for (const auto &patch : coupling.patchesOf(wheel)) {
+        const Vec3 centre = .25 * (patch.corner[0] + patch.corner[1] + patch.corner[2] + patch.corner[3]);
+        wheel.volume_m3 += dot(centre, patch.normal) * patch.area / 3;
+    }
+    require(wheel.volume_m3 > 0, "the wheel has measured solid volume");
+    std::vector<Reaction> reactions;
+    double reference = 0;
+    for (const auto &[name, density] : std::vector<std::pair<std::string,double>>{
+             {"glass",2500},{"oak",700},{"iron",7870}}) {
+        wheel.density_kg_m3 = density;
+        wheel.mass_kg = density * wheel.volume_m3;
+        const auto force = coupling.forces(water, {wheel}, reactions);
+        require(force.size() == 1, "immersed paddles receive one body force");
+        require(force[0].torque_n_m.z > .2, "downstream flow overcomes the declared .2 Nm bearing");
+        Vec3 returned{};
+        for (const auto &reaction : reactions) returned += Vec3{reaction.fx_n,0,reaction.fz_n};
+        near(returned.x, force[0].drag_n.x, 1e-9, "every horizontal newton is returned once");
+        near(returned.z, force[0].drag_n.z, 1e-9, "every lateral newton is returned once");
+        if (!reference) reference = force[0].torque_n_m.z;
+        near(force[0].torque_n_m.z, reference, 1e-10, "same wet geometry and speed have the same water torque");
+        std::cout << "    " << name << ": mass " << wheel.mass_kg << " kg, current torque "
+                  << force[0].torque_n_m.z << " Nm, drag " << force[0].drag_n.x
+                  << " N, returned-force residual " << returned.x - force[0].drag_n.x << " N\n";
+    }
+    wheel.angular_velocity_rad_s = {0,0,2}; // chosen probe state, not a velocity assignment in a run
+    const auto moving = coupling.forces(water, {wheel}, reactions);
+    require(moving.size() == 1 && moving[0].torque_n_m.z < reference,
+            "paddles moving with the stream reduce their relative-current torque");
+    require(moving[0].drag_power_w > 0, "drag does positive work on the turning wheel");
+    wheel.angular_velocity_rad_s = {};
+    for (std::size_t cell = 0; cell < grid.cells(); ++cell) water.setDischarge(cell, 0, 0);
+    const auto still = coupling.forces(water, {wheel}, reactions);
+    near(still[0].torque_n_m.z, 0, 1e-9, "still water supplies no driving torque");
+    near(length(still[0].drag_n), 0, 1e-9, "still water supplies no drag to a still wheel");
+    wheel.com_m.z = 1.5;
+    require(coupling.forces(water, {wheel}, reactions).empty(), "a wheel beside the river is dry");
+}
+
 } // namespace
 
 int main() {
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
         {"compounds use their closed union and return drag once", compoundsUseTheirClosedUnionAndReturnDragOnce},
         {"compound obstacles preserve gaps and invalidate geometry", compoundObstaclesPreserveGapsAndInvalidateGeometry},
+        {"current drives immersed paddles and returns their drag once", currentDrivesImmersedPaddlesAndReturnsTheirDragOnce},
         {"a lake at rest stays exactly at rest", aLakeAtRestStaysExactlyAtRest},
         {"a finite spout debits only accepted parcels and closes ledgers",finiteSpoutDebitsOnlyAcceptedParcelsAndClosesLedgers},
         {"a closed basin conserves water", aClosedBasinConservesWater},

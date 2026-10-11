@@ -32,8 +32,8 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
-    def test_all_twenty_are_physical_reproducible_deep_copies(self):
-        self.assertEqual(len(families()), 20)
+    def test_all_twenty_one_are_physical_reproducible_deep_copies(self):
+        self.assertEqual(len(families()), 21)
         for family in families():
             with self.subTest(family=family['id']):
                 original = copy.deepcopy(family)

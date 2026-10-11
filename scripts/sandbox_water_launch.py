@@ -13,9 +13,10 @@ def knob(lo, hi, step, default, label):
 
 
 TRAY = [
-    dict(piece='water_wheel', count=99, cost=0, across=False, turns=[], knobs={
+    dict(piece='water_wheel', count=99, cost=0, turns=[], knobs={
         'x_m': knob(-1.5, 1.5, .02, 0, 'along channel (m)'),
-        'radius_m': knob(.25, .4, .05, .4, 'wheel radius (m)'),
+        'z_m': knob(-1, 1, .02, 0, 'across river (m)'),
+        'radius_m': knob(.25, .65, .05, .4, 'wheel radius (m)'),
         'side': dict(choices=['left', 'right', 'off'], default='left', label='pour onto'),
         'load_part': dict(default='',part=True,label='drum load (optional)'),
         'discharge_l_s': knob(.5, 3, .5, 2, 'external supply (L/s)')}),
@@ -55,18 +56,18 @@ def water_wheel(name, k, ctx):
     side = k.get('side', 'left')
     r = float(k.get('radius_m', .4))
     ground=mw.compile_ground(ctx['spec']['ground'],[])
-    x,z=k.get('x_m',0),ground['trench_z_m']
+    x,z=k.get('x_m',0),ground['trench_z_m']+k.get('z_m',0)
     bed=mw.ground_height(ground,x,z)
     # A smaller wheel needs a higher clearance over the bed to keep its axle
     # out of the solid bank. Derive it from geometry, never clip its collider.
     clearance=max(.065,.055-bed-r)
     hub=bed+clearance+r
     fragment = dict(kits=[dict(kit='water_wheel', name=name, at_m=[k.get('x_m',0),0,0],
-        radius_m=r, clearance_m=clearance,paddle_width_m=.36, friction_n_m=.2,
+        radius_m=r, across_m=k.get('z_m',0), clearance_m=clearance,paddle_width_m=.36, friction_n_m=.2,
         pour=dict(side='-x' if side == 'left' else '+x', offset_m=r*.5,
                   discharge_l_s=k.get('discharge_l_s',2), until_s=6))]) if side != 'off' else dict(kits=[dict(
         kit='water_wheel', name=name, at_m=[k.get('x_m',0),0,0], radius_m=r,
-        clearance_m=clearance,paddle_width_m=.36, friction_n_m=.2)])
+        across_m=k.get('z_m',0), clearance_m=clearance,paddle_width_m=.36, friction_n_m=.2)])
     if side != 'off':
         sx=x+(-1 if side=='left' else 1)*r*.5
         mouth=hub+r+.5
@@ -81,7 +82,7 @@ def water_wheel(name, k, ctx):
         point=list(selected['at_m'])
         if selected['shape']=='box':point[1] += selected['size_m'][1]*.5
         fragment['joints'] = [dict(name=name+' load drum',kind='drum',drum=name,load=k['load_part'],
-            centre_m=[k.get('x_m',0),hub,ground['trench_z_m']+.45],axis=[0,0,1],radius_m=.04,
+            centre_m=[k.get('x_m',0),hub,z+.45],axis=[0,0,1],radius_m=.04,
             load_point_m=point,winds=1,spare_m=0)]
     return fragment
 
@@ -201,3 +202,32 @@ TEMPLATES.append(dict(id='finite-tank-wheel',name='One tank, one wheel',
     description='A finite four-litre source drives the wheel and runs dry. This uses a metered outlet, with conserved parcel volume.',
     base=copy.deepcopy(CHANNEL_BASE),placements=[dict(piece='water_wheel',side='off'),
         dict(piece='water_tank',x_m=-.2,height_m=1.1,fill_l=4,valve='open')]))
+
+# Boundary inflow supplies a real current along the channel; there is no
+# falling spout. The larger wheel puts its axle above the load's attachment.
+RIVER_BASE=copy.deepcopy(CHANNEL_BASE)
+RIVER_BASE['title']='River workbench'
+RIVER_BASE['ground']['discharge_m3_s']=.1
+RIVER_BASE['parts'] += [
+    _box('river gate guide',[-.09,.30,.45],[.08,.6,.08],'concrete',True),
+    _box('river gate',[-.25,.12,.45],[.10,.16,.08],'oak'),
+    _box('river gate foot',[-.25,.02,.45],[.14,.04,.14],'concrete',True)]
+RIVER_BASE['joints']=[dict(name='river gate slide',kind='slide',a='river gate guide',b='river gate',
+    at_m=[-.25,.12,.45],axis=[0,1,0],lower_m=0,upper_m=.14,friction_n=0)]
+RIVER_SOLUTION=dict(piece='water_wheel',x_m=0,z_m=0,radius_m=.65,side='off',load_part='river gate')
+TEMPLATES.append(dict(id='river-lift',name='River powers a lift',
+    description='The river current pushes immersed paddles. Its axle winds a rope to lift the gate; no falling-water supply.',
+    base=copy.deepcopy(RIVER_BASE),placements=[copy.deepcopy(RIVER_SOLUTION)]))
+TEMPLATES.append(dict(id='river-workbench',name='Build beside a river',
+    description='Add a water wheel in the current, then connect its drum load to the river gate. The flow enters upstream and leaves downstream.',
+    base=copy.deepcopy(RIVER_BASE),placements=[]))
+river_lesson=easy_level('easy-river-lift','21. River-powered lift',
+    'Place a wheel in the river current. Its axle must wind the rope and raise the gate eight centimetres.',
+    RIVER_BASE,'water_wheel',{k:v for k,v in RIVER_SOLUTION.items() if k!='piece'},
+    {'rose_m':{'part':'river gate','m':.08}},10)
+river_lesson['tray'][0]['knobs']['radius_m']['default']=.65
+river_lesson['tray'][0]['knobs']['side']['default']='off'
+river_lesson['tray'][0]['knobs']['load_part']['default']='river gate'
+river_lesson['par_energy_j']=593992292  # Measured nominal piece construction plus 1 kJ margin.
+river_lesson['wrong']=[dict(RIVER_SOLUTION,z_m=1)]
+EASY_LEVELS.append(river_lesson)

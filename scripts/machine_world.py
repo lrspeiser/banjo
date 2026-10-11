@@ -905,7 +905,8 @@ def _kit_water_wheel(k, problems, name):
         problems.append(name + ': a water wheel stands in the flume; declare ground {"kind": "flume", ...} first')
         return [], []
     at = _vec(k.get('at_m'), 3, name + ' at_m', problems)
-    x, z = at[0], ground['trench_z_m']
+    x = at[0]
+    z = ground['trench_z_m'] + _num(k, 'across_m', name, problems, 0, -1, 1)
     radius = _num(k, 'radius_m', name, problems, 0.4, 0.15, 1.5)
     count = int(_num(k, 'paddles', name, problems, 8, 3, 16))
     width = _num(k, 'paddle_width_m', name, problems, min(0.36, ground['trench_width_m'] - 0.14), 0.05, 2.0)
@@ -2302,7 +2303,7 @@ class MachineSession:
         if isinstance(reply.get('water'), dict):
             # The engine's own picture of the water: the box of wet columns,
             # each surface in millimetres above base_m.
-            self.water = {k: reply['water'].get(k) for k in ('t', 'box', 'base_m', 'surface_mm_b64', 'in_m3_s',
+            self.water = {k: reply['water'].get(k) for k in ('t', 'box', 'base_m', 'surface_mm_b64', 'flow_b64', 'in_m3_s',
                                                              'out_m3_s', 'volume_m3', 'wet_cells', 'residual_m3')}
             self.water_seq = self.seq
         if reply.get('cuts'):
@@ -2655,14 +2656,26 @@ class MachineSession:
             w, g = self.water, self.ground_view['grid']
             i0, j0, ni, nj = w['box']
             raw = base64.b64decode(w['surface_mm_b64'])
-            xyz = []
+            xyz, samples = [], []
+            flow = base64.b64decode(w.get('flow_b64') or '')
+            beds = list(struct.iter_unpack('<f', base64.b64decode(self.ground_view['heights_b64'])))
             for k, (mm,) in enumerate(struct.iter_unpack('<H', raw)):
                 if mm and ni:
                     xyz.extend([round(1000*(g['x0_m']+(i0+k%ni)*g['cell_m'])),
                                 round(1000*w['base_m'])+mm,
                                 round(1000*(g['z0_m']+(j0+k//ni)*g['cell_m']))])
+                    if 2*k+1 < len(flow):
+                        vx, vz = struct.unpack_from('bb', flow, 2*k)
+                        bed = beds[(j0+k//ni)*g['nx']+i0+k%ni][0]
+                        samples.append({'at_m':[v/1000 for v in xyz[-3:]],
+                                        'velocity_m_s':[round(vx*.05,2),round(vz*.05,2)],
+                                        'depth_m':round(max(0,w['base_m']+mm/1000-bed),4)})
             frame['surface'] = {'xyz_mm': subset_xyz(xyz, 512), 'cell_m': g['cell_m'],
                                 'wet_cells': len(xyz)//3, 't': w.get('t')}
+            # Match the client's bounded arrow budget; surface tiles keep
+            # their separate 512-cell sampling budget.
+            stride=max(1,math.ceil(len(samples)/96))
+            frame['surface']['flow_samples']=samples[::stride]
         if self.flow_trail and abs(self.flow_trail[-1]['t']-frame['t']) < 1e-6:
             self.flow_trail[-1] = frame
         else:

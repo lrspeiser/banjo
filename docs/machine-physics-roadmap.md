@@ -8,7 +8,16 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
-October 11 update: the sandbox exposes independent cards and twenty easy
+The river workbench and its easy lift lesson expose the existing shallow-water
+current coupling: immersed paddle surfaces receive pressure/relative-flow drag
+and torque, and the wheel winds a real drum rope. Current arrows use the native
+velocity grid. The measured oak example lifts its gate; equal-geometry glass
+and iron probes receive the same instantaneous water torque, but dense full
+fixtures still stall under the existing wake/obstacle heuristics. This is not a
+calibrated turbine model or a closed coupled energy audit. See
+[river measurements](sandbox-water-launch-measured.md#river-current-wheel).
+
+October 11 update: the sandbox exposes independent cards and twenty-one easy
 challenges for the guide's cutting, optics, mechanical, electrical, water and
 launch pieces. Explicit electrical terminal graphs support shared finite
 supplies, manual/paddle switches, bulbs, coils and motors. Fixed metered water

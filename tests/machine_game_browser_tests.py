@@ -49,6 +49,7 @@ class Puzzles(unittest.TestCase):
         cls.level_count = len(machine_game.load_levels())
         cls.template_count = len(machine_game.sandbox_templates())
         cls.piece_count = len([row for row in machine_game.free_build()['tray'] if not row.get('attach')])
+        cls.river_solution = dict(machine_game.sandbox_water_launch.RIVER_SOLUTION)
         # An engine still closing as the tests end holds its log open a moment.
         cls.logs = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         # The game site as deployed: open to anyone, nothing else served.
@@ -208,6 +209,79 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def place_river_wheel(self):
+        self.press('Add a water wheel');initial=self.ghost()['p']
+        self.assertEqual(initial['radius_m'],self.river_solution['radius_m'],'The river base must provide its usable wheel size before editing')
+        self.assertEqual(initial['side'],'off','The river wheel must start with its falling pour off')
+        for key,label in [('x_m','along channel (m)'),('z_m','across river (m)'),
+                          ('radius_m','wheel radius (m)'),('side','pour onto')]:
+            self.slide(f'{label} of your water_wheel 1',self.river_solution[key])
+        self.press('Change its drum load')
+        self.slide('drum load (optional) of your water_wheel 1','')
+        self.ghost()
+        self.assertEqual(self.js("document.querySelector('[aria-label=\"Its drum load\"]').value"),'')
+        self.slide('drum load (optional) of your water_wheel 1',self.river_solution['load_part'])
+        self.ghost()
+        self.assertEqual(self.js("document.querySelector('[aria-label=\"Its drum load\"]').value"),'river gate',
+                         'Changing the full connection selector must update the compact control')
+        self.assertTrue(self.ghost()['fits'])
+        self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+
+    def assert_measured_river_current(self):
+        self.wait('window.machineRiverState()?.visible && window.machineRiverState().arrows>0',20)
+        current=self.js('window.machineRiverState()')
+        self.assertTrue(current['hasCurrent'])
+        self.assertGreater(current['inflow_m3_s'],0)
+        self.assertTrue(current['samples'])
+        self.assertTrue(all(s['depth_m']>0 and len(s['velocity_m_s'])==2 for s in current['samples']))
+        self.assertTrue(any(s['velocity_m_s'][0]>0 for s in current['samples']),'Native downstream velocity supplies the visible arrows')
+
+    def test_river_workbench_places_a_useful_wheel_and_restores_its_saved_connections(self):
+        self.page.send('Emulation.setDeviceMetricsOverride',{'width':1280,'height':860,'deviceScaleFactor':1,'mobile':False})
+        self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':False})
+        self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+        self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",60)
+        self.press('Start from Build beside a river');self.wait(READY,60)
+        self.assertEqual(self.js('window.machinePlacements()'),[])
+        self.place_river_wheel()
+        setup=self.js('window.machinePlacements()')
+        base=self.js('window.machineDesign().draft.base')
+        initial=self.js("window.machineBodies()['river gate'][1]")
+        count=self.js('window.machineDesign().versions.length')
+        self.press('Save version');self.wait(f'window.machineDesign().versions.length==={count+1}',10)
+        self.click_visible('Run it');self.assert_measured_river_current()
+        self.wait(f"window.machineBodies()['river gate'][1]>={initial+.08}",30)
+        self.click_visible('Pause');self.click_visible('Set up again');self.wait(READY,60)
+        self.assertEqual(self.js('window.machineDesign().draft.base'),base)
+        self.assertEqual(self.js('window.machinePlacements()'),setup)
+        self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,60)
+        self.assertEqual(self.js('window.machinePlacements()'),setup)
+        self.assertEqual(self.js('window.machineDesign().draft.base'),base)
+        self.press('Remove your water_wheel 1');self.wait(f'window.machinePlacements().length===0 && {READY}',60)
+        self.press('Save version');self.wait(f'window.machineDesign().versions.length==={count+2}',10)
+        self.js(f"document.getElementById('design-versions').open=true;document.getElementById('version-pick').value='{count+1}'")
+        self.press('Restore version');self.wait(f'window.machinePlacements().length===1 && {READY}',60)
+        self.assertEqual(self.js('window.machinePlacements()'),setup)
+        self.assertEqual(self.js('window.machineDesign().draft.base'),base)
+        self.assertEqual(setup[0]['load_part'],'river gate')
+        self.press('All designs')
+        self.press('Start from Water turns a wheel');self.wait(READY,60)
+        self.press('Pick up your water_wheel 1');self.ghost()
+        normal=self.js("[Number(document.querySelector('[aria-label=\"wheel radius (m) of your water_wheel 1\"]').value),document.querySelector('[aria-label=\"pour onto of your water_wheel 1\"]').value]")
+        self.assertEqual(normal,[.4,'left'],'The dry pour example must restore its own visible tray defaults')
+        self.press('Cancel')
+
+    def test_river_lift_lesson_is_won_by_a_wheel_in_the_measured_current_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-river-lift',width,height,phone=width!=1280)
+                self.place_river_wheel()
+                initial=self.js("window.machineBodies()['river gate'][1]")
+                self.click_visible('Run it');self.assert_measured_river_current()
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                self.assertGreaterEqual(self.js("window.machineBodies()['river gate'][1]")-initial,.08)
+
     def test_tray_cards_live_at_the_add_controls_and_arrows_only_browse(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
@@ -673,7 +747,7 @@ class Puzzles(unittest.TestCase):
         self.page.send('Page.navigate', {'url': f'{self.base}/play'})
         self.wait("document.getElementById('levels-screen') && !document.getElementById('levels-screen').hidden", 60)
         self.press('Easy: learn a piece')
-        self.assertEqual(self.js("document.querySelectorAll('.ls-list li').length"), 20)
+        self.assertEqual(self.js("document.querySelectorAll('.ls-list li').length"), 21)
         self.press('Full chain reactions')
         self.assertEqual(self.js("document.querySelectorAll('.ls-list li').length"), 8)
         self.press('All challenges')

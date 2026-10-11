@@ -40,7 +40,7 @@ SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, s
 EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel',
               'easy-spring', 'easy-gears', 'easy-weight', 'easy-motor', 'easy-power', 'easy-switch',
               'easy-bulb', 'easy-loop', 'easy-water-receiver', 'easy-heat', 'easy-catapult',
-              'easy-marble-light', 'easy-water-gate', 'easy-charge-lift']
+              'easy-marble-light', 'easy-water-gate', 'easy-charge-lift', 'easy-river-lift']
 
 ROOT = Path(__file__).resolve().parents[1]
 LEVELS_PATH = ROOT / 'client/voxel-lab/levels.json'
@@ -181,6 +181,11 @@ def requested_level(data):
             raise ValueError('Names starting with "your " are reserved for tray pieces')
         level['machine'] = copy.deepcopy(base)
         level['custom_base'] = True
+        if (base.get('ground') or {}).get('discharge_m3_s',0)>0:
+            wheel=next((t for t in level['tray'] if t['piece']=='water_wheel'),None)
+            if wheel:
+                wheel['knobs']['radius_m']['default']=.65
+                wheel['knobs']['side']['default']='off'
     return level
 
 

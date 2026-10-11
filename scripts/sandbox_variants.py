@@ -38,6 +38,7 @@ POLICIES = {
     'easy-marble-light': ('part', 'trigger marble', 'height_m', (.48, .51, .59, .62)),
     'easy-water-gate': ('piece', 'water_wheel', 'discharge_l_s', (1.5, 2.5, 3)),
     'easy-charge-lift': ('sun', None, 'elevation_deg', (14, 16, 18, 22)),
+    'easy-river-lift': ('ground', None, 'discharge_m3_s', (.095, .105, .11, .12)),
 }
 
 PARAMETER_LABELS = {
@@ -47,6 +48,7 @@ PARAMETER_LABELS = {
     'length_m': 'Lever length (m)', 'discharge_l_s': 'Water supply (L/s)',
     'voltage_v': 'Supply voltage (V)', 'fill_l': 'Starting water (L)',
     'cock_deg': 'Cock angle (degrees)',
+    'discharge_m3_s': 'River inflow (m³/s)',
 }
 
 
@@ -113,6 +115,8 @@ def construct(family_level, seed, *, attempt=0):
             for placement in result.get(answer, []):
                 if placement['piece'] == name:
                     placement[parameter] = value
+    elif kind == 'ground':
+        result['machine']['ground'][parameter] = value
     elif kind == 'sun':
         result['machine']['sun'][parameter] = value
         for placement in result['solution']:

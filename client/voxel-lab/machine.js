@@ -505,6 +505,7 @@ function placeSun() {
 
 // The ground the engine built: its own heights, one per column.
 let terrain = null, water = null, parcels = null;
+let riverFlow = null, riverState = null;
 // Poured water in the air: one small sphere per parcel the engine carries,
 // where the engine says it is (millimetres).
 function syncParcels(p) {
@@ -543,18 +544,61 @@ function syncGround(view) {
   terrain.position.set(g.x0_m + width / 2, 0, g.z0_m + depth / 2);
   scene.add(terrain);
   terrain.userData.grid = g;
+  terrain.userData.heights = heights;
+}
+// Static arrows show the current the engine measured in its wet cells. They
+// are indicators, not animated water parcels; their length is capped for
+// readability and is not a claim about displacement or energy.
+function waterCurrentArrows(samples, cell) {
+  const moving = samples.filter(s => Array.isArray(s.at_m) && s.at_m.length === 3 &&
+    s.at_m.every(Number.isFinite) && Array.isArray(s.velocity_m_s) && s.velocity_m_s.length === 2 &&
+    s.velocity_m_s.every(Number.isFinite) && Math.hypot(...s.velocity_m_s) > .025);
+  if (!moving.length) return null;
+  const coordinates = [], stride = Math.max(1, Math.ceil(moving.length / 96)), shown = [];
+  for (let k = 0; k < moving.length; k += stride) {
+    const sample = moving[k], [x,y,z] = sample.at_m, [vx,vz] = sample.velocity_m_s;
+    const speed = Math.hypot(vx,vz), ux = vx / speed, uz = vz / speed;
+    const length = Math.max(.06, Math.min(.18, cell * 1.4)), head = length * .32;
+    const a = [x - ux * length / 2,y + .008,z - uz * length / 2];
+    const b = [x + ux * length / 2,y + .008,z + uz * length / 2];
+    coordinates.push(...a,...b,...b,b[0]-ux*head-uz*head*.55,b[1],b[2]-uz*head+ux*head*.55,
+      ...b,b[0]-ux*head+uz*head*.55,b[1],b[2]-uz*head-ux*head*.55);
+    shown.push(sample);
+  }
+  const line = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position',
+    new THREE.Float32BufferAttribute(coordinates,3)),
+    new THREE.LineBasicMaterial({color:0xb8f4ff,transparent:true,opacity:.95,depthWrite:false}));
+  line.userData.samples = shown;
+  return line;
 }
 // The water: each wet column's surface, in millimetres above base_m.
 function syncWater(w) {
-  if (water) { scene.remove(water); water.geometry.dispose(); water = null; }
+  if (water) { scene.remove(water); water.geometry.dispose(); water.material.dispose(); water = null; }
+  if (riverFlow) { scene.remove(riverFlow); riverFlow.geometry.dispose(); riverFlow.material.dispose(); riverFlow = null; }
+  riverState = null;
   if (!w || !terrain || !w.box || !w.box[2] || !w.surface_mm_b64) return;
   const g = terrain.userData.grid, [i0, j0, ni, nj] = w.box;
   const bytes = Uint8Array.from(atob(w.surface_mm_b64), c => c.charCodeAt(0));
   const mm = new Uint16Array(bytes.buffer, 0, bytes.length / 2);
-  const wet = [];
+  // Native flow_b64 stores signed vx,vz pairs, each count representing
+  // 0.05 m/s and capped at +/-6.35 m/s (Environment::waterBox).
+  const flowBytes = w.flow_b64 ? Uint8Array.from(atob(w.flow_b64), c => c.charCodeAt(0)) : null;
+  const flow = flowBytes && flowBytes.length === 2 * ni * nj ? new Int8Array(flowBytes.buffer) : null;
+  const wet = [], samples = [];
+  let speedSum = 0, maxSpeed = 0, depthSum = 0, depthCount = 0, capped = false;
   for (let j = 0; j < nj; j++) for (let i = 0; i < ni; i++) {
-    const v = mm[j * ni + i];
-    if (v) wet.push([g.x0_m + (i0 + i) * g.cell_m, w.base_m + v / 1000, g.z0_m + (j0 + j) * g.cell_m]);
+    const k = j * ni + i, v = mm[k];
+    if (!v) continue;
+    const at = [g.x0_m + (i0 + i) * g.cell_m, w.base_m + v / 1000, g.z0_m + (j0 + j) * g.cell_m];
+    wet.push(at);
+    const bed = terrain.userData.heights[(j0+j)*g.nx+i0+i], depth = Math.max(0,at[1]-bed);
+    if (Number.isFinite(depth)) { depthSum += depth; depthCount++; }
+    if (flow) {
+      const velocity = [flow[2*k]*.05,flow[2*k+1]*.05], speed = Math.hypot(...velocity);
+      speedSum += speed; maxSpeed = Math.max(maxSpeed,speed);
+      capped ||= Math.abs(flow[2*k]) === 127 || Math.abs(flow[2*k+1]) === 127;
+      samples.push({at_m:at,velocity_m_s:velocity,depth_m:Number.isFinite(depth)?depth:null});
+    }
   }
   if (!wet.length) return;
   const tile = new THREE.PlaneGeometry(g.cell_m, g.cell_m);
@@ -563,7 +607,14 @@ function syncWater(w) {
   const m = new THREE.Matrix4();
   wet.forEach((p, k) => water.setMatrixAt(k, m.makeTranslation(p[0], p[1], p[2])));
   scene.add(water);
+  riverFlow = waterCurrentArrows(samples,g.cell_m);
+  if (riverFlow) scene.add(riverFlow);
+  riverState = {t:w.t,wetCells:wet.length,hasCurrent:Boolean(flow),meanSpeed_m_s:flow?speedSum/wet.length:null,
+    maxSpeed_m_s:flow?maxSpeed:null,meanDepth_m:depthCount?depthSum/depthCount:null,capped,
+    inflow_m3_s:w.in_m3_s,outflow_m3_s:w.out_m3_s,arrows:riverFlow?.userData.samples.length||0};
 }
+window.machineRiverState = () => riverState && {...riverState,visible:Boolean(riverFlow?.visible),
+  samples:(riverFlow?.userData.samples||[]).map(s=>({at_m:[...s.at_m],velocity_m_s:[...s.velocity_m_s],depth_m:s.depth_m}))};
 
 // Ropes and springs: a line between their two attachment points, each fixed
 // in its body's own frame and carried by that body's measured pose. Hidden
@@ -731,6 +782,11 @@ function renderReadings(frame) {
   updatePowerLabels();
   const dl = $('readings'); dl.replaceChildren();
   pair(dl, 'World time', describeTime(frame.t));
+  if (riverState) {
+    pair(dl,'Water flow',`${((riverState.inflow_m3_s||0)*1000).toFixed(2)} L/s in · ${((riverState.outflow_m3_s||0)*1000).toFixed(2)} L/s out`);
+    if (riverState.hasCurrent) pair(dl,'Water current',`${riverState.meanSpeed_m_s.toFixed(2)} m/s mean · ${riverState.capped?'at least ':''}${riverState.maxSpeed_m_s.toFixed(2)} m/s max · arrows show direction (0.05 m/s samples)`);
+    if (riverState.meanDepth_m!=null) pair(dl,'Water depth',`about ${riverState.meanDepth_m.toFixed(3)} m mean across ${riverState.wetCells} visible wet cells`);
+  }
   for (const c of readouts.circuits || []) {
     pair(dl, `${c.name}: switch`, c.closed === null ? 'always closed' : c.closed ? 'closed' : 'open');
     pair(dl, `${c.name}: current`, `${(c.current_a || 0).toFixed(2)} A` + (c.heats ? ` · ${(c.coil_w || 0).toFixed(0)} W into ${c.heats}` : '') +
@@ -1546,6 +1602,11 @@ async function checkGhost(g) {
 // the view meets the scene.
 function startGhost(p, index, keepPlace = false) {
   endGhost();
+  // Prebuilt/saved placements may omit default-valued knobs. Resolve them
+  // before editing so range controls and selectors show the compiled setup.
+  for (const [key, rule] of Object.entries(trayItem(p.piece).knobs)) {
+    if (p[key] == null) p[key] = knobDefault(rule);
+  }
   selectPhonePanel('controls');
   ghost = {p, index, was: index < placements.length ? placements[index] : null, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {}};
@@ -1641,7 +1702,9 @@ function renderGhostBar() {
   const key = ghost.card, rule = knobs[key], name = knobName(rule, key);
   const row = Object.assign(document.createElement('div'), {className: 'knob-row'});
   if (rule.part || rule.hinge || rule.terminal || rule.power_port) {
-    row.append(referenceControl(ghost.p, key, rule, () => { showGhostKnobs(); askGhost(); }));
+    const select = referenceControl(ghost.p, key, rule, () => { showGhostKnobs(); askGhost(); });
+    ghost.cardInput = [select, null, key];
+    row.append(select);
   } else if (rule.choices) {
     const select = document.createElement('select');
     for (const c of rule.choices) select.append(Object.assign(document.createElement('option'), {value: c, textContent: c}));
@@ -1652,6 +1715,7 @@ function renderGhostBar() {
       showGhostKnobs(); askGhost();
     });
     row.append(select);
+    ghost.cardInput = [select, null, key];
   } else {
     const step = rule.turning ? 15 : (rule.step || 0.01) * 5;
     const input = Object.assign(document.createElement('input'), {type: 'range', min: rule.min, max: rule.max,
@@ -1720,7 +1784,7 @@ function showGhostKnobs() {
   if (ghost.cardInput) {
     const [input, shown, key] = ghost.cardInput;
     if (String(input.value) !== String(ghost.p[key])) input.value = ghost.p[key];
-    shown.textContent = String(ghost.p[key]) + (knobs[key].turning ? '°' : '');
+    if (shown) shown.textContent = String(ghost.p[key]) + (knobs[key].turning ? '°' : '');
   }
 }
 
@@ -1791,6 +1855,8 @@ function drawFlowFrame(frame) {
     for (let i=0;i<mesh.count;i++) mesh.setMatrixAt(i,matrix.makeTranslation(...surface.xyz_mm.slice(i*3,i*3+3).map(v=>v/1000)));
     mesh.frustumCulled=false; flowGroup.add(mesh);
   }
+  const riverArrows = waterCurrentArrows(surface?.flow_samples || [],surface?.cell_m || .02);
+  if (riverArrows) flowGroup.add(riverArrows);
   for (const [i,w] of (frame.wires || []).entries()) {
     const pts = w.points_m.map(p=>new THREE.Vector3(...p));
     const electrical = shownElectrical();
@@ -1821,7 +1887,8 @@ function drawFlowFrame(frame) {
     glow.position.set(...d.at_m); flowGroup.add(glow); bulbs++;
   }
   flowGroup.userData.drawn={lightSegments:light.legs,waterPoints:water.length/3,
-    wetCells:surface?.xyz_mm?.length/3||0,wires:frame.wires.length,arrows,bulbs};
+    wetCells:surface?.xyz_mm?.length/3||0,wires:frame.wires.length,arrows,bulbs,
+    riverArrows:riverArrows?.userData.samples.length||0};
   const rows=[];
   if (frame.light.length) rows.push(`Light: ${frame.light.length} sampled rays`);
   const amps=(frame.wires||[]).filter(w=>w.unit==='A').map(w=>Math.abs(w.value));
@@ -1835,6 +1902,8 @@ function drawFlowFrame(frame) {
     rows.push(`Water: ${frame.water.poured_l.toFixed(2)} L released${frame.water.sources.some(s=>s.remaining_m3!=null)?`, ${left.toFixed(2)} L left`:''}`);
     if (frame.water.sources.length && frame.water.sources.every(s=>!s.valve_open)) rows.push('Water valves closed');
   }
+  const currents=(surface?.flow_samples||[]).map(s=>Math.hypot(...s.velocity_m_s)).filter(Number.isFinite);
+  if (currents.length) rows.push(`Water current: up to ${Math.max(...currents).toFixed(2)} m/s · arrows show direction (0.05 m/s samples)`);
   $('flow-readings').textContent=rows.join(' · ');
 }
 
@@ -1845,6 +1914,7 @@ function updateFlowPreview() {
   if (beams) beams.visible=visible?false:Boolean(readouts.light?.paths?.length);
   if (parcels) parcels.visible=!visible;
   if (water) water.visible=!visible;
+  if (riverFlow) riverFlow.visible=!visible;
   const now=performance.now();
   if (!visible) {flowTick=now;return;}
   const end=frames[frames.length-1].t;
@@ -1854,7 +1924,8 @@ function updateFlowPreview() {
   let index=0;
   while (index+1<frames.length && frames[index+1].t<=flowTime) index++;
   if (index!==flowIndex) {flowIndex=index;drawFlowFrame(frames[index]);}
-  $('flow-summary').textContent=`Flow preview · ${describeTime(frames[index].t)}${previewShown.complete?'':' · incomplete'}`;
+  const currents=(frames[index].surface?.flow_samples||[]).map(s=>Math.hypot(...s.velocity_m_s)).filter(Number.isFinite);
+  $('flow-summary').textContent=`Flow preview · ${describeTime(frames[index].t)}${currents.length?` · Current up to ${Math.max(...currents).toFixed(2)} m/s`:''}${previewShown.complete?'':' · incomplete'}`;
   $('flow-time').max=String(end); $('flow-time').value=String(flowTime);
   $('flow-play').textContent=flowPlaying?'Pause preview':'Play preview';
   $('flow-play').setAttribute('aria-pressed',String(flowPlaying));
@@ -1982,6 +2053,7 @@ function showPreviewLegend(r, colourOf) {
   const frames=r.flow_frames || [], keys=[];
   if (frames.some(f=>f.light.length)) keys.push(chip(0xff8cdc,'light preview'));
   if (frames.some(f=>f.water || f.surface)) keys.push(chip(0x62cfff,'water preview'));
+  if (frames.some(f=>f.surface?.flow_samples?.some(s=>Math.hypot(...s.velocity_m_s)>.025))) keys.push(chip(0xb8f4ff,'river current'));
   if (frames.some(f=>f.wires.length)) keys.push(chip(0xffe066,'current preview'));
   row.prepend(...keys); box.append(row);
 }
@@ -2472,7 +2544,7 @@ const PIECE_INFO = {
   wire: ['electrics', 'Connect two terminals. Crossed wires stay separate.'],
   power_cable: ['electrics', 'Click a solar output, then a winch or battery input. A two-conductor lead carries collected power.'],
   ignition: ['electrics', 'A wired heating coil attached to a material target.'],
-  water_wheel: ['water', 'Falling water pushes a wheel in a collection channel. Open its example to start.'],
+  water_wheel: ['water', 'River current or falling water pushes the paddles. Connect its drum to lift a load.'],
   water_tank: ['water', 'A fixed finite water supply with a metered outlet and valve. Open its channel example.'],
   catapult: ['motion', 'A counterweight turns a cradle that launches through physical contact.']
 };
@@ -2977,6 +3049,12 @@ async function rebuildLevel(start) {
   try {
     const opened = await build(null, false, {op: 'level_open', level: level.id, ...sandboxRequest(), placements, helped});
     if (opened.session !== session) return;
+    // The chosen sandbox environment can supply appropriate tray defaults:
+    // a river wheel starts without the separate falling-water feed.
+    if (level.free && opened.level?.tray) {
+      level.tray = opened.level.tray;
+      renderTray();
+    }
     placedCost = (opened.placements || []).map(p => p.cost);
     placedEnergy = opened.energy || {};
     renderPlaced();
@@ -3222,7 +3300,7 @@ async function chooseLevel(id, design = null) {
   if ($('piece-picker').open) $('piece-picker').close();
   document.querySelector('main').hidden = false;
   keepBuild(); showSandboxScreen(false); showLevelsScreen(false);
-  level = id === 'free' && freeLevel ? freeLevel : levels.find(l => l.id === id) || (generatedLevel?.id === id ? generatedLevel : levels[0]);
+  level = id === 'free' && freeLevel ? {...freeLevel} : levels.find(l => l.id === id) || (generatedLevel?.id === id ? generatedLevel : levels[0]);
   $('phone-design-tab').textContent = level.free ? 'Design' : 'Level';
   selectPhonePanel('controls');
   if (level.variant) {

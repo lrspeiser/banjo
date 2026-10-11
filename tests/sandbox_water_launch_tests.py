@@ -44,7 +44,7 @@ class WaterLaunchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'channel base'):
                 sw.PIECES[piece]('dry',{},dict(spec=sw.DRY_BASE))
 
-    def test_four_easy_solutions_win_in_three_nudged_runs(self):
+    def test_each_easy_solution_wins_in_three_nudged_runs(self):
         for level in sw.EASY_LEVELS:
             for seed in range(3):
                 with self.subTest(level=level['id'],seed=seed):
@@ -166,7 +166,7 @@ class WaterLaunchTests(unittest.TestCase):
                 finally:e.close()
 
     def test_every_offered_wheel_radius_clears_bank_and_feed_support(self):
-        for radius in (.25,.30,.35,.40):
+        for radius in (.25,.30,.35,.40,.45,.50,.55,.60,.65):
             level=mg.requested_level(dict(level='free',base=sw.CHANNEL_BASE))
             c=mw.compile_spec(mg.compose(level,[dict(piece='water_wheel',radius_m=radius)])[0])
             with tempfile.TemporaryDirectory() as td:
@@ -178,6 +178,56 @@ class WaterLaunchTests(unittest.TestCase):
                         peak=max(peak,abs(e.op(op='joints')['joints'][0]['degrees']))
                     self.assertGreater(peak,30,'The selected radius has a real usable axle and water contact')
                 finally:e.close()
+
+    def test_river_current_lifts_a_real_drum_load_without_a_pour(self):
+        level=next(l for l in sw.EASY_LEVELS if l['id']=='easy-river-lift')
+        compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+        self.assertEqual(compiled['spouts'],[],'The boundary current supplies this wheel, not a falling pour')
+        drum=next(j for j in compiled['joints'] if j['kind']=='drum')
+        self.assertEqual((drum['drum'],drum['load']),('your water_wheel 1','river gate'))
+        self.assertGreater(drum['centre_m'][1],drum['load_point_m'][1]+.08)
+        with tempfile.TemporaryDirectory() as td:
+            e,j,_=mw.build_engine(ENGINE,compiled,td)
+            started=time.perf_counter()
+            try:
+                initial=next(b for b in e.first['bodies'] if b['name']=='river gate')['position_m'][1]
+                rise=angle=wound=tension=0
+                for _ in range(200):
+                    r=e.op(op='step',dt=.002,n=25,moved=False)
+                    gate=next(b for b in r['bodies'] if b['name']=='river gate')
+                    rise=max(rise,gate['position_m'][1]-initial)
+                    joints=e.op(op='joints')['joints']
+                    hinge=next(row for row in joints if row['id']==j['your water_wheel 1 hinge'])
+                    angle=max(angle,hinge['degrees'])
+                    rope=next(row for row in joints if row['id']==j['your water_wheel 1 load drum'])
+                    wound=max(wound,rope['wound_m']);tension=max(tension,rope['tension_n'])
+                    if r.get('water'):self.assertLess(abs(r['water']['residual_m3']),1e-8)
+                self.assertGreaterEqual(rise,.08,'The river must do useful work on the real guided gate')
+                self.assertGreater(angle,0,'The real axle must turn in its winding direction')
+                self.assertGreater(wound,0,'The angled rope must actually wind onto the drum')
+                self.assertGreater(tension,0,'The rope must apply measured tension to the load')
+                print('\n river lift: rise',rise,'m; wheel',angle,'deg; wound',wound,'m; tension',tension,'N; 2ms rigid /10cm fluid; wall',time.perf_counter()-started,'s')
+            finally:e.close()
+        for label,changes in [('no rope',dict(load_part='')),('on bank',dict(z_m=1))]:
+            p=copy.deepcopy(level['solution']);p[0].update(changes)
+            r=self.run_level(level,p)
+            self.assertIsNone(r['error'])
+            self.assertFalse(r['stations'][0]['done'],label)
+        dry=copy.deepcopy(level);dry['machine']['ground']['discharge_m3_s']=0
+        r=self.run_level(dry,dry['solution'])
+        self.assertIsNone(r['error'])
+        self.assertFalse(r['stations'][0]['done'],'A dry channel has no source of lifting work')
+
+    def test_river_lesson_discharge_presets_win_without_changing_goal(self):
+        source=next(l for l in sw.EASY_LEVELS if l['id']=='easy-river-lift')
+        for discharge in (.095,.105,.11,.12):
+            level=copy.deepcopy(source);level['machine']['ground']['discharge_m3_s']=discharge
+            for seed in range(3):
+                with self.subTest(discharge=discharge,seed=seed):
+                    r=self.run_level(level,level['solution'],seed)
+                    self.assertIsNone(r['error'])
+                    self.assertTrue(r['stations'][0]['done'],r)
+                    print('\n river discharge',discharge,'seed',seed,'wins',r['stations'][0]['at_s'],'s; wall',r['wall_s'],'s')
 
 
 if __name__=='__main__':unittest.main()

@@ -16,10 +16,10 @@ water-turbine or real-world catapult predictions.
 ## What a player can build
 
 **Water wheel:** a real supported eight-paddle wheel in an explicitly chosen
-flume. Radius 25–40 cm, location along the channel, left/right/off external
+flume. Radius 25–65 cm, location along/across the channel, left/right/off external
 pour, and 0.5–3 L/s metered supply. A bridge carries the feed over the wheel
 from a grounded bank post. Clearance adapts to radius so the axle stays at
-least 55 mm above the bank; all four offered radii have compose-and-run
+least 55 mm above the bank; all nine offered radii have compose-and-run
 regressions. The optional Load part control connects a drum rope to an
 existing part using its geometry, as in the gate example. The spout is an externally supplied demonstration,
 limited to six seconds; choosing Off removes its feed and lets another tank
@@ -141,7 +141,101 @@ worker queues, source receipts and all three projectile materials at two
 timesteps. `tests/water_tests.cpp` covers accepted-plan debit and complete
 falling-parcel ledger closure with a fixed source and receiver.
 
-Final integration verification: all eight Python water/launch tests pass in
+## River-current wheel
+
+The two new sandbox designs are **Build beside a river** (no wheel placed)
+and **River powers a lift** (connected example). Easy 21 asks the player to
+place a wheel in the current and raise the guided gate 8 cm within 10 s.
+The base is a 6 m by 4 m grid: 10 cm fluid columns, a 60 cm-wide trench,
+35 cm depth, 0.005 bed slope, 100 L/s west-boundary inflow and east outflow.
+It starts dry. The water initially entering the scene is an external supply;
+there is no infinite local tank or invisible falling spout.
+
+The default oak wheel has a 65 cm radius, eight paddles, 36 cm paddle width,
+6.5 cm bed clearance and 0.2 N m bearing friction. Its axle is about 35 cm
+above the bank datum; a 4 cm drum winds the rope attached to the offset gate's
+top. The load slides vertically on its existing physical guide. Its goal,
+deadline and tolerances were not reduced to pass; geometry must keep the
+target below the drum's lower rope departure. Moving the wheel onto the bank
+removes its wetted paddles and cannot lift the load.
+
+The existing `WaterCoupling` integrates pressure and relative-flow drag over
+wetted surfaces, applies force and torque at their actual locations, and returns
+horizontal drag impulse to the water. Drag coefficients Cd = 1 and Cf = 0.01
+are declared game parameters, not turbine calibration. The new native surface
+regression uses identical geometry for glass, oak and iron in the same 1 m/s
+current: each receives 18.084 N drag and 6.3321 N m drive torque. The paired
+horizontal reaction residual is exactly zero in that oracle. Still water
+gives zero driving torque; a dry bank gives no wetted force; moving paddles
+with the current reduces relative-flow torque. This instantaneous oracle is
+not proof of full fluid/rigid conservation.
+
+Full native fixture measurements below use 2 cm solids, 10 cm fluid columns,
+10 s duration, 100 L/s, and 2 ms / 1 ms rigid steps. No chosen spin, assigned
+wheel velocity, material-name override or scripted gate displacement is used.
+
+| Wheel material | Native wheel mass (kg) | Final gate rise, 2 ms / 1 ms (m) | Whole rigid mechanical energy change, 2 ms / 1 ms (J) |
+|---|---:|---:|---:|
+| Glass | 194.76518 | 0 / 0 | −1.56e−11 / −1.56e−11 |
+| Oak | 54.53425 | 0.09796 / 0.09750 | +0.857881 / +0.853848 |
+| Iron | 613.12080 | 0 / 0 | −4.96e−11 / −4.96e−11 |
+
+The oak gate reaches 8 cm at 4.080 s at both timesteps; its potential-energy
+increase is 0.861045 / 0.857002 J. Glass and iron remain stationary. This
+comparison does not isolate inertia: the existing 10 cm coarse obstacle
+seal-gap rule and mass-scaled wake threshold (5% of weight/weight×half-size)
+also affect dense wheels. The playable catalogue wheel is oak; dense turbine
+behavior remains unvalidated and should not be claimed from a renamed preset.
+Wall times for the 10 s native runs were 0.41–1.87 s at 2 ms and 0.50–3.35 s at
+1 ms on this computer.
+
+For the 2 ms oak run: initial water 0 m³, inflow 0.999000 m³, outflow
+0.436081 m³, retained 0.562919 m³, volume residual −1.17e−14 m³. The maximum
+volume residual across material/flow controls is 2.54e−14 m³. Returned
+horizontal drag impulse is −67.5133 N s; this is a receipt, not a full momentum
+residual. Boundary hydraulic energy, Manning/contact losses, hydrostatic bed
+reaction, joint/support work and numerical corrections are not independently
+reconciled. The rigid energy changes above are measured changes, not closure
+residuals. River boundary work is not included in the game's existing energy
+score; the new authored par uses its measured construction cost plus 1 kJ.
+
+The game-step (1/240 s) solution and three nudged runs win at about 4.10 s.
+All four seeded flows (95, 105, 110, 120 L/s) win in three nudged runs, at
+4.383 / 3.85 / 3.65 / 3.35 s. Dry/no-flow, bank placement, absent wheel and
+absent drum connection fail for physical reasons. A full 10 s direct native
+probe winds 0.04275 m of rope and reaches a peak 0.10870 m gate rise; its peak
+constraint tension of 926.261 N is a solver/contact measurement, not a
+calibrated steady lifting force.
+
+Current arrows are static samples of the native velocity grid, quantized at
+0.05 m/s per axis and clipped at ±6.35 m/s. Surface heights are in millimetres;
+bed heights are float metres. Preview packets retain up to 96 current vectors
+and 512 surface tiles per frame; reported preview depth is rounded to 0.1 mm.
+These displays change with engine snapshots, not a cosmetic current animation.
+Saved versions keep the base's supply and the wheel/drum graph.
+
+Verification: the existing CMake target compiles the added native regression;
+`banjo_water_tests` passes 23/23. The full Python water/launch suite passes
+10/10, including all nine radii and the river load/negative controls. The game
+suite passes 40/40 and seeded recipe/preflight suite 8/8 on the verified
+integration executable. Native physics source is unchanged; executable SHA-256
+is `569a441595274e13128e1b8f06ff54d392232409b312d2089a77c2451315c976`.
+
+Final browser verification: the river workbench's save/reload/restore test and
+native lift lesson pass on desktop and both phone orientations. The battery
+carousel and both river tests pass together 3/3 in 30.635 s. The final broad
+suite passes 41/42 in 271.367 s, with one portrait solar input-click timeout.
+That unchanged test passes three isolated repetitions in 35.665 s, then three
+more after four preceding-state checks (7/7 in 47.236 s), without click retries
+or relaxed assertions. The intermittent click's cause remains unproven; this
+is a remaining QA limitation, not a fully green final broad run. Client geometry,
+JavaScript syntax, changed documentation links and source registration (269/269)
+pass. Manual portrait 390×844 and landscape 844×390 screenshots show the river
+and unobstructed scene controls.
+
+### Previous falling-water checkpoint
+
+Before the river addition, all eight Python water/launch tests passed in
 9.103 s. The existing native water suite passes 22/22, including the finite
 source and receiver-bound regression. A same-geometry three-second pour
 onto different wheel materials (2 ms rigid step, all other conditions held
