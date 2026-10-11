@@ -48,6 +48,16 @@ struct CircuitLightSwitch {
     int sense{};            // +1: closed at or above; -1: closed at or below
 };
 
+// A switch worked by contact: closed while two named bodies in the world touch
+// -- a contact on a lever pressed against a plate, a ball lying across two
+// rails. The host sets it from the contacts of the last step before each
+// solve; the circuit never moves anything. Which bodies can carry current is
+// the host's to say (docs/machine-circuits.md).
+struct CircuitContactSwitch {
+    std::string branch;
+    std::string a, b;
+};
+
 // One branch's Joule heat for one step, owed to a named world body.
 struct CircuitBodyHeat {
     std::string branch, body;
@@ -60,6 +70,7 @@ public:
     [[nodiscard]] const std::string &id() const { return id_; }
     [[nodiscard]] std::vector<CircuitHingeSwitch> hingeSwitches() const;
     [[nodiscard]] std::vector<CircuitLightSwitch> lightSwitches() const;
+    [[nodiscard]] std::vector<CircuitContactSwitch> contactSwitches() const;
     [[nodiscard]] std::vector<std::string> heatedBodies() const;
     [[nodiscard]] std::vector<CircuitBodyHeat> bodyHeat(const CircuitStep &step) const;
     // The world has no such body to warm this step (it burned away, say): the
@@ -101,6 +112,7 @@ private:
         int follow_sense{};
         std::string follow_sensor;        // follows_light: "" for a switch not worked by light
         double follow_w{};
+        std::string touch_a, touch_b;     // follows_contact: "" for a switch not worked by contact
     };
     std::string id_;
     unsigned store_{};

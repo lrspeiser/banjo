@@ -179,6 +179,10 @@ class Declaration(unittest.TestCase):
             ({'parts': [part('a', [.1, .1, .1], [0, .05, 0])], 'batteries': [{'name': 'b', 'in': 'a'}],
               'circuits': [{'name': 'c', 'battery': 'b', 'switch': {'hinge': 'none', 'closed_at_or_above_deg': 5},
                             'coil': {'heats': 'a', 'resistance_ohm': 1}}]}, 'hinge joint'),
+            ({'parts': [part('a', [.1, .1, .1], [0, .05, 0]), part('c', [.1, .1, .1], [.3, .05, 0])],
+              'batteries': [{'name': 'b', 'in': 'a'}],
+              'circuits': [{'name': 'c1', 'battery': 'b', 'switch': {'touch': ['a', 'c']},
+                            'coil': {'heats': 'a', 'resistance_ohm': 1}}]}, 'carries no current'),
             ({'parts': [part('a', [.01, .1, .1], [0, .05, 0])]}, 'at least one cell'),
             ({'kits': [{'kit': 'pendulum', 'name': 'p', 'pivot_m': [0, .5, 0], 'rope_m': .6}]}, 'hit the ground'),
             ({'kits': [{'kit': 'ramp', 'name': 'r', 'top_m': [0, .5, 0], 'bottom_m': [1, .2, .5]}]}, 'along x or z'),
@@ -264,6 +268,32 @@ class Engine(unittest.TestCase):
             r = mw.rehearse(compiled, ENGINE, Path(logs), seconds=3)
         self.assertTrue(r['stations'][0]['done'], r['events'])
         self.assertEqual(r['closest_approach'], [])
+
+    @need_engine
+    def test_a_contact_switch_closes_as_its_metal_parts_touch_and_stays_so_at_rest(self):
+        # An iron ball dropped onto an aluminium plate: the circuit is open
+        # while it falls and closes as it lands, about 0.27 s after it is let
+        # go (a 0.35 m fall), and stays closed while the ball lies there.
+        spec = {'schema': mw.SCHEMA, 'cell_m': 0.02,
+                'parts': [part('plate', [.2, .02, .2], [0, .01, 0], material='aluminum', fixed=True),
+                          {'name': 'ball', 'shape': 'sphere', 'material': 'iron', 'size_m': [.06, .06, .06],
+                           'at_m': [0, .4, 0]},
+                          part('box', [.1, .1, .1], [.5, .05, 0], fixed=True)],
+                'batteries': [{'name': 'b', 'in': 'box', 'capacity_j': 5000, 'voltage_v': 12}],
+                'circuits': [{'name': 'c', 'battery': 'b', 'switch': {'touch': ['ball', 'plate']},
+                              'coil': {'heats': 'box', 'resistance_ohm': 2}}],
+                'stations': [{'title': 'Lands', 'done_when': {'switch_closed': 'c'}, 'focus': ['ball']}]}
+        compiled = mw.compile_spec(spec)
+        with tempfile.TemporaryDirectory() as logs:
+            r = mw.rehearse(compiled, ENGINE, Path(logs), seconds=2.5, after_s=2.0)
+        self.assertTrue(r['stations'][0]['done'], r['events'])
+        # Open while it falls; closed from when it lands. (It bounces, and a
+        # bounce's touch lasts a step: the frames a session reads may see a
+        # later one first.)
+        self.assertGreaterEqual(r['stations'][0]['at_s'], (2 * 0.35 / 9.81) ** 0.5 - 0.01)
+        self.assertLess(r['stations'][0]['at_s'], 1.2)
+        self.assertTrue(r['readouts']['circuits'][0]['closed'], 'still closed with the ball at rest on the plate')
+        self.assertGreater(r['readouts']['circuits'][0]['into_body_j'], 0.0)
 
     @need_engine
     def test_live_session_streams_only_changes_and_measures_the_circuit(self):

@@ -140,7 +140,16 @@ def _cannon(name, k, ctx=None):
            'ball': {'diameter_m': k.get('ball_diameter_m', 0.08), 'material': k.get('ball_material', 'iron')}}
     if k.get('fire_at_s') is not None:
         kit['fire_at_s'] = k['fire_at_s']
-    return {'kits': [_turned_kit(kit, k, muzzle)]}
+    made = {'kits': [_turned_kit(kit, k, muzzle)]}
+    # Wired to the level's trigger: a coil on the charge, in a circuit the
+    # trigger's contact closes, on the level's battery (level 3: a weight on
+    # a cord pulls the trigger arm down onto its contact).
+    fired = (ctx or {}).get('tray', {}).get('fired_by')
+    if fired:
+        made['circuits'] = [{'name': fired.get('circuit', 'firing circuit'), 'battery': fired['battery'],
+                             'switch': {'touch': list(fired['touch'])},
+                             'coil': {'heats': f'{name} charge', 'resistance_ohm': fired.get('coil_ohm', 0.1)}}]
+    return made
 
 
 def _steam(name, k, ctx=None):
@@ -319,6 +328,8 @@ def _assemble(level, placements, lenient=False):
         spec['parts'] += made.get('parts', [])
         if made.get('joints'):
             spec['joints'] = list(spec.get('joints') or []) + made['joints']
+        if made.get('circuits'):
+            spec['circuits'] = list(spec.get('circuits') or []) + made['circuits']
         if made.get('solar_panels'):
             spec['solar_panels'] = list(spec.get('solar_panels') or []) + made['solar_panels']
         if made.get('mirrors'):
@@ -669,15 +680,18 @@ def pieces_energy(compiled):
 PROPELLANT_J_PER_KG = 2.8e6    # the engine's stand-in for gunpowder (machine_world _kit_cannon)
 
 
-def run_energy(compiled, readouts):
-    """What the run put in so far: heaters' heat and batteries' energy as the
-    engine measured them, and the powder in the machine's charges (all of it:
-    a charge is there to be fired)."""
-    ledger = (readouts or {}).get('heat_ledger') or {}
+def run_energy(compiled, readouts, t_s=0.0):
+    """What came into the machine in its first t_s seconds, each once: what
+    the batteries gave, as the engine measured it (a coil's heat, a laser's
+    light and a motor's work all came out of a battery, and are counted
+    there, not again where they ended up); fuel burned in its heaters (a
+    firebox: its declared power for as long as it has burned); and the
+    powder in its charges (all of it: a charge is there to be fired)."""
     start = {b['name']: b.get('charge_j', b['capacity_j']) for b in compiled.get('batteries') or []}
     now = {b['name']: b.get('charge_j') for b in ((readouts or {}).get('machines') or {}).get('batteries') or []}
     drawn = sum(max(0.0, start[n] - now[n]) for n in start if now.get(n) is not None)
-    heat = max(0.0, ledger.get('heater_in_j') or 0.0)
+    heat = sum(h['power_w'] * min(h.get('seconds', 0.0), max(0.0, t_s - h.get('start_s', 0.0)))
+               for h in (compiled.get('thermo') or {}).get('heaters') or [])
     parts = {p['name']: p for p in compiled['parts']}
     powder = 0.0
     for row in ((compiled.get('thermo') or {}).get('contents') or []):
@@ -689,10 +703,11 @@ def run_energy(compiled, readouts):
             'j': round(heat + powder + drawn)}
 
 
-def energy_of(compiled, readouts):
-    """The whole of it: the pieces' making and the run's energy, itemised."""
+def energy_of(compiled, readouts, t_s=0.0):
+    """The whole of it: the pieces' making and the run's energy in its first
+    t_s seconds, itemised."""
     pieces = pieces_energy(compiled)
-    run = run_energy(compiled, readouts)
+    run = run_energy(compiled, readouts, t_s)
     made = sum(v['j'] for v in pieces.values())
     return {'j': made + run['j'], 'pieces_j': made, 'pieces': pieces, 'run': run}
 
@@ -704,7 +719,8 @@ def measure_energy(level, placements, exe, logs):
     compiled = mw.compile_spec(spec)
     r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=120)
     row = (r['stations'] or [{}])[0]
-    return dict(energy_of(compiled, r.get('readouts')), goal_at_s=row.get('at_s') if row.get('done') else None)
+    return dict(energy_of(compiled, r.get('readouts'), r['world_time_s']),
+                goal_at_s=row.get('at_s') if row.get('done') else None)
 
 
 def stars(level, checked, cost, goal_at_s, helped=False, energy_j=None):

@@ -577,7 +577,7 @@ class Handler(BaseHTTPRequestHandler):
     level=machine_game.level_by_id(game['level'])
     rows=(s.readouts or {}).get('stations') or [{}]
     # And what the win took: making the pieces, and what the run put in so far.
-    energy=machine_game.energy_of(s.compiled,s.readouts)
+    energy=machine_game.energy_of(s.compiled,s.readouts,s.t)
     r={'ok':True,**machine_game.stars(level,game['checked'],game['cost'],rows[0].get('at_s') if rows[0].get('done') else None,game['helped'],energy_j=energy['j']),'energy':energy}
    elif op=='trial':
     if self.server.trial_allowance:self.server.trial_allowance.take(self.visitor())

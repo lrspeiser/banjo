@@ -303,12 +303,66 @@ void hingeSwitchAndBodyHeat() {
     std::cout << "hinge switch closed at " << closed_at << " s; coil " << exported << " J out, " << received
               << " J into the peg, now " << peg_k << " K\n";
 }
+// A switch closed by contact: a ball dropped onto a plate closes it as the two
+// touch, measured from their shapes -- not when the solver first pairs them,
+// which Jolt does up to 2 cm apart -- and it stays closed while the ball lies
+// on the plate.
+json touchNetwork(unsigned store) {
+    auto n = coilNetwork(store, 1);
+    n["branches"][0].erase("follows_hinge");
+    n["branches"][0]["follows_contact"] = {{"a", "ball"}, {"b", "plate"}};
+    return n;
+}
+void contactSwitch() {
+    const auto alone = Circuit::read(touchNetwork(1));
+    check(alone.contactSwitches().size() == 1 && alone.contactSwitches()[0].a == "ball" &&
+              alone.contactSwitches()[0].b == "plate", "contact switch not read");
+    check(alone.saved()["branches"][0]["follows_contact"]["b"] == "plate", "follows_contact lost on save");
+    rejects([] { auto bad = touchNetwork(1); bad["branches"][0]["follows_contact"]["b"] = "ball"; Circuit::read(bad); });
+    rejects([] { auto bad = touchNetwork(1);
+                 bad["branches"][0]["follows_hinge"] = {{"joint", 1}, {"closed_at_or_above_deg", 5}}; Circuit::read(bad); });
+    rejects([] { auto bad = touchNetwork(1); bad["branches"][1]["follows_contact"] = {{"a", "ball"}, {"b", "plate"}};
+                 Circuit::read(bad); });
+
+    TileImpactRequest r; r.cell_size_m = 0.05; r.backend = BackendKind::CpuParallel;
+    r.gravity_m_s2 = {0, -9.81, 0};
+    SceneBody plate; plate.name = "plate"; plate.shape = BodyShape::Box; plate.material = MaterialPreset::Iron;
+    plate.dimensions_m = {0.4, 0.1, 0.4}; plate.center_m = {0, 0.05, 0}; plate.anchored = true;
+    SceneBody ball = plate; ball.name = "ball"; ball.anchored = false;
+    ball.dimensions_m = {0.1, 0.1, 0.1}; ball.center_m = {0, 0.6, 0};
+    SceneBody peg = plate; peg.name = "peg"; peg.material = MaterialPreset::Oak;
+    peg.dimensions_m = {0.1, 0.1, 0.1}; peg.center_m = {1.0, 0.05, 0};
+    r.bodies = {plate, ball, peg};
+    auto w = LiveWorld::open(r);
+    const auto store = w->energyStore("battery", "plate", 1.0e5, 1.0e5, 24, 0);
+    rejects([&] { auto bad = touchNetwork(store); bad["branches"][0]["follows_contact"]["a"] = "nothing here";
+                  w->circuit(bad.dump()); });
+    const auto circuit = w->circuit(touchNetwork(store).dump());
+    rejects([&] { w->circuitSwitch(circuit, "lever switch", true); });
+    double closed_at = -1.0;
+    for (int i = 0; i < 480; ++i) {
+        // Where the ball stands at the start of the step: what the switch is set from.
+        double bottom = 0.0;
+        for (const auto &p : w->poses()) if (p.name == "ball") bottom = p.position_m.y - 0.05;
+        w->step(1.0 / 240);
+        const bool closed = json::parse(w->circuits())[0]["branches"][0]["closed"].get<bool>();
+        if (closed_at < 0.0 && closed) {
+            closed_at = (i + 1) / 240.0;
+            check(bottom - 0.1 <= 0.001 + 1e-6, "switch closed with the ball still above the plate");
+        }
+        if (closed_at < 0.0) check(bottom - 0.1 > 0.001, "the ball touched the plate and the switch stayed open");
+    }
+    check(closed_at > 0.0, "the dropped ball never closed its switch");
+    check(json::parse(w->circuits())[0]["branches"][0]["closed"].get<bool>(),
+          "the switch opened with the ball at rest on the plate");
+    std::cout << "contact switch closed at " << closed_at << " s\n";
+}
 }
 int main() {
     try {
         const auto start = std::chrono::steady_clock::now();
         circuitsAndHeat(); switchingFailureAndValidation(); liveLoopAndRestore(); stalledAndEmpty();
-        sharedMotorsAndGeneration(); housingReactionAndConvergence(); hingeSwitchAndBodyHeat();
+        sharedMotorsAndGeneration(); housingReactionAndConvergence(); hingeSwitchAndBodyHeat(); contactSwitch();
         std::cout << "circuits passed in " << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() << " s\n";
         return 0;
     } catch (const std::exception &e) { std::cerr << e.what() << '\n'; return 1; }

@@ -366,6 +366,12 @@ public:
     // How many bodies the solver is stepping right now, and whether one is.
     [[nodiscard]] unsigned awakeBodies() const;
     [[nodiscard]] bool isAwake(MatterBodyId body_id) const;
+    // Whether two bodies touch now: their shapes as they stand, no further
+    // apart than within_m (0 to 0.1 m), or into each other. Measured from the
+    // shapes, not Jolt's contact cache, which pairs bodies up to its
+    // speculative distance (2 cm) before they touch and finds nothing between
+    // two that are asleep. A body not in the world touches nothing.
+    [[nodiscard]] bool touching(MatterBodyId a, MatterBodyId b, double within_m) const;
 
     // ---- a tool's point in the ground (docs/ground-work.md) -----------------
     //

@@ -256,12 +256,17 @@ class Tray(unittest.TestCase):
                                                          drop_from_m=h)])[0])
             return mg.pieces_energy(c)['your tackle 1']['j']
         self.assertLess(made(7.9, 2, 1.2), made(4.7, 3, 1.75) / 3)
-        # The run: heaters' heat and batteries' energy as measured, and the
-        # powder in the charges (level 3's 1 g: 2.8 kJ).
+        # The run, each once: what the batteries gave, fuel burned in heaters
+        # (level 4's 12 kW firebox, 2 s: 24 kJ), and the powder in the charges
+        # (level 3's 1 g: 2.8 kJ). A coil's heat came out of a battery: the
+        # engine's heat ledger counts it again, and it is not taken from there.
+        steam = mg.level_by_id('steam')
+        compiled = mw.compile_spec(mg.compose(steam, steam['solution'])[0])
+        self.assertEqual(mg.run_energy(compiled, {}, 2.0)['heat_j'], 24000)
         fire = mg.level_by_id('fire')
         compiled = mw.compile_spec(mg.compose(fire, fire['solution'])[0])
-        run = mg.run_energy(compiled, {'heat_ledger': {'heater_in_j': 1500.0}})
-        self.assertEqual((run['heat_j'], run['powder_j'], run['electric_j']), (1500, 2800, 0))
+        run = mg.run_energy(compiled, {'heat_ledger': {'heater_in_j': 2000.0}}, 1.0)
+        self.assertEqual((run['heat_j'], run['powder_j'], run['electric_j']), (0, 2800, 0))
         battery = {'batteries': [{'name': 'b', 'capacity_j': 1000.0, 'charge_j': 600.0}]}
         self.assertEqual(mg.run_energy(battery | {'parts': []},
                                        {'machines': {'batteries': [{'name': 'b', 'charge_j': 450.0}]}})['electric_j'], 150)

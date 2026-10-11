@@ -708,6 +708,9 @@ DENSITY_KG_M3 = {'iron': 7870.0, 'oak': 700.0, 'aluminum': 2700.0, 'concrete': 2
 # (the rest crack instead) and softer than the edge's own (an edge on
 # something as hard flattens instead). Indentation hardness, Pa.
 HARDNESS_PA = {'iron': 1.5e9, 'aluminum': 950e6, 'oak': 35e6, 'rubber': 6e6}
+# What carries a current, for a contact switch: the metals. Oak, glass,
+# concrete, rubber, ceramic and ice do not.
+CONDUCTORS = ('iron', 'aluminum')
 
 
 def cuttable(target, edge):
@@ -1423,6 +1426,20 @@ def compile_spec(spec, lenient=False):
         if isinstance(switch, dict) and 'photocell' in switch:   # follows light (the light section)
             row['switch'] = light_switch(switch, what, light, problems)
             switch = None
+        if isinstance(switch, dict) and 'touch' in switch:
+            # Closed while two parts touch, as the solver finds them: two
+            # metal parts, which carry the current, pressed together -- a
+            # contact on a lever and a plate it comes down on.
+            touch = switch.get('touch')
+            if not (isinstance(touch, list) and len(touch) == 2 and touch[0] != touch[1] and all(t in names for t in touch)):
+                problems.append(f'{what}: switch.touch names the two parts whose touching closes it')
+            else:
+                for t in touch:
+                    if names[t].get('material') not in CONDUCTORS:
+                        problems.append(f'{what}: switch.touch: {t} is {names[t].get("material")}, which carries no '
+                                        f'current; a contact is metal ({", ".join(CONDUCTORS)})')
+            row['switch'] = {'touch': list(touch) if isinstance(touch, list) else touch}
+            switch = None
         if switch is not None:
             if not isinstance(switch, dict) or switch.get('hinge') not in {j['name'] for j in joint_rows if j['kind'] == 'hinge'}:
                 problems.append(f'{what}: switch.hinge must name a hinge joint')
@@ -1735,6 +1752,8 @@ def build_engine(exe, compiled, workdir):
                 sw = dict(c['switch'])
                 if 'photocell' in sw:
                     follows = ('follows_light', light_branch(sw))
+                elif 'touch' in sw:
+                    follows = ('follows_contact', {'a': sw['touch'][0], 'b': sw['touch'][1]})
                 else:
                     follows = ('follows_hinge', {'joint': joint_ids[sw.pop('hinge')], **sw})
                 branches.append({'id': 'switch', 'kind': 'switch', 'component': c['name'] + ' switch', 'a': 'plus',
@@ -2381,7 +2400,7 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                    'closest_approach': [c for i, c in sorted(getattr(session, 'closest', {}).items()) if i not in done],
                    'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]],
                    # What went in, as it stood at the end: heat, chemistry, batteries.
-                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines')
+                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits')
                                 if (session.readouts or {}).get(k) is not None}}
             if track:
                 out['paths'] = {name: {'points': points, 'turn_wxyz': session.trail_turn.get(name)}

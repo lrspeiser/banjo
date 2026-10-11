@@ -98,7 +98,8 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
     for (const auto &b : doc.at("branches")) {
         keys(b, {"id", "kind", "component", "a", "b", "thermal", "resistance_ohm", "alpha_per_k", "reference_k", "trip_k",
                  "fuse_a2_s", "gear_ratio", "motor", "closed", "failed", "used_a2_s", "current_a", "motor_current_a",
-                 "torque_n_m", "housing_reaction_n_m", "heats_body", "follows_hinge", "follows_light"});
+                 "torque_n_m", "housing_reaction_n_m", "heats_body", "follows_hinge", "follows_light",
+                 "follows_contact"});
         Branch row;
         row.id = b.at("id"); row.kind = b.at("kind"); row.component = b.at("component");
         unique(ids, row.id);
@@ -152,6 +153,21 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
             row.follow_sensor = f.at("sensor").get<std::string>();
             row.follow_w = watts;
             row.follow_sense = above ? 1 : -1;
+        }
+        if (b.contains("follows_contact")) {
+            // A switch worked by two bodies in the world touching: closed while
+            // they do, open while they are apart.
+            const auto &f = b.at("follows_contact");
+            keys(f, {"a", "b"});
+            require(row.kind == "switch", "only a switch follows a contact");
+            require(!b.contains("follows_hinge") && !b.contains("follows_light"),
+                    "a switch follows a hinge, light or a contact, one of them");
+            require(f.at("a").is_string() && f.at("b").is_string() && !f.at("a").get<std::string>().empty() &&
+                        !f.at("b").get<std::string>().empty(),
+                    "follows_contact names two bodies, a and b");
+            row.touch_a = f.at("a").get<std::string>();
+            row.touch_b = f.at("b").get<std::string>();
+            require(row.touch_a != row.touch_b, "follows_contact names two different bodies");
         }
         row.resistance = number(b, "resistance_ohm");
         row.alpha = number(b, "alpha_per_k"); row.reference_k = number(b, "reference_k", 293.15);
@@ -364,6 +380,12 @@ std::vector<CircuitLightSwitch> Circuit::lightSwitches() const {
         if (!b.follow_sensor.empty()) out.push_back({b.id, b.follow_sensor, b.follow_w, b.follow_sense});
     return out;
 }
+std::vector<CircuitContactSwitch> Circuit::contactSwitches() const {
+    std::vector<CircuitContactSwitch> out;
+    for (const auto &b : branches_)
+        if (!b.touch_a.empty()) out.push_back({b.id, b.touch_a, b.touch_b});
+    return out;
+}
 std::vector<std::string> Circuit::heatedBodies() const {
     std::vector<std::string> out;
     for (const auto &b : branches_) if (!b.body.empty()) out.push_back(b.body);
@@ -422,6 +444,7 @@ nlohmann::json Circuit::saved() const {
         if (!b.follow_sensor.empty())
             row["follows_light"] = {{"sensor", b.follow_sensor},
                 {b.follow_sense > 0 ? "closed_at_or_above_w" : "closed_at_or_below_w", b.follow_w}};
+        if (!b.touch_a.empty()) row["follows_contact"] = {{"a", b.touch_a}, {"b", b.touch_b}};
         if (last_.current_a.size() == branches_.size()) {
             row["current_a"] = last_.current_a[i]; row["motor_current_a"] = last_.motor_current_a[i];
             row["torque_n_m"] = last_.torque_n_m[i]; row["housing_reaction_n_m"] = -last_.torque_n_m[i];

@@ -241,7 +241,9 @@ PIECE_HELP = {
              'pivot, its sharp edge about 0.06 m ahead of the pivot, 0.2 m wide across the swing. It cuts oak and '
              'rubber, not iron',
     'cannon': 'a cannon firing level toward +x: its muzzle at (x_m, bore_height_m, z_m), the barrel behind it; '
-              'fire_at_s is when its primer lights it; powder_g of powder throws its 2.1 kg iron ball at very '
+              'it fires when the level\'s trigger closes its firing circuit (on level 3 a weight on a cord pulls '
+              'the trigger as the run starts) and the current heats its powder; powder_g of powder throws its 2.1 kg '
+              'iron ball at very '
               'roughly 9 m/s for 1 g and 20 m/s for 2 g. The ball drops as it flies',
     'steam': 'a steam engine: a cylinder at (x_m, z_m) on the ground with a piston on top, the piston at about '
              '0.34 m up; heat_kw boils water under it and the piston rises about 1.2 cm/s per kW',

@@ -49,6 +49,7 @@
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
 #include <Jolt/Physics/Collision/CollisionDispatch.h>
+#include <Jolt/Physics/Body/BodyLockMulti.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 
@@ -4238,6 +4239,31 @@ unsigned JoltWorld::wakeBodiesIn(const Vec3 &low_world_m, const Vec3 &high_world
 
 unsigned JoltWorld::awakeBodies() const {
     return impl_->physics_->GetNumActiveBodies(JPH::EBodyType::RigidBody);
+}
+
+bool JoltWorld::touching(MatterBodyId a, MatterBodyId b, double within_m) const {
+    if (!std::isfinite(within_m) || within_m < 0 || within_m > 0.1)
+        throw std::invalid_argument("touching tolerance must be 0..100 mm");
+    const auto first = impl_->bodies_.find(a), second = impl_->bodies_.find(b);
+    if (first == impl_->bodies_.end() || second == impl_->bodies_.end()) return false;
+    const JPH::BodyID ids[2] = {first->second, second->second};
+    JPH::BodyLockMultiRead lock(impl_->physics_->GetBodyLockInterface(), ids, 2);
+    const JPH::Body *one = lock.GetBody(0), *two = lock.GetBody(1);
+    if (one == nullptr || two == nullptr) return false;
+    // In the first body's own frame (its centre of mass, where Jolt keeps a
+    // body's shape), so the query is single precision near its origin.
+    const JPH::Quat inverse = one->GetRotation().Conjugated();
+    const JPH::Vec3 offset(two->GetCenterOfMassPosition() - one->GetCenterOfMassPosition());
+    JPH::CollideShapeSettings settings;
+    settings.mMaxSeparationDistance = float(within_m);
+    settings.mActiveEdgeMode = JPH::EActiveEdgeMode::CollideWithAll;
+    settings.mBackFaceMode = JPH::EBackFaceMode::CollideWithBackFaces;
+    JPH::AnyHitCollisionCollector<JPH::CollideShapeCollector> hit;
+    JPH::CollisionDispatch::sCollideShapeVsShape(one->GetShape(), two->GetShape(), JPH::Vec3::sReplicate(1.0F),
+        JPH::Vec3::sReplicate(1.0F), JPH::Mat44::sIdentity(),
+        JPH::Mat44::sRotationTranslation(inverse * two->GetRotation(), inverse * offset),
+        JPH::SubShapeIDCreator(), JPH::SubShapeIDCreator(), settings, hit);
+    return hit.HadHit();
 }
 
 bool JoltWorld::isAwake(MatterBodyId body_id) const {

@@ -375,7 +375,7 @@
    "id": "fire",
    "title": "Knock it off",
    "teaches": "a powder charge",
-   "brief": "Knock the iron block off its pedestal into the green zone behind it with a cannon.",
+   "brief": "Knock the iron block off its pedestal into the green zone behind it with a cannon. It fires when the trigger closes its circuit: a weight on a cord pulls the trigger arm down onto its contact as the run starts, and the battery's current heats the powder.",
    "time_s": 4,
    "budget": 40,
    "par": 26,
@@ -416,6 +416,114 @@
        0.0
       ],
       "fixed": false
+     },
+     {
+      "name": "contact post",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.04,
+       0.28,
+       0.04
+      ],
+      "at_m": [
+       -1.03,
+       0.14,
+       0.6
+      ],
+      "fixed": true
+     },
+     {
+      "name": "contact plate",
+      "shape": "box",
+      "material": "aluminum",
+      "size_m": [
+       0.04,
+       0.02,
+       0.04
+      ],
+      "at_m": [
+       -1.03,
+       0.29,
+       0.6
+      ],
+      "fixed": true
+     },
+     {
+      "name": "trigger weight",
+      "shape": "box",
+      "material": "iron",
+      "size_m": [
+       0.06,
+       0.06,
+       0.06
+      ],
+      "at_m": [
+       -1.1,
+       0.15,
+       0.6
+      ]
+     },
+     {
+      "name": "battery box",
+      "shape": "box",
+      "material": "concrete",
+      "size_m": [
+       0.1,
+       0.1,
+       0.1
+      ],
+      "at_m": [
+       -0.9,
+       0.05,
+       0.8999999999999999
+      ],
+      "fixed": true
+     }
+    ],
+    "kits": [
+     {
+      "kit": "lever",
+      "name": "trigger",
+      "pivot_m": [
+       -0.9,
+       0.3,
+       0.6
+      ],
+      "length_m": 0.4,
+      "width_m": 0.04,
+      "thickness_m": 0.02,
+      "limit_deg": 20,
+      "along": "x",
+      "material": "aluminum",
+      "friction_n_m": 0.05
+     }
+    ],
+    "joints": [
+     {
+      "name": "trigger cord",
+      "kind": "tie",
+      "a": "trigger",
+      "b": "trigger weight",
+      "at_m": [
+       -1.1,
+       0.32,
+       0.6
+      ],
+      "at_b_m": [
+       -1.1,
+       0.18,
+       0.6
+      ],
+      "length_m": 0.16
+     }
+    ],
+    "batteries": [
+     {
+      "name": "battery",
+      "in": "battery box",
+      "capacity_j": 100000,
+      "voltage_v": 24
      }
     ]
    },
@@ -481,20 +589,21 @@
        "default": 1.0,
        "step": 0.05,
        "label": "Powder (g)"
-      },
-      "fire_at_s": {
-       "min": 0.2,
-       "max": 3.0,
-       "default": 0.5,
-       "step": 0.1,
-       "label": "Fires at (s)"
       }
+     },
+     "fired_by": {
+      "battery": "battery",
+      "touch": [
+       "trigger",
+       "contact plate"
+      ]
      }
     }
    ],
    "hints": [
     "The block sits 0.4 m up; its middle is 0.45 m above the ground. The ball flies level, dropping a little.",
-    "Heavier charges throw the ball faster, but cost more."
+    "Heavier charges throw the ball faster, but cost more.",
+    "The cannon fires a moment after the start: the weight drops, its cord pulls the trigger onto the contact, and the current takes about a second to light the powder."
    ],
    "solution": [
     {
@@ -502,11 +611,33 @@
      "x_m": 1.4,
      "bore_height_m": 0.48,
      "z_m": 0.0,
-     "powder_g": 1.0,
-     "fire_at_s": 0.5
+     "powder_g": 1.0
     }
    ],
-   "par_energy_j": 905000000
+   "par_energy_j": 905000000,
+   "milestones": [
+    {
+     "title": "The cord pulls the trigger",
+     "done_when": {
+      "switch_closed": "firing circuit"
+     },
+     "focus": [
+      "trigger"
+     ]
+    },
+    {
+     "title": "The cannon fires",
+     "done_when": {
+      "moved_m": {
+       "part": "your cannon 1 ball",
+       "m": 0.3
+      }
+     },
+     "focus": [
+      "your cannon 1 ball"
+     ]
+    }
+   ]
   },
   {
    "id": "steam",

@@ -1389,6 +1389,16 @@ struct LiveWorld::Impl {
                         closed = worked.sense > 0 ? cell.power_w >= worked.closed_w : cell.power_w <= worked.closed_w;
                 c.setSwitch(worked.branch, closed);
             }
+            // A switch worked by contact is closed while its two bodies touch
+            // at the start of this step: their shapes as they stand, within a
+            // millimetre or pressed into each other, measured, never assumed.
+            // A body that is gone (burned, broken off) touches nothing, and its
+            // switch opens.
+            for (const auto &worked : c.contactSwitches()) {
+                const auto a = index_of.find(worked.a), b = index_of.find(worked.b);
+                c.setSwitch(worked.branch, a != index_of.end() && b != index_of.end() &&
+                                               world->touching(body_of[a->second], body_of[b->second], 0.001));
+            }
             const auto *store = energyStoreById(c.store());
             std::vector<machines::CircuitMotorInput> inputs;
             for (unsigned id : c.motors()) {
@@ -8914,6 +8924,12 @@ unsigned LiveWorld::circuit(const std::string &declaration) {
             throw std::invalid_argument("circuit: switch " + worked.branch + " follows joint " +
                                         std::to_string(worked.joint) + ", which is not a hinge in this world");
     }
+    // And the bodies whose touching works its contact switches.
+    for (const auto &worked : c.contactSwitches())
+        for (const std::string &body : {worked.a, worked.b})
+            if (impl_->index_of.find(body) == impl_->index_of.end())
+                throw std::invalid_argument("circuit: switch " + worked.branch + " closes where " + worked.a +
+                                            " touches " + worked.b + ", and " + body + " is not in this world");
     // And the light sensors that work its switches (docs/optics-checkpoint.md).
     for (const auto &worked : c.lightSwitches()) {
         const bool there = std::any_of(impl_->photocells.begin(), impl_->photocells.end(),
@@ -8938,6 +8954,10 @@ void LiveWorld::circuitSwitch(unsigned id, const std::string &branch, bool close
     for (const auto &worked : impl_->circuits[id - 1].lightSwitches())
         if (worked.branch == branch)
             throw std::invalid_argument("switch " + branch + " is worked by the light on " + worked.sensor +
+                                        ", not by hand");
+    for (const auto &worked : impl_->circuits[id - 1].contactSwitches())
+        if (worked.branch == branch)
+            throw std::invalid_argument("switch " + branch + " is closed by " + worked.a + " touching " + worked.b +
                                         ", not by hand");
     impl_->circuits[id - 1].setSwitch(branch, closed);
 }
