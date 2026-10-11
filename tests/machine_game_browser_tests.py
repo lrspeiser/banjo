@@ -1,8 +1,9 @@
 """The puzzle page (/play) in Chrome, used the way a person uses it.
 
 A piece added from the tray is a see-through ghost, placed at once where the
-view's middle meets the scene; it can be moved by a click, a tap or the
-pointer, changed and turned while it is a ghost, then set down and run. A
+view's middle meets the scene; dragging near it moves it. Clicking or tapping
+switches to View without relocating it; a background drag turns the camera.
+It can be changed and turned while it is a ghost, then set down and run. A
 ghost stood inside a wall is red and says why. On a phone held upright the
 scene comes into view when a piece is added, and the ghost's controls sit
 just below the scene, out of its way.
@@ -116,6 +117,41 @@ class Puzzles(unittest.TestCase):
     def mouse(self, kind, x, y):
         extra = {'button': 'left', 'clickCount': 1} if kind != 'mouseMoved' else {}
         self.page.send('Input.dispatchMouseEvent', {'type': kind, 'x': x, 'y': y, **extra})
+
+    def drag(self, start, end, touch=False, button='left', steps=8, modifiers=0):
+        if touch:
+            self.page.send('Input.dispatchTouchEvent', {'type':'touchStart', 'touchPoints':[{'x':start[0],'y':start[1],'id':1}]})
+        else:
+            self.page.send('Input.dispatchMouseEvent', {'type':'mousePressed','x':start[0],'y':start[1],
+                                                       'button':button,'buttons':{'left':1,'right':2,'middle':4}[button],'clickCount':1,'modifiers':modifiers})
+        for k in range(1,steps+1):
+            x=start[0]+(end[0]-start[0])*k/steps
+            y=start[1]+(end[1]-start[1])*k/steps
+            if touch:
+                self.page.send('Input.dispatchTouchEvent', {'type':'touchMove','touchPoints':[{'x':x,'y':y,'id':1}]})
+            else:
+                self.page.send('Input.dispatchMouseEvent', {'type':'mouseMoved','x':x,'y':y,
+                                                           'button':button,'buttons':{'left':1,'right':2,'middle':4}[button],'modifiers':modifiers})
+            time.sleep(.03)
+        if touch:
+            self.page.send('Input.dispatchTouchEvent', {'type':'touchEnd','touchPoints':[]})
+        else:
+            self.page.send('Input.dispatchMouseEvent', {'type':'mouseReleased','x':end[0],'y':end[1],
+                                                       'button':button,'buttons':0,'clickCount':1,'modifiers':modifiers})
+
+    def drag_ghost_to(self, x, z, touch=False):
+        p=self.ghost()['p']
+        bottom=self.js('window.machineGhostScreen().bottom')
+        self.drag(self.screen_point([p['x_m'],bottom,p.get('z_m',0)]),self.screen_point([x,bottom,z]),touch=touch)
+        return self.ghost()
+
+    def empty_scene_point(self):
+        point=self.js("""(() => {const r=document.querySelector('#view canvas').getBoundingClientRect(),b=window.machineGhostScreen();
+            for(const fy of [.7,.5,.35,.85])for(const fx of [.85,.15,.5]){const x=r.left+r.width*fx,y=r.top+r.height*fy;
+              if((!b || x<b.x0-40 || x>b.x1+40 || y<b.y0-40 || y>b.y1+40) && document.elementFromPoint(x,y)?.tagName==='CANVAS')return [x,y];}
+            return null;})()""")
+        self.assertIsNotNone(point,'there is an unobstructed background drag target outside the 40px grab margin')
+        return point
 
     def key(self, key):
         self.js('document.activeElement && document.activeElement.blur()')
@@ -241,10 +277,7 @@ class Puzzles(unittest.TestCase):
             with self.subTest(viewport=(width,height)):
                 self.open('gap',width,height,phone=width!=1280)
                 self.press('Add a plank'); self.ghost()
-                self.press('Follow the pointer')
-                x,y=self.screen_point([.3,0,0])
-                self.mouse('mouseMoved',x,y); self.ghost()
-                self.mouse('mousePressed',x,y); self.mouse('mouseReleased',x,y)
+                self.drag_ghost_to(.3,0,touch=width!=1280)
                 self.slide('Cut to length of your plank 1',.7)
                 self.ghost()
                 self.page.events.clear()
@@ -518,6 +551,17 @@ class Puzzles(unittest.TestCase):
         self.click_visible('Power output of your solar 2')
         self.click_visible('Power input of your battery 3')
         self.wait(f'window.machinePlacements().length === 4 && {READY}', 60)
+        self.press('Pick up your power_cable 4')
+        cable_before=self.ghost()['p']
+        box=self.js('window.machineGhostScreen()')
+        x,y=(box['x0']+box['x1'])/2,(box['y0']+box['y1'])/2
+        self.assertEqual(self.js(f'document.elementFromPoint({x},{y})?.tagName'),'CANVAS')
+        turned=self.js('window.machineCamera().azimuth')
+        self.drag([x,y],[x+60,y])
+        self.assertEqual(self.ghost()['p'],cable_before,'a fixed-port cable cannot acquire meaningless position edits')
+        self.assertNotEqual(self.js('window.machineCamera().azimuth'),turned,'dragging near a cable preview turns the camera')
+        self.assertTrue(self.js("document.getElementById('move-pad').hidden"))
+        self.press('Cancel')
         self.press('Pick up your battery 3'); self.ghost()
         self.slide('along (m) of your battery 3', 1.2)
         self.assertTrue(self.ghost()['fits'])
@@ -758,25 +802,25 @@ class Puzzles(unittest.TestCase):
                 self.press('Throw the ghost away')
                 self.wait("document.getElementById('edit-guide-label').hidden", 5)
 
-    def test_a_ghost_is_placed_at_once_follows_on_request_changed_turned_set_down_and_run(self):
+    def test_a_ghost_is_placed_at_once_dragged_changed_turned_set_down_and_run(self):
         self.open('gap')
         self.js("window.machineView({azimuth: -0.35, elevation: 0.75, distance: 3.2, at: [0.3, 0.2, 0]})")
         time.sleep(1.5)                       # the camera eases to its new view
         self.press('Add a plank')
         g = self.ghost()
-        self.assertTrue(not g['follow'] and g['parts'] > 0, 'it is placed at once, ready to change')
-        self.press('Follow the pointer')
+        self.assertGreater(g['parts'],0,'it is placed at once, ready to change')
+        self.assertFalse(self.js("[...document.querySelectorAll('button')].some(b=>b.textContent==='Follow the pointer')"))
         # Not in the machine yet: the engine's world has no plank.
         self.assertNotIn('your plank 1', self.js("[...document.querySelectorAll('#stations li')].map(l => l.textContent).join()"))
-        for x in (-0.2, 0.3):
-            self.mouse('mouseMoved', *self.screen_point([x, 0.0, 0.0]))
-            g = self.ghost()
-        self.assertAlmostEqual(g['p']['x_m'], 0.3, delta=0.02, msg='the ghost follows the pointer')
-        x, y = self.screen_point([0.3, 0.0, 0.0])
+        self.mouse('mouseMoved',*self.screen_point([-.2,0,0]))
+        self.assertEqual(self.ghost()['p'],g['p'],'hovering cannot relocate the piece')
+        g=self.drag_ghost_to(.3,0)
+        self.assertAlmostEqual(g['p']['x_m'],0.3,delta=0.02,msg='dragging puts the ghost there')
+        x, y = self.screen_point([0.8, 0.0, 0.0])
         self.mouse('mousePressed', x, y)
         self.mouse('mouseReleased', x, y)
-        g = self.ghost()
-        self.assertFalse(g['follow'], 'a click pins it')
+        self.assertEqual(self.ghost()['p'],g['p'],'a scene click cannot relocate it')
+        self.assertEqual(self.js("document.getElementById('mode-view').getAttribute('aria-pressed')"),'true')
         self.mouse('mouseMoved', *self.screen_point([0.8, 0.0, 0.0]))
         self.assertAlmostEqual(self.ghost()['p']['x_m'], g['p']['x_m'], delta=1e-9, msg='pinned, it stays')
         # Changed and turned as a ghost.
@@ -1184,12 +1228,10 @@ class Puzzles(unittest.TestCase):
         far = [first['x_m'] + first['run_m'], first['top_height_m'] - first['drop_m'], first['z_m']]
         self.press('Add a track')
         self.ghost()
-        # Out of the way first: a click on the ghost itself does not move it.
-        self.slide('top end x of your track 2', -1.5)
+        # Start out of the way, then drag the actual ghost to the far end.
+        self.slide('top end x of your track 2', -0.5)
         self.ghost()
-        x, y = self.js(f'window.machineScreenPoint({json.dumps(far)})')
-        self.mouse('mousePressed', x, y)
-        self.mouse('mouseReleased', x, y)
+        self.drag_ghost_to(far[0],far[2])
         self.wait("(() => { const g = window.machineGhostState(); return g && g.answered && !g.busy && "
                   "/Joined to the far end of your track 1/.test(document.querySelector('#ghost-bar .state').textContent); })()", 20)
         p = self.ghost()['p']
@@ -1377,9 +1419,45 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Move'); self.press('Cancel')
                 self.assertTrue(self.js("document.getElementById('scene-mode').hidden"))
 
-    def test_the_eye_looks_around_without_moving_the_piece_and_esc_goes_back_to_the_hand(self):
-        # Level 2's knife fills much of the view: in the hand, a drag across it
-        # moves it; with the eye, the same drag turns the view and leaves it.
+    def test_scene_clicks_and_subthreshold_drags_do_not_relocate_and_background_drags_rotate(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('laser',width,height,phone=width!=1280)
+                self.press('Add a mirror');before=self.ghost()['p']
+                x,y=self.empty_scene_point()
+                if width==1280:
+                    self.mouse('mousePressed',x,y);self.mouse('mouseReleased',x,y)
+                else:
+                    self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y,'id':1}]})
+                    self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+                self.assertEqual(self.ghost()['p'],before,'an empty scene click/tap cannot relocate the ghost')
+                self.assertEqual(self.js("document.getElementById('mode-view').getAttribute('aria-pressed')"),'true')
+                box=self.js('window.machineGhostScreen()')
+                x,y=box['x1']+25,(box['y0']+box['y1'])/2
+                turned=self.js('window.machineCamera().azimuth')
+                self.drag([x,y],[x+5,y],touch=width!=1280,steps=1)
+                self.assertEqual(self.ghost()['p'],before,'a 5px motion remains below the 6px drag threshold')
+                self.assertEqual(self.js('window.machineCamera().azimuth'),turned)
+                self.drag([x,y],[x+7,y],touch=width!=1280,steps=1)
+                moved=self.ghost()['p']
+                self.assertNotEqual(moved,before,'a 7px near-piece drag moves it from View')
+                self.assertEqual(self.js('window.machineCamera().azimuth'),turned)
+                self.assertEqual(self.js("document.getElementById('mode-move').getAttribute('aria-pressed')"),'true')
+                x,y=self.empty_scene_point()
+                self.drag([x,y],[x-60,y],touch=width!=1280)
+                self.assertEqual(self.ghost()['p'],moved,'an empty scene drag cannot relocate it in Move')
+                self.assertNotEqual(self.js('window.machineCamera().azimuth'),turned)
+                if width==1280:
+                    x,y=self.empty_scene_point()
+                    self.mouse('mousePressed',x,y)
+                    for px in (x-20,x):
+                        self.page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':px,'y':y,'button':'left','buttons':1})
+                    self.mouse('mouseReleased',x,y)
+                    self.assertEqual(self.ghost()['p'],moved,'an out-and-back background drag cannot relocate it')
+                    self.assertEqual(self.js("document.getElementById('mode-move').getAttribute('aria-pressed')"),'true',
+                                     'a drag ending where it began is still a drag, not a View click')
+
+    def test_near_piece_drag_moves_in_view_and_secondary_drag_rotates_without_relocating(self):
         self.open('cut')
         self.press('Add a knife')
         p0 = self.ghost()['p']
@@ -1387,27 +1465,43 @@ class Puzzles(unittest.TestCase):
         box = self.js('window.machineGhostScreen()')
         x, y = (box['x0'] + box['x1']) / 2, (box['y0'] + box['y1']) / 2
 
-        def drag():
-            self.mouse('mousePressed', x, y)
-            for k in range(1, 9):
-                self.page.send('Input.dispatchMouseEvent', {'type': 'mouseMoved', 'x': x + 12 * k, 'y': y,
-                                                            'button': 'left', 'buttons': 1})
-                time.sleep(0.03)
-            self.mouse('mouseReleased', x + 96, y)
         self.click_visible('View')
         self.assertIn('looking', self.js("document.getElementById('view').className"))
         turned = self.js('window.machineCamera().azimuth')
-        drag()
-        time.sleep(0.3)
-        self.assertEqual(self.ghost()['p'], p0, 'looking around leaves the knife where it was')
-        self.assertNotEqual(self.js('window.machineCamera().azimuth'), turned, 'and turns the view')
+        self.drag([x,y],[x+96,y])
+        self.assertNotEqual(self.ghost()['p']['x_m'],p0['x_m'],'a primary drag near the piece moves it even in View')
+        self.assertEqual(self.js('window.machineCamera().azimuth'),turned)
+        for button,modifiers in (('right',0),('middle',0),('left',2)):
+            box=self.js('window.machineGhostScreen()')
+            x,y=(box['x0']+box['x1'])/2,(box['y0']+box['y1'])/2
+            before=self.ghost()['p'];turned=self.js('window.machineCamera().azimuth')
+            self.drag([x,y],[x+64,y],button=button,modifiers=modifiers)
+            self.assertEqual(self.ghost()['p'],before,f'{button} drag with modifiers={modifiers} near the piece cannot move it')
+            self.assertNotEqual(self.js('window.machineCamera().azimuth'),turned)
+        self.click_visible('View')
         self.key('Escape')
-        self.assertNotIn('looking', self.js("document.getElementById('view').className"), 'Esc: back to the hand')
+        self.assertNotIn('looking', self.js("document.getElementById('view').className"), 'Esc: back to Move')
         self.assertTrue(self.js('Boolean(window.machineGhostState())'), 'the knife is still there to place')
         box = self.js('window.machineGhostScreen()')
         x, y = (box['x0'] + box['x1']) / 2, (box['y0'] + box['y1']) / 2
-        drag()
-        self.assertNotEqual(self.ghost()['p']['x_m'], p0['x_m'], 'in the hand, the drag moves it')
+        self.drag([x,y],[x+96,y])
+        self.assertNotEqual(self.ghost()['p']['x_m'],p0['x_m'],'in Move, the drag moves it')
+
+    def test_zoom_during_a_held_piece_drag_does_not_relocate_a_stationary_pointer(self):
+        self.open('laser')
+        self.press('Add a mirror');self.ghost()
+        box=self.js('window.machineGhostScreen()')
+        x,y=box['x1']+25,(box['y0']+box['y1'])/2
+        self.mouse('mousePressed',x,y)
+        self.page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':x+20,'y':y,'button':'left','buttons':1})
+        before=self.ghost()['p'];distance=self.js('window.machineCamera().distance')
+        self.page.send('Input.dispatchMouseEvent',{'type':'mouseWheel','x':x+20,'y':y,'deltaX':0,'deltaY':-120,'button':'left','buttons':1})
+        self.wait(f'window.machineCamera().distance < {distance}',5)
+        self.page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':x+20,'y':y,'button':'left','buttons':1})
+        self.assertEqual(self.ghost()['p'],before,'zooming with the pointer held still cannot relocate the piece')
+        self.page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':x+60,'y':y,'button':'left','buttons':1})
+        self.mouse('mouseReleased',x+60,y)
+        self.assertNotEqual(self.ghost()['p'],before,'an intentional pointer movement still works after zooming')
 
     def test_a_part_pulled_by_hand_is_a_test_and_earns_nothing(self):
         # Level 5 with no ramp: Pull on, the lever's end pulled down -- the
@@ -1433,6 +1527,36 @@ class Puzzles(unittest.TestCase):
         self.assertIn('A test run', done)
         self.assertIn('the goal happened', done)
         self.assertNotIn('chain', self.js("Object.keys(window.machineSave().players[window.machineSave().current].levels)"))
+
+    def test_a_second_finger_releases_the_pull_before_turning_the_camera(self):
+        self.open('chain')
+        self.js("window.machineView({azimuth: -0.2, elevation: 0.35, distance: 2.2, at: [0.4, 0.15, 0]})")
+        self.wait('window.machineCamera().settled',30)
+        x,y=self.screen_point([0.15,0.16,0])
+        self.press('🖐 Pull')
+        self.page.send('Network.enable'); self.page.events.clear()
+        touch=lambda kind,points:self.page.send('Input.dispatchTouchEvent',{'type':kind,'touchPoints':points})
+        touch('touchStart',[{'x':x,'y':y,'id':1}])
+        self.wait('Boolean(window.machinePullState())',5)
+        touch('touchMove',[{'x':x,'y':y+12,'id':1}])
+        self.wait('window.machinePullState().force_n > 0',5)
+        def pull_requests():
+            self.js('true')  # Drain pending network events through the browser channel.
+            return [json.loads(e['params']['request']['postData']) for e in self.page.events
+                    if e['method']=='Network.requestWillBeSent' and e['params']['request']['url'].endswith('/api/machine')
+                    and e['params']['request'].get('postData') and json.loads(e['params']['request']['postData']).get('op')=='pull']
+        until=time.monotonic()+5
+        while time.monotonic()<until and not any(p['force'] != [0,0,0] for p in pull_requests()):
+            time.sleep(.03)
+        self.assertTrue(any(p['force'] != [0,0,0] for p in pull_requests()),'the engine receives the active pull')
+        turned=self.js('window.machineCamera().azimuth')
+        touch('touchStart',[{'x':x,'y':y+12,'id':1},{'x':x+80,'y':y+12,'id':2}])
+        self.assertIsNone(self.js('window.machinePullState()'),'a second finger ends the force gesture')
+        touch('touchMove',[{'x':x+20,'y':y+12,'id':1},{'x':x+100,'y':y+12,'id':2}])
+        self.assertNotEqual(self.js('window.machineCamera().azimuth'),turned)
+        touch('touchEnd',[])
+        pulls=pull_requests()
+        self.assertEqual(pulls[-1]['force'],[0,0,0],'the engine receives a zero-force release before camera motion')
 
     def test_a_ghost_inside_a_wall_is_red_says_why_and_cannot_be_set_down(self):
         self.open('laser')
@@ -1464,11 +1588,8 @@ class Puzzles(unittest.TestCase):
         self.ghost()
         self.assertGreater(self.js("document.getElementById('view').getBoundingClientRect().top"), -41,
                            'adding a piece brings the scene, and its ghost, into view')
-        x, y = self.screen_point([0.3, 0.0, 0.0])
-        self.page.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': y}]})
-        self.page.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
-        g = self.ghost()
-        self.assertAlmostEqual(g['p']['x_m'], 0.3, delta=0.03, msg='a tap puts it there')
+        g=self.drag_ghost_to(.3,0,touch=True)
+        self.assertAlmostEqual(g['p']['x_m'],0.3,delta=0.03,msg='a drag puts it there')
         # Its controls are just below the scene, out of its way, and in sight:
         # a chip picks the knob, + turns it on.
         card = self.js("document.getElementById('ghost-bar').getBoundingClientRect().toJSON()")
@@ -1506,12 +1627,14 @@ class Puzzles(unittest.TestCase):
         g1 = self.ghost()
         self.assertGreater(g1['p']['x_m'] - g0['p']['x_m'], 0.1, 'it moved the way it was dragged')
         self.assertEqual(self.js('window.machineCamera().azimuth'), turned, 'the view did not turn')
-        # A phone: one finger anywhere moves it; two fingers turn the view.
+        # A phone: a near-piece finger moves it; background and two-finger
+        # gestures turn the view without relocating it.
         self.open('laser', 390, 844, phone=True)
         self.press('Add a mirror')
         p0 = self.ghost()['p']
-        view = self.js("document.getElementById('view').getBoundingClientRect().toJSON()")
-        sx, sy = view['x'] + 60, view['y'] + view['height'] - 160
+        self.click_visible('View')
+        box=self.js('window.machineGhostScreen()')
+        sx,sy=box['x1']+25,(box['y0']+box['y1'])/2
         touch = lambda kind, points: self.page.send('Input.dispatchTouchEvent', {'type': kind, 'touchPoints': points})
         touch('touchStart', [{'x': sx, 'y': sy}])
         for k in range(1, 9):                 # a finger's pace, a move a frame or so
@@ -1520,17 +1643,39 @@ class Puzzles(unittest.TestCase):
         time.sleep(0.1)
         touch('touchEnd', [])
         p1 = self.ghost()['p']
-        self.assertGreater(p1['x_m'] - p0['x_m'], 0.1, 'one finger, far from it, still moves it')
+        self.assertGreater(p1['x_m'] - p0['x_m'],0.1,'a near-piece finger moves it even in View')
+        sx,sy=self.empty_scene_point()
+        turned=self.js('window.machineCamera().azimuth')
+        self.drag([sx,sy],[sx-60,sy],touch=True)
+        self.assertEqual(self.ghost()['p'],p1,'a background finger cannot relocate the piece')
+        self.assertNotEqual(self.js('window.machineCamera().azimuth'),turned)
+        box=self.js('window.machineGhostScreen()')
+        view=self.js("document.querySelector('#view canvas').getBoundingClientRect().toJSON()")
+        sx=max(view['left']+16,min(view['right']-160,(box['x0']+box['x1'])/2))
+        sy=max(view['top']+100,min(view['bottom']-100,(box['y0']+box['y1'])/2))
         turned = self.js('window.machineCamera().azimuth')
         touch('touchStart', [{'x': sx, 'y': sy, 'id': 1}, {'x': sx + 120, 'y': sy, 'id': 2}])
         for k in range(1, 9):
             time.sleep(0.03)
             touch('touchMove', [{'x': sx + 12 * k, 'y': sy, 'id': 1}, {'x': sx + 120 + 12 * k, 'y': sy, 'id': 2}])
         time.sleep(0.1)
+        touch('touchEnd',[{'x':sx+96,'y':sy,'id':1}])
+        touch('touchMove',[{'x':sx+116,'y':sy,'id':1}])
+        self.assertEqual(self.ghost()['p'],p1,'the remaining finger cannot grab the piece before all fingers are up')
         touch('touchEnd', [])
         time.sleep(0.5)
-        self.assertEqual(self.ghost()['p']['x_m'], p1['x_m'], 'two fingers leave it be')
+        self.assertEqual(self.ghost()['p'],p1,'two fingers leave the whole placement unchanged')
         self.assertNotEqual(self.js('window.machineCamera().azimuth'), turned, 'two fingers turn the view')
+        box=self.js('window.machineGhostScreen()')
+        sx,sy=(box['x0']+box['x1'])/2,(box['y0']+box['y1'])/2
+        touch('touchStart',[{'x':sx,'y':sy,'id':1}])
+        touch('touchMove',[{'x':sx+15,'y':sy,'id':1}])
+        touch('touchCancel',[])
+        cancelled=self.ghost()['p']
+        box=self.js('window.machineGhostScreen()')
+        sx,sy=(box['x0']+box['x1'])/2,(box['y0']+box['y1'])/2
+        self.drag([sx,sy],[sx+80,sy],touch=True)
+        self.assertNotEqual(self.ghost()['p'],cancelled,'a new near-piece drag works after touchCancel')
 
     def test_arrows_move_a_piece_as_it_is_seen_and_a_piece_set_down_is_picked_up_by_clicking_it(self):
         # Level 7's solar panel has a height of its own, so all six arrows;

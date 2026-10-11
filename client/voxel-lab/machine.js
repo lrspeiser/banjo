@@ -954,16 +954,24 @@ addEventListener('resize', resize);
 
 const pointers = new Map();
 let pinch = 0;
+// Once a second finger joins, keep the entire gesture for the camera until
+// every finger lifts. The remaining finger must not pick up or move a piece.
+let cameraGesture = false;
+let sceneDragged = false;
 renderer.domElement.addEventListener('pointerdown', e => { pointers.set(e.pointerId, [e.clientX, e.clientY]); renderer.domElement.setPointerCapture(e.pointerId); });
 renderer.domElement.addEventListener('pointerup', e => { pointers.delete(e.pointerId); pinch = 0; });
 renderer.domElement.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); pinch = 0; });
 renderer.domElement.addEventListener('pointermove', e => {
-  const last = pointers.get(e.pointerId); if (!last || draggingGhost || pulling) return;
+  const last = pointers.get(e.pointerId); if (!last) return;
+  const before = [...pointers.values()];
+  pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  if (pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) >= 6) sceneDragged = true;
+  if (draggingGhost || pulling) return;
+  if (pressedAt && !cameraGesture && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6) return;
   if (pointers.size === 2) {
     // Two fingers: apart and together zoom, moved together turn the view
     // (one finger moves a piece being placed, on a touch screen).
-    const [p0, q0] = [...pointers.values()];
-    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    const [p0, q0] = before;
     const [a, b] = [...pointers.values()], gap = Math.hypot(a[0] - b[0], a[1] - b[1]);
     if (pinch) distance = Math.min(40, Math.max(.4, distance * pinch / gap));
     azimuth -= ((a[0] + b[0]) - (p0[0] + q0[0])) / 2 * .006;
@@ -972,9 +980,22 @@ renderer.domElement.addEventListener('pointermove', e => {
   }
   azimuth -= (e.clientX - last[0]) * .006;
   elevation = Math.min(1.45, Math.max(.05, elevation + (e.clientY - last[1]) * .006));
-  pointers.set(e.pointerId, [e.clientX, e.clientY]);
 });
-renderer.domElement.addEventListener('wheel', e => { e.preventDefault(); if (ghost && (e.shiftKey || e.altKey)) return; distance =Math.min(40, Math.max(.4, distance * Math.exp(e.deltaY * .001))); }, {passive: false});
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  if (ghost && (e.shiftKey || e.altKey)) return;
+  const previous = distance;
+  distance = Math.min(40, Math.max(.4, distance * Math.exp(e.deltaY * .001)));
+  // Zoom while holding a piece without changing its position under the new
+  // camera. Subsequent movement is relative to this new grab ray.
+  if (ghost && draggingGhost) {
+    const at = pointers.get(draggingGhost.id);
+    const from = at && slidePoint(at[0], at[1], draggingGhost.y);
+    if (!from) { distance = previous; return; }
+    Object.assign(draggingGhost, {from, x: ghost.p.x_m ?? 0, z: ghost.p.z_m ?? 0});
+  }
+}, {passive: false});
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 
 // The camera where the view says it is. A frame drawn does this; so does
 // anything that picks from the view (where a piece goes, what is under the
@@ -1099,8 +1120,8 @@ let sandboxBase = null, sandboxTemplates = [], activeDesign = null;
 function sandboxRequest() { return level?.free && activeDesign?.draft.base ? {base: activeDesign.draft.base} : {}; }
 
 // ---- the ghost: a piece before it is set down ------------------------------------
-// A see-through copy of a piece. It follows the pointer over the scene until
-// a click pins it; pinned, it can be dragged, its knobs changed and turned
+// A see-through copy of a piece. It stays put until deliberately dragged;
+// its knobs can be changed and turned
 // any way, and then set down. It is nothing in the engine meanwhile: the
 // server compiles it where it would go (set down on what is there, turned as
 // it is turned) and says why it could not go there. Blue fits, red does not
@@ -1144,15 +1165,6 @@ function sceneHit(clientX, clientY) {
 function ghostHit(clientX, clientY) {
   pointerRay(clientX, clientY);
   return raycaster.intersectObjects(ghostGroup.children, true).some(h => h.object.isMesh);
-}
-
-// Put the ghost's middle where the pointer meets the scene (less where on
-// the ghost it was taken hold of, when it is dragged).
-function moveGhostTo(clientX, clientY, hold = {x: 0, z: 0}) {
-  const at = ghost && sceneHit(clientX, clientY);
-  if (!at) return;
-  const moved = [setKnob(ghost.p, 'x_m', at.x - hold.x), setKnob(ghost.p, 'z_m', at.z - hold.z)].some(Boolean);
-  if (moved) { ghost.snapNext = true; followGhost(); showGhostKnobs(); askGhost(); }
 }
 
 // Where the other pieces connect, while a piece is placed: a dot at each --
@@ -1230,9 +1242,8 @@ const MOVE_STEP_M = 0.02;
 const PAD = [['forward', '↑', 'Move it away from you'], ['left', '←', 'Move it left'], ['right', '→', 'Move it right'],
              ['back', '↓', 'Move it toward you'], ['up', '▲', 'Raise it'], ['down', '▼', 'Lower it']];
 let padAxes = '';
-// Looking around while a piece is placed: every drag and tap turns the view
-// and none moves the piece (the arrows still do). View and Move in the
-// scene's corner, or Esc, goes back and forth; a new piece starts in Move.
+// A click returns to View without changing placement. Deliberately dragging
+// the selected piece resumes Move; dragging empty space always turns the view.
 let looking = false;
 function setLooking(on) {
   looking = Boolean(on && ghost);
@@ -1243,7 +1254,7 @@ function setLooking(on) {
 }
 function renderMovePad() {
   const pad = $('move-pad');
-  pad.hidden = !LEVEL_MODE || !ghost || ghost.p.piece === 'wire';
+  pad.hidden = !LEVEL_MODE || !movableGhost();
   $('scene-mode').hidden = pad.hidden;
   $('mode-view').setAttribute('aria-pressed', String(looking));
   $('mode-move').setAttribute('aria-pressed', String(!looking));
@@ -1531,12 +1542,12 @@ async function checkGhost(g) {
 }
 
 // A piece from the tray (index after the rest) or one picked up (its own
-// index): a ghost of it, following the pointer, starting where the middle of
+// index): a ghost of it, starting where the middle of
 // the view meets the scene.
 function startGhost(p, index, keepPlace = false) {
   endGhost();
   selectPhonePanel('controls');
-  ghost = {p, index, was: index < placements.length ? placements[index] : null, follow: false, fits: true, problems: [],
+  ghost = {p, index, was: index < placements.length ? placements[index] : null, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {}};
   view.classList.add('placing'); view.classList.remove('pickable', 'looking');
   looking = false;
@@ -1563,7 +1574,8 @@ function pickUp(i) {
 }
 
 function endGhost() {
-  ghost = null; draggingGhost = null;
+  ghost = null; draggingGhost = null; pressedAt = null;
+  view.classList.remove('grabbing', 'grab');
   terminalStart = null; powerMessage('');
   clearGhostMeshes(); ghostGroup.position.set(0, 0, 0); drawPorts([]);
   clearEditGuide();
@@ -1679,7 +1691,7 @@ function showGhostState() {
   const said = document.querySelector('#ghost-bar .state');
   if (said && ghost) {
     said.className = 'state ' + (choosingTerminal ? '' : ghost.fits ? 'fits' : 'refused');
-    said.textContent = choosingTerminal ? 'Choose the other terminal in the scene.' : (ghost.follow ? 'It follows the pointer: click where it should go. ' : '') + (ghost.fits ? (ghost.sun && ghost.sun.length
+    said.textContent = choosingTerminal ? 'Choose the other terminal in the scene.' : (ghost.fits ? (ghost.sun && ghost.sun.length
       ? `Aim estimate: ${ghost.sun[0].off_sun_deg}° off sun, ${Math.round(ghost.sun[0].sunlight_w)} W before shade. Set down for the measured meter.` : 'It fits here.')
       : ghost.problems.join('; ')) + (ghost.joined ? ` Joined to the ${ghost.joined}.` : '') +
       (ghost.fits && ghost.energy ? ' ' + madeAgainstPar() : '');
@@ -1687,9 +1699,7 @@ function showGhostState() {
   const state = $('ghost-state'), down = $('ghost-down');
   if (!ghost || !state) return;
   state.className = 'ghost-state ' + (choosingTerminal ? '' : ghost.fits ? 'fits' : 'refused');
-  state.textContent = ghost.follow ? 'Move the pointer over the scene; click to put it there. '
-    : '';
-  state.textContent += choosingTerminal ? 'Choose the other terminal in the scene.' : ghost.fits ? 'It fits here.' : ghost.problems.join('; ');
+  state.textContent = choosingTerminal ? 'Choose the other terminal in the scene.' : ghost.fits ? 'It fits here.' : ghost.problems.join('; ');
   // A panel: how squarely it faces the sun (the engine decides shade).
   for (const s of ghost.sun || []) state.textContent += ` It faces ${s.off_sun_deg}° off the sun: about ` +
     `${Math.round(s.sunlight_w)} W of sunlight on it, if nothing shades it.`;
@@ -1715,7 +1725,7 @@ function showGhostKnobs() {
 }
 
 window.machineGhostState = () => ghost ? {p: {...ghost.p}, index: ghost.index, fits: ghost.fits, problems: ghost.problems,
-  follow: ghost.follow, busy: ghost.busy, answered: ghost.answered, parts: ghostGroup.children.length,
+  follow: false, busy: ghost.busy, answered: ghost.answered, parts: ghostGroup.children.length,
   editGuide: ghost.editGuide?.key === ghost.card ? ghost.editGuide : null} : null;
 
 // ---- the preview: where things will go ----------------------------------------------
@@ -1988,14 +1998,10 @@ $('path-toggle').addEventListener('click', () => {
   if (previewOn) schedulePreview(0); else { clearTimeout(previewTimer); previewAsk++; clearPreview(); }
 });
 
-// Moving a piece, as 3D builders do it. A press near it -- anywhere within a
-// generous margin of it on the screen, not only on its few pixels -- takes
-// hold of it; on a touch screen one finger anywhere does (two fingers turn
-// and zoom the view). It then slides on a level plane at the height it
-// stands, by however far the pointer moves over that plane: it never jumps
-// onto whatever is behind the pointer. A tap or click that does not move
-// puts it there, unless it was on the piece itself. Any other drag turns the
-// view.
+// Only a deliberate primary drag near the selected piece moves it. Keep
+// its grab offset on a horizontal plane; clicks and small hand jitter never
+// change placement. Empty-space drags, secondary buttons and two fingers
+// turn the camera without leaving the piece editor.
 const ghostBox = new THREE.Box3(), boxCorner = new THREE.Vector3(), slidePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function ghostScreenBox() {
   if (!ghost || !ghostGroup.children.length) return null;
@@ -2022,6 +2028,11 @@ function slidePoint(clientX, clientY, y) {
   return raycaster.ray.intersectPlane(slidePlane, new THREE.Vector3());
 }
 const GRAB_MARGIN_PX = 40;
+function movableGhost() {
+  if (!ghost || ['wire', 'power_cable'].includes(ghost.p.piece)) return false;
+  const knobs = ghost && trayItem(ghost.p.piece)?.knobs;
+  return Boolean(knobs?.x_m || knobs?.z_m);
+}
 // Which of the player's pieces (its index), if any, is the first thing under
 // the pointer in the scene.
 function placedAt(clientX, clientY) {
@@ -2066,14 +2077,19 @@ window.machineBodies = () => Object.fromEntries([...world.bodies].map(([name, b]
 window.machineGhostScreen = () => ghostScreenBox();
 window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible, settled: target.distanceTo(goal) < 1e-3});
 renderer.domElement.addEventListener('pointerdown', e => {
+  if (pointers.size > 1) {
+    if (pulling) letGo();
+    cameraGesture = true; draggingGhost = null; pressedAt = null;
+    view.classList.remove('grabbing'); return;
+  }
+  if (cameraGesture) return;
   pressedAt = [e.clientX, e.clientY];
+  sceneDragged = false;
   draggingGhost = null;
-  // A second finger: the view, not the piece.
-  if (!ghost || ghost.follow || pointers.size > 1 || looking) return;
-  if (e.pointerType === 'touch' || nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX)) {
+  if (!movableGhost() || e.button !== 0 || e.ctrlKey) return;
+  if (nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX)) {
     const box = ghostScreenBox(), y = box ? box.bottom : 0, from = slidePoint(e.clientX, e.clientY, y);
-    if (from) draggingGhost = {y, from, x: ghost.p.x_m ?? 0, z: ghost.p.z_m ?? 0};
-    view.classList.add('grabbing');
+    if (from) draggingGhost = {id: e.pointerId, y, from, x: ghost.p.x_m ?? 0, z: ghost.p.z_m ?? 0, active: false};
   }
 });
 renderer.domElement.addEventListener('pointermove', e => {
@@ -2083,26 +2099,39 @@ renderer.domElement.addEventListener('pointermove', e => {
     if (!e.buttons && e.pointerType === 'mouse') view.classList.toggle('pickable', !pullMode && !attachMode && placedAt(e.clientX, e.clientY) >= 0);
     return;
   }
-  if (draggingGhost && pointers.size <= 1) {
+  if (draggingGhost && draggingGhost.id === e.pointerId && pointers.size === 1 && !cameraGesture) {
+    if (!draggingGhost.active) {
+      if (!pressedAt || Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6) return;
+      const drag = draggingGhost;
+      setLooking(false); draggingGhost = drag; drag.active = true;
+      view.classList.add('grabbing');
+    }
     const at = slidePoint(e.clientX, e.clientY, draggingGhost.y);
     if (!at) return;
     const moved = [setKnob(ghost.p, 'x_m', draggingGhost.x + at.x - draggingGhost.from.x),
                    setKnob(ghost.p, 'z_m', draggingGhost.z + at.z - draggingGhost.from.z)].some(Boolean);
     if (moved) { ghost.snapNext = true; followGhost(); showGhostKnobs(); askGhost(); }
-  } else if (ghost.follow && !e.buttons) moveGhostTo(e.clientX, e.clientY);
-  else if (!e.buttons) view.classList.toggle('grab', !ghost.follow && !looking && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
+  } else if (!e.buttons) view.classList.toggle('grab', movableGhost() && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
 });
 renderer.domElement.addEventListener('pointerup', e => {
-  const click = pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6;
-  if (ghost && click && !looking && (ghost.follow || !nearGhost(e.clientX, e.clientY, 0))) {
-    moveGhostTo(e.clientX, e.clientY);
-    if (ghost.follow) { ghost.follow = false; renderPlaced(); renderGhostBar(); showGhostState(); }
-  } else if (!ghost && click && !pullMode && !attachMode) {
+  const click = e.button === 0 && !cameraGesture && !sceneDragged && pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6;
+  if (ghost && click) setLooking(true);
+  else if (!ghost && click && !pullMode && !attachMode) {
     const i = placedAt(e.clientX, e.clientY);
     if (i >= 0) pickUp(i);
   }
   draggingGhost = null; pressedAt = null;
+  if (!pointers.size) cameraGesture = false;
   view.classList.remove('grabbing');
+});
+const cancelPlacementGesture = () => {
+  draggingGhost = null; pressedAt = null;
+  if (!pointers.size) cameraGesture = false;
+  view.classList.remove('grabbing');
+};
+renderer.domElement.addEventListener('pointercancel', cancelPlacementGesture);
+renderer.domElement.addEventListener('lostpointercapture', e => {
+  pointers.delete(e.pointerId); pinch = 0; cancelPlacementGesture();
 });
 
 // Guides through the piece being placed, as 3D editors draw them: a line
@@ -2194,15 +2223,15 @@ function sendPull(force, at, now = false) {
        force: force.toArray().map(v => +v.toFixed(2))}).catch(() => {});
 }
 renderer.domElement.addEventListener('pointerdown', e => {
-  if (!pullMode || ghost || pointers.size > 1) return;
+  if (!pullMode || ghost || pointers.size > 1 || cameraGesture || e.button !== 0 || e.ctrlKey) return;
   const target = pullTarget(e.clientX, e.clientY);
   if (!target) return;
-  pulling = {...target, clientX: e.clientX, clientY: e.clientY};
+  pulling = {...target, pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY};
   pullLine.visible = true;
   if (!playing) setPlaying(true).catch(() => {});
 });
 renderer.domElement.addEventListener('pointermove', e => {
-  if (!pulling) return;
+  if (!pulling || pulling.pointerId !== e.pointerId) return;
   pulling.clientX = e.clientX; pulling.clientY = e.clientY;
   const {at, force} = pullForce(e.clientX, e.clientY);
   sendPull(force, at);
@@ -2217,6 +2246,7 @@ const letGo = () => {
 };
 renderer.domElement.addEventListener('pointerup', letGo);
 renderer.domElement.addEventListener('pointercancel', letGo);
+renderer.domElement.addEventListener('lostpointercapture', letGo);
 // Each frame: the string from the point of the part to the pointer, and the
 // force sent again as the part moves under it.
 function drawPull() {
@@ -2296,7 +2326,7 @@ function attachChoice() {
   card.hidden = false;
 }
 renderer.domElement.addEventListener('pointerup', e => {
-  if (!attachMode || ghost || !pressedAt || Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) >= 6) return;
+  if (!attachMode || ghost || e.button !== 0 || cameraGesture || sceneDragged || !pressedAt || Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) >= 6) return;
   const part = partAt(e.clientX, e.clientY);
   if (!part || attaching.length >= 2 || (attaching[0] && attaching[0].name === part.name)) return;
   attaching.push(part);
@@ -2663,12 +2693,8 @@ function ghostItem() {
   const title = Object.assign(document.createElement('strong'), {textContent: `${what} — ghost, not set down yet`});
   title.append(Object.assign(document.createElement('span'), {id: 'ghost-cost'}));
   head.append(title);
-  const follow = button(ghost.follow ? 'Following the pointer' : 'Follow the pointer', () => {
-    ghost.follow = !ghost.follow; renderPlaced(); renderGhostBar(); showGhostState();
-  });
-  follow.setAttribute('aria-pressed', String(ghost.follow));
   const actions = Object.assign(document.createElement('div'), {className: 'ghost-actions'});
-  actions.append(follow, button('Set it down', setGhostDown, {id: 'ghost-down', disabled: true}), button('Cancel', cancelGhost));
+  actions.append(button('Set it down', setGhostDown, {id: 'ghost-down', disabled: true}), button('Cancel', cancelGhost));
   li.append(head, actions, Object.assign(document.createElement('p'), {id: 'ghost-state', className: 'ghost-state'}));
   ghost.inputs = {};
   const turning = Object.assign(document.createElement('fieldset'), {className: 'turning'});
@@ -2694,7 +2720,7 @@ function ghostItem() {
       showGhostKnobs(); askGhost();
     }), Object.assign(document.createElement('p'), {className: 'legend',
       textContent: 'Keys: Q/E turn · R/F tip · Z/C roll (with Shift, 1°) · arrows move it as you see it, Page Up/Down raise and lower it · Enter sets it down · Esc switches between moving it and looking around. ' +
-                   'Shift+wheel turns it, Alt+wheel tips it. Drag the pinned ghost to move it; click anywhere to put it there.'}));
+                   'Shift+wheel turns it, Alt+wheel tips it. Drag the ghost to move it; click to return to View without moving it. Drag empty space, right/middle drag or Ctrl+drag to turn the view.'}));
     li.append(turning);
   }
   return li;
@@ -3504,7 +3530,7 @@ async function startGame() {
     ['view-left', () => { azimuth -= .2; }], ['view-right', () => { azimuth += .2; }],
     ['view-in', () => { distance = Math.max(.4, distance / 1.2); }], ['view-out', () => { distance = Math.min(40, distance * 1.2); }]
   ]) $(id).addEventListener('click', change);
-  $('scene-note').textContent = 'Drag to turn the view · Wheel or pinch to zoom · Click one of your pieces to pick it up';
+  $('scene-note').textContent = 'Drag a ghost to move · Drag empty space to turn · Wheel or two fingers to zoom';
   $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;
   for (const d of document.querySelectorAll('aside details:not(#feedback):not(#phone-tools)')) d.hidden = true;
