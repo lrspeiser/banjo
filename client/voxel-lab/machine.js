@@ -634,7 +634,7 @@ function render() {
   camera.position.set(target.x + distance * Math.cos(elevation) * Math.sin(azimuth), target.y + distance * Math.sin(elevation),
                       target.z + distance * Math.cos(elevation) * Math.cos(azimuth));
   camera.lookAt(target);
-  if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); }
+  if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); syncMovePad(); }
   renderer.render(scene, camera);
   renderLabels();
 }
@@ -789,6 +789,88 @@ function turnGhost(key, by) {
   if (k && setKnob(ghost.p, k, (ghost.p[k] || 0) + by)) { showGhostKnobs(); askGhost(); }
 }
 
+// Moving it as it is seen: left, right, away from you and toward you go
+// along whichever of the level's ground directions (x, the red guide line;
+// z, the blue) is nearest that way on the screen, so a press moves it along
+// one guide line; up and down move whatever sets its height, all together
+// or not at all (a ramp keeps its slope). A piece with no height of its own
+// rests on what is under it.
+const HEIGHT_KNOBS = ['height_m', 'pivot_height_m', 'bore_height_m', 'drop_from_m', 'top_height_m', 'foot_height_m'];
+function heightKnobs(p) {
+  const knobs = trayItem(p.piece).knobs;
+  return HEIGHT_KNOBS.filter(k => knobs[k] && !knobs[k].choices);
+}
+function viewAxis(dir) {
+  // The camera looks along (-sin a, -cos a) on the ground; its right is (cos a, -sin a).
+  const [dx, dz] = {right: [Math.cos(azimuth), -Math.sin(azimuth)], left: [-Math.cos(azimuth), Math.sin(azimuth)],
+                    forward: [-Math.sin(azimuth), -Math.cos(azimuth)], back: [Math.sin(azimuth), Math.cos(azimuth)]}[dir];
+  return Math.abs(dx) >= Math.abs(dz) ? ['x_m', Math.sign(dx)] : ['z_m', Math.sign(dz)];
+}
+function moveGhostBy(dir, metres) {
+  if (!ghost) return false;
+  const knobs = trayItem(ghost.p.piece).knobs;
+  let moved = false;
+  if (dir === 'up' || dir === 'down') {
+    const keys = heightKnobs(ghost.p), by = dir === 'up' ? metres : -metres;
+    if (!keys.length || keys.some(k => (ghost.p[k] ?? 0) + by > knobs[k].max + 1e-9 || (ghost.p[k] ?? 0) + by < knobs[k].min - 1e-9)) return false;
+    for (const k of keys) moved = setKnob(ghost.p, k, (ghost.p[k] ?? 0) + by) || moved;
+  } else {
+    const [key, sign] = viewAxis(dir);
+    if (!knobs[key]) return false;
+    moved = setKnob(ghost.p, key, (ghost.p[key] ?? 0) + sign * metres);
+  }
+  if (moved) { followGhost(); showGhostKnobs(); askGhost(); }
+  return moved;
+}
+
+// The arrows, over the scene while a piece is placed. Each is drawn in the
+// colour of the guide line it moves along, which changes as the view turns.
+// Held, an arrow keeps moving it.
+const MOVE_STEP_M = 0.02;
+const PAD = [['forward', '↑', 'Move it away from you'], ['left', '←', 'Move it left'], ['right', '→', 'Move it right'],
+             ['back', '↓', 'Move it toward you'], ['up', '▲', 'Raise it'], ['down', '▼', 'Lower it']];
+let padAxes = '';
+function renderMovePad() {
+  const pad = $('move-pad');
+  pad.hidden = !LEVEL_MODE || !ghost;
+  padAxes = '';
+  if (pad.hidden) { pad.replaceChildren(); return; }
+  const high = heightKnobs(ghost.p).length > 0;
+  pad.replaceChildren(...PAD.filter(([dir]) => high || (dir !== 'up' && dir !== 'down')).map(([dir, glyph, say]) => {
+    const b = holdButton(glyph, () => moveGhostBy(dir, MOVE_STEP_M), {ariaLabel: say, title: say});
+    b.dataset.dir = dir;
+    return b;
+  }));
+  syncMovePad();
+}
+function syncMovePad() {
+  const pad = $('move-pad');
+  if (pad.hidden) return;
+  const axes = ['left', 'right', 'forward', 'back'].map(dir => viewAxis(dir)[0]).join();
+  if (axes === padAxes) return;
+  padAxes = axes;
+  for (const b of pad.querySelectorAll('button')) {
+    const dir = b.dataset.dir;
+    b.dataset.axis = dir === 'up' || dir === 'down' ? 'y' : viewAxis(dir)[0] === 'x_m' ? 'x' : 'z';
+  }
+}
+
+// A button that acts when pressed, and again and again while it is held.
+function holdButton(text, act, extra = {}) {
+  const b = Object.assign(document.createElement('button'), {type: 'button', textContent: text}, extra);
+  let wait = null, again = null;
+  const stop = () => { clearTimeout(wait); clearInterval(again); wait = again = null; };
+  const tick = () => { if (!b.isConnected || b.disabled) stop(); else act(); };
+  b.addEventListener('pointerdown', e => {
+    e.preventDefault(); stop(); tick();
+    wait = setTimeout(() => { again = setInterval(tick, 80); }, 350);
+  });
+  for (const end of ['pointerup', 'pointerleave', 'pointercancel', 'blur']) b.addEventListener(end, stop);
+  // From the keyboard (or a script) a press is a click with no pointer: once.
+  b.addEventListener('click', e => { if (e.detail === 0) act(); });
+  return b;
+}
+
 // The ghost as last compiled, moved at once by however far its knobs have
 // moved since; the server's answer then sets it down again.
 function followGhost() {
@@ -896,7 +978,7 @@ function startGhost(p, index) {
   endGhost();
   ghost = {p, index, was: index < placements.length ? placements[index] : null, follow: false, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {}};
-  view.classList.add('placing');
+  view.classList.add('placing'); view.classList.remove('pickable');
   renderTray(); renderPlaced(); renderGhostBar();
   // Where the ghost is: in sight (a phone's page has scrolled down to the tray).
   sceneIntoView();
@@ -906,6 +988,15 @@ function startGhost(p, index) {
     if (at) { setKnob(ghost.p, 'x_m', at.x); setKnob(ghost.p, 'z_m', at.z); showGhostKnobs(); }
   }
   askGhost();
+}
+
+// A piece set down, made a ghost again to move, change or turn it (from the
+// panel, or by clicking it in the scene). After a run, or during one, the
+// level goes back to its start first: pieces are placed there.
+function pickUp(i) {
+  if (!placements[i]) return;
+  if (playing || world.t > 0) rebuildLevel(false).catch(() => {});
+  startGhost({...placements[i]}, i);
 }
 
 function endGhost() {
@@ -934,15 +1025,17 @@ function nudgeKnob(key, by) {
 }
 
 function renderGhostBar() {
+  renderMovePad();
   const card = $('ghost-bar');
   card.hidden = !ghost;
   ghost && (ghost.cardInput = null);
   if (!ghost) { card.replaceChildren(); return; }
   const throwAway = button('✕', cancelGhost, {ariaLabel: 'Throw the ghost away', title: 'Throw the ghost away'});
   const head = Object.assign(document.createElement('p'), {className: 'head',
-    textContent: `Your ${ghost.p.piece}: drag it, or ${matchMedia('(pointer: coarse)').matches ? 'tap' : 'click'} where it goes`});
-  const knobs = trayItem(ghost.p.piece).knobs, keys = Object.keys(knobs);
-  if (!keys.includes(ghost.card)) ghost.card = keys.find(k => k !== 'x_m' && k !== 'z_m') || keys[0];
+    textContent: `Your ${ghost.p.piece}: drag it, use the arrows, or ${matchMedia('(pointer: coarse)').matches ? 'tap' : 'click'} where it goes`});
+  // Where it stands is the arrows' and the drag's; the chips change the rest.
+  const knobs = trayItem(ghost.p.piece).knobs, keys = Object.keys(knobs).filter(k => k !== 'x_m' && k !== 'z_m');
+  if (!keys.includes(ghost.card)) ghost.card = keys[0];
   const chips = Object.assign(document.createElement('div'), {className: 'chips'});
   for (const key of keys) {
     const chip = button(knobName(knobs[key], key), () => { ghost.card = key; renderGhostBar(); },
@@ -987,7 +1080,7 @@ function showGhostState() {
   if (said && ghost) {
     said.className = 'state ' + (ghost.fits ? 'fits' : 'refused');
     said.textContent = (ghost.follow ? 'It follows the pointer: click where it should go. ' : '') + (ghost.fits ? (ghost.sun && ghost.sun.length
-      ? `Faces ${ghost.sun[0].off_sun_deg}° off the sun: about ${Math.round(ghost.sun[0].sunlight_w)} W` : 'It fits here.')
+      ? `Faces ${ghost.sun[0].off_sun_deg}° off the sun: about ${Math.round(ghost.sun[0].sunlight_w)} W.` : 'It fits here.')
       : ghost.problems.join('; ')) + (ghost.fits && ghost.energy ? ` It takes ${energyText(ghost.energy.j)} to make.` : '');
   }
   const state = $('ghost-state'), down = $('ghost-down');
@@ -1174,6 +1267,27 @@ function slidePoint(clientX, clientY, y) {
   return raycaster.ray.intersectPlane(slidePlane, new THREE.Vector3());
 }
 const GRAB_MARGIN_PX = 40;
+// Which of the player's pieces (its index), if any, is the first thing under
+// the pointer in the scene.
+function placedAt(clientX, clientY) {
+  if (!LEVEL_MODE || !level || !placements.length) return -1;
+  const rect = renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  const nameOf = new Map([...meshes].map(([name, m]) => [m, name]));
+  const hit = raycaster.intersectObjects([...nameOf.keys()].filter(m => m.visible), true).find(h => h.object.isMesh);
+  let o = hit && hit.object;
+  while (o && !nameOf.has(o)) o = o.parent;
+  const m = o && nameOf.get(o).match(/^your (\S+) (\d+)(?: |$)/);
+  const i = m ? Number(m[2]) - 1 : -1;
+  return i >= 0 && placements[i] && placements[i].piece === m[1] ? i : -1;
+}
+// For tests: where a body is on the page (the middle of its mesh).
+window.machineBodyScreen = name => {
+  const mesh = meshes.get(name);
+  if (!mesh) return null;
+  const c = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()).project(camera), rect = renderer.domElement.getBoundingClientRect();
+  return [rect.left + (c.x + 1) / 2 * rect.width, rect.top + (1 - c.y) / 2 * rect.height];
+};
 // For tests: where the piece being placed is on the screen, and the view.
 window.machineGhostScreen = () => ghostScreenBox();
 window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible});
@@ -1189,7 +1303,12 @@ renderer.domElement.addEventListener('pointerdown', e => {
   }
 });
 renderer.domElement.addEventListener('pointermove', e => {
-  if (!ghost) { view.classList.remove('grab'); return; }
+  if (!ghost) {
+    view.classList.remove('grab');
+    // A piece of yours under the mouse can be clicked to pick it up.
+    if (!e.buttons && e.pointerType === 'mouse') view.classList.toggle('pickable', placedAt(e.clientX, e.clientY) >= 0);
+    return;
+  }
   if (draggingGhost && pointers.size <= 1) {
     const at = slidePoint(e.clientX, e.clientY, draggingGhost.y);
     if (!at) return;
@@ -1204,6 +1323,9 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (ghost && click && (ghost.follow || !nearGhost(e.clientX, e.clientY, 0))) {
     moveGhostTo(e.clientX, e.clientY);
     if (ghost.follow) { ghost.follow = false; renderPlaced(); renderGhostBar(); showGhostState(); }
+  } else if (!ghost && click) {
+    const i = placedAt(e.clientX, e.clientY);
+    if (i >= 0) pickUp(i);
   }
   draggingGhost = null; pressedAt = null;
   view.classList.remove('grabbing');
@@ -1257,14 +1379,10 @@ renderer.domElement.addEventListener('wheel', e => {
 document.addEventListener('keydown', e => {
   if (!ghost || e.ctrlKey || e.metaKey || e.target.closest('input, textarea, select')) return;
   const key = e.key.toLowerCase(), step = e.shiftKey ? 1 : 15;
-  const nudge = {arrowleft: ['x_m', -1], arrowright: ['x_m', 1], arrowup: ['z_m', -1], arrowdown: ['z_m', 1]}[key];
+  const nudge = {arrowleft: 'left', arrowright: 'right', arrowup: 'forward', arrowdown: 'back', pageup: 'up', pagedown: 'down'}[key];
   if (TURN_KEYS[key]) turnGhost(TURN_KEYS[key][0], TURN_KEYS[key][1] * step);
-  else if (nudge) {
-    const rule = trayItem(ghost.p.piece).knobs[nudge[0]];
-    if (rule && setKnob(ghost.p, nudge[0], (ghost.p[nudge[0]] ?? 0) + nudge[1] * (rule.step || 0.01) * (e.shiftKey ? 10 : 1))) {
-      followGhost(); showGhostKnobs(); askGhost();
-    }
-  } else if (key === 'enter' && !e.target.closest('button')) setGhostDown();
+  else if (nudge) moveGhostBy(nudge, e.shiftKey ? 0.1 : 0.01);
+  else if (key === 'enter' && !e.target.closest('button')) setGhostDown();
   else if (key === 'escape') cancelGhost();
   else return;
   e.preventDefault();
@@ -1348,6 +1466,7 @@ function renderSceneTray() {
     }, {ariaLabel: `Add a ${t.piece}`, disabled: left <= 0, title: left > 0 ? `${left} left` : 'none left'});
     const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
     b.prepend(img); pictureInto(img, t);
+    b.append(Object.assign(document.createElement('small'), {textContent: left > 0 ? `${left} left` : 'none left'}));
     return b;
   }));
 }
@@ -1442,7 +1561,7 @@ function ghostItem() {
       for (const [key, rule] of Object.entries(t.knobs)) if (rule.turning) setKnob(p, key, 0);
       showGhostKnobs(); askGhost();
     }), Object.assign(document.createElement('p'), {className: 'legend',
-      textContent: 'Keys: Q/E turn · R/F tip · Z/C roll (with Shift, 1°) · arrows move it · Enter sets it down · Esc cancels. ' +
+      textContent: 'Keys: Q/E turn · R/F tip · Z/C roll (with Shift, 1°) · arrows move it as you see it, Page Up/Down raise and lower it · Enter sets it down · Esc cancels. ' +
                    'Shift+wheel turns it, Alt+wheel tips it. Drag the pinned ghost to move it; click anywhere to put it there.'}));
     li.append(turning);
   }
@@ -1459,7 +1578,7 @@ function renderPlaced() {
     head.append(Object.assign(document.createElement('strong'), {textContent: `your ${p.piece} ${i + 1}${made ? ' · ' + energyText(made.j) + ' to make' : ''}`}));
     const actions = Object.assign(document.createElement('div'), {className: 'ghost-actions'});
     // Picked up, it becomes a ghost again: moved, changed, turned, set down.
-    actions.append(button('Pick up', () => startGhost({...p}, i), {ariaLabel: `Pick up your ${p.piece} ${i + 1}`}),
+    actions.append(button('Pick up', () => pickUp(i), {ariaLabel: `Pick up your ${p.piece} ${i + 1}`}),
                    button('Remove', () => {
                      if (ghost) endGhost();
                      placements.splice(i, 1); renderTray(); renderPlaced(); scheduleRebuild(0);
@@ -1715,6 +1834,7 @@ async function startGame() {
   // shown: the sandbox's switches for those are not on the game page.
   for (const id of ['follow', 'path-toggle']) $(id).hidden = true;
   document.querySelector('#scene-actions .speed').hidden = true;
+  $('scene-note').textContent = 'Drag to turn the view · Wheel or pinch to zoom · Click one of your pieces to pick it up';
   let seen = false;
   try { seen = Boolean(localStorage.getItem('banjo-play-guide-seen')); } catch { /* private window */ }
   showGuide(!seen);

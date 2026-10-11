@@ -327,6 +327,50 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(self.ghost()['p']['x_m'], p1['x_m'], 'two fingers leave it be')
         self.assertNotEqual(self.js('window.machineCamera().azimuth'), turned, 'two fingers turn the view')
 
+    def test_arrows_move_a_piece_as_it_is_seen_and_a_piece_set_down_is_picked_up_by_clicking_it(self):
+        # Level 7's solar panel has a height of its own, so all six arrows;
+        # there is no x or z to pick: the arrows (and dragging) move it.
+        self.open('sun')
+        self.assertIn('1 left', self.js("document.querySelector('#scene-tray button').textContent"))
+        self.press('Add a solar')
+        start = self.ghost()['p']
+        self.assertFalse({'x', 'z'} & set(self.js("[...document.querySelectorAll('#ghost-bar .chips button')].map(b => b.textContent)")))
+        # Looking along -z: right is +x (along the red guide line), toward you +z.
+        self.js('window.machineView({azimuth: 0})')
+        self.wait("document.querySelector('#move-pad [data-dir=right]').dataset.axis === 'x'", 5)
+        self.press('Move it right')
+        self.assertAlmostEqual(self.ghost()['p']['x_m'], start['x_m'] + 0.02, places=4)
+        self.press('Move it toward you')
+        self.assertAlmostEqual(self.ghost()['p']['z_m'], start['z_m'] + 0.02, places=4)
+        self.press('Raise it')
+        self.assertAlmostEqual(self.ghost()['p']['height_m'], start['height_m'] + 0.02, places=4)
+        # A quarter turn round, looking along -x: right is now -z, along the blue line.
+        self.js('window.machineView({azimuth: Math.PI / 2})')
+        self.wait("document.querySelector('#move-pad [data-dir=right]').dataset.axis === 'z'", 5)
+        z = self.ghost()['p']['z_m']
+        self.press('Move it right')
+        self.assertAlmostEqual(self.ghost()['p']['z_m'], z - 0.02, places=4)
+        # Level 1 gives one plank: set down, there is none left to add. While
+        # it runs, a click on it picks it up, and the level goes back to its start.
+        self.open('gap')
+        self.press('Add a plank')
+        self.ghost()
+        self.assertTrue(self.js("document.getElementById('move-pad').querySelectorAll('button').length === 4"),
+                        'a plank rests on what is under it: no up or down')
+        self.press('Set it down')
+        self.wait('!window.machineGhostState()', 5)
+        self.wait(READY, 60)
+        self.assertTrue(self.js("document.querySelector('#scene-tray button').disabled"))
+        self.assertIn('none left', self.js("document.querySelector('#scene-tray button').textContent"))
+        self.press('Run it')
+        self.wait("/calculating live/.test(document.getElementById('clock').textContent)", 30)
+        x, y = self.js("window.machineBodyScreen('your plank 1')")
+        self.mouse('mousePressed', x, y)
+        self.mouse('mouseReleased', x, y)
+        g = self.ghost()
+        self.assertEqual(g['index'], 0, 'the plank set down is a ghost again')
+        self.wait(READY, 60)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
