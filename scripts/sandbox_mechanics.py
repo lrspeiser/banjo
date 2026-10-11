@@ -229,10 +229,9 @@ TRAY = [
 
 
 def base(title, **fields):
-    # A grounded reference marker keeps a machine valid before any piece has
-    # been inserted. It is outside the demonstrations' moving clearances.
+    # Empty machines are valid: only parts with a physical role belong here.
     return dict(schema=mw.SCHEMA, title=title, cell_m=.02,
-                parts=[box('reference marker', [.12] * 3, [-1.8, .06, 1.8])], stations=[], **fields)
+                parts=[], stations=[], **fields)
 
 
 def optical_base(title, target, normal, watts=10, beam_width=.02):

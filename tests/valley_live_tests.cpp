@@ -97,6 +97,40 @@ void run(LiveWorld &world, double seconds) {
     }
 }
 
+void anEmptyFlumeRunsAndRestoresItsWater() {
+    for (const double discharge : {0.0, 0.1}) {
+        const Json flume = {{"kind", "flume"}, {"nx", 60}, {"nz", 40},
+                            {"trench_z_m", 0}, {"trench_width_m", .6},
+                            {"trench_depth_m", .35}, {"trench_slope", .005},
+                            {"discharge_m3_s", discharge}};
+        const Json scene = {{"bodies", Json::array()}, {"terrain", {{"generate", flume}}}};
+        auto world = open(scene);
+        require(world->poses().empty() && world->environment() && world->environment()->water(),
+                "empty channel lost its terrain/water or manufactured a solid body");
+        near(world->environment()->water()->volume(), 0, 0, "channel begins dry");
+        run(*world, 1.0);
+        const auto &water = *world->environment()->water();
+        require(world->poses().empty(), "water-only stepping manufactured a solid body");
+        near(world->time_s(), 1.0, 1e-12, "water-only world advances its clock");
+        if (discharge > 0) require(water.volume() > .08 && water.ledger().inflow_m3 > .08,
+                                   "empty flowing channel received no declared upstream water");
+        else near(water.volume(), 0, 0, "empty dry channel remains dry");
+        near(water.residual(), 0, 1e-12, "water-only volume ledger closes");
+        std::string why;
+        const auto saved = world->snapshot(why);
+        require(!saved.empty(), "water-only world could not be saved: " + why);
+        auto again = open(scene, saved);
+        require(again->restored().tier == "whole" && again->poses().empty(), "water-only world restores whole");
+        near(again->environment()->water()->volume(), water.volume(), 1e-12, "empty restore preserves water volume");
+        near(again->environment()->water()->ledger().inflow_m3, water.ledger().inflow_m3, 1e-12,
+             "empty restore preserves upstream volume receipt");
+        run(*again, .1);
+        require(again->poses().empty(), "continued water-only world manufactured bodies");
+        std::cout << "    solids=0, dt=" << kDt << " s, Q=" << discharge
+                  << " m3/s, retained=" << water.volume() << " m3, residual=" << water.residual() << " m3\n";
+    }
+}
+
 LiveBodyPose poseOf(const LiveWorld &world, const std::string &name) {
     for (const LiveBodyPose &pose : world.poses())
         if (pose.name == name) return pose;
@@ -1640,6 +1674,7 @@ int main(int argc, char **argv) {
     setenv("BANJO_TERRAIN_CACHE", cache.string().c_str(), 1);
 #endif
     const std::vector<std::pair<std::string_view, std::function<void()>>> tests{
+        {"an empty flume runs and restores its water", anEmptyFlumeRunsAndRestoresItsWater},
         {"cut surface has native walls slopes and restart",cutSurfaceHasNativeWallsSlopesAndRestart},
         {"column surface has native tops walls voids and restart",columnSurfaceHasNativeTopsWallsVoidsAndRestart},
         {"column surface supports glass oak and iron",columnSurfaceSupportsGlassOakAndIron},

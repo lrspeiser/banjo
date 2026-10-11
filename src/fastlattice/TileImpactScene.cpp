@@ -130,6 +130,8 @@ std::vector<SceneBody> readSceneFile(const std::string &path) {
 
 void readSceneSettings(const std::string &text, TileImpactRequest &request) {
     const nlohmann::json document = nlohmann::json::parse(text);
+    if (document.is_array() || (document.is_object() && document.contains("bodies") &&
+                                document.at("bodies").is_array())) request.authored_scene = true;
     if (!document.is_object()) return;   // a bare array is bodies and nothing else
     if (document.contains("precise_rigid_bodies"))
         request.precise_rigid_scene_json = document.at("precise_rigid_bodies").dump();
@@ -203,7 +205,7 @@ void readSceneSettings(const std::string &text, TileImpactRequest &request) {
 std::vector<SceneBody> readSceneJson(const std::string &text) {
     const nlohmann::json document = nlohmann::json::parse(text);
     const auto &list = document.contains("bodies") ? document.at("bodies") : document;
-    if (!list.is_array() || list.empty()) throw std::invalid_argument("a scene needs a non-empty bodies array");
+    if (!list.is_array()) throw std::invalid_argument("a scene needs a bodies array");
     const auto vector3 = [](const nlohmann::json &node, const char *key, Vec3 fallback) {
         if (!node.contains(key)) return fallback;
         const auto &v = node.at(key);
@@ -440,7 +442,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     TileImpactSetup &s = *setup;
     s.request = request;
     const TileImpactRequest &r = s.request;
-    s.multi_body = !r.bodies.empty();
+    s.multi_body = r.authored_scene || !r.bodies.empty();
     if (!(r.cell_size_m > 0.0) || !(r.dt_factor > 0.0))
         throw std::invalid_argument("the scene needs a positive cell size and a positive dt factor");
     if (!s.multi_body &&
@@ -468,7 +470,12 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
     // yield_stretch, which is the one switch StepSettings reads, and it touches
     // no threshold of either failure law.
     if (r.plasticity) s.compiled = withPlasticFlow(s.compiled, s.tile_material);
-    if (s.multi_body) {
+    const bool empty_scene = s.multi_body && r.bodies.empty();
+    if (empty_scene) {
+        // No lattice means no stiffness-limited substep. Keep its empty
+        // adjacency/schedule valid, and never manufacture the legacy plate.
+        s.asset.adjacency_offsets = {0U};
+    } else if (s.multi_body) {
         // Each body is generated on its own, with its own material, and the
         // results are concatenated. No bond crosses a body, so the objects stay
         // separate; node contact is what lets them meet.
@@ -665,7 +672,7 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
                                  s.compiled, &s.layout);
     s.limit = measureLatticeResolutionLimit(s.asset, s.compiled);
     }
-    if (!(s.limit.explicit_substep_limit_s > 0.0))
+    if (!empty_scene && !(s.limit.explicit_substep_limit_s > 0.0))
         throw std::runtime_error("lattice has no resolution limit; is the material stiffness zero?");
     if (r.loose_cells) {
         // The substep limit above is the bonded lattice's, so the loose heap is
@@ -674,7 +681,9 @@ std::unique_ptr<TileImpactSetup> buildTileImpactSetup(const TileImpactRequest &r
         s.asset.adjacent_bond_indices.clear();
         s.asset.adjacency_offsets.assign(s.asset.nodes.size() + 1U, 0U);
     }
-    s.dt_s = r.dt_factor * s.limit.explicit_substep_limit_s;
+    // This idle fallback is not a material stability limit. Live callers
+    // still choose their own dt, and terrain/water retains its own CFL step.
+    s.dt_s = empty_scene ? 1.0 / 240.0 : r.dt_factor * s.limit.explicit_substep_limit_s;
 
     s.ground_y = 0.0;
     s.support_y = r.layout == SceneLayout::Flat ? 0.0 : r.ledge_height_m;

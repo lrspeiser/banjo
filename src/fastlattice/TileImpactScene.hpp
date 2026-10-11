@@ -114,10 +114,11 @@ struct PartInterface {
 };
 
 struct TileImpactRequest {
-    // Many objects instead of one tile and one rigid striker. Empty means the
-    // single-tile scene this lane has always run, bit for bit: nothing about a
-    // body is read unless this is non-empty.
+    // Many objects instead of one tile and one rigid striker. Without an
+    // authored scene an empty list retains the legacy tile-impact fixture.
+    // An explicitly authored empty array instead means no solid bodies.
     std::vector<SceneBody> bodies;
+    bool authored_scene{false};
     // Distinct live-only rigid bodies. Never decoded into cubic lattice cells.
     std::string precise_rigid_scene_json;
     MaterialPreset tile_material{MaterialPreset::Glass};

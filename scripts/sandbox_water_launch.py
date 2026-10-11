@@ -40,9 +40,7 @@ TRAY = [
 
 CHANNEL_BASE = dict(schema=mw.SCHEMA, title='Dry collection channel', ground=dict(
     kind='flume', nx=60, nz=40, cell_m=.1, trench_z_m=0, trench_width_m=.6,
-    trench_depth_m=.35, trench_slope=.005, discharge_m3_s=0), parts=[
-        dict(name='channel marker', shape='box', material='concrete', fixed=True,
-             at_m=[-2.0,.04,.8], size_m=[.12,.08,.12])])
+    trench_depth_m=.35, trench_slope=.005, discharge_m3_s=0), parts=[])
 DRY_BASE = dict(schema=mw.SCHEMA, title='Launcher workbench', parts=[])
 
 

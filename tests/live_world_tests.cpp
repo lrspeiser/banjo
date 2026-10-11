@@ -90,6 +90,48 @@ const LiveBodyPose &named(const std::vector<LiveBodyPose> &poses, const std::str
     throw std::runtime_error("no body called " + name);
 }
 
+void anAuthoredEmptyWorldHasNoHiddenBodiesAndCanBeSaved() {
+    for (const std::string text : {std::string("{\"bodies\":[]}"), std::string("[]")}) {
+        TileImpactRequest r;
+        r.backend = benchBackend();
+        r.bodies = readSceneJson(text);
+        readSceneSettings(text, r);
+        require(r.authored_scene, "explicit empty bodies did not select the authored scene lane");
+        const auto setup = buildTileImpactSetup(r);
+        require(setup->multi_body && setup->matter.nodes.empty() && setup->asset.bonds.empty(),
+                "an empty scene manufactured legacy tile matter");
+        require(setup->settings_world.sphere_enabled == 0 && std::isfinite(setup->dt_s),
+                "an empty scene enabled the legacy striker or has no usable idle timestep");
+        const auto live = LiveWorld::open(r);
+        require(live->poses().empty(), "an empty scene manufactured a solid body");
+        live->foreseeCollisions(1.0);
+        for (int i = 0; i < 240; ++i) live->step(1.0 / 240.0);
+        require(live->poses().empty() && std::abs(live->time_s() - 1.0) < 1e-12,
+                "an empty world cannot advance its clock without bodies");
+        std::string why;
+        const auto saved = live->snapshot(why);
+        require(!saved.empty(), "empty world could not be saved: " + why);
+        const auto again = LiveWorld::open(r, saved);
+        require(again->restored().tier == "whole" && again->poses().empty(),
+                "empty world did not restore whole and empty");
+        require(std::abs(again->time_s() - live->time_s()) < 1e-12, "empty restore lost its clock");
+        again->step(1.0 / 240.0);
+        const auto carried = LiveWorld::open(r, saved, LiveWorld::carryAll(saved));
+        require(carried->poses().empty(), "carrying an empty snapshot manufactured a body");
+    }
+    for (const std::string bad : {std::string("{}"), std::string("{\"bodies\":null}"),
+                                 std::string("{\"bodies\":{}}")}) {
+        bool refused = false;
+        try { (void)readSceneJson(bad); } catch (const std::invalid_argument &) { refused = true; }
+        require(refused, "missing or malformed bodies were treated as an empty authored array");
+    }
+    TileImpactRequest legacy;
+    legacy.backend = benchBackend();
+    const auto setup = buildTileImpactSetup(legacy);
+    require(!setup->multi_body && !setup->matter.nodes.empty() && setup->settings_world.sphere_enabled == 1,
+            "a default request lost the legacy tile and striker fixture");
+}
+
 void aWorldOpensIntactAndNamed() {
     const auto live = LiveWorld::open(ballOverFloor());
     const auto poses = live->poses();
@@ -2539,6 +2581,11 @@ void selectedStructureInspectionIsReadOnlyAndInTheFacingFrame() {
 
 int main(int argc, char **argv) {
     try {
+        if (argc > 1 && std::string(argv[1]) == "--empty") {
+            anAuthoredEmptyWorldHasNoHiddenBodiesAndCanBeSaved();
+            std::cout << "[PASS] authored empty worlds advance and restore without hidden bodies; legacy fixtures remain\n";
+            return 0;
+        }
         if (argc > 1 && std::string(argv[1]) == "--structure") {
             selectedStructureInspectionIsReadOnlyAndInTheFacingFrame();
             std::cout << "[PASS] selected structure inspection is bounded, read-only and in the facing frame\n";
@@ -2554,6 +2601,8 @@ int main(int argc, char **argv) {
             std::cout << "[PASS] a foreseen fracture's first run is done inside its warning\n";
             return 0;
         }
+        anAuthoredEmptyWorldHasNoHiddenBodiesAndCanBeSaved();
+        std::cout << "[PASS] authored empty worlds advance and restore without hidden bodies; legacy fixtures remain\n";
         aWorldOpensIntactAndNamed();
         selectedStructureInspectionIsReadOnlyAndInTheFacingFrame();
         std::cout << "[PASS] a world opens intact, named, and in the shapes that were asked for\n";

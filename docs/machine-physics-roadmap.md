@@ -8,6 +8,14 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+Authored empty scenes can open, step and save without solid bodies, including
+water-only flumes. An explicit empty body array selects an empty scene; an
+undeclared legacy test request retains its original fixture. Missing/malformed
+arrays are still refused. This removes the need for reference-marker boxes in
+learning fields. Empty lattices use a finite 1/240 s idle scheduling default;
+live callers choose their actual step and water keeps its own CFL limit. No
+material, contact or water-force law changes accompany this loader update.
+
 The river workbench and its easy lift lesson expose the existing shallow-water
 current coupling: immersed paddle surfaces receive pressure/relative-flow drag
 and torque, and the wheel winds a real drum rope. Current arrows use the native

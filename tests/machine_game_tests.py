@@ -44,9 +44,24 @@ def need_engine(test):
 
 
 LEVELS = mg.load_levels()
+EMPTY_START_LEVELS = ('easy-solar', 'easy-tackle', 'easy-spring', 'easy-gears',
+                      'easy-water-wheel', 'easy-water-receiver')
 
 
 class Tray(unittest.TestCase):
+    def test_catalogue_bases_have_no_unrelated_reference_boxes(self):
+        for row in mg.load_levels():
+            self.assertFalse({'reference marker', 'channel marker'} &
+                             {p['name'] for p in row['machine'].get('parts', [])}, row['id'])
+        for row in mg.sandbox_templates():
+            self.assertFalse({'reference marker', 'channel marker'} &
+                             {p['name'] for p in (row['base'] or {}).get('parts', [])}, row['name'])
+        gears = mg.level_by_id('easy-gears')
+        self.assertEqual(mw.compile_spec(mg.compose(gears, [], leave_out_goal=True)[0])['parts'], [])
+        compiled = mw.compile_spec(mg.compose(gears, gears['solution'])[0])
+        self.assertIn('your gears 1 battery box', {p['name'] for p in compiled['parts']})
+        self.assertEqual(compiled['batteries'][0]['in'], 'your gears 1 battery box')
+
     def test_edit_guides_follow_compiled_geometry_and_do_not_change_the_setup(self):
         free = mg.free_build()
         placement = [{'piece': 'plank', 'x_m': 0, 'z_m': 0, 'length_m': .6}]
@@ -307,11 +322,15 @@ class Tray(unittest.TestCase):
 
     def test_every_level_opens_before_any_piece_is_placed(self):
         # Shown, not run: a goal about a piece not placed yet is left out and
-        # what it needs is said; there is always something for the engine to
-        # build (it refuses an empty world).
+        # what it needs is said. An empty learning field is also valid; its
+        # native opening is checked separately below.
         for level in LEVELS:
             spec, _, _ = mg.compose(level, [], leave_out_goal=True)
-            self.assertTrue(mw.compile_spec(spec)['parts'], level['id'])
+            parts = mw.compile_spec(spec)['parts']
+            if level['id'] in EMPTY_START_LEVELS:
+                self.assertEqual(parts, [], level['id'])
+            else:
+                self.assertTrue(parts, level['id'])
         steam = mg.level_by_id('steam')
         spec, _, _ = mg.compose(steam, [], leave_out_goal=True)
         self.assertEqual((spec['_needs'], spec['stations']), ('Place a steam engine: the goal is its piston', []))
@@ -630,6 +649,22 @@ class FreeBuild(unittest.TestCase):
 
 
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_empty_learning_fields_open_and_step_without_dummy_bodies(self):
+        for identity in EMPTY_START_LEVELS:
+            with self.subTest(level=identity), tempfile.TemporaryDirectory() as logs:
+                spec = mg.compose(mg.level_by_id(identity), [], leave_out_goal=True)[0]
+                compiled = mw.compile_spec(spec)
+                self.assertEqual(compiled['parts'], [])
+                engine, _, _ = mw.build_engine(ENGINE, compiled, logs)
+                try:
+                    self.assertEqual(engine.first['bodies'], [])
+                    reply = engine.op(op='step', dt=.002, n=1, moved=False)
+                    self.assertTrue(reply['ok'])
+                    self.assertEqual(reply['bodies'], [])
+                finally:
+                    engine.close()
+
     @need_engine
     def test_generated_recipe_reopens_after_cache_loss_without_exposing_answers(self):
         with tempfile.TemporaryDirectory() as logs:

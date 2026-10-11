@@ -209,6 +209,19 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_gear_lesson_starts_empty_then_its_battery_drive_turns_the_wheels(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-gears',width,height,phone=width!=1280)
+                self.assertEqual(self.js('Object.keys(window.machineBodies())'),[],
+                                 'No unrelated box should appear before the player adds the gear pair')
+                self.press('Add a gears');self.ghost()
+                self.slide('Included battery drive of your gears 1','forward');self.ghost()
+                self.click_visible('Run it')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                self.assertIn('your gears 1 battery box',self.js('Object.keys(window.machineBodies())'))
+
     def place_river_wheel(self):
         self.press('Add a water wheel');initial=self.ghost()['p']
         self.assertEqual(initial['radius_m'],self.river_solution['radius_m'],'The river base must provide its usable wheel size before editing')

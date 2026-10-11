@@ -5534,7 +5534,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     // layout in place puts a support plane at the ledge height through the
     // middle of everything -- a pane resting on the floor then reads as 140 mm
     // buried and every attempt to break it is refused as too deeply penetrated.
-    if (!impl.request.bodies.empty()) impl.request.layout = SceneLayout::Flat;
+    if (impl.request.authored_scene || !impl.request.bodies.empty()) impl.request.layout = SceneLayout::Flat;
     for (auto &body : readPreciseRigidScene(request.precise_rigid_scene_json))
         impl.precise_bodies.emplace(body.name, std::move(body));
     if (!impl.precise_bodies.empty()) {
@@ -5735,7 +5735,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
             const std::uint32_t part = setup.part_of_node[component.node_indices.front()];
             return part < plan.carried.size() && plan.carried[part] != 0;
         });
-    if (saved == nullptr && components.empty()) throw std::runtime_error("a live world needs at least one body");
+    const bool authored_empty = r.authored_scene && r.bodies.empty();
+    if (saved == nullptr && components.empty() && !authored_empty)
+        throw std::runtime_error("a live world needs at least one body");
     MatterBodyId first_fresh = 1000;
     if (carrying && saved->doc.contains("next") && saved->doc.at("next").contains("body"))
         first_fresh = std::max<MatterBodyId>(first_fresh, saved->doc.at("next").at("body").get<MatterBodyId>());
@@ -5997,13 +5999,14 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         }
         // Carried, nothing of it may come back -- the room changed everything
         // in it -- and what the scene has instead is there.
-        if (placements.empty() && !carrying) throw std::invalid_argument("the saved world has nothing in it");
+        if (placements.empty() && !carrying && !authored_empty)
+            throw std::invalid_argument("the saved world has nothing in it");
         impl.next_body_id = std::max({impl.next_body_id, doc.at("next").at("body").get<MatterBodyId>(),
                                       ids.empty() ? MatterBodyId{1000} : *ids.rbegin() + 1});
     }
     // Carried, the room is never left empty: a scene whose every thing is
     // unchanged, and was swept up in the saved world, is opened as it is.
-    if (carrying && build.rigid_fragments.empty())
+    if (carrying && build.rigid_fragments.empty() && !authored_empty)
         throw std::invalid_argument("nothing of the saved world or of the scene would be in the room");
 
     // The most bodies a live world will hold: what runReversibleTrial allows,

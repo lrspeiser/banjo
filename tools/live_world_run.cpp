@@ -2046,7 +2046,7 @@ int main(int argc, char **argv) {
             else if (option == "--carry") carry_path = value();
             else throw std::invalid_argument("unknown option: " + option);
         }
-        if (request.bodies.empty()) throw std::invalid_argument("a live world needs --scene");
+        if (!request.authored_scene && request.bodies.empty()) throw std::invalid_argument("a live world needs --scene");
         if (!carry_path.empty() && snapshot_path.empty())
             throw std::invalid_argument("--carry says what to carry of a saved world, and there is no --snapshot");
 
