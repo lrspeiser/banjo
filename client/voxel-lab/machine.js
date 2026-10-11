@@ -3323,7 +3323,7 @@ function installPhonePanels() {
   $('phone-tabs').addEventListener('keydown',e=>{
     const names=['controls','design','help'], index=names.indexOf(phonePanel);
     const next=e.key==='Home'?0:e.key==='End'?2:e.key==='ArrowRight'?(index+1)%3:e.key==='ArrowLeft'?(index+2)%3:null;
-    if(next!==null){e.preventDefault();selectPhonePanel(names[next],true);}
+    if(next!==null){e.preventDefault();e.stopPropagation();selectPhonePanel(names[next],true);}
   });
   phoneLayout.addEventListener('change',update); update();
 }

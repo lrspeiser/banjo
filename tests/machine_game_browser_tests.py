@@ -199,6 +199,13 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Controls'); self.click_visible('Add a piece')
                 self.press('Add a plank'); self.ghost()
                 self.assertEqual(self.js("document.getElementById('phone-controls-tab').getAttribute('aria-selected')"),'true')
+                before=self.ghost()['p']
+                self.click_visible('Controls')
+                for key,code in [('ArrowRight',39),('ArrowLeft',37)]:
+                    for kind in ('keyDown','keyUp'):
+                        self.page.send('Input.dispatchKeyEvent',{'type':kind,'key':key,'code':key,'windowsVirtualKeyCode':code})
+                    self.assertEqual(self.ghost()['p'],before,'tab navigation cannot nudge the selected piece')
+                self.assertEqual(self.js("document.activeElement.id"),'phone-controls-tab')
                 self.click_visible('✓ Set down'); self.wait(READY,30)
                 self.click_visible('Design')
                 self.press('Pick up your plank 1'); self.ghost()
