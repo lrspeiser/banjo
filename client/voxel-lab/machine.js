@@ -293,6 +293,7 @@ async function pickPowerPort(port) {
   finally { powerBusy = false; updatePowerLabels(); }
 }
 document.addEventListener('keydown', e => {
+  if ($('guide').open) return;
   if (e.key === 'Escape' && pickedPowerPort) { pickedPowerPort = null; powerMessage(''); updatePowerLabels(); }
 });
 
@@ -693,27 +694,6 @@ function renderClock(frame) {
     : frame.t > 0 ? (scored ? 'Run again' : 'Continue') : 'Run it';
 }
 
-// Station labels float over the parts each station watches.
-function renderLabels() {
-  const box = $('labels'); box.replaceChildren();
-  if (!machine) return;
-  const rect = renderer.domElement.getBoundingClientRect();
-  const live = readouts.stations || [];
-  machine.stations.forEach((s, i) => {
-    const names = new Set(s.focus || []);
-    const pts = [...world.bodies.values()].filter(b => names.has(b.name) || names.has(family(b.name))).map(b => b.position_m);
-    if (!pts.length) return;
-    const p = new THREE.Vector3(...pts[0]).add(new THREE.Vector3(0, .35, 0)).project(camera);
-    if (p.z > 1 || Math.abs(p.x) > 1.1 || Math.abs(p.y) > 1.1) return;
-    const el = document.createElement('div');
-    el.className = 'station-label' + (live[i] && live[i].done ? ' done' : '');
-    el.textContent = `${i + 1} ${s.title}`;
-    el.style.left = `${(p.x + 1) / 2 * rect.width}px`;
-    el.style.top = `${(1 - p.y) / 2 * rect.height}px`;
-    box.append(el);
-  });
-}
-
 // ---- building and running --------------------------------------------------------
 async function build(next, start, request) {
   const mine = ++polling;
@@ -904,7 +884,6 @@ function render() {
   if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); updateEditGuide(); syncMovePad(); }
   drawPull();
   renderer.render(scene, camera);
-  renderLabels();
   positionPowerLabels();
 }
 
@@ -2018,7 +1997,7 @@ renderer.domElement.addEventListener('wheel', e => {
   turnGhost(e.altKey ? 'pitch_deg' : 'yaw_deg', Math.sign(e.deltaY || e.deltaX) * -15);
 }, {passive: false});
 document.addEventListener('keydown', e => {
-  if ($('piece-picker').open || !ghost || e.ctrlKey || e.metaKey || e.target.closest('input, textarea, select')) return;
+  if ($('guide').open || $('piece-picker').open || !ghost || e.ctrlKey || e.metaKey || e.target.closest('input, textarea, select')) return;
   const key = e.key.toLowerCase(), step = e.shiftKey ? 1 : 15;
   const nudge = {arrowleft: 'left', arrowright: 'right', arrowup: 'forward', arrowdown: 'back', pageup: 'up', pagedown: 'down'}[key];
   if (TURN_KEYS[key]) turnGhost(TURN_KEYS[key][0], TURN_KEYS[key][1] * step);
@@ -2494,7 +2473,7 @@ function setupSnapshot() { return JSON.stringify(level?.free ? {placements, base
 $('undo-pieces').addEventListener('click', () => travel(undone, redone));
 $('redo-pieces').addEventListener('click', () => travel(redone, undone));
 document.addEventListener('keydown', e => {
-  if ($('piece-picker').open || !LEVEL_MODE || !(e.ctrlKey || e.metaKey) || e.target.closest('input, textarea, select')) return;
+  if ($('guide').open || $('piece-picker').open || !LEVEL_MODE || !(e.ctrlKey || e.metaKey) || e.target.closest('input, textarea, select')) return;
   const key = e.key.toLowerCase();
   if (key === 'z' && !e.shiftKey) travel(undone, redone);
   else if (key === 'y' || (key === 'z' && e.shiftKey)) travel(redone, undone);
@@ -2787,8 +2766,6 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
 let levelDifficulty = 'all';
 function showLevelsScreen(show) {
   const box = $('levels-screen');
-  const guide = $('guide');
-  $('game').prepend(guide);
   box.hidden = !show;
   document.body.classList.toggle('on-levels', show);
   if (!show) { resize(); return; }
@@ -2796,7 +2773,6 @@ function showLevelsScreen(show) {
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Levels'});
-  box.append(guide);
   if (level) head.append(button(`Back to ${levelTitle(level)}`, () => showLevelsScreen(false)));
   // Who is playing: each name keeps its own progress, in this browser.
   const who = add(box, 'form', {className: 'ls-player'});
@@ -3075,17 +3051,28 @@ async function askLevel(mode) {
   finally { $('send').disabled = $('solve').disabled = false; $('chat-status').textContent = ''; }
 }
 
-// How to play: shown on a first visit, and again from the header's link.
+// Help never navigates, rebuilds a design or appears automatically.
 function showGuide(show) {
-  $('guide').hidden = !show;
-  if (!show) { try { localStorage.setItem('banjo-play-guide-seen', '1'); } catch { /* private window */ } }
+  const guide = $('guide');
+  if (show && !guide.open) {
+    document.body.classList.add('reading-guide');
+    guide.showModal();
+    $('guide-done').focus({preventScroll: true});
+  } else if (!show && guide.open) guide.close();
 }
 $('guide-done').addEventListener('click', () => showGuide(false));
 $('guide-open').addEventListener('click', e => {
-  if (!LEVEL_MODE) return;
   e.preventDefault();
-  const open = $('sandbox-screen').hidden ? Promise.resolve() : chooseLevel('free');
-  open.then(() => { showGuide(true); $('guide').scrollIntoView({block: 'nearest'}); });
+  showGuide(true);
+});
+$('guide').addEventListener('close', () => {
+  document.body.classList.remove('reading-guide');
+  $('guide-open').focus({preventScroll: true});
+});
+$('guide').addEventListener('click', e => {
+  if (e.target !== $('guide')) return;
+  const r = $('guide').getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) showGuide(false);
 });
 
 // What a player tells us: with the level and pieces it is about, to the
@@ -3118,9 +3105,6 @@ async function startGame() {
   top.append($('scene-tray'), $('move-pad'), $('scene-actions'), $('machine-controls'), $('preview-legend'));
   view.append(top);
   $('scene-note').textContent = 'Drag to turn the view · Wheel or pinch to zoom · Click one of your pieces to pick it up';
-  let seen = false;
-  try { seen = Boolean(localStorage.getItem('banjo-play-guide-seen')); } catch { /* private window */ }
-  showGuide(!seen);
   $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;
   for (const d of document.querySelectorAll('aside details:not(#feedback)')) d.hidden = true;

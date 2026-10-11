@@ -161,8 +161,6 @@ class Puzzles(unittest.TestCase):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
                 self.open('sun', width, height, phone=width != 1280)
-                if self.js("!document.getElementById('guide').hidden"):
-                    self.press('Got it')
                 self.press('Add a solar panel'); self.ghost()
                 for label, value in [('x', 1), ('z', .4), ('height', .6), ('turn', -45), ('tip', 75)]:
                     self.slide(f'{label} of your solar 1', value)
@@ -456,17 +454,66 @@ class Puzzles(unittest.TestCase):
         self.press('Next level')
         self.wait("/^2\\. /.test(document.getElementById('title').textContent)", 30)
 
-    def test_a_first_visit_shows_how_to_play_and_a_player_can_tell_us_what_happened(self):
+    def test_help_is_only_an_overlay_and_keeps_each_screen_and_setup_on_desktop_and_phones(self):
+        def open_help():
+            self.assertFalse(self.js("document.getElementById('guide').open"), 'help does not appear automatically')
+            before = self.js("({url:location.href,setup:window.machinePlacements(),save:localStorage.getItem('banjo-play-save'),screen:document.body.className,scroll:scrollY})")
+            target = self.js("(() => {const e=document.getElementById('guide-open'),r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height,visible:r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})()")
+            self.assertTrue(target['visible'] and target['hit'], target)
+            self.assertGreaterEqual(target['w'], 44); self.assertGreaterEqual(target['h'], 44)
+            self.page.events.clear()
+            self.mouse('mousePressed', target['x'], target['y']); self.mouse('mouseReleased', target['x'], target['y'])
+            self.wait("document.getElementById('guide').open", 5)
+            self.assertEqual(self.js('location.href'), before['url'])
+            self.assertEqual(self.js('window.machinePlacements()'), before['setup'])
+            self.assertEqual(self.js("localStorage.getItem('banjo-play-save')"), before['save'])
+            self.assertEqual(self.js("document.body.className.replace(' reading-guide','')"), before['screen'])
+            self.assertEqual(self.js("document.activeElement.id"), 'guide-done')
+            layout = self.js("(() => {const r=document.getElementById('guide').getBoundingClientRect(),b=document.querySelector('.guide-body');return {inView:r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight,overflows:b.scrollWidth>b.clientWidth,scrollable:getComputedStyle(b).overflowY==='auto'};})()")
+            self.assertTrue(layout['inView'] and layout['scrollable'] and not layout['overflows'], layout)
+            # Real keys cannot manipulate a ghost or place it behind the help.
+            ghost_before = self.js('window.machineGhostState()')
+            self.key('q'); self.key('Enter')
+            self.assertEqual(self.js('window.machineGhostState()'), ghost_before)
+            self.page.send('Input.dispatchKeyEvent', {'type':'keyDown','key':'Tab','code':'Tab','windowsVirtualKeyCode':9})
+            self.page.send('Input.dispatchKeyEvent', {'type':'keyUp','key':'Tab','code':'Tab','windowsVirtualKeyCode':9})
+            self.assertTrue(self.js("Boolean(document.activeElement.closest('#guide'))"), 'focus stays in the modal')
+            requests = [e['params']['request'] for e in self.page.events if e['method'] == 'Network.requestWillBeSent']
+            ops = [json.loads(r['postData'])['op'] for r in requests if r['url'].endswith('/api/machine') and 'postData' in r]
+            self.assertFalse(any(op in ('open','level_open','check','play') for op in ops), ops)
+            return before
+
+        def assert_closed(before):
+            self.wait("!document.getElementById('guide').open && !document.body.classList.contains('reading-guide')", 5)
+            self.assertEqual(self.js('location.href'), before['url'])
+            self.assertEqual(self.js('window.machinePlacements()'), before['setup'])
+            self.assertEqual(self.js("localStorage.getItem('banjo-play-save')"), before['save'])
+            self.assertEqual(self.js('scrollY'), before['scroll'])
+            self.assertEqual(self.js('document.activeElement.id'), 'guide-open')
+
+        self.page.send('Network.enable')
+        for width, height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('tackle', width, height, phone=width != 1280)
+                self.assertEqual(self.js("document.querySelectorAll('.station-label').length"), 0, 'no floating station notes')
+                before = open_help(); self.click_visible('Close'); assert_closed(before)
+                self.open('gap', width, height, phone=width != 1280)
+                self.press('Add a plank'); self.ghost()
+                self.js('scrollTo(0,0)')
+                before = open_help(); self.key('Escape'); assert_closed(before)
+                self.page.send('Page.navigate', {'url': self.base + '/play'})
+                self.wait("!document.getElementById('levels-screen').hidden", 60)
+                before = open_help()
+                # A backdrop click dismisses, while content clicks do not.
+                self.mouse('mousePressed', 2, 2); self.mouse('mouseReleased', 2, 2); assert_closed(before)
+                self.page.send('Page.navigate', {'url': self.base + '/machine'})
+                self.wait("!document.getElementById('sandbox-screen').hidden", 60)
+                before = open_help(); self.click_visible('Close'); assert_closed(before)
+                self.press('Add New Design'); self.wait(READY, 60)
+                before = open_help(); self.click_visible('Close'); assert_closed(before)
+
+    def test_a_player_can_tell_us_what_happened(self):
         self.open('gap')
-        self.js("localStorage.removeItem('banjo-play-guide-seen')")
-        self.open('gap')
-        self.assertFalse(self.js("document.getElementById('guide').hidden"), 'a first visit shows how to play')
-        self.press('Got it')
-        self.open('gap')
-        self.assertTrue(self.js("document.getElementById('guide').hidden"), 'once read, it stays out of the way')
-        self.js("document.getElementById('guide-open').click()")
-        self.assertFalse(self.js("document.getElementById('guide').hidden"), 'How to play brings it back')
-        self.press('Got it')
         # Telling us: the words, with the level and its pieces, reach the log.
         self.js("document.getElementById('feedback').open = true")
         self.js("document.getElementById('feedback-text').value = 'The plank looked like it floated'")
@@ -502,8 +549,8 @@ class Puzzles(unittest.TestCase):
             requests = [e['params']['request'] for e in self.page.events if e['method'] == 'Network.requestWillBeSent']
             ops = [json.loads(r['postData'])['op'] for r in requests if r['url'].endswith('/api/machine') and 'postData' in r]
             self.assertEqual(ops, ['levels'])
-            self.assertGreater(self.js("document.getElementById('guide').getBoundingClientRect().height"), 0)
-            self.press('Got it')
+            self.assertFalse(self.js("document.getElementById('guide').open"))
+            self.assertEqual(self.js("document.getElementById('guide').getBoundingClientRect().height"), 0)
             self.press('Play level 1, Mind the gap')
             self.wait(READY, 90)
             self.assertGreater(self.js("document.querySelector('main').getBoundingClientRect().height"), 0)

@@ -1,11 +1,10 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo Machine</title><link rel="stylesheet" href="/machine.css"></head><body>
-<header><strong>Banjo <span>Machine</span></strong><nav><a href="/play" id="levels-open">Levels</a><a href="/machine" id="sandbox-open">Sandbox</a><a href="/play" id="guide-open">How to play</a></nav><output id="build">Checking…</output></header>
+<header><strong>Banjo <span>Machine</span></strong><nav><a href="/play" id="levels-open">Levels</a><a href="/machine" id="sandbox-open">Sandbox</a><a href="#guide" id="guide-open" aria-haspopup="dialog">How to play</a></nav><output id="build">Checking…</output></header>
 <section id="page-loading" class="levels-screen" role="status">Loading Banjo…</section>
 <noscript><p class="levels-screen">Enable JavaScript to choose and play a level.</p></noscript>
 <main hidden>
 <section id="view" tabindex="-1" aria-label="The machine in 3D, as the engine calculates it">
 <output id="clock">Setting up…</output>
-<div id="labels" aria-hidden="true"></div>
 <div id="power-labels" class="power-labels" aria-label="Solar meters and power connections"></div>
 <output id="power-status" class="power-status" hidden aria-live="polite"></output>
 <output id="edit-guide-label" class="edit-guide-label" hidden aria-live="polite"></output>
@@ -37,18 +36,6 @@
 <details id="design-versions"><summary>Saved versions</summary><label for="version-pick">Version to reopen</label><select id="version-pick"></select><button id="restore-version" type="button">Restore version</button></details>
 </section>
 <section id="game" hidden aria-label="The puzzle">
-<section id="guide" class="guide" hidden aria-label="How to play">
-<h2>How to play</h2>
-<ol>
-<li>Each level has a goal: something has to end up in the <b>green box</b> in time. In the <b>Sandbox</b>, build freely: open a prebuilt design or press <b>Add New Design</b>, then name it and use <b>Save version</b> to keep setups you want to return to.</li>
-<li>Press a piece's button at the top of the scene (<b>+ plank</b>). In the Sandbox, press <b>Add a piece</b> and choose from the full-screen library. A blue <b>ghost</b> of it appears in the scene, ready to move.</li>
-<li>Drag it to move it (on a phone, one finger moves it and two fingers turn the view), tap where it should go, or use the arrows over the scene: they move it left, right, away from you and toward you as you see it, and up and down. To turn the view without moving it, press 👁 in the middle of the arrows (or Esc); ✋ moves it again. Change and turn it with the controls under the scene (or Q/E, R/F, Z/C). Coloured lines through it show where it lines up. A red ghost cannot go there, and says why.</li>
-<li>Press <b>Set it down</b>, then <b>Run it</b>. To change a piece afterwards, click (tap) it in the scene. Nothing is animated: the physics engine calculates every bounce, burn and cut live.</li>
-<li>On a level, win on as little <b>energy</b> as you can: the energy to make your pieces (smaller, lighter, cheaper materials) and what the run burns or draws. Beat a level's par for three stars, and play it again to do better. Sandbox designs have no score.</li>
-<li>Stuck? <b>Ask for a hint</b>, or <b>Place it for me</b> (worth one star at most).</li>
-</ol>
-<button id="guide-done" type="button">Got it</button>
-</section>
 <nav id="levels" aria-label="Levels"></nav>
 <p id="brief"></p>
 <p id="goal-line" class="legend"></p>
@@ -85,6 +72,20 @@
 </main>
 <section id="levels-screen" class="levels-screen" hidden aria-label="Levels and how far you have got"></section>
 <section id="sandbox-screen" class="levels-screen" hidden aria-label="Sandbox designs"></section>
+<dialog id="guide" aria-labelledby="guide-title">
+<div class="guide-head"><h2 id="guide-title">How to play</h2><button id="guide-done" type="button">Close</button></div>
+<div class="guide-body" tabindex="0" aria-label="Playing instructions">
+<ol>
+<li><b>Choose a challenge.</b> Read its goal beside the scene. Green boxes mark destinations; other challenges measure things like light, power or water.</li>
+<li><b>Add a piece.</b> Use the buttons above the scene. In the Sandbox, <b>Add a piece</b> opens the piece library.</li>
+<li><b>Move and tweak it.</b> Drag the blue ghost, tap where it should go, or use the arrows. Change its size and angle with the piece controls. On a phone, one finger moves the piece and two fingers turn the view. Use 👁 to look around without moving it. A red ghost tells you why it cannot fit.</li>
+<li><b>Try your machine.</b> Press <b>Set it down</b>, then <b>Run it</b>. <b>Pause</b> stops the run; <b>Set up again</b> restores your setup. Tap a piece to move or change it. Solar collectors connect by clicking <b>Output</b>, then the receiving <b>Input</b>.</li>
+<li><b>Keep building.</b> Beat a challenge's energy par for three stars. In the Sandbox, choose a prebuilt design or <b>Add New Design</b>, name your build and use <b>Save version</b> to keep a setup you can reopen.</li>
+<li><b>Need a hand?</b> Use <b>Ask for help</b> beside the game. <b>Place it for me</b> attempts a solution, worth one star at most.</li>
+</ol>
+<p><b>Keyboard:</b> arrows move a piece; Page Up/Down change its height; Q/E turn, R/F tip and Z/C roll. Enter sets it down. Esc switches between moving and looking around. Ctrl+Z undoes a change.</p>
+</div>
+</dialog>
 <dialog id="piece-picker" aria-labelledby="piece-picker-title" aria-describedby="piece-picker-help">
 <div class="piece-picker-head"><h1 id="piece-picker-title">Choose a piece</h1><button id="piece-picker-close" type="button">Back to sandbox</button></div>
 <p id="piece-picker-help">Choose a piece to return to your design and place it.</p>
