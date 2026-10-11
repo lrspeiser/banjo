@@ -371,6 +371,16 @@ struct LiveImpact {
 // body's OWN frame. The body-local part is what makes it survive: the whole
 // assembly can be picked up, carried, turned upside down, and the pin is still
 // in the same place in the wood, because that is how it was written down.
+// A pull on a body (LiveWorld::pull): what it pulls with, where on the body
+// it is tied, now, and the work it has done -- the force times how far that
+// point of the body has moved along it, step by step.
+struct LivePull {
+    std::string body;
+    Vec3 force_n{};
+    Vec3 at_world_m{};
+    double work_j{};
+};
+
 struct LiveJoint {
     unsigned id{};
     // "hinge" -- a pin two things turn about.
@@ -1999,6 +2009,15 @@ public:
     // down stays down: the contact under it stays pressed. False for a joint
     // that is not a pin.
     bool ratchet(unsigned joint, double at_rad, int sense);
+    // Pull on a body: a person testing a part -- a string tied to it at
+    // `at_world_m` (a point of it now; it stays that point of the body as it
+    // moves) and pulled with `force_n` -- with no hand or arm in the world. The
+    // force goes on before every step until it is changed; a zero force lets
+    // go. A pull does to the world what any force does, and the work it does
+    // is kept (pulls()). False for a body that is not in the world or does not
+    // move.
+    bool pull(const std::string &body, const Vec3 &at_world_m, const Vec3 &force_n);
+    [[nodiscard]] std::vector<LivePull> pulls() const;
     // Take the pin out. What hung on it falls.
     void unhinge(unsigned joint);
 

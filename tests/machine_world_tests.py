@@ -296,6 +296,42 @@ class Engine(unittest.TestCase):
         self.assertGreater(r['readouts']['circuits'][0]['into_body_j'], 0.0)
 
     @need_engine
+    def test_a_test_pull_moves_a_part_and_its_work_is_what_the_part_gained(self):
+        # A person testing a part pulls it -- a force at a point of it, no hand
+        # in the world -- and lets go. The 0.7 kg oak crate pulled up with
+        # 20 N rises; the work the pull did is the energy it gave the crate,
+        # in height and speed, and it is kept after letting go.
+        spec = {'schema': mw.SCHEMA, 'cell_m': 0.02,
+                'parts': [part('crate', [.1, .1, .1], [0, .05, 0]), part('floor', [.4, .02, .4], [1, .01, 0], fixed=True)]}
+        with tempfile.TemporaryDirectory() as logs:
+            s = mw.MachineSession(mw.compile_spec(spec), ENGINE, Path(logs), paced=False)
+            try:
+                with self.assertRaises(ValueError):
+                    s.pull('floor', [1, .02, 0], [0, 10, 0])
+                with self.assertRaises(ValueError):
+                    s.pull('crate', [0, .05, 0], [0, 300, 0])
+                s.pull('crate', [0, .05, 0], [0, 20, 0])
+                s.play(True)
+                with s.lock:
+                    while s.t < 0.3 and not s.error:
+                        s.lock.wait(0.02)
+                    crate = dict(s.bodies['crate'])
+                s.pull('crate', crate['position_m'], [0, 0, 0])
+                with s.lock:
+                    while s.t < 0.6 and not s.error:
+                        s.lock.wait(0.02)
+                    pulls = (s.readouts or {}).get('pulls') or []
+                    self.assertIsNone(s.error)
+            finally:
+                s.close()
+        mass = crate['mass_kg']
+        gained = mass * 9.81 * (crate['position_m'][1] - 0.05) + 0.5 * mass * sum(v * v for v in crate['velocity_m_s'])
+        work = next(p for p in pulls if p['body'] == 'crate')['work_j']
+        print(f'\n  pulled: {work:.2f} J of work; the crate gained {gained:.2f} J when let go')
+        self.assertGreater(crate['position_m'][1], 0.3)
+        self.assertAlmostEqual(work, gained, delta=0.1 * gained)
+
+    @need_engine
     def test_live_session_streams_only_changes_and_measures_the_circuit(self):
         with tempfile.TemporaryDirectory() as logs:
             host = mw.MachineHost(ENGINE, logs)

@@ -38,6 +38,9 @@ STEPS_PER_CALL = 4
 MAX_HOLD_S = 0.05
 MAX_PARTS = 120
 MAX_TIME_S = 120.0
+# The hardest a person testing a part pulls on it, newtons: about what one
+# pulls with an arm.
+PULL_MAX_N = 200.0
 # Engine cell edges are 10-40 mm; the world's matter is built from cells this
 # size, so nothing can be thinner than one.
 CELL_CHOICES = (0.02, 0.04)
@@ -1857,6 +1860,10 @@ class MachineSession:
         self._first_impact = set()
         self._parted = set()
         self._switches = {}
+        # Pulls a person asked for, not yet given to the engine (the run's
+        # own thread does that, between steps), and whether any ever was.
+        self._pull_queue = {}
+        self._pulled = False
         self._latched = set()
         self._hot = set()
         self._turned = {}
@@ -2117,6 +2124,10 @@ class MachineSession:
                 row['turned_deg'] = round(total + step, 2)
             rows.append(row)
         out['joints'] = rows
+        # A person's test pulls: what each pulls with and the work it has done.
+        if self._pulled:
+            out['pulls'] = [{'body': p['body'], 'force_n': p['force_n'], 'work_j': _round(p['work_j'], 3)}
+                            for p in self.engine.op(op='pulls').get('pulls', [])]
         circuits = []
         if self.circuit_ids:
             for c in self.engine.op(op='circuits').get('circuits', []):
@@ -2289,6 +2300,11 @@ class MachineSession:
                 continue
             try:
                 started = time.perf_counter()
+                with self.lock:
+                    queued, self._pull_queue = self._pull_queue, {}
+                for body, (at, force) in queued.items():
+                    self.engine.op(op='pull', body=body, at=at, force=force)
+                    self._pulled = True
                 reply = self.engine.op(op='step', dt=DT_S, n=STEPS_PER_CALL, moved=True)
                 # Something is about to break or bend. Played live, its run
                 # goes onto the engine's worker and the world keeps going while
@@ -2341,6 +2357,30 @@ class MachineSession:
                     self._event('stopped', 'the engine stopped: ' + str(exc))
                     self.lock.notify_all()
                 return
+
+    def pull(self, body, at, force):
+        """A person testing a part: pull `body` at `at` (a point of it now, world
+        metres) with `force` (world newtons, at most PULL_MAX_N), on until it
+        is changed; a zero force lets go. Its work counts in what the run took.
+        The run's own thread hands it to the engine before its next step."""
+        try:
+            at, force = [float(v) for v in at], [float(v) for v in force]
+        except (TypeError, ValueError):
+            raise ValueError('a pull is a point and a force, three numbers each') from None
+        if len(at) != 3 or len(force) != 3 or not all(math.isfinite(v) for v in at + force):
+            raise ValueError('a pull is a point and a force, three numbers each')
+        if math.hypot(*force) > PULL_MAX_N + 1e-9:
+            raise ValueError(f'a test pull is at most {PULL_MAX_N:g} N')
+        with self.lock:
+            if self.error:
+                raise ValueError(self.error)
+            b = self.bodies.get(body)
+            if b is None or b.get('anchored'):
+                raise ValueError(f'{body} is not something that moves')
+            self._pull_queue[body] = (at, force)
+            self.last_used = self.last_action = time.monotonic()
+            self.lock.notify_all()
+        return {'body': body, 'force_n': [round(v, 3) for v in force]}
 
     def play(self, running, speed=None):
         with self.lock:

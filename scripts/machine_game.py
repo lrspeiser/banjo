@@ -699,8 +699,11 @@ def run_energy(compiled, readouts, t_s=0.0):
         share = (row.get('contents') or {}).get('propellant', 0.0)
         if body and share:
             powder += _volume(body) * DENSITY.get(body['material'], 1000.0) * share * PROPELLANT_J_PER_KG
+    # And a person's test pulls: the work they did on it (what pulled back on
+    # them is theirs, not the machine's).
+    pulled = sum(max(0.0, p.get('work_j') or 0.0) for p in (readouts or {}).get('pulls') or [])
     return {'heat_j': round(heat), 'powder_j': round(powder), 'electric_j': round(drawn),
-            'j': round(heat + powder + drawn)}
+            'pull_j': round(pulled), 'j': round(heat + powder + drawn + pulled)}
 
 
 def energy_of(compiled, readouts, t_s=0.0):

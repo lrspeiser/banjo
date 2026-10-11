@@ -606,7 +606,7 @@ renderer.domElement.addEventListener('pointerdown', e => { pointers.set(e.pointe
 renderer.domElement.addEventListener('pointerup', e => { pointers.delete(e.pointerId); pinch = 0; });
 renderer.domElement.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); pinch = 0; });
 renderer.domElement.addEventListener('pointermove', e => {
-  const last = pointers.get(e.pointerId); if (!last || draggingGhost) return;
+  const last = pointers.get(e.pointerId); if (!last || draggingGhost || pulling) return;
   if (pointers.size === 2) {
     // Two fingers: apart and together zoom, moved together turn the view
     // (one finger moves a piece being placed, on a touch screen).
@@ -635,6 +635,7 @@ function render() {
                       target.z + distance * Math.cos(elevation) * Math.cos(azimuth));
   camera.lookAt(target);
   if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); syncMovePad(); }
+  drawPull();
   renderer.render(scene, camera);
   renderLabels();
 }
@@ -1340,7 +1341,7 @@ renderer.domElement.addEventListener('pointermove', e => {
   if (!ghost) {
     view.classList.remove('grab');
     // A piece of yours under the mouse can be clicked to pick it up.
-    if (!e.buttons && e.pointerType === 'mouse') view.classList.toggle('pickable', placedAt(e.clientX, e.clientY) >= 0);
+    if (!e.buttons && e.pointerType === 'mouse') view.classList.toggle('pickable', !pullMode && placedAt(e.clientX, e.clientY) >= 0);
     return;
   }
   if (draggingGhost && pointers.size <= 1) {
@@ -1357,7 +1358,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (ghost && click && !looking && (ghost.follow || !nearGhost(e.clientX, e.clientY, 0))) {
     moveGhostTo(e.clientX, e.clientY);
     if (ghost.follow) { ghost.follow = false; renderPlaced(); renderGhostBar(); showGhostState(); }
-  } else if (!ghost && click) {
+  } else if (!ghost && click && !pullMode) {
     const i = placedAt(e.clientX, e.clientY);
     if (i >= 0) pickUp(i);
   }
@@ -1404,6 +1405,93 @@ function updateGuides() {
   guideGroundZ.position.set(cx, .004, cz); guideGroundZ.scale.set(t, .002, far);
   guideFoot.position.set(cx, .005, cz);
 }
+// ---- testing a part: a pull ----------------------------------------------------
+// With Pull on, pressing a loose part and dragging pulls it that way -- the
+// engine's own force at that point of it, no hand in the world -- harder the
+// further the pointer goes from the point (PULL_N_PER_M), up to PULL_MAX_N.
+// A line is the string. Letting go lets go. The work the pull does counts in
+// what the run took (the win card says so). It pulls while the world runs, and
+// starts it if it is not running.
+const PULL_N_PER_M = 400, PULL_MAX_N = 200;
+let pullMode = false, pulling = null;
+const pullLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+                                new THREE.LineBasicMaterial({color: 0xffd34d}));
+pullLine.visible = false;
+pullLine.frustumCulled = false;
+scene.add(pullLine);
+$('pull-tool').addEventListener('click', () => {
+  pullMode = !pullMode;
+  $('pull-tool').setAttribute('aria-pressed', String(pullMode));
+  view.classList.toggle('pulling-mode', pullMode);
+});
+// The loose part under the pointer, and the point of it there.
+function pullTarget(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  const nameOf = new Map([...meshes].map(([name, m]) => [m, name]));
+  const hit = raycaster.intersectObjects([...nameOf.keys()].filter(m => m.visible), true).find(h => h.object.isMesh);
+  let o = hit && hit.object;
+  while (o && !nameOf.has(o)) o = o.parent;
+  const name = o && nameOf.get(o), body = name && world.bodies.get(name);
+  if (!body || body.anchored) return null;
+  return {name, mesh: o, local: o.worldToLocal(hit.point.clone()), plane: new THREE.Plane().setFromNormalAndCoplanarPoint(
+    camera.getWorldDirection(new THREE.Vector3()).negate(), hit.point)};
+}
+function pullForce(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  const to = raycaster.ray.intersectPlane(pulling.plane, new THREE.Vector3());
+  const at = pulling.mesh.localToWorld(pulling.local.clone());
+  if (!to) return {at, to: at, force: new THREE.Vector3()};
+  const force = to.clone().sub(at).multiplyScalar(PULL_N_PER_M);
+  if (force.length() > PULL_MAX_N) force.setLength(PULL_MAX_N);
+  return {at, to, force};
+}
+let pullSent = 0;
+function sendPull(force, at, now = false) {
+  if (!pulling || !session) return;
+  const stamp = performance.now();
+  if (!now && stamp - pullSent < 100) return;
+  pullSent = stamp;
+  api({op: 'pull', session, body: pulling.name, at: at.toArray().map(v => +v.toFixed(4)),
+       force: force.toArray().map(v => +v.toFixed(2))}).catch(() => {});
+}
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (!pullMode || ghost || pointers.size > 1) return;
+  const target = pullTarget(e.clientX, e.clientY);
+  if (!target) return;
+  pulling = {...target, clientX: e.clientX, clientY: e.clientY};
+  pullLine.visible = true;
+  if (!playing) setPlaying(true).catch(() => {});
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!pulling) return;
+  pulling.clientX = e.clientX; pulling.clientY = e.clientY;
+  const {at, force} = pullForce(e.clientX, e.clientY);
+  sendPull(force, at);
+});
+const letGo = () => {
+  if (!pulling) return;
+  const {at} = pullForce(pulling.clientX, pulling.clientY);
+  sendPull(new THREE.Vector3(), at, true);
+  pulling = null;
+  pullLine.visible = false;
+  $('clock').title = '';
+};
+renderer.domElement.addEventListener('pointerup', letGo);
+renderer.domElement.addEventListener('pointercancel', letGo);
+// Each frame: the string from the point of the part to the pointer, and the
+// force sent again as the part moves under it.
+function drawPull() {
+  if (!pulling) return;
+  const {at, to, force} = pullForce(pulling.clientX, pulling.clientY);
+  pullLine.geometry.setFromPoints([at, to]);
+  pullLine.material.color.setHSL(0.14 - 0.14 * force.length() / PULL_MAX_N, 1, 0.55);
+  sendPull(force, at);
+  $('clock').title = `Pulling ${pulling.name} with ${Math.round(force.length())} N`;
+}
+window.machinePullState = () => pulling && {body: pulling.name, force_n: Math.round(pullForce(pulling.clientX, pulling.clientY).force.length())};
+
 // Turning by hand: Shift and the wheel turns it, Alt and the wheel tips it.
 renderer.domElement.addEventListener('wheel', e => {
   if (!ghost || !(e.shiftKey || e.altKey)) return;
@@ -1691,7 +1779,8 @@ async function score(row) {
                               : `The goal did not happen within ${level.time_s} s.`];
   if (r.helped) said.push('The chat placed the pieces, so one star at most.');
   v.append(' ' + said.join(' '));
-  const kept = keepResult(level.id, r);
+  // A run pulled by hand is a test: nothing is kept for it.
+  const kept = r.tested ? {was: record(level.id), better: false, unlocked: []} : keepResult(level.id, r);
   renderLevels();
   showDone(r, kept);
   // The goal happened: let what follows settle for a moment, then stop.
@@ -1726,7 +1815,16 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   const box = $('level-done'), next = levels[levels.indexOf(level) + 1];
   const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
   const allLevels = button('All levels', () => { closeDone(); showLevelsScreen(true); });
-  if (r.earned.goal) {
+  if (r.tested) {
+    // Pulled by hand: what happened, and that it is a test, not a win.
+    add('h2', {textContent: 'A test run'});
+    add('p', {textContent: r.earned.goal ? `With your pull, the goal happened at ${describeTime(r.goal_at_s)}.`
+                                         : `With your pull, the goal did not happen within ${level.time_s} s.`});
+    add('p', {className: 'hint', textContent: 'A run you pull by hand tests the parts. To win, let the machine do it: run it without pulling.'});
+    const actions = add('div', {className: 'actions'});
+    actions.append(button('Play again', () => { closeDone(); startOver(true); }, {className: 'primary', ariaLabel: 'Play this level again'}),
+                   allLevels);
+  } else if (r.earned.goal) {
     // The win, and what it took: less energy is better.
     // A first win with a tool is an achievement; a win again is the level.
     const unlocked = (kept.unlocked || []).map(toolName);
@@ -1740,7 +1838,7 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     add('p', {className: 'energy', textContent: `Energy used: ${energyText(r.energy_j)}`});
     add('p', {className: 'breakdown', textContent: `${energyText(e.pieces_j)} to make your pieces, ` +
       (run.j ? `${energyText(run.j)} in the run` : 'nothing used in the run') + (run.j ? ` (${[['heat', run.heat_j], ['powder', run.powder_j],
-      ['electricity', run.electric_j]].filter(([, j]) => j).map(([w, j]) => `${w} ${energyText(j)}`).join(', ')})` : '') + '.'});
+      ['electricity', run.electric_j], ['your pulls', run.pull_j]].filter(([, j]) => j).map(([w, j]) => `${w} ${energyText(j)}`).join(', ')})` : '') + '.'});
     // Par is the level's own solution's energy, rounded up: within 1% of it is on par.
     const par = r.par_energy_j, verdict = r.energy_j < 0.99 * par ? `Under par (${energyText(par)})!`
       : r.energy_j <= par ? `At par (${energyText(par)}).` : `Par is ${energyText(par)}.`;

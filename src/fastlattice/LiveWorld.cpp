@@ -1369,6 +1369,37 @@ struct LiveWorld::Impl {
         circuits.push_back(std::move(c));
         for (unsigned id : ids) motorById(id)->on_circuit = true;
     }
+    // Pulls: a force at a point of a body, put on before each step. The work
+    // the last step's force did is the force times how far that point moved
+    // in the step, measured at the start of this one (a step taken back moved
+    // it nowhere).
+    struct Pull {
+        std::string body;
+        Vec3 local{};             // the point, in the body's own frame
+        Vec3 force{};             // what it pulls with from now on
+        Vec3 applied{};           // what it pulled with in the last step
+        Vec3 last_world{};        // where the point was as that step began
+        double work_j{};
+    };
+    std::vector<Pull> pulls;
+    void preparePulls() {
+        for (Pull &p : pulls) {
+            const auto found = index_of.find(p.body);
+            if (found == index_of.end() || !inWorld(found->second)) {
+                p.applied = {};
+                continue;
+            }
+            const RigidSnapshot s = world->snapshot(body_of[found->second]);
+            const Vec3 at = s.center_of_mass_world_m + s.orientation_world.rotate(p.local);
+            p.work_j += dot(p.applied, at - p.last_world);
+            p.last_world = at;
+            p.applied = p.force;
+            if (length(p.force) > 0.0) {
+                world->addForce(body_of[found->second], p.force, at);
+                world->wake(body_of[found->second]);
+            }
+        }
+    }
     // A ratchet's pawl: measured where the pin has got to at the start of the
     // step, never assumed. Once past its reading it has caught, and its limit
     // the other way is where the pin has got to -- so it goes on, and cannot
@@ -7919,6 +7950,7 @@ void LiveWorld::step(double dt_s) {
     if (impl_->light_report.declared) impl_->heatFromLight(dt_s);
     if (!impl_->circuits.empty()) impl_->prepareCircuits(dt_s);
     impl_->prepareRatchets();
+    if (!impl_->pulls.empty()) impl_->preparePulls();
     if (impl_->body_of.size() + impl_->native_players.size() + 8 <= 2000) {
         bool committed = false;
         try {
@@ -9985,6 +10017,36 @@ unsigned LiveWorld::drum(const std::string &drum, const std::string &load, const
     impl_->world->wake(impl_->body_of[second->second]);
     impl_->joints.push_back(std::move(joint));
     return impl_->joints.back().id;
+}
+
+bool LiveWorld::pull(const std::string &body, const Vec3 &at_world_m, const Vec3 &force_n) {
+    for (const Vec3 &v : {at_world_m, force_n})
+        if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z))
+            throw std::invalid_argument("a pull is a point and a force, in numbers");
+    const auto found = impl_->index_of.find(body);
+    if (found == impl_->index_of.end() || !impl_->inWorld(found->second) || impl_->described[found->second].anchored)
+        return false;
+    const RigidSnapshot s = impl_->world->snapshot(impl_->body_of[found->second]);
+    const Vec3 local = conjugateOf(s.orientation_world).rotate(at_world_m - s.center_of_mass_world_m);
+    for (Impl::Pull &p : impl_->pulls)
+        if (p.body == body) {
+            p.local = local;
+            p.force = force_n;
+            p.last_world = at_world_m;
+            p.applied = {};
+            return true;
+        }
+    impl_->pulls.push_back({body, local, force_n, {}, at_world_m, 0.0});
+    return true;
+}
+
+std::vector<LivePull> LiveWorld::pulls() const {
+    std::vector<LivePull> out;
+    for (const Impl::Pull &p : impl_->pulls) {
+        LivePull said{p.body, p.force, p.last_world, p.work_j};
+        out.push_back(said);
+    }
+    return out;
 }
 
 bool LiveWorld::ratchet(unsigned joint, double at_rad, int sense) {

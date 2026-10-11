@@ -293,6 +293,31 @@ class Puzzles(unittest.TestCase):
         drag()
         self.assertNotEqual(self.ghost()['p']['x_m'], p0['x_m'], 'in the hand, the drag moves it')
 
+    def test_a_part_pulled_by_hand_is_a_test_and_earns_nothing(self):
+        # Level 5 with no ramp: Pull on, the lever's end pulled down -- the
+        # engine's force at that point, no hand in the world. The ratchet
+        # catches, the contact closes, the cannon fires and the block goes in.
+        # A run pulled by hand tests the parts; it is not a win, and nothing
+        # of it is kept.
+        self.open('chain')
+        self.js("window.machineView({azimuth: -0.2, elevation: 0.35, distance: 2.2, at: [0.4, 0.15, 0]})")
+        time.sleep(1.5)
+        x, y = self.screen_point([0.15, 0.16, 0.0])
+        self.press('🖐 Pull')
+        self.mouse('mouseMoved', x, y)
+        self.mouse('mousePressed', x, y)
+        for k in range(1, 16):
+            self.page.send('Input.dispatchMouseEvent', {'type': 'mouseMoved', 'x': x, 'y': y + 12 * k,
+                                                        'button': 'left', 'buttons': 1})
+            time.sleep(0.04)
+        self.wait("Boolean(window.machinePullState()) && window.machinePullState().force_n > 50", 10)
+        self.wait("!document.getElementById('level-done').hidden", 60)
+        self.mouse('mouseReleased', x, y + 180)
+        done = self.js("document.getElementById('level-done').textContent")
+        self.assertIn('A test run', done)
+        self.assertIn('the goal happened', done)
+        self.assertNotIn('chain', self.js("Object.keys(window.machineSave().players[window.machineSave().current].levels)"))
+
     def test_a_ghost_inside_a_wall_is_red_says_why_and_cannot_be_set_down(self):
         self.open('laser')
         self.press('Add a mirror')

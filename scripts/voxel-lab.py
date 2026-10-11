@@ -516,6 +516,7 @@ class Handler(BaseHTTPRequestHandler):
     from machine_world import compile_spec
     c=compile_spec(data.get('spec'));r={'ok':True,'parts':len(c['parts']),'cells':c['cells'],'notes':c['notes']}
    elif op=='play':r=host.get(data.get('session')).play(bool(data.get('running')),data.get('speed'))
+   elif op=='pull':r={'ok':True,**host.get(data.get('session')).pull(data.get('body'),data.get('at'),data.get('force'))}
    elif op=='frame':
     after,wait=data.get('after',0),data.get('wait_ms',0)
     if type(after) is not int or not 0<=after<=10**9 or type(wait) is not int or not 0<=wait<=250:raise ValueError('Invalid frame request')
@@ -579,6 +580,9 @@ class Handler(BaseHTTPRequestHandler):
     # And what the win took: making the pieces, and what the run put in so far.
     energy=machine_game.energy_of(s.compiled,s.readouts,s.t)
     r={'ok':True,**machine_game.stars(level,game['checked'],game['cost'],rows[0].get('at_s') if rows[0].get('done') else None,game['helped'],energy_j=energy['j']),'energy':energy}
+    # A run someone pulled by hand is a test of the parts, not the machine
+    # doing it: it earns nothing.
+    if (s.readouts or {}).get('pulls'):r.update(tested=True,stars=0)
    elif op=='trial':
     if self.server.trial_allowance:self.server.trial_allowance.take(self.visitor())
     if not self.server.chat_busy.acquire(blocking=False):raise ValueError('The engine is busy with another trial; try again shortly')

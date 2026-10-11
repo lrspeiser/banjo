@@ -3082,6 +3082,19 @@ int main(int argc, char **argv) {
                         if (c.id == id) reply["control"] = controlOf(c, world->motors(), world->joints(), *world);
                 } else if (op == "unhinge") {
                     world->unhinge(command.at("joint").get<unsigned>());
+                } else if (op == "pull") {
+                    // A person testing a part: a force at a point of it, on
+                    // until changed; a zero force lets go.
+                    if (!world->pull(command.at("body").get<std::string>(), readVec(command, "at"),
+                                     readVec(command, "force")))
+                        throw std::invalid_argument("only something that moves can be pulled");
+                } else if (op == "pulls") {
+                    nlohmann::json list = nlohmann::json::array();
+                    for (const LivePull &p : world->pulls())
+                        list.push_back({{"body", p.body}, {"force_n", vec(p.force_n)}, {"at_m", vec(p.at_world_m)},
+                                        {"work_j", tidy(p.work_j)}});
+                    std::cout << nlohmann::json{{"ok", true}, {"pulls", list}}.dump() << std::endl;
+                    continue;
                 } else if (op == "ratchet") {
                     // A pawl on a pin: past its reading (degrees) it goes on
                     // but cannot come back.

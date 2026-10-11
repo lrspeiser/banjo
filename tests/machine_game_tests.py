@@ -267,6 +267,9 @@ class Tray(unittest.TestCase):
         compiled = mw.compile_spec(mg.compose(fire, fire['solution'])[0])
         run = mg.run_energy(compiled, {'heat_ledger': {'heater_in_j': 2000.0}}, 1.0)
         self.assertEqual((run['heat_j'], run['powder_j'], run['electric_j']), (0, 2800, 0))
+        # A person's test pull: the work it did counts; what pulled back does not.
+        pulled = mg.run_energy(compiled, {'pulls': [{'body': 'x', 'work_j': 15.0}, {'body': 'y', 'work_j': -4.0}]}, 1.0)
+        self.assertEqual((pulled['pull_j'], pulled['j']), (15, 2815))
         battery = {'batteries': [{'name': 'b', 'capacity_j': 1000.0, 'charge_j': 600.0}]}
         self.assertEqual(mg.run_energy(battery | {'parts': []},
                                        {'machines': {'batteries': [{'name': 'b', 'charge_j': 450.0}]}})['electric_j'], 150)

@@ -75,6 +75,8 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 #verdict .stars{font-size:1.35rem;letter-spacing:.15rem;color:#ffd34d}
 #view.placing canvas{cursor:crosshair}
 #view.pickable canvas{cursor:pointer}
+#view.pulling-mode canvas{cursor:grab}
+#pull-tool[aria-pressed=true]{background:#7a5a12;border-color:#ffd34d}
 .move-pad{position:absolute;top:52px;left:10px;z-index:3;display:grid;grid-template-columns:repeat(3,42px);grid-template-rows:repeat(3,42px);gap:4px;pointer-events:none}
 .move-pad[hidden]{display:none}
 .move-pad button{pointer-events:auto;padding:0;font:700 20px system-ui;color:#fff;background:#142836d9;border:2px solid #9fb6c4;border-radius:9px;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 2px 8px #0006}
