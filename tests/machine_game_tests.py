@@ -108,7 +108,12 @@ class Tray(unittest.TestCase):
                 self.assertEqual(turning, ['angle_deg', 'pitch_deg', 'roll_deg'] if t['piece'] == 'mirror'
                                  else [] if t.get('turning') is False
                                  else ['pitch_deg', 'roll_deg', 'yaw_deg'], level['id'])
-                self.assertIn('z_m', t['knobs'])
+                # Moved across too, but for a counterweight, which hangs in
+                # line with the beam its rope runs along.
+                if t.get('across') is False:
+                    self.assertNotIn('z_m', t['knobs'])
+                else:
+                    self.assertIn('z_m', t['knobs'])
             # Unturned, a level's own solution is built exactly as before.
             spec, _, cost = mg.compose(level, level['solution'])
             self.assertFalse(any('turned' in k for k in spec['kits']), level['id'])
@@ -175,7 +180,7 @@ class Tray(unittest.TestCase):
         with self.assertRaises(mg.LevelRefused):
             mg.ghost(laser, two, 2)          # the tray holds two mirrors
         g = mg.ghost(laser, laser['solution'], 1)
-        self.assertEqual((g['fits'], [p['name'] for p in g['parts']]), (True, ['your mirror 2']))
+        self.assertEqual((g['fits'], [p['name'] for p in g['parts']]), (True, ['your mirror 2', 'your mirror 2 stand']))
         tight = dict(mg.level_by_id('fire'), budget=20)
         g = mg.ghost(tight, [dict(tight['solution'][0], powder_g=3.0)], 0)
         self.assertEqual(g['problems'], ['the pieces would cost 34; the budget is 20'])
@@ -187,6 +192,39 @@ class Tray(unittest.TestCase):
         self.assertEqual((faced['off_sun_deg'], faced['sunlight_w']), (0.0, 250.0))
         flat = mg.ghost(sun, [{k: v for k, v in sun['solution'][0].items() if k not in ('yaw_deg', 'pitch_deg')}], 0)
         self.assertEqual((flat['sun'][0]['off_sun_deg'], flat['sun'][0]['sunlight_w']), (75.0, 64.7))
+
+    def test_nothing_floats(self):
+        # Every fixed part stands on the ground or is bolted to one that does,
+        # by a chain of them: the level's own (level 6's laser sits on its
+        # post) and the player's wherever its knobs put it (a mirror on a
+        # stand, a cannon's barrel, a ramp on two legs) -- as the solution has
+        # it and with every knob at either end of its range.
+        for level in LEVELS:
+            tries = [level['solution']]
+            for t in level['tray']:
+                for end in ('min', 'max'):
+                    p = {'piece': t['piece']}
+                    for key, rule in t['knobs'].items():
+                        p[key] = rule['choices'][-1 if end == 'max' else 0] if 'choices' in rule else (
+                            rule.get('default', rule['min']) if rule.get('turning') else rule[end])
+                    tries.append([p])
+            for placements in tries:
+                parts = mg._assemble(level, placements, lenient=True)[3]['parts']
+                held = mg.held_up(parts)
+                with self.subTest(level=level['id'], placements=placements):
+                    self.assertEqual([p['name'] for p in parts if p.get('fixed') and p['name'] not in held], [])
+        # The stand is the piece's: shown with its ghost, standing on the ground.
+        laser = mg.level_by_id('laser')
+        stand = next(p for p in mg.ghost(laser, laser['solution'], 0)['parts'] if p['name'] == 'your mirror 1 stand')
+        self.assertAlmostEqual(stand['at_m'][1] - 0.5 * stand['size_m'][1], 0.0, places=6)
+        # Level 8's rope turns over pulley blocks hung from the beam, in line with it.
+        tackle = mg.level_by_id('tackle')
+        parts = {p['name']: p for p in mg._assemble(tackle, tackle['solution'])[3]['parts']}
+        for name in ('your tackle 1 pulley 1', 'your tackle 1 pulley 2'):
+            block, beam = parts[name], parts['gantry beam']
+            self.assertAlmostEqual(block['at_m'][1] + 0.5 * block['size_m'][1], beam['at_m'][1] - 0.5 * beam['size_m'][1])
+            self.assertEqual(block['at_m'][2], beam['at_m'][2])
+        self.assertNotIn('z_m', tackle['tray'][0]['knobs'], 'a counterweight hangs in line with its beam')
 
     def test_every_level_opens_before_any_piece_is_placed(self):
         # Shown, not run: a goal about a piece not placed yet is left out and

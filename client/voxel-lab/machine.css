@@ -79,6 +79,7 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 .move-pad[hidden]{display:none}
 .move-pad button{pointer-events:auto;padding:0;font:700 20px system-ui;color:#fff;background:#142836d9;border:2px solid #9fb6c4;border-radius:9px;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 2px 8px #0006}
 .move-pad button:active{background:#2f6f94}
+.move-pad button:disabled{opacity:.35;cursor:not-allowed}
 .move-pad button[data-axis=x]{border-color:#ff5c5c;color:#ffc4c4}
 .move-pad button[data-axis=z]{border-color:#4d9dff;color:#c4ddff}
 .move-pad button[data-axis=y]{border-color:#6fe08a;color:#c9f6d3}

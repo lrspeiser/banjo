@@ -849,9 +849,13 @@ function syncMovePad() {
   const axes = ['left', 'right', 'forward', 'back'].map(dir => viewAxis(dir)[0]).join();
   if (axes === padAxes) return;
   padAxes = axes;
+  // A piece kept in line (level 8's counterweight, under its beam) has no z:
+  // an arrow that would move it that way is greyed out.
+  const knobs = trayItem(ghost.p.piece).knobs;
   for (const b of pad.querySelectorAll('button')) {
     const dir = b.dataset.dir;
     b.dataset.axis = dir === 'up' || dir === 'down' ? 'y' : viewAxis(dir)[0] === 'x_m' ? 'x' : 'z';
+    if (b.dataset.axis !== 'y') b.disabled = !knobs[viewAxis(dir)[0]];
   }
 }
 

@@ -50,6 +50,8 @@ def load_levels():
             # mirror's angle_deg) keeps that one as its turn.
             own_turn = any(r.get('turning') for r in t['knobs'].values())
             for key, rule in FREE_KNOBS.items():
+                if key == 'z_m' and t.get('across') is False:
+                    continue
                 if rule.get('turning') and (not level.get('turning', True) or t.get('turning') is False
                                             or (key == 'yaw_deg' and own_turn)):
                     continue
@@ -209,10 +211,16 @@ def _tackle(name, k, ctx):
     top = load['at_m'][1] + 0.5 * load['size_m'][1]
     beam = ctx['tray'].get('over_m', 1.95)
     weight = {'name': name, 'shape': 'box', 'material': material, 'size_m': [side] * 3, 'at_m': [x, y, z]}
+    # The pulleys the rope turns over, each in an iron block hung from the
+    # underside of the level's beam (its middle where the rope turns).
+    block = ctx['tray'].get('pulley_m', 0.04)
+    pulleys = [{'name': f'{name} pulley {i + 1}', 'shape': 'box', 'material': 'iron', 'size_m': [block] * 3,
+                'at_m': [at[0], beam, at[2]], 'fixed': True}
+               for i, at in enumerate(([x, beam, z], load['at_m']))]
     rope = {'name': name + ' rope', 'kind': 'pulley', 'a': name, 'b': load['name'],
             'at_m': [x, round(y + 0.5 * side, 4), z], 'at_b_m': [load['at_m'][0], round(top, 4), load['at_m'][2]],
             'over_a_m': [x, beam, z], 'over_b_m': [load['at_m'][0], beam, load['at_m'][2]], 'ratio': k['ratio']}
-    return {'parts': [weight], 'joints': [rope]}
+    return {'parts': [weight] + pulleys, 'joints': [rope]}
 
 
 def _lens(name, k, ctx):
@@ -297,6 +305,9 @@ def _assemble(level, placements, lenient=False):
     spec.setdefault('kits', [])
     spec.setdefault('parts', [])
     spec['title'] = level['title']
+    # Nothing floats: the level's own stands first, so a piece is set down
+    # on them as on anything else.
+    spec['parts'] += _level_held_up(level, spec, lenient)
     tray = {t['piece']: t for t in level['tray']}
     for i, p in enumerate(checked):
         knobs = {k: v for k, v in p.items() if k not in ('piece', 'cost')}
@@ -313,7 +324,198 @@ def _assemble(level, placements, lenient=False):
         if made.get('mirrors'):
             spec.setdefault('light', {}).setdefault('mirrors', [])
             spec['light']['mirrors'] = spec['light']['mirrors'] + made['mirrors']
-    return spec, checked, cost, mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
+    compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
+    # And the player's pieces: a mirror stands on a post, not in the air.
+    stands = hold_up(compiled['parts'], spec.get('cell_m', 0.02))
+    if stands:
+        spec['parts'] += stands
+        compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
+    return spec, checked, cost, compiled
+
+
+# ---- nothing floats ----------------------------------------------------------
+#
+# Everything in the world is held up: a fixed part stands on the ground, or is
+# bolted to a fixed part that is held up, by a chain of them down to the
+# ground. One that would hang in the air (a mirror, a laser, a cannon's
+# barrel, a ramp at a height) gets a stand: a concrete post from the top of
+# whatever is under it up to its underside -- two under a long part. A
+# player's stand is part of the piece (named for it), so it counts in the
+# piece's energy and may not go into anything. Loose parts need none: gravity
+# and contact hold them, or they fall.
+
+TOUCH_M = 0.004      # parts this close are touching (bolted together)
+STAND_SIDE_M = 0.04
+
+
+def _reach(solid):
+    """A solid's half extents along x, y and z in the world."""
+    if solid['shape'] == 'sphere':
+        return [0.5 * solid['size_m'][0]] * 3
+    axes, half = mw._axes(solid), mw._half(solid)
+    return [sum(abs(axes[j][i]) * half[j] for j in range(3)) for i in range(3)]
+
+
+def _gap(a, b):
+    """How far apart two solids are (negative: they overlap), by the widest
+    separating axis -- not the first one found, which can say less."""
+    if a['shape'] == 'sphere' or b['shape'] == 'sphere':
+        return -mw.overlap_depth(a, b)
+    ca, cb, aa, ab, ha, hb = a['at_m'], b['at_m'], mw._axes(a), mw._axes(b), mw._half(a), mw._half(b)
+    d = [cb[i] - ca[i] for i in range(3)]
+    axes = aa + ab
+    for u in aa:
+        for v in ab:
+            c = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+            n = math.sqrt(sum(x * x for x in c))
+            if n > 1e-9:
+                axes.append([x / n for x in c])
+    return max(abs(sum(d[k] * ax[k] for k in range(3)))
+               - sum(ha[j] * abs(sum(aa[j][k] * ax[k] for k in range(3))) for j in range(3))
+               - sum(hb[j] * abs(sum(ab[j][k] * ax[k] for k in range(3))) for j in range(3)) for ax in axes)
+
+
+def held_up(parts):
+    """The names of the fixed parts that are held up: on the ground, or
+    touching one that is, by a chain of them."""
+    fixed = [p for p in parts if p.get('fixed')]
+    solids = {p['name']: [(s, s['at_m'], _reach(s)) for s in mw.solids_of(p)] for p in fixed}
+    held = {p['name'] for p in fixed if min(c[1] - r[1] for _, c, r in solids[p['name']]) <= TOUCH_M}
+    todo = list(held)
+
+    def near(x, y):
+        return any(all(abs(cx[i] - cy[i]) <= rx[i] + ry[i] + TOUCH_M for i in range(3))
+                   and _gap(sx, sy) <= TOUCH_M for sx, cx, rx in solids[x] for sy, cy, ry in solids[y])
+    while todo:
+        name = todo.pop()
+        for p in fixed:
+            if p['name'] not in held and near(name, p['name']):
+                held.add(p['name'])
+                todo.append(p['name'])
+    return held
+
+
+def _underside(solid, x, z):
+    """How high a vertical line at (x, z) first meets a solid, coming up from
+    below; None if it misses."""
+    c = solid['at_m']
+    if solid['shape'] == 'sphere':
+        r = 0.5 * solid['size_m'][0]
+        q = r * r - (x - c[0]) ** 2 - (z - c[2]) ** 2
+        return c[1] - math.sqrt(q) if q >= 0 else None
+    lo, hi = -math.inf, math.inf
+    for a, h in zip(mw._axes(solid), mw._half(solid)):
+        k = (x - c[0]) * a[0] + (z - c[2]) * a[2]
+        if abs(a[1]) < 1e-9:
+            if abs(k) > h:
+                return None
+            continue
+        y0, y1 = sorted(((-h - k) / a[1], (h - k) / a[1]))
+        lo, hi = max(lo, c[1] + y0), min(hi, c[1] + y1)
+    return lo if lo <= hi else None
+
+
+def _stand_at(part, solids, parts, x, z, cell, name):
+    """A post at (x, z) from the top of the highest fixed thing under it up to
+    where it meets the part's underside; None where it would miss the part
+    or the part is as good as resting there already."""
+    if all(_underside(sd, x, z) is None for sd in solids):
+        return None
+    w = 0.5 * STAND_SIDE_M
+    # Its top meets the part and goes into none of it.
+    top = min(u for dx, dz in ((0, 0), (-w, -w), (-w, w), (w, -w), (w, w)) for sd in solids
+              for u in [_underside(sd, x + dx, z + dz)] if u is not None)
+    base = 0.0
+    for q in parts:
+        if not q.get('fixed') or q['name'] == part['name']:
+            continue
+        for sd in mw.solids_of(q):
+            cq, r = sd['at_m'], _reach(sd)
+            if abs(cq[0] - x) < r[0] + w and abs(cq[2] - z) < r[2] + w and cq[1] + r[1] <= top + 1e-6:
+                base = max(base, cq[1] + r[1])
+    if top - base <= TOUCH_M:
+        return None
+    # The engine builds it of whole cells: the next whole number up, so it
+    # reaches into what it holds (by less than a cell) rather than stopping
+    # short of it.
+    height = round(math.ceil((top - base) / cell - 1e-6) * cell, 6)
+    return {'name': name, 'shape': 'box', 'material': 'concrete', 'size_m': [STAND_SIDE_M, height, STAND_SIDE_M],
+            'at_m': [round(x, 4), base + 0.5 * height, round(z, 4)], 'turn_deg': [0.0, 0.0, 0.0], 'fixed': True}
+
+
+def _clear(stand, part, parts):
+    """Whether a stand goes into nothing but what it holds (and the rest of
+    its own piece): a lever, a table's edge, a ball are in its way."""
+    mine = owner(part)
+    for q in parts:
+        if q['name'] == part['name'] or (mine is not None and owner(q) == mine):
+            continue
+        if any(mw.overlap_depth(stand, sd) > 0.001 for sd in mw.solids_of(q)):
+            return False
+    return True
+
+
+def _stands_for(part, parts, cell=0.02):
+    """Posts holding `part` up: under its middle, or under both ends of a long
+    part (along its longest level direction). Each goes where it is clear,
+    tried a little further along the part at a time, as a table's leg is
+    moved off a pipe; one that finds nowhere clear is left out while another
+    holds the part. When none finds anywhere, they stand where they would,
+    and what they go into says why the part cannot go there."""
+    solids = mw.solids_of(part)
+    big = max(solids, key=lambda sd: math.prod(sd['size_m']))
+    axes, half = mw._axes(big), mw._half(big)
+    j = max(range(3), key=lambda j: 2 * half[j] * math.hypot(axes[j][0], axes[j][2]))
+    length = 2 * half[j] * math.hypot(axes[j][0], axes[j][2])
+    across = math.hypot(axes[j][0], axes[j][2])
+    u = [axes[j][0] / across, axes[j][2] / across] if across > 1e-9 else [1.0, 0.0]
+    c = big['at_m']
+    if length > 0.6:
+        groups = [[side * f for f in (0.3, 0.2, 0.4, 0.1, 0.45)] for side in (-1, 1)]
+    else:
+        groups = [[0.0, 0.15, -0.15, 0.3, -0.3]]
+    chosen, nominal = [], []
+    for n, fractions in enumerate(groups):
+        name = part['name'] + ' stand' + (f' {n + 1}' if len(groups) > 1 else '')
+        tries = [st for f in fractions
+                 for st in [_stand_at(part, solids, parts, c[0] + f * length * u[0], c[2] + f * length * u[1], cell, name)]
+                 if st is not None]
+        if tries:
+            nominal.append(tries[0])
+            clear = next((st for st in tries if _clear(st, part, parts)), None)
+            if clear is not None:
+                chosen.append(clear)
+    return chosen or nominal
+
+
+def hold_up(parts, cell=0.02):
+    """The stands that keep every fixed part in `parts` from floating."""
+    parts, stands, tried = list(parts), [], set()
+    names = {p['name'] for p in parts}
+    while True:
+        held = held_up(parts)
+        floating = [p for p in parts if p.get('fixed') and p['name'] not in held and p['name'] not in tried]
+        if not floating:
+            return stands
+        # The biggest first: what is bolted to it is held up once it is.
+        p = max(floating, key=_volume)
+        tried.add(p['name'])
+        more = [st for st in _stands_for(p, parts, cell) if st['name'] not in names]
+        names |= {st['name'] for st in more}
+        stands += more
+        parts += more
+
+
+_level_stands = {}
+
+
+def _level_held_up(level, spec, lenient):
+    """The level's own stands, once a level (its machine never changes)."""
+    key = (level['id'], json.dumps(level['machine'], sort_keys=True))
+    if key not in _level_stands:
+        _level_stands[key] = hold_up(mw.compile_spec(dict(spec, stations=[]), lenient=lenient)['parts'],
+                                     spec.get('cell_m', 0.02))
+    return copy.deepcopy(_level_stands[key])
 
 
 def owner(part):
@@ -327,7 +529,7 @@ def clashes_of(compiled):
     another piece. (The machine itself lets two bolted parts meet; a
     player's bolted mirror stood inside a wall, and a bolted plank inside
     the tables it should have rested on.)"""
-    clashes = []
+    deepest = {}
     for a in compiled['parts']:
         if owner(a) is None:
             continue
@@ -336,8 +538,12 @@ def clashes_of(compiled):
                 continue
             depth = max(mw.overlap_depth(sa, sb) for sa in mw.solids_of(a) for sb in mw.solids_of(b))
             if depth > 0.001:
-                clashes.append(f'{a["name"]} goes {depth * 1000:.0f} mm into {b["name"]}; move it')
-    return clashes
+                # A piece's stand going into something is the piece going into it.
+                what = a['name'][:-len(' stand')] if a['name'].endswith(' stand') else a['name']
+                into = owner(b) if b['name'].startswith(f'{owner(b)} stand') else b['name']
+                key = (what, into)
+                deepest[key] = max(deepest.get(key, 0.0), depth)
+    return [f'{what} goes {depth * 1000:.0f} mm into {into}; move it' for (what, into), depth in deepest.items()]
 
 
 def ghost(level, placements, index):
