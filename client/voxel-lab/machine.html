@@ -27,6 +27,13 @@
 <p id="scene-note">Drag to turn · Wheel or pinch to zoom · Every motion is calculated live</p>
 </section>
 <aside>
+<div id="phone-toolbar" hidden>
+<div id="phone-tabs" role="tablist" aria-label="Playground sections">
+<button id="phone-controls-tab" type="button" role="tab" aria-controls="control-panel" aria-selected="true">Controls</button>
+<button id="phone-design-tab" type="button" role="tab" aria-controls="phone-design-panel" aria-selected="false" tabindex="-1">Design</button>
+<button id="phone-help-tab" type="button" role="tab" aria-controls="phone-help-panel" aria-selected="false" tabindex="-1">Help</button>
+</div><div id="phone-runbar"></div>
+</div>
 <section id="control-panel" class="control-panel" aria-label="Machine and piece controls">
 <div id="view-controls" class="view-controls" aria-label="View controls">
 <button id="view-left" type="button" aria-label="Turn the view left" title="Turn the view left">◀</button><button id="view-right" type="button" aria-label="Turn the view right" title="Turn the view right">▶</button>

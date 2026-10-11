@@ -1398,11 +1398,13 @@ async function askGhost() {
 // the view meets the scene.
 function startGhost(p, index, keepPlace = false) {
   endGhost();
+  selectPhonePanel('controls');
   ghost = {p, index, was: index < placements.length ? placements[index] : null, follow: false, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {}};
   view.classList.add('placing'); view.classList.remove('pickable', 'looking');
   looking = false;
   renderTray(); renderPlaced(); renderGhostBar();
+  if (phoneLayout.matches) $('control-panel').scrollTop = 0;
   // Where the ghost is: in sight (a phone's page has scrolled down to the tray).
   sceneIntoView();
   // A copy starts beside what it copies; a new piece where the view's middle meets the scene.
@@ -3045,6 +3047,8 @@ async function chooseLevel(id, design = null) {
   document.querySelector('main').hidden = false;
   keepBuild(); showSandboxScreen(false); showLevelsScreen(false);
   level = id === 'free' && freeLevel ? freeLevel : levels.find(l => l.id === id) || (generatedLevel?.id === id ? generatedLevel : levels[0]);
+  $('phone-design-tab').textContent = level.free ? 'Design' : 'Level';
+  selectPhonePanel('controls');
   if (level.variant) {
     me().freshChallenges = [{id:level.id, title:levelTitle(level)}, ...(me().freshChallenges || []).filter(row => row.id !== level.id)].slice(0, 12);
     persist();
@@ -3269,6 +3273,61 @@ $('feedback-form').addEventListener('submit', async e => {
   finally { $('feedback-send').disabled = false; }
 });
 
+let phonePanel = 'controls';
+const phoneLayout = matchMedia('(max-width:820px), (max-height:500px) and (min-width:600px)');
+function selectPhonePanel(name, focus = false) {
+  phonePanel = name;
+  if (!$('phone-design-panel')) return;
+  for (const [key,id] of [['controls','control-panel'],['design','phone-design-panel'],['help','phone-help-panel']]) {
+    const tab = $('phone-'+key+'-tab'), pane = $(id), selected = key === name;
+    tab.setAttribute('aria-selected',String(selected)); tab.tabIndex = selected ? 0 : -1;
+    pane.hidden = phoneLayout.matches && !selected;
+    if (selected && focus) tab.focus();
+  }
+}
+function installPhonePanels() {
+  const controls = $('control-panel'), aside = controls.parentElement;
+  const design = Object.assign(document.createElement('section'),{id:'phone-design-panel'});
+  const help = Object.assign(document.createElement('section'),{id:'phone-help-panel'});
+  for (const node of [...aside.children]) {
+    if (node === controls || node === $('phone-toolbar')) continue;
+    (node.matches('.chat') ? help : design).append(node);
+  }
+  aside.append(design,help);
+  const tools = Object.assign(document.createElement('details'),{id:'phone-tools'});
+  tools.append(Object.assign(document.createElement('summary'),{textContent:'Tools and speed'}));
+  controls.append(tools);
+  const update = () => {
+    const mobile = phoneLayout.matches;
+    document.body.classList.toggle('phone-panels',mobile);
+    $('phone-toolbar').hidden = !mobile; tools.hidden = !mobile;
+    if (mobile) {
+      tools.append($('scene-actions'));
+      $('phone-runbar').append($('start'),$('reset'));
+      $('reset').textContent = 'Reset';
+    } else {
+      $('scene-actions').prepend($('start'),$('reset'));
+      $('scene-tray').after($('scene-actions'));
+      $('reset').textContent = 'Set up again';
+    }
+    $('reset').setAttribute('aria-label','Set up again');
+    $('reset').title = 'Restore the starting setup';
+    for (const [key,pane] of [['controls',controls],['design',design],['help',help]]) {
+      pane.classList.add('phone-pane');
+      if (mobile) { pane.setAttribute('role','tabpanel'); pane.setAttribute('aria-labelledby','phone-'+key+'-tab'); pane.tabIndex = 0; }
+      else { pane.removeAttribute('role'); pane.removeAttribute('aria-labelledby'); pane.removeAttribute('tabindex'); }
+    }
+    selectPhonePanel(phonePanel);
+  };
+  for (const key of ['controls','design','help']) $('phone-'+key+'-tab').addEventListener('click',()=>selectPhonePanel(key));
+  $('phone-tabs').addEventListener('keydown',e=>{
+    const names=['controls','design','help'], index=names.indexOf(phonePanel);
+    const next=e.key==='Home'?0:e.key==='End'?2:e.key==='ArrowRight'?(index+1)%3:e.key==='ArrowLeft'?(index+2)%3:null;
+    if(next!==null){e.preventDefault();selectPhonePanel(names[next],true);}
+  });
+  phoneLayout.addEventListener('change',update); update();
+}
+
 async function startGame() {
   document.body.classList.add('playing-level');
   // A level plays at real time, the camera following what moves, its path
@@ -3287,6 +3346,7 @@ async function startGame() {
   $('view-controls').before($('flow-preview'));
   $('view-controls').prepend($('undo-pieces'), $('redo-pieces'));
   controls.append($('machine-controls'));
+  installPhonePanels();
   // Browser scroll-to-target must leave secondary buttons below this sticky
   // module, including when its prediction timeline changes its height.
   new ResizeObserver(() => controls.parentElement.style.setProperty('--control-height',`${controls.offsetHeight+8}px`)).observe(controls);
@@ -3297,7 +3357,7 @@ async function startGame() {
   $('scene-note').textContent = 'Drag to turn the view · Wheel or pinch to zoom · Click one of your pieces to pick it up';
   $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;
-  for (const d of document.querySelectorAll('aside details:not(#feedback)')) d.hidden = true;
+  for (const d of document.querySelectorAll('aside details:not(#feedback):not(#phone-tools)')) d.hidden = true;
   // The levels have their own screen, and the engine's readings are the
   // sandbox's: a player sees the scene, the goal and the result.
   $('levels').hidden = true;

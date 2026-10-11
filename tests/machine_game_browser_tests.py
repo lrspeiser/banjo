@@ -97,12 +97,14 @@ class Puzzles(unittest.TestCase):
         # Large trays live in the library; use its ordinary scene entry point.
         if name.startswith('Add a ') and name != 'Add a piece' and self.js("Boolean(document.querySelector('#scene-tray button[aria-label=\"Add a piece\"]')) && !document.getElementById('piece-picker').open"):
             self.press('Add a piece')
+        self.reveal_control(f"[...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(name)})")
         found = self.js(f"""(() => {{ const b = [...document.querySelectorAll('button')].find(b =>
             !b.disabled && b.offsetParent !== null && ((b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(name)}));
             if (b) b.click(); return Boolean(b); }})()""")
         self.assertTrue(found, f'no button {name!r} to press')
 
     def slide(self, label, value):
+        self.reveal_control(f"document.querySelector('[aria-label={json.dumps(label)}]')")
         self.assertTrue(self.js(f"""(() => {{ const el = document.querySelector('[aria-label={json.dumps(label)}]');
             if (!el) return false; el.value = {json.dumps(value)};
             el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', {{bubbles: true}})); return true; }})()"""),
@@ -127,6 +129,7 @@ class Puzzles(unittest.TestCase):
 
     def click_visible(self, label):
         """Hit the actual visible target, rather than invoking its DOM handler."""
+        self.reveal_control(f"[...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(label)})")
         target = self.js(f"""(() => {{ const el = [...document.querySelectorAll('button')].find(b =>
             !b.disabled && b.offsetParent !== null && (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(label)});
             if (!el) return null; const r = el.getBoundingClientRect(), x = r.left + r.width/2, y = r.top + r.height/2;
@@ -138,6 +141,16 @@ class Puzzles(unittest.TestCase):
         self.assertGreaterEqual(target['h'], 44, (label, target))
         self.mouse('mousePressed', target['x'], target['y'])
         self.mouse('mouseReleased', target['x'], target['y'])
+
+    def reveal_control(self, expression):
+        """Navigate the phone's real tabs before using a section's controls."""
+        panel = self.js(f"(() => {{const el={expression}; const pane=el?.closest('.phone-pane'); return !document.querySelector('main').hidden && document.body.classList.contains('phone-panels') && pane?.hidden ? document.getElementById(pane.getAttribute('aria-labelledby')).textContent : null;}})()")
+        if panel:
+            self.click_visible(panel)
+        tools = self.js(f"(() => {{const el={expression}; const d=el?.closest('#phone-tools'); return Boolean(d && !d.hidden && !d.open);}})()")
+        if tools:
+            x,y = self.js("(() => {const r=document.querySelector('#phone-tools summary').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()")
+            self.mouse('mousePressed',x,y); self.mouse('mouseReleased',x,y)
 
     def assert_power_layout(self):
         # A rebuild reframes the camera; the anchors follow it each frame.
@@ -157,6 +170,57 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_phone_tabs_scroll_independently_keep_run_visible_and_survive_rotation(self):
+        for width,height in ((390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('free',width,height,phone=True)
+                self.click_visible('Design')
+                self.assertTrue(self.js("document.getElementById('control-panel').hidden && document.getElementById('phone-help-panel').hidden"))
+                pane=self.js("document.getElementById('phone-design-panel').getBoundingClientRect().toJSON()")
+                self.assertGreater(pane['height'],300 if width==390 else 230)
+                # Scroll the content to its end: the fixed toolbar and scene
+                # cannot be covered by settings or by a sticky controls box.
+                geometry=self.js("document.getElementById('phone-toolbar').getBoundingClientRect().toJSON()")
+                self.page.send('Input.dispatchMouseEvent',{'type':'mouseWheel','x':pane['x']+pane['width']/2,'y':pane['y']+pane['height']/2,'deltaX':0,'deltaY':10000})
+                self.wait("document.getElementById('phone-design-panel').scrollTop>0",5)
+                self.assertEqual(self.js("document.querySelector('aside').scrollTop"),0)
+                self.assertEqual(self.js("document.getElementById('phone-toolbar').getBoundingClientRect().toJSON()"),geometry)
+                self.assertLessEqual(self.js("document.getElementById('engine-assumptions').getBoundingClientRect().bottom"),pane['bottom'])
+                self.click_visible('Help')
+                self.js("document.getElementById('message').value='Keep this draft while I adjust the machine'")
+                self.click_visible('Run it')
+                self.wait("/World (?!0\\.00)[0-9.]+ s/.test(document.getElementById('clock').textContent)",30)
+                self.click_visible('Pause'); self.click_visible('Set up again'); self.wait(READY,30)
+                self.assertEqual(self.js("document.getElementById('phone-help-tab').getAttribute('aria-selected')"),'true')
+                self.click_visible('Design')
+                self.js("document.getElementById('save-design').scrollIntoView({block:'center'})")
+                self.click_visible('Save version')
+                self.wait("/saved/.test(document.getElementById('design-status').textContent)",5)
+                self.click_visible('Controls'); self.click_visible('Add a piece')
+                self.press('Add a plank'); self.ghost()
+                self.assertEqual(self.js("document.getElementById('phone-controls-tab').getAttribute('aria-selected')"),'true')
+                self.click_visible('✓ Set down'); self.wait(READY,30)
+                self.click_visible('Design')
+                self.press('Pick up your plank 1'); self.ghost()
+                self.assertEqual(self.js("document.getElementById('phone-controls-tab').getAttribute('aria-selected')"),'true')
+                self.click_visible('Throw the ghost away'); self.wait('!window.machineGhostState()',5)
+                self.click_visible('Help')
+                self.page.send('Emulation.setDeviceMetricsOverride',{'width':1280,'height':860,'deviceScaleFactor':1,'mobile':False})
+                self.wait("!document.body.classList.contains('phone-panels')",5)
+                self.assertTrue(self.js("['control-panel','phone-design-panel','phone-help-panel'].every(id=>!document.getElementById(id).hidden)"))
+                self.assertEqual(self.js("document.querySelectorAll('#start').length"),1)
+                self.assertEqual(self.js("document.getElementById('start').parentElement.id"),'scene-actions')
+                self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':True})
+                self.wait("document.body.classList.contains('phone-panels')",5)
+                self.assertEqual(self.js("document.getElementById('phone-help-tab').getAttribute('aria-selected')"),'true')
+                self.assertEqual(self.js("document.getElementById('message').value"),'Keep this draft while I adjust the machine')
+                # Keyboard navigation moves both the selected tab and focus.
+                self.click_visible('Help')
+                for kind in ('keyDown','keyUp'):
+                    self.page.send('Input.dispatchKeyEvent',{'type':kind,'key':'Home','code':'Home','windowsVirtualKeyCode':36})
+                self.assertEqual(self.js("document.activeElement.id"),'phone-controls-tab')
+                self.assertEqual(self.js("document.getElementById('phone-controls-tab').getAttribute('aria-selected')"),'true')
+
     def test_flow_preview_can_be_paused_scrubbed_and_edited_without_running_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
@@ -192,6 +256,7 @@ class Puzzles(unittest.TestCase):
                     self.click_visible('Play preview')
                     self.wait('window.machineFlowPreviewState().playing',5)
                     # A tall preview module must still leave Save accessible.
+                    self.reveal_control("document.getElementById('save-design')")
                     self.js("document.getElementById('save-design').scrollIntoView({block:'center'})")
                     self.click_visible('Save version')
                     self.wait("/saved/.test(document.getElementById('design-status').textContent)",5)
@@ -203,13 +268,14 @@ class Puzzles(unittest.TestCase):
                         self.assertEqual(self.js('window.machineFlowPreviewState().sample.water.xyz_mm'),[])
                         self.assertIn('Water valves closed',self.js("document.getElementById('flow-readings').textContent"))
                         self.press('Cancel'); self.wait('!window.machineGhostState()',5)
+                    self.reveal_control("document.getElementById('designs-open')")
                     self.js("document.getElementById('designs-open').scrollIntoView({block:'center'})")
                     self.click_visible('All designs')
                     self.wait("!document.getElementById('sandbox-screen').hidden",5)
                 self.open('easy-mirror',width,height,phone=width!=1280)
                 self.press('Add a mirror'); self.ghost()
                 self.wait('window.machineFlowPreviewState()?.frames>2',60)
-                self.wait('window.machineFlowPreviewState()?.drawn.lightSegments>0',5)
+                self.wait('window.machineFlowPreviewState()?.drawn?.lightSegments>0',5)
                 self.assertIn('light preview',self.js("document.getElementById('preview-legend').textContent"))
                 self.assertTrue(self.js(READY))
 
@@ -231,7 +297,7 @@ class Puzzles(unittest.TestCase):
                     self.assertEqual(self.ghost()['p'], setup[0])
                     self.assertTrue(self.js(READY), 'selecting a device never starts the live simulation')
                     for label in ('Run it','Set up again','Turn the view left','Zoom in','✓ Set down','Throw the ghost away'):
-                        target = self.js(f"(() => {{const b=[...document.querySelectorAll('#control-panel button')].find(b=>(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(label)}),r=b?.getBoundingClientRect();return r?{{visible:r.x>=0 && r.right<=innerWidth && r.y>=0 && r.bottom<=innerHeight,uncovered:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),h:r.height,w:r.width}}:null;}})()")
+                        target = self.js(f"(() => {{const b=[...document.querySelectorAll('#control-panel button,#phone-runbar button')].find(b=>(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(label)}),r=b?.getBoundingClientRect();return r?{{visible:r.x>=0 && r.right<=innerWidth && r.y>=0 && r.bottom<=innerHeight,uncovered:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),h:r.height,w:r.width}}:null;}})()")
                         self.assertIsNotNone(target,label)
                         self.assertTrue(target['visible'] and target['uncovered'],(label,target))
                         self.assertGreaterEqual(target['h'],44); self.assertGreaterEqual(target['w'],44)
@@ -388,6 +454,7 @@ class Puzzles(unittest.TestCase):
                 self.press('Save version')
                 self.wait("window.machineDesign().versions.length > 0", 10)
                 saved = self.js('window.machineDesign().versions.slice(-1)[0].draft')
+                self.reveal_control("document.getElementById('machine-controls')")
                 self.js("document.getElementById('machine-controls').open = true")
                 targets = self.js("[...document.querySelectorAll('#machine-control-rows button')].map(b=>{const r=b.getBoundingClientRect();return {w:r.width,h:r.height,right:r.right};})")
                 self.assertTrue(targets)
@@ -885,6 +952,7 @@ class Puzzles(unittest.TestCase):
                 self.wait(READY, 60)
                 self.assertLessEqual(self.js('document.body.scrollWidth'), width)
                 for selector in ('#start', '#reset', '#pull-tool', '#attach-tool'):
+                    self.reveal_control(f"document.querySelector('{selector}')")
                     box = self.js(f"(() => {{const r=document.querySelector('{selector}').getBoundingClientRect();return {{h:r.height,x:r.x,right:r.right,top:r.top,bottom:r.bottom}};}})()")
                     scene = self.js("(() => {const r=document.querySelector('#view').getBoundingClientRect();return {top:r.top,bottom:r.bottom};})()")
                     self.assertGreaterEqual(box['h'], 44)
@@ -892,7 +960,7 @@ class Puzzles(unittest.TestCase):
                     self.assertLessEqual(box['right'], width)
                     self.assertGreaterEqual(box['top'], 0)
                     self.assertLessEqual(box['bottom'], height)
-                    self.assertTrue(self.js(f"Boolean(document.querySelector('{selector}').closest('#control-panel'))"))
+                    self.assertTrue(self.js(f"Boolean(document.querySelector('{selector}').closest('#control-panel,#phone-toolbar'))"))
                 self.press('All designs')
 
     def test_a_track_snaps_to_another_and_pieces_are_copied_undone_and_joined(self):
@@ -1159,7 +1227,8 @@ class Puzzles(unittest.TestCase):
         # The panel's tray shows each piece, with a picture, and how many are left.
         self.wait("Boolean(document.querySelector('#tray img:not([hidden])'))", 30)
         self.assertEqual(self.js("document.querySelector('#tray li').textContent"), 'plank1 of 1 left')
-        self.js("document.querySelector('aside').scrollTop = document.querySelector('aside').scrollHeight")
+        self.click_visible('Level')
+        self.js("document.getElementById('phone-design-panel').scrollTop = document.getElementById('phone-design-panel').scrollHeight")
         self.assertGreaterEqual(self.js("document.getElementById('view').getBoundingClientRect().top"), 0,
                                 'the scene remains visible while the phone panel scrolls')
         self.press('Add a plank')
