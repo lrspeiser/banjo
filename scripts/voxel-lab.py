@@ -532,7 +532,7 @@ class Handler(BaseHTTPRequestHandler):
        mode=data.get('mode','hint'),last_run=data.get('last_run'),rehearse=host.rehearse)
      else:r=machine_chat.respond(data.get('message'),data.get('spec'),data.get('history'),rehearse=host.rehearse if data.get('rehearse',True) else None)
     finally:self.server.chat_busy.release()
-   elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()]}
+   elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build())}
    elif op=='level_open':
     # The level's machine with the player's pieces in it, built in the engine.
     level=machine_game.level_by_id(data.get('level'))

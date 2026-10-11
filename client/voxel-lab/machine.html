@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo Machine</title><link rel="stylesheet" href="/machine.css"></head><body>
-<header><strong>Banjo <span>Machine</span></strong><nav><a href="/play" id="levels-open">Levels</a><a href="/machine">Sandbox</a><a href="/play" id="guide-open">How to play</a></nav><output id="build">Checking…</output></header>
+<header><strong>Banjo <span>Machine</span></strong><nav><a href="/play" id="levels-open">Levels</a><a href="/play?level=free" id="free-open">Free build</a><a href="/machine">Sandbox</a><a href="/play" id="guide-open">How to play</a></nav><output id="build">Checking…</output></header>
 <main>
 <section id="view" aria-label="The machine in 3D, as the engine calculates it">
 <output id="clock">Setting up…</output>
@@ -36,6 +36,7 @@
 <nav id="levels" aria-label="Levels"></nav>
 <p id="brief"></p>
 <p id="goal-line" class="legend"></p>
+<div id="free-actions" class="chat-actions" hidden><button id="free-example" type="button">Set out the example</button><button id="free-clear" type="button">Clear the table</button></div>
 <h2>Your tray</h2><ul id="tray"></ul>
 <h2 id="placed-head">Your pieces</h2><ol id="placed"></ol>
 <p id="cost-line"></p>

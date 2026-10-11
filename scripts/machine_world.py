@@ -229,6 +229,23 @@ def _sphere_box(sphere, box):
     return 0.5 * sphere['size_m'][0] - gap
 
 
+def cell_inside(part, cell, margin=1e-6):
+    """Whether the engine's world grid has a cell whose centre is well inside
+    this box. A turned box is built from those cells (TileImpactScene), so a
+    thin one lying exactly between them can have none -- and a world with a
+    body of no matter is refused whole."""
+    axes, half, c = _axes(part), _half(part), part['at_m']
+    ext = [sum(abs(axes[j][i]) * half[j] for j in range(3)) for i in range(3)]
+    span = [range(math.floor((c[i] - ext[i]) / cell) - 1, math.ceil((c[i] + ext[i]) / cell) + 1) for i in range(3)]
+    for gx in span[0]:
+        for gy in span[1]:
+            for gz in span[2]:
+                q = [(gx + 0.5) * cell - c[0], (gy + 0.5) * cell - c[1], (gz + 0.5) * cell - c[2]]
+                if all(abs(sum(axes[j][k] * q[k] for k in range(3))) < half[j] - margin for j in range(3)):
+                    return True
+    return False
+
+
 def overlap_depth(a, b):
     """How far two parts interpenetrate (positive) or how far apart they are
     (negative). Spheres are exact; boxes and cones use a separating-axis test
@@ -395,8 +412,8 @@ def _kit_ramp(k, problems, name):
     centre = [mid_top[i] - normal[i] * 0.5 * thick for i in range(3)]
     parts = [{'name': name, 'shape': 'box', 'material': mat, 'size_m': size, 'at_m': centre, 'turn_deg': turn,
               'fixed': True}]
+    rail_h, rail_w = 0.06, 0.04
     if k.get('rails', True):
-        rail_h, rail_w = 0.06, 0.04
         for tag, s in (('left', 1), ('right', -1)):
             off = 0.5 * width + 0.5 * rail_w
             rsize = [length, rail_h, rail_w] if along_x else [rail_w, rail_h, length]
@@ -404,8 +421,60 @@ def _kit_ramp(k, problems, name):
                           'at_m': [centre[i] + s * off * side[i] + normal[i] * (0.5 * thick + 0.5 * rail_h)
                                    for i in range(3)],
                           'turn_deg': turn, 'fixed': True})
-    ball = k.get('ball')
     joints = []
+    if k.get('end_stop'):
+        # A wall across the foot, as high as the rails: what rolls down stops
+        # there and stays.
+        stop_t = 0.02
+        parts.append({'name': name + ' stop', 'shape': 'box', 'material': mat,
+                      'size_m': [stop_t, rail_h, width] if along_x else [width, rail_h, stop_t],
+                      'at_m': [bottom[i] - along[i] * 0.5 * stop_t + normal[i] * 0.5 * rail_h for i in range(3)],
+                      'turn_deg': turn, 'fixed': True})
+    barrier = k.get('barrier')
+    if barrier:
+        # A gate near the foot: a flap hanging across the ramp from a bar on a
+        # pin over the left rail, the pin along the ramp. What rolls down
+        # stops against the flap -- pushing along the pin, which the pin
+        # holds -- and waits. Pressing the short arm out past the rail down
+        # (something landing on it, a lever, a pull) turns the bar up and the
+        # flap out of the way. Its own weight closes it again, unless it
+        # stays_open: a ratchet catches it once it is well up.
+        if not along_x:
+            problems.append(name + ': a barrier needs a ramp along x (turn the kit to point it another way)')
+        elif not k.get('rails', True):
+            problems.append(name + ': a barrier hangs from a pin over the left rail; keep the rails')
+        elif k.get('end_stop') or k.get('gate'):
+            problems.append(name + ': a ramp has a barrier, an end stop or a gate, not two of them')
+        else:
+            ex = list(along) if sign > 0 else [-v for v in along]
+            # The pin is over the rail's outer edge, so the arm goes down past
+            # the rail and the bar over the rail goes up, clear of it.
+            off, lift = 0.5 * width + rail_w, 0.012
+            pin = [bottom[i] - along[i] * 0.04 + side[i] * off + normal[i] * (rail_h + lift) for i in range(3)]
+            # The flap stops 25 mm above the floor (a marble's middle is lower)
+            # and turns up about the pin; its far bottom corner must pass over
+            # the far rail's top edge, so it reaches no further out than that
+            # edge's distance from the pin (less 3 mm). What it leaves at the
+            # far side is narrower than a marble.
+            low, near = rail_h + lift - 0.025, rail_w + 0.005
+            reach = math.sqrt(max(0.0, (math.hypot(width + rail_w, lift) - 0.003) ** 2 - low ** 2))
+            arm, bar = 0.08, width + rail_w + 0.02
+            parts.append({'name': name + ' barrier', 'shape': 'compound', 'material': 'oak', 'at_m': pin,
+                          'turn_deg': turn, 'fixed': False,
+                          'parts': [{'shape': 'box', 'size_m': [0.02, 0.02, bar], 'at_m': [0, 0, -0.5 * bar]},
+                                    {'shape': 'box', 'size_m': [0.01, low - 0.01, reach - near],
+                                     'at_m': [0, -0.5 * (low + 0.01), -0.5 * (reach + near)]},
+                                    {'shape': 'box', 'size_m': [0.02, 0.02, arm], 'at_m': [0, 0, 0.5 * arm]},
+                                    # A paddle on its end, wider along the ramp: something
+                                    # dropped on it does not have to hit a 2 cm arm.
+                                    {'shape': 'box', 'size_m': [0.06, 0.01, 0.04], 'at_m': [0, 0.015, arm - 0.02]}]})
+            joint = {'name': name + ' barrier pin', 'kind': 'hinge', 'a': name + ' left rail', 'b': name + ' barrier',
+                     'at_m': pin, 'axis': [round(v, 9) for v in ex], 'lower_deg': 0, 'upper_deg': 75,
+                     'friction_n_m': 0.002}
+            if isinstance(barrier, dict) and barrier.get('stays_open'):
+                joint['ratchet'] = {'at_or_above_deg': 20}
+            joints.append(joint)
+    ball = k.get('ball')
     if isinstance(ball, dict):
         dia = _num(ball, 'diameter_m', name + ' ball', problems, 0.08, 0.04, min(0.6, width))
         start = 0.08 + 0.5 * dia
@@ -432,6 +501,43 @@ def _kit_ramp(k, problems, name):
             joints.append({'name': name + ' gate slide', 'kind': 'slide', 'a': name + ' gate guide', 'b': name + ' gate',
                            'at_m': gate_at, 'axis': side, 'lower_m': 0.0,
                            'upper_m': 0.5 * length + dia + 0.08, 'friction_n': 1.0})
+    return parts, joints
+
+
+def _kit_flip_flop(k, problems, name):
+    """A rocker that sends what drops on its middle one way, then the other:
+    a trough (a base with a lip along each side) on a pin across its middle,
+    tipped tilt_deg toward one end, with a fin standing up from the middle.
+    The fin leans with the low end, so a marble dropped on the middle lands
+    on the high side; its weight tips the rocker over and it rolls off that
+    end, leaving the rocker tipped the other way for the next one. A board
+    behind holds the pin and stops a marble that comes in fast. Measured:
+    four iron marbles fed down a track went right, left, right, left."""
+    at = _vec(k.get('pivot_m'), 3, name + ' pivot_m', problems)
+    tilt = _num(k, 'tilt_deg', name, problems, 15, 5, 30)
+    half = _num(k, 'half_length_m', name, problems, 0.12, 0.08, 0.3)
+    width = _num(k, 'width_m', name, problems, 0.08, 0.06, 0.2)
+    fin = _num(k, 'fin_m', name, problems, 0.06, 0.03, 0.12)
+    tipped = k.get('tipped', '-x')
+    if tipped not in ('-x', '+x'):
+        problems.append(name + ': tipped is "-x" or "+x" (the end that is down to start)')
+    down = 1.0 if tipped == '-x' else -1.0     # turned +tilt about z, the -x end is down
+    t, lip = 0.01, 0.04
+    parts = [{'name': name, 'shape': 'compound', 'material': k.get('material', 'oak'), 'at_m': list(at),
+              'turn_deg': [0.0, 0.0, down * tilt], 'fixed': False,
+              'parts': [{'shape': 'box', 'size_m': [2 * half, t, width], 'at_m': [0, 0, 0]},
+                        {'shape': 'box', 'size_m': [t, fin, width], 'at_m': [0, 0.5 * t + 0.5 * fin, 0]},
+                        {'shape': 'box', 'size_m': [2 * half, lip, t], 'at_m': [0, 0.5 * t + 0.5 * lip, 0.5 * (width - t)]},
+                        {'shape': 'box', 'size_m': [2 * half, lip, t], 'at_m': [0, 0.5 * t + 0.5 * lip, -0.5 * (width - t)]}]}]
+    board_h, board_t = 0.32, 0.04
+    parts.append({'name': name + ' board', 'shape': 'box', 'material': k.get('board_material', 'concrete'),
+                  'size_m': [2 * half + 0.02, board_h, board_t],
+                  'at_m': [at[0], at[1] + 0.2 - 0.5 * board_h, at[2] - 0.5 * width - 0.006 - 0.5 * board_t],
+                  'turn_deg': [0.0, 0.0, 0.0], 'fixed': True})
+    # Its reading is 0 as built, tipped: it can go over to the other side and back.
+    joints = [{'name': name + ' pin', 'kind': 'hinge', 'a': name + ' board', 'b': name, 'at_m': list(at),
+               'axis': [0, 0, 1], 'lower_deg': -2 * tilt if down > 0 else 0, 'upper_deg': 0 if down > 0 else 2 * tilt,
+               'friction_n_m': 0.01}]
     return parts, joints
 
 
@@ -1036,7 +1142,8 @@ def _kit_knife_pendulum(k, problems, name):
 KITS = {'ramp': _kit_ramp, 'domino_row': _kit_domino_row, 'lever': _kit_lever,
         'hanging_weight': _kit_hanging_weight, 'plate_on_supports': _kit_plate,
         'pendulum': _kit_pendulum, 'block_tower': _kit_block_tower, 'water_wheel': _kit_water_wheel,
-        'steam_engine': _kit_steam_engine, 'cannon': _kit_cannon, 'knife_pendulum': _kit_knife_pendulum}
+        'steam_engine': _kit_steam_engine, 'cannon': _kit_cannon, 'knife_pendulum': _kit_knife_pendulum,
+        'flip_flop': _kit_flip_flop}
 
 KIT_HELP = {
     'ramp': 'anchored plank from top_m down to bottom_m (centre of its upper surface at each end, metres), '
@@ -1044,7 +1151,19 @@ KIT_HELP = {
             'top, optional gate: true (needs rails false) -- a bar "<name> gate" across the ramp below the ball on a '
             'slide "<name> gate slide" that moves it toward +z (a ramp along x) or +x (along z) by up to half its '
             'length plus the ball; tie a rope or drum to its OTHER end (at -z or -x, half its length, width_m + '
-            '0.3, from its centre) and pull it that way, and the ball rolls',
+            '0.3, from its centre) and pull it that way, and the ball rolls. Or end_stop: true, a wall across the '
+            'foot that what rolls down stops at; or barrier: true (or {"stays_open": true}; a ramp along x), a gate '
+            '"<name> barrier" near the foot on a pin "<name> barrier pin" over the left (+z) rail: a flap across the '
+            'ramp that what rolls down waits against, and a short arm out past the rail with a paddle on its end, '
+            '0.04 m from the foot and 0.06-0.10 m out past the outer face of the rail -- press that paddle down '
+            '(drop something on it, a lever, a pull) and the flap lifts out of the way; it falls shut again unless '
+            'stays_open',
+    'flip_flop': 'a rocker "<name>" on pin "<name> pin" that sends marbles dropped on its middle one way, then the '
+                 'other: pivot_m [x, y, z] (drop them on this point from above, along z or straight down), tipped '
+                 '"-x|+x" (the end that is down to start; the first marble goes the other way), tilt_deg (15), '
+                 'half_length_m (0.12), width_m (0.08). A board "<name> board" behind it (at -z) holds the pin. A '
+                 'marble leaves off the end it went to, about half_length_m from the pivot and a little lower. '
+                 'Iron marbles tip it; an oak one is too light',
     'domino_row': 'count boxes standing on the ground from start_m [x, 0, z], direction "+x|-x|+z|-z", spacing_m, '
                   'size_m [thickness, height, width], material',
     'lever': 'pivot block + plank + hinge; pivot_m [x, block height, z], length_m, width_m, thickness_m, limit_deg, '
@@ -1278,6 +1397,19 @@ def compile_spec(spec, lenient=False):
                 row['at_m'][1] -= lowest_point(row)
             notes.append(f'{name}: sized to whole {cell * 1000:.0f} mm cells, '
                          + ' x '.join(f'{s:.3g}' for s in row['size_m']) + ' m')
+        thin_turned = shape == 'box' and any(row['turn_deg']) and min(row['size_m']) <= 2 * cell + 1e-9
+        if thin_turned and not cell_inside(row, cell):
+            # A thin turned box between the grid's cells: moved across its
+            # thickness by a quarter or half a cell until a cell is in it.
+            axes = _axes(row)
+            thin = axes[min(range(3), key=lambda j: row['size_m'][j])]
+            for d in (0.25 * cell, -0.25 * cell, 0.5 * cell, -0.5 * cell):
+                moved = dict(row, at_m=[row['at_m'][i] + d * thin[i] for i in range(3)])
+                if cell_inside(moved, cell):
+                    row['at_m'] = moved['at_m']
+                    notes.append(f'{name}: moved {abs(d) * 1000:.0f} mm across its thickness, onto the cells '
+                                 'the engine builds it from')
+                    break
         if any(abs(v) > 40 for v in row['velocity_m_s']):
             problems.append(f'{what}: starting speed is at most 40 m/s on each axis')
         if abs(row['at_m'][0]) > WORLD_HALF_M or abs(row['at_m'][2]) > WORLD_HALF_M or row['at_m'][1] > WORLD_TOP_M:

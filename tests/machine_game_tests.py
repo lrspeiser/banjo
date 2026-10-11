@@ -329,7 +329,107 @@ class Tray(unittest.TestCase):
         self.assertNotIn('placements', hint)
 
 
+def knob_default(rule):
+    return rule.get('default', rule['choices'][0] if 'choices' in rule else rule['min'])
+
+
+class FreeBuild(unittest.TestCase):
+    FREE = mg.level_by_id('free')
+
+    def test_the_free_build_has_no_goal_and_every_piece(self):
+        free = self.FREE
+        self.assertIsNone(free['goal'])
+        pieces = [t['piece'] for t in free['tray']]
+        for p in ('marble', 'track', 'shelf', 'flipflop', 'block', 'dominoes', 'lever', 'plank', 'ramp', 'cannon', 'steam'):
+            self.assertIn(p, pieces)
+        self.assertNotIn('free', [l['id'] for l in LEVELS], 'it is not one of the numbered levels')
+        spec, checked, cost = mg.compose(free, [])
+        self.assertEqual(spec['stations'], [], 'nothing to do but watch')
+        shown = mg.public(free)
+        self.assertTrue(shown['free'])
+        self.assertEqual(shown['example'], free['example'])
+        # A track turns only about the upright; a marble does not turn at all.
+        knobs = {t['piece']: t['knobs'] for t in free['tray']}
+        self.assertIn('yaw_deg', knobs['track'])
+        self.assertNotIn('pitch_deg', knobs['track'])
+        self.assertFalse({'yaw_deg', 'pitch_deg', 'roll_deg'} & set(knobs['marble']))
+
+    def test_every_free_piece_fits_as_it_comes(self):
+        for t in self.FREE['tray']:
+            placed = dict({k: knob_default(r) for k, r in t['knobs'].items()}, piece=t['piece'])
+            g = mg.ghost(self.FREE, [placed], 0)
+            with self.subTest(piece=t['piece']):
+                self.assertTrue(g['fits'], g['problems'])
+                self.assertTrue(g['parts'])
+
+    def test_a_marble_is_set_down_on_what_is_under_it(self):
+        # On a shelf it rests on the shelf; on a sloping track it rests on the
+        # slope, touching it and in none of it.
+        free = self.FREE
+        shelf = {'piece': 'shelf', 'x_m': 0.0, 'z_m': 0.0, 'top_height_m': 0.8, 'run_m': 0.4, 'drop_m': 0.015, 'end': 'gate'}
+        g = mg.ghost(free, [shelf, {'piece': 'marble', 'x_m': 0.1, 'z_m': 0.0}], 1)
+        self.assertTrue(g['fits'], g['problems'])
+        surface = 0.8 - 0.015 * 0.1 / 0.4
+        self.assertAlmostEqual(g['parts'][0]['at_m'][1], surface + 0.02, delta=0.004)
+        track = {'piece': 'track', 'x_m': 0.0, 'z_m': 0.0, 'top_height_m': 0.6, 'run_m': 0.6, 'drop_m': 0.3, 'end': 'open'}
+        spec, _, _ = mg.compose(free, [track, {'piece': 'marble', 'x_m': 0.3, 'z_m': 0.0}])
+        c = mw.compile_spec(spec)
+        marble = next(p for p in c['parts'] if p['name'] == 'your marble 2')
+        board = next(p for p in c['parts'] if p['name'] == 'your track 1')
+        gap = -mw.overlap_depth(marble, board)
+        self.assertGreaterEqual(gap, 0.0)
+        self.assertLess(gap, 0.004, 'it rests on the slope, not on top of the slope\'s box')
+
+    def test_the_example_is_built_as_it_is_written(self):
+        spec, checked, cost = mg.compose(self.FREE, self.FREE['example'])
+        c = mw.compile_spec(spec)
+        names = {p['name'] for p in c['parts']}
+        self.assertIn('your flipflop 8', names)
+        self.assertIn('your dominoes 11 6', names)
+        gate = next(j for j in c['joints'] if j['name'] == 'your shelf 1 barrier pin')
+        self.assertIn('ratchet', gate, 'its shelf\'s gate stays open')
+
+
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_the_free_builds_example_works_and_its_preview_follows_the_marbles(self):
+        # A marble rolls onto the gate's paddle; the gate opens and its catch
+        # holds it. The marbles waiting on the shelf roll down to the
+        # flip-flop, which sends them to the stop and to the dominoes, and
+        # every domino falls -- in the run as written and nudged a little.
+        free = mg.level_by_id('free')
+        spec, _, _ = mg.compose(free, free['example'])
+        compiled = mw.compile_spec(spec)
+        waiting = ('your marble 2', 'your marble 3', 'your marble 4')
+        with tempfile.TemporaryDirectory() as logs:
+            for seed in (0, 1, 2):
+                s = mw.MachineSession(mg.nudged(compiled, seed) if seed else compiled, ENGINE, Path(logs), paced=False)
+                try:
+                    s.play(True)
+                    began = time.perf_counter()
+                    while time.perf_counter() - began < 120:
+                        with s.lock:
+                            if s.t >= 8.0 or s.error:
+                                break
+                            s.lock.wait(0.05)
+                    with s.lock:
+                        self.assertIsNone(s.error)
+                        ends = {n: s.bodies[n]['position_m'] for n in waiting}
+                        down = sum(1 for n, b in s.bodies.items() if 'dominoes' in n and b['position_m'][1] < 0.045)
+                        events = [e['text'] for e in s.events]
+                finally:
+                    s.close()
+                stopped = sum(1 for p in ends.values() if p[2] < -0.5 and p[1] > 0.1)
+                beyond = sum(1 for p in ends.values() if p[2] > 0.3)
+                print(f'\n  example, nudge {seed}: {stopped} at the stop, {beyond} to the dominoes, {down} dominoes down')
+                self.assertTrue(any('caught on its ratchet' in e for e in events))
+                self.assertGreaterEqual(stopped, 1)
+                self.assertGreaterEqual(beyond, 1)
+                self.assertEqual(down, 6)
+            shown = mg.preview(free, free['example'], ENGINE, Path(logs))
+        self.assertIsNone(shown['goal_at_s'])
+        self.assertTrue(shown['paths'][0]['name'].startswith('your marble'), 'the marbles are followed first')
+
     @need_engine
     def test_every_level_is_solved_by_its_solution_every_time_and_not_without_pieces(self):
         with tempfile.TemporaryDirectory() as logs:

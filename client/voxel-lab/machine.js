@@ -316,7 +316,7 @@ function syncZones() {
   const shown = (machine?.stations || []).map(s => s.done_when && s.done_when.in_zone).filter(Boolean);
   // A level's goal zone is drawn even before the piece it is about is placed
   // (the goal is then left out of the run): it is where to build.
-  const goalZone = LEVEL_MODE && level && level.goal.station.done_when.in_zone;
+  const goalZone = LEVEL_MODE && level && level.goal && level.goal.station.done_when.in_zone;
   if (goalZone && !shown.some(z => z.at_m.every((v, i) => v === goalZone.at_m[i]))) shown.push(goalZone);
   for (const z of shown) {
     const box = new THREE.Mesh(new THREE.BoxGeometry(...z.size_m),
@@ -488,7 +488,7 @@ async function build(next, start, request) {
     if (mine !== polling) { api({op: 'close', session: opened.session}).catch(() => {}); return opened; }
     spec = request ? opened.machine : next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
     world = mergeFrame({seq: 0, t: 0, bodies: new Map()}, opened);
-    $('title').textContent = LEVEL_MODE && level ? `${levels.indexOf(level) + 1}. ${level.title}` : machine.title;
+    $('title').textContent = LEVEL_MODE && level ? levelTitle(level) : machine.title;
     $('spec').value = JSON.stringify(spec, null, 1);
     const notes = $('notes'); notes.replaceChildren();
     for (const n of machine.notes || []) { const li = document.createElement('li'); li.textContent = n; notes.append(li); }
@@ -497,7 +497,10 @@ async function build(next, start, request) {
     if (parcels) { scene.remove(parcels); parcels.geometry.dispose(); parcels = null; }
     syncGround(opened.ground); syncWater(opened.water); syncParcels(opened.parcels);
     syncMeshes([...world.bodies.values()]); syncWires(); syncRopes(); syncZones(); updateWires(); placeSun(); syncLight(); renderStations(); renderReadings(opened); renderClock(opened);
-    frameCamera();
+    // A free build is framed once, as it opens: after that the view is
+    // where the player put it, not moved every time a piece is set down.
+    if (!(LEVEL_MODE && level && level.free && framedFree)) frameCamera();
+    if (LEVEL_MODE && level && level.free) framedFree = true;
     if (start) await setPlaying(true);
     poll(mine);
     return opened;
@@ -559,12 +562,16 @@ async function poll(mine) {
 }
 
 // ---- camera -------------------------------------------------------------------
+let framedFree = false;
 function frameCamera() {
-  const pts = [...world.bodies.values()].map(b => b.position_m);
+  // A free build's table corners mark where pieces can go; the view is of what is built.
+  const pts = [...world.bodies.values()].filter(b => !b.name.startsWith('table corner ')).map(b => b.position_m);
   // A level's goal zone is in the picture too, and the ground under it:
   // where the player is to build, even before anything stands there.
-  const zone = LEVEL_MODE && level && level.goal.station.done_when.in_zone;
+  const zone = LEVEL_MODE && level && level.goal && level.goal.station.done_when.in_zone;
   if (zone) pts.push(zone.at_m, [zone.at_m[0], 0, zone.at_m[2]]);
+  // An empty table: its middle, from a little way off.
+  if (!pts.length && LEVEL_MODE && level && level.free) pts.push([-1, 0, -.6], [1, .8, .6]);
   if (!pts.length) return;
   const lo = [0, 1, 2].map(i => Math.min(...pts.map(p => p[i]))), hi = [0, 1, 2].map(i => Math.max(...pts.map(p => p[i])));
   // A level is looked at from half its height (its goal zone is often high), a little further back.
@@ -591,6 +598,7 @@ window.machineView = ({azimuth: a, elevation: e, distance: d, at} = {}) => {
 // And where a point in the world is on the page, for a script that clicks
 // where a person would (tests of placing a piece by clicking).
 window.machineScreenPoint = point => {
+  freshView();
   const p = new THREE.Vector3(...point).project(camera), rect = renderer.domElement.getBoundingClientRect();
   return [rect.left + (p.x + 1) / 2 * rect.width, rect.top + (1 - p.y) / 2 * rect.height];
 };
@@ -625,6 +633,23 @@ renderer.domElement.addEventListener('pointermove', e => {
 });
 renderer.domElement.addEventListener('wheel', e => { e.preventDefault(); if (ghost && (e.shiftKey || e.altKey)) return; distance =Math.min(40, Math.max(.4, distance * Math.exp(e.deltaY * .001))); }, {passive: false});
 
+// The camera where the view says it is. A frame drawn does this; so does
+// anything that picks from the view (where a piece goes, what is under the
+// pointer), with every part where it stands -- a press can come before the
+// first frame after a change (a slow phone, a level just built), and it must
+// not aim at the view as it was before.
+function aimCamera() {
+  camera.position.set(target.x + distance * Math.cos(elevation) * Math.sin(azimuth), target.y + distance * Math.sin(elevation),
+                      target.z + distance * Math.cos(elevation) * Math.cos(azimuth));
+  camera.lookAt(target);
+}
+function freshView() { aimCamera(); camera.updateMatrixWorld(); scene.updateMatrixWorld(); }
+function pointerRay(clientX, clientY) {
+  freshView();
+  const rect = renderer.domElement.getBoundingClientRect();
+  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+}
+
 function render() {
   requestAnimationFrame(render);
   if (follow && machine && playing) {
@@ -632,9 +657,7 @@ function render() {
     if (f) { goal.set(f.at[0], Math.max(.25, f.at[1]), f.at[2]); distance += (Math.max(2.2, Math.min(distance, 3.4)) - distance) * .02; }
   }
   target.lerp(goal, .05);
-  camera.position.set(target.x + distance * Math.cos(elevation) * Math.sin(azimuth), target.y + distance * Math.sin(elevation),
-                      target.z + distance * Math.cos(elevation) * Math.cos(azimuth));
-  camera.lookAt(target);
+  aimCamera();
   if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); syncMovePad(); }
   drawPull();
   renderer.render(scene, camera);
@@ -718,6 +741,7 @@ fetch('/api/checkpoint').then(r => r.ok ? r.json() : null).then(c => {
 const params = new URLSearchParams(location.search);
 const LEVEL_MODE = location.pathname === '/play' || params.has('level');
 let levels = [], level = null, placements = [], placedCost = [], placedEnergy = {}, helped = false, scored = false, lastRun = null, rebuildTimer = null;
+let freeLevel = null;
 
 // ---- the ghost: a piece before it is set down ------------------------------------
 // A see-through copy of a piece. It follows the pointer over the scene until
@@ -756,16 +780,14 @@ function setKnob(p, key, v) {
 }
 
 function sceneHit(clientX, clientY) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  pointerRay(clientX, clientY);
   const solid = [ground, ...[...meshes].filter(([name, m]) => m.visible && !hiddenPiece(name)).map(([, m]) => m)];
   const hits = raycaster.intersectObjects(solid, true);
   return hits.length ? hits[0].point : null;
 }
 
 function ghostHit(clientX, clientY) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  pointerRay(clientX, clientY);
   return raycaster.intersectObjects(ghostGroup.children, true).some(h => h.object.isMesh);
 }
 
@@ -1197,7 +1219,7 @@ async function askPreview() {
 function drawPreview(r) {
   clearPreview();
   previewShown = r;
-  const zone = level.goal.station.done_when.in_zone;
+  const zone = level.goal && level.goal.station.done_when.in_zone;
   const inZone = p => Boolean(zone) && [0, 1, 2].every(i => Math.abs(p[i] - zone.at_m[i]) <= zone.size_m[i] / 2);
   const colourOf = new Map(), dotShape = PREVIEW_DOT;
   for (const path of r.paths) {
@@ -1247,15 +1269,20 @@ function showPreviewLegend(r, colourOf) {
   box.hidden = !r;
   if (!r) return;
   box.append(Object.assign(document.createElement('p'), {className: 'head',
-    textContent: r.goal_at_s != null ? `Predicted: the goal at ${describeTime(r.goal_at_s)}` : 'Predicted: the goal does not happen'}));
+    textContent: !level.goal ? 'Predicted: where things will go'
+      : r.goal_at_s != null ? `Predicted: the goal at ${describeTime(r.goal_at_s)}` : 'Predicted: the goal does not happen'}));
   const chip = (colour, text) => {
     const s = Object.assign(document.createElement('span'), {className: 'chip', textContent: text});
     s.style.setProperty('--c', '#' + new THREE.Color(colour).getHexString());
     return s;
   };
   const row = Object.assign(document.createElement('p'), {className: 'chips'});
-  row.append(chip(FREE_COLOUR, 'moving'), chip(GOAL_COLOUR, 'in the goal'));
-  for (const [name, colour] of colourOf) row.append(chip(colour, `after it hits ${name}`));
+  row.append(chip(FREE_COLOUR, 'moving'));
+  if (level.goal) row.append(chip(GOAL_COLOUR, 'in the goal'));
+  // A few of what is hit, not every rail of a big build: the key is over the scene.
+  const hit = [...colourOf];
+  for (const [name, colour] of hit.slice(0, 4)) row.append(chip(colour, `after it hits ${name}`));
+  if (hit.length > 4) row.append(Object.assign(document.createElement('span'), {className: 'more', textContent: `and ${hit.length - 4} more`}));
   box.append(row);
 }
 
@@ -1280,6 +1307,7 @@ $('path-toggle').addEventListener('click', () => {
 const ghostBox = new THREE.Box3(), boxCorner = new THREE.Vector3(), slidePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function ghostScreenBox() {
   if (!ghost || !ghostGroup.children.length) return null;
+  freshView();
   ghostBox.setFromObject(ghostGroup);
   if (ghostBox.isEmpty()) return null;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -1297,8 +1325,7 @@ function nearGhost(clientX, clientY, margin) {
   return Boolean(b) && clientX >= b.x0 - margin && clientX <= b.x1 + margin && clientY >= b.y0 - margin && clientY <= b.y1 + margin;
 }
 function slidePoint(clientX, clientY, y) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  pointerRay(clientX, clientY);
   slidePlane.constant = -y;
   return raycaster.ray.intersectPlane(slidePlane, new THREE.Vector3());
 }
@@ -1307,8 +1334,7 @@ const GRAB_MARGIN_PX = 40;
 // the pointer in the scene.
 function placedAt(clientX, clientY) {
   if (!LEVEL_MODE || !level || !placements.length) return -1;
-  const rect = renderer.domElement.getBoundingClientRect();
-  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  pointerRay(clientX, clientY);
   const nameOf = new Map([...meshes].map(([name, m]) => [m, name]));
   const hit = raycaster.intersectObjects([...nameOf.keys()].filter(m => m.visible), true).find(h => h.object.isMesh);
   let o = hit && hit.object;
@@ -1321,12 +1347,15 @@ function placedAt(clientX, clientY) {
 window.machineBodyScreen = name => {
   const mesh = meshes.get(name);
   if (!mesh) return null;
+  freshView();
   const c = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()).project(camera), rect = renderer.domElement.getBoundingClientRect();
   return [rect.left + (c.x + 1) / 2 * rect.width, rect.top + (1 - c.y) / 2 * rect.height];
 };
+// For tests: where each body is in the world now.
+window.machineBodies = () => Object.fromEntries([...world.bodies].map(([name, b]) => [name, b.position_m]));
 // For tests: where the piece being placed is on the screen, and the view.
 window.machineGhostScreen = () => ghostScreenBox();
-window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible});
+window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible, settled: target.distanceTo(goal) < 1e-3});
 renderer.domElement.addEventListener('pointerdown', e => {
   pressedAt = [e.clientX, e.clientY];
   draggingGhost = null;
@@ -1427,8 +1456,7 @@ $('pull-tool').addEventListener('click', () => {
 });
 // The loose part under the pointer, and the point of it there.
 function pullTarget(clientX, clientY) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  pointerRay(clientX, clientY);
   const nameOf = new Map([...meshes].map(([name, m]) => [m, name]));
   const hit = raycaster.intersectObjects([...nameOf.keys()].filter(m => m.visible), true).find(h => h.object.isMesh);
   let o = hit && hit.object;
@@ -1439,8 +1467,7 @@ function pullTarget(clientX, clientY) {
     camera.getWorldDirection(new THREE.Vector3()).negate(), hit.point)};
 }
 function pullForce(clientX, clientY) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1), camera);
+  pointerRay(clientX, clientY);
   const to = raycaster.ray.intersectPlane(pulling.plane, new THREE.Vector3());
   const at = pulling.mesh.localToWorld(pulling.local.clone());
   if (!to) return {at, to: at, force: new THREE.Vector3()};
@@ -1543,7 +1570,9 @@ function bestStars(id) { return record(id).stars || 0; }
 // each first win with one an achievement. A player whose wins were kept
 // before tools were counted has the tools of the levels they won.
 const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
-                    mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens'};
+                    mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens', flipflop: 'flip-flop'};
+// A piece's name on its button: as the tray calls it, but a flip-flop has its hyphen.
+function pieceLabel(piece) { return piece === 'flipflop' ? 'flip-flop' : piece; }
 function toolsOf(player) {
   if (!player.tools) {
     player.tools = {};
@@ -1592,6 +1621,7 @@ function renderLevels() {
 }
 
 function knobDefault(rule) { return rule.default ?? (rule.choices ? rule.choices[0] : rule.min); }
+function levelTitle(l) { return l.free ? l.title : `${levels.indexOf(l) + 1}. ${l.title}`; }
 function trayItem(piece) { return level.tray.find(t => t.piece === piece); }
 
 // Pieces are added from the scene: a button each, with its picture, over the
@@ -1600,16 +1630,18 @@ function renderSceneTray() {
   const bar = $('scene-tray');
   bar.hidden = !LEVEL_MODE || !level || Boolean(ghost);
   if (bar.hidden) return;
+  bar.classList.toggle('many', level.tray.length > 4);
   bar.replaceChildren(...level.tray.map(t => {
     const left = (t.count || 1) - placements.filter(p => p.piece === t.piece).length;
-    const b = button(`+ ${t.piece}`, () => {
+    const b = button(`+ ${pieceLabel(t.piece)}`, () => {
       const p = {piece: t.piece};
       for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
       startGhost(p, placements.length);
-    }, {ariaLabel: `Add a ${t.piece}`, disabled: left <= 0, title: left > 0 ? `${left} left` : 'none left'});
+    }, {ariaLabel: `Add a ${pieceLabel(t.piece)}`, disabled: left <= 0, title: left > 0 ? `${left} left` : 'none left'});
     const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
     b.prepend(img); pictureInto(img, t);
-    b.append(Object.assign(document.createElement('small'), {textContent: left > 0 ? `${left} left` : 'none left'}));
+    // In a free build there are as many as anyone needs: no count.
+    if (!level.free) b.append(Object.assign(document.createElement('small'), {textContent: left > 0 ? `${left} left` : 'none left'}));
     return b;
   }));
 }
@@ -1624,8 +1656,9 @@ function renderTray() {
     const count = t.count || 1, li = document.createElement('li');
     li.className = used >= count ? 'used-up' : '';
     const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
-    li.append(img, Object.assign(document.createElement('span'), {className: 'tray-name', textContent: t.piece}),
-              Object.assign(document.createElement('span'), {className: 'tray-left', textContent: `${count - used} of ${count} left`}));
+    li.append(img, Object.assign(document.createElement('span'), {className: 'tray-name', textContent: pieceLabel(t.piece)}),
+              Object.assign(document.createElement('span'), {className: 'tray-left',
+                textContent: level.free ? 'as many as you like' : `${count - used} of ${count} left`}));
     pictureInto(img, t);
     ul.append(li);
   }
@@ -1733,18 +1766,26 @@ function renderPlaced() {
   if (ghost && !ghost.was) ol.append(ghostItem());
   if (ghost) { showGhostKnobs(); showGhostState(); }
   const made = Object.values(placedEnergy).reduce((a, b) => a + (b.j || 0), 0);
-  $('cost-line').textContent = placements.length
-    ? `Your pieces take ${energyText(made)} to make. Par for the whole win, pieces and run: ${energyText(level.par_energy_j)}.`
-    : '';
+  $('cost-line').textContent = !placements.length ? ''
+    : level.free ? `${placements.length} ${placements.length === 1 ? 'piece' : 'pieces'} on the table, ${energyText(made)} to make.`
+    : `Your pieces take ${energyText(made)} to make. Par for the whole win, pieces and run: ${energyText(level.par_energy_j)}.`;
   $('placed-head').hidden = !placements.length && !ghost;
 }
 
 function scheduleRebuild(ms = 350) { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildLevel(false).catch(() => {}), ms); }
 
+// A free build is kept for the player, in this browser, as it changes.
+function keepBuild() {
+  if (!level || !level.free) return;
+  me().free = {placements: placements.map(p => ({...p})), at: new Date().toISOString()};
+  persist();
+}
+
 async function rebuildLevel(start) {
   // A rebuild still waiting to start would come after this one and undo it
   // (a Run pressed just after setting a piece down stayed unstarted).
   clearTimeout(rebuildTimer);
+  keepBuild();
   scored = false; $('verdict').replaceChildren(); closeDone();
   try {
     const opened = await build(null, false, {op: 'level_open', level: level.id, placements, helped});
@@ -1765,7 +1806,7 @@ async function rebuildLevel(start) {
 }
 
 function watchGoal(frame) {
-  if (!LEVEL_MODE || !level || scored || !frame || !session || !(world.t > 0)) return;
+  if (!LEVEL_MODE || !level || level.free || scored || !frame || !session || !(world.t > 0)) return;
   const row = (readouts.stations || [])[0];
   if ((row && row.done) || world.t > level.time_s + 0.3) { scored = true; score(row).catch(() => {}); }
 }
@@ -1887,7 +1928,7 @@ function showLevelsScreen(show) {
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Levels'});
-  if (level) head.append(button(`Back to ${levels.indexOf(level) + 1}. ${level.title}`, () => showLevelsScreen(false)));
+  if (level) head.append(button(`Back to ${levelTitle(level)}`, () => showLevelsScreen(false)));
   // Who is playing: each name keeps its own progress, in this browser.
   const who = add(box, 'form', {className: 'ls-player'});
   add(who, 'label', {textContent: 'Player', htmlFor: 'player-pick'});
@@ -1907,6 +1948,17 @@ function showLevelsScreen(show) {
   const nextUp = levels.find(l => !bestStars(l.id));
   add(box, 'p', {className: 'ls-summary', textContent: `${save.current}: ${won} of ${levels.length} levels won, ` +
     `${starsAll} of ${levels.length * 3} stars.` + (nextUp ? ` Next up: ${levels.indexOf(nextUp) + 1}. ${nextUp.title}.` : ' Every level won!')});
+  // The free build: no goal, every piece, kept for this player.
+  if (freeLevel) {
+    const kept = (me().free || {}).placements || [];
+    const free = button('', () => { showLevelsScreen(false); chooseLevel('free').catch(() => {}); },
+                        {className: 'ls-card ls-free', ariaLabel: 'Free build: build anything'});
+    add(free, 'strong', {textContent: 'Free build'});
+    add(free, 'span', {className: 'teaches', textContent: 'No goal: every piece, as many as you like. Hold marbles up high, ' +
+      'send them down tracks and split them with a flip-flop.'});
+    add(free, 'span', {className: 'status', textContent: kept.length ? `Your build: ${kept.length} ${kept.length === 1 ? 'piece' : 'pieces'}` : 'An empty table'});
+    box.append(free);
+  }
   const list = add(box, 'ol', {className: 'ls-list'});
   levels.forEach((l, i) => {
     const row = record(l.id), li = add(list, 'li', {});
@@ -1935,18 +1987,38 @@ renderer.domElement.addEventListener('pointerdown', () => {
 });
 
 async function chooseLevel(id) {
-  level = levels.find(l => l.id === id) || levels[0];
+  level = id === 'free' && freeLevel ? freeLevel : levels.find(l => l.id === id) || levels[0];
   endGhost(); closeDone(); previewAsk++; clearPreview();
-  placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null;
+  placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
   history_.replaceState(null, '', '/play?level=' + level.id);
-  $('title').textContent = `${levels.indexOf(level) + 1}. ${level.title}`;
+  $('title').textContent = levelTitle(level);
   $('brief').textContent = level.brief;
-  $('goal-line').textContent = `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s, on as little energy as you can `+
-    `(par ${energyText(level.par_energy_j)}, pieces and run). It teaches ${level.teaches}.`;
+  $('goal-line').textContent = level.free
+    ? `No goal: build whatever you like and press Run it. Your build is kept for ${save.current} in this browser.`
+    : `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s, on as little energy as you can `+
+      `(par ${energyText(level.par_energy_j)}, pieces and run). It teaches ${level.teaches}.`;
   $('chat-log').replaceChildren();
+  // The chat helps with a level's goal; a free build has none to help with.
+  document.querySelector('.chat').hidden = Boolean(level.free);
+  $('free-actions').hidden = !level.free;
+  if (level.free) {
+    placements = ((me().free || {}).placements || []).map(p => ({...p}));
+    me().last = 'free'; persist();
+  }
   renderLevels(); renderTray(); renderPlaced();
   await rebuildLevel(false);
 }
+
+// A free build's own buttons: clear the table, or set out the example.
+$('free-clear').addEventListener('click', () => {
+  if (!placements.length || confirm('Take every piece off the table?')) startOver(false);
+});
+$('free-example').addEventListener('click', () => {
+  if (!level || !level.example) return;
+  if (placements.length && !confirm('Put the example on the table instead of your build?')) return;
+  endGhost(); placements = level.example.map(p => ({...p})); renderTray(); renderPlaced();
+  framedFree = false; rebuildLevel(false).catch(() => {});
+});
 
 async function askLevel(mode) {
   const message = $('message').value.trim() || (mode === 'hint' ? 'Give me a hint.' : 'Place the pieces for me.');
@@ -2027,7 +2099,7 @@ async function startGame() {
   $('message').placeholder = 'Ask about this level, e.g. “Why does my ball fall short?”';
   document.querySelector('.chat h2').textContent = 'Ask for help';
   const r = await api({op: 'levels'});
-  levels = r.levels;
+  levels = r.levels; freeLevel = r.free || null;
   // /play on its own opens the levels screen, over the level this player is up to.
   const upTo = levels.find(l => !bestStars(l.id)) || levels[0];
   await chooseLevel(params.get('level') || me().last || upTo.id);

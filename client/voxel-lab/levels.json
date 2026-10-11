@@ -1743,5 +1743,682 @@
    ],
    "par_energy_j": 749000000
   }
- ]
+ ],
+ "free": {
+  "id": "free",
+  "title": "Free build",
+  "free": true,
+  "teaches": "building your own machine",
+  "brief": "Build anything. Every piece is here, as many as you like: hold marbles up high on a shelf behind a gate, run them down tracks, send them left and right with a flip-flop, knock down dominoes. Press Run it and watch: the engine works out every roll, bounce and fall.",
+  "time_s": 12,
+  "budget": 1000000,
+  "par": 0,
+  "machine": {
+   "schema": "banjo.machine.v1",
+   "title": "Free build",
+   "kits": [],
+   "parts": [
+    {
+     "name": "table corner 1",
+     "shape": "box",
+     "material": "concrete",
+     "size_m": [
+      0.04,
+      0.02,
+      0.04
+     ],
+     "at_m": [
+      -2.04,
+      0.01,
+      -2.04
+     ],
+     "fixed": true
+    },
+    {
+     "name": "table corner 2",
+     "shape": "box",
+     "material": "concrete",
+     "size_m": [
+      0.04,
+      0.02,
+      0.04
+     ],
+     "at_m": [
+      2.04,
+      0.01,
+      -2.04
+     ],
+     "fixed": true
+    },
+    {
+     "name": "table corner 3",
+     "shape": "box",
+     "material": "concrete",
+     "size_m": [
+      0.04,
+      0.02,
+      0.04
+     ],
+     "at_m": [
+      2.04,
+      0.01,
+      2.04
+     ],
+     "fixed": true
+    },
+    {
+     "name": "table corner 4",
+     "shape": "box",
+     "material": "concrete",
+     "size_m": [
+      0.04,
+      0.02,
+      0.04
+     ],
+     "at_m": [
+      -2.04,
+      0.01,
+      2.04
+     ],
+     "fixed": true
+    }
+   ]
+  },
+  "goal": null,
+  "tray": [
+   {
+    "piece": "marble",
+    "count": 40,
+    "cost": 0,
+    "turning": false,
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "material": {
+      "choices": [
+       "iron",
+       "oak",
+       "rubber"
+      ],
+      "default": "iron",
+      "label": "material"
+     },
+     "diameter_m": {
+      "choices": [
+       0.04,
+       0.06
+      ],
+      "default": 0.04,
+      "label": "size (m)"
+     }
+    }
+   },
+   {
+    "piece": "track",
+    "count": 40,
+    "cost": 0,
+    "turns": [
+     "yaw_deg"
+    ],
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "top end x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "top_height_m": {
+      "min": 0.05,
+      "max": 2.0,
+      "default": 0.5,
+      "step": 0.01,
+      "label": "top end height"
+     },
+     "run_m": {
+      "min": 0.2,
+      "max": 1.6,
+      "default": 0.6,
+      "step": 0.02,
+      "label": "length"
+     },
+     "drop_m": {
+      "min": 0.01,
+      "max": 1.0,
+      "default": 0.08,
+      "step": 0.01,
+      "label": "drop"
+     },
+     "end": {
+      "choices": [
+       "open",
+       "stop",
+       "gate",
+       "gate that stays open"
+      ],
+      "default": "open",
+      "label": "far end"
+     }
+    }
+   },
+   {
+    "piece": "shelf",
+    "count": 40,
+    "cost": 0,
+    "turns": [
+     "yaw_deg"
+    ],
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "back end x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "top_height_m": {
+      "min": 0.1,
+      "max": 2.0,
+      "default": 0.8,
+      "step": 0.01,
+      "label": "height"
+     },
+     "run_m": {
+      "min": 0.2,
+      "max": 1.0,
+      "default": 0.4,
+      "step": 0.02,
+      "label": "length"
+     },
+     "drop_m": {
+      "min": 0.005,
+      "max": 0.05,
+      "default": 0.015,
+      "step": 0.005,
+      "label": "drop (toward its gate)"
+     },
+     "end": {
+      "choices": [
+       "gate",
+       "gate that stays open",
+       "stop",
+       "open"
+      ],
+      "default": "gate",
+      "label": "far end"
+     }
+    }
+   },
+   {
+    "piece": "flipflop",
+    "count": 20,
+    "cost": 0,
+    "turns": [
+     "yaw_deg"
+    ],
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "height_m": {
+      "min": 0.15,
+      "max": 2.0,
+      "default": 0.4,
+      "step": 0.01,
+      "label": "pin height"
+     },
+     "tipped": {
+      "choices": [
+       "left",
+       "right"
+      ],
+      "default": "left",
+      "label": "starts tipped"
+     }
+    }
+   },
+   {
+    "piece": "block",
+    "count": 40,
+    "cost": 0,
+    "turns": [
+     "yaw_deg"
+    ],
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "length_m": {
+      "min": 0.02,
+      "max": 1.0,
+      "default": 0.1,
+      "step": 0.02,
+      "label": "length"
+     },
+     "tall_m": {
+      "min": 0.02,
+      "max": 1.5,
+      "default": 0.2,
+      "step": 0.02,
+      "label": "height"
+     },
+     "depth_m": {
+      "min": 0.02,
+      "max": 1.0,
+      "default": 0.1,
+      "step": 0.02,
+      "label": "depth"
+     },
+     "material": {
+      "choices": [
+       "concrete",
+       "oak",
+       "iron"
+      ],
+      "default": "concrete",
+      "label": "material"
+     }
+    }
+   },
+   {
+    "piece": "dominoes",
+    "count": 10,
+    "cost": 0,
+    "turns": [
+     "yaw_deg"
+    ],
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "first one at x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "count": {
+      "min": 2,
+      "max": 20,
+      "default": 6,
+      "step": 1,
+      "label": "how many"
+     },
+     "spacing_m": {
+      "min": 0.04,
+      "max": 0.2,
+      "default": 0.07,
+      "step": 0.01,
+      "label": "spacing"
+     },
+     "tall_m": {
+      "choices": [
+       0.08,
+       0.12,
+       0.16
+      ],
+      "default": 0.12,
+      "label": "height (m)"
+     }
+    }
+   },
+   {
+    "piece": "lever",
+    "count": 10,
+    "cost": 0,
+    "turns": [
+     "yaw_deg"
+    ],
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "pin x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "pivot_height_m": {
+      "min": 0.04,
+      "max": 1.0,
+      "default": 0.1,
+      "step": 0.01,
+      "label": "pin height"
+     },
+     "length_m": {
+      "min": 0.2,
+      "max": 1.2,
+      "default": 0.5,
+      "step": 0.02,
+      "label": "length"
+     },
+     "limit_deg": {
+      "min": 5,
+      "max": 45,
+      "default": 20,
+      "step": 1,
+      "label": "tips up to (degrees)"
+     }
+    }
+   },
+   {
+    "piece": "plank",
+    "count": 20,
+    "cost": 0,
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "middle at x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "length_m": {
+      "min": 0.2,
+      "max": 1.2,
+      "default": 0.4,
+      "step": 0.02,
+      "label": "length"
+     }
+    }
+   },
+   {
+    "piece": "ramp",
+    "count": 10,
+    "cost": 0,
+    "turns": [
+     "yaw_deg"
+    ],
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "top at x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "top_height_m": {
+      "min": 0.2,
+      "max": 1.5,
+      "default": 0.5,
+      "step": 0.01,
+      "label": "top height"
+     },
+     "run_m": {
+      "min": 0.3,
+      "max": 1.5,
+      "default": 0.6,
+      "step": 0.01,
+      "label": "run"
+     },
+     "foot_height_m": {
+      "min": 0.05,
+      "max": 1.0,
+      "default": 0.2,
+      "step": 0.01,
+      "label": "foot height"
+     }
+    }
+   },
+   {
+    "piece": "cannon",
+    "count": 5,
+    "cost": 0,
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "muzzle x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "bore_height_m": {
+      "min": 0.05,
+      "max": 1.0,
+      "default": 0.2,
+      "step": 0.01,
+      "label": "bore height"
+     },
+     "powder_g": {
+      "min": 0.3,
+      "max": 3.0,
+      "default": 1.0,
+      "step": 0.05,
+      "label": "powder (g)"
+     },
+     "fire_at_s": {
+      "min": 0.2,
+      "max": 10.0,
+      "default": 1.0,
+      "step": 0.1,
+      "label": "fires at (s)"
+     }
+    }
+   },
+   {
+    "piece": "steam",
+    "count": 3,
+    "cost": 0,
+    "turns": [
+     "yaw_deg"
+    ],
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "heat_kw": {
+      "min": 1,
+      "max": 30,
+      "default": 5,
+      "step": 0.5,
+      "label": "firebox (kW)"
+     },
+     "boiler_side": {
+      "choices": [
+       "-x",
+       "+x",
+       "-z",
+       "+z"
+      ],
+      "default": "-x",
+      "label": "boiler on the"
+     }
+    }
+   }
+  ],
+  "hints": [
+   "Set out the example to see one way: a marble rolls onto a gate's paddle, the gate opens, the marbles waiting on the shelf roll down to a flip-flop, and it sends them to the dominoes or to a stop.",
+   "A shelf tilts a little toward its gate, so marbles set down on it roll to the gate and wait there.",
+   "A gate opens when its short arm, out past the rail, is pressed down: drop a marble on it from a track above, tip a lever under it, or pull it.",
+   "A flip-flop sends marbles dropped on its middle one way, then the other. Put a track's end just above its pin, and a track under each end."
+  ],
+  "example": [
+   {
+    "piece": "shelf",
+    "x_m": -1.0,
+    "z_m": 0.0,
+    "top_height_m": 0.8,
+    "run_m": 0.4,
+    "drop_m": 0.015,
+    "end": "gate that stays open"
+   },
+   {
+    "piece": "marble",
+    "x_m": -0.95,
+    "z_m": 0.0
+   },
+   {
+    "piece": "marble",
+    "x_m": -0.89,
+    "z_m": 0.0
+   },
+   {
+    "piece": "marble",
+    "x_m": -0.83,
+    "z_m": 0.0
+   },
+   {
+    "piece": "track",
+    "x_m": -1.05,
+    "z_m": 0.13,
+    "top_height_m": 0.97,
+    "run_m": 0.36,
+    "drop_m": 0.03,
+    "end": "open"
+   },
+   {
+    "piece": "marble",
+    "x_m": -1.01,
+    "z_m": 0.13
+   },
+   {
+    "piece": "track",
+    "x_m": -0.7,
+    "z_m": 0.0,
+    "top_height_m": 0.55,
+    "run_m": 0.9,
+    "drop_m": 0.05,
+    "end": "open"
+   },
+   {
+    "piece": "flipflop",
+    "x_m": 0.24,
+    "z_m": 0.0,
+    "height_m": 0.34,
+    "tipped": "left",
+    "yaw_deg": -90
+   },
+   {
+    "piece": "track",
+    "x_m": 0.24,
+    "z_m": 0.14,
+    "top_height_m": 0.2,
+    "run_m": 0.6,
+    "drop_m": 0.08,
+    "end": "open",
+    "yaw_deg": -90
+   },
+   {
+    "piece": "track",
+    "x_m": 0.24,
+    "z_m": -0.14,
+    "top_height_m": 0.2,
+    "run_m": 0.6,
+    "drop_m": 0.08,
+    "end": "stop",
+    "yaw_deg": 90
+   },
+   {
+    "piece": "dominoes",
+    "x_m": 0.24,
+    "z_m": 0.9,
+    "count": 6,
+    "spacing_m": 0.07,
+    "tall_m": 0.12,
+    "yaw_deg": -90
+   }
+  ]
+ }
 }

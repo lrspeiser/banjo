@@ -78,6 +78,9 @@ class Puzzles(unittest.TestCase):
         self.page.send('Emulation.setTouchEmulationEnabled', {'enabled': phone, 'maxTouchPoints': 5})
         self.page.send('Page.navigate', {'url': f'{self.base}/play?level={level}'})
         self.wait(f"document.getElementById('clock') && {READY}", 90)
+        # The view eases to its place as a level opens; a piece added before
+        # it gets there lands where a slow page's view happened to be.
+        self.wait('window.machineCamera().settled', 30)
 
     def ghost(self):
         self.wait(SETTLED, 20)
@@ -215,6 +218,37 @@ class Puzzles(unittest.TestCase):
         self.wait(READY, 90)
         self.assertTrue(self.js("document.getElementById('levels-screen').hidden"))
         self.assertTrue(self.js("document.getElementById('title').textContent.startsWith('2. ')"))
+
+    def test_the_free_build_has_every_piece_keeps_a_build_and_sets_out_the_example(self):
+        # The levels screen's free build: every piece, no count, no goal, no
+        # chat. A marble set down is kept for the player and is there again
+        # after a reload. The example goes on the table and runs: the gate is
+        # opened by a marble, and the marbles it held knock the dominoes down.
+        self.page.send('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 860, 'deviceScaleFactor': 1,
+                                                              'mobile': False})
+        self.page.send('Page.navigate', {'url': f'{self.base}/play'})
+        self.wait("document.querySelector('.ls-free') && !document.getElementById('levels-screen').hidden", 90)
+        self.js("(() => { const s = JSON.parse(localStorage.getItem('banjo-play-save') || 'null'); if (s) { for (const p of Object.values(s.players)) delete p.free; localStorage.setItem('banjo-play-save', JSON.stringify(s)); } })()")
+        self.press('Free build: build anything')
+        self.wait(READY, 90)
+        self.assertEqual(self.js("document.getElementById('title').textContent"), 'Free build')
+        self.assertGreaterEqual(self.js("document.querySelectorAll('#scene-tray button').length"), 11)
+        self.assertNotIn('left', self.js("document.getElementById('scene-tray').textContent"))
+        self.assertTrue(self.js("document.querySelector('.chat').hidden"))
+        self.press('Add a marble')
+        self.ghost()
+        self.press('Set it down')
+        self.wait("document.querySelectorAll('#placed li').length === 1 && /1 piece on the table/.test(document.getElementById('cost-line').textContent)", 60)
+        self.page.send('Page.navigate', {'url': f'{self.base}/play?level=free'})
+        self.wait(READY, 90)
+        self.wait("document.querySelectorAll('#placed li').length === 1", 30)
+        self.assertIn('your marble 1', self.js("document.getElementById('placed').textContent"))
+        self.js('window.confirm = () => true')
+        self.press('Set out the example')
+        self.wait(f"document.querySelectorAll('#placed li').length === 11 && {READY}", 90)
+        self.press('Run it')
+        self.wait("(window.machineBodies()['your dominoes 11 6'] || [0, 1])[1] < 0.045", 60)
+        self.assertTrue(self.js("document.getElementById('level-done').hidden"), 'no score: there is no goal')
 
     def test_a_level_opens_before_its_goal_piece_and_a_missed_goal_starts_over(self):
         # Level 4's goal is its engine's piston: before there is one, the

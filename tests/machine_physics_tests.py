@@ -201,7 +201,106 @@ class Declarations(unittest.TestCase):
         self.assertLess(by['knife arm']['at_m'][2], by['weight arm']['at_m'][2] - 0.1)
 
 
+    def test_a_thin_turned_part_between_the_grids_cells_is_moved_onto_them(self):
+        # A domino 2 cm thick turned a quarter round, its middle on a line
+        # between the engine's cells: no cell of the grid is in it, and a world
+        # with a body of no matter is refused whole. It is moved half a cell
+        # across its thickness at most, and says so.
+        spec = {'schema': mw.SCHEMA, 'parts': [box('domino', [0.02, 0.12, 0.06], [0.24, 0.061, 0.9], turn_deg=[0, -90, 0])]}
+        self.assertFalse(mw.cell_inside(dict(spec['parts'][0], size_m=[0.02, 0.12, 0.06]), 0.02))
+        c = mw.compile_spec(spec)
+        moved = c['parts'][0]
+        self.assertTrue(mw.cell_inside(moved, 0.02))
+        self.assertLessEqual(abs(moved['at_m'][2] - 0.9), 0.01 + 1e-9)
+        self.assertEqual(moved['at_m'][0], 0.24)
+        self.assertTrue(any('across its thickness' in n for n in c['notes']), c['notes'])
+
+    def test_a_flip_flop_and_a_gate_are_built_as_declared(self):
+        c = mw.compile_spec(flip_flop_feed('-x'))
+        pin = next(j for j in c['joints'] if j['name'] == 'ff pin')
+        self.assertEqual((pin['lower_deg'], pin['upper_deg']), (-30, 0))
+        c = mw.compile_spec(gated_shelf(True))
+        pin = next(j for j in c['joints'] if j['name'] == 'shelf barrier pin')
+        self.assertEqual(pin['a'], 'shelf left rail')
+        self.assertEqual(pin['ratchet'], {'at_or_above_deg': 20})
+        self.assertNotIn('ratchet', next(j for j in mw.compile_spec(gated_shelf(False))['joints']
+                                          if j['name'] == 'shelf barrier pin'))
+        self.refused(dict(gated_shelf(True), kits=[dict(gated_shelf(True)['kits'][0], end_stop=True)]), 'not two of them')
+
+
+def flip_flop_feed(tipped, marbles=(0.1, 0.6, 1.5, 2.6)):
+    """A flip-flop at 0.5 m, and a track along -z whose foot is just above its
+    pin, with iron marbles resting on it: the further up, the later each one
+    arrives."""
+    slope, foot_y, foot_z = math.radians(5), 0.61, 0.07
+    length = max(marbles) + 0.15
+    top = [0, foot_y + length * math.sin(slope), foot_z + length * math.cos(slope)]
+    along, normal = [0, -math.sin(slope), -math.cos(slope)], [0, math.cos(slope), -math.sin(slope)]
+    return {'schema': mw.SCHEMA, 'title': 'Flip-flop',
+            'kits': [{'kit': 'flip_flop', 'name': 'ff', 'pivot_m': [0, 0.5, 0], 'tipped': tipped},
+                     {'kit': 'ramp', 'name': 'feed', 'top_m': top, 'bottom_m': [0, foot_y, foot_z], 'width_m': 0.08}],
+            'parts': [{'name': f'm{i + 1}', 'shape': 'sphere', 'material': 'iron', 'size_m': [0.04] * 3,
+                       'at_m': [[0, foot_y, foot_z][k] - along[k] * s + normal[k] * 0.022 for k in range(3)]}
+                      for i, s in enumerate(marbles)]}
+
+
+def gated_shelf(stays_open, trigger=True):
+    """A shelf tilted 2 degrees toward its gate with three iron marbles on it,
+    and a marble that falls a metre onto the gate's paddle."""
+    kit = {'kit': 'ramp', 'name': 'shelf', 'top_m': [-0.3, 0.42, 0], 'bottom_m': [0.3, 0.40, 0], 'width_m': 0.08,
+           'thickness_m': 0.02, 'barrier': {'stays_open': stays_open}}
+    tilt = math.atan2(0.02, 0.6)
+    parts = [{'name': f'm{i + 1}', 'shape': 'sphere', 'material': 'iron', 'size_m': [0.04] * 3,
+              'at_m': [x, 0.40 + (0.3 - x) * math.tan(tilt) + 0.023, 0.0]} for i, x in enumerate((-0.2, -0.12, -0.04))]
+    spec = {'schema': mw.SCHEMA, 'title': 'Gated shelf', 'kits': [kit], 'parts': parts}
+    if trigger:
+        barrier = next(p for p in mw.compile_spec(spec)['parts'] if p['name'] == 'shelf barrier')
+        paddle = mw.solids_of(barrier)[3]['at_m']
+        parts.append({'name': 'trigger', 'shape': 'sphere', 'material': 'iron', 'size_m': [0.04] * 3,
+                      'at_m': [paddle[0], paddle[1] + 1.0, paddle[2]]})
+    return spec
+
+
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_a_flip_flop_sends_marbles_one_way_then_the_other(self):
+        # Four iron marbles fed down a track onto its middle, one after
+        # another. Started with its -x end down, they go +x, -x, +x, -x; the
+        # other way round, the other way. Nothing tips it but each marble's
+        # weight on its high side, where its fin, leaning with the low end,
+        # sends it.
+        for tipped, first in (('-x', 1), ('+x', -1)):
+            ended = run(flip_flop_feed(tipped), 5.0)
+            self.assertIsNone(ended['error'])
+            xs = [ended['bodies'][f'm{i}']['position_m'][0] for i in range(1, 5)]
+            print(f'\n  flip-flop tipped {tipped}: the marbles ended at x = {[round(x, 2) for x in xs]}')
+            self.assertTrue(all(abs(x) > 0.15 for x in xs), xs)
+            self.assertEqual([1 if x > 0 else -1 for x in xs], [first, -first, first, -first])
+
+    @need_engine
+    def test_a_gate_holds_marbles_until_its_paddle_is_pressed(self):
+        # Three marbles on a shelf roll down to its gate and wait against its
+        # flap. A marble dropped on the gate's paddle turns it up. With a
+        # catch it stays up and they roll off the end; without one it falls
+        # shut before they get there, and they wait. With nothing dropped on
+        # it, they wait too.
+        caught = run(gated_shelf(True), 3.0)
+        shut = run(gated_shelf(False), 3.0)
+        alone = run(gated_shelf(True, trigger=False), 3.0)
+        for r in (caught, shut, alone):
+            self.assertIsNone(r['error'])
+        heights = {k: [r['bodies'][f'm{i}']['position_m'][1] for i in (1, 2, 3)]
+                   for k, r in (('caught', caught), ('shut', shut), ('alone', alone))}
+        print(f'\n  gate: marble heights {heights}; ' + ' | '.join(e for e in caught['events'] if 'ratchet' in e))
+        self.assertTrue(any('caught on its ratchet' in e for e in caught['events']))
+        self.assertTrue(all(y < 0.1 for y in heights['caught']), 'with the catch they roll off the end')
+        for key in ('shut', 'alone'):
+            self.assertTrue(all(y > 0.4 for y in heights[key]), f'{key}: they wait on the shelf')
+            gate = next(p for p in mw.compile_spec(gated_shelf(True))['parts'] if p['name'] == 'shelf barrier')['at_m'][0]
+            first = max((caught if key == 'caught' else shut if key == 'shut' else alone)['bodies'][f'm{i}']['position_m'][0]
+                        for i in (1, 2, 3))
+            self.assertLess(first, gate, f'{key}: none of them passed the gate')
+
     @need_engine
     def test_a_motor_turns_one_wheel_and_the_gears_turn_the_other_back_at_half_speed(self):
         r = run(GEARS, 4.0)

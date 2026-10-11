@@ -135,6 +135,10 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 /* The tray in the scene: add a piece without leaving the 3D view. */
 .scene-tray{position:absolute;top:52px;left:10px;right:10px;z-index:2;display:flex;flex-wrap:wrap;gap:6px;pointer-events:none}
 .scene-tray[hidden]{display:none}
+/* A free build's tray has every piece: one row that scrolls sideways. */
+.scene-tray.many{flex-wrap:nowrap;overflow-x:auto;pointer-events:auto;padding-bottom:4px;scrollbar-width:thin}
+.scene-tray.many button{flex:none}
+.scene-top>.scene-tray.many{max-width:100%}
 .scene-tray button{pointer-events:auto;min-height:38px;padding:5px 12px;background:#1f6b45;color:#e7f2f8;border:1px solid #5fe08f;border-radius:8px;cursor:pointer;font:600 14px system-ui;box-shadow:0 3px 10px #0007}
 .scene-tray button{display:inline-flex;align-items:center;gap:6px}
 .scene-tray img{width:28px;height:28px;margin:-4px 0 -4px -6px}
@@ -169,6 +173,7 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 .preview-legend p{margin:0}
 .preview-legend .head{font-weight:600;margin-bottom:2px}
 .preview-legend .chips{display:flex;flex-wrap:wrap;gap:4px 10px}
+.preview-legend .more{opacity:.75}
 .preview-legend .chip::before{content:"";display:inline-block;width:10px;height:10px;margin-right:4px;border-radius:50%;background:var(--c);vertical-align:-1px}
 #path-toggle[aria-pressed="false"]{opacity:.6}
 /* The levels screen: every level and how far this player has got. */
@@ -189,6 +194,7 @@ body.on-levels main{display:none}
 .ls-card .status{font-size:13px;color:#9fdcff}
 .ls-list li.won .ls-card{border-color:#5fe08f}
 .ls-list li.next .ls-card{outline:2px solid #6cc6ff}
+.levels-screen .ls-free{min-height:0;margin:0 0 12px;border-color:#b98cff;background:#251f3a}
 /* What a win took. */
 .level-done .energy{font-size:18px;font-weight:700;margin:6px 0 2px}
 .level-done .breakdown{font-size:13px;color:#b9cbd6}

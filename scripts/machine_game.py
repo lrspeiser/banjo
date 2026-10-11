@@ -15,7 +15,9 @@ Reliability: a real chain of events is fragile. `trial` runs the same machine
 several times with every loose part nudged by a millimetre or two, and says
 in how many the goal happened -- which a player can try to raise.
 
-Levels live in client/voxel-lab/levels.json.
+Levels live in client/voxel-lab/levels.json. So does the free build: a
+table with no goal and every piece, as many as you like, where a player
+builds whatever they want and runs it.
 """
 import copy
 import json
@@ -42,24 +44,36 @@ FREE_KNOBS = {
 }
 
 
+def _with_free_knobs(level):
+    for t in level['tray']:
+        # A piece whose own knob already turns it about the vertical (a
+        # mirror's angle_deg) keeps that one as its turn. One that is only
+        # ever turned about the vertical (a track: tipped, its slope is its
+        # drop's) names the turns it has.
+        own_turn = any(r.get('turning') for r in t['knobs'].values())
+        for key, rule in FREE_KNOBS.items():
+            if key == 'z_m' and t.get('across') is False:
+                continue
+            if rule.get('turning') and (not level.get('turning', True) or t.get('turning') is False
+                                        or (key == 'yaw_deg' and own_turn)
+                                        or ('turns' in t and key not in t['turns'])):
+                continue
+            t['knobs'].setdefault(key, dict(rule))
+    return level
+
+
 def load_levels():
-    levels = json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['levels']
-    for level in levels:
-        for t in level['tray']:
-            # A piece whose own knob already turns it about the vertical (a
-            # mirror's angle_deg) keeps that one as its turn.
-            own_turn = any(r.get('turning') for r in t['knobs'].values())
-            for key, rule in FREE_KNOBS.items():
-                if key == 'z_m' and t.get('across') is False:
-                    continue
-                if rule.get('turning') and (not level.get('turning', True) or t.get('turning') is False
-                                            or (key == 'yaw_deg' and own_turn)):
-                    continue
-                t['knobs'].setdefault(key, dict(rule))
-    return levels
+    return [_with_free_knobs(level) for level in json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['levels']]
+
+
+def free_build():
+    """The free build: a level with no goal, every piece in its tray."""
+    return _with_free_knobs(json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['free'])
 
 
 def level_by_id(level_id):
+    if level_id == 'free':
+        return free_build()
     for level in load_levels():
         if level['id'] == level_id:
             return level
@@ -88,6 +102,36 @@ def set_down_height(parts, x0, x1, z0, z1):
             continue
         top = max(top, c[1] + ext[1])
     return top
+
+
+def rest_height(part, parts, gap=0.002):
+    """The height of a part's middle when it is set down from above at its x
+    and z until it first meets something, or the ground: exact for a ball on
+    a slope or the edge of a shelf, where the tops of what is under it would
+    leave it in the air."""
+    reach = _reach(part)
+    x, z = part['at_m'][0], part['at_m'][2]
+    under = [sd for q in parts for sd in mw.solids_of(q)
+             for r in [_reach(sd)] if abs(sd['at_m'][0] - x) < r[0] + reach[0] and abs(sd['at_m'][2] - z) < r[2] + reach[2]]
+
+    def clear(y):
+        probe = dict(part, at_m=[x, y, z])
+        return all(mw.overlap_depth(sp, sd) <= 0.0 for sp in mw.solids_of(probe) for sd in under)
+    floor = reach[1]
+    y = max([floor] + [sd['at_m'][1] + _reach(sd)[1] + reach[1] for sd in under])
+    step = 0.01
+    while y - step > floor and clear(y - step):
+        y -= step
+    low = max(floor, y - step)
+    if clear(low):
+        return low + gap
+    for _ in range(14):
+        mid = 0.5 * (y + low)
+        if clear(mid):
+            y = mid
+        else:
+            low = mid
+    return y + gap
 
 
 def _turn(k):
@@ -245,8 +289,80 @@ def _lens(name, k, ctx):
                       'diameter_m': ctx['tray'].get('diameter_m', 0.1)}]}
 
 
+def _marble(name, k, ctx):
+    """A loose marble set down at (x_m, z_m) on whatever is under it -- a
+    shelf, a track, the ground. From then on gravity and contact move it."""
+    d = k.get('diameter_m', 0.04)
+    part = {'name': name, 'shape': 'sphere', 'material': k.get('material', 'iron'), 'size_m': [d, d, d],
+            'at_m': [k['x_m'], 0.0, k.get('z_m', 0.0)], 'turn_deg': [0.0, 0.0, 0.0], 'fixed': False}
+    part['at_m'][1] = round(rest_height(part, ctx['parts']), 4)
+    return {'parts': [part]}
+
+
+TRACK_ENDS = {'open': {}, 'stop': {'end_stop': True}, 'gate': {'barrier': True},
+              'gate that stays open': {'barrier': {'stays_open': True}}}
+
+
+def _track(name, k, ctx=None):
+    """A chute: a board with a rail each side, its top end at (x_m,
+    top_height_m), dropping drop_m over run_m toward +x until it is turned
+    (about its top end). Its far end is open (what rolls down drops off), a
+    stop (it stays there) or a gate (it waits there until something presses
+    the gate's arm down). A shelf is a short one, tilted a little toward
+    its gate."""
+    top = [k['x_m'], k['top_height_m'], k.get('z_m', 0.0)]
+    kit = dict({'kit': 'ramp', 'name': name, 'top_m': top,
+                'bottom_m': [k['x_m'] + k['run_m'], round(k['top_height_m'] - k['drop_m'], 4), k.get('z_m', 0.0)],
+                'width_m': k.get('width_m', 0.08), 'thickness_m': 0.02}, **TRACK_ENDS[k.get('end', 'open')])
+    return {'kits': [_turned_kit(kit, k, top)]}
+
+
+def _flipflop(name, k, ctx=None):
+    """A flip-flop on its pin at (x_m, height_m, z_m): marbles dropped on its
+    middle go one way, then the other. It starts tipped left (its -x end
+    down: the first marble goes right) or right."""
+    pivot = [k['x_m'], k['height_m'], k.get('z_m', 0.0)]
+    return {'kits': [_turned_kit({'kit': 'flip_flop', 'name': name, 'pivot_m': pivot,
+                                  'tipped': '-x' if k.get('tipped', 'left') == 'left' else '+x'}, k, pivot)]}
+
+
+def _block(name, k, ctx):
+    """A fixed block -- a post, a wall, a step, a stop -- set down at (x_m,
+    z_m) on whatever is under it."""
+    part = {'name': name, 'shape': 'box', 'material': k.get('material', 'concrete'),
+            'size_m': [k['length_m'], k['tall_m'], k['depth_m']], 'at_m': [k['x_m'], 0.0, k.get('z_m', 0.0)],
+            'turn_deg': mw.turn_of(mw.heading(*(_turn(k) or [0.0, 0.0, 0.0]))), 'fixed': True}
+    part['at_m'][1] = round(rest_height(part, ctx['parts'], gap=0.0), 4)
+    return {'parts': [part]}
+
+
+def _dominoes(name, k, ctx):
+    """A row of oak dominoes from (x_m, z_m) along +x until it is turned,
+    standing on whatever is under the row."""
+    count, spacing, tall = int(round(k['count'])), k['spacing_m'], k['tall_m']
+    x, z = k['x_m'], k.get('z_m', 0.0)
+    yaw = math.radians(k.get('yaw_deg', 0.0))
+    end = [x + (count - 1) * spacing * math.cos(yaw), z - (count - 1) * spacing * math.sin(yaw)]
+    base = set_down_height(ctx['parts'], min(x, end[0]) - 0.04, max(x, end[0]) + 0.04,
+                           min(z, end[1]) - 0.04, max(z, end[1]) + 0.04)
+    start = [x, round(base + 0.001, 4), z]
+    return {'kits': [_turned_kit({'kit': 'domino_row', 'name': name, 'start_m': start, 'direction': '+x',
+                                  'count': count, 'spacing_m': spacing, 'size_m': [0.02, tall, 0.06],
+                                  'material': 'oak'}, k, start)]}
+
+
+def _lever(name, k, ctx=None):
+    """A seesaw: a plank on a pin on a block standing on the ground at
+    (x_m, z_m), along x until it is turned."""
+    pivot = [k['x_m'], k['pivot_height_m'], k.get('z_m', 0.0)]
+    return {'kits': [_turned_kit({'kit': 'lever', 'name': name, 'pivot_m': pivot, 'length_m': k['length_m'],
+                                  'width_m': 0.08, 'thickness_m': 0.02, 'limit_deg': k.get('limit_deg', 20),
+                                  'along': 'x'}, k, pivot)]}
+
+
 PIECES = {'plank': _plank, 'knife': _knife, 'cannon': _cannon, 'steam': _steam, 'ramp': _ramp, 'mirror': _mirror,
-          'solar': _solar, 'tackle': _tackle, 'lens': _lens}
+          'solar': _solar, 'tackle': _tackle, 'lens': _lens, 'marble': _marble, 'track': _track, 'shelf': _track,
+          'flipflop': _flipflop, 'block': _block, 'dominoes': _dominoes, 'lever': _lever}
 
 
 class LevelRefused(ValueError):
@@ -305,6 +421,21 @@ def check_placements(level, placements, budget=True):
     return out, round(cost, 1)
 
 
+class _Context(dict):
+    """What a piece is built among: its tray row, and -- worked out only for
+    a piece that is set down on what is there -- the parts already there."""
+
+    def __init__(self, spec, lenient, tray):
+        super().__init__(tray=tray)
+        self._spec, self._lenient = spec, lenient
+
+    def __missing__(self, key):
+        if key != 'parts':
+            raise KeyError(key)
+        self['parts'] = mw.compile_spec(dict(self._spec, stations=[]), lenient=self._lenient)['parts']
+        return self['parts']
+
+
 def _assemble(level, placements, lenient=False):
     """The level's machine with the player's pieces built into it, and that
     machine compiled. lenient: as far as it can be, with its problems in it
@@ -322,7 +453,7 @@ def _assemble(level, placements, lenient=False):
         knobs = {k: v for k, v in p.items() if k not in ('piece', 'cost')}
         # What is there already, for a piece that is set down on it, and
         # what the tray says about it (the battery a panel is wired to).
-        ctx = {'parts': mw.compile_spec(dict(spec, stations=[]), lenient=lenient)['parts'], 'tray': tray[p['piece']]}
+        ctx = _Context(spec, lenient, tray[p['piece']])
         made = PIECES[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)
         spec['kits'] += made.get('kits', [])
         spec['parts'] += made.get('parts', [])
@@ -541,11 +672,16 @@ def clashes_of(compiled):
     player's bolted mirror stood inside a wall, and a bolted plank inside
     the tables it should have rested on.)"""
     deepest = {}
+    solids = {p['name']: [(sd, _reach(sd)) for sd in mw.solids_of(p)] for p in compiled['parts']}
+
+    def near(a, b):
+        return any(all(abs(sa['at_m'][i] - sb['at_m'][i]) < ra[i] + rb[i] for i in range(3))
+                   for sa, ra in solids[a['name']] for sb, rb in solids[b['name']])
     for a in compiled['parts']:
         if owner(a) is None:
             continue
         for b in compiled['parts']:
-            if b is a or owner(b) == owner(a) or (owner(b) is not None and b['name'] < a['name']):
+            if b is a or owner(b) == owner(a) or (owner(b) is not None and b['name'] < a['name']) or not near(a, b):
                 continue
             depth = max(mw.overlap_depth(sa, sb) for sa in mw.solids_of(a) for sb in mw.solids_of(b))
             if depth > 0.001:
@@ -597,14 +733,16 @@ def compose(level, placements, leave_out_goal=False):
     not placed yet is refused -- or with leave_out_goal, left out, and what
     it needs said in spec['_needs'], so the level can still be shown."""
     spec, checked, cost, compiled = _assemble(level, placements)
-    goal = level['goal']['station']['done_when']
-    rule = next(iter(goal.values()))
-    wanted = rule.get('part') if isinstance(rule, dict) else rule
     names = {p['name'] for p in compiled['parts']}
     clashes = clashes_of(compiled)
     if clashes:
         raise LevelRefused(clashes[:4])
     spec['stations'] = []
+    if not level.get('goal'):
+        return spec, checked, cost      # the free build: nothing to do but watch
+    goal = level['goal']['station']['done_when']
+    rule = next(iter(goal.values()))
+    wanted = rule.get('part') if isinstance(rule, dict) else rule
     if isinstance(wanted, str) and wanted not in names:
         needs = level['goal'].get('needs', f'the goal is about {wanted}, which is not here yet')
         if not leave_out_goal:
@@ -783,10 +921,11 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0):
     hardly move (under 2 cm) are left out."""
     spec, checked, cost = compose(level, placements)
     compiled = mw.compile_spec(spec)
-    goal = level['goal']['station']['done_when']
-    rule = next(iter(goal.values()))
+    rule = next(iter(level['goal']['station']['done_when'].values())) if level.get('goal') else None
     wanted = rule.get('part') if isinstance(rule, dict) else rule
     loose = [p['name'] for p in compiled['parts'] if not p['fixed']]
+    # With no goal, the marbles first: they are what a free build is about.
+    loose.sort(key=lambda n: ' marble ' not in n + ' ')
     track = ([wanted] if wanted in loose else []) + [n for n in loose if n != wanted][:7]
     r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=wall_limit_s,
                     track=track, after_s=0.5)
@@ -916,4 +1055,4 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
 def public(level):
     """What the page needs to show a level: never its solution."""
     return {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
-                                  'tray', 'goal', 'hints', 'par_energy_j') if k in level}
+                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example') if k in level}
