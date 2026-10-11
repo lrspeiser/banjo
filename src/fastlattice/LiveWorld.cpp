@@ -945,6 +945,11 @@ struct LiveWorld::Impl {
     struct SceneJoint {
         unsigned id{};
         std::string a, b;
+        // A ratchet (LiveWorld::ratchet): the reading it catches at, which way
+        // (+1 up, -1 down, 0 none), and whether it has caught.
+        double ratchet_at{};
+        int ratchet_sense{};
+        bool latched{};
         // Where the pin sits inside each body's OWN matter, and which way it
         // runs in the first one's. This is the part that survives: the assembly
         // can be carried across the room or turned over and the pin is still in
@@ -1363,6 +1368,25 @@ struct LiveWorld::Impl {
                 throw std::invalid_argument("circuit must include every motor sharing the store");
         circuits.push_back(std::move(c));
         for (unsigned id : ids) motorById(id)->on_circuit = true;
+    }
+    // A ratchet's pawl: measured where the pin has got to at the start of the
+    // step, never assumed. Once past its reading it has caught, and its limit
+    // the other way is where the pin has got to -- so it goes on, and cannot
+    // come back.
+    void prepareRatchets() {
+        for (SceneJoint &j : joints) {
+            if (j.ratchet_sense == 0 || !j.attached || j.rigid == 0 || !world->hasJoint(j.rigid)) continue;
+            const double at = world->jointState(j.rigid).at;
+            if (!j.latched) j.latched = j.ratchet_sense > 0 ? at >= j.ratchet_at : at <= j.ratchet_at;
+            if (!j.latched) continue;
+            double lower = j.lower, upper = j.upper;
+            if (j.ratchet_sense > 0) lower = std::min(std::max(lower, at), upper);
+            else upper = std::max(std::min(upper, at), lower);
+            if (lower == j.lower && upper == j.upper) continue;
+            j.lower = lower;
+            j.upper = upper;
+            world->setHingeLimits(j.rigid, lower, upper);
+        }
     }
     void prepareCircuits(double dt) {
         circuit_steps.clear();
@@ -6525,6 +6549,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         joint.upper = numberFrom(o.at("upper"));
         joint.friction = numberFrom(o.at("friction"));
         joint.breaks_at_n = numberFrom(o.at("breaks_at_n"));
+        joint.ratchet_at = o.contains("ratchet_at") ? numberFrom(o.at("ratchet_at")) : 0.0;
+        joint.ratchet_sense = o.value("ratchet_sense", 0);
+        joint.latched = o.value("latched", false);
         joint.over_a = vecFrom(o.at("over_a"));
         joint.over_b = vecFrom(o.at("over_b"));
         joint.ratio = numberFrom(o.at("ratio"));
@@ -7891,6 +7918,7 @@ void LiveWorld::step(double dt_s) {
     // heat back with everything else.
     if (impl_->light_report.declared) impl_->heatFromLight(dt_s);
     if (!impl_->circuits.empty()) impl_->prepareCircuits(dt_s);
+    impl_->prepareRatchets();
     if (impl_->body_of.size() + impl_->native_players.size() + 8 <= 2000) {
         bool committed = false;
         try {
@@ -8764,6 +8792,7 @@ std::vector<LiveJoint> LiveWorld::joints() const {
         // Away with the thing it is in, it is still in it: attached, reading
         // what it read as it went, and made again when the thing is back.
         said.away = impl_->setAside(joint);
+        said.latched = joint.latched;
         said.attached = joint.attached && (joint.rigid != 0 || said.away);
         if (said.away) said.at = joint.at_when_hung;
         if (joint.rigid != 0 && impl_->world->hasJoint(joint.rigid)) {
@@ -9956,6 +9985,20 @@ unsigned LiveWorld::drum(const std::string &drum, const std::string &load, const
     impl_->world->wake(impl_->body_of[second->second]);
     impl_->joints.push_back(std::move(joint));
     return impl_->joints.back().id;
+}
+
+bool LiveWorld::ratchet(unsigned joint, double at_rad, int sense) {
+    if (!std::isfinite(at_rad) || (sense != 1 && sense != -1))
+        throw std::invalid_argument("a ratchet catches at a reading, going up (+1) or down (-1)");
+    for (Impl::SceneJoint &held : impl_->joints) {
+        if (held.id != joint) continue;
+        if (held.kind != JoltWorld::JointKind::Hinge) return false;
+        held.ratchet_at = at_rad;
+        held.ratchet_sense = sense;
+        held.latched = false;
+        return true;
+    }
+    return false;
 }
 
 void LiveWorld::setJointFriction(unsigned joint, double friction_torque_n_m) {
@@ -19153,6 +19196,9 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                             {"stand_off_b", savedNumber(j.stand_off_b)},
                             {"lower", savedNumber(j.lower)},
                             {"upper", savedNumber(j.upper)},
+                            {"ratchet_at", savedNumber(j.ratchet_at)},
+                            {"ratchet_sense", j.ratchet_sense},
+                            {"latched", j.latched},
                             {"friction", savedNumber(j.friction)},
                             {"breaks_at_n", savedNumber(j.breaks_at_n)},
                             {"over_a", savedVec(j.over_a)},

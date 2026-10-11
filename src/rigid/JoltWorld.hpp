@@ -1108,6 +1108,9 @@ public:
     [[nodiscard]] bool hasJoint(unsigned joint) const;
     [[nodiscard]] JointReport jointState(unsigned joint) const;
     void setJointFriction(unsigned joint, double friction);
+    // A pin's travel, as its reading (radians): what a ratchet tightens as the
+    // pin turns. Only a hinge has one to set.
+    void setHingeLimits(unsigned joint, double lower, double upper);
     // A pin that is driven: Jolt's own motor on the hinge, aiming at a speed
     // with a torque it may not exceed. LiveWorld's motors set both every step,
     // before the step's reversible trial, because a constraint's settings are

@@ -874,6 +874,7 @@ nlohmann::json jointsOf(const LiveWorld &world) {
         // Away in the bag with the thing it is in (LiveWorld::park): still in
         // it, and made again when the thing is back.
         if (joint.away) said["away"] = true;
+        if (joint.latched) said["latched"] = true;
         if (joint.kind == "elastic") {
             // The declared linear model, and what it currently holds.
             said["metres"] = tidy(joint.at);
@@ -3081,6 +3082,15 @@ int main(int argc, char **argv) {
                         if (c.id == id) reply["control"] = controlOf(c, world->motors(), world->joints(), *world);
                 } else if (op == "unhinge") {
                     world->unhinge(command.at("joint").get<unsigned>());
+                } else if (op == "ratchet") {
+                    // A pawl on a pin: past its reading (degrees) it goes on
+                    // but cannot come back.
+                    const bool up = command.contains("at_or_above_deg");
+                    const double degrees = up ? command.at("at_or_above_deg").get<double>()
+                                              : command.at("at_or_below_deg").get<double>();
+                    if (!world->ratchet(command.at("joint").get<unsigned>(),
+                                        degrees * 3.14159265358979323846 / 180.0, up ? 1 : -1))
+                        throw std::invalid_argument("a ratchet goes on a pin");
                 } else if (op == "joint_friction") {
                     // Newton metres for a pin, newtons for a slide; the joint
                     // knows which it is, so either spelling is accepted.

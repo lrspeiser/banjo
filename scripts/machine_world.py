@@ -474,6 +474,8 @@ def _kit_lever(k, problems, name):
                'at_m': [at[0], plank_y, at[2]], 'axis': [0, 0, 1] if along == 'x' else [1, 0, 0],
                'lower_deg': -limit, 'upper_deg': limit,
                'friction_n_m': _num(k, 'friction_n_m', name, problems, 0.5, 0, 50)}]
+    if k.get('ratchet') is not None:
+        joints[0]['ratchet'] = k['ratchet']
     return parts, joints
 
 
@@ -1332,6 +1334,16 @@ def compile_spec(spec, lenient=False):
             row['lower_deg'] = _num(j, 'lower_deg', what, problems, -180, -180, 180)
             row['upper_deg'] = _num(j, 'upper_deg', what, problems, 180, -180, 180)
             row['friction_n_m'] = _num(j, 'friction_n_m', what, problems, 0.0, 0, 1e4)
+            # A ratchet: past this reading the pin goes on but cannot come back
+            # (a pawl in a toothed wheel), so what it was pushed to it stays at.
+            ratchet = j.get('ratchet')
+            if ratchet is not None:
+                up, down = 'at_or_above_deg' in (ratchet or {}), 'at_or_below_deg' in (ratchet or {})
+                if not isinstance(ratchet, dict) or up == down:
+                    problems.append(f'{what}: a ratchet catches at_or_above_deg or at_or_below_deg one reading')
+                else:
+                    key = 'at_or_above_deg' if up else 'at_or_below_deg'
+                    row['ratchet'] = {key: _num(ratchet, key, what + ' ratchet', problems, 0, -179, 179)}
         elif kind == 'fix':
             row['axis'] = _vec(j.get('axis', [0, 1, 0]), 3, what + ' axis', problems)
             row['holds_shear_n'] = _num(j, 'holds_shear_n', what, problems, 0.0, 0, 1e7)
@@ -1709,6 +1721,8 @@ def build_engine(exe, compiled, workdir):
             elif j['kind'] == 'hinge':
                 r = engine.op(op='hinge', a=j['a'], b=j['b'], at=j['at_m'], axis=j['axis'], lower_deg=j['lower_deg'],
                               upper_deg=j['upper_deg'], friction_n_m=j['friction_n_m'])
+                if j.get('ratchet'):
+                    engine.op(op='ratchet', joint=r['joint'], **j['ratchet'])
             elif j['kind'] == 'fix':
                 extra = {'member': j['member']} if j.get('member') else {}
                 r = engine.op(op='fix', a=j['a'], b=j['b'], at=j['at_m'], axis=j['axis'],
@@ -1843,6 +1857,7 @@ class MachineSession:
         self._first_impact = set()
         self._parted = set()
         self._switches = {}
+        self._latched = set()
         self._hot = set()
         self._turned = {}
         self.water = None
@@ -2084,6 +2099,11 @@ class MachineSession:
                 row['degrees'] = None
             # And for a joint made of something (a rope's links): what it can
             # still carry, the share of it left, and why it let go.
+            if j.get('latched'):
+                row['latched'] = True
+                if name not in self._latched:
+                    self._latched.add(name)
+                    self._event('latched', f'{name} caught on its ratchet at {j.get("degrees", 0):.1f} degrees')
             for key in ('metres', 'tension_n', 'leaves', 'meets', 'wound_m', 'breaks_at_n', 'member',
                         'capacity_fraction', 'parted_because'):
                 if key in j:

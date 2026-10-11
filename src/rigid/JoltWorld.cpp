@@ -2296,6 +2296,16 @@ void JoltWorld::setDamping(MatterBodyId body_id, double linear_per_s, double ang
     motion->SetAngularDamping(static_cast<float>(angular_per_s));
 }
 
+void JoltWorld::setHingeLimits(unsigned joint, double lower, double upper) {
+    impl_->requireConfigurationMutable();
+    if (!std::isfinite(lower) || !std::isfinite(upper) || lower > upper)
+        throw std::invalid_argument("a pin's limits are two readings, the lower first");
+    auto &held = impl_->joints_.at(joint);
+    if (held.kind != JointKind::Hinge) throw std::invalid_argument("only a pin has limits to set");
+    static_cast<JPH::HingeConstraint *>(held.constraint.GetPtr())
+        ->SetLimits(static_cast<float>(lower), static_cast<float>(upper));
+}
+
 void JoltWorld::setJointFriction(unsigned joint, double friction) {
     impl_->requireConfigurationMutable();
     if (!(friction >= 0.0) || !std::isfinite(friction))

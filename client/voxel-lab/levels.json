@@ -776,11 +776,14 @@
        0.1,
        0.0
       ],
-      "length_m": 0.8,
+      "length_m": 1.0,
       "width_m": 0.2,
       "limit_deg": 15,
       "along": "x",
-      "material": "oak"
+      "material": "oak",
+      "ratchet": {
+       "at_or_above_deg": 4
+      }
      },
      {
       "kit": "cannon",
@@ -846,6 +849,37 @@
        0.6
       ],
       "fixed": false
+     },
+     {
+      "name": "lever contact",
+      "shape": "box",
+      "material": "aluminum",
+      "size_m": [
+       0.02,
+       0.02,
+       0.02
+      ],
+      "at_m": [
+       0.12,
+       0.11,
+       0.0
+      ]
+     },
+     {
+      "name": "contact plate",
+      "shape": "box",
+      "material": "aluminum",
+      "size_m": [
+       0.12,
+       0.04,
+       0.12
+      ],
+      "at_m": [
+       0.13,
+       0.02,
+       0.0
+      ],
+      "fixed": true
      }
     ],
     "batteries": [
@@ -861,13 +895,33 @@
       "name": "firing circuit",
       "battery": "battery",
       "switch": {
-       "hinge": "lever hinge",
-       "closed_at_or_above_deg": 8
+       "touch": [
+        "lever contact",
+        "contact plate"
+       ]
       },
       "coil": {
        "heats": "cannon charge",
        "resistance_ohm": 0.1
       }
+     }
+    ],
+    "joints": [
+     {
+      "name": "lever contact fixing",
+      "kind": "fix",
+      "a": "lever",
+      "b": "lever contact",
+      "at_m": [
+       0.12,
+       0.12,
+       0.0
+      ],
+      "axis": [
+       0.0,
+       1.0,
+       0.0
+      ]
      }
     ]
    },

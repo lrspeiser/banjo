@@ -325,6 +325,33 @@ class Engine(unittest.TestCase):
         self.assertEqual(fixing['capacity_fraction'], 1.0)
 
     @need_engine
+    def test_a_ratchet_keeps_a_knocked_lever_down(self):
+        # An iron ball dropped on a lever's end knocks it down. Past 4 degrees
+        # its ratchet catches -- a pawl in a toothed wheel -- and the lever goes
+        # on but cannot come back up: it ends at or past 4 degrees. Without
+        # one, the same knock leaves it rocking back.
+        def lever(ratchet):
+            kit = {'kit': 'lever', 'name': 'lever', 'pivot_m': [0.0, 0.1, 0.0], 'length_m': 0.8, 'limit_deg': 15,
+                   'along': 'x'}
+            if ratchet:
+                kit['ratchet'] = {'at_or_above_deg': 4}
+            return {'schema': mw.SCHEMA, 'cell_m': 0.02, 'kits': [kit],
+                    'parts': [{'name': 'ball', 'shape': 'sphere', 'material': 'iron', 'size_m': [0.08, 0.08, 0.08],
+                               'at_m': [-0.3, 0.6, 0.0]}]}
+        held = run(lever(True), 2.5)
+        self.assertIsNone(held['error'])
+        pin = next(j for j in held['readouts']['joints'] if j['name'] == 'lever hinge')
+        print(f"\n  ratchet: {pin['degrees']:.1f} degrees, latched {pin.get('latched')} | "
+              + ' | '.join(e for e in held['events'] if 'ratchet' in e))
+        self.assertTrue(pin.get('latched'))
+        self.assertGreaterEqual(pin['degrees'], 4.0 - 1e-3)
+        self.assertTrue(any('caught on its ratchet' in e for e in held['events']))
+        with self.assertRaises(mw.MachineRefused):
+            spec = lever(True)
+            spec['kits'][0]['ratchet'] = {'at_or_above_deg': 4, 'at_or_below_deg': -4}
+            mw.compile_spec(spec)
+
+    @need_engine
     def test_the_flat_of_the_knife_does_not_cut(self):
         flat = dict(KNIFE, kits=[KNIFE['kits'][0], dict(KNIFE['kits'][1])])
         compiled = mw.compile_spec(flat)

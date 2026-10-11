@@ -453,6 +453,9 @@ struct LiveJoint {
     // and attached, with nothing standing in for it until the thing is back.
     // `at` is what it read as it went, and what it is made again with.
     bool away{};
+    // A pin with a ratchet (LiveWorld::ratchet) that has caught: it turned past
+    // its reading, and from there may go on but not come back.
+    bool latched{};
 
     // ---- heat and strength (docs/thermal-mechanics.md) ----------------------
     //
@@ -1990,6 +1993,12 @@ public:
     [[nodiscard]] std::vector<LiveJoint> joints() const;
     // How hard it is to move. A stiff hinge holds a door where it is left.
     void setJointFriction(unsigned joint, double friction_torque_n_m);
+    // A ratchet on a pin: once its reading passes at_rad -- going up (sense +1)
+    // or down (-1) -- it may go on that way but never come back, its limit
+    // following it as a pawl drops into a toothed wheel. A lever a ball knocks
+    // down stays down: the contact under it stays pressed. False for a joint
+    // that is not a pin.
+    bool ratchet(unsigned joint, double at_rad, int sense);
     // Take the pin out. What hung on it falls.
     void unhinge(unsigned joint);
 
