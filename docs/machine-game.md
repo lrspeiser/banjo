@@ -193,6 +193,8 @@ Checked on October 11, 2026: all 29 Chrome browser tests passed in 112.5 seconds
 
 Drag-only placement checked October 11, 2026: the full 39-test Chrome suite passed in 193.1 s. A final four-test rerun passed in 8.8 s after excluding fixed-port power cables from object dragging and adding the second-finger Pull release test (40 browser regressions in total). Checks cover clicks and 5 px jitter leaving all placement knobs unchanged, 7 px near-piece drags resuming Move, background/right/middle/Ctrl camera drags, zoom while holding a piece, two-finger release quarantine, touch cancellation, snapped track endpoints, unchanged gap wins and energy, explicit solar wiring, saved versions and 44 px unobstructed controls at 1280×860, 390×844 and 844×390. Wire and power-cable previews stay attached to their named sockets; dragging near them turns the camera. The Pull regression records an active force request followed by a zero-force release before camera movement. The client view CTest, JavaScript syntax check and all 269 source registrations passed. This changes client gestures only, using engine SHA-256 569a441595274e13128e1b8f06ff54d392232409b312d2089a77c2451315c976; it changes no native physics, material model, timestep, goal or conservation tolerance.
 
+The preceding Linux CI checkpoint passed 147 of 148 CTests; its browser suite was killed by the 300 s aggregate limit after 27 passing tests, with no assertion failure reported. With 40 browser regressions now registered and Linux CI using software rendering, that suite's CTest allowance is 600 s. Individual browser waits, level goals and physical tolerances are unchanged. The longer aggregate allowance is configuration, not a new claim that Linux CI has passed.
+
 ## The eight levels
 
 

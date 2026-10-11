@@ -898,7 +898,11 @@ if(BANJO_BUILD_TESTS)
                 add_test(NAME banjo_machine_game_browser_tests COMMAND ${CMAKE_COMMAND} -E env
                     BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
                     ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_game_browser_tests.py)
-                set_tests_properties(banjo_machine_game_browser_tests PROPERTIES TIMEOUT 300
+                # Forty UI regressions include several phone viewports. In
+                # Linux software-rendered Chrome the old 300 s suite cap
+                # expired after 27 passing tests; individual waits/assertions
+                # retain their own limits. Allow the full suite to finish.
+                set_tests_properties(banjo_machine_game_browser_tests PROPERTIES TIMEOUT 600
                     LABELS "native;world;machine;browser")
             endif()
             target_link_libraries(banjo_motor_tests PRIVATE banjo_fastlattice_scene)
