@@ -1,173 +1,81 @@
-# Hosting Banjo
+# Hosting the game
 
-## Current Render physics lab
-
-The current service is [Banjo](https://banjo-f1sv.onrender.com/coupled), Render
-service `srv-dajite67bikc73c8echg`, on `lrspeiser/banjo` main with automatic
-commit deployment. It has one CPU / 2 GB and no CUDA GPU.
-
-The Docker image now starts `scripts/voxel-lab.py` with `banjo_voxel_world_run`
-and the compiled `banjo_coupled_cpu` library. Ubuntu 24.04 includes NumPy;
-BLAS/OpenMP threads are bounded to one per worker. The browser explicitly
-shows **CPU reference**. It uses the same physical trial headers, nonlinear
-controller, canonical world and acceptance gates as the local CUDA backend.
-CUDA requests do not fall back silently.
-
-Use the existing password at `/login`. Root opens `/coupled`. Docker Command
-stays empty; a health check can use `/login`. Existing `BANJO_PASSWORD` and
-`BANJO_PUBLIC_HOST=banjo-f1sv.onrender.com` remain unchanged. Public binds need
-the password; assets and APIs use the existing gate, Host and same-origin
-checks, including HTTPS through Render's reverse proxy.
-
-Eight scenes can run separately and expire after ten idle minutes. Journals
-live at `/data/physics-lab-logs`; use a persistent disk to keep them through
-deploys. Save scene downloads the accepted state to the user. Restore requires
-the same source, native binary, NumPy version and backend. Running processes
-are not persistent multiplayer worlds. The image receipt records identity;
-it does not certify physics. Credentials, `.env` and local build files are
-excluded. The Render API key stays only in the ignored local environment.
-
-Testable: 10 m rigid-ball rebound, before/contact/after inspection, low-energy
-four-material sheet controls, save/reopen and substep logs. Strong fracture,
-detailed ball impacts and full-world realtime remain open. This is a physics
-validation lab, not the complete game.
-
-Run source registration, the CPU coupled/high-drop/gateway suites, and on a
-CUDA host the retained CUDA and CPU/CUDA parity suites before publishing.
-Then verify the intended commit on Render, HTTPS login and the public drop
-in a browser. Local testing is not hosted verification.
-
-## Historical playground deployment
-
-The following describes the previous game server, retained for reference.
-Its binaries and saved data remain, but it is no longer the Docker default.
-No Fly deployment was made for the hosted physics checkpoint.
-
-The playground -- `playground/server.py` and the engine it drives -- runs
-anywhere a Linux container runs and stays running. This page puts it on
-Fly.io, from this folder, with no GitHub connection needed.
-
-## Why not Vercel, or any serverless host
-
-The room is a world held in one running process. The page steps it about thirty
-times a second, and between steps it is still there. A serverless function
-starts for one request and is gone after it, so each step would find a new,
-empty world. The engine is native code that wants a whole machine: a break is
-worked out on every core there is, and on four cores one took 1.08 s against
-the 0.49 s of warning the engine gives. And the rooms need a disk to be kept
-on. A container host with an always-on machine and a volume has all three.
+The game is hosted on Render as the web service **banjo**
+(`srv-dajite67bikc73c8echg`), at <https://banjo-f1sv.onrender.com/play>. Render
+builds it from the `main` branch of `lrspeiser/banjo` and deploys every new
+commit by itself, so a push to main is a deploy. It takes about six minutes, and
+Render keeps the old version serving until the new one is up.
 
 ## What runs
 
-`Dockerfile` builds the engine for Linux -- headless: `banjo_platform_cli`,
-`banjo_live_world_run` and `libbanjo.so` -- and runs the same Python server as a
-desktop, listening on every interface. Two things make that safe:
+The `Dockerfile` has two stages:
 
-- **A password.** With `BANJO_PASSWORD` set, every page, script and API needs a
-  session that only the password gets (`playground/access_gate.py`). The server
-  will not listen anywhere but `127.0.0.1` without one.
-- **One name.** The server answers only to `BANJO_PUBLIC_HOST` (and to
-  localhost), so a page on another site cannot drive it.
+1. **Build.** Ubuntu 24.04 compiles one program, the engine
+   `banjo_live_world_run`, with no tests. CMake downloads Jolt Physics and
+   nlohmann/json from GitHub while it configures. It compiles two files at a
+   time (`BUILD_JOBS`, default 2), because one compile per core ran Render's
+   8 GB build machine out of memory.
+2. **Run.** Ubuntu 24.04 with Python 3 and nothing else. The image holds the
+   whole source tree, as a checkout does, with the engine in `/app/bin`. There
+   is no git in it, so the commit the page shows is written to
+   `/app/bin/build-receipt.json` from the commit Render builds
+   (`RENDER_GIT_COMMIT`).
 
-The image holds the whole source tree, as a checkout does, with the three
-programs in `/app/bin`. The server finds its modules and data from where it
-stands in a checkout: `examples/authoring`, `mcp` and `bindings` on its import
-path, `docs` and `assets` read from disk. An image that copied folders one by one
-left out `examples/authoring`, and on Render the server stopped at its first
-import (`ModuleNotFoundError: No module named 'banjo_authoring'`).
+It starts:
 
-The rooms, the valley's generated ground and recorded runs are kept under
-`/data`, a volume: what the chat built and what was dug is there after a restart
-or a new deploy (`playground/room_store.py`). Where things were moved by hand
-goes with the running world, as it does on a desktop.
+    python3 -u scripts/voxel-lab.py --host 0.0.0.0 --port ${PORT:-8080} \
+      --native /app/bin/banjo_live_world_run --logs /data/machine-logs \
+      --site game --public
 
-## Deploying to Fly.io
+- `--site game` serves the game and nothing else: `/play`, `/machine`, the
+  files those pages load, `/api/machine` and `/api/checkpoint`. `/` goes to
+  `/play`; everything else is 404.
+- `--public` opens it to anyone with no password. In return, what costs money
+  or a lot of engine time is rationed per visitor: the chat, the reliability
+  check, the path preview and feedback (the numbers and the variables that
+  change them are in [machine-game.md](machine-game.md), "The site").
+  `--public` is refused without `--site game`.
+- The server runs at most `BANJO_MACHINE_SESSIONS` live levels at once (10 in
+  the image). When it is full, a newcomer takes the place of a level whose page
+  has closed or gone quiet, or else is told to try again in a minute or two.
 
-You need flyctl (https://fly.io/docs/flyctl/install/) and a Fly account
-(`fly auth login`).
+A player's progress (stars, best energy, their free build) is kept in their own
+browser, not on the server. The server writes only the machines' logs and
+players' feedback, under `/data/machine-logs`. Without a persistent disk at
+`/data`, those are lost when the service restarts or deploys.
 
-1. From the repository root, `fly launch --no-deploy --copy-config`. Pick a name
-   and a region near you; it writes both into `fly.toml` and keeps the rest.
-2. In `fly.toml`, set `BANJO_PUBLIC_HOST` to `<your-app>.fly.dev`.
-3. Make the volume, in the same region:
-   `fly volumes create banjo_data --size 10 --region <region>`.
-4. Set the secrets, in your own terminal, so they never go in a file:
-   `fly secrets set OPENAI_API_KEY=... BANJO_PASSWORD=...`. The room's chat uses
-   `gpt-5-mini` unless `OPENAI_MODEL` says otherwise.
-5. `fly deploy --ha=false`. Fly builds the image on its own builders, so this
-   computer needs no Docker; `--ha=false` keeps it to one machine, since there is
-   one world and one volume.
-6. Open `https://<your-app>.fly.dev/world` and enter the password.
+## Render's settings
 
-The machine stops by itself when nobody is connected (`auto_stop_machines`) and
-starts on the next visit, which then takes a little longer. `fly scale count 0`
-stops it until you scale it back to 1.
+- **Runtime:** Docker, from the repository's `Dockerfile`. Leave *Docker
+  Command* empty so the image's own command runs.
+- **Environment:** `OPENAI_API_KEY` as a secret, for the chat; without it the
+  chat says it is not available and the rest works. `OPENAI_MODEL` changes the
+  model from `gpt-5-mini`. `BANJO_PUBLIC_HOST` is the site's hostname
+  (`banjo-f1sv.onrender.com`): the server answers only to that name and to
+  localhost, so another site's page cannot drive it.
+- **Health check path:** none is set, so Render waits for the port to open.
+  `/play` would do; `/login` would not, since a public server has no login.
+- **Instance:** one CPU and 2 GB (`1c-2g`), with no persistent disk.
 
-## Deploying to Render
+## Checking an image before deploying
 
-Render builds the same image: make a **Web Service** with the **Docker**
-runtime. Render's native Python runtime has no CMake to build the engine with.
+There is no Docker on the development machine, so check the image's steps by
+hand in Ubuntu 24.04 (WSL's, on Windows). Build as the image does:
 
-- **Source:** Render builds from a connected repository, or pulls an image
-  already built into a registry. Point it at the branch that has these files.
-- **Start command:** the image's own, so leave Render's *Docker Command* empty.
-  It is
-  `sh -c 'exec python3 -u playground/server.py --host 0.0.0.0 --port ${PORT:-8080} --engine /app/bin/banjo_platform_cli --studio /app/bin/banjo_network_lab --runs /data/runs --rooms /data/rooms'`,
-  which listens on the port Render hands it in `PORT`.
-- **Environment:** `OPENAI_API_KEY` and `BANJO_PASSWORD` as secret values, and
-  `BANJO_PUBLIC_HOST` set to the service's hostname, `<name>.onrender.com` (or
-  your own domain).
-- **Disk:** a persistent disk mounted at `/data`, so what is built is kept
-  across restarts and deploys. A service with a disk runs as one instance,
-  which is what one world wants.
-- **Health check path:** `/login`. Everything else asks for the password first.
-- **Instance:** as many CPUs as you will pay for. With fewer, a break takes
-  longer than the warning the engine gives, and the room waits for it.
-- **Build memory:** the image compiles two files at a time (`BUILD_JOBS`,
-  default 2). Render's builder has 8 GB, and a build with one compile per core
-  ran out of it. With two, the compilers and the linker together peak at
-  1.4 GB -- measured, with the largest single compile at 846 MB.
+    cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=OFF
+    cmake --build build/linux --parallel 2 --target banjo_live_world_run
 
-## What it costs
-
-- **The machine:** 8 dedicated cores and 16 GB, billed while it runs (Fly's
-  pricing page has the rate). Fewer cores cost less, but then a break takes
-  longer than the warning the engine gives, and the room waits for it.
-- **The volume:** 10 GB, billed while it exists.
-- **The chat:** each request to the room's chat sends 160,000 to 270,000 input
-  tokens to your OpenAI account (measured, `gpt-5-mini`).
-
-## One world, one person
-
-The server holds one live world. Two people with the password share it: opening
-a room opens it for both, and the chat builds in the one room. Share the
-password accordingly.
-
-## Checking it before deploying
-
-The image's steps by hand in Ubuntu 24.04 -- WSL's, on Windows. The build
-stage, from a checkout:
-
-    cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
-      -DBANJO_BUILD_LAB=OFF -DBANJO_BUILD_HEADLESS=ON \
-      -DBANJO_BUILD_PRECOMPUTE=OFF -DBANJO_BUILD_TESTS=OFF
-    cmake --build build/linux --parallel 8 \
-      --target banjo_platform_cli banjo_c banjo_live_world_run
-
-Then the image's start, from the files the image holds and nothing else. Run
-from the checkout itself, the server finds files the image leaves out: that is
-how `examples/authoring` went missing on Render with this check passing.
+Then start the server from the files the image holds and nothing else. Run from
+a full checkout, a server can find files the image leaves out, and the check
+passes while Render fails:
 
     rm -rf /tmp/banjo-image && mkdir -p /tmp/banjo-image/app/bin
     git archive HEAD | tar -x -C /tmp/banjo-image/app
-    cp -a build/linux/banjo_platform_cli build/linux/banjo_live_world_run \
-          build/linux/libbanjo.so* /tmp/banjo-image/app/bin/
+    cp -a build/linux/banjo_live_world_run /tmp/banjo-image/app/bin/
     cd /tmp/banjo-image/app
-    BANJO_PASSWORD=... BANJO_LIBRARY=$PWD/bin/libbanjo.so \
-      python3 -S -u playground/server.py --host 0.0.0.0 --port 8090 \
-      --engine bin/banjo_platform_cli --studio bin/banjo_network_lab \
-      --rooms /tmp/banjo-image/data/rooms --runs /tmp/banjo-image/data/runs
+    python3 -S -u scripts/voxel-lab.py --host 127.0.0.1 --port 8090 \
+      --native bin/banjo_live_world_run --logs /tmp/banjo-image/data \
+      --site game --public
 
-`-S` keeps Python to its standard library, as the image's is: a module installed
-on the machine but not in the image would fail the same way. Then open
-http://localhost:8090/login from Windows.
+`-S` keeps Python to its standard library, as the image's is. Then open
+<http://localhost:8090/play> and play a level.

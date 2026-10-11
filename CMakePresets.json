@@ -13,8 +13,6 @@
       "binaryDir": "${sourceDir}/build/dev",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "BANJO_BUILD_LAB": "ON",
-        "BANJO_BUILD_HEADLESS": "ON",
         "BANJO_BUILD_TESTS": "ON"
       }
     },
@@ -25,20 +23,6 @@
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "BANJO_BUILD_LAB": "ON",
-        "BANJO_BUILD_HEADLESS": "ON",
-        "BANJO_BUILD_TESTS": "ON"
-      }
-    },
-    {
-      "name": "core",
-      "displayName": "Dependency-free Banjo core",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/core",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "BANJO_BUILD_LAB": "OFF",
-        "BANJO_BUILD_HEADLESS": "OFF",
         "BANJO_BUILD_TESTS": "ON"
       }
     }
@@ -51,10 +35,6 @@
     {
       "name": "release",
       "configurePreset": "release"
-    },
-    {
-      "name": "core",
-      "configurePreset": "core"
     }
   ],
   "testPresets": [
@@ -66,8 +46,8 @@
       }
     },
     {
-      "name": "core",
-      "configurePreset": "core",
+      "name": "release",
+      "configurePreset": "release",
       "output": {
         "outputOnFailure": true
       }

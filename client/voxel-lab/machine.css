@@ -1,4 +1,7 @@
 *{box-sizing:border-box}
+/* Hidden means hidden: a class that sets display (.chat-actions is flex) would
+   otherwise beat the attribute, and level 1 showed the free build's buttons. */
+[hidden]{display:none!important}
 body{margin:0;background:#0d1720;color:#e4edf4;font:15px system-ui,sans-serif}
 header{min-height:52px;display:flex;align-items:center;gap:18px;padding:10px 18px;border-bottom:1px solid #314451;flex-wrap:wrap}
 header strong{font-size:20px}header span{font-weight:400;color:#a9c1ce;margin-left:8px}

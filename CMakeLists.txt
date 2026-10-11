@@ -6,31 +6,15 @@ project(
     DESCRIPTION "A matter-first runtime for editable-physics worlds"
     LANGUAGES C CXX)
 
-option(BANJO_BUILD_LAB "Build the interactive rolling-ball visual laboratory" ON)
-option(BANJO_BUILD_HEADLESS "Build the automated headless rolling-ball laboratory" ON)
-option(BANJO_BUILD_PRECOMPUTE "Build the deterministic scenario precomputation tools" ON)
 option(BANJO_BUILD_TESTS "Build Banjo unit tests" ON)
 option(BANJO_JOLT_CONTINUOUS_SMALL_ROTATION "Experimental: integrate native angular steps below one microradian" OFF)
-option(BANJO_BUILD_CUDA "Build the CUDA backend of the fast explicit lattice fracture lane" OFF)
-option(BANJO_TEST_CUPY "Run opt-in shared-source CuPy GPU coupon checks (requires GPU, CuPy, nvcc and host compiler)" OFF)
-set(BANJO_NEWTON_PYTHON "" CACHE FILEPATH "Opt-in Python runtime with pinned Newton/Warp and an actual CUDA GPU")
-# nvcc contracts a*b+c into fused multiply-adds by default; MSVC (/fp:precise)
-# never does. A fused operation rounds once where the CPU rounds twice, and the
-# lattice's discrete failure decisions amplify that last-bit difference into a
-# different fracture cascade. The lane's claim is that the GPU runs the CPU
-# lane's physics, so contraction is off unless asked for; the cost is measured
-# in docs/fast-gpu-checkpoint.md.
-option(BANJO_CUDA_FMAD "Let nvcc fuse multiply-adds in the lattice kernel (breaks bitwise equality with the CPU backend)" OFF)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-# The C API (banjo_c) is a shared library built out of the engine's static
-# libraries, and on Linux everything linked into a shared object must be
-# position-independent. MSVC never needed it, so every Windows build linked
-# while CI on Ubuntu stopped at libbanjo.so ("recompile with -fPIC"). Set
-# before any target and any fetched dependency, so Jolt gets it too.
+# Position-independent code everywhere, Jolt included: set before any target
+# and any fetched dependency.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 # One floating-point model for everything linked into the engine, Jolt
 # included -- banjo-cpu-precise-v1: /fp:precise, or -fno-fast-math
@@ -143,32 +127,8 @@ target_compile_definitions(banjo_core PUBLIC BANJO_FP_PROFILE="${BANJO_FP_PROFIL
 target_compile_features(banjo_core PUBLIC cxx_std_23)
 banjo_enable_warnings(banjo_core)
 
-# Precomputed-basis (modal) fracture lane. Dense eigen work is kept in its own
-# library so its threading and vector flags do not leak into banjo_core.
-option(BANJO_MODAL_OPENMP "Thread the modal lane's dense products with OpenMP" ON)
-add_library(
-    banjo_modal
-    src/modal/SymmetricEigen.cpp
-    src/modal/ModalBasis.cpp
-    src/modal/ModalFracture.cpp)
-target_link_libraries(banjo_modal PUBLIC banjo_core)
-target_compile_features(banjo_modal PUBLIC cxx_std_23)
-banjo_enable_warnings(banjo_modal)
-if(MSVC)
-    target_compile_options(banjo_modal PRIVATE /arch:AVX2)
-endif()
-if(BANJO_MODAL_OPENMP)
-    find_package(OpenMP)
-    if(OpenMP_CXX_FOUND)
-        target_link_libraries(banjo_modal PUBLIC OpenMP::OpenMP_CXX)
-    endif()
-endif()
-
-# The fast explicit lattice lane (docs/fast-gpu-checkpoint.md): the CPU
-# lane's physics on a colour-parallel schedule. The C++ library always builds
-# and carries the CPU backend; the CUDA backend is a separate target behind
-# BANJO_BUILD_CUDA so the rest of the repository builds without a CUDA
-# toolchain. Without it the GPU factory throws a clear error, never a no-op.
+# The fast explicit lattice lane: the CPU lane's physics on a colour-parallel
+# schedule, which the live world's breaking runs on.
 add_library(
     banjo_fastlattice
     src/matter/BoxLattice.cpp
@@ -186,721 +146,209 @@ add_library(
 target_link_libraries(banjo_fastlattice PUBLIC banjo_core)
 target_compile_features(banjo_fastlattice PUBLIC cxx_std_23)
 banjo_enable_warnings(banjo_fastlattice)
-if(BANJO_BUILD_CUDA)
-    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR "${CMAKE_CUDA_ARCHITECTURES}" STREQUAL "")
-        set(CMAKE_CUDA_ARCHITECTURES 120)
-    endif()
-    enable_language(CUDA)
-    find_package(CUDAToolkit REQUIRED)
-    add_library(banjo_fastlattice_cuda STATIC src/fastlattice/CudaLatticeBackend.cu)
-    target_include_directories(banjo_fastlattice_cuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    set_target_properties(banjo_fastlattice_cuda PROPERTIES
-        CUDA_STANDARD 20 CUDA_STANDARD_REQUIRED ON CUDA_SEPARABLE_COMPILATION OFF)
-    if(NOT BANJO_CUDA_FMAD)
-        target_compile_options(banjo_fastlattice_cuda PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-fmad=false>)
-    endif()
-    target_link_libraries(banjo_fastlattice_cuda PUBLIC CUDA::cudart_static)
-    target_link_libraries(banjo_fastlattice PUBLIC banjo_fastlattice_cuda)
-    target_compile_definitions(banjo_fastlattice PUBLIC BANJO_HAS_CUDA=1)
-else()
-    target_sources(banjo_fastlattice PRIVATE src/fastlattice/CudaLatticeUnavailable.cpp)
+# The CPU backend only: the CUDA backend went with the labs. The factory
+# throws a clear error when a GPU is asked for, never a no-op.
+target_sources(banjo_fastlattice PRIVATE src/fastlattice/CudaLatticeUnavailable.cpp)
+
+include(FetchContent)
+
+# Cohesive opening distances are below float position resolution, even
+# near ordinary gameplay coordinates. Preserve explicit OFF builds for
+# legacy saves/regression; new builds use the validated position format.
+option(DOUBLE_PRECISION "Use double-precision Jolt positions (saved-world identity)" ON)
+
+set(JPH_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+set(DEBUG_RENDERER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
+set(PROFILER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
+set(JPH_USE_DX12 OFF CACHE BOOL "" FORCE)
+set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
+set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
+set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
+# Jolt defaults to the static MSVC runtime (/MT); Banjo and raylib use the
+# dynamic one (/MD), so the link fails on Visual Studio without this.
+set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    JoltPhysics
+    GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+    GIT_TAG v5.6.0
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR Build)
+FetchContent_MakeAvailable(JoltPhysics)
+target_link_libraries(Jolt PRIVATE banjo_friction_block)
+include(cmake/JoltForceObservation.cmake)
+include(cmake/JoltFrictionBlock.cmake)
+banjo_jolt_force_observation(Jolt "${joltphysics_SOURCE_DIR}")
+banjo_jolt_friction_block(Jolt "${joltphysics_SOURCE_DIR}")
+if(BANJO_JOLT_CONTINUOUS_SMALL_ROTATION)
+    include(cmake/JoltSmallRotation.cmake)
+    banjo_jolt_continuous_small_rotation(Jolt "${joltphysics_SOURCE_DIR}")
 endif()
+# One file of ours compiled inside Jolt's own target, with Jolt's own flags,
+# so banjo_fp_profile_tests can ask what Jolt's objects actually do with a
+# NaN, an infinity, a signed zero and a product that could be fused.
+target_sources(Jolt PRIVATE src/numeric/FpProbeJolt.cpp)
 
-if(BANJO_BUILD_PRECOMPUTE)
-    add_executable(banjo_phase_pair_benchmark tools/phase_pair_benchmark.cpp)
-    target_link_libraries(banjo_phase_pair_benchmark PRIVATE banjo_core)
-    banjo_enable_warnings(banjo_phase_pair_benchmark)
-    add_executable(banjo_lattice_dump tools/lattice_dump.cpp)
-    target_link_libraries(banjo_lattice_dump PRIVATE banjo_core)
-    banjo_enable_warnings(banjo_lattice_dump)
-    add_executable(banjo_precompute src/app/precompute_main.cpp)
-    target_link_libraries(banjo_precompute PRIVATE banjo_core)
-    target_compile_features(banjo_precompute PRIVATE cxx_std_23)
-    banjo_enable_warnings(banjo_precompute)
-endif()
-
-if(BANJO_BUILD_LAB OR BANJO_BUILD_HEADLESS)
-    include(FetchContent)
-
-    # Cohesive opening distances are below float position resolution, even
-    # near ordinary gameplay coordinates. Preserve explicit OFF builds for
-    # legacy saves/regression; new builds use the validated position format.
-    option(DOUBLE_PRECISION "Use double-precision Jolt positions (saved-world identity)" ON)
-
-    set(JPH_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-    set(ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-    set(ENABLE_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
-    set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
-    set(DEBUG_RENDERER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
-    set(PROFILER_IN_DEBUG_AND_RELEASE OFF CACHE BOOL "" FORCE)
-    set(JPH_USE_DX12 OFF CACHE BOOL "" FORCE)
-    set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
-    set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
-    set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
-    # Jolt defaults to the static MSVC runtime (/MT); Banjo and raylib use the
-    # dynamic one (/MD), so the link fails on Visual Studio without this.
-    set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
-
-    FetchContent_Declare(
-        JoltPhysics
-        GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
-        GIT_TAG v5.6.0
-        GIT_SHALLOW TRUE
-        SOURCE_SUBDIR Build)
-    FetchContent_MakeAvailable(JoltPhysics)
-    target_link_libraries(Jolt PRIVATE banjo_friction_block)
-    include(cmake/JoltForceObservation.cmake)
-    include(cmake/JoltFrictionBlock.cmake)
-    banjo_jolt_force_observation(Jolt "${joltphysics_SOURCE_DIR}")
-    banjo_jolt_friction_block(Jolt "${joltphysics_SOURCE_DIR}")
-    if(BANJO_JOLT_CONTINUOUS_SMALL_ROTATION)
-        include(cmake/JoltSmallRotation.cmake)
-        banjo_jolt_continuous_small_rotation(Jolt "${joltphysics_SOURCE_DIR}")
-    endif()
-    # One file of ours compiled inside Jolt's own target, with Jolt's own flags,
-    # so banjo_fp_profile_tests can ask what Jolt's objects actually do with a
-    # NaN, an infinity, a signed zero and a product that could be fused.
-    target_sources(Jolt PRIVATE src/numeric/FpProbeJolt.cpp)
-
-    add_library(
-        banjo_runtime
-        src/physics/TetrahedronContact.cpp
-        src/rigid/DrumRope.cpp
-        src/rigid/JoltWorld.cpp
-        src/rigid/RigidComponent.cpp
-        src/rigid/LogFaceSpring.cpp
-        src/sim/RollingBallExperiment.cpp
-        src/numeric/FpProbeRuntime.cpp)
-    target_include_directories(banjo_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(banjo_runtime PUBLIC banjo_core Jolt)
-    # The drum's rope (rigid/DrumRope.cpp) is a Jolt constraint of our own, a
-    # class derived from JPH::TwoBodyConstraint, so it is compiled with Jolt's
-    # RTTI setting. Jolt is built without RTTI (CPP_RTTI_ENABLED), so its
-    # classes have no type information, and a class of ours derived from one
-    # and built with RTTI asks for its base's: GCC's link failed for want of
-    # `typeinfo for JPH::TwoBodyConstraint`. MSVC linked it; the rule is the
-    # same for both.
-    #
-    # Its floating-point model is everyone's (cmake/FloatingPointModel.cmake).
-    # It was once given Jolt's /fp:fast here, after its copy of Jolt's
-    # AxisConstraintPart replaced Jolt's own and moved a cut in
-    # banjo_blade_tests from 4.676 J to 4.192 J; that mended its own copies and
-    # left JoltWorld.cpp's and TetrahedronContact.cpp's as they were.
-    if (NOT CPP_RTTI_ENABLED)
-        if (MSVC)
-            set_source_files_properties(src/rigid/DrumRope.cpp src/rigid/LogFaceSpring.cpp PROPERTIES COMPILE_OPTIONS "/GR-")
-        else()
-            set_source_files_properties(src/rigid/DrumRope.cpp src/rigid/LogFaceSpring.cpp PROPERTIES COMPILE_OPTIONS "-fno-rtti")
-        endif()
-    endif()
-    target_compile_features(banjo_runtime PUBLIC cxx_std_23)
-    banjo_enable_warnings(banjo_runtime)
-
-    add_library(banjo_lattice_native_contact src/fastlattice/NativeFixedContact.cpp)
-    target_sources(banjo_lattice_native_contact PRIVATE src/fastlattice/SheetImpact.cpp)
-    target_link_libraries(banjo_lattice_native_contact PUBLIC banjo_runtime banjo_fastlattice)
-    banjo_enable_warnings(banjo_lattice_native_contact)
-
-    # Structured creator input is parsed independently of the language model.
-    set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
-    set(JSON_Install OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(nlohmann_json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG 65ee68451d8eb2b5f3a30b410476ab83deb3289b)
-    FetchContent_MakeAvailable(nlohmann_json)
-    add_library(banjo_coupled_cpu SHARED src/physics/CoupledCpuApi.cpp)
-    target_include_directories(banjo_coupled_cpu PRIVATE src)
-    find_package(Threads REQUIRED)
-    target_link_libraries(banjo_coupled_cpu PRIVATE Threads::Threads)
-    target_compile_features(banjo_coupled_cpu PRIVATE cxx_std_17)
-    banjo_enable_warnings(banjo_coupled_cpu)
-    # Bounded field/mechanism references used by the editable 3D lab. These
-    # are real compiled adapters; complete inter-family coupling stays gated.
-    add_library(banjo_thermal_fields SHARED src/thermal/ThermalFieldApi.cpp
-        src/thermal/ThermalKernel.cpp src/thermal/EnthalpyLaw.cpp src/thermal/ThermalMatterTransfer.cpp)
-    target_include_directories(banjo_thermal_fields PUBLIC src)
-    target_compile_definitions(banjo_thermal_fields PRIVATE BANJO_THERMAL_FIELDS_BUILD)
-    target_compile_features(banjo_thermal_fields PRIVATE cxx_std_17)
-    banjo_enable_warnings(banjo_thermal_fields)
-    add_library(banjo_mechanisms_cpu SHARED src/physics/MechanismCpuApi.cpp)
-    target_include_directories(banjo_mechanisms_cpu PRIVATE src)
-    target_compile_features(banjo_mechanisms_cpu PRIVATE cxx_std_17)
-    banjo_enable_warnings(banjo_mechanisms_cpu)
-    add_library(banjo_flow_cpu SHARED src/flow/FlowReference.cpp src/flow/FlowCpuApi.cpp)
-    target_include_directories(banjo_flow_cpu PUBLIC src)
-    target_compile_features(banjo_flow_cpu PRIVATE cxx_std_17)
-    banjo_enable_warnings(banjo_flow_cpu)
-    add_executable(banjo_gpu_material_oracle src/app/gpu_material_oracle_main.cpp)
-    target_link_libraries(banjo_gpu_material_oracle PRIVATE banjo_core nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_gpu_material_oracle)
-    add_library(banjo_material_lab src/creator/BondedBowl.cpp src/creator/BowlRecording.cpp src/platform/BowlGeometry.cpp)
-    target_link_libraries(banjo_material_lab PUBLIC banjo_core)
-    banjo_enable_warnings(banjo_material_lab)
-    add_library(banjo_platform src/platform/PlatformWorld.cpp src/platform/PlatformPlayback.cpp src/platform/CompiledObject.cpp src/platform/CompiledRuntime.cpp src/platform/NetworkWorld.cpp src/platform/WaterWheelWorld.cpp src/platform/VoxelImpactWorld.cpp)
-    target_link_libraries(banjo_platform PUBLIC banjo_runtime banjo_material_lab PRIVATE nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_platform)
-    add_library(banjo_sparse_world src/world/SparseThermalWorld.cpp src/world/WorldLabFixture.cpp src/world/WorldPackage.cpp)
-    target_link_libraries(banjo_sparse_world PUBLIC banjo_core PRIVATE nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_sparse_world)
-    add_executable(banjo_world_cli src/app/world_main.cpp)
-    target_link_libraries(banjo_world_cli PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_world_cli)
-    add_executable(banjo_platform_cli src/app/platform_main.cpp)
-    add_executable(banjo_drop_world_run tools/drop_world_run.cpp)
-    target_link_libraries(banjo_drop_world_run PRIVATE banjo_platform nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_drop_world_run)
-    add_executable(banjo_voxel_world_run tools/voxel_world_run.cpp)
-    target_link_libraries(banjo_voxel_world_run PRIVATE banjo_platform nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_voxel_world_run)
-    if(BANJO_BUILD_TESTS)
-        add_executable(banjo_rigid_component_tests tests/rigid_component_tests.cpp)
-        target_link_libraries(banjo_rigid_component_tests PRIVATE banjo_runtime)
-        banjo_enable_warnings(banjo_rigid_component_tests)
-        add_test(NAME banjo_rigid_component_tests COMMAND banjo_rigid_component_tests)
-        add_executable(banjo_voxel_face_spring_tests tests/voxel_face_spring_tests.cpp)
-        add_executable(banjo_connector_plasticity_tests tests/connector_plasticity_tests.cpp)
-        target_link_libraries(banjo_connector_plasticity_tests PRIVATE banjo_platform)
-        banjo_enable_warnings(banjo_connector_plasticity_tests)
-        add_test(NAME banjo_connector_plasticity_tests COMMAND banjo_connector_plasticity_tests)
-        add_executable(banjo_state_recorder_tests tests/state_recorder_tests.cpp)
-        target_link_libraries(banjo_state_recorder_tests PRIVATE banjo_core Jolt)
-        banjo_enable_warnings(banjo_state_recorder_tests)
-        add_test(NAME banjo_state_recorder_tests COMMAND banjo_state_recorder_tests)
-        add_executable(banjo_rotation_strain_tests tests/rotation_strain_tests.cpp)
-        add_executable(banjo_coupled_contact_tests tests/coupled_contact_tests.cpp)
-        target_link_libraries(banjo_coupled_contact_tests PRIVATE banjo_core)
-        banjo_enable_warnings(banjo_coupled_contact_tests)
-        add_test(NAME banjo_coupled_contact_tests COMMAND banjo_coupled_contact_tests)
-        add_executable(banjo_rigid_step_work_tests tests/rigid_step_work_tests.cpp)
-        add_executable(banjo_contact_friction_block_tests tests/contact_friction_block_tests.cpp)
-        target_link_libraries(banjo_contact_friction_block_tests PRIVATE banjo_friction_block)
-        banjo_enable_warnings(banjo_contact_friction_block_tests)
-        add_test(NAME banjo_contact_friction_block_tests COMMAND banjo_contact_friction_block_tests)
-        add_executable(banjo_contact_normal_block_tests tests/contact_normal_block_tests.cpp)
-        add_executable(banjo_box_sweep_tests tests/box_sweep_tests.cpp)
-        target_link_libraries(banjo_box_sweep_tests PRIVATE banjo_core)
-        banjo_enable_warnings(banjo_box_sweep_tests)
-        add_test(NAME banjo_box_sweep_tests COMMAND banjo_box_sweep_tests)
-        target_link_libraries(banjo_contact_normal_block_tests PRIVATE banjo_friction_block)
-        banjo_enable_warnings(banjo_contact_normal_block_tests)
-        add_test(NAME banjo_contact_normal_block_tests COMMAND banjo_contact_normal_block_tests)
-        set_tests_properties(banjo_contact_normal_block_tests PROPERTIES TIMEOUT 60)
-        target_link_libraries(banjo_rigid_step_work_tests PRIVATE banjo_core)
-        banjo_enable_warnings(banjo_rigid_step_work_tests)
-        add_test(NAME banjo_rigid_step_work_tests COMMAND banjo_rigid_step_work_tests)
-        target_link_libraries(banjo_rotation_strain_tests PRIVATE banjo_core)
-        banjo_enable_warnings(banjo_rotation_strain_tests)
-        add_test(NAME banjo_rotation_strain_tests COMMAND banjo_rotation_strain_tests)
-        target_link_libraries(banjo_voxel_face_spring_tests PRIVATE banjo_platform)
-        banjo_enable_warnings(banjo_voxel_face_spring_tests)
-        add_test(NAME banjo_voxel_face_spring_tests COMMAND banjo_voxel_face_spring_tests)
-    endif()
-    add_executable(banjo_playground_record tools/playground_record.cpp)
-    target_link_libraries(banjo_playground_record PRIVATE banjo_platform nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_playground_record)
-    target_link_libraries(banjo_platform_cli PRIVATE banjo_platform nlohmann_json::nlohmann_json)
-    add_library(banjo_creator_runtime src/creator/CreatorWorld.cpp src/creator/BowlLab.cpp)
-    target_link_libraries(banjo_creator_runtime PUBLIC banjo_runtime banjo_material_lab PRIVATE nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_creator_runtime)
-    add_library(banjo_starter_runtime src/creator/StarterWorld.cpp)
-    target_link_libraries(banjo_starter_runtime PUBLIC banjo_creator_runtime PRIVATE nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_starter_runtime)
-    add_library(banjo_precision_conversion src/creator/PrecisionConversion.cpp)
-    target_link_libraries(banjo_precision_conversion PUBLIC banjo_starter_runtime PRIVATE nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_precision_conversion)
-    add_executable(banjo_starter_assistant_probe src/app/starter_assistant_probe_main.cpp)
-    target_link_libraries(banjo_starter_assistant_probe PRIVATE banjo_starter_runtime banjo_creator_assistant)
-    banjo_enable_warnings(banjo_starter_assistant_probe)
-    add_executable(banjo_assembly_review_probe src/app/assembly_review_probe_main.cpp)
-    target_link_libraries(banjo_assembly_review_probe PRIVATE banjo_creator_assistant nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_assembly_review_probe)
-    add_library(banjo_creator_assistant src/creator/CodexAssistant.cpp src/platform/ChildProcess.cpp)
-    target_link_libraries(banjo_creator_assistant PUBLIC banjo_creator_runtime PRIVATE nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_creator_assistant)
-endif()
-
-if(BANJO_BUILD_HEADLESS)
-    add_executable(banjo_sphere_patch_adaptive_probe tools/sphere_patch_adaptive_probe.cpp)
-    target_link_libraries(banjo_sphere_patch_adaptive_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_sphere_patch_adaptive_probe)
-    add_executable(banjo_sphere_patch_probe tools/sphere_patch_probe.cpp)
-    target_link_libraries(banjo_sphere_patch_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_sphere_patch_probe)
-    add_executable(banjo_material_behavior_probe tools/material_behavior_probe.cpp)
-    target_link_libraries(banjo_material_behavior_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_material_behavior_probe)
-    add_executable(banjo_material_lab_record tools/material_lab_record.cpp)
-    add_executable(banjo_sheet_world_run tools/sheet_world_run.cpp)
-    target_link_libraries(banjo_sheet_world_run PRIVATE banjo_lattice_native_contact nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_sheet_world_run)
-    target_link_libraries(banjo_material_lab_record PRIVATE banjo_fastlattice nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_material_lab_record)
-    add_executable(banjo_dynamic_material_cli tools/dynamic_material_cli.cpp)
-    target_link_libraries(banjo_dynamic_material_cli PRIVATE banjo_core nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_dynamic_material_cli)
-    add_executable(banjo_continuum_cli tools/continuum_patch_probe.cpp)
-    target_link_libraries(banjo_continuum_cli PRIVATE banjo_core nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_continuum_cli)
-    add_executable(banjo_continuum_kernel_benchmark tools/continuum_kernel_benchmark.cpp)
-    target_link_libraries(banjo_continuum_kernel_benchmark PRIVATE banjo_core nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_continuum_kernel_benchmark)
-    add_executable(banjo_object_state_probe tools/object_state_probe.cpp)
-    target_link_libraries(banjo_object_state_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_object_state_probe)
-    add_executable(banjo_precision_convert src/app/precision_convert_main.cpp)
-    target_link_libraries(banjo_precision_convert PRIVATE banjo_precision_conversion)
-    banjo_enable_warnings(banjo_precision_convert)
-    add_executable(banjo_runtime_cohesive_probe src/app/runtime_cohesive_probe_main.cpp)
-    target_link_libraries(banjo_runtime_cohesive_probe PRIVATE banjo_runtime)
-    banjo_enable_warnings(banjo_runtime_cohesive_probe)
-    add_executable(banjo_cohesive_pair_probe src/app/cohesive_pair_probe_main.cpp)
-    target_link_libraries(banjo_cohesive_pair_probe PRIVATE banjo_core)
-    banjo_enable_warnings(banjo_cohesive_pair_probe)
-    add_executable(banjo_cohesive_probe src/app/cohesive_probe_main.cpp)
-    target_link_libraries(banjo_cohesive_probe PRIVATE banjo_core)
-    banjo_enable_warnings(banjo_cohesive_probe)
-    add_executable(banjo_assistant_probe src/app/assistant_probe_main.cpp)
-    target_link_libraries(banjo_assistant_probe PRIVATE banjo_creator_assistant)
-    banjo_enable_warnings(banjo_assistant_probe)
-    add_executable(banjo_creator_cli src/app/creator_main.cpp)
-    target_link_libraries(banjo_creator_cli PRIVATE banjo_creator_runtime)
-    banjo_enable_warnings(banjo_creator_cli)
-    add_executable(banjo_solver_probe src/app/solver_probe_main.cpp)
-    target_link_libraries(banjo_solver_probe PRIVATE banjo_core)
-    banjo_enable_warnings(banjo_solver_probe)
-
-    add_executable(banjo_modal_fracture_record tools/modal_fracture_record.cpp)
-    target_link_libraries(banjo_modal_fracture_record PRIVATE banjo_modal banjo_runtime nlohmann_json::nlohmann_json)
-    target_compile_features(banjo_modal_fracture_record PRIVATE cxx_std_23)
-    banjo_enable_warnings(banjo_modal_fracture_record)
-
-    add_executable(banjo_glass_diagnostic tools/glass_shatter_diagnostic.cpp)
-    target_link_libraries(banjo_glass_diagnostic PRIVATE banjo_runtime)
-    target_compile_features(banjo_glass_diagnostic PRIVATE cxx_std_23)
-    banjo_enable_warnings(banjo_glass_diagnostic)
-
-    add_executable(banjo_quasistatic_probe src/app/quasistatic_probe_main.cpp)
-    target_link_libraries(banjo_quasistatic_probe PRIVATE banjo_runtime nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_quasistatic_probe)
-    # The thermochemical network: matter inventories, reactions, heat paths,
-    # gas regions and pressure boundaries, with one energy ledger. It owns no
-    # geometry and no motion -- the live world tells it where things are and
-    # applies the forces it asks for -- so it builds and tests on its own.
-    add_library(banjo_thermo src/thermo/Thermochemistry.cpp src/thermo/ThermoWorld.cpp
-                             src/thermo/ThermoJson.cpp src/thermo/ThermalMechanics.cpp)
-    target_link_libraries(banjo_thermo PUBLIC banjo_core PRIVATE nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_thermo)
-    if(BANJO_BUILD_TESTS)
-        add_executable(banjo_thermochemistry_tests tests/thermochemistry_tests.cpp)
-        target_link_libraries(banjo_thermochemistry_tests PRIVATE banjo_thermo)
-        banjo_enable_warnings(banjo_thermochemistry_tests)
-        add_test(NAME banjo_thermochemistry_tests COMMAND banjo_thermochemistry_tests)
-        # The three machines that gas pressure makes: a steam engine, a cannon
-        # and a rocket, all one mechanism.
-        add_executable(banjo_gas_pressure_tests tests/gas_pressure_tests.cpp)
-        target_link_libraries(banjo_gas_pressure_tests PRIVATE banjo_thermo)
-        banjo_enable_warnings(banjo_gas_pressure_tests)
-        add_test(NAME banjo_gas_pressure_tests COMMAND banjo_gas_pressure_tests)
-    endif()
-    # Terrain and water: the ground as material held still, and rivers and
-    # lakes as columns of water on it, run where they are changing rather than
-    # everywhere they exist (docs/terrain-and-water.md). The water solver owns
-    # no bodies; the environment is where it meets the rigid world.
-    add_library(banjo_water src/water/ShallowWater.cpp src/water/WaterCoupling.cpp src/water/CompoundWaterSurface.cpp src/water/RiverNetwork.cpp src/water/FallingWater.cpp)
-    target_link_libraries(banjo_water PUBLIC banjo_core)
-    banjo_enable_warnings(banjo_water)
-    if(BANJO_BUILD_TESTS)
-        add_executable(banjo_water_tests tests/water_tests.cpp)
-        target_link_libraries(banjo_water_tests PRIVATE banjo_water)
-        banjo_enable_warnings(banjo_water_tests)
-        add_test(NAME banjo_water_tests COMMAND banjo_water_tests)
-        add_executable(banjo_river_network_tests tests/river_network_tests.cpp)
-        target_link_libraries(banjo_river_network_tests PRIVATE banjo_water)
-        banjo_enable_warnings(banjo_river_network_tests)
-        add_test(NAME banjo_river_network_tests COMMAND banjo_river_network_tests)
-    endif()
-    add_library(banjo_terrain src/terrain/TerrainField.cpp src/terrain/TerrainGenerator.cpp
-                              src/terrain/GroundWork.cpp)
-    target_link_libraries(banjo_terrain PUBLIC banjo_core banjo_water)
-    banjo_enable_warnings(banjo_terrain)
-    if(BANJO_BUILD_TESTS)
-        add_executable(banjo_terrain_tests tests/terrain_tests.cpp)
-        target_link_libraries(banjo_terrain_tests PRIVATE banjo_terrain)
-        banjo_enable_warnings(banjo_terrain_tests)
-        add_test(NAME banjo_terrain_tests COMMAND banjo_terrain_tests)
-    endif()
-    add_library(banjo_environment src/terrain/Environment.cpp src/terrain/StreamedRegions.cpp src/terrain/GroundExcavation.cpp)
-    target_link_libraries(banjo_environment PUBLIC banjo_terrain banjo_water banjo_runtime
-                                            PRIVATE nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_environment)
-    add_library(banjo_circuits src/machines/Circuit.cpp)
-    target_include_directories(banjo_circuits PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(banjo_circuits PUBLIC nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_circuits)
-    # Light: rays from the sun and lamps followed through the world's own
-    # shapes -- reflected, refracted, absorbed -- with one ledger of where the
-    # power went (docs/optics-checkpoint.md). It owns no geometry: the host
-    # answers where a ray meets a surface.
-    add_library(banjo_optics src/optics/OpticalProperties.cpp src/optics/RayOptics.cpp)
-    target_link_libraries(banjo_optics PUBLIC banjo_core)
-    banjo_enable_warnings(banjo_optics)
-    add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
-                                       src/fastlattice/LiveWorld.cpp
-                                       src/fastlattice/ToolTerrain.cpp
-                                       src/fastlattice/NativeToolUse.cpp
-                                       src/fastlattice/NativeToolClearance.cpp
-    src/fastlattice/PreciseRigidScene.cpp)
-    target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment banjo_circuits banjo_optics PRIVATE nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_fastlattice_scene)
-    add_executable(banjo_fast_lattice_run tools/fast_lattice_run.cpp)
-    target_link_libraries(banjo_fast_lattice_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_fast_lattice_run)
-    # The C face of the engine, and the only target meant to leave this tree.
-    #
-    # Everything else here is built to be linked from inside the project, with
-    # C++ types in the interface and no promise that anything stays put. This
-    # one is a shared library behind a flat C header: a version to check, a
-    # handle to hold, and no exception crossing the boundary. Anything that can
-    # call a C function can drive a world -- which was the gap. Before this, a
-    # host either vendored the whole tree and built it in C++, or spoke to a
-    # subprocess.
-    add_library(banjo_c SHARED src/capi/banjo.cpp)
-    target_link_libraries(banjo_c PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
-    target_include_directories(banjo_c PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>)
-    target_compile_definitions(banjo_c PRIVATE BANJO_BUILDING_SHARED INTERFACE BANJO_SHARED)
-    set_target_properties(banjo_c PROPERTIES
-        OUTPUT_NAME banjo
-        # Hide everything the header does not declare, so the exported surface
-        # is the header and nothing else.
-        CXX_VISIBILITY_PRESET hidden
-        VISIBILITY_INLINES_HIDDEN ON
-        # The ABI version, in the file name. A host linking against it says
-        # which one it was built for, and two of them can sit side by side.
-        SOVERSION 4
-        VERSION 4.0.0
-        WINDOWS_EXPORT_ALL_SYMBOLS OFF)
-    banjo_enable_warnings(banjo_c)
-
-    # What it takes to hand this to someone else: the library, the one header,
-    # and a CMake package so `find_package(Banjo)` works in their tree. There
-    # were no install rules at all before this, which is the practical reason
-    # nothing outside this repository could use the engine.
-    include(GNUInstallDirs)
-    include(CMakePackageConfigHelpers)
-    install(TARGETS banjo_c EXPORT BanjoTargets
-            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-    install(FILES include/banjo/banjo.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/banjo)
-    install(EXPORT BanjoTargets NAMESPACE Banjo::
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Banjo)
-    write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfigVersion.cmake"
-        VERSION 4.0.0 COMPATIBILITY SameMajorVersion)
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfig.cmake"
-         "include(\"\${CMAKE_CURRENT_LIST_DIR}/BanjoTargets.cmake\")\n")
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfig.cmake"
-                  "${CMAKE_CURRENT_BINARY_DIR}/BanjoConfigVersion.cmake"
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Banjo)
-
-    # A consumer, built the way a consumer builds: C, against the header only.
-    # It is a test as much as an example -- if the header needs a C++ compiler
-    # or a type the header does not declare, this stops compiling.
-    add_executable(banjo_c_example examples/drop.c)
-    target_link_libraries(banjo_c_example PRIVATE banjo_c)
-    set_property(TARGET banjo_c_example PROPERTY C_STANDARD 99)
-
-    add_test(NAME banjo_capi_tests COMMAND banjo_c_example --test)
-
-    # The same library driven from a language that cannot read a C++ header.
-    # ctypes gets no help from the compiler, so a wrong argument type is a
-    # silent pointer truncation rather than an error, and only running it finds
-    # that out. Skipped rather than failed when there is no Python, because a
-    # C++ tree should not stop building for the want of an interpreter.
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    if(Python3_FOUND)
-        if(TARGET banjo_drop_world_run)
-            add_test(NAME banjo_drop_world_integration_tests
-                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/drop_world_tests.py $<TARGET_FILE:banjo_drop_world_run>)
-            set_tests_properties(banjo_drop_world_integration_tests PROPERTIES TIMEOUT 120 LABELS "native;world;experimental")
-            add_test(NAME banjo_water_wheel_tests
-                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/water_wheel_tests.py $<TARGET_FILE:banjo_drop_world_run>)
-            set_tests_properties(banjo_water_wheel_tests PROPERTIES TIMEOUT 120 LABELS "native;water;experimental")
-            find_program(BANJO_NODE_EXECUTABLE node)
-            if(BANJO_NODE_EXECUTABLE)
-                set_tests_properties(banjo_drop_world_integration_tests PROPERTIES FIXTURES_SETUP drop_observation_data)
-                set_tests_properties(banjo_water_wheel_tests PROPERTIES FIXTURES_SETUP water_observation_data)
-                add_test(NAME banjo_drop_observation_tests
-                    COMMAND ${BANJO_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/drop_observation_tests.mjs)
-                set_tests_properties(banjo_drop_observation_tests PROPERTIES TIMEOUT 10
-                    FIXTURES_REQUIRED "drop_observation_data;water_observation_data" LABELS "native;client;experimental")
-            endif()
-        endif()
-        if(TARGET banjo_sheet_world_run)
-            add_test(NAME banjo_sheet_feedback_native_tests
-                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sheet_feedback_native_tests.py $<TARGET_FILE:banjo_sheet_world_run>)
-            set_tests_properties(banjo_sheet_feedback_native_tests PROPERTIES TIMEOUT 30 FIXTURES_SETUP sheet_feedback_data LABELS "native;sheet;client")
-            find_program(BANJO_NODE_EXECUTABLE node)
-            if(BANJO_NODE_EXECUTABLE)
-                add_test(NAME banjo_sheet_observation_tests
-                    COMMAND ${BANJO_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sheet_observation_tests.mjs)
-                set_tests_properties(banjo_sheet_observation_tests PROPERTIES TIMEOUT 10 FIXTURES_REQUIRED sheet_feedback_data LABELS "native;sheet;client")
-            endif()
-            add_test(NAME banjo_sheet_gateway_tests
-                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sheet_gateway_tests.py $<TARGET_FILE:banjo_sheet_world_run>)
-            set_tests_properties(banjo_sheet_gateway_tests PROPERTIES TIMEOUT 30 LABELS "native;sheet;client")
-            add_test(NAME banjo_sheet_diagnostics_tests
-                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sheet_impact_tests.py $<TARGET_FILE:banjo_sheet_world_run>)
-            set_tests_properties(banjo_sheet_diagnostics_tests PROPERTIES TIMEOUT 240 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} LABELS "native;sheet;experimental")
-        endif()
-        add_test(NAME banjo_ffi_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/banjo_ffi_tests.py)
-        set_tests_properties(banjo_ffi_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        add_test(NAME banjo_product_circuit_tests
-                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/product_circuit_tests.py)
-        set_tests_properties(banjo_product_circuit_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        add_test(NAME banjo_machine_api_tests
-                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_api_tests.py)
-        set_tests_properties(banjo_machine_api_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
-        # Pins through the same boundary. An outside program holding nothing but
-        # banjo.h builds a gateway, hangs a gate on it, shoves it open and reads
-        # back where it got to -- which is the half of a playground people and
-        # programs can both build in that a browser test cannot cover.
-        add_test(NAME banjo_joint_binding_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/joint_binding_tests.py)
-        set_tests_properties(banjo_joint_binding_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        # Heat, chemistry and gas through the same boundary: declaring what
-        # things contain, lighting them, a gas lifting a load, and the ledger.
-        add_test(NAME banjo_thermo_ffi_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/thermo_ffi_tests.py)
-        set_tests_properties(banjo_thermo_ffi_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        # Blades through the same boundary: an edge given, a hand that grips,
-        # and what it cut read back -- from nothing but banjo.h.
-        add_test(NAME banjo_blade_binding_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/blade_binding_tests.py)
-        set_tests_properties(banjo_blade_binding_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        # The hand's own motions through the same boundary: a ball wielded and
-        # thrown, the throw previewed first, what it left with and the work the
-        # hand did read back, and a block hauled against a spring.
-        add_test(NAME banjo_hand_stroke_binding_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/hand_stroke_binding_tests.py)
-        set_tests_properties(banjo_hand_stroke_binding_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        # Terrain and water through the same boundary: generated ground and
-        # its water read, dug, heaped and cut, a lake left at rest, oak that
-        # floats and iron that sinks, and the arrays a renderer draws from.
-        add_test(NAME banjo_environment_ffi_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/environment_ffi_tests.py)
-        set_tests_properties(banjo_environment_ffi_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        # Tools that dig through the same boundary: a point given to a pick, a
-        # swing into soil and onto rock, a pry whose loosened soil is carried
-        # (docs/ground-work.md).
-        add_test(NAME banjo_ground_work_binding_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/ground_work_binding_tests.py)
-        set_tests_properties(banjo_ground_work_binding_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        # And through the MCP and the playground's room: the found pick in the
-        # clearing, its point, its swing-and-lever trial, a strike whose hole
-        # the ground keeps, and the room handed all of it.
-        add_test(NAME banjo_ground_work_mcp_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/ground_work_mcp_tests.py)
-        set_tests_properties(banjo_ground_work_mcp_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        # The two ways the playground can hold a world, run against the same
-        # scene and compared. Claiming they are interchangeable is easy; this
-        # is the part that makes it true.
-        # The room on /world: what it is made of, that it fits the lane, and
-        # that a change the engine would refuse is refused where the thing that
-        # made it can be told.
-        # The MCP server, driven as a real subprocess through the real protocol.
-        add_test(NAME banjo_mcp_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/banjo_mcp_tests.py)
-        set_tests_properties(banjo_mcp_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        # The expedition (docs/gameplay.md): its law, inventory and saves with
-        # no engine, then the same loop through a real server, runner and MCP.
-        add_test(NAME banjo_gameplay_tests
-                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/gameplay_tests.py)
-        add_test(NAME banjo_solid_representation_tests
-                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/solid_representation_tests.py
-                 --native $<TARGET_FILE:banjo_voxel_world_run>
-                 --output ${CMAKE_CURRENT_BINARY_DIR}/solid-representation-evidence.json)
-        set_tests_properties(banjo_solid_representation_tests PROPERTIES TIMEOUT 180 LABELS "experimental;material;representation;client")
-        add_test(NAME banjo_gameplay_live_tests
-                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/gameplay_live_tests.py)
-        set_tests_properties(banjo_gameplay_live_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>"
-            TIMEOUT 300)
-        # The docs name everything the API has: every MCP tool in the table in
-        # docs/api/mcp.md, every banjo.h function in docs/api/c-api.md and in
-        # the Python binding.
-        add_test(NAME banjo_api_docs_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/api_docs_tests.py)
-        set_tests_properties(banjo_api_docs_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        # A person's notebook (docs/knowledge-and-progression.md): the graph's
-        # checks when it loads, which design a built thing is, the evaluator's
-        # rules, and that the room's chat reads the notebook and cannot write it.
-        add_test(NAME banjo_knowledge_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/knowledge_tests.py)
-        set_tests_properties(banjo_knowledge_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>")
-        # What every column is made of, over the wire and in a survey's words:
-        # the block parses exactly, agrees with the heights beside it, and a dig
-        # changes the runs where it dug and nowhere else.
-        add_test(NAME banjo_terrain_runs_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/terrain_runs_tests.py)
-        set_tests_properties(banjo_terrain_runs_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
-        # How far down the rock goes, and the block that comes out of it: 30 m of
-        # earth where there were 2 (docs/earth-and-mining-plan.md).
-        add_test(NAME banjo_deep_earth_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/deep_earth_tests.py)
-        set_tests_properties(banjo_deep_earth_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
-        add_test(NAME banjo_world_room_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_room_tests.py)
-        # The engine and library THIS tree built. Without them the room and
-        # lane suites looked only in build/integration, so in any other build
-        # tree they tested some other build -- or, finding none, skipped and
-        # were counted as passing.
-        set_tests_properties(banjo_world_room_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
-        add_test(NAME banjo_live_lanes_agree_tests
-                 COMMAND ${Python3_EXECUTABLE}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/live_lanes_agree_tests.py)
-        set_tests_properties(banjo_live_lanes_agree_tests PROPERTIES
-            ENVIRONMENT "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>;BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>")
-    endif()
-
-    # A live scene, driven a line at a time: the playground talks to this instead
-    # of asking for a recording and playing it back.
-    add_executable(banjo_live_world_run tools/live_world_run.cpp)
-    target_link_libraries(banjo_live_world_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_live_world_run)
-    # Algorithm 3: precomputed multi-step propagators with causal-cone patching.
-    add_executable(banjo_fracture_algo3 tools/fracture_algo3.cpp)
-    target_link_libraries(banjo_fracture_algo3 PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_fracture_algo3)
-
-    # Physics check (a) for the energy-scaled criterion: a pre-cracked strip in
-    # tension, whose crack speed and dissipation per unit crack area have known
-    # answers (docs/criterion-energy-scaled-checkpoint.md, section 5).
-    add_executable(banjo_criterion_strip_probe tools/criterion_strip_probe.cpp)
-    target_link_libraries(banjo_criterion_strip_probe PRIVATE banjo_fastlattice banjo_runtime nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_criterion_strip_probe)
-
-    add_executable(banjo_headless src/app/headless_main.cpp)
-    target_link_libraries(banjo_headless PRIVATE banjo_runtime)
-    target_compile_features(banjo_headless PRIVATE cxx_std_23)
-    banjo_enable_warnings(banjo_headless)
-endif()
-
-if(BANJO_BUILD_LAB)
-    add_executable(banjo_continuum_lab src/viewer/continuum.cpp)
-    target_link_libraries(banjo_continuum_lab PRIVATE raylib nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_continuum_lab)
-    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-    set(CUSTOMIZE_BUILD ON CACHE BOOL "" FORCE)
-    # CUSTOMIZE_BUILD exposes every raylib SUPPORT_* switch, and in this build
-    # several that config.h leaves off came through enabled. Two of them break
-    # the interactive viewer: custom frame control removes the buffer swap,
-    # input polling, and frame timing from EndDrawing(), so the window stays
-    # black and GetFrameTime() is always zero; busy-wait pegs a core. Force
-    # both off so the lab behaves the same as a default raylib build.
-    set(SUPPORT_CUSTOM_FRAME_CONTROL OFF CACHE BOOL "" FORCE)
-    set(SUPPORT_BUSY_WAIT_LOOP OFF CACHE BOOL "" FORCE)
-    set(USE_AUDIO OFF CACHE BOOL "" FORCE)
-    set(GLFW_BUILD_X11 ON CACHE BOOL "" FORCE)
-    set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
-
-    FetchContent_Declare(
-        raylib
-        GIT_REPOSITORY https://github.com/raysan5/raylib.git
-        GIT_TAG 6.0
-        GIT_SHALLOW TRUE)
-    FetchContent_MakeAvailable(raylib)
-    include(cmake/GuardGlfwActiveWindow.cmake)
-
-    add_executable(banjo_lab src/viewer/main.cpp)
-    target_link_libraries(banjo_lab PRIVATE banjo_runtime raylib)
-    target_compile_features(banjo_lab PRIVATE cxx_std_23)
-    banjo_enable_warnings(banjo_lab)
-    add_executable(banjo_bowl src/viewer/bowl.cpp src/viewer/fracture_view.cpp)
-    target_link_libraries(banjo_bowl PRIVATE banjo_creator_runtime raylib)
-    banjo_enable_warnings(banjo_bowl)
-    add_executable(banjo_workshop src/viewer/workshop.cpp)
-    target_link_libraries(banjo_workshop PRIVATE banjo_creator_assistant raylib nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_workshop)
-    add_executable(banjo_starter src/viewer/starter.cpp)
-    target_link_libraries(banjo_starter PRIVATE banjo_starter_runtime banjo_creator_assistant raylib nlohmann_json::nlohmann_json)
-    banjo_enable_warnings(banjo_starter)
-    if(MSVC)
-        target_link_options(banjo_workshop PRIVATE "/MAP:${CMAKE_CURRENT_BINARY_DIR}/banjo_workshop.map")
+add_library(
+    banjo_runtime
+    src/physics/TetrahedronContact.cpp
+    src/rigid/DrumRope.cpp
+    src/rigid/JoltWorld.cpp
+    src/rigid/RigidComponent.cpp
+    src/rigid/LogFaceSpring.cpp
+    src/sim/RollingBallExperiment.cpp
+    src/numeric/FpProbeRuntime.cpp)
+target_include_directories(banjo_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(banjo_runtime PUBLIC banjo_core Jolt)
+# The drum's rope (rigid/DrumRope.cpp) is a Jolt constraint of our own, a
+# class derived from JPH::TwoBodyConstraint, so it is compiled with Jolt's
+# RTTI setting. Jolt is built without RTTI (CPP_RTTI_ENABLED), so its
+# classes have no type information, and a class of ours derived from one
+# and built with RTTI asks for its base's: GCC's link failed for want of
+# `typeinfo for JPH::TwoBodyConstraint`. MSVC linked it; the rule is the
+# same for both.
+#
+# Its floating-point model is everyone's (cmake/FloatingPointModel.cmake).
+# It was once given Jolt's /fp:fast here, after its copy of Jolt's
+# AxisConstraintPart replaced Jolt's own and moved a cut in
+# banjo_blade_tests from 4.676 J to 4.192 J; that mended its own copies and
+# left JoltWorld.cpp's and TetrahedronContact.cpp's as they were.
+if (NOT CPP_RTTI_ENABLED)
+    if (MSVC)
+        set_source_files_properties(src/rigid/DrumRope.cpp src/rigid/LogFaceSpring.cpp PROPERTIES COMPILE_OPTIONS "/GR-")
+    else()
+        set_source_files_properties(src/rigid/DrumRope.cpp src/rigid/LogFaceSpring.cpp PROPERTIES COMPILE_OPTIONS "-fno-rtti")
     endif()
 endif()
+target_compile_features(banjo_runtime PUBLIC cxx_std_23)
+banjo_enable_warnings(banjo_runtime)
+
+# Structured creator input is parsed independently of the language model.
+set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+set(JSON_Install OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG 65ee68451d8eb2b5f3a30b410476ab83deb3289b)
+FetchContent_MakeAvailable(nlohmann_json)
+
+# Python and Node run the machine suites and the floating-point audit;
+# without them those tests are left out, never passed.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+find_program(BANJO_NODE_EXECUTABLE node)
 
 if(BANJO_BUILD_TESTS)
-    if(TARGET banjo_thermal_fields)
-        add_executable(banjo_thermal_matter_transfer_tests tests/thermal_matter_transfer_tests.cpp)
-        target_link_libraries(banjo_thermal_matter_transfer_tests PRIVATE banjo_thermal_fields)
-        banjo_enable_warnings(banjo_thermal_matter_transfer_tests)
-        add_test(NAME banjo_thermal_matter_transfer_tests COMMAND banjo_thermal_matter_transfer_tests)
-        set_tests_properties(banjo_thermal_matter_transfer_tests PROPERTIES TIMEOUT 60 LABELS "thermal;representation;experimental")
-        add_executable(banjo_thermal_field_api_tests tests/thermal_field_api_tests.cpp)
-        target_link_libraries(banjo_thermal_field_api_tests PRIVATE banjo_thermal_fields)
-        banjo_enable_warnings(banjo_thermal_field_api_tests)
-        add_test(NAME banjo_thermal_field_api_tests COMMAND banjo_thermal_field_api_tests)
-        set_tests_properties(banjo_thermal_field_api_tests PROPERTIES TIMEOUT 60 LABELS "thermal;reaction;experimental")
-    endif()
-    if(TARGET banjo_flow_cpu)
-        add_executable(banjo_flow_reference_tests tests/flow_reference_tests.cpp src/flow/FlowReference.cpp)
-        target_include_directories(banjo_flow_reference_tests PRIVATE src)
-        banjo_enable_warnings(banjo_flow_reference_tests)
-        add_test(NAME banjo_flow_reference_tests COMMAND banjo_flow_reference_tests)
-        set_tests_properties(banjo_flow_reference_tests PROPERTIES TIMEOUT 60 LABELS "flow;experimental")
-    endif()
-    find_program(BANJO_NODE_EXECUTABLE node)
-    if(BANJO_NODE_EXECUTABLE)
-        add_test(NAME banjo_test_world_input_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-            --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_world_input_tests.mjs)
-        add_test(NAME banjo_terrain_material_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-            --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/terrain_material_tests.mjs)
-        add_test(NAME banjo_tool_target_client_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-            --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/tool_target_client_tests.mjs)
-        add_test(NAME banjo_workshop_supply_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-            --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_supply_tests.mjs)
-        add_test(NAME banjo_voice_client_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-            --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/voice_client_tests.mjs)
-        add_test(NAME banjo_voice_controller_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-            --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/voice_controller_tests.mjs)
-        add_test(NAME banjo_physical_matter_ui_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-            --experimental-default-type=module --test ${CMAKE_CURRENT_SOURCE_DIR}/tests/physical_matter_ui_tests.mjs)
-    endif()
+    add_executable(banjo_rigid_component_tests tests/rigid_component_tests.cpp)
+    target_link_libraries(banjo_rigid_component_tests PRIVATE banjo_runtime)
+    banjo_enable_warnings(banjo_rigid_component_tests)
+    add_test(NAME banjo_rigid_component_tests COMMAND banjo_rigid_component_tests)
+    add_executable(banjo_state_recorder_tests tests/state_recorder_tests.cpp)
+    target_link_libraries(banjo_state_recorder_tests PRIVATE banjo_core Jolt)
+    banjo_enable_warnings(banjo_state_recorder_tests)
+    add_test(NAME banjo_state_recorder_tests COMMAND banjo_state_recorder_tests)
+    add_executable(banjo_rotation_strain_tests tests/rotation_strain_tests.cpp)
+    add_executable(banjo_rigid_step_work_tests tests/rigid_step_work_tests.cpp)
+    add_executable(banjo_contact_friction_block_tests tests/contact_friction_block_tests.cpp)
+    target_link_libraries(banjo_contact_friction_block_tests PRIVATE banjo_friction_block)
+    banjo_enable_warnings(banjo_contact_friction_block_tests)
+    add_test(NAME banjo_contact_friction_block_tests COMMAND banjo_contact_friction_block_tests)
+    add_executable(banjo_contact_normal_block_tests tests/contact_normal_block_tests.cpp)
+    add_executable(banjo_box_sweep_tests tests/box_sweep_tests.cpp)
+    target_link_libraries(banjo_box_sweep_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_box_sweep_tests)
+    add_test(NAME banjo_box_sweep_tests COMMAND banjo_box_sweep_tests)
+    target_link_libraries(banjo_contact_normal_block_tests PRIVATE banjo_friction_block)
+    banjo_enable_warnings(banjo_contact_normal_block_tests)
+    add_test(NAME banjo_contact_normal_block_tests COMMAND banjo_contact_normal_block_tests)
+    set_tests_properties(banjo_contact_normal_block_tests PROPERTIES TIMEOUT 60)
+    target_link_libraries(banjo_rigid_step_work_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_rigid_step_work_tests)
+    add_test(NAME banjo_rigid_step_work_tests COMMAND banjo_rigid_step_work_tests)
+    target_link_libraries(banjo_rotation_strain_tests PRIVATE banjo_core)
+    banjo_enable_warnings(banjo_rotation_strain_tests)
+    add_test(NAME banjo_rotation_strain_tests COMMAND banjo_rotation_strain_tests)
+endif()
+
+# The thermochemical network: matter inventories, reactions, heat paths,
+# gas regions and pressure boundaries, with one energy ledger. It owns no
+# geometry and no motion -- the live world tells it where things are and
+# applies the forces it asks for -- so it builds and tests on its own.
+add_library(banjo_thermo src/thermo/Thermochemistry.cpp src/thermo/ThermoWorld.cpp
+                         src/thermo/ThermoJson.cpp src/thermo/ThermalMechanics.cpp)
+target_link_libraries(banjo_thermo PUBLIC banjo_core PRIVATE nlohmann_json::nlohmann_json)
+banjo_enable_warnings(banjo_thermo)
+if(BANJO_BUILD_TESTS)
+    add_executable(banjo_thermochemistry_tests tests/thermochemistry_tests.cpp)
+    target_link_libraries(banjo_thermochemistry_tests PRIVATE banjo_thermo)
+    banjo_enable_warnings(banjo_thermochemistry_tests)
+    add_test(NAME banjo_thermochemistry_tests COMMAND banjo_thermochemistry_tests)
+    # The three machines that gas pressure makes: a steam engine, a cannon
+    # and a rocket, all one mechanism.
+    add_executable(banjo_gas_pressure_tests tests/gas_pressure_tests.cpp)
+    target_link_libraries(banjo_gas_pressure_tests PRIVATE banjo_thermo)
+    banjo_enable_warnings(banjo_gas_pressure_tests)
+    add_test(NAME banjo_gas_pressure_tests COMMAND banjo_gas_pressure_tests)
+endif()
+# Terrain and water: the ground as material held still, and rivers and
+# lakes as columns of water on it, run where they are changing rather than
+# everywhere they exist (docs/terrain-and-water.md). The water solver owns
+# no bodies; the environment is where it meets the rigid world.
+add_library(banjo_water src/water/ShallowWater.cpp src/water/WaterCoupling.cpp src/water/CompoundWaterSurface.cpp src/water/RiverNetwork.cpp src/water/FallingWater.cpp)
+target_link_libraries(banjo_water PUBLIC banjo_core)
+banjo_enable_warnings(banjo_water)
+if(BANJO_BUILD_TESTS)
+    add_executable(banjo_water_tests tests/water_tests.cpp)
+    target_link_libraries(banjo_water_tests PRIVATE banjo_water)
+    banjo_enable_warnings(banjo_water_tests)
+    add_test(NAME banjo_water_tests COMMAND banjo_water_tests)
+    add_executable(banjo_river_network_tests tests/river_network_tests.cpp)
+    target_link_libraries(banjo_river_network_tests PRIVATE banjo_water)
+    banjo_enable_warnings(banjo_river_network_tests)
+    add_test(NAME banjo_river_network_tests COMMAND banjo_river_network_tests)
+endif()
+add_library(banjo_terrain src/terrain/TerrainField.cpp src/terrain/TerrainGenerator.cpp
+                          src/terrain/GroundWork.cpp)
+target_link_libraries(banjo_terrain PUBLIC banjo_core banjo_water)
+banjo_enable_warnings(banjo_terrain)
+if(BANJO_BUILD_TESTS)
+    add_executable(banjo_terrain_tests tests/terrain_tests.cpp)
+    target_link_libraries(banjo_terrain_tests PRIVATE banjo_terrain)
+    banjo_enable_warnings(banjo_terrain_tests)
+    add_test(NAME banjo_terrain_tests COMMAND banjo_terrain_tests)
+endif()
+add_library(banjo_environment src/terrain/Environment.cpp src/terrain/StreamedRegions.cpp src/terrain/GroundExcavation.cpp)
+target_link_libraries(banjo_environment PUBLIC banjo_terrain banjo_water banjo_runtime
+                                        PRIVATE nlohmann_json::nlohmann_json)
+banjo_enable_warnings(banjo_environment)
+add_library(banjo_circuits src/machines/Circuit.cpp)
+target_include_directories(banjo_circuits PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(banjo_circuits PUBLIC nlohmann_json::nlohmann_json)
+banjo_enable_warnings(banjo_circuits)
+# Light: rays from the sun and lamps followed through the world's own
+# shapes -- reflected, refracted, absorbed -- with one ledger of where the
+# power went (docs/optics-checkpoint.md). It owns no geometry: the host
+# answers where a ray meets a surface.
+add_library(banjo_optics src/optics/OpticalProperties.cpp src/optics/RayOptics.cpp)
+target_link_libraries(banjo_optics PUBLIC banjo_core)
+banjo_enable_warnings(banjo_optics)
+add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
+                                   src/fastlattice/LiveWorld.cpp
+                                   src/fastlattice/ToolTerrain.cpp
+                                   src/fastlattice/NativeToolUse.cpp
+                                   src/fastlattice/NativeToolClearance.cpp
+src/fastlattice/PreciseRigidScene.cpp)
+target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment banjo_circuits banjo_optics PRIVATE nlohmann_json::nlohmann_json)
+banjo_enable_warnings(banjo_fastlattice_scene)
+
+# A live scene, driven a line at a time: the playground talks to this instead
+# of asking for a recording and playing it back.
+add_executable(banjo_live_world_run tools/live_world_run.cpp)
+target_link_libraries(banjo_live_world_run PRIVATE banjo_fastlattice_scene nlohmann_json::nlohmann_json)
+banjo_enable_warnings(banjo_live_world_run)
+
+if(BANJO_BUILD_TESTS)
     add_executable(banjo_patch_pressure_tests tests/patch_pressure_tests.cpp)
     target_link_libraries(banjo_patch_pressure_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_patch_pressure_tests)
@@ -1041,12 +489,6 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_energy_rupture_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_energy_rupture_tests)
     add_test(NAME banjo_energy_rupture_tests COMMAND banjo_energy_rupture_tests)
-    if(TARGET banjo_runtime_cohesive_probe AND DOUBLE_PRECISION)
-        add_test(NAME banjo_runtime_cohesive_accuracy COMMAND banjo_runtime_cohesive_probe
-            "${CMAKE_CURRENT_BINARY_DIR}/runtime-cohesive-accuracy.csv" --require-accuracy)
-        add_test(NAME banjo_runtime_tension_accuracy COMMAND banjo_runtime_cohesive_probe
-            "${CMAKE_CURRENT_BINARY_DIR}/runtime-tension-accuracy.csv" --require-accuracy --jolt-surfaces)
-    endif()
     add_executable(banjo_cohesive_spatial_tests tests/cohesive_spatial_tests.cpp)
     target_link_libraries(banjo_cohesive_spatial_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_cohesive_spatial_tests)
@@ -1124,14 +566,6 @@ if(BANJO_BUILD_TESTS)
     target_link_libraries(banjo_implicit_fracture_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_implicit_fracture_tests)
     add_test(NAME banjo_implicit_fracture_tests COMMAND banjo_implicit_fracture_tests)
-    add_executable(banjo_modal_eigen_tests tests/modal_eigen_tests.cpp)
-    target_link_libraries(banjo_modal_eigen_tests PRIVATE banjo_modal)
-    banjo_enable_warnings(banjo_modal_eigen_tests)
-    add_test(NAME banjo_modal_eigen_tests COMMAND banjo_modal_eigen_tests)
-    add_executable(banjo_modal_fracture_tests tests/modal_fracture_tests.cpp)
-    target_link_libraries(banjo_modal_fracture_tests PRIVATE banjo_modal)
-    banjo_enable_warnings(banjo_modal_fracture_tests)
-    add_test(NAME banjo_modal_fracture_tests COMMAND banjo_modal_fracture_tests)
     add_executable(banjo_quasistatic_fracture_tests tests/quasistatic_fracture_tests.cpp)
     target_link_libraries(banjo_quasistatic_fracture_tests PRIVATE banjo_core)
     banjo_enable_warnings(banjo_quasistatic_fracture_tests)
@@ -1199,26 +633,6 @@ if(BANJO_BUILD_TESTS)
         target_link_libraries(banjo_runtime_tension_contact_tests PRIVATE banjo_runtime)
         banjo_enable_warnings(banjo_runtime_tension_contact_tests)
         add_test(NAME banjo_runtime_tension_contact_tests COMMAND banjo_runtime_tension_contact_tests)
-        add_executable(banjo_precision_conversion_tests tests/precision_conversion_tests.cpp)
-        target_link_libraries(banjo_precision_conversion_tests PRIVATE banjo_precision_conversion nlohmann_json::nlohmann_json)
-        banjo_enable_warnings(banjo_precision_conversion_tests)
-        add_test(NAME banjo_precision_conversion_tests COMMAND banjo_precision_conversion_tests)
-        add_executable(banjo_bowl_tests tests/bowl_lab_tests.cpp)
-        target_link_libraries(banjo_bowl_tests PRIVATE banjo_creator_runtime nlohmann_json::nlohmann_json)
-        banjo_enable_warnings(banjo_bowl_tests)
-        add_test(NAME banjo_bowl_tests COMMAND banjo_bowl_tests)
-        add_executable(banjo_starter_tests tests/starter_world_tests.cpp)
-        target_link_libraries(banjo_starter_tests PRIVATE banjo_starter_runtime nlohmann_json::nlohmann_json)
-        banjo_enable_warnings(banjo_starter_tests)
-        add_test(NAME banjo_starter_tests COMMAND banjo_starter_tests)
-        add_executable(banjo_assistant_tests tests/creator_assistant_tests.cpp)
-        target_link_libraries(banjo_assistant_tests PRIVATE banjo_creator_assistant nlohmann_json::nlohmann_json)
-        banjo_enable_warnings(banjo_assistant_tests)
-        add_test(NAME banjo_assistant_tests COMMAND banjo_assistant_tests)
-        add_executable(banjo_creator_tests tests/creator_world_tests.cpp)
-        target_link_libraries(banjo_creator_tests PRIVATE banjo_creator_runtime nlohmann_json::nlohmann_json)
-        banjo_enable_warnings(banjo_creator_tests)
-        add_test(NAME banjo_creator_tests COMMAND banjo_creator_tests)
 
         add_executable(banjo_hinge_tests tests/hinge_tests.cpp)
         target_link_libraries(banjo_hinge_tests PRIVATE banjo_runtime)
@@ -1249,22 +663,8 @@ if(BANJO_BUILD_TESTS)
         target_link_libraries(banjo_native_point_contact_tests PRIVATE banjo_runtime)
         banjo_enable_warnings(banjo_native_point_contact_tests)
         add_test(NAME banjo_native_point_contact_tests COMMAND banjo_native_point_contact_tests)
-        add_executable(banjo_native_lattice_contact_tests tests/native_lattice_contact_tests.cpp)
-        target_link_libraries(banjo_native_lattice_contact_tests PRIVATE banjo_lattice_native_contact)
-        banjo_enable_warnings(banjo_native_lattice_contact_tests)
-        add_test(NAME banjo_native_lattice_contact_tests COMMAND banjo_native_lattice_contact_tests)
-        add_executable(banjo_material_surface_contact_tests tests/material_surface_contact_tests.cpp)
-        target_link_libraries(banjo_material_surface_contact_tests PRIVATE banjo_lattice_native_contact nlohmann_json::nlohmann_json)
-        banjo_enable_warnings(banjo_material_surface_contact_tests)
-        add_test(NAME banjo_material_surface_contact_tests COMMAND banjo_material_surface_contact_tests)
-        add_test(NAME banjo_material_manifold_oracles COMMAND banjo_material_surface_contact_tests --manifold-oracles-only)
-        add_executable(banjo_double_geometry_contact_tests tests/double_geometry_contact_tests.cpp)
-        target_link_libraries(banjo_double_geometry_contact_tests PRIVATE banjo_lattice_native_contact)
-        banjo_enable_warnings(banjo_double_geometry_contact_tests)
-        add_test(NAME banjo_double_geometry_contact_tests COMMAND banjo_double_geometry_contact_tests)
         # Exercises the full coupled contact search and transfer accounting.
         # Strict fracture/time refinement is a separate retained acceptance gate.
-        add_test(NAME banjo_material_coupled_surface_contact_tests COMMAND banjo_material_surface_contact_tests --coupled-manifold)
 
     # Two wheels that turn together at a ratio: gears in mesh, a chain between
     # sprockets, and teeth that strip when too much goes through them.
@@ -1389,6 +789,11 @@ if(BANJO_BUILD_TESTS)
             target_compile_definitions(banjo_thermal_geometry_long_tests PRIVATE BANJO_THERMAL_GEOMETRY_LONG=1)
             banjo_enable_warnings(banjo_thermal_geometry_long_tests)
             add_test(NAME banjo_thermal_geometry_long_tests COMMAND banjo_thermal_geometry_long_tests)
+            # It runs for many minutes: labelled long, so CI's -LE "long|performance"
+            # leaves it out, and given the long suites' timeout.
+            set(BANJO_LONG_TEST_TIMEOUT_S 7200 CACHE STRING "Timeout, in seconds, for the long suites")
+            set_tests_properties(banjo_thermal_geometry_long_tests PROPERTIES
+                LABELS long TIMEOUT ${BANJO_LONG_TEST_TIMEOUT_S})
 
             # Terrain and water in a live world: the owner's acceptance tests
             # for the valley -- conservation, a lake at rest, a dam, an outlet,
@@ -1714,821 +1119,9 @@ if(BANJO_BUILD_TESTS)
                          -DEXTRA_FIRST=$<TARGET_FILE:banjo_fp_link_order_extra_first>
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/fp_link_order_compare.cmake)
     endif()
-endif()
-
-if(BANJO_BUILD_TESTS AND TARGET banjo_creator_runtime)
- add_executable(banjo_bonded_bowl_tests tests/bonded_bowl_tests.cpp)
- target_link_libraries(banjo_bonded_bowl_tests PRIVATE banjo_creator_runtime)
- add_test(NAME banjo_bonded_bowl_tests COMMAND banjo_bonded_bowl_tests)
-endif()
-
-if(BANJO_BUILD_TESTS AND TARGET banjo_platform)
- add_executable(banjo_thermal_burn_acceptance tools/thermal_burn_acceptance.cpp)
- add_executable(banjo_thermal_experiment_cli tools/thermal_experiment_cli.cpp)
- add_executable(banjo_cohesive_sphere_probe tools/cohesive_sphere_probe.cpp)
- target_link_libraries(banjo_cohesive_sphere_probe PRIVATE banjo_core nlohmann_json::nlohmann_json)
- banjo_enable_warnings(banjo_cohesive_sphere_probe)
- target_link_libraries(banjo_thermal_experiment_cli PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
- banjo_enable_warnings(banjo_thermal_experiment_cli)
- target_link_libraries(banjo_thermal_burn_acceptance PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
- banjo_enable_warnings(banjo_thermal_burn_acceptance)
- add_executable(banjo_thermal_burn_acceptance_tests tests/thermal_burn_acceptance_tests.cpp)
- target_link_libraries(banjo_thermal_burn_acceptance_tests PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
- banjo_enable_warnings(banjo_thermal_burn_acceptance_tests)
- add_test(NAME banjo_thermal_burn_acceptance_tests COMMAND banjo_thermal_burn_acceptance_tests)
- add_executable(banjo_thermal_frontier_tests tests/thermal_frontier_tests.cpp)
- target_link_libraries(banjo_thermal_frontier_tests PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
- banjo_enable_warnings(banjo_thermal_frontier_tests)
- add_test(NAME banjo_thermal_frontier_tests COMMAND banjo_thermal_frontier_tests)
- add_executable(banjo_network_adaptive_tests tests/network_adaptive_tests.cpp)
- target_link_libraries(banjo_network_adaptive_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
- target_compile_definitions(banjo_network_adaptive_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
- banjo_enable_warnings(banjo_network_adaptive_tests)
- add_test(NAME banjo_network_adaptive_tests COMMAND banjo_network_adaptive_tests)
- add_executable(banjo_thermal_region_join_tests tests/thermal_region_join_tests.cpp)
- target_link_libraries(banjo_thermal_region_join_tests PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
- add_test(NAME banjo_thermal_region_join_tests COMMAND banjo_thermal_region_join_tests)
- add_executable(banjo_network_skin_tests tests/network_skin_tests.cpp)
- target_link_libraries(banjo_network_skin_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
- target_compile_definitions(banjo_network_skin_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
- add_test(NAME banjo_network_skin_tests COMMAND banjo_network_skin_tests)
- add_executable(banjo_world_package_tests tests/world_package_tests.cpp)
- target_link_libraries(banjo_world_package_tests PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
- target_compile_definitions(banjo_world_package_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
- add_test(NAME banjo_world_package_tests COMMAND banjo_world_package_tests)
- add_executable(banjo_enthalpy_law_tests tests/enthalpy_law_tests.cpp)
- target_link_libraries(banjo_enthalpy_law_tests PRIVATE banjo_core)
- add_test(NAME banjo_enthalpy_law_tests COMMAND banjo_enthalpy_law_tests)
- add_executable(banjo_thermal_kernel_tests tests/thermal_kernel_tests.cpp)
- target_link_libraries(banjo_thermal_kernel_tests PRIVATE banjo_core)
- add_test(NAME banjo_thermal_kernel_tests COMMAND banjo_thermal_kernel_tests)
- add_executable(banjo_sparse_world_tests tests/sparse_world_tests.cpp)
- target_link_libraries(banjo_sparse_world_tests PRIVATE banjo_sparse_world nlohmann_json::nlohmann_json)
- add_test(NAME banjo_sparse_world_tests COMMAND banjo_sparse_world_tests)
- add_executable(banjo_resolution_budget_tests tests/resolution_budget_tests.cpp)
- target_link_libraries(banjo_resolution_budget_tests PRIVATE banjo_core)
- add_test(NAME banjo_resolution_budget_tests COMMAND banjo_resolution_budget_tests)
- add_executable(banjo_network_material_tests tests/network_material_tests.cpp)
- target_link_libraries(banjo_network_material_tests PRIVATE banjo_core)
- add_test(NAME banjo_network_material_tests COMMAND banjo_network_material_tests)
- add_executable(banjo_network_runtime_tests tests/network_runtime_tests.cpp)
- target_link_libraries(banjo_network_runtime_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
- target_compile_definitions(banjo_network_runtime_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
- add_test(NAME banjo_network_runtime_tests COMMAND banjo_network_runtime_tests)
- # The network lane now runs on its own stability clock, several hundred
- # internal solves per host tick, so these multi-scenario 720-step runs cost
- # roughly an hour each rather than seconds. Coverage is unchanged; only the
- # price is. See docs/network-at-rest-stability-checkpoint.md.
- # The adaptive suite's tomato fixture is fully resolved under the 8,192-substep
- # cap and takes about 18 minutes, past ctest's default.
- # How long the hour-long suites below are given. Two hours on a fast machine;
- # .github/workflows/long-physics.yml gives a slower runner more.
- set(BANJO_LONG_TEST_TIMEOUT_S 7200 CACHE STRING
-     "Timeout, in seconds, for the network, showcase and contact-capacity suites")
- set_tests_properties(banjo_network_skin_tests banjo_network_runtime_tests
-     banjo_network_adaptive_tests
-     PROPERTIES TIMEOUT ${BANJO_LONG_TEST_TIMEOUT_S})
- add_executable(banjo_material_showcase_tests tests/material_showcase_tests.cpp)
- target_link_libraries(banjo_material_showcase_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
- target_compile_definitions(banjo_material_showcase_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
- add_test(NAME banjo_material_showcase_tests COMMAND banjo_material_showcase_tests)
- # Same stability clock as the skin and runtime suites: about an hour.
- set_tests_properties(banjo_material_showcase_tests PROPERTIES
-     TIMEOUT ${BANJO_LONG_TEST_TIMEOUT_S})
- add_executable(banjo_contact_capacity_tests tests/contact_capacity_tests.cpp)
- target_link_libraries(banjo_contact_capacity_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
- target_compile_definitions(banjo_contact_capacity_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
- add_test(NAME banjo_contact_capacity_tests COMMAND banjo_contact_capacity_tests)
- # Keep native diagnostics/rollback in the ordinary gate; the material-network
- # capacity experiments below retain the full long suite.
- add_test(NAME banjo_native_contact_capacity_tests
-     COMMAND banjo_contact_capacity_tests --native-trials-only)
- # Three 7^3 matter balls and a twice-stepped panel, fully resolved under the
- # substep cap: about 34 minutes (2,039 s measured).
- set_tests_properties(banjo_contact_capacity_tests PROPERTIES
-     TIMEOUT ${BANJO_LONG_TEST_TIMEOUT_S})
- # Those five cost a quarter of an hour to an hour EACH on a fast machine, and
- # the skin suite ran past two hours on a Linux build of it. A check made on
- # every push cannot spend that, so .github/workflows/ci.yml runs `ctest -LE
- # long`, and .github/workflows/long-physics.yml runs these five -- one job
- # each, nightly and on demand. Nothing is skipped; it is when they run.
- set_tests_properties(banjo_network_skin_tests banjo_network_runtime_tests
-     banjo_network_adaptive_tests banjo_material_showcase_tests
-     banjo_contact_capacity_tests PROPERTIES LABELS long)
- # The owner's heated and cold beams follow twenty-five minutes of world through
- # heating, fracture, cooling and a second blow: a minute to four on a fast
- # desktop, as the pieces happen to fall, which a check made on every push does
- # not spend either.
- if(TEST banjo_thermal_geometry_long_tests)
-     set_tests_properties(banjo_thermal_geometry_long_tests PROPERTIES
-         LABELS long TIMEOUT ${BANJO_LONG_TEST_TIMEOUT_S})
- endif()
- add_executable(banjo_network_spring_tests tests/network_spring_tests.cpp)
- target_link_libraries(banjo_network_spring_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
- add_test(NAME banjo_network_spring_tests COMMAND banjo_network_spring_tests)
- add_executable(banjo_compiled_runtime_tests tests/compiled_runtime_tests.cpp)
- target_link_libraries(banjo_compiled_runtime_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
- target_compile_definitions(banjo_compiled_runtime_tests PRIVATE BANJO_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
- add_test(NAME banjo_compiled_runtime_tests COMMAND banjo_compiled_runtime_tests)
- add_executable(banjo_compiled_object_tests tests/compiled_object_tests.cpp)
- target_link_libraries(banjo_compiled_object_tests PRIVATE banjo_platform)
- add_test(NAME banjo_compiled_object_tests COMMAND banjo_compiled_object_tests)
- add_executable(banjo_platform_tests tests/platform_tests.cpp)
- target_link_libraries(banjo_platform_tests PRIVATE banjo_platform nlohmann_json::nlohmann_json)
- add_test(NAME banjo_platform_tests COMMAND banjo_platform_tests)
-endif()
-
-if(TARGET raylib AND TARGET banjo_platform)
- add_executable(banjo_world_lab src/viewer/world.cpp)
- target_link_libraries(banjo_world_lab PRIVATE banjo_sparse_world raylib nlohmann_json::nlohmann_json)
- banjo_enable_warnings(banjo_world_lab)
- add_executable(banjo_network_lab src/viewer/runtime.cpp)
- target_compile_definitions(banjo_network_lab PRIVATE BANJO_NETWORK_LAB=1)
- target_link_libraries(banjo_network_lab PRIVATE banjo_platform raylib nlohmann_json::nlohmann_json)
- add_executable(banjo_runtime_lab src/viewer/runtime.cpp)
- target_link_libraries(banjo_runtime_lab PRIVATE banjo_platform raylib nlohmann_json::nlohmann_json)
- add_executable(banjo_platform_lab src/viewer/platform.cpp)
- target_link_libraries(banjo_platform_lab PRIVATE banjo_platform raylib nlohmann_json::nlohmann_json)
-endif()
-
-# Precise live compounds must be tested through the real native subprocess,
-# including installation transactions and persistent state, not only JSON.
-if(TARGET banjo_live_world_run AND Python3_Interpreter_FOUND)
-    foreach(game_suite IN ITEMS game_material_policy playable_recipes world_seed workshop_material_catalog player_learning_fixed)
-        add_test(NAME banjo_${game_suite}_tests
-            COMMAND ${CMAKE_COMMAND} -E env
-                BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-                BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-                BANJO_BROWSER_TESTS=required
-                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/${game_suite}_tests.py -v)
-        set_tests_properties(banjo_${game_suite}_tests PROPERTIES TIMEOUT 300)
-    endforeach()
-    add_test(NAME banjo_world_goods_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_goods_tests.py -v)
-    set_tests_properties(banjo_world_goods_tests PROPERTIES TIMEOUT 240)
-    add_test(NAME banjo_excavation_piles_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_goods_tests.py
-            GoodsJourney.test_older_owned_ground_moves_to_separate_piles_and_bulk_collection_is_durable
-            GoodsJourney.test_raw_material_collection_credits_personal_build_stock_and_preserves_shared_stock
-            GoodsJourney.test_two_collectors_race_for_one_actual_output_without_duplicate_credit
-            GoodsJourney.test_output_collect_requires_nearby_player_and_survives_failures_retry_two_guests_restart
-            GoodsJourney.test_saved_withdrawal_recovers_credit_after_sql_failure_and_server_restart -v)
-    set_tests_properties(banjo_excavation_piles_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_ground_transfers_tests
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ground_transfers_tests.py -v)
-    # Generated two-map native hauling is longer than the presentation suite.
-    # Keep its actual delivery/processing/restart journey independently runnable.
-    add_test(NAME banjo_generated_rover_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/generated_rover_tests.py -v)
-    set_tests_properties(banjo_generated_rover_tests PROPERTIES TIMEOUT 300)
-    add_test(NAME banjo_generated_rover_repeat_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/generated_rover_repeat_tests.py -v)
-    set_tests_properties(banjo_generated_rover_repeat_tests PROPERTIES TIMEOUT 300)
-    add_test(NAME banjo_ai_verification_tests
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_verification_tests.py -v)
-    set_tests_properties(banjo_ai_verification_tests PROPERTIES TIMEOUT 60)
-    add_test(NAME banjo_product_labels_tests
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/product_labels_tests.py -v)
-    set_tests_properties(banjo_product_labels_tests PROPERTIES TIMEOUT 60)
-    add_test(NAME banjo_market_tests
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/market_tests.py -v)
-    set_tests_properties(banjo_market_tests PROPERTIES TIMEOUT 60)
-    add_test(NAME banjo_ai_player_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_player_tests.py -v)
-    # The two reference explorers now run to their end (three paid jobs each)
-    # instead of failing early; 21 minutes on a fully loaded desktop.
-    set_tests_properties(banjo_ai_player_tests PROPERTIES TIMEOUT 1800)
-    add_test(NAME banjo_ai_column_opening_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_player_tests.py
-            AutonomousGuests.test_character_join_checkpoints_advancing_world_before_profile_save
-            AutonomousGuests.test_character_join_refuses_unsaved_world_without_creating_guest
-            AutonomousGuests.test_ai_paid_make_uses_own_collected_stock_solar_and_recovers_lost_writes_on_restart
-            AutonomousGuests.test_reference_explorer_completes_goal_chains_on_both_column_terrains -v)
-    set_tests_properties(banjo_ai_column_opening_tests PROPERTIES TIMEOUT 720)
-    add_test(NAME banjo_goal_chains_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/goal_chains_tests.py -v)
-    set_tests_properties(banjo_goal_chains_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_recipe_audit_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/recipe_audit_tests.py -v)
-    set_tests_properties(banjo_recipe_audit_tests PROPERTIES TIMEOUT 300)
-    add_test(NAME banjo_workshop_recipe_contract_tests
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_recipe_contract_tests.py -v)
-    set_tests_properties(banjo_workshop_recipe_contract_tests PROPERTIES TIMEOUT 60)
-    add_test(NAME banjo_workshop_local_cells_tests
-        COMMAND ${CMAKE_COMMAND} -E env BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_local_cells_tests.py -v)
-    set_tests_properties(banjo_workshop_local_cells_tests PROPERTIES TIMEOUT 90)
-    add_test(NAME banjo_metal_shovel_game_tests
-        COMMAND ${CMAKE_COMMAND} -E env BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c> BANJO_BROWSER_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/metal_shovel_game_tests.py -v)
-    set_tests_properties(banjo_metal_shovel_game_tests PROPERTIES TIMEOUT 240)
-    add_test(NAME banjo_rover_order_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rover_order_tests.py -v)
-    set_tests_properties(banjo_rover_order_tests PROPERTIES TIMEOUT 300)
-    add_test(NAME banjo_construction_fit_tests
-            COMMAND ${CMAKE_COMMAND} -E env BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run> BANJO_PLATFORM_ENGINE=$<TARGET_FILE:banjo_platform_cli>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/construction_fit_tests.py -v)
-    set_tests_properties(banjo_construction_fit_tests PROPERTIES TIMEOUT 600)
-    add_test(NAME banjo_rover_route_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rover_route_tests.py -v)
-    set_tests_properties(banjo_rover_route_tests PROPERTIES TIMEOUT 900)
-    add_test(NAME banjo_native_walk_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native_walk_tests.py -v)
-    set_tests_properties(banjo_native_walk_tests PROPERTIES TIMEOUT 300)
-    add_test(NAME banjo_workshop_ground_tools_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_GROUND_TOOL_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_tools_tests.py -v)
-    set_tests_properties(banjo_workshop_ground_tools_tests PROPERTIES TIMEOUT 120)
-    add_test(NAME banjo_precise_rigid_live_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_PRECISE_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/precise_rigid_live_tests.py -v)
-    set_tests_properties(banjo_precise_rigid_live_tests PROPERTIES TIMEOUT 120)
-    # And the cart that drives itself: the room's sensors checked and carried,
-    # and the tests-cart room opened, driven and saved through the runner.
-    add_test(NAME banjo_cart_room_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_CART_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/cart_room_tests.py -v)
-    set_tests_properties(banjo_cart_room_tests PROPERTIES TIMEOUT 120)
-    # And the rover that roams: the room's programs checked and carried, and the
-    # tests-rover room opened, set roaming and saved through the runner.
-    add_test(NAME banjo_rover_room_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_ROVER_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rover_room_tests.py -v)
-    set_tests_properties(banjo_rover_room_tests PROPERTIES TIMEOUT 180)
-    # And solar panels: the room's sun and panels checked and carried, and the
-    # tests-solar room's rover resting while the sun charges it.
-    add_test(NAME banjo_solar_room_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_SOLAR_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/solar_room_tests.py -v)
-    set_tests_properties(banjo_solar_room_tests PROPERTIES TIMEOUT 180)
-    # And a day for the sun: the room's day checked, carried and saved, and the
-    # tests-day room's rover resting through the night until the morning.
-    add_test(NAME banjo_day_room_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_DAY_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/day_room_tests.py -v)
-    set_tests_properties(banjo_day_room_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_world_daylight_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_daylight_tests.py -v)
-    set_tests_properties(banjo_world_daylight_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_recipe_guidance_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/recipe_guidance_tests.py -v)
-    set_tests_properties(banjo_recipe_guidance_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_gathering_journey_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/gathering_journey_tests.py -v)
-    set_tests_properties(banjo_gathering_journey_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_private_ground_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/private_ground_tests.py -v)
-    set_tests_properties(banjo_private_ground_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_process_guidance_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/private_ground_tests.py
-            PrivateGround.test_processing_guidance_selects_owned_sand_and_shares_current_input_facts
-            PrivateGround.test_stored_sand_glass_input_native_energy_private_output_and_restart
-            PrivateGround.test_camp_light_from_processed_outputs_is_paid_used_and_retained_without_market -v)
-    set_tests_properties(banjo_process_guidance_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_ai_processing_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ai_processing_tests.py -v)
-    set_tests_properties(banjo_ai_processing_tests PROPERTIES TIMEOUT 600)
-    add_test(NAME banjo_construction_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/construction_tests.py -v)
-    set_tests_properties(banjo_construction_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_proactive_guidance_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/proactive_guidance_tests.py -v)
-    set_tests_properties(banjo_proactive_guidance_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_build_lab_chat_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/build_lab_chat_tests.py -v)
-    set_tests_properties(banjo_build_lab_chat_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_game_guidance_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_CURRENT_SOURCE_DIR}/tests -p game_guidance_tests.py -v)
-    set_tests_properties(banjo_game_guidance_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_physical_matter_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/physical_matter_tests.py -v)
-    set_tests_properties(banjo_physical_matter_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_raw_crafting_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/raw_crafting_tests.py -v)
-    set_tests_properties(banjo_raw_crafting_tests PROPERTIES TIMEOUT 300)
-    add_test(NAME banjo_physical_matter_browser_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/physical_matter_browser_tests.py -v)
-    set_tests_properties(banjo_physical_matter_browser_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_world_navigation_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/world_navigation_tests.py -v)
-    set_tests_properties(banjo_world_navigation_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_voice_tests COMMAND ${Python3_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/voice_tests.py -v)
-    add_test(NAME banjo_voice_browser_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/voice_browser_tests.py -v)
-    set_tests_properties(banjo_voice_browser_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_construction_project_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/construction_project_tests.py -v)
-    set_tests_properties(banjo_construction_project_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_material_delivery_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_preview_tests.py Candidates TerrainDelivery -v)
-    add_test(NAME banjo_tool_use_tests
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tool_use_tests.py -v)
-    add_test(NAME banjo_room_trace_tests
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/room_trace_tests.py -v)
-    set_tests_properties(banjo_tool_use_tests PROPERTIES TIMEOUT 120)
-    add_test(NAME banjo_material_layer_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_preview_tests.py
-            PlayerMaterials.test_actual_tool_exposes_soil_and_private_storage_peer_restart_agree -v)
-    set_tests_properties(banjo_material_delivery_tests banjo_material_layer_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_cut_material_layer_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            "BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>"
-            "BANJO_LIBRARY=$<TARGET_FILE:banjo_c>"
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_preview_tests.py
-            PlayerMaterials.test_cut_surface_exposes_soil_and_private_storage_peer_restart_agree -v)
-    set_tests_properties(banjo_cut_material_layer_tests PROPERTIES TIMEOUT 180)
-
-    add_test(NAME banjo_column_material_layer_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_preview_tests.py
-            PlayerMaterials.test_column_surface_exposes_soil_and_private_storage_peer_restart_agree -v)
-    set_tests_properties(banjo_column_material_layer_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_close_material_layer_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_LIBRARY=$<TARGET_FILE:banjo_c>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_preview_tests.py
-            PlayerMaterials.test_close_contact_exposes_soil_and_private_storage_peer_restart_agree
-            PlayerMaterials.test_close_column_contact_exposes_soil_and_private_storage_peer_restart_agree -v)
-    set_tests_properties(banjo_close_material_layer_tests PROPERTIES TIMEOUT 180)
-    add_test(NAME banjo_mine_loop_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/mine_loop_tests.py -v)
-    set_tests_properties(banjo_mine_loop_tests PROPERTIES TIMEOUT 180)
-    # And what thinks for the rover, and talking to it: what is made of Jev's
-    # answers, a decision applied before the next step, and the chat's open,
-    # say and close working the tests-rover room's program, with a scripted Jev.
-    add_test(NAME banjo_rover_brain_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_ROVER_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/rover_brain_tests.py -v)
-    set_tests_properties(banjo_rover_brain_tests PROPERTIES TIMEOUT 300)
-    # And the Workshop's robot parts: the rover assembled from the library's
-    # components, the bench chat's sensor and routine tools, and the rover
-    # installed into a room as exact bodies on pins, roaming dry.
-    add_test(NAME banjo_workshop_rover_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_ROVER_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_rover_tests.py -v)
-    set_tests_properties(banjo_workshop_rover_tests PROPERTIES TIMEOUT 300)
-    # And a rover that flies: the drone from the same library on four rotors,
-    # installed through the same gate, lifting to its height and flying to
-    # its places.
-    add_test(NAME banjo_workshop_drone_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_ROVER_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_drone_tests.py -v)
-    set_tests_properties(banjo_workshop_drone_tests PROPERTIES TIMEOUT 300)
-    # And raw materials into finished goods: the room's account of goods, the
-    # routine language, a machine that goes nowhere, the goods rack, and the
-    # mine in the real engine: ore to wire on the Workshop's rack.
-    add_test(NAME banjo_goods_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_ROVER_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/goods_tests.py -v)
-    set_tests_properties(banjo_goods_tests PROPERTIES TIMEOUT 600)
-    # And containers: a mass of a substance carried BY A BODY rather than
-    # lying at a place, riding whatever carries it and pouring into another
-    # container -- or onto the ground -- when it is turned over.
-    add_test(NAME banjo_vessels_tests
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/vessels_tests.py -v)
-    set_tests_properties(banjo_vessels_tests PROPERTIES TIMEOUT 120)
-    # And the electric furnace: what its lining decides, that a recipe's own
-    # temperature says which machine works it, that the Workshop's recipes
-    # and the generator's chain cannot drift apart, and -- in the real engine
-    # -- that its chamber heats, holds at ambient + P/U, and goes cold.
-    add_test(NAME banjo_electric_furnace_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/electric_furnace_tests.py -v)
-    set_tests_properties(banjo_electric_furnace_tests PROPERTIES TIMEOUT 300)
-    # The three machines gas pressure drives, as a ROOM rather than as the
-    # network on its own: a steam engine whose piston climbs on boiling water,
-    # a cannon that throws its ball, and a rocket that leaves the bench on its
-    # own exhaust. tests/gas_pressure_tests.cpp pins the same three against a
-    # one-dimensional stand-in; this one runs them with Jolt underneath.
-    add_test(NAME banjo_engines_room_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/engines_room_tests.py -v)
-    set_tests_properties(banjo_engines_room_tests PROPERTIES TIMEOUT 300)
-    # And devices that pair: the mouths goods go into a machine through and
-    # come out of, the rule that pairs two of them, and the mine's rover
-    # docking its store to the smelter's intake port in the real engine.
-    add_test(NAME banjo_ports_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_ROVER_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/ports_tests.py -v)
-    set_tests_properties(banjo_ports_tests PROPERTIES TIMEOUT 600)
-    # And a routine that responds: conditions, when/unless, watches, and
-    # standing requests -- orders run before the round and reported.
-    add_test(NAME banjo_routine_language_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_ROVER_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/routine_language_tests.py -v)
-    set_tests_properties(banjo_routine_language_tests PROPERTIES TIMEOUT 600)
-    # And what has been seen of a room: the record, what reveals it, the senses
-    # held to it, and a survey of somewhere nobody has been.
-    add_test(NAME banjo_sight_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_ROVER_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/sight_tests.py -v)
-    set_tests_properties(banjo_sight_tests PROPERTIES TIMEOUT 600)
-    # And driving a thing at the bench with the keys: the little world kept
-    # open and stepped as the keys arrive.
-    add_test(NAME banjo_workshop_drive_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_ROVER_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/workshop_drive_tests.py -v)
-    set_tests_properties(banjo_workshop_drive_tests PROPERTIES TIMEOUT 600)
-    # And what a break costs: the room's failure law reaching the engine, and
-    # the account the world gives of a break in the tests-break room.
-    add_test(NAME banjo_break_room_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_BREAK_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/break_room_tests.py -v)
-    set_tests_properties(banjo_break_room_tests PROPERTIES TIMEOUT 180)
-    # And every room the server serves: each one opens, steps and keeps up
-    # with realtime, which is how a room that rotted is found before a
-    # person clicks on it.
-    add_test(NAME banjo_every_room_tests
-        COMMAND ${CMAKE_COMMAND} -E env
-            BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-            BANJO_ROOMS_LIVE_TESTS=required
-            ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/every_room_tests.py -v)
-    set_tests_properties(banjo_every_room_tests PROPERTIES TIMEOUT 300)
-endif()
-
-# The replacement runtime is compiled by Cargo through a named CMake target;
-# existing native builds opt in while its authoritative worker is developed.
-if(BANJO_BUILD_TESTS)
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    if(Python3_FOUND)
-        if(BANJO_NEWTON_PYTHON AND TARGET banjo_voxel_world_run)
-            add_test(NAME banjo_gpu_contact_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_contact_test.py
-                --native $<TARGET_FILE:banjo_voxel_world_run>
-                --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/results.json)
-            set_tests_properties(banjo_gpu_contact_tests PROPERTIES TIMEOUT 300 LABELS "gpu;experimental;contact;client")
-            add_test(NAME banjo_physx_contact_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/physx_contact_test.py
-                --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/physx-results.json)
-            set_tests_properties(banjo_physx_contact_tests PROPERTIES TIMEOUT 300 LABELS "gpu;experimental;contact;client")
-            add_test(NAME banjo_gpu_material_laws_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_material_laws_test.py
-                --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
-                --native $<TARGET_FILE:banjo_voxel_world_run>
-                --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/material-laws-results.json)
-            set_tests_properties(banjo_gpu_material_laws_tests PROPERTIES TIMEOUT 180 LABELS "gpu;experimental;material;client")
-            add_test(NAME banjo_gpu_material_frames_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_material_frames_test.py
-                --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
-                --report ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact/material-frames-results.json)
-            set_tests_properties(banjo_gpu_material_frames_tests PROPERTIES TIMEOUT 180 LABELS "gpu;experimental;material;contact")
-            add_test(NAME banjo_gpu_coupled_world_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_coupled_world_test.py
-                --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
-                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-coupled-evidence.json)
-            set_tests_properties(banjo_gpu_coupled_world_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
-            add_test(NAME banjo_gpu_representation_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_representation_test.py
-                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-representation-evidence.json)
-            set_tests_properties(banjo_gpu_representation_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact;representation")
-            add_test(NAME banjo_object_registry_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/object_registry_test.py
-                --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
-                --native $<TARGET_FILE:banjo_voxel_world_run>
-                --output ${CMAKE_CURRENT_BINARY_DIR}/object-registry-evidence.json)
-            set_tests_properties(banjo_object_registry_tests PROPERTIES TIMEOUT 180 LABELS "gpu;experimental;material;representation;client")
-            add_test(NAME banjo_gpu_high_drop_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_high_drop_test.py
-                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-high-drop-evidence.json)
-            set_tests_properties(banjo_gpu_high_drop_tests PROPERTIES TIMEOUT 180 LABELS "gpu;experimental;material;contact;representation")
-            add_test(NAME banjo_gpu_coupled_pipeline_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_coupled_pipeline_test.py
-                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-coupled-pipeline-evidence.json)
-            set_tests_properties(banjo_gpu_coupled_pipeline_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
-            add_test(NAME banjo_gpu_coupled_convergence_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_coupled_convergence_test.py
-                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-coupled-convergence-evidence.json)
-            set_tests_properties(banjo_gpu_coupled_convergence_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
-            add_test(NAME banjo_gpu_coupled_line_search_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_coupled_line_search_test.py
-                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-coupled-line-search-evidence.json)
-            set_tests_properties(banjo_gpu_coupled_line_search_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
-            add_test(NAME banjo_gpu_resident_linear_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_resident_linear_test.py
-                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-resident-linear-evidence.json)
-            set_tests_properties(banjo_gpu_resident_linear_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
-            add_test(NAME banjo_gpu_contact_timing_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu_contact_timing_test.py
-                --oracle $<TARGET_FILE:banjo_gpu_material_oracle>
-                --output ${CMAKE_CURRENT_BINARY_DIR}/gpu-contact-timing-evidence.json)
-            set_tests_properties(banjo_gpu_contact_timing_tests PROPERTIES TIMEOUT 900 LABELS "gpu;experimental;material;contact")
-        endif()
-        if(TARGET banjo_coupled_cpu AND TARGET banjo_voxel_world_run)
-            add_test(NAME banjo_physics_fields_gateway_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/physics_fields_gateway_test.py
-                --library-dir $<TARGET_FILE_DIR:banjo_coupled_cpu> --native $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_physics_fields_gateway_tests PROPERTIES TIMEOUT 120 LABELS "field;mechanism;thermal;flow;client")
-            add_test(NAME banjo_thermal_fields_tests COMMAND ${CMAKE_COMMAND} -E env
-                BANJO_THERMAL_FIELDS_LIBRARY=$<TARGET_FILE:banjo_thermal_fields>
-                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/thermal_fields_test.py)
-            set_tests_properties(banjo_thermal_fields_tests PROPERTIES TIMEOUT 60 LABELS "thermal;phase;reaction;experimental")
-            add_test(NAME banjo_thermal_matter_adapter_tests COMMAND ${CMAKE_COMMAND} -E env
-                BANJO_THERMAL_FIELDS_LIBRARY=$<TARGET_FILE:banjo_thermal_fields>
-                BANJO_COUPLED_CPU_LIBRARY=$<TARGET_FILE:banjo_coupled_cpu>
-                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/thermal_matter_adapter_test.py)
-            set_tests_properties(banjo_thermal_matter_adapter_tests PROPERTIES TIMEOUT 60 LABELS "thermal;representation;experimental")
-            add_test(NAME banjo_coupled_thermal_matter_tests COMMAND ${CMAKE_COMMAND} -E env
-                BANJO_THERMAL_FIELDS_LIBRARY=$<TARGET_FILE:banjo_thermal_fields>
-                BANJO_COUPLED_CPU_LIBRARY=$<TARGET_FILE:banjo_coupled_cpu>
-                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/coupled_thermal_matter_test.py)
-            set_tests_properties(banjo_coupled_thermal_matter_tests PROPERTIES TIMEOUT 180 LABELS "thermal;representation;cpu;experimental")
-            add_test(NAME banjo_flow_continuation_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/flow_continuation_test.py $<TARGET_FILE:banjo_flow_cpu>)
-            set_tests_properties(banjo_flow_continuation_tests PROPERTIES TIMEOUT 60 LABELS "flow;representation;experimental")
-            add_test(NAME banjo_flow_reference_api_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/flow_reference_api_test.py $<TARGET_FILE:banjo_flow_cpu>)
-            set_tests_properties(banjo_flow_reference_api_tests PROPERTIES TIMEOUT 30 LABELS "flow;field;api")
-            add_test(NAME banjo_mechanisms_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/mechanisms_test.py $<TARGET_FILE:banjo_mechanisms_cpu>)
-            set_tests_properties(banjo_mechanisms_tests PROPERTIES TIMEOUT 120 LABELS "mechanism;sleep;experimental")
-            add_test(NAME banjo_cpu_coupled_modes_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_coupled_modes_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
-                --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-coupled-modes-evidence.json)
-            set_tests_properties(banjo_cpu_coupled_modes_tests PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;material;representation")
-            add_test(NAME banjo_contact_observation_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/contact_observation_test.py --library $<TARGET_FILE:banjo_coupled_cpu>)
-            set_tests_properties(banjo_contact_observation_tests PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;contact;representation")
-            add_test(NAME banjo_contact_branch_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/contact_branch_test.py --library $<TARGET_FILE:banjo_coupled_cpu>)
-            set_tests_properties(banjo_contact_branch_tests PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;contact;representation")
-            add_test(NAME banjo_material_branch_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_branch_test.py --library $<TARGET_FILE:banjo_coupled_cpu>)
-            set_tests_properties(banjo_material_branch_tests PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;material;representation")
-            add_test(NAME banjo_cpu_local_jacobian_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_local_jacobian_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
-                --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-local-jacobian-evidence.json)
-            set_tests_properties(banjo_cpu_local_jacobian_tests PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;material;contact")
-            add_test(NAME banjo_cpu_coupled_world_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_coupled_world_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
-                --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-coupled-evidence.json)
-            add_test(NAME banjo_cpu_high_drop_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_high_drop_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
-                --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-high-drop-evidence.json)
-            add_test(NAME banjo_cpu_coupled_gateway_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_coupled_gateway_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
-                --native $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_cpu_coupled_world_tests banjo_cpu_high_drop_tests banjo_cpu_coupled_gateway_tests
-                PROPERTIES TIMEOUT 180 LABELS "cpu;experimental;material;client")
-            # The glass step a 10 m drop used to be refused at, and (long) the
-            # whole drop through the subdividing controller.
-            add_test(NAME banjo_cpu_glass_fracture_step_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_glass_fracture_step_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
-                --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-glass-fracture-step-evidence.json)
-            set_tests_properties(banjo_cpu_glass_fracture_step_tests PROPERTIES TIMEOUT 120 LABELS "cpu;experimental;material")
-            add_test(NAME banjo_cpu_drop_spot_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_drop_spot_test.py --library $<TARGET_FILE:banjo_coupled_cpu>)
-            set_tests_properties(banjo_cpu_drop_spot_tests PROPERTIES TIMEOUT 120 LABELS "cpu;experimental;contact")
-            add_test(NAME banjo_cpu_glass_high_drop_full_tests COMMAND ${CMAKE_COMMAND} -E env
-                BANJO_THERMAL_FIELDS_LIBRARY=$<TARGET_FILE:banjo_thermal_fields>
-                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_glass_fracture_step_test.py
-                --library $<TARGET_FILE:banjo_coupled_cpu> --full
-                --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-glass-high-drop-evidence.json)
-            set_tests_properties(banjo_cpu_glass_high_drop_full_tests PROPERTIES TIMEOUT 900 LABELS "cpu;experimental;material;long")
-            if(BANJO_NEWTON_PYTHON)
-                add_test(NAME banjo_cpu_coupled_parity_tests COMMAND ${BANJO_NEWTON_PYTHON}
-                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpu_coupled_parity_test.py --library $<TARGET_FILE:banjo_coupled_cpu>
-                    --output ${CMAKE_CURRENT_BINARY_DIR}/cpu-cuda-parity-evidence.json)
-                set_tests_properties(banjo_cpu_coupled_parity_tests PROPERTIES TIMEOUT 180 LABELS "cpu;gpu;experimental;material")
-            endif()
-        endif()
-        if(BANJO_TEST_CUPY)
-            add_test(NAME banjo_cupy_physics_probe COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/scripts/cupy-physics-probe.py
-                --report ${CMAKE_CURRENT_BINARY_DIR}/cupy-probe/results.json)
-            set_tests_properties(banjo_cupy_physics_probe PROPERTIES TIMEOUT 120 LABELS "gpu;experimental;primitive")
-        endif()
-        if(TARGET banjo_voxel_world_run)
-            add_test(NAME banjo_voxel_contact_model_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_contact_model_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_contact_model_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
-            add_test(NAME banjo_voxel_centered_comparison_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_centered_comparison_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_centered_comparison_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;diagnostic")
-            add_test(NAME banjo_voxel_midpoint_contact_comparison_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_centered_comparison_test.py $<TARGET_FILE:banjo_voxel_world_run> midpoint-unilateral)
-            set_tests_properties(banjo_voxel_midpoint_contact_comparison_tests PROPERTIES TIMEOUT 900 LABELS "native;voxel;diagnostic")
-            add_test(NAME banjo_voxel_log_gradient_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_log_gradient_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_log_gradient_tests PROPERTIES TIMEOUT 300 LABELS "native;voxel;experimental")
-            add_test(NAME banjo_voxel_execution_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_execution_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_execution_tests PROPERTIES TIMEOUT 300 LABELS "native;voxel;performance")
-            add_test(NAME banjo_voxel_world_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_world_test.py --native $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_world_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
-            add_test(NAME banjo_voxel_gateway_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_gateway_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_gateway_tests PROPERTIES TIMEOUT 30 LABELS "native;voxel;client")
-            add_test(NAME banjo_voxel_plasticity_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_plasticity_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_plasticity_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
-            add_test(NAME banjo_voxel_actuation_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_actuation_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_actuation_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
-            add_test(NAME banjo_voxel_pipeline_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_pipeline_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            add_test(NAME banjo_voxel_hybrid_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_hybrid_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_hybrid_tests PROPERTIES TIMEOUT 120 LABELS "native;voxel;experimental")
-            add_test(NAME banjo_voxel_rigid_flight_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_rigid_flight_test.py $<TARGET_FILE:banjo_voxel_world_run> --full)
-            set_tests_properties(banjo_voxel_rigid_flight_tests PROPERTIES TIMEOUT 180 LABELS "native;voxel;experimental")
-            add_test(NAME banjo_voxel_endpoint_friction_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_endpoint_friction_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_endpoint_friction_tests PROPERTIES TIMEOUT 600 LABELS "native;voxel;experimental")
-            add_test(NAME banjo_voxel_motion_profile_tests COMMAND ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_motion_profile_test.py $<TARGET_FILE:banjo_voxel_world_run>)
-            set_tests_properties(banjo_voxel_motion_profile_tests PROPERTIES TIMEOUT 60 LABELS "native;voxel")
-            set_tests_properties(banjo_voxel_pipeline_tests PROPERTIES TIMEOUT 60 LABELS "native;voxel;client")
-            find_program(BANJO_NODE_EXECUTABLE NAMES node)
-            if(BANJO_NODE_EXECUTABLE)
-                add_test(NAME banjo_flow_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/flow_view_test.mjs)
-                set_tests_properties(banjo_flow_view_tests PROPERTIES TIMEOUT 10 LABELS "flow;client")
-                add_test(NAME banjo_mechanisms_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/mechanisms_view_test.mjs)
-                set_tests_properties(banjo_mechanisms_view_tests PROPERTIES TIMEOUT 10 LABELS "mechanism;client")
-                add_test(NAME banjo_thermal_fields_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/thermal_fields_view_test.mjs)
-                set_tests_properties(banjo_thermal_fields_view_tests PROPERTIES TIMEOUT 10 LABELS "thermal;client")
-                add_test(NAME banjo_voxel_playback_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/voxel_playback_test.mjs)
-                set_tests_properties(banjo_voxel_playback_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")
-                add_test(NAME banjo_scene_session_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_session_test.mjs)
-                set_tests_properties(banjo_scene_session_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")
-                add_test(NAME banjo_coupled_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/coupled_view_test.mjs)
-                set_tests_properties(banjo_coupled_view_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")
-                add_test(NAME banjo_machine_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_view_test.mjs)
-                set_tests_properties(banjo_machine_view_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client;machine")
-                add_test(NAME banjo_scene_action_placement_tests COMMAND ${BANJO_NODE_EXECUTABLE}
-                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/scene_action_placement_test.mjs)
-                set_tests_properties(banjo_scene_action_placement_tests PROPERTIES TIMEOUT 10 LABELS "voxel;client")
-            endif()
-        endif()
-        add_test(NAME banjo_regression_runner_tests
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/regression_runner_tests.py)
-        add_test(NAME banjo_build_manifest_tests
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/build_manifest_tests.py)
-        add_test(NAME banjo_interaction_journal_tests
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/interaction_journal_tests.py)
-        if(TARGET banjo_material_lab_record)
-            add_test(NAME banjo_material_lab_recording_tests
-                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/material_lab_recording_tests.py $<TARGET_FILE:banjo_material_lab_record>)
-            set_tests_properties(banjo_material_lab_recording_tests PROPERTIES TIMEOUT 180)
-        endif()
-    endif()
-endif()
-option(BANJO_BUILD_RUST_RUNTIME "Build and test the replacement application runtime" OFF)
-set(BANJO_RUNTIME_NATIVE_EXECUTABLE "" CACHE FILEPATH "Existing native runner for isolated Rust integration checks when native targets are disabled")
-if(BANJO_BUILD_RUST_RUNTIME)
-    find_program(BANJO_CARGO_EXECUTABLE cargo
-        HINTS "$ENV{USERPROFILE}/.cargo/bin" "$ENV{HOME}/.cargo/bin" REQUIRED)
-    add_custom_target(banjo_rust_runtime ALL
-        COMMAND ${BANJO_CARGO_EXECUTABLE} build --workspace --locked
-                --target-dir ${CMAKE_CURRENT_SOURCE_DIR}/build/rust-runtime
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        SOURCES Cargo.toml Cargo.lock rust-toolchain.toml runtime/Cargo.toml
-                runtime/src/lib.rs runtime/src/contracts.rs runtime/src/native.rs
-                runtime/src/world.rs runtime/src/main.rs
-        VERBATIM)
-    if(BANJO_BUILD_TESTS)
-        add_test(NAME banjo_rust_runtime_tests
-            COMMAND ${BANJO_CARGO_EXECUTABLE} test --workspace --locked)
-        set_tests_properties(banjo_rust_runtime_tests PROPERTIES
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} TIMEOUT 180 LABELS "runtime;contracts")
-        if(TARGET banjo_live_world_run)
-            set(_banjo_runtime_native $<TARGET_FILE:banjo_live_world_run>)
-        elseif(BANJO_RUNTIME_NATIVE_EXECUTABLE)
-            if(NOT EXISTS "${BANJO_RUNTIME_NATIVE_EXECUTABLE}")
-                message(FATAL_ERROR "BANJO_RUNTIME_NATIVE_EXECUTABLE does not exist")
-            endif()
-            set(_banjo_runtime_native "${BANJO_RUNTIME_NATIVE_EXECUTABLE}")
-        endif()
-        if(_banjo_runtime_native AND Python3_FOUND)
-            add_test(NAME banjo_runtime_native_tests COMMAND ${CMAKE_COMMAND} -E env
-                BANJO_LIVE_ENGINE=${_banjo_runtime_native}
-                BANJO_RUNTIME_ENGINE=${CMAKE_CURRENT_SOURCE_DIR}/build/rust-runtime/debug/banjo-runtime${CMAKE_EXECUTABLE_SUFFIX}
-                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/runtime_native_tests.py -v)
-            set_tests_properties(banjo_runtime_native_tests PROPERTIES TIMEOUT 90 LABELS "runtime;native")
-            add_test(NAME banjo_test_world_gateway_tests COMMAND ${CMAKE_COMMAND} -E env
-                BANJO_LIVE_ENGINE=${_banjo_runtime_native}
-                BANJO_RUNTIME_ENGINE=${CMAKE_CURRENT_SOURCE_DIR}/build/rust-runtime/debug/banjo-runtime${CMAKE_EXECUTABLE_SUFFIX}
-                ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_world_tests.py -v)
-            set_tests_properties(banjo_test_world_gateway_tests PROPERTIES TIMEOUT 120 LABELS "runtime;native;client")
-        endif()
+    if(BANJO_NODE_EXECUTABLE)
+        add_test(NAME banjo_machine_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_view_test.mjs)
+        set_tests_properties(banjo_machine_view_tests PROPERTIES TIMEOUT 10 LABELS "client;machine")
     endif()
 endif()

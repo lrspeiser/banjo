@@ -9,7 +9,7 @@ just below the scene, out of its way.
 
     BANJO_LIVE_ENGINE=path/to/banjo_live_world_run python tests/machine_game_browser_tests.py
 
-Needs Chrome (BANJO_CHROME, tests/qa_browser.py) and the engine. Without them
+Needs Chrome (BANJO_CHROME, tests/chrome_driver.py) and the engine. Without them
 it skips, unless BANJO_BROWSER_TESTS=required.
 """
 import importlib.util
@@ -24,7 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tests'))
-import qa_browser  # noqa: E402
+import chrome_driver  # noqa: E402
 
 ENGINE = Path(os.environ['BANJO_LIVE_ENGINE']) if os.environ.get('BANJO_LIVE_ENGINE') else None
 SETTLED = "(() => { const g = window.machineGhostState(); return Boolean(g && g.answered && !g.busy); })()"
@@ -35,7 +35,7 @@ class Puzzles(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         missing = [what for what, ok in (('the engine (BANJO_LIVE_ENGINE)', ENGINE and ENGINE.is_file()),
-                                         ('Chrome (BANJO_CHROME)', qa_browser.CHROME.is_file())) if not ok]
+                                         ('Chrome (BANJO_CHROME)', chrome_driver.CHROME.is_file())) if not ok]
         if missing:
             if os.environ.get('BANJO_BROWSER_TESTS') == 'required':
                 raise RuntimeError('required, and missing: ' + ', '.join(missing))
@@ -49,7 +49,7 @@ class Puzzles(unittest.TestCase):
         cls.server = lab.Server(('127.0.0.1', 0), ENGINE, Path(cls.logs.name), site='game', public=True)
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
         cls.base = f'http://127.0.0.1:{cls.server.server_address[1]}'
-        cls.chrome = qa_browser.Chrome(1280, 860)
+        cls.chrome = chrome_driver.Chrome(1280, 860)
         cls.page = cls.chrome.page
 
     @classmethod
@@ -382,6 +382,21 @@ class Puzzles(unittest.TestCase):
         self.wait(READY, 60)
         self.assertEqual(self.js("document.querySelectorAll('#placed li').length"), 0)
         self.assertFalse(self.js("document.getElementById('scene-tray').hidden"))
+
+    def test_what_is_hidden_is_not_drawn_on_a_level_or_in_the_free_build(self):
+        # The page hides things with the hidden attribute. A class that sets
+        # display beats the attribute unless the stylesheet says otherwise:
+        # level 1 showed the free build's Set out the example, Share this build
+        # and Clear the table. Nothing hidden may take up any room.
+        drawn = ("[...document.querySelectorAll('[hidden]')]"
+                 ".filter(e => e.getClientRects().length).map(e => e.id || e.className)")
+        self.open('gap')
+        self.assertTrue(self.js("document.getElementById('free-actions').hidden"))
+        self.assertEqual(self.js(drawn), [])
+        self.page.send('Page.navigate', {'url': f'{self.base}/play?level=free'})
+        self.wait(READY, 90)
+        self.assertFalse(self.js("document.getElementById('free-actions').hidden"))
+        self.assertEqual(self.js(drawn), [])
 
     def test_energy_against_par_is_said_while_a_piece_is_changed_and_on_a_win_over_par(self):
         # Level 1: a 0.78 m plank still bridges the gap, and takes 34.1 MJ to

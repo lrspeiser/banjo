@@ -1,6 +1,6 @@
 # The machine: a live chain-reaction world built from general parts
 
-October 10, 2026. Open `/machine` on the lab server (local `http://127.0.0.1:18893/machine`; on Render, `/` now opens it after login).
+October 10, 2026. Open `/machine` on the game's server (local `http://127.0.0.1:18893/machine`; hosted, https://banjo-f1sv.onrender.com/machine).
 
 ## What you can do
 

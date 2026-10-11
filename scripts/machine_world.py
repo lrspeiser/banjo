@@ -1961,9 +1961,14 @@ class Engine:
             raise ValueError('the engine could not build this world: ' + str(self.first.get('error')))
 
     def _read(self):
-        for line in self.proc.stdout:
-            self.lines.put(line)
-        self.lines.put(None)
+        try:
+            for line in self.proc.stdout:
+                self.lines.put(line)
+        finally:
+            self.lines.put(None)
+            # The reader owns the engine's output: closed here, at its end,
+            # not by close() while this thread may still be reading it.
+            self.proc.stdout.close()
 
     def _next(self, timeout):
         try:
@@ -1993,6 +1998,17 @@ class Engine:
             pass
         if self.proc.poll() is None:
             self.proc.kill()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        # Its pipes too. Left to the garbage collector, a server that starts an
+        # engine for every preview held their handles until a collection.
+        for pipe in (self.proc.stdin, self.proc.stderr):
+            try:
+                pipe.close()
+            except (OSError, ValueError):
+                pass
 
 
 def build_engine(exe, compiled, workdir):
