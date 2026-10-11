@@ -1254,6 +1254,10 @@ def ghost(level, placements, index, snapping=False, edit_key=None):
              'energy': pieces_energy(compiled).get(name),
              'parts': [dict({k: p[k] for k in keys if k in p},
                             **({'parts': p['parts']} if p['shape'] == 'compound' else {})) for p in mine]}
+    # Draw the compiled terminals while placing a device, including its
+    # prepared socket leads. This does not advance the engine.
+    if checked[index]['piece'] in ('battery', 'switch', 'bulb', 'motor', 'ignition', 'wire'):
+        reply['electrical_preview'] = compiled.get('electrical', {})
     if checked[index]['piece'] == 'wire':
         terminals = {device['name'] + ':' + key: at for device in compiled.get('electrical', {}).get('devices', [])
                      for key, at in device['terminals'].items()}

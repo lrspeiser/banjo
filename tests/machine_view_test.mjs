@@ -3,7 +3,19 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, wireRoute} from '../client/voxel-lab/machine-view.mjs';
+
+const pinA = [-.68, .18, .07], pinB = [.68, .08, .07];
+for (const [a,b] of [[pinA,pinB], [pinB,pinA], [pinA,[-.68,.18,.07]], [[0,.012,.1],[0,.012,.3]]]) {
+  const route = wireRoute(a,b);
+  assert.deepEqual(route[0], a); assert.deepEqual(route.at(-1), b);
+  assert.ok(route.every(p => p.every(Number.isFinite)), 'all cable points are finite');
+  assert.ok(route.some(p => p[1] === .012), 'the wire reaches the floor');
+  for (let i=1; i<route.length; i++) assert.equal(route[i].filter((v,k) => Math.abs(v-route[i-1][k])>1e-9).length, 1,
+    'each nonzero cable segment runs along one axis');
+}
+assert.notDeepEqual(wireRoute(pinA,pinB,0), wireRoute(pinA,pinB,1), 'parallel wires have distinct floor lanes');
+assert.deepEqual(pinA, [-.68,.18,.07], 'drawing never mutates native terminal coordinates');
 
 const body = (name, extra = {}) => ({name, shape: 'box', material: 'oak', dimensions_m: [.1, .1, .1], position_m: [0, 0, 0],
   orientation_wxyz: [1, 0, 0, 0], revision: 0, ...extra});

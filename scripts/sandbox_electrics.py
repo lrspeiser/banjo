@@ -522,7 +522,7 @@ def easy_levels():
     # wrong control is an open supply in the copied scenario, tested separately.
     levels[-1]['wrong'] = []
     s = manual_loop(); s['electrical']['wires'].pop()
-    levels.append(easy('easy-loop', 'Finish the loop', 'Connect lamp minus to supply minus. Wire crossings do not make connections.',
+    levels.append(easy('easy-loop', 'Finish the loop', 'Click lamp −, then supply − to draw the missing return wire. Run it to light the bulb. Crossing wires do not connect.',
                        s, tray('wire'), {'piece': 'wire', 'a_terminal': 'lamp:minus', 'b_terminal': 'supply:minus'},
                        {'load_power_w': {'device': 'lamp', 'at_least_w': 2, 'for_s': .5}},
                        {'piece': 'wire', 'a_terminal': 'lamp:minus', 'b_terminal': 'lamp:plus'}))

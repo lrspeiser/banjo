@@ -21,6 +21,16 @@ export function mergeFrame(world, frame) {
 // What a piece is a piece of: "glass plate piece 3 piece 1" -> "glass plate".
 export function family(name) { return String(name).split(' piece ')[0]; }
 
+// Drawing geometry only: native terminals and current remain authoritative.
+// Prepared, player-placed and preview wires share separated floor lanes.
+export function wireRoute(a, b, lane = 0) {
+  const floor = .012, frontA = a[2] + .045, frontB = b[2] + .045;
+  const z = Math.max(frontA, frontB) + .14 + lane * .035;
+  const points = [a, [a[0], a[1], frontA], [a[0], floor, frontA],
+    [a[0], floor, z], [b[0], floor, z], [b[0], floor, frontB], [b[0], b[1], frontB], b];
+  return points.filter((p, i) => !i || p.some((v, k) => Math.abs(v - points[i - 1][k]) > 1e-9)).map(p => [...p]);
+}
+
 // Each material keeps one recognisable colour. Colour is only identification:
 // the engine's laws come from the material's declared properties, never from this.
 export const MATERIAL_COLORS = {oak: 0xb07a45, iron: 0x5d636b, concrete: 0xa9a9a2, glass: 0x9fd8ef, ice: 0xd9f3ff,

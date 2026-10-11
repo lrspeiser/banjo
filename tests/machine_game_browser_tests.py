@@ -29,7 +29,7 @@ import chrome_driver  # noqa: E402
 
 ENGINE = Path(os.environ['BANJO_LIVE_ENGINE']) if os.environ.get('BANJO_LIVE_ENGINE') else None
 SETTLED = "(() => { const g = window.machineGhostState(); return Boolean(g && g.answered && !g.busy); })()"
-READY = "/ready: press Run it/.test(document.getElementById('clock').textContent)"
+READY = "/ready: press Run it/.test(document.getElementById('clock')?.textContent || '')"
 
 
 class Puzzles(unittest.TestCase):
@@ -512,6 +512,49 @@ class Puzzles(unittest.TestCase):
                 self.press(title); self.wait(READY, 60)
                 self.assertEqual(self.js('location.href'), link)
 
+    def test_terminal_clicks_teach_wiring_and_prepared_leads_use_the_same_routes(self):
+        for width, height in ((1280,860), (390,844), (844,390)):
+            with self.subTest(width=width, height=height):
+                self.open('easy-loop', width, height, phone=width<1000)
+                self.assertEqual(len(self.js('window.machineWiringState().wires')), 2)
+                self.click_visible('Connect lamp minus')
+                self.ghost()
+                self.assertEqual(self.js('window.machineWiringState().selected'), 'lamp:minus')
+                self.key('Escape')
+                self.assertIsNone(self.js('window.machineGhostState()'))
+                self.assertEqual(self.js('window.machinePlacements()'), [])
+                self.wait("(() => { const b=document.querySelector('[data-terminal=\"lamp:minus\"]'); return b && !b.disabled && b.offsetParent!==null; })()", 10)
+                self.click_visible('Connect supply plus'); self.ghost()
+                self.click_visible('Connect control in')
+                self.wait(f'!window.machineGhostState() && {READY}', 60)
+                self.click_visible('Run it')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Not this time', self.js("document.getElementById('level-done').textContent"),
+                              'another supply lead cannot replace the missing return path')
+                self.press('Start over'); self.wait(READY, 60)
+                self.wait("(() => { const b=document.querySelector('[data-terminal=\"lamp:minus\"]'); return b && !b.disabled && b.offsetParent!==null; })()", 10)
+                self.click_visible('Connect lamp minus'); self.ghost()
+                self.click_visible('Connect supply minus')
+                self.wait(f'!window.machineGhostState() && {READY}', 60)
+                self.assertEqual(self.js('window.machinePlacements().map(p=>[p.piece,p.a_terminal,p.b_terminal])'),
+                                 [['wire','lamp:minus','supply:minus']])
+                wires = self.js('window.machineWiringState().wires')
+                self.assertEqual(len(wires),3)
+                self.assertTrue(all(any(abs(p[1]-.012)<1e-9 for p in w['route']) for w in wires))
+                self.click_visible('Run it')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.wait('window.machineWiringState().wires.every(w=>w.color===0xffd34d)',10)
+                self.open('easy-marble-light', width, height, phone=width<1000)
+                self.assertEqual(len(self.js('window.machineWiringState().wires')), 1)
+                self.press('Add a switch'); self.ghost()
+                self.slide('along (m) of your switch 1', 0); self.slide('across (m) of your switch 1', 0)
+                self.assertTrue(self.ghost()['fits'])
+                self.assertEqual(self.js('window.machineWiringState().ghostWires'),3)
+                self.wait("[...document.querySelectorAll('.terminal-label')].length===3 && [...document.querySelectorAll('.terminal-label')].every(c=>!c.hidden)", 10)
+                self.click_visible('Run it')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertEqual(len(self.js('window.machineWiringState().wires')),3)
+
     def test_easy_selection_and_saved_wiring_use_the_real_scene_controls(self):
         self.page.send('Page.navigate', {'url': f'{self.base}/play'})
         self.wait("document.getElementById('levels-screen') && !document.getElementById('levels-screen').hidden", 60)
@@ -572,13 +615,9 @@ class Puzzles(unittest.TestCase):
             self.press('Set it down')
             self.wait(f'!window.machineGhostState() && {READY}', 60)
         for terminal in ('plus', 'minus'):
-            self.press('Add a wire')
-            self.ghost()
-            number = 3 if terminal == 'plus' else 4
-            self.slide(f'from terminal of your wire {number}', f'your battery 1:{terminal}')
-            self.slide(f'to terminal of your wire {number}', f'your bulb 2:{terminal}')
-            self.assertTrue(self.ghost()['fits'])
-            self.press('Set it down')
+            self.wait('window.machineCamera().settled', 30)
+            self.click_visible(f'Connect your battery 1 {terminal}'); self.ghost()
+            self.click_visible(f'Connect your bulb 2 {terminal}')
             self.wait(f'!window.machineGhostState() && {READY}', 60)
         first = self.js('window.machinePlacements()')
         self.press('Save version')

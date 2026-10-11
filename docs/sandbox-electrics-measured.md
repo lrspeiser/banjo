@@ -21,6 +21,12 @@ the same declared battery store used by the graph.
   junction at a crossing. Moving a device moves its displayed terminal positions
   but keeps identity and connectivity. Routes are visual and do not change
   resistance. Delete or disconnect a terminal and no electrical shortcut remains.
+  Click/tap two labelled scene terminals to place one wire, or edit its terminal
+  selectors. Prepared, placed and preview wires share thick orthogonal floor
+  routes and endpoint pins; yellow indicates measured current. These routes
+  have no cable mass, length-dependent loss, collision or mechanical constraint.
+  The **Finish the loop** lesson introduces the missing return lead; the
+  marble/paddle lesson retains its prepared leads, visible even during placement.
   Wires are electrical graph elements, with no simulated cable mass, sag or
   mechanical attachment; their fixed resistance is a disclosed idealization.
 - Power cable: a saved two-conductor charging lead from a solar output to a

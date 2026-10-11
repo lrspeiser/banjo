@@ -20,6 +20,23 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_ghost_shows_prepared_terminal_graph_without_changing_the_level(self):
+        level = next(row for row in e.easy_levels() if row['id'] == 'easy-marble-light')
+        before = copy.deepcopy(level)
+        reply = mg.ghost(level, [copy.deepcopy(level['solution'][0])], 0)
+        electrical = reply['electrical_preview']
+        self.assertEqual(len(electrical['wires']), 3)
+        pins = {d['name'] + ':' + key: at for d in electrical['devices'] for key, at in d['terminals'].items()}
+        self.assertIn('your switch 1:in', pins)
+        self.assertIn('your switch 1:out', pins)
+        self.assertTrue(all(w['a'] in pins and w['b'] in pins for w in electrical['wires']))
+        self.assertEqual(level, before, 'showing prepared leads must not alter the scenario')
+        loop = next(row for row in e.easy_levels() if row['id'] == 'easy-loop')
+        reply = mg.ghost(loop, [copy.deepcopy(loop['solution'][0])], 0)
+        self.assertEqual(reply['wire_preview'], [
+            next(d['terminals']['minus'] for d in reply['electrical_preview']['devices'] if d['name'] == 'lamp'),
+            next(d['terminals']['minus'] for d in reply['electrical_preview']['devices'] if d['name'] == 'supply')])
+
     def test_saved_power_lead_and_generic_ports(self):
         level = mg.level_by_id('sun')
         saved = copy.deepcopy(level['solution'])
