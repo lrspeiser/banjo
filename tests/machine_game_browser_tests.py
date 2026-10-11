@@ -126,6 +126,43 @@ class Puzzles(unittest.TestCase):
                                                       **({'text': key} if kind == 'keyDown' and key not in named else {})})
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_fresh_easy_challenge_can_be_solved_shared_and_reopened_on_phones(self):
+        for width, height in ((1280, 860), (390, 844), (844, 390)):
+            with self.subTest(viewport=(width, height)):
+                self.page.send('Emulation.setDeviceMetricsOverride', {'width':width,'height':height,'deviceScaleFactor':1,'mobile':width != 1280})
+                self.page.send('Page.navigate', {'url': f'{self.base}/play'})
+                self.wait("!document.getElementById('levels-screen').hidden", 60)
+                self.assertLessEqual(self.js('document.body.scrollWidth'), width)
+                self.slide('Easy challenge family', 'easy-loop')
+                self.press('New easy challenge')
+                self.wait(f"/easy-loop--v1--/.test(location.search) && {READY}", 60)
+                link = self.js('location.href')
+                title = self.js("document.getElementById('title').textContent")
+                goal = self.js("document.getElementById('goal-line').textContent")
+                self.assertIn('seed', title)
+                self.assertIn('Fresh setup', goal)
+                self.press('Share this challenge')
+                self.assertEqual(self.js("document.getElementById('challenge-link').value"), link)
+                self.page.send('Page.navigate', {'url':link})
+                self.wait(READY, 60)
+                self.assertEqual(self.js("document.getElementById('title').textContent"), title)
+                self.assertEqual(self.js("document.getElementById('goal-line').textContent"), goal)
+                self.press('Add a wire'); self.ghost()
+                self.slide('from terminal of your wire 1', 'lamp:minus')
+                self.slide('to terminal of your wire 1', 'supply:minus')
+                self.assertTrue(self.ghost()['fits'])
+                self.press('Set it down'); self.wait(READY, 60)
+                self.press('Run it')
+                self.wait("!document.getElementById('level-done').hidden", 30)
+                self.assertNotIn('finished every level', self.js("document.getElementById('level-done').textContent"))
+                self.assertFalse(self.js("Boolean(document.querySelector('#level-done [aria-label=\"Next level\"]'))"))
+                self.press('All levels')
+                self.assertLessEqual(self.js('document.body.scrollWidth'), width)
+                self.assertGreaterEqual(self.js("document.getElementById('challenge-family').getBoundingClientRect().height"), 44)
+                self.assertIn(title, self.js("document.querySelector('[aria-label=\"Recent easy challenges\"]').textContent"))
+                self.press(title); self.wait(READY, 60)
+                self.assertEqual(self.js('location.href'), link)
+
     def test_easy_selection_and_saved_wiring_use_the_real_scene_controls(self):
         self.page.send('Page.navigate', {'url': f'{self.base}/play'})
         self.wait("document.getElementById('levels-screen') && !document.getElementById('levels-screen').hidden", 60)

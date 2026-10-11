@@ -28,6 +28,18 @@ Per-material measurements, conservation receipts, timesteps and limits are in [m
 
 Integration verification used `build/agent-integration/Release/banjo_live_world_run.exe`, SHA-256 `b98d68d42734536b6bacc3ca008690d061d7e89fab290ca42bfc1235b0a3161a`. All 147 applicable CTest entries passed across the full run and the corrected browser/water rerun (long/performance labels excluded). The browser suite passed 24 tests, including desktop, 390×844 portrait and 844×390 landscape, explicit wiring, version restoration and queued live controls. The game suite passed 37 tests; the added mechanics/electrics/water/combinations suites passed 11/7/8/2 tests. Source registration accounts for all 269 C++ sources. No complete rigid/fluid/contact energy closure is claimed by these results.
 
+The catalogue checkpoint was published as `874c2796`; `banjo.is` served that header and its water-wheel example poured 12 litres and turned its axle in a live browser run. The local site uses the tested executable above.
+
+## Fresh easy challenges
+
+**New easy challenge** on the level chooser lets the player select any of the twenty families. The same action beside an easy challenge makes another setup in that family. It changes one bounded physical input: source power, sunlight elevation, supply voltage, cord or lever length, load height, bearing friction, starting water, flow or catapult cock angle. Prepared settings are fixed in that challenge's tray; its goal and deadline remain the family's own. There are 78 physical presets across the twenty families; different seeds can select the same preset. This is repeatable authored variation, not unlimited procedural geometry or a language-model-generated level.
+
+Before offering a setup, the server rehearses its private solution, empty machine and wrong setup with three nudges each. All three correct runs must win and every empty/wrong run must fail without engine errors or incomplete rehearsals. It tries at most three seeded candidates, then a checked original setup; the page explicitly identifies that fallback. It refuses the request if even the original fails. Public responses contain no solution, wrong placements or private rehearsal receipts. Native preflight shares the server's two preview slots and reliability-check request allowance.
+
+Versioned recipe IDs include family, seed and accepted attempt. **Share this challenge** exposes a link to that exact recipe. The last twelve generated challenges appear under **Return to an easy challenge** for the current browser player. Shared recipes are verified on their first request to a server/engine; an in-memory bounded cache avoids repeating the work on subsequent requests. Energy par is the actual three-run mean rounded upward to three significant figures, including measured water source work. Reopening recreates the initial puzzle; **Set up again** retries with the pieces currently placed.
+
+The native sweep passed all 78 presets: 234/234 correct nudges won, 0/234 empty and 0/234 wrong nudges won. Goals and deadlines were unchanged. The sweep took about 90 seconds on the integration binary; its eight-test suite also checks seed identity, bounded retries, fallback refusal, native errors and incomplete negative runs. Delivery regressions verify exact recipe reopening after cache loss and keep water work in rehearsal energy receipts. The full game/browser suites now contain 39/25 tests, including generated challenge → terminal selection → native win → share/reload → recent replay on desktop and both phone orientations.
+
 ## Playing a level
 
 - **The goal** is a green box drawn in the scene ("the ball is in the cup") and a time limit. The engine checks it on every step: the goal happens when the named part's centre is inside the box.

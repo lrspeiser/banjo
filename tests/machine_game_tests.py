@@ -631,6 +631,43 @@ class FreeBuild(unittest.TestCase):
 
 class Engine(unittest.TestCase):
     @need_engine
+    def test_generated_recipe_reopens_after_cache_loss_without_exposing_answers(self):
+        with tempfile.TemporaryDirectory() as logs:
+            generated = mg.fresh_easy('easy-loop', 42, ENGINE, logs)
+            public = mg.public(generated)
+            self.assertTrue(public['variant']['validated'])
+            self.assertNotIn('solution', public)
+            self.assertNotIn('wrong', public)
+            self.assertNotIn('validation', public['variant'])
+            self.assertNotIn('attempts', public['variant'])
+            kept = copy.deepcopy(generated)
+            retrieved = mg.level_by_id(generated['id'])
+            retrieved['machine']['title'] = 'changed outside the cache'
+            self.assertEqual(mg.level_by_id(generated['id']), kept)
+            mg._variants.clear(); mg._variant_requests.clear()
+            with self.assertRaises(ValueError): mg.level_by_id(generated['id'])
+            recreated = mg.fresh_easy('easy-loop', 42, ENGINE, logs, recipe_id=generated['id'])
+            self.assertEqual(recreated['machine'], generated['machine'])
+            self.assertEqual(recreated['goal'], generated['goal'])
+            self.assertEqual(recreated['par_energy_j'], generated['par_energy_j'])
+            with self.assertRaises(ValueError):
+                mg.fresh_easy('easy-loop', 43, ENGINE, logs, recipe_id=generated['id'])
+
+    @need_engine
+    def test_rehearsed_water_energy_keeps_the_measured_source_work(self):
+        level = mg.level_by_id('easy-water-receiver')
+        spec, _, _ = mg.compose(level, level['solution'])
+        compiled = mw.compile_spec(spec)
+        with tempfile.TemporaryDirectory() as logs:
+            result = mw.rehearse(compiled, ENGINE, logs, seconds=3)
+        self.assertIn('pour', result['readouts'])
+        energy = mg.energy_of(compiled, result['readouts'], result['world_time_s'])
+        self.assertGreater(energy['run']['water_j'], 1)
+        supplied = sum(source['source_energy_j'] for source in result['readouts']['pour']['sources'])
+        # energy_of publishes whole joules; the native ledger retains floats.
+        self.assertEqual(energy['run']['water_j'], round(supplied))
+
+    @need_engine
     def test_sandbox_chain_runs_the_same_declaration_with_live_readings(self):
         template = mg.sandbox_templates()[1]
         spec, _, _ = mg.compose(mg.requested_level({'level': 'free', 'base': template['base']}), [])

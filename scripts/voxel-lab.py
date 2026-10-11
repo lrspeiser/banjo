@@ -188,6 +188,13 @@ class Handler(BaseHTTPRequestHandler):
      else:r=machine_chat.respond(data.get('message'),data.get('spec'),data.get('history'),rehearse=host.rehearse if data.get('rehearse',True) else None)
     finally:self.server.chat_busy.release()
    elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build()),'sandbox':machine_game.sandbox_templates(),'sandbox_base':machine_game.free_build()['machine']}
+   elif op=='easy_variant':
+    if self.server.trial_allowance:self.server.trial_allowance.take(self.visitor())
+    if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is testing other challenges; try again shortly')
+    try:
+     level=machine_game.fresh_easy(data.get('family'),data.get('seed'),host.exe,host.logs,recipe_id=data.get('recipe'))
+     r={'ok':True,'level':machine_game.public(level)}
+    finally:self.server.preview_busy.release()
    elif op=='level_open':
     # The level's machine with the player's pieces in it, built in the engine.
     level=machine_game.requested_level(data)
@@ -197,7 +204,7 @@ class Handler(BaseHTTPRequestHandler):
     needs=spec.pop('_needs',None)
     r=host.open(spec);r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost;r['energy']=machine_game.pieces_energy(r['machine'])
     if needs:r['needs']=needs
-    host.get(r['session']).game={'level':level['id'],'checked':checked,'cost':cost,'helped':bool(data.get('helped'))}
+    host.get(r['session']).game={'level':level['id'],'definition':level,'checked':checked,'cost':cost,'helped':bool(data.get('helped'))}
    elif op=='feedback':
     # A player's word about the game: one line to the log, where the host
     # keeps it (FEEDBACK ...), and to feedback.jsonl beside the machines'
@@ -230,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
     # Stars from what the engine measured in this session's run.
     s=host.get(data.get('session'));game=getattr(s,'game',None)
     if not game:raise ValueError('That session is not a level')
-    level=machine_game.level_by_id(game['level'])
+    level=game.get('definition') or machine_game.level_by_id(game['level'])
     rows=(s.readouts or {}).get('stations') or [{}]
     # And what the win took: making the pieces, and what the run put in so far.
     energy=machine_game.energy_of(s.compiled,s.readouts,s.t)

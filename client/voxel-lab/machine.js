@@ -807,6 +807,7 @@ fetch('/api/checkpoint').then(r => r.ok ? r.json() : null).then(c => {
 const params = new URLSearchParams(location.search);
 const LEVEL_MODE = true;
 let levels = [], level = null, placements = [], placedCost = [], placedEnergy = {}, helped = false, scored = false, lastRun = null, rebuildTimer = null;
+let generatedLevel = null;
 let freeLevel = null;
 let sandboxBase = null, sandboxTemplates = [], activeDesign = null;
 function sandboxRequest() { return level?.free && activeDesign?.draft.base ? {base: activeDesign.draft.base} : {}; }
@@ -1927,7 +1928,8 @@ function renderLevels() {
 }
 
 function knobDefault(rule) { return rule.default ?? (rule.choices ? rule.choices[0] : rule.min); }
-function levelTitle(l) { return l.free ? (activeDesign?.name || 'Sandbox') : `${levels.indexOf(l) + 1}. ${l.title}`; }
+function levelTitle(l) { return l.free ? (activeDesign?.name || 'Sandbox') : l.variant
+  ? `${l.title} · seed ${l.variant.seed.toString(16).padStart(8, '0')}` : `${levels.indexOf(l) + 1}. ${l.title}`; }
 function trayItem(piece) { return level.tray.find(t => t.piece === piece); }
 
 const PIECE_INFO = {
@@ -2519,7 +2521,7 @@ function closeDone() {
 }
 function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   closeDone();
-  const box = $('level-done'), next = levels[levels.indexOf(level) + 1];
+  const box = $('level-done'), next = level.variant ? null : levels[levels.indexOf(level) + 1];
   const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
   const allLevels = button('All levels', () => { closeDone(); showLevelsScreen(true); });
   if (r.tested) {
@@ -2538,8 +2540,8 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     if (unlocked.length) {
       add('h2', {textContent: 'Achievement Unlocked'});
       add('p', {className: 'unlocked', textContent: `Your first win with ${unlocked.map(t => (/^[aeiou]/.test(t) ? 'an ' : 'a ') + t)
-        .join(' and ')}!` + (next ? '' : ' And you finished every level!')});
-    } else add('h2', {textContent: next ? 'Level complete!' : 'You finished every level!'});
+        .join(' and ')}!` + (next || level.variant ? '' : ' And you finished every level!')});
+    } else add('h2', {textContent: level.variant ? 'Challenge complete!' : next ? 'Level complete!' : 'You finished every level!'});
     add('p', {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)});
     // What the win took, in energy, against par: behind Energy details, so the
     // card is the stars and what to do next.
@@ -2555,7 +2557,7 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     addHow('p', {className: 'energy', textContent: `Energy used: ${energyText(r.energy_j)}`});
     addHow('p', {className: 'breakdown', textContent: `${energyText(e.pieces_j)} to make your pieces, ` +
       (run.j ? `${energyText(run.j)} in the run` : 'nothing used in the run') + (run.j ? ` (${[['heat', run.heat_j], ['powder', run.powder_j],
-      ['electricity', run.electric_j], ['your pulls', run.pull_j]].filter(([, j]) => j).map(([w, j]) => `${w} ${energyText(j)}`).join(', ')})` : '') + '.'});
+      ['electricity', run.electric_j], ['water source', run.water_j], ['your pulls', run.pull_j]].filter(([, j]) => j).map(([w, j]) => `${w} ${energyText(j)}`).join(', ')})` : '') + '.'});
     // Par is the level's own solution's energy, rounded up: within 1% of it is on par.
     const par = r.par_energy_j, verdict = r.energy_j < 0.99 * par ? `Under par (${energyText(par)})!`
       : r.energy_j <= par ? `At par (${energyText(par)}).` : `Par is ${energyText(par)}.`;
@@ -2639,6 +2641,23 @@ function showLevelsScreen(show) {
     const filter = button(label, () => { levelDifficulty = value; showLevelsScreen(true); });
     filter.setAttribute('aria-pressed', String(levelDifficulty === value)); filters.append(filter);
   }
+  const freshBox = add(box, 'section', {className: 'ls-player', ariaLabel: 'Fresh easy challenges'});
+  add(freshBox, 'label', {textContent: 'Learn a piece', htmlFor: 'challenge-family'});
+  const familyPick = add(freshBox, 'select', {id: 'challenge-family', ariaLabel: 'Easy challenge family'});
+  for (const l of levels.filter(l => l.difficulty === 'easy')) familyPick.append(new Option(l.title, l.id));
+  const freshStatus = add(freshBox, 'p', {role: 'status'});
+  const newEasy = button('New easy challenge', async () => {
+    newEasy.disabled = true; freshStatus.textContent = 'Testing a fresh setup in the physics engine…';
+    try { await freshChallenge(familyPick.value); }
+    catch (e) { freshStatus.textContent = e.message; }
+    finally { newEasy.disabled = false; }
+  });
+  freshBox.append(newEasy);
+  if (me().freshChallenges?.length) {
+    const recent = add(box, 'section', {className: 'chat-actions', ariaLabel: 'Recent easy challenges'});
+    add(recent, 'h2', {textContent: 'Return to an easy challenge'});
+    for (const saved of me().freshChallenges) recent.append(button(saved.title, () => chooseLevel(saved.id).catch(e => { freshStatus.textContent = e.message; })));
+  }
   const list = add(box, 'ol', {className: 'ls-list'});
   levels.forEach((l, i) => {
     if (levelDifficulty !== 'all' && (l.difficulty || 'normal') !== levelDifficulty) return;
@@ -2648,7 +2667,7 @@ function showLevelsScreen(show) {
                         {className: 'ls-card', ariaLabel: `Play level ${i + 1}, ${l.title}`});
     add(card, 'strong', {textContent: `${i + 1}. ${l.title}`});
     add(card, 'span', {className: 'stars', textContent: '★'.repeat(row.stars || 0) + '☆'.repeat(3 - (row.stars || 0))});
-    add(card, 'span', {className: 'teaches', textContent: `${l.difficulty === 'easy' ? 'Easy · ' : ''}${l.teaches}`});
+    add(card, 'span', {className: 'teaches', textContent: `${l.difficulty === 'easy' ? 'Easy · ' : ''}${pieceLabel(l.teaches)}`});
     add(card, 'span', {className: 'status', textContent: row.energy_j != null
       ? `Best win: ${energyText(row.energy_j)} (par ${energyText(l.par_energy_j)})`
       : row.stars ? 'Won' : l === nextUp ? 'Next up' : 'Not won yet'});
@@ -2668,10 +2687,26 @@ renderer.domElement.addEventListener('pointerdown', () => {
 });
 
 async function chooseLevel(id, design = null) {
+  if (!levels.some(l => l.id === id) && id.includes('--v')) {
+    if (generatedLevel?.id !== id) {
+      const match = /^(easy-[a-z-]+)--v\d+--([0-9a-f]{8})--(?:\d|c)$/.exec(id);
+      if (!match) throw new Error('This challenge link is not supported.');
+      $('page-loading').hidden = false;
+      $('page-loading').textContent = 'Testing this shared challenge in the physics engine…';
+      try {
+        const r = await api({op:'easy_variant', family:match[1], seed:parseInt(match[2], 16), recipe:id});
+        generatedLevel = r.level;
+      } finally { $('page-loading').hidden = true; }
+    }
+  }
   if ($('piece-picker').open) $('piece-picker').close();
   document.querySelector('main').hidden = false;
   keepBuild(); showSandboxScreen(false); showLevelsScreen(false);
-  level = id === 'free' && freeLevel ? freeLevel : levels.find(l => l.id === id) || levels[0];
+  level = id === 'free' && freeLevel ? freeLevel : levels.find(l => l.id === id) || (generatedLevel?.id === id ? generatedLevel : levels[0]);
+  if (level.variant) {
+    me().freshChallenges = [{id:level.id, title:levelTitle(level)}, ...(me().freshChallenges || []).filter(row => row.id !== level.id)].slice(0, 12);
+    persist();
+  }
   activeDesign = null;
   if (level.free) {
     const store = designStore();
@@ -2693,7 +2728,12 @@ async function chooseLevel(id, design = null) {
   $('goal-line').textContent = level.free
     ? 'No goal: build whatever you like and press Run it. Save a version whenever you want to return to this setup.'
     : `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s, on as little energy as you can `+
-      `(par ${energyText(level.par_energy_j)}, pieces and run). It teaches ${level.teaches}.`;
+      `(par ${energyText(level.par_energy_j)}, pieces and run). It teaches ${pieceLabel(level.teaches)}.`;
+  if (level.variant) $('goal-line').textContent += level.variant.fallback
+    ? ' This seed uses the tested original setup because fresh candidates failed verification.'
+    : ` Fresh setup: ${level.variant.parameter_label || level.variant.parameter.replaceAll('_', ' ')} = ${level.variant.value}.`;
+  $('challenge-actions').hidden = level.difficulty !== 'easy';
+  $('challenge-link').hidden = true;
   $('chat-log').replaceChildren();
   // On a level the chat hints and places the tray's pieces; in a free build
   // it builds what it is asked.
@@ -2719,6 +2759,24 @@ async function chooseLevel(id, design = null) {
   renderLevels(); renderTray(); renderPlaced();
   await rebuildLevel(false);
 }
+
+async function freshChallenge(family) {
+  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  const r = await api({op:'easy_variant', family, seed});
+  generatedLevel = r.level;
+  await chooseLevel(generatedLevel.id);
+}
+$('challenge-fresh').addEventListener('click', async () => {
+  const b = $('challenge-fresh'); b.disabled = true;
+  $('clock').textContent = 'Testing a fresh setup in the physics engine…';
+  try { await freshChallenge(level.variant?.family || level.id); }
+  catch (e) { $('clock').textContent = e.message; }
+  finally { b.disabled = false; }
+});
+$('challenge-share').addEventListener('click', () => {
+  const link = $('challenge-link'); link.value = location.origin + '/play?level=' + encodeURIComponent(level.id);
+  link.hidden = false; link.focus(); link.select();
+});
 
 // A free build's own buttons: clear the table, or set out the example.
 $('free-clear').addEventListener('click', () => {

@@ -20,7 +20,9 @@ Windows, built and tested on Linux in CI, and not tested on macOS.
 
 **Eight chain-reaction levels and twenty freely selectable easy challenges.**
 The easy challenges introduce cutting, optics, springs, gearing, wiring, water,
-heating and catapults one step at a time. The original chain-reaction levels are:
+heating and catapults one step at a time. **New easy challenge** offers tested
+physical variations with repeatable seed links and a recent-challenges list.
+The original chain-reaction levels are:
 
 | Level | What makes it work |
 |---|---|

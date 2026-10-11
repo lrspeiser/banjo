@@ -20,10 +20,13 @@ table with no goal and every piece, as many as you like, where a player
 builds whatever they want and runs it.
 """
 import copy
+import hashlib
 import json
 import math
 import random
 import re
+import threading
+from collections import OrderedDict
 from pathlib import Path
 
 import machine_world as mw
@@ -31,6 +34,7 @@ import sandbox_mechanics
 import sandbox_electrics
 import sandbox_water_launch
 import sandbox_combinations
+import sandbox_variants
 
 SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_combinations)
 EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel',
@@ -40,6 +44,9 @@ EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle
 
 ROOT = Path(__file__).resolve().parents[1]
 LEVELS_PATH = ROOT / 'client/voxel-lab/levels.json'
+_variants = OrderedDict()
+_variant_requests = OrderedDict()
+_variant_lock = threading.RLock()
 
 
 # Every piece can be moved across (z) and turned however a person turns a
@@ -79,6 +86,9 @@ def load_levels():
     order.update({ident: len(order) + i for i, ident in enumerate(EASY_ORDER)})
     for module in SANDBOX_MODULES:
         levels.extend(copy.deepcopy(getattr(module, 'EASY_LEVELS', [])))
+    for level in levels:
+        if level.get('difficulty') == 'easy':
+            level['title'] = re.sub(r'^\d+\.\s*', '', level['title'])
     levels.sort(key=lambda level: order[level['id']])
     return [_with_free_knobs(level) for level in levels]
 
@@ -102,10 +112,56 @@ def free_build():
 def level_by_id(level_id):
     if level_id == 'free':
         return free_build()
+    with _variant_lock:
+        if level_id in _variants:
+            return copy.deepcopy(_variants[level_id])
     for level in load_levels():
         if level['id'] == level_id:
             return level
     raise ValueError(f'There is no level called {level_id!s}')
+
+
+def fresh_easy(family_id, seed, exe, logs, recipe_id=None):
+    """Issue only a native-validated recipe; shared URLs validate exact recipes.
+
+    Cached results belong to the actual engine binary. A server restart or an
+    evicted recipe is recreated and verified by this endpoint before opening.
+    Private answers and preflight diagnostics never enter the public level.
+    """
+    if family_id not in EASY_ORDER:
+        raise ValueError('Choose an authored Easy challenge family.')
+    decoded = sandbox_variants.parse(recipe_id) if recipe_id else None
+    if decoded and (decoded['family'] != family_id or decoded['seed'] != seed):
+        raise ValueError('Shared recipe and requested family/seed differ.')
+    sandbox_variants.identity(family_id, seed)
+    digest = hashlib.sha256(Path(exe).read_bytes()).hexdigest()
+    key = (digest, family_id, seed, recipe_id)
+    with _variant_lock:
+        cached = _variant_requests.get(key)
+        if cached in _variants:
+            _variant_requests.move_to_end(key)
+            _variants.move_to_end(cached)
+            return copy.deepcopy(_variants[cached])
+    family = next(level for level in load_levels() if level['id'] == family_id)
+    if decoded:
+        level = sandbox_variants.reconstruct(family, seed, decoded['attempt'])
+        receipt = sandbox_variants.validate(level, exe, logs)
+        if not receipt['valid']:
+            raise ValueError('This shared challenge no longer passes its physics checks.')
+        energy = receipt['mean_energy_j']
+        quantum = 10 ** (math.floor(math.log10(max(energy, 1e-12))) - 2)
+        level['par_energy_j'] = math.ceil(energy / quantum) * quantum
+        level['variant'].update(validated=True, validation=receipt, measured_energy_j=energy)
+    else:
+        level = sandbox_variants.preflight(family, seed, exe, logs)
+    with _variant_lock:
+        _variants[level['id']] = copy.deepcopy(level)
+        _variant_requests[key] = level['id']
+        while len(_variants) > 512:
+            _variants.popitem(last=False)
+        while len(_variant_requests) > 1024:
+            _variant_requests.popitem(last=False)
+    return level
 
 
 def requested_level(data):
@@ -1549,5 +1605,9 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
 
 def public(level):
     """What the page needs to show a level: never its solution."""
-    return {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
+    result = {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
                                   'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty') if k in level}
+    if level.get('variant'):
+        result['variant'] = {k: level['variant'][k] for k in ('family', 'seed', 'version', 'attempt',
+            'fallback', 'validated', 'parameter', 'parameter_label', 'kind', 'value', 'measured_energy_j') if k in level['variant']}
+    return result
