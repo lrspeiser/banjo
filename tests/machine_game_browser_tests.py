@@ -243,6 +243,41 @@ class Puzzles(unittest.TestCase):
         self.assertEqual((notes[-1]['text'], notes[-1]['level']), ('The plank looked like it floated', 'gap'))
         self.assertNotIn('127.0.0.1', json.dumps(notes[-1]), 'nothing that names the player is kept')
 
+    def test_root_opens_play_without_flashing_or_building_the_editor(self):
+        # Even while the module is unavailable, the initial HTML keeps the
+        # editor out of sight. The server redirects before sending a page.
+        self.page.send('Network.enable')
+        self.page.send('Network.setCacheDisabled', {'cacheDisabled': True})
+        self.page.send('Network.setBlockedURLs', {'urls': ['*/machine.js']})
+        try:
+            self.page.send('Page.navigate', {'url': self.base + '/'})
+            self.wait("location.pathname === '/play' && Boolean(document.getElementById('page-loading')) && !document.getElementById('page-loading').hidden", 10)
+            self.assertEqual(self.js("document.querySelector('main').getBoundingClientRect().height"), 0)
+            self.assertGreater(self.js("document.getElementById('page-loading').getBoundingClientRect().height"), 0)
+        finally:
+            self.page.send('Network.setBlockedURLs', {'urls': []})
+            self.page.send('Network.setCacheDisabled', {'cacheDisabled': False})
+        # Record actual API operations: browsing must not open a live world,
+        # including for a returning player whose last choice was the sandbox.
+        self.js("localStorage.setItem('banjo-play-save', JSON.stringify({current:'Landing test',players:{'Landing test':{levels:{},last:'free'}}})); localStorage.removeItem('banjo-play-guide-seen')")
+        self.page.events.clear()
+        try:
+            self.page.send('Page.navigate', {'url': self.base + '/'})
+            self.wait("document.querySelectorAll('.ls-list li').length === 8 && document.querySelector('.ls-summary').textContent.startsWith('Landing test:')", 30)
+            self.assertEqual(self.js('location.pathname + location.search'), '/play')
+            self.assertEqual(self.js("document.querySelector('main').getBoundingClientRect().height"), 0)
+            requests = [e['params']['request'] for e in self.page.events if e['method'] == 'Network.requestWillBeSent']
+            ops = [json.loads(r['postData'])['op'] for r in requests if r['url'].endswith('/api/machine') and 'postData' in r]
+            self.assertEqual(ops, ['levels'])
+            self.assertGreater(self.js("document.getElementById('guide').getBoundingClientRect().height"), 0)
+            self.press('Got it')
+            self.press('Play level 1, Mind the gap')
+            self.wait(READY, 90)
+            self.assertGreater(self.js("document.querySelector('main').getBoundingClientRect().height"), 0)
+            self.assertEqual(self.js('location.pathname + location.search'), '/play?level=gap')
+        finally:
+            self.js("localStorage.removeItem('banjo-play-save')")
+
     def test_the_levels_screen_shows_each_players_own_progress(self):
         # /play on its own: every level and how far this player has got.
         self.page.send('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 860, 'deviceScaleFactor': 1,

@@ -622,6 +622,7 @@ window.machineScreenPoint = point => {
 
 function resize() {
   const w = view.clientWidth, h = view.clientHeight;
+  if (!w || !h) return;
   renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
@@ -2434,6 +2435,8 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
 // ---- the levels screen: every level, and how far this player has got --------------------
 function showLevelsScreen(show) {
   const box = $('levels-screen');
+  const guide = $('guide');
+  $('game').prepend(guide);
   box.hidden = !show;
   document.body.classList.toggle('on-levels', show);
   if (!show) { resize(); return; }
@@ -2441,6 +2444,7 @@ function showLevelsScreen(show) {
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Levels'});
+  box.append(guide);
   if (level) head.append(button(`Back to ${levelTitle(level)}`, () => showLevelsScreen(false)));
   // Who is playing: each name keeps its own progress, in this browser.
   const who = add(box, 'form', {className: 'ls-player'});
@@ -2497,6 +2501,7 @@ renderer.domElement.addEventListener('pointerdown', () => {
 
 async function chooseLevel(id, design = null) {
   if ($('piece-picker').open) $('piece-picker').close();
+  document.querySelector('main').hidden = false;
   keepBuild(); showSandboxScreen(false); showLevelsScreen(false);
   level = id === 'free' && freeLevel ? freeLevel : levels.find(l => l.id === id) || levels[0];
   activeDesign = null;
@@ -2714,16 +2719,17 @@ async function startGame() {
   }
   const r = await api({op: 'levels'});
   levels = r.levels; freeLevel = r.free || null; sandboxBase = r.sandbox_base; sandboxTemplates = r.sandbox || [];
-  // /play on its own opens the levels screen, over the level this player is up to.
-  const upTo = levels.find(l => !bestStars(l.id)) || levels[0];
+  // Browse first. A landing page does not build a world or replace /play
+  // with the last puzzle's URL before the player chooses a level.
+  $('page-loading').hidden = true;
   if (location.pathname === '/machine') {
     if (params.has('design') || sharedBuild) {
       const d = designStore().items.find(d => d.id === params.get('design'));
       await chooseLevel('free', d);
     } else showSandboxScreen();
   } else {
-    await chooseLevel(params.get('level') || (me().last === 'free' ? upTo.id : me().last) || upTo.id);
-    if (!params.get('level')) showLevelsScreen(true);
+    if (params.get('level')) await chooseLevel(params.get('level'));
+    else showLevelsScreen(true);
   }
 }
 // The scene in sight: on a phone the panel below it (the tray, Run it) is a
@@ -2764,5 +2770,8 @@ addEventListener('pagehide', () => {
 
 const history_ = window.history;
 resize(); render();
-if (LEVEL_MODE) startGame().catch(e => { $('clock').textContent = 'Could not load the levels: ' + e.message; });
+if (LEVEL_MODE) startGame().catch(e => {
+  $('page-loading').hidden = false;
+  $('page-loading').textContent = 'Could not load Banjo: ' + e.message + '. Reload to try again.';
+});
 else fetch('/machine-default.json').then(r => r.json()).then(d => build(d)).catch(e => { $('clock').textContent = 'Could not load the machine: ' + e.message; });

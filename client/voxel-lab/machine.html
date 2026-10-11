@@ -1,6 +1,8 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo Machine</title><link rel="stylesheet" href="/machine.css"></head><body>
 <header><strong>Banjo <span>Machine</span></strong><nav><a href="/play" id="levels-open">Levels</a><a href="/machine" id="sandbox-open">Sandbox</a><a href="/play" id="guide-open">How to play</a></nav><output id="build">Checking…</output></header>
-<main>
+<section id="page-loading" class="levels-screen" role="status">Loading Banjo…</section>
+<noscript><p class="levels-screen">Enable JavaScript to choose and play a level.</p></noscript>
+<main hidden>
 <section id="view" tabindex="-1" aria-label="The machine in 3D, as the engine calculates it">
 <output id="clock">Setting up…</output>
 <div id="labels" aria-hidden="true"></div>
