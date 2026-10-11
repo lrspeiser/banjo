@@ -263,8 +263,10 @@ function syncWater(w) {
 // in its body's own frame and carried by that body's measured pose. Hidden
 // once the engine reports the joint gone.
 const ropes = [];
+const LINK_DOT = new THREE.SphereGeometry(.012, 12, 8);
+const linkLook = {hinge: new THREE.MeshBasicMaterial({color: 0xffd34d}), fix: new THREE.MeshBasicMaterial({color: 0xf2f6f8})};
 function syncRopes() {
-  for (const r of ropes) { scene.remove(r.line); r.line.geometry.dispose(); }
+  for (const r of ropes) { scene.remove(r.line); if (r.line.geometry !== LINK_DOT) r.line.geometry.dispose(); }
   ropes.length = 0;
   if (!machine) return;
   const local = (name, at) => {
@@ -273,6 +275,15 @@ function syncRopes() {
     return new THREE.Vector3(...at).sub(new THREE.Vector3(...b.position_m)).applyQuaternion(q.invert());
   };
   for (const j of machine.joints) {
+    // A pin or glue a player put between two parts: a dot where they join.
+    if (/^your link \d+$/.test(j.name) && (j.kind === 'hinge' || j.kind === 'fix')) {
+      const a = local(j.a, j.at_m);
+      if (!a) continue;
+      const dot = new THREE.Mesh(LINK_DOT, linkLook[j.kind]);
+      scene.add(dot);
+      ropes.push({line: dot, dot: true, name: j.name, a: j.a, localA: a});
+      continue;
+    }
     if (j.kind !== 'tie' && j.kind !== 'spring' && j.kind !== 'pulley') continue;
     if (j.hidden) continue;   // a rope's cord, inside the chain drawn as its segments
     const a = local(j.a, j.at_m), b = local(j.b, j.at_b_m);
@@ -301,6 +312,12 @@ function updateRopes() {
     return v.clone().applyQuaternion(q).add(new THREE.Vector3(...b.position_m));
   };
   for (const r of ropes) {
+    if (r.dot) {
+      const pa = at(r.a, r.localA);
+      r.line.visible = Boolean(pa) && !gone.has(r.name);
+      if (pa) r.line.position.copy(pa);
+      continue;
+    }
     const pa = at(r.a, r.localA), pb = at(r.b, r.localB);
     r.line.visible = Boolean(pa && pb) && !gone.has(r.name);
     if (r.line.visible) r.line.geometry.setFromPoints([pa, ...r.over, pb]);
@@ -797,7 +814,25 @@ function moveGhostTo(clientX, clientY, hold = {x: 0, z: 0}) {
   const at = ghost && sceneHit(clientX, clientY);
   if (!at) return;
   const moved = [setKnob(ghost.p, 'x_m', at.x - hold.x), setKnob(ghost.p, 'z_m', at.z - hold.z)].some(Boolean);
-  if (moved) { followGhost(); showGhostKnobs(); askGhost(); }
+  if (moved) { ghost.snapNext = true; followGhost(); showGhostKnobs(); askGhost(); }
+}
+
+// Where the other pieces connect, while a piece is placed: a dot at each --
+// green where a marble comes in, amber where it goes out, violet a gate's
+// paddle -- the one it is joined to bigger.
+const portGroup = new THREE.Group();
+scene.add(portGroup);
+const PORT_DOT = new THREE.SphereGeometry(.018, 14, 10);
+const portLook = {in: 0x5fe08f, out: 0xffb347, trigger: 0xc38bff};
+function drawPorts(list, joined) {
+  for (const c of [...portGroup.children]) portGroup.remove(c);
+  for (const q of list) {
+    const dot = new THREE.Mesh(PORT_DOT, new THREE.MeshBasicMaterial({color: portLook[q.kind] || 0xffffff, transparent: true,
+      opacity: .85, depthTest: false}));
+    dot.position.set(...q.at);
+    if (joined && joined.to === q.name && joined.port === q.port) dot.scale.setScalar(1.8);
+    portGroup.add(dot);
+  }
 }
 
 // The knob that turns a piece about an axis: the free one, or for the turn
@@ -996,13 +1031,21 @@ function pictureInto(img, t) {
 async function askGhost() {
   if (!ghost) return;
   if (ghost.busy) { ghost.again = true; return; }
-  const g = ghost, sent = {x: g.p.x_m ?? 0, z: g.p.z_m ?? 0};
-  g.busy = true; g.again = false;
+  const g = ghost, sent = {x: g.p.x_m ?? 0, z: g.p.z_m ?? 0}, snapping = Boolean(g.snapNext);
+  g.busy = true; g.again = false; g.snapNext = false;
   try {
-    const r = await api({op: 'level_ghost', level: level.id, placements: ghostPlacements(), index: g.index});
+    const r = await api({op: 'level_ghost', level: level.id, placements: ghostPlacements(), index: g.index, snap: snapping});
     if (ghost !== g) return;
-    Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], energy: r.energy, drawnAt: sent, answered: true});
+    // Moved by hand near where it connects to another piece: put where the
+    // two connect, and asked about again there.
+    if (r.snap && r.snap.moved && !g.again) {
+      const moved = Object.entries(r.snap.knobs).map(([k, v]) => setKnob(g.p, k, v)).some(Boolean);
+      if (moved) { followGhost(); showGhostKnobs(); g.again = true; }
+    }
+    Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], energy: r.energy, drawnAt: sent, answered: true,
+                      joined: r.snap ? `${r.snap.port} of ${r.snap.to}` : null});
     drawGhost(r.parts, r.fits);
+    drawPorts(r.ports || [], r.snap);
     schedulePreview();
   } catch (e) {
     if (ghost === g) Object.assign(g, {fits: false, problems: e.data && e.data.problems ? e.data.problems : [e.message], answered: true});
@@ -1015,7 +1058,7 @@ async function askGhost() {
 // A piece from the tray (index after the rest) or one picked up (its own
 // index): a ghost of it, following the pointer, starting where the middle of
 // the view meets the scene.
-function startGhost(p, index) {
+function startGhost(p, index, keepPlace = false) {
   endGhost();
   ghost = {p, index, was: index < placements.length ? placements[index] : null, follow: false, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {}};
@@ -1024,7 +1067,8 @@ function startGhost(p, index) {
   renderTray(); renderPlaced(); renderGhostBar();
   // Where the ghost is: in sight (a phone's page has scrolled down to the tray).
   sceneIntoView();
-  if (!ghost.was) {
+  // A copy starts beside what it copies; a new piece where the view's middle meets the scene.
+  if (!ghost.was && !keepPlace) {
     const rect = renderer.domElement.getBoundingClientRect();
     const at = sceneHit(rect.left + rect.width / 2, rect.top + rect.height / 2);
     if (at) { setKnob(ghost.p, 'x_m', at.x); setKnob(ghost.p, 'z_m', at.z); showGhostKnobs(); }
@@ -1043,7 +1087,7 @@ function pickUp(i) {
 
 function endGhost() {
   ghost = null; draggingGhost = null;
-  clearGhostMeshes(); ghostGroup.position.set(0, 0, 0);
+  clearGhostMeshes(); ghostGroup.position.set(0, 0, 0); drawPorts([]);
   view.classList.remove('placing', 'looking');
   looking = false;
   renderGhostBar();
@@ -1053,6 +1097,7 @@ function cancelGhost() { if (!ghost) return; endGhost(); renderTray(); renderPla
 
 function setGhostDown() {
   if (!ghost || !ghost.fits || ghost.busy || !ghost.answered) return;
+  remember();
   if (ghost.was) placements[ghost.index] = ghost.p; else placements.push(ghost.p);
   endGhost(); renderTray(); renderPlaced(); scheduleRebuild(0);
 }
@@ -1139,7 +1184,8 @@ function showGhostState() {
     said.className = 'state ' + (ghost.fits ? 'fits' : 'refused');
     said.textContent = (ghost.follow ? 'It follows the pointer: click where it should go. ' : '') + (ghost.fits ? (ghost.sun && ghost.sun.length
       ? `Faces ${ghost.sun[0].off_sun_deg}° off the sun: about ${Math.round(ghost.sun[0].sunlight_w)} W.` : 'It fits here.')
-      : ghost.problems.join('; ')) + (ghost.fits && ghost.energy ? ' ' + madeAgainstPar() : '');
+      : ghost.problems.join('; ')) + (ghost.joined ? ` Joined to the ${ghost.joined}.` : '') +
+      (ghost.fits && ghost.energy ? ' ' + madeAgainstPar() : '');
   }
   const state = $('ghost-state'), down = $('ghost-down');
   if (!ghost || !state) return;
@@ -1351,6 +1397,8 @@ window.machineBodyScreen = name => {
   const c = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()).project(camera), rect = renderer.domElement.getBoundingClientRect();
   return [rect.left + (c.x + 1) / 2 * rect.width, rect.top + (1 - c.y) / 2 * rect.height];
 };
+// For tests: the pieces as they stand.
+window.machinePlacements = () => JSON.parse(JSON.stringify(placements));
 // For tests: where each body is in the world now.
 window.machineBodies = () => Object.fromEntries([...world.bodies].map(([name, b]) => [name, b.position_m]));
 // For tests: where the piece being placed is on the screen, and the view.
@@ -1371,7 +1419,7 @@ renderer.domElement.addEventListener('pointermove', e => {
   if (!ghost) {
     view.classList.remove('grab');
     // A piece of yours under the mouse can be clicked to pick it up.
-    if (!e.buttons && e.pointerType === 'mouse') view.classList.toggle('pickable', !pullMode && placedAt(e.clientX, e.clientY) >= 0);
+    if (!e.buttons && e.pointerType === 'mouse') view.classList.toggle('pickable', !pullMode && !attachMode && placedAt(e.clientX, e.clientY) >= 0);
     return;
   }
   if (draggingGhost && pointers.size <= 1) {
@@ -1379,7 +1427,7 @@ renderer.domElement.addEventListener('pointermove', e => {
     if (!at) return;
     const moved = [setKnob(ghost.p, 'x_m', draggingGhost.x + at.x - draggingGhost.from.x),
                    setKnob(ghost.p, 'z_m', draggingGhost.z + at.z - draggingGhost.from.z)].some(Boolean);
-    if (moved) { followGhost(); showGhostKnobs(); askGhost(); }
+    if (moved) { ghost.snapNext = true; followGhost(); showGhostKnobs(); askGhost(); }
   } else if (ghost.follow && !e.buttons) moveGhostTo(e.clientX, e.clientY);
   else if (!e.buttons) view.classList.toggle('grab', !ghost.follow && !looking && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
 });
@@ -1388,7 +1436,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (ghost && click && !looking && (ghost.follow || !nearGhost(e.clientX, e.clientY, 0))) {
     moveGhostTo(e.clientX, e.clientY);
     if (ghost.follow) { ghost.follow = false; renderPlaced(); renderGhostBar(); showGhostState(); }
-  } else if (!ghost && click && !pullMode) {
+  } else if (!ghost && click && !pullMode && !attachMode) {
     const i = placedAt(e.clientX, e.clientY);
     if (i >= 0) pickUp(i);
   }
@@ -1520,6 +1568,76 @@ function drawPull() {
 }
 window.machinePullState = () => pulling && {body: pulling.name, force_n: Math.round(pullForce(pulling.clientX, pulling.clientY).force.length())};
 
+// ---- joining two parts: 🔗 Attach ------------------------------------------------
+// With Attach on, press one part, then another: a card asks how to join them
+// -- glue where they were pressed, a pin there (its axle along x, along z or
+// upright), or a string from the first point to the second, as long as
+// it is then. The join is one of the pieces: it is kept, taken back, removed.
+let attachMode = false, attaching = [];
+const attachMark = new THREE.Group();
+scene.add(attachMark);
+function partAt(clientX, clientY) {
+  pointerRay(clientX, clientY);
+  const nameOf = new Map([...meshes].map(([name, m]) => [m, name]));
+  const hit = raycaster.intersectObjects([...nameOf.keys()].filter(m => m.visible), true).find(h => h.object.isMesh);
+  let o = hit && hit.object;
+  while (o && !nameOf.has(o)) o = o.parent;
+  return o ? {name: nameOf.get(o), at: hit.point.toArray().map(v => +v.toFixed(4))} : null;
+}
+function cancelAttach() {
+  attaching = [];
+  for (const c of [...attachMark.children]) attachMark.remove(c);
+  $('attach-card').hidden = true; $('attach-card').replaceChildren();
+}
+function setAttach(on) {
+  attachMode = Boolean(on);
+  if (attachMode && pullMode) $('pull-tool').click();
+  $('attach-tool').setAttribute('aria-pressed', String(attachMode));
+  view.classList.toggle('attaching', attachMode);
+  cancelAttach();
+}
+$('attach-tool').addEventListener('click', () => { if (ghost) cancelGhost(); setAttach(!attachMode); });
+$('pull-tool').addEventListener('click', () => { if (pullMode && attachMode) setAttach(false); });
+function attachChoice() {
+  const [one, two] = attaching, card = $('attach-card');
+  const body = name => world.bodies.get(name);
+  card.replaceChildren(Object.assign(document.createElement('p'), {textContent: `Join ${one.name} and ${two.name}:`}));
+  if (body(one.name) && body(two.name) && body(one.name).anchored && body(two.name).anchored) {
+    card.append(Object.assign(document.createElement('p'), {className: 'hint', textContent: 'Both are fixed, so a join would move nothing. Join something that moves.'}),
+                button('Cancel', () => setAttach(false)));
+    card.hidden = false;
+    return;
+  }
+  const mid = one.at.map((v, i) => +((v + two.at[i]) / 2).toFixed(4));
+  const join = (kind, extra = {}) => {
+    remember();
+    placements.push({piece: 'link', kind, a: one.name, b: two.name, at_m: kind === 'string' ? one.at : mid,
+                     ...(kind === 'string' ? {at_b_m: two.at} : {}), ...extra});
+    setAttach(false); renderTray(); renderPlaced(); scheduleRebuild(0);
+  };
+  const row = Object.assign(document.createElement('div'), {className: 'actions'});
+  row.append(button('Glue', () => join('glue'), {ariaLabel: 'Glue them together'}),
+             button('String', () => join('string'), {ariaLabel: 'Tie them with a string'}),
+             button('Pin, axle along x', () => join('pin', {axis: 'along x'}), {ariaLabel: 'Pin them, the axle along x'}),
+             button('Pin, axle along z', () => join('pin', {axis: 'along z'}), {ariaLabel: 'Pin them, the axle along z'}),
+             button('Pin, axle upright', () => join('pin', {axis: 'upright'}), {ariaLabel: 'Pin them, the axle upright'}),
+             button('Cancel', () => setAttach(false)));
+  card.append(row);
+  card.hidden = false;
+}
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!attachMode || ghost || !pressedAt || Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) >= 6) return;
+  const part = partAt(e.clientX, e.clientY);
+  if (!part || attaching.length >= 2 || (attaching[0] && attaching[0].name === part.name)) return;
+  attaching.push(part);
+  const dot = new THREE.Mesh(PORT_DOT, new THREE.MeshBasicMaterial({color: 0xffd34d, depthTest: false}));
+  dot.position.set(...part.at);
+  attachMark.add(dot);
+  $('clock').title = attaching.length === 1 ? `${part.name}: now press the part to join it to` : '';
+  if (attaching.length === 2) attachChoice();
+}, true);
+window.machineAttachState = () => ({on: attachMode, picked: attaching.map(p => p.name), card: !$('attach-card').hidden});
+
 // Turning by hand: Shift and the wheel turns it, Alt and the wheel tips it.
 renderer.domElement.addEventListener('wheel', e => {
   if (!ghost || !(e.shiftKey || e.altKey)) return;
@@ -1631,7 +1749,7 @@ function renderSceneTray() {
   bar.hidden = !LEVEL_MODE || !level || Boolean(ghost);
   if (bar.hidden) return;
   bar.classList.toggle('many', level.tray.length > 4);
-  bar.replaceChildren(...level.tray.map(t => {
+  bar.replaceChildren(...level.tray.filter(t => !t.attach).map(t => {
     const left = (t.count || 1) - placements.filter(p => p.piece === t.piece).length;
     const b = button(`+ ${pieceLabel(t.piece)}`, () => {
       const p = {piece: t.piece};
@@ -1651,7 +1769,7 @@ function renderSceneTray() {
 function renderTray() {
   renderSceneTray();
   const ul = $('tray'); ul.replaceChildren();
-  for (const t of level.tray) {
+  for (const t of level.tray.filter(t => !t.attach)) {
     const used = placements.filter(p => p.piece === t.piece).length + (ghost && !ghost.was && ghost.p.piece === t.piece ? 1 : 0);
     const count = t.count || 1, li = document.createElement('li');
     li.className = used >= count ? 'used-up' : '';
@@ -1753,12 +1871,28 @@ function renderPlaced() {
     const made = placedEnergy[`your ${p.piece} ${i + 1}`];
     head.append(Object.assign(document.createElement('strong'), {textContent: `your ${p.piece} ${i + 1}${made ? ' · ' + energyText(made.j) + ' to make' : ''}`}));
     const actions = Object.assign(document.createElement('div'), {className: 'ghost-actions'});
+    const remove = button('Remove', () => {
+      if (ghost) endGhost();
+      remember(); removePiece(i); renderTray(); renderPlaced(); scheduleRebuild(0);
+    }, {ariaLabel: `Remove your ${p.piece} ${i + 1}`});
+    if (p.piece === 'link') {
+      // A join is not picked up or copied: it is made again with Attach.
+      actions.append(remove);
+      head.append(actions);
+      li.append(head, Object.assign(document.createElement('p'), {className: 'knob-summary', textContent:
+        `${p.kind === 'string' ? 'A string' : p.kind === 'pin' ? `A pin (its axle ${p.axis || 'along z'})` : 'Glue'} between ${p.a} and ${p.b}`}));
+      ol.append(li);
+      return;
+    }
     // Picked up, it becomes a ghost again: moved, changed, turned, set down.
+    // A copy is a new ghost of it, 10 cm along.
     actions.append(button('Pick up', () => pickUp(i), {ariaLabel: `Pick up your ${p.piece} ${i + 1}`}),
-                   button('Remove', () => {
-                     if (ghost) endGhost();
-                     placements.splice(i, 1); renderTray(); renderPlaced(); scheduleRebuild(0);
-                   }, {ariaLabel: `Remove your ${p.piece} ${i + 1}`}));
+                   button('Copy', () => {
+                     const copy = {...p};
+                     if (typeof copy.x_m === 'number') setKnob(copy, 'x_m', copy.x_m + 0.1);
+                     startGhost(copy, placements.length, true);
+                   }, {ariaLabel: `Copy your ${p.piece} ${i + 1}`}),
+                   remove);
     head.append(actions);
     li.append(head, Object.assign(document.createElement('p'), {className: 'knob-summary', textContent: describeKnobs(p, t)}));
     ol.append(li);
@@ -1772,7 +1906,48 @@ function renderPlaced() {
   $('placed-head').hidden = !placements.length && !ghost;
 }
 
+// A piece taken away: the pieces after it move up one, so what a join names
+// moves with them, and a join to the piece taken away goes with it.
+function removePiece(i) {
+  const gone = `your ${placements[i].piece} ${i + 1}`;
+  const renamed = name => {
+    const m = /^your (\S+) (\d+)(.*)$/.exec(name);
+    return m && Number(m[2]) > i + 1 ? `your ${m[1]} ${Number(m[2]) - 1}${m[3]}` : name;
+  };
+  placements.splice(i, 1);
+  placements = placements.filter(p => p.piece !== 'link' || ![p.a, p.b].some(n => n === gone || n.startsWith(gone + ' ')))
+    .map(p => p.piece === 'link' ? {...p, a: renamed(p.a), b: renamed(p.b)} : p);
+}
+
 function scheduleRebuild(ms = 350) { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildLevel(false).catch(() => {}), ms); }
+
+// Every change to the pieces can be taken back, and put back again: a copy
+// of them as they were, before each change.
+let undone = [], redone = [];
+function remember() {
+  undone.push(JSON.stringify(placements)); redone = [];
+  if (undone.length > 60) undone.shift();
+  showUndo();
+}
+function showUndo() {
+  $('undo-pieces').disabled = !undone.length; $('redo-pieces').disabled = !redone.length;
+}
+function travel(from, to) {
+  if (!from.length) return;
+  to.push(JSON.stringify(placements));
+  placements = JSON.parse(from.pop());
+  endGhost(); cancelAttach(); renderTray(); renderPlaced(); showUndo(); scheduleRebuild(0);
+}
+$('undo-pieces').addEventListener('click', () => travel(undone, redone));
+$('redo-pieces').addEventListener('click', () => travel(redone, undone));
+document.addEventListener('keydown', e => {
+  if (!LEVEL_MODE || !(e.ctrlKey || e.metaKey) || e.target.closest('input, textarea, select')) return;
+  const key = e.key.toLowerCase();
+  if (key === 'z' && !e.shiftKey) travel(undone, redone);
+  else if (key === 'y' || (key === 'z' && e.shiftKey)) travel(redone, undone);
+  else return;
+  e.preventDefault();
+});
 
 // A free build is kept for the player, in this browser, as it changes.
 function keepBuild() {
@@ -1838,6 +2013,7 @@ let advanceTimer = null;
 // or change them) or with none.
 function startOver(keep) {
   endGhost();
+  if (!keep && placements.length) remember();
   if (!keep) { placements = []; placedCost = []; placedEnergy = {}; helped = false; }
   renderTray(); renderPlaced();
   rebuildLevel(false).then(() => {
@@ -1990,6 +2166,8 @@ async function chooseLevel(id) {
   level = id === 'free' && freeLevel ? freeLevel : levels.find(l => l.id === id) || levels[0];
   endGhost(); closeDone(); previewAsk++; clearPreview();
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
+  undone = []; redone = []; showUndo(); cancelAttach();
+  $('attach-tool').hidden = !level.free;
   history_.replaceState(null, '', '/play?level=' + level.id);
   $('title').textContent = levelTitle(level);
   $('brief').textContent = level.brief;
@@ -2016,7 +2194,7 @@ $('free-clear').addEventListener('click', () => {
 $('free-example').addEventListener('click', () => {
   if (!level || !level.example) return;
   if (placements.length && !confirm('Put the example on the table instead of your build?')) return;
-  endGhost(); placements = level.example.map(p => ({...p})); renderTray(); renderPlaced();
+  endGhost(); remember(); placements = level.example.map(p => ({...p})); renderTray(); renderPlaced();
   framedFree = false; rebuildLevel(false).catch(() => {});
 });
 
@@ -2029,7 +2207,7 @@ async function askLevel(mode) {
     const r = await api({op: 'chat', level: level.id, placements, mode, message, last_run: lastRun});
     say('model', r.reply);
     if (mode === 'build' && Array.isArray(r.placements)) {
-      endGhost();
+      endGhost(); remember();
       placements = r.placements.map(p => { const q = {...p}; delete q.cost; return q; });
       helped = true; renderTray(); renderPlaced();
       if (r.rehearsal) say(r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.goal_at_s != null
@@ -2074,6 +2252,7 @@ async function startGame() {
   // A level plays at real time, the camera following what moves, its path
   // shown: the sandbox's switches for those are not on the game page.
   for (const id of ['follow', 'path-toggle']) $(id).hidden = true;
+  for (const id of ['undo-pieces', 'redo-pieces']) $(id).hidden = false;
   document.querySelector('#scene-actions .speed').hidden = true;
   // What the player works with, together at the top of the scene: the
   // pieces to add (the arrows while one is placed), Run it and Set up again,

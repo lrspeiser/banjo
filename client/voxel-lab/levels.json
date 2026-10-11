@@ -2326,6 +2326,51 @@
       "label": "boiler on the"
      }
     }
+   },
+   {
+    "piece": "link",
+    "count": 60,
+    "cost": 0,
+    "turning": false,
+    "across": false,
+    "attach": true,
+    "knobs": {
+     "kind": {
+      "choices": [
+       "glue",
+       "pin",
+       "string"
+      ],
+      "default": "pin",
+      "label": "joined by"
+     },
+     "a": {
+      "part": true,
+      "label": "one part"
+     },
+     "b": {
+      "part": true,
+      "label": "the other part"
+     },
+     "at_m": {
+      "point": true,
+      "label": "where"
+     },
+     "at_b_m": {
+      "point": true,
+      "needed": false,
+      "label": "the string's other end"
+     },
+     "axis": {
+      "choices": [
+       "along z",
+       "along x",
+       "upright"
+      ],
+      "default": "along z",
+      "label": "the pin's axle"
+     }
+    }
    }
   ],
   "hints": [

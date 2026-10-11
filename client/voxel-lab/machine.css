@@ -125,6 +125,13 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 /* How the run went. */
 .level-done{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;width:min(360px,calc(100% - 24px));box-sizing:border-box;padding:16px 18px;text-align:center;background:#142836f5;border:1px solid #5fe08f;border-radius:12px;box-shadow:0 10px 30px #000a}
 .level-done[hidden]{display:none}
+.attach-card{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:4;width:min(460px,calc(100% - 24px));padding:10px 12px;background:#142836f5;border:1px solid #ffd34d;border-radius:12px;box-shadow:0 10px 30px #000a;font-size:14px}
+.attach-card[hidden]{display:none}
+.attach-card p{margin:0 0 6px}
+.attach-card .actions{display:flex;flex-wrap:wrap;gap:6px}
+.attach-card button{min-height:40px;padding:6px 10px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer;font:14px system-ui}
+#attach-tool[aria-pressed=true]{background:#6b5a1f;border-color:#ffd34d}
+#view.attaching canvas{cursor:crosshair}
 .level-done h2{margin:0 0 4px;font-size:22px}
 .level-done .stars{margin:2px 0 6px;font-size:30px;letter-spacing:4px;color:#ffd34d}
 .level-done p{margin:4px 0;font-size:14px}

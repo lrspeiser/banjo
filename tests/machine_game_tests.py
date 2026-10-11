@@ -356,6 +356,8 @@ class FreeBuild(unittest.TestCase):
 
     def test_every_free_piece_fits_as_it_comes(self):
         for t in self.FREE['tray']:
+            if t.get('attach'):
+                continue      # a link is made by joining two parts, not from the tray
             placed = dict({k: knob_default(r) for k, r in t['knobs'].items()}, piece=t['piece'])
             g = mg.ghost(self.FREE, [placed], 0)
             with self.subTest(piece=t['piece']):
@@ -379,6 +381,62 @@ class FreeBuild(unittest.TestCase):
         gap = -mw.overlap_depth(marble, board)
         self.assertGreaterEqual(gap, 0.0)
         self.assertLess(gap, 0.004, 'it rests on the slope, not on top of the slope\'s box')
+
+    def test_a_piece_moved_near_another_snaps_where_they_connect(self):
+        free = self.FREE
+        first = {'piece': 'track', 'x_m': 0.0, 'z_m': 0.0, 'top_height_m': 0.8, 'run_m': 0.6, 'drop_m': 0.1, 'end': 'open'}
+        # A track's top end near the first's far end (0.6, 0.7, 0): just under
+        # it and a little past it, turned however it was turned.
+        second = {'piece': 'track', 'x_m': 0.65, 'z_m': 0.05, 'top_height_m': 0.3, 'run_m': 0.6, 'drop_m': 0.1,
+                  'end': 'open', 'yaw_deg': 90}
+        g = mg.ghost(free, [first, second], 1, snapping=True)
+        self.assertEqual(g['snap']['to'], 'your track 1')
+        self.assertEqual(g['snap']['port'], 'far end')
+        self.assertEqual(g['snap']['knobs'], {'x_m': 0.63, 'z_m': 0.0, 'top_height_m': 0.66})
+        # Only a piece moved by hand is snapped; one already there says what it is joined to.
+        self.assertNotIn('snap', mg.ghost(free, [first, second], 1))
+        there = dict(second, **g['snap']['knobs'])
+        self.assertFalse(mg.ghost(free, [first, there], 1)['snap']['moved'])
+        # A flip-flop under the far end: its middle under it, its board behind
+        # it the way the marbles come.
+        ff = {'piece': 'flipflop', 'x_m': 0.62, 'z_m': 0.03, 'height_m': 0.3, 'tipped': 'left'}
+        snapped = mg.ghost(free, [first, ff], 1, snapping=True)['snap']['knobs']
+        self.assertEqual(snapped, {'x_m': 0.64, 'z_m': 0.0, 'height_m': 0.59, 'yaw_deg': -90})
+        # A track's far end over a gate's paddle, short of it the way it runs.
+        shelf = {'piece': 'shelf', 'x_m': -0.6, 'z_m': 0.0, 'top_height_m': 0.8, 'run_m': 0.4, 'drop_m': 0.015,
+                 'end': 'gate that stays open'}
+        trigger = {'piece': 'track', 'x_m': -0.6, 'z_m': 0.12, 'top_height_m': 1.0, 'run_m': 0.36, 'drop_m': 0.03, 'end': 'open'}
+        g = mg.ghost(free, [shelf, trigger], 1, snapping=True)
+        paddle = next(q for q in g['ports'] if q['kind'] == 'trigger')
+        self.assertEqual(g['snap']['port'], 'gate paddle')
+        far = [g['snap']['knobs']['x_m'] + 0.36, g['snap']['knobs']['top_height_m'] - 0.03]
+        self.assertAlmostEqual(far[0], paddle['at'][0] - 0.05, places=3)
+        self.assertAlmostEqual(far[1], paddle['at'][1] + 0.065, places=3)
+        # A marble near a track's top end sits just in from it.
+        g = mg.ghost(free, [first, {'piece': 'marble', 'x_m': 0.04, 'z_m': 0.02}], 1, snapping=True)
+        self.assertEqual(g['snap']['knobs'], {'x_m': 0.05, 'z_m': 0.0})
+        # Nothing near: nothing snaps.
+        far_away = dict(second, x_m=1.5, z_m=1.5)
+        self.assertNotIn('snap', mg.ghost(free, [first, far_away], 1, snapping=True))
+
+    def test_two_parts_are_joined_by_glue_a_pin_or_a_string(self):
+        free = self.FREE
+        block = {'piece': 'block', 'x_m': 0.0, 'z_m': 0.0, 'tall_m': 0.2}
+        plank = {'piece': 'plank', 'x_m': 0.0, 'z_m': 0.0, 'length_m': 0.6}
+        for kind, extra, joint in (('glue', {}, 'fix'), ('pin', {'axis': 'along z'}, 'hinge'),
+                                   ('string', {'at_b_m': [0.2, 0.25, 0.0]}, 'tie')):
+            link = dict({'piece': 'link', 'kind': kind, 'a': 'your block 1', 'b': 'your plank 2', 'at_m': [0.0, 0.2, 0.0]}, **extra)
+            spec, _, _ = mg.compose(free, [block, plank, link])
+            made = next(j for j in mw.compile_spec(spec)['joints'] if j['name'] == 'your link 3')
+            self.assertEqual(made['kind'], joint)
+            if kind == 'pin':
+                self.assertEqual(made['axis'], [0.0, 0.0, 1.0])
+            if kind == 'string':
+                self.assertAlmostEqual(made['length_m'], math.dist([0.0, 0.2, 0.0], [0.2, 0.25, 0.0]), places=4)
+        with self.assertRaises(mg.LevelRefused):
+            mg.compose(free, [block, dict(link, b='your block 1')])
+        with self.assertRaises(mw.MachineRefused):
+            mg.compose(free, [block, plank, dict(link, b='your plank 9')])
 
     def test_the_example_is_built_as_it_is_written(self):
         spec, checked, cost = mg.compose(self.FREE, self.FREE['example'])
@@ -429,6 +487,62 @@ class Engine(unittest.TestCase):
             shown = mg.preview(free, free['example'], ENGINE, Path(logs))
         self.assertIsNone(shown['goal_at_s'])
         self.assertTrue(shown['paths'][0]['name'].startswith('your marble'), 'the marbles are followed first')
+
+    @need_engine
+    def test_a_marble_goes_from_a_track_onto_the_one_snapped_to_it_and_a_pin_makes_a_seesaw(self):
+        free = mg.level_by_id('free')
+        first = {'piece': 'track', 'x_m': 0.0, 'z_m': 0.0, 'top_height_m': 0.8, 'run_m': 0.6, 'drop_m': 0.1, 'end': 'open'}
+        second = {'piece': 'track', 'x_m': 0.65, 'z_m': 0.05, 'top_height_m': 0.4, 'run_m': 0.6, 'drop_m': 0.1, 'end': 'stop'}
+        second = dict(second, **mg.ghost(free, [first, second], 1, snapping=True)['snap']['knobs'])
+        marble = dict({'piece': 'marble', 'x_m': 0.04, 'z_m': 0.02})
+        placed = [first, second, marble]
+        marble = dict(marble, **mg.ghost(free, placed, 2, snapping=True)['snap']['knobs'])
+        spec, _, _ = mg.compose(free, [first, second, marble])
+
+        def ran(spec, seconds):
+            with tempfile.TemporaryDirectory() as logs:
+                s = mw.MachineSession(mw.compile_spec(spec), ENGINE, Path(logs), paced=False)
+                try:
+                    s.play(True)
+                    began = time.perf_counter()
+                    while time.perf_counter() - began < 120:
+                        with s.lock:
+                            if s.t >= seconds or s.error:
+                                break
+                            s.lock.wait(0.05)
+                    with s.lock:
+                        return s.error, {n: dict(b) for n, b in s.bodies.items()}, [e['text'] for e in s.events]
+                finally:
+                    s.close()
+        error, bodies, events = ran(spec, 3.0)
+        self.assertIsNone(error)
+        end = bodies['your marble 3']['position_m']
+        print(f'\n  snapped tracks: the marble ended at {[round(v, 3) for v in end]}')
+        # At the second track's stop, 1.2 m along, on the track.
+        self.assertAlmostEqual(end[0], second['x_m'] + 0.6 - 0.02 - 0.02, delta=0.02)
+        self.assertGreater(end[1], 0.25)
+        # A plank on a block, pinned at its middle: a marble dropped on one end
+        # tips it about the pin, and it stays on the pin; glued, it does not tip.
+        block = {'piece': 'block', 'x_m': 0.0, 'z_m': 0.0, 'tall_m': 0.2, 'length_m': 0.02, 'depth_m': 0.1}
+        plank = {'piece': 'plank', 'x_m': 0.0, 'z_m': 0.0, 'length_m': 0.6}
+        built = mg.compose(free, [block, plank])[0]
+        top = next(p for p in mw.compile_spec(built)['parts'] if p['name'] == 'your plank 2')['at_m']
+        for kind, tips in (('pin', True), ('glue', False)):
+            link = {'piece': 'link', 'kind': kind, 'a': 'your block 1', 'b': 'your plank 2', 'at_m': [0.0, top[1], 0.0],
+                    'axis': 'along z'}
+            spec = mg.compose(free, [block, plank, link])[0]
+            spec['parts'].append({'name': 'dropped', 'shape': 'sphere', 'material': 'iron', 'size_m': [0.06] * 3,
+                                  'at_m': [0.25, 0.8, 0.0]})
+            error, bodies, events = ran(spec, 1.5)
+            self.assertIsNone(error)
+            q = bodies['your plank 2']['orientation_wxyz']
+            tipped = 2 * math.degrees(math.acos(min(1.0, abs(q[0]))))
+            print(f'  {kind}: the plank turned {tipped:.1f} degrees, its middle at {[round(v, 3) for v in bodies["your plank 2"]["position_m"]]}')
+            self.assertLess(math.dist(bodies['your plank 2']['position_m'], top), 0.02, 'it stays on its pin')
+            if tips:
+                self.assertGreater(tipped, 5.0)
+            else:
+                self.assertLess(tipped, 1.0)
 
     @need_engine
     def test_every_level_is_solved_by_its_solution_every_time_and_not_without_pieces(self):

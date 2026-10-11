@@ -228,9 +228,12 @@ class Puzzles(unittest.TestCase):
                                                               'mobile': False})
         self.page.send('Page.navigate', {'url': f'{self.base}/play'})
         self.wait("document.querySelector('.ls-free') && !document.getElementById('levels-screen').hidden", 90)
-        self.js("(() => { const s = JSON.parse(localStorage.getItem('banjo-play-save') || 'null'); if (s) { for (const p of Object.values(s.players)) delete p.free; localStorage.setItem('banjo-play-save', JSON.stringify(s)); } })()")
         self.press('Free build: build anything')
         self.wait(READY, 90)
+        # An empty table to start from, whatever this player built before.
+        self.js('window.confirm = () => true')
+        self.press('Clear the table')
+        self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
         self.assertEqual(self.js("document.getElementById('title').textContent"), 'Free build')
         self.assertGreaterEqual(self.js("document.querySelectorAll('#scene-tray button').length"), 11)
         self.assertNotIn('left', self.js("document.getElementById('scene-tray').textContent"))
@@ -249,6 +252,88 @@ class Puzzles(unittest.TestCase):
         self.press('Run it')
         self.wait("(window.machineBodies()['your dominoes 11 6'] || [0, 1])[1] < 0.045", 60)
         self.assertTrue(self.js("document.getElementById('level-done').hidden"), 'no score: there is no goal')
+
+    def test_a_track_snaps_to_another_and_pieces_are_copied_undone_and_joined(self):
+        # A second track put at the first's far end snaps under it. A piece
+        # is copied, a change taken back and put back, and two parts are tied
+        # by a string with Attach.
+        self.page.send('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 860, 'deviceScaleFactor': 1,
+                                                              'mobile': False})
+        self.page.send('Page.navigate', {'url': f'{self.base}/play?level=free'})
+        self.wait(f"document.getElementById('clock') && {READY}", 90)
+        self.js('window.confirm = () => true')
+        self.press('Clear the table')
+        self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
+        self.wait('window.machineCamera().settled', 30)
+        self.press('Add a track')
+        self.ghost()
+        self.press('Set it down')
+        self.wait(f"window.machinePlacements().length === 1 && {READY}", 60)
+        first = self.js('window.machinePlacements()[0]')
+        far = [first['x_m'] + first['run_m'], first['top_height_m'] - first['drop_m'], first['z_m']]
+        self.press('Add a track')
+        self.ghost()
+        # Out of the way first: a click on the ghost itself does not move it.
+        self.slide('top end x of your track 2', -1.5)
+        self.ghost()
+        x, y = self.js(f'window.machineScreenPoint({json.dumps(far)})')
+        self.mouse('mousePressed', x, y)
+        self.mouse('mouseReleased', x, y)
+        self.wait("(() => { const g = window.machineGhostState(); return g && g.answered && !g.busy && "
+                  "/Joined to the far end of your track 1/.test(document.querySelector('#ghost-bar .state').textContent); })()", 20)
+        p = self.ghost()['p']
+        self.assertAlmostEqual(p['x_m'], far[0] + 0.03, delta=0.011)
+        self.assertAlmostEqual(p['top_height_m'], far[1] - 0.04, delta=0.011)
+        self.press('Set it down')
+        self.wait(f"window.machinePlacements().length === 2 && {READY}", 60)
+        # A copy is a new ghost of it, 10 cm along; thrown away, nothing changes.
+        self.press('Copy your track 2')
+        self.assertEqual(self.ghost()['index'], 2)
+        self.assertAlmostEqual(self.ghost()['p']['x_m'], p['x_m'] + 0.1, delta=0.011)
+        self.press('Throw the ghost away')
+        self.press('Remove your track 2')
+        self.wait('window.machinePlacements().length === 1', 10)
+        self.press('Undo')
+        self.wait('window.machinePlacements().length === 2', 10)
+        self.press('Redo')
+        self.wait('window.machinePlacements().length === 1', 10)
+        self.press('Undo')
+        self.wait(f"window.machinePlacements().length === 2 && {READY}", 60)
+        # Attach: the first track to the second, by a string.
+        self.press('🔗 Attach')
+        for name in ('your track 1', 'your track 2'):
+            x, y = self.js(f'window.machineBodyScreen({json.dumps(name)})')
+            self.mouse('mousePressed', x, y)
+            self.mouse('mouseReleased', x, y)
+            time.sleep(0.2)
+        self.wait('window.machineAttachState().card', 10)
+        self.assertIn('Both are fixed', self.js("document.getElementById('attach-card').textContent"),
+                      'two fixed parts: a join would move nothing')
+        self.press('Cancel')
+        self.press('Add a marble')
+        self.ghost()
+        self.press('Set it down')
+        self.wait(f"window.machinePlacements().length === 3 && {READY}", 60)
+        self.press('🔗 Attach')
+        for name in ('your track 1', 'your marble 3'):
+            x, y = self.js(f'window.machineBodyScreen({json.dumps(name)})')
+            self.mouse('mousePressed', x, y)
+            self.mouse('mouseReleased', x, y)
+            time.sleep(0.2)
+        self.wait('window.machineAttachState().card', 10)
+        self.press('Tie them with a string')
+        self.wait(f"window.machinePlacements().length === 4 && {READY}", 60)
+        link = self.js('window.machinePlacements()[3]')
+        # Whatever part of the track was pressed first: its board or the rail in front of it.
+        self.assertEqual((link['piece'], link['kind'], link['b']), ('link', 'string', 'your marble 3'))
+        self.assertTrue(link['a'].startswith('your track 1'), link['a'])
+        said = self.js("document.getElementById('placed').textContent")
+        self.assertIn(f"A string between {link['a']} and your marble 3", said)
+        # Taking away the first track takes its string with it, and the
+        # others move up one.
+        self.press('Remove your track 1')
+        self.wait('window.machinePlacements().length === 2', 10)
+        self.assertEqual([q['piece'] for q in self.js('window.machinePlacements()')], ['track', 'marble'])
 
     def test_a_level_opens_before_its_goal_piece_and_a_missed_goal_starts_over(self):
         # Level 4's goal is its engine's piston: before there is one, the

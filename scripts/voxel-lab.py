@@ -570,7 +570,7 @@ class Handler(BaseHTTPRequestHandler):
    elif op=='level_ghost':
     # A piece before it is set down: what it would be and where, and why it
     # could not go there. Compiled only, never run, so it is not rationed.
-    r={'ok':True,**machine_game.ghost(machine_game.level_by_id(data.get('level')),data.get('placements'),data.get('index'))}
+    r={'ok':True,**machine_game.ghost(machine_game.level_by_id(data.get('level')),data.get('placements'),data.get('index'),snapping=bool(data.get('snap')))}
    elif op=='level_score':
     # Stars from what the engine measured in this session's run.
     s=host.get(data.get('session'));game=getattr(s,'game',None)

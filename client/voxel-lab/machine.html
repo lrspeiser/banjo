@@ -7,6 +7,9 @@
 <div id="scene-actions" class="scene-actions">
 <button id="start">Start</button><button id="reset">Set up again</button>
 <button id="pull-tool" aria-pressed="false" title="Pull a part to test it: press on it and drag">🖐 Pull</button>
+<button id="attach-tool" aria-pressed="false" hidden title="Join two parts: press one, then the other">🔗 Attach</button>
+<button id="undo-pieces" hidden disabled title="Take back the last change to your pieces (Ctrl+Z)" aria-label="Undo">↶</button>
+<button id="redo-pieces" hidden disabled title="Put it back (Ctrl+Y)" aria-label="Redo">↷</button>
 <label class="speed">Speed<select id="speed" aria-label="Speed of world time"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
 <button id="follow" aria-pressed="true">Follow</button>
 <button id="path-toggle" aria-pressed="true" hidden title="Show where things will go">Path</button>
@@ -15,6 +18,7 @@
 <div id="move-pad" class="move-pad" hidden aria-label="Move the piece as you see it"></div>
 <section id="preview-legend" class="preview-legend" hidden aria-live="polite" aria-label="Where things will go"></section>
 <section id="level-done" class="level-done" hidden aria-live="polite" aria-label="How the run went"></section>
+<section id="attach-card" class="attach-card" hidden aria-live="polite" aria-label="How to join the two parts"></section>
 <p id="scene-note">Drag to turn · Wheel or pinch to zoom · Every motion is calculated live</p>
 </section>
 <aside>
