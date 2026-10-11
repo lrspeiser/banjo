@@ -2017,6 +2017,16 @@ public:
     // is kept (pulls()). False for a body that is not in the world or does not
     // move.
     bool pull(const std::string &body, const Vec3 &at_world_m, const Vec3 &force_n);
+    // A rope: a chain of segments tied one to the next (`links`, ties), which
+    // hangs, sways and drapes as a rope does, and a `cord` (a tie with a
+    // breaking tension) from its top to what it carries, which carries the
+    // load -- an iterative solver cannot pass a heavy load through a chain of
+    // light bodies, and one cord carries it exactly. What the cord can carry is
+    // what the weakest of the `segments` has left, cut and burned; when it gives
+    // way -- or a segment is cut right through -- it parts, and the chain parts
+    // with it at that segment. False unless the cord and links are ties and the
+    // segments are in the world.
+    bool rope(unsigned cord, const std::vector<std::string> &segments, const std::vector<unsigned> &links);
     [[nodiscard]] std::vector<LivePull> pulls() const;
     // Take the pin out. What hung on it falls.
     void unhinge(unsigned joint);

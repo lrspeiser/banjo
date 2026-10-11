@@ -274,6 +274,7 @@ function syncRopes() {
   };
   for (const j of machine.joints) {
     if (j.kind !== 'tie' && j.kind !== 'spring' && j.kind !== 'pulley') continue;
+    if (j.hidden) continue;   // a rope's cord, inside the chain drawn as its segments
     const a = local(j.a, j.at_m), b = local(j.b, j.at_b_m);
     if (!a || !b) continue;
     const line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color: j.kind === 'spring' ? 0x9fd3ff : 0xd8c9a3}));

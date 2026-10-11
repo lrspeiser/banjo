@@ -3082,6 +3082,14 @@ int main(int argc, char **argv) {
                         if (c.id == id) reply["control"] = controlOf(c, world->motors(), world->joints(), *world);
                 } else if (op == "unhinge") {
                     world->unhinge(command.at("joint").get<unsigned>());
+                } else if (op == "rope") {
+                    // A chain that hangs, and a cord through it that carries.
+                    std::vector<unsigned> links;
+                    for (const auto &id : command.value("links", nlohmann::json::array()))
+                        links.push_back(id.get<unsigned>());
+                    if (!world->rope(command.at("cord").get<unsigned>(),
+                                     command.at("segments").get<std::vector<std::string>>(), links))
+                        throw std::invalid_argument("a rope is a cord with a breaking tension, ties, and its segments");
                 } else if (op == "pull") {
                     // A person testing a part: a force at a point of it, on
                     // until changed; a zero force lets go.

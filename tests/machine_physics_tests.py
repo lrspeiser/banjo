@@ -325,6 +325,26 @@ class Engine(unittest.TestCase):
         self.assertEqual(fixing['capacity_fraction'], 1.0)
 
     @need_engine
+    def test_a_cord_hangs_as_a_chain_and_carries_its_weight_exactly(self):
+        # A cord that bends and sways: a chain of one-cell oak segments, and
+        # a cord through it that carries the 13.6 kg weight -- a chain of light
+        # segments alone let it down 40 cm. The weight stays where it hung; the
+        # cord carries all of it; the chain hangs from the arm.
+        spec = {'schema': mw.SCHEMA, 'cell_m': 0.02,
+                'kits': [{'kit': 'hanging_weight', 'name': 'weight', 'post_m': [0, 0, 0], 'drop_m': 0.4, 'side': '+z',
+                          'hang': 'cord', 'rope_m': 0.3, 'weight_material': 'iron', 'weight_size_m': 0.12}]}
+        start = next(p for p in mw.compile_spec(spec)['parts'] if p['name'] == 'weight')['at_m'][1]
+        r = run(spec, 3.0)
+        self.assertIsNone(r['error'])
+        cord = next(j for j in r['readouts']['joints'] if j['name'] == 'weight cord')
+        print(f"\n  cord: weight {r['bodies']['weight']['position_m'][1] - start:+.4f} m from where it hung, "
+              f"carrying {cord['tension_n']:.1f} N")
+        self.assertAlmostEqual(r['bodies']['weight']['position_m'][1], start, delta=0.002)
+        self.assertAlmostEqual(cord['tension_n'], 13.6 * 9.81, delta=0.03 * 13.6 * 9.81)
+        self.assertEqual(len([b for b in r['bodies'] if b.startswith('weight rope ')]), 15)
+        self.assertGreater(r['bodies']['weight rope 1']['position_m'][1], r['bodies']['weight rope 15']['position_m'][1])
+
+    @need_engine
     def test_a_ratchet_keeps_a_knocked_lever_down(self):
         # An iron ball dropped on a lever's end knocks it down. Past 4 degrees
         # its ratchet catches -- a pawl in a toothed wheel -- and the lever goes

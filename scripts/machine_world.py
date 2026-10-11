@@ -495,8 +495,56 @@ def _kit_hanging_weight(k, problems, name):
     peg_len = _num(k, 'peg_length_m', name, problems, 0.3, 0.1, 1.0)
     post_w = 0.16
     hang = k.get('hang', 'peg')
-    if hang not in ('peg', 'rope'):
-        problems.append(f'{name}: hang is "peg" or "rope"')
+    if hang not in ('peg', 'rope', 'cord'):
+        problems.append(f'{name}: hang is "peg", "rope" or "cord"')
+    if hang == 'cord':
+        # A cord that bends and sways: a run of oak segments one cell each,
+        # each tied to the next with a little slack, from a fixed arm down to
+        # the weight -- so it hangs and swings as a cord does and a knife can
+        # meet any of it -- and through it a cord from the arm to the weight
+        # that carries the weight (LiveWorld::rope: a chain of light bodies
+        # cannot carry a heavy one in an iterative solver; one cord does).
+        # What the cord carries is what its weakest segment has left, cut or
+        # charred; when it gives way the chain parts there.
+        rope = _num(k, 'rope_m', name, problems, 0.3, 0.1, 2.0)
+        seg = k['_cell']
+        count = max(2, round(rope / seg))
+        rope = count * seg
+        strength = _num(k, 'holds_tension_n', name, problems, holds, 10, 1e6)
+        reach = 0.5 * peg_len + 0.005
+        post_h = drop + wsize + 0.005 + rope + 0.04
+        x = at[0] + side[0] * (0.5 * post_w + reach)
+        z = at[2] + side[2] * (0.5 * post_w + reach)
+        arm_len = reach + 0.03
+        arm_c = [at[0] + side[0] * (0.5 * post_w + 0.5 * arm_len), post_h - 0.02,
+                 at[2] + side[2] * (0.5 * post_w + 0.5 * arm_len)]
+        top = post_h - 0.04
+        arm_size = [arm_len if side[0] else 0.06, 0.04, arm_len if side[2] else 0.06]
+        segs = [f'{name} rope {i + 1}' for i in range(count)]
+        centres = [[x, top - (i + 0.5) * seg, z] for i in range(count)]
+        weight_top = top - rope - 0.005
+        parts = [{'name': name + ' post', 'shape': 'box', 'material': k.get('post_material', 'concrete'),
+                  'size_m': [post_w, post_h, post_w], 'at_m': [at[0], 0.5 * post_h, at[2]], 'turn_deg': [0, 0, 0],
+                  'fixed': True},
+                 {'name': name + ' arm', 'shape': 'box', 'material': k.get('post_material', 'concrete'),
+                  'size_m': arm_size, 'at_m': arm_c, 'turn_deg': [0, 0, 0], 'fixed': True}]
+        parts += [{'name': n, 'shape': 'box', 'material': k.get('peg_material', 'oak'), 'size_m': [seg, seg, seg],
+                   'at_m': c, 'turn_deg': [0, 0, 0], 'fixed': False} for n, c in zip(segs, centres)]
+        parts.append({'name': name, 'shape': 'box', 'material': k.get('weight_material', 'iron'),
+                      'size_m': [wsize, wsize, wsize], 'at_m': [x, weight_top - 0.5 * wsize, z],
+                      'turn_deg': [0, 0, 0], 'fixed': False})
+        # The chain: each link a little longer than it stands, so the chain
+        # hangs a little slack beside the cord and carries only itself.
+        slack = 1.02
+        tie = lambda label, a, b, pa, pb: {'name': f'{name} {label}', 'kind': 'tie', 'a': a, 'b': b, 'at_m': pa,
+                                           'at_b_m': pb, 'length_m': round(slack * math.dist(pa, pb), 5)}
+        links = [tie('rope link 0', name + ' arm', segs[0], [x, top, z], centres[0])]
+        links += [tie(f'rope link {i + 1}', segs[i], segs[i + 1], centres[i], centres[i + 1]) for i in range(count - 1)]
+        links.append(tie(f'rope link {count}', segs[-1], name, centres[-1], [x, weight_top, z]))
+        cord = {'name': name + ' cord', 'kind': 'tie', 'a': name + ' arm', 'b': name, 'at_m': [x, top, z],
+                'at_b_m': [x, weight_top, z], 'breaks_at_n': strength, 'hidden': True}
+        k['_ropes'].append({'cord': cord['name'], 'segments': segs, 'links': [l['name'] for l in links]})
+        return parts, links + [cord]
     if hang == 'rope':
         # A rope -- an oak cord, there being no fibre material yet -- hanging
         # from a fixed arm at the top of the post, the weight on its lower end.
@@ -1074,6 +1122,8 @@ def compile_spec(spec, lenient=False):
     # a breech. Read by the engine's thermochemistry (src/thermo/ThermoJson).
     thermo = {'gas_regions': [], 'contents': [], 'heaters': []}
     blades = []
+    # Ropes the kits make: a chain that hangs and a cord through it (LiveWorld::rope).
+    ropes = []
     ground = compile_ground(spec.get('ground'), problems)
     light_extra = {}   # lamps, sensors and mirrors that kits make (the light section)
     for i, kit in enumerate(spec.get('kits', []) or []):
@@ -1088,7 +1138,7 @@ def compile_spec(spec, lenient=False):
                   {key: len(rows) for key, rows in light_extra.items() if isinstance(rows, list)})
         p, j = KITS[kit['kit']](dict(kit, _known={r['name']: r for r in parts if isinstance(r, dict) and 'name' in r},
                                      _ground=ground, _spouts=spouts, _thermo=thermo, _cell=cell,
-                                     _blades=blades, _sun=spec.get('sun'), _light=light_extra),
+                                     _blades=blades, _sun=spec.get('sun'), _light=light_extra, _ropes=ropes),
                                 problems, name.strip())
         turned = kit.get('turned')
         if turned is not None:
@@ -1356,6 +1406,8 @@ def compile_spec(spec, lenient=False):
                     problems.append(f'{what}: member is the part the fixing is made of, a or b')
                 row['member'] = j.get('member')
         elif kind == 'tie':
+            if j.get('hidden'):
+                row['hidden'] = True      # a rope's cord, inside its chain: not drawn
             row['at_b_m'] = _vec(j.get('at_b_m'), 3, what + ' at_b_m', problems)
             row['length_m'] = _num(j, 'length_m', what, problems, 0.0, 0, 20)
             row['breaks_at_n'] = _num(j, 'breaks_at_n', what, problems, 0.0, 0, 1e7)
@@ -1597,7 +1649,7 @@ def compile_spec(spec, lenient=False):
             'parts': checked, 'joints': joint_rows, 'batteries': batteries, 'circuits': circuits,
             'torches': torches, 'spouts': checked_spouts, 'stations': stations, 'cells': round(cells), 'notes': notes,
             'plasticity': bool(spec.get('plasticity', False)), 'sun': sun, 'solar_panels': solar_panels,
-            'thermo': {key: rows for key, rows in thermo.items() if rows}, 'blades': checked_blades,
+            'thermo': {key: rows for key, rows in thermo.items() if rows}, 'blades': checked_blades, 'ropes': ropes,
             'light': light}
 
 
@@ -1748,6 +1800,9 @@ def build_engine(exe, compiled, workdir):
         for b in compiled.get('blades', []):
             engine.op(op='blade', body=b['part'], heel=b['heel_m'], tip=b['tip_m'], facing=b['facing'],
                       thickness_m=b['thickness_m'], edge_radius_m=b['edge_radius_m'], bevel_deg=b['bevel_deg'])
+        for r in compiled.get('ropes', []):
+            engine.op(op='rope', cord=joint_ids[r['cord']], segments=r['segments'],
+                      links=[joint_ids[n] for n in r['links']])
         store_ids = {}
         for b in compiled['batteries']:
             extra = {'charge_j': b['charge_j']} if 'charge_j' in b else {}

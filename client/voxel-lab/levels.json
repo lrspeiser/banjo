@@ -1073,7 +1073,7 @@
       ],
       "drop_m": 0.4,
       "side": "-z",
-      "hang": "rope",
+      "hang": "cord",
       "rope_m": 0.1,
       "weight_material": "iron",
       "weight_size_m": 0.12

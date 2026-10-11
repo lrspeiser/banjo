@@ -950,6 +950,12 @@ struct LiveWorld::Impl {
         double ratchet_at{};
         int ratchet_sense{};
         bool latched{};
+        // A rope (LiveWorld::rope): its cord lists the segments it runs through
+        // and which of them is weakest now; each of its chain's links names
+        // its cord.
+        std::vector<std::string> segments;
+        std::string weakest;
+        unsigned rope_cord{};
         // Where the pin sits inside each body's OWN matter, and which way it
         // runs in the first one's. This is the part that survives: the assembly
         // can be carried across the room or turned over and the pin is still in
@@ -6583,6 +6589,9 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         joint.ratchet_at = o.contains("ratchet_at") ? numberFrom(o.at("ratchet_at")) : 0.0;
         joint.ratchet_sense = o.value("ratchet_sense", 0);
         joint.latched = o.value("latched", false);
+        joint.segments = o.value("segments", std::vector<std::string>{});
+        joint.weakest = o.value("weakest", std::string{});
+        joint.rope_cord = o.value("rope_cord", 0U);
         joint.over_a = vecFrom(o.at("over_a"));
         joint.over_b = vecFrom(o.at("over_b"));
         joint.ratio = numberFrom(o.at("ratio"));
@@ -8246,11 +8255,15 @@ void LiveWorld::partOverloadedLinks() {
                 how = pulled_apart ? "pulled out along its axis" : "sheared across its axis";
             }
         } else {
-            if (!rated && !(joint.breaks_at_n > 0.0)) continue;
+            // A rope's cord whose weakest segment is cut right through, or
+            // burned through, parts whatever it carries.
+            const bool through = !joint.segments.empty() && joint.capacity_fraction <= 1.0e-3;
+            if (!through && !rated && !(joint.breaks_at_n > 0.0)) continue;
             carrying = impl_->world->jointTension(joint.rigid);
-            if (!(carrying > kNoLoadN) || carrying <= joint.breaks_at_n) continue;
+            if (!through && (!(carrying > kNoLoadN) || carrying <= joint.breaks_at_n)) continue;
             bar = joint.breaks_at_n;
             cold = joint.rated_breaks_at_n;
+            if (through) how = "cut through";
         }
         // Made of a member a blade has cut part way through: it gives way at
         // the cut, not at the joint. The joint keeps its piece; what was
@@ -8264,7 +8277,18 @@ void LiveWorld::partOverloadedLinks() {
                 continue;
             }
         }
-        part(joint, carrying, bar, cold, how, what, rated);
+        part(joint, carrying, bar, cold, how, what, rated || !joint.segments.empty());
+        // A rope's cord gone: its chain parts at the weakest segment, where it
+        // gave way, and what was below falls.
+        if (!joint.segments.empty() && !joint.weakest.empty())
+            for (Impl::SceneJoint &link : impl_->joints)
+                if (link.rope_cord == joint.id && link.attached && link.rigid != 0 &&
+                    (link.a == joint.weakest || link.b == joint.weakest)) {
+                    impl_->world->removeJoint(link.rigid);
+                    link.rigid = 0;
+                    link.attached = false;
+                    link.parted_because = "its rope parted at " + joint.weakest;
+                }
     }
     for (const Tear &t : tears) {
         const auto member = impl_->index_of.find(t.member);
@@ -10047,6 +10071,27 @@ std::vector<LivePull> LiveWorld::pulls() const {
         out.push_back(said);
     }
     return out;
+}
+
+bool LiveWorld::rope(unsigned cord, const std::vector<std::string> &segments, const std::vector<unsigned> &links) {
+    const auto find = [&](unsigned id) -> Impl::SceneJoint * {
+        for (Impl::SceneJoint &j : impl_->joints)
+            if (j.id == id) return &j;
+        return nullptr;
+    };
+    Impl::SceneJoint *c = find(cord);
+    if (c == nullptr || c->kind != JoltWorld::JointKind::Link || !(c->breaks_at_n > 0.0) || segments.empty()) return false;
+    for (const std::string &s : segments)
+        if (impl_->index_of.find(s) == impl_->index_of.end()) return false;
+    for (const unsigned id : links) {
+        const Impl::SceneJoint *l = find(id);
+        if (l == nullptr || l->kind != JoltWorld::JointKind::Link || id == cord) return false;
+    }
+    c->segments = segments;
+    c->rated_breaks_at_n = c->declared_breaks_at_n = c->breaks_at_n;
+    for (const unsigned id : links) find(id)->rope_cord = cord;
+    refreshMechanics();
+    return true;
 }
 
 bool LiveWorld::ratchet(unsigned joint, double at_rad, int sense) {
@@ -13960,6 +14005,45 @@ void LiveWorld::refreshMechanics() {
     // A change of a fifth of a percent of what a joint could take cold is
     // worth asking about again; less is the heat creeping on.
     constexpr double kRecheck = 0.002;
+    // A rope's cord: what the weakest of its segments has left, heat's damage
+    // and what a blade has cut, across the way the cord pulls.
+    for (Impl::SceneJoint &j : impl_->joints) {
+        if (j.segments.empty() || !j.attached || j.rigid == 0 || !impl_->world->hasJoint(j.rigid)) continue;
+        const Vec3 load = impl_->loadDirection(j);
+        double least = 1.0;
+        std::string weakest;
+        for (const std::string &segment : j.segments) {
+            const auto at = impl_->index_of.find(segment);
+            if (at == impl_->index_of.end()) {
+                // Burned away, or otherwise gone: the rope is gone there.
+                least = 0.0;
+                weakest = segment;
+                j.member_said = segment + " is gone";
+                break;
+            }
+            const LiveMaterialState state = materialStateOf(at->second, &load);
+            const double left = state.section.tension * (1.0 - cutShareOf(at->second, load));
+            if (weakest.empty() || left < least) {
+                least = left;
+                weakest = segment;
+                j.member_said = describeMember(state);
+                const double cut = cutShareOf(at->second, load);
+                if (cut >= 0.0005)
+                    j.member_said += ", cut " + std::to_string(static_cast<int>(std::lround(100.0 * cut))) + "% through";
+            }
+        }
+        j.weakest = weakest;
+        j.breaks_at_n = j.rated_breaks_at_n * least;
+        j.capacity_fraction = least;
+        if (std::abs(least - j.checked_fraction) > kRecheck) {
+            j.checked_fraction = least;
+            ++j.rechecks;
+            for (const std::string &side : {j.a, j.b}) {
+                const auto found = impl_->index_of.find(side);
+                if (found != impl_->index_of.end()) impl_->world->wake(impl_->body_of[found->second]);
+            }
+        }
+    }
     // The least of its stiffness an elastic keeps: Jolt's spring needs some.
     constexpr double kSoftest = 1.0e-3;
     for (Impl::SceneJoint &j : impl_->joints) {
@@ -14094,7 +14178,7 @@ double LiveWorld::cutShareOf(std::size_t body, const Vec3 &load_world) const {
         // kerf's plane, its matter on both sides (found again for each piece
         // when a cut parts a body). A piece a cut parted off has the kerf at
         // its face, where it is a surface, not a nick.
-        if (kerf.crossings.empty()) continue;
+        if (kerf.crossings.empty() && impl_->nodes_of[body].size() > 1) continue;
         swept += kerf.area() * std::abs(dot(kerf.w, along));
     }
     return std::clamp(swept / section, 0.0, 1.0);
@@ -17920,6 +18004,7 @@ void LiveWorld::settleCuts(double dt_s) {
         for (Impl::SceneJoint &joint : I.joints) {
             if (!joint.attached || joint.rigid == 0 || joint.kind != JoltWorld::JointKind::Link) continue;
             if (joint.a != e.target && joint.b != e.target) continue;
+            if (joint.rope_cord != 0 || !joint.segments.empty()) continue;
             const auto ja = I.index_of.find(joint.a);
             const auto jb = I.index_of.find(joint.b);
             if (ja == I.index_of.end() || jb == I.index_of.end()) continue;
@@ -19261,6 +19346,9 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                             {"ratchet_at", savedNumber(j.ratchet_at)},
                             {"ratchet_sense", j.ratchet_sense},
                             {"latched", j.latched},
+                            {"segments", j.segments},
+                            {"weakest", j.weakest},
+                            {"rope_cord", j.rope_cord},
                             {"friction", savedNumber(j.friction)},
                             {"breaks_at_n", savedNumber(j.breaks_at_n)},
                             {"over_a", savedVec(j.over_a)},

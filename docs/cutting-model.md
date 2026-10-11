@@ -456,12 +456,34 @@ and the strap holds the 32 kg weight with 72% of its strength. Rated at 400 N
 instead of 800 N, the same cut leaves 288 N against the weight's 316 N: it tears
 at the cut and the weight falls.
 
-A rope made of a run of one-cell segments tied together (it would flex and
-drape) was tried for this and does not hold a real load: an iterative solver
-passes load through a light body to a heavy one at about their mass ratio per
-iteration, and 5.6 g oak segments under a 13.6 kg weight would need ten
-thousand iterations to carry it; Jolt allows 255. Sixteen such links let the
-weight down 40 cm. The rope stays one body, stiff, until that is solved.
+### A cord that bends and sways
+
+A rope made only of a run of one-cell segments tied together does not hold a
+real load: an iterative solver passes load through a light body to a heavy
+one at about their mass ratio per iteration, and 5.6 g oak segments under a
+13.6 kg weight would need ten thousand iterations to carry it; Jolt allows
+255. Sixteen such links let the weight down 40 cm.
+
+So a cord (`LiveWorld::rope`; a hanging weight's `"hang": "cord"`) is two
+things: the chain of segments, each tied to the next with 2% slack, which
+hangs, sways and is knocked about as a cord is and carries only itself; and a
+cord through it, one tie from the arm to the weight, which carries the load
+exactly (the weight stays where it hung to the micrometre, the cord carrying
+its 133.7 N). The cord can carry what the weakest of its segments has left --
+heat's damage and what a blade has cut, across the way it pulls -- and a
+segment burned away leaves nothing. When the cord gives way, or a segment is
+gone or cut through, it parts, and the chain parts with it at that segment:
+what was below falls. Level 6's weight hangs on one: its laser chars a segment
+away and the weight falls (3 of 3).
+
+What it does not do yet: feel its own tension. The chain carries none -- the
+cord carries it all -- so it is as floppy as a slack rope, and a knife swung
+into it knocks the 5.6 g segment it meets aside, cutting a few per cent, where
+a taut rope under the weight would hold still for the edge. Giving each segment
+the cord's tension as a force is too stiff for the step (a segment's own
+frequency would be about 1000 rad/s against 240 steps a second). So a weight a
+knife is to cut down hangs on the stiff rope (`"hang": "rope"`), as level 2's
+does.
 
 ## 9. What this does not capture
 
