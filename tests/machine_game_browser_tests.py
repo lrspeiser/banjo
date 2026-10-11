@@ -419,6 +419,27 @@ class Puzzles(unittest.TestCase):
         done = self.js("document.getElementById('level-done').textContent")
         self.assertIn('Your plank 1: 3.28 kg, 34.1 MJ', done)
         self.assertIn('your plank 1 about 11% lighter', done)
+        # Details start folded away, then remain readable on desktop and on
+        # a phone in either orientation, with the next actions reachable.
+        self.assertTrue(self.js("document.getElementById('level-done-energy').hidden"))
+        self.assertEqual(self.js("document.querySelector('#level-done .how-open').getAttribute('aria-expanded')"), 'false')
+        self.press('Energy details')
+        self.assertEqual(self.js("document.querySelector('#level-done .how-open').getAttribute('aria-expanded')"), 'true')
+        for width, height in ((1280, 860), (390, 844), (844, 390)):
+            with self.subTest(viewport=(width, height)):
+                self.page.send('Emulation.setDeviceMetricsOverride',
+                               {'width': width, 'height': height, 'deviceScaleFactor': 1, 'mobile': width != 1280})
+                self.wait("(() => { const b = document.getElementById('level-done').getBoundingClientRect(); "
+                          "const v = document.getElementById('view').getBoundingClientRect(); "
+                          "return b.top >= v.top && b.bottom <= v.bottom + 1; })()", 10)
+                self.assertIn('Your plank 1: 3.28 kg, 34.1 MJ',
+                              self.js("document.getElementById('level-done-energy').innerText"))
+                self.js("document.querySelector('#level-done .actions').scrollIntoView({block: 'nearest'})")
+                self.assertTrue(self.js("[...document.querySelectorAll('#level-done .actions button')].every(b => { "
+                                        "const r = b.getBoundingClientRect(), p = document.getElementById('level-done').getBoundingClientRect(); "
+                                        "return r.left >= p.left && r.right <= p.right && r.top >= p.top && r.bottom <= p.bottom; })"))
+        self.press('Energy details')
+        self.assertTrue(self.js("document.getElementById('level-done-energy').hidden"))
 
     def test_the_eye_looks_around_without_moving_the_piece_and_esc_goes_back_to_the_hand(self):
         # Level 2's knife fills much of the view: in the hand, a drag across it

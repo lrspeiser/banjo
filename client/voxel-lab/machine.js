@@ -2053,9 +2053,19 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
         .join(' and ')}!` + (next ? '' : ' And you finished every level!')});
     } else add('h2', {textContent: next ? 'Level complete!' : 'You finished every level!'});
     add('p', {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)});
+    // What the win took, in energy, against par: behind Energy details, so the
+    // card is the stars and what to do next.
+    const how = button('Energy details', () => {
+      details.hidden = !details.hidden;
+      how.setAttribute('aria-expanded', String(!details.hidden));
+    }, {className: 'how-open'});
+    how.setAttribute('aria-expanded', 'false'); how.setAttribute('aria-controls', 'level-done-energy');
+    box.appendChild(how);
+    const details = add('div', {id: 'level-done-energy', className: 'how', hidden: true});
+    const addHow = (tag, props) => details.appendChild(Object.assign(document.createElement(tag), props));
     const e = r.energy || {}, run = e.run || {};
-    add('p', {className: 'energy', textContent: `Energy used: ${energyText(r.energy_j)}`});
-    add('p', {className: 'breakdown', textContent: `${energyText(e.pieces_j)} to make your pieces, ` +
+    addHow('p', {className: 'energy', textContent: `Energy used: ${energyText(r.energy_j)}`});
+    addHow('p', {className: 'breakdown', textContent: `${energyText(e.pieces_j)} to make your pieces, ` +
       (run.j ? `${energyText(run.j)} in the run` : 'nothing used in the run') + (run.j ? ` (${[['heat', run.heat_j], ['powder', run.powder_j],
       ['electricity', run.electric_j], ['your pulls', run.pull_j]].filter(([, j]) => j).map(([w, j]) => `${w} ${energyText(j)}`).join(', ')})` : '') + '.'});
     // Par is the level's own solution's energy, rounded up: within 1% of it is on par.
@@ -2063,11 +2073,11 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
       : r.energy_j <= par ? `At par (${energyText(par)}).` : `Par is ${energyText(par)}.`;
     const best = kept.was.energy_j != null
       ? (r.energy_j < kept.was.energy_j ? ` New best for ${save.current}!` : ` Your best: ${energyText(kept.was.energy_j)}.`) : '';
-    add('p', {textContent: `Goal at ${describeTime(r.goal_at_s)}. ${verdict}${best}`});
+    addHow('p', {textContent: `Goal at ${describeTime(r.goal_at_s)}. ${verdict}${best}`});
     // What each piece took, and how far from par: a piece made of the same
     // stuff takes energy in proportion to its weight.
     const pieces = Object.entries(e.pieces || {});
-    if (pieces.length) add('p', {className: 'breakdown', textContent: pieces.map(([name, m]) =>
+    if (pieces.length) addHow('p', {className: 'breakdown', textContent: pieces.map(([name, m]) =>
       `${name[0].toUpperCase() + name.slice(1)}: ${Number(Number(m.kg).toPrecision(3))} kg, ${energyText(m.j)}`).join('; ') + '.'});
     if (r.stars < 3) {
       const over = r.energy_j - par, heavy = pieces.sort((a, b) => b[1].j - a[1].j)[0];
