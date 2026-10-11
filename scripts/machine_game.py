@@ -23,9 +23,20 @@ import copy
 import json
 import math
 import random
+import re
 from pathlib import Path
 
 import machine_world as mw
+import sandbox_mechanics
+import sandbox_electrics
+import sandbox_water_launch
+import sandbox_combinations
+
+SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_combinations)
+EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel',
+              'easy-spring', 'easy-gears', 'easy-weight', 'easy-motor', 'easy-power', 'easy-switch',
+              'easy-bulb', 'easy-loop', 'easy-water-receiver', 'easy-heat', 'easy-catapult',
+              'easy-marble-light', 'easy-water-gate', 'easy-charge-lift']
 
 ROOT = Path(__file__).resolve().parents[1]
 LEVELS_PATH = ROOT / 'client/voxel-lab/levels.json'
@@ -63,12 +74,29 @@ def _with_free_knobs(level):
 
 
 def load_levels():
-    return [_with_free_knobs(level) for level in json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['levels']]
+    levels = json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['levels']
+    order = {level['id']: i for i, level in enumerate(levels)}
+    order.update({ident: len(order) + i for i, ident in enumerate(EASY_ORDER)})
+    for module in SANDBOX_MODULES:
+        levels.extend(copy.deepcopy(getattr(module, 'EASY_LEVELS', [])))
+    levels.sort(key=lambda level: order[level['id']])
+    return [_with_free_knobs(level) for level in levels]
 
 
 def free_build():
     """The free build: a level with no goal, every piece in its tray."""
-    return _with_free_knobs(json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['free'])
+    level = json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['free']
+    tray = {row['piece']: row for row in level['tray']}
+    for module in SANDBOX_MODULES:
+        for row in module.TRAY:
+            tray[row['piece']] = dict(copy.deepcopy(row), sandbox_builder=True)
+    level['tray'] = list(tray.values())
+    link = next(row for row in level['tray'] if row['piece'] == 'link')
+    link['knobs']['kind']['choices'].append('spring')
+    link['knobs'].update(rest_m=dict(min=.01, max=3, default=.3, step=.01, label='spring relaxed length (m)'),
+                         stiffness_n_m=dict(min=1, max=2000, default=100, step=1, label='spring stiffness (N/m)'),
+                         damping_n_s_m=dict(min=0, max=50, default=1, step=.1, label='internal spring damping (N s/m)'))
+    return _with_free_knobs(level)
 
 
 def level_by_id(level_id):
@@ -102,12 +130,15 @@ def requested_level(data):
 
 def sandbox_templates():
     """Starting designs, copied by the browser; the originals stay unchanged."""
-    return [
+    templates = [
         {'name': 'Gate and split', 'description': 'Release three marbles through a gate and flip-flop; topple six dominoes.',
          'base': None, 'placements': free_build()['example']},
         {'name': 'Chain reaction', 'description': 'Water wheel, ramp, dominoes, lever, burning rope and glass. Includes engine readings.',
          'base': json.loads((ROOT / 'client/voxel-lab/machine-default.json').read_text(encoding='utf-8')), 'placements': []},
     ]
+    for module in SANDBOX_MODULES:
+        templates.extend(copy.deepcopy(module.templates() if hasattr(module, 'templates') else module.TEMPLATES))
+    return templates
 
 
 # ---- the pieces ---------------------------------------------------------------
@@ -406,7 +437,7 @@ def _lever(name, k, ctx=None):
                                   'along': 'x'}, k, pivot)]}
 
 
-LINK_JOINTS = {'glue': 'fix', 'pin': 'hinge', 'string': 'tie'}
+LINK_JOINTS = {'glue': 'fix', 'pin': 'hinge', 'string': 'tie', 'spring': 'spring'}
 LINK_AXES = {'along x': [1.0, 0.0, 0.0], 'along z': [0.0, 0.0, 1.0], 'upright': [0.0, 1.0, 0.0]}
 
 
@@ -421,6 +452,8 @@ def _link(name, k, ctx=None):
         joint.update(axis=LINK_AXES[k.get('axis', 'along z')], friction_n_m=0.002)
     elif k['kind'] == 'glue':
         joint.update(axis=[0.0, 1.0, 0.0])
+    elif k['kind'] == 'spring':
+        joint.update(at_b_m=list(k['at_b_m']), rest_m=k['rest_m'], stiffness_n_m=k['stiffness_n_m'], damping_n_s_m=k['damping_n_s_m'])
     else:
         joint.update(at_b_m=list(k['at_b_m']), length_m=round(math.dist(at, k['at_b_m']), 5))
     return {'joints': [joint]}
@@ -459,10 +492,10 @@ def check_placements(level, placements, budget=True):
         knobs = {}
         for key, rule in t['knobs'].items():
             value = p.get(key, rule.get('default'))
-            if rule.get('part'):
+            if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal')):
                 # A link's ends: a part of the machine, named.
-                if not isinstance(value, str) or not 0 < len(value) <= 60:
-                    problems.append(f'{what}: {key} names a part')
+                if not isinstance(value, str) or not 0 <= len(value) <= 120:
+                    problems.append(f'{what}: {key} names an existing connection')
                 knobs[key] = value
                 continue
             if rule.get('point'):
@@ -511,14 +544,31 @@ class _Context(dict):
     a piece that is set down on what is there -- the parts already there."""
 
     def __init__(self, spec, lenient, tray):
-        super().__init__(tray=tray)
+        super().__init__(tray=tray, spec=spec)
         self._spec, self._lenient = spec, lenient
 
     def __missing__(self, key):
         if key != 'parts':
             raise KeyError(key)
-        self['parts'] = mw.compile_spec(dict(self._spec, stations=[]), lenient=self._lenient)['parts']
+        # Other subsystems may still have future endpoint references while
+        # declarations are staged. Final compilation below remains strict.
+        self['parts'] = mw.compile_spec(dict(self._spec, stations=[]), lenient=True)['parts']
         return self['parts']
+
+
+def merge_fragment(spec, fragment, nested=False):
+    """Append declaration arrays and merge nested subsystems without losing a device."""
+    for key, value in fragment.items():
+        if key == 'mirrors' and not nested:
+            spec.setdefault('light', {}).setdefault('mirrors', []).extend(copy.deepcopy(value))
+        elif isinstance(value, list):
+            spec[key] = list(spec.get(key) or []) + copy.deepcopy(value)
+        elif isinstance(value, dict):
+            merge_fragment(spec.setdefault(key, {}), value, nested=True)
+        elif key not in spec or spec[key] == value:
+            spec[key] = copy.deepcopy(value)
+        else:
+            raise ValueError(f'Conflicting declaration setting: {key}')
 
 
 def _assemble(level, placements, lenient=False):
@@ -534,23 +584,36 @@ def _assemble(level, placements, lenient=False):
     # on them as on anything else.
     spec['parts'] += _level_held_up(level, spec, lenient)
     tray = {t['piece']: t for t in level['tray']}
-    for i, p in enumerate(checked):
+    pending = list(enumerate(checked))
+    complete = set()
+    ordered = []
+    while pending:
+        ready = None
+        for pos, (i, p) in enumerate(pending):
+            refs = [p.get(key, '') for key, rule in tray[p['piece']]['knobs'].items()
+                    if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal'))]
+            dependencies = {int(match.group(1)) - 1 for ref in refs
+                            for match in [re.match(r'^your \S+ (\d+)(?:\b|:)', ref)] if match and int(match.group(1)) - 1 != i}
+            if dependencies <= complete:
+                ready = pos
+                break
+        if ready is None:
+            raise LevelRefused(['Connections contain a cycle or name a tray piece that is not present'])
+        i, p = pending.pop(ready)
+        ordered.append((i, p))
+        complete.add(i)
+    for i, p in ordered:
         knobs = {k: v for k, v in p.items() if k not in ('piece', 'cost')}
         # What is there already, for a piece that is set down on it, and
         # what the tray says about it (the battery a panel is wired to).
         ctx = _Context(spec, lenient, tray[p['piece']])
-        made = PIECES[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)
-        spec['kits'] += made.get('kits', [])
-        spec['parts'] += made.get('parts', [])
-        if made.get('joints'):
-            spec['joints'] = list(spec.get('joints') or []) + made['joints']
-        if made.get('circuits'):
-            spec['circuits'] = list(spec.get('circuits') or []) + made['circuits']
-        if made.get('solar_panels'):
-            spec['solar_panels'] = list(spec.get('solar_panels') or []) + made['solar_panels']
-        if made.get('mirrors'):
-            spec.setdefault('light', {}).setdefault('mirrors', [])
-            spec['light']['mirrors'] = spec['light']['mirrors'] + made['mirrors']
+        builders = PIECES
+        if level.get('free') or tray[p['piece']].get('sandbox_builder'):
+            builders = dict(PIECES)
+            for module in SANDBOX_MODULES:
+                builders.update(module.PIECES)
+        made = builders[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)
+        merge_fragment(spec, made)
     compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
     # And the player's pieces: a mirror stands on a post, not in the air.
     stands = hold_up(compiled['parts'], spec.get('cell_m', 0.02), only_player=level.get('custom_base', False))
@@ -1013,6 +1076,8 @@ def editing_guide(level, checked, index, compiled, key):
     rule = next(t for t in level['tray'] if t['piece'] == p['piece'])['knobs'].get(key)
     if not rule:
         return None
+    if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal', 'point')):
+        return None
     name = f'your {p["piece"]} {index + 1}'
     mine = [q for q in compiled['parts'] if owner(q) == name and not q['name'].endswith(' stand')]
     if not mine:
@@ -1125,6 +1190,12 @@ def ghost(level, placements, index, snapping=False, edit_key=None):
              'energy': pieces_energy(compiled).get(name),
              'parts': [dict({k: p[k] for k in keys if k in p},
                             **({'parts': p['parts']} if p['shape'] == 'compound' else {})) for p in mine]}
+    if checked[index]['piece'] == 'wire':
+        terminals = {device['name'] + ':' + key: at for device in compiled.get('electrical', {}).get('devices', [])
+                     for key, at in device['terminals'].items()}
+        wire = next((wire for wire in compiled.get('electrical', {}).get('wires', []) if wire['name'] == name), None)
+        if wire:
+            reply['wire_preview'] = [terminals[wire['a']], terminals[wire['b']]]
     if isinstance(edit_key, str):
         reply['edit_guide'] = editing_guide(level, checked, index, compiled, edit_key)
     if level.get('free'):
@@ -1158,9 +1229,13 @@ def compose(level, placements, leave_out_goal=False):
         return spec, checked, cost      # sandbox readings are retained, never scored
     spec['stations'] = []
     goal = level['goal']['station']['done_when']
-    rule = next(iter(goal.values()))
-    wanted = rule.get('part') if isinstance(rule, dict) else rule
-    if isinstance(wanted, str) and wanted not in names:
+    available = names | {j['name'] for j in compiled['joints']} | {c['name'] for c in compiled['circuits']} \
+        | {b['name'] for b in compiled['batteries']} | {s['name'] for s in compiled.get('spouts', [])} \
+        | {d['name'] for d in compiled.get('electrical', {}).get('devices', [])} \
+        | {s['name'] for s in (compiled.get('light') or {}).get('photocells', [])}
+    missing = [name for name in _named(goal) if name not in available]
+    if missing:
+        wanted = missing[0]
         needs = level['goal'].get('needs', f'the goal is about {wanted}, which is not here yet')
         if not leave_out_goal:
             raise LevelRefused([needs])
@@ -1188,7 +1263,7 @@ def _named(rule):
         elif isinstance(value, list):
             out += [v for v in value if isinstance(v, str)]
         elif isinstance(value, dict):
-            out += [value[k] for k in ('part', 'joint', 'photocell') if isinstance(value.get(k), str)]
+            out += [value[k] for k in ('part', 'joint', 'photocell', 'battery', 'device', 'spout') if isinstance(value.get(k), str)]
     return out
 
 
@@ -1243,8 +1318,9 @@ def run_energy(compiled, readouts, t_s=0.0):
     firebox: its declared power for as long as it has burned); and the
     powder in its charges (all of it: a charge is there to be fired)."""
     start = {b['name']: b.get('charge_j', b['capacity_j']) for b in compiled.get('batteries') or []}
-    now = {b['name']: b.get('charge_j') for b in ((readouts or {}).get('machines') or {}).get('batteries') or []}
-    drawn = sum(max(0.0, start[n] - now[n]) for n in start if now.get(n) is not None)
+    stores = {b['name']: b for b in ((readouts or {}).get('machines') or {}).get('batteries') or []}
+    drawn = sum(max(0.0, stores[n].get('given_j', start[n] - stores[n].get('charge_j', start[n])))
+                for n in start if n in stores)
     heat = sum(h['power_w'] * min(h.get('seconds', 0.0), max(0.0, t_s - h.get('start_s', 0.0)))
                for h in (compiled.get('thermo') or {}).get('heaters') or [])
     parts = {p['name']: p for p in compiled['parts']}
@@ -1257,8 +1333,10 @@ def run_energy(compiled, readouts, t_s=0.0):
     # And a person's test pulls: the work they did on it (what pulled back on
     # them is theirs, not the machine's).
     pulled = sum(max(0.0, p.get('work_j') or 0.0) for p in (readouts or {}).get('pulls') or [])
+    water = sum(max(0.0, source.get('source_energy_j') or 0.0)
+                for source in ((readouts or {}).get('pour') or {}).get('sources', []))
     return {'heat_j': round(heat), 'powder_j': round(powder), 'electric_j': round(drawn),
-            'pull_j': round(pulled), 'j': round(heat + powder + drawn + pulled)}
+            'pull_j': round(pulled), 'water_j': round(water), 'j': round(heat + powder + drawn + pulled + water)}
 
 
 def energy_of(compiled, readouts, t_s=0.0):
@@ -1472,4 +1550,4 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
 def public(level):
     """What the page needs to show a level: never its solution."""
     return {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
-                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example') if k in level}
+                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty') if k in level}

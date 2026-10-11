@@ -44,6 +44,10 @@ class Puzzles(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('machine_game_page', ROOT / 'scripts/voxel-lab.py')
         lab = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(lab)
+        import machine_game
+        cls.level_count = len(machine_game.load_levels())
+        cls.template_count = len(machine_game.sandbox_templates())
+        cls.piece_count = len([row for row in machine_game.free_build()['tray'] if not row.get('attach')])
         # An engine still closing as the tests end holds its log open a moment.
         cls.logs = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         # The game site as deployed: open to anyone, nothing else served.
@@ -122,6 +126,96 @@ class Puzzles(unittest.TestCase):
                                                       **({'text': key} if kind == 'keyDown' and key not in named else {})})
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_easy_selection_and_saved_wiring_use_the_real_scene_controls(self):
+        self.page.send('Page.navigate', {'url': f'{self.base}/play'})
+        self.wait("document.getElementById('levels-screen') && !document.getElementById('levels-screen').hidden", 60)
+        self.press('Easy: learn a piece')
+        self.assertEqual(self.js("document.querySelectorAll('.ls-list li').length"), 20)
+        self.press('Full chain reactions')
+        self.assertEqual(self.js("document.querySelectorAll('.ls-list li').length"), 8)
+        self.press('All challenges')
+        self.open('easy-loop')
+        self.press('Add a wire')
+        self.ghost()
+        self.slide('from terminal of your wire 1', 'lamp:minus')
+        self.slide('to terminal of your wire 1', 'supply:minus')
+        self.assertTrue(self.ghost()['fits'])
+        self.press('Set it down')
+        self.wait(f'!window.machineGhostState() && {READY}', 60)
+        self.press('Run it')
+        self.wait("!document.getElementById('level-done').hidden", 30)
+        self.assertIn('Goal', self.js("document.getElementById('level-done').textContent"))
+
+    def test_manual_switch_is_queued_before_running_and_reset_restores_saved_state(self):
+        for width, height in ((1280, 860), (390, 844), (844, 390)):
+            with self.subTest(viewport=(width, height)):
+                self.page.send('Emulation.setDeviceMetricsOverride', {'width':width,'height':height,'deviceScaleFactor':1,'mobile':width != 1280})
+                self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+                self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)
+                self.press('Start from Build your first circuit')
+                self.wait(READY, 60)
+                self.press('Save version')
+                self.wait("window.machineDesign().versions.length > 0", 10)
+                saved = self.js('window.machineDesign().versions.slice(-1)[0].draft')
+                self.js("document.getElementById('machine-controls').open = true")
+                targets = self.js("[...document.querySelectorAll('#machine-control-rows button')].map(b=>{const r=b.getBoundingClientRect();return {w:r.width,h:r.height,right:r.right};})")
+                self.assertTrue(targets)
+                self.assertTrue(all(row['h'] >= 44 and row['right'] <= width for row in targets), targets)
+                self.press('Toggle control')
+                self.press('Run it')
+                self.wait("/controlopen/.test(document.getElementById('readings').textContent)", 15)
+                self.assertEqual(self.js('window.machineDesign().versions.slice(-1)[0].draft'), saved)
+                self.press('Set up again')
+                self.wait(READY, 60)
+                self.wait("/controlclosed/.test(document.getElementById('readings').textContent)", 15)
+
+    def test_saved_terminal_graph_removal_undo_reload_and_restore(self):
+        self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+        self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)
+        self.slide('New design name', 'Saved terminal graph')
+        self.press('Add New Design')
+        self.wait(READY, 60)
+        for piece, x in [('battery', -.6), ('bulb', .6)]:
+            self.press(f'Add a {piece}')
+            self.ghost()
+            number = 1 if piece == 'battery' else 2
+            self.slide(f'along (m) of your {piece} {number}', x)
+            self.slide(f'across (m) of your {piece} {number}', 0)
+            self.assertTrue(self.ghost()['fits'])
+            self.press('Set it down')
+            self.wait(f'!window.machineGhostState() && {READY}', 60)
+        for terminal in ('plus', 'minus'):
+            self.press('Add a wire')
+            self.ghost()
+            number = 3 if terminal == 'plus' else 4
+            self.slide(f'from terminal of your wire {number}', f'your battery 1:{terminal}')
+            self.slide(f'to terminal of your wire {number}', f'your bulb 2:{terminal}')
+            self.assertTrue(self.ghost()['fits'])
+            self.press('Set it down')
+            self.wait(f'!window.machineGhostState() && {READY}', 60)
+        first = self.js('window.machinePlacements()')
+        self.press('Save version')
+        self.wait("/Version 1 saved/.test(document.getElementById('design-status').textContent)", 10)
+        self.press('Remove your battery 1')
+        self.wait(f'window.machinePlacements().length === 1 && {READY}', 60)
+        self.assertEqual(self.js('window.machinePlacements()[0].piece'), 'bulb')
+        self.press('Undo')
+        self.wait(f'window.machinePlacements().length === 4 && {READY}', 60)
+        self.assertEqual(self.js('window.machinePlacements()'), first)
+        self.page.send('Page.navigate', {'url': self.js('location.href')})
+        self.wait(READY, 60)
+        self.assertEqual(self.js('window.machinePlacements()'), first)
+        self.press('Remove your battery 1')
+        self.wait(f'window.machinePlacements().length === 1 && {READY}', 60)
+        self.press('Save version')
+        self.wait("/Version 2 saved/.test(document.getElementById('design-status').textContent)", 10)
+        self.js("document.getElementById('design-versions').open = true; document.getElementById('version-pick').value = '1'")
+        self.press('Restore version')
+        self.wait(f'window.machinePlacements().length === 4 && {READY}', 60)
+        self.assertEqual(self.js('window.machinePlacements()'), first)
+        self.press('Run it')
+        self.wait("/your bulb 2.*0\\.60 W light/.test(document.getElementById('readings').textContent)", 15)
+
     def test_selected_controls_highlight_the_piece_and_follow_its_orientation(self):
         self.open('gap')
         self.press('Add a plank')
@@ -263,7 +357,7 @@ class Puzzles(unittest.TestCase):
         self.page.events.clear()
         try:
             self.page.send('Page.navigate', {'url': self.base + '/'})
-            self.wait("document.querySelectorAll('.ls-list li').length === 8 && document.querySelector('.ls-summary').textContent.startsWith('Landing test:')", 30)
+            self.wait(f"document.querySelectorAll('.ls-list li').length === {self.level_count} && document.querySelector('.ls-summary').textContent.startsWith('Landing test:')", 30)
             self.assertEqual(self.js('location.pathname + location.search'), '/play')
             self.assertEqual(self.js("document.querySelector('main').getBoundingClientRect().height"), 0)
             requests = [e['params']['request'] for e in self.page.events if e['method'] == 'Network.requestWillBeSent']
@@ -284,17 +378,17 @@ class Puzzles(unittest.TestCase):
                                                               'mobile': False})
         self.page.send('Page.navigate', {'url': f'{self.base}/play'})
         self.wait("document.getElementById('levels-screen') && !document.getElementById('levels-screen').hidden", 90)
-        self.assertEqual(self.js("document.querySelectorAll('.ls-list li').length"), 8)
+        self.assertEqual(self.js("document.querySelectorAll('.ls-list li').length"), self.level_count)
         self.js("document.querySelector('.ls-player input').value = 'Tester'")
         self.press('Add player')
-        self.assertIn('Tester: 0 of 8 levels won', self.js("document.querySelector('.ls-summary').textContent"))
+        self.assertIn(f'Tester: 0 of {self.level_count} levels won', self.js("document.querySelector('.ls-summary').textContent"))
         # A win kept for this player shows on the screen; another player's is
         # their own.
         self.js("""(() => { const s = JSON.parse(localStorage.getItem('banjo-play-save'));
             s.players.Tester.levels.gap = {stars: 3, energy_j: 28800000}; localStorage.setItem('banjo-play-save', JSON.stringify(s)); })()""")
         self.page.send('Page.navigate', {'url': f'{self.base}/play'})
         self.wait("!document.getElementById('levels-screen').hidden", 90)
-        self.assertIn('Tester: 1 of 8 levels won, 3 of 24 stars', self.js("document.querySelector('.ls-summary').textContent"))
+        self.assertIn(f'Tester: 1 of {self.level_count} levels won, 3 of {self.level_count * 3} stars', self.js("document.querySelector('.ls-summary').textContent"))
         self.assertIn('Best win: 28.8 MJ', self.js("document.querySelector('.ls-list li').textContent"))
         self.js("(() => { const p = document.getElementById('player-pick'); p.value = 'Player 1'; p.dispatchEvent(new Event('change')); })()")
         self.assertTrue(self.js("document.querySelector('.ls-summary').textContent.startsWith('Player 1:')"))
@@ -355,7 +449,7 @@ class Puzzles(unittest.TestCase):
         try:
             self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
             self.wait("document.getElementById('sandbox-screen') && !document.getElementById('sandbox-screen').hidden", 60)
-            self.assertEqual(self.js("document.querySelectorAll('#prebuilt-designs button').length"), 2)
+            self.assertEqual(self.js("document.querySelectorAll('#prebuilt-designs button').length"), self.template_count)
             self.press('Open design My free build')
             self.wait(f"window.machinePlacements().length === 1 && {READY}", 60)
             self.press('Save version')
@@ -461,7 +555,7 @@ class Puzzles(unittest.TestCase):
                 self.assertGreaterEqual(bounds['closeHeight'], 44)
                 self.assertLessEqual(bounds['closeRight'], width)
                 self.assertLessEqual(bounds['closeBottom'], height)
-                cards = self.js("[...document.querySelectorAll('#piece-grid button')].map(b=>{const r=b.getBoundingClientRect();return {name:b.textContent,w:r.width,h:r.height,left:r.left,right:r.right};})")
+                cards = self.js("[...document.querySelectorAll('#piece-grid .piece-card')].map(b=>{const r=b.getBoundingClientRect();return {name:b.textContent,w:r.width,h:r.height,left:r.left,right:r.right};})")
                 self.assertTrue(all(r['w'] >= 140 and r['h'] >= 180 and r['left'] >= 0 and r['right'] <= width for r in cards), cards)
                 # Modal keyboard focus cannot escape to the live scene.
                 self.js("document.getElementById('piece-picker-close').focus()")
@@ -479,7 +573,7 @@ class Puzzles(unittest.TestCase):
                 self.assertIsNone(self.js('window.machineGhostState()'))
                 self.wait("document.activeElement.getAttribute('aria-label') === 'Add a piece'", 5)
                 self.press('Add a piece')
-                self.assertEqual(self.js("document.querySelectorAll('#piece-grid button').length"), 13)
+                self.assertEqual(self.js("document.querySelectorAll('#piece-grid .piece-card').length"), self.piece_count)
                 self.key('Escape')
                 self.assertFalse(self.js("document.getElementById('piece-picker').open"))
                 self.assertEqual(self.js('window.machinePlacements()'), before)
@@ -864,7 +958,7 @@ class Puzzles(unittest.TestCase):
         # there is no x or z to pick: the arrows (and dragging) move it.
         self.open('sun')
         self.assertIn('1 left', self.js("document.querySelector('#scene-tray button').textContent"))
-        self.press('Add a solar')
+        self.press('Add a solar panel')
         start = self.ghost()['p']
         self.assertFalse({'x', 'z'} & set(self.js("[...document.querySelectorAll('#ghost-bar .chips button')].map(b => b.textContent)")))
         # Looking along -z: right is +x (along the red guide line), toward you +z.

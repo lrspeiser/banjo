@@ -99,13 +99,13 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
         keys(b, {"id", "kind", "component", "a", "b", "thermal", "resistance_ohm", "alpha_per_k", "reference_k", "trip_k",
                  "fuse_a2_s", "gear_ratio", "motor", "closed", "failed", "used_a2_s", "current_a", "motor_current_a",
                  "torque_n_m", "housing_reaction_n_m", "heats_body", "follows_hinge", "follows_light",
-                 "follows_contact"});
+                 "follows_contact", "lamp", "efficiency", "power_w", "emitted_w"});
         Branch row;
         row.id = b.at("id"); row.kind = b.at("kind"); row.component = b.at("component");
         unique(ids, row.id);
         require(!row.component.empty(), "branch needs source component identity");
         require(row.kind == "resistor" || row.kind == "wire" || row.kind == "switch" ||
-                row.kind == "fuse" || row.kind == "motor", "unsupported branch " + row.kind);
+                row.kind == "fuse" || row.kind == "motor" || row.kind == "bulb", "unsupported branch " + row.kind);
         row.a = index(c.nodes_, b.at("a")); row.b = index(c.nodes_, b.at("b"));
         require(row.a != row.b, "branch terminals must differ");
         if (b.contains("heats_body")) {
@@ -170,6 +170,13 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
             require(row.touch_a != row.touch_b, "follows_contact names two different bodies");
         }
         row.resistance = number(b, "resistance_ohm");
+        if (row.kind == "bulb") {
+            require(b.at("lamp").is_number_integer() && b.at("lamp").get<std::int64_t>() > 0,
+                    "bulb needs a lamp id");
+            row.lamp = b.at("lamp").get<unsigned>();
+            row.efficiency = number(b, "efficiency", 0.2);
+            require(row.efficiency >= 0.0 && row.efficiency <= 1.0, "bulb efficiency is from zero to one");
+        } else require(!b.contains("lamp") && !b.contains("efficiency"), "only bulbs emit light");
         row.alpha = number(b, "alpha_per_k"); row.reference_k = number(b, "reference_k", 293.15);
         row.trip_k = number(b, "trip_k"); row.fuse_limit = number(b, "fuse_a2_s");
         row.ratio = number(b, "gear_ratio", 1.0);
@@ -208,6 +215,7 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
         c.heat_j_ = number(ledger, "heat_j"); c.shaft_j_ = number(ledger, "shaft_j");
         c.ambient_j_ = number(ledger, "ambient_j");
         c.exported_j_ = number(ledger, "exported_j");
+        c.emitted_j_ = number(ledger, "emitted_j");
         require(c.exported_j_ >= 0.0, "invalid exported heat history");
         c.electrical_residual_j_ = number(ledger, "electrical_residual_j");
         c.thermal_residual_j_ = number(ledger, "thermal_residual_j");
@@ -220,6 +228,17 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
         c.last_.source_current_a = number(last, "source_current_a");
         c.last_.max_kcl_a = number(last, "max_kcl_a");
         c.last_.limited = last.value("power_limited", false);
+        c.last_.dt_s = number(last, "dt_s");
+        c.last_.branch_heat_j = last.value("branch_heat_j", std::vector<double>{});
+        c.last_.shaft_j = last.value("shaft_j", std::vector<double>{});
+        c.last_.light_j = last.value("light_j", std::vector<double>{});
+        for (const auto *values : {&c.last_.branch_heat_j, &c.last_.shaft_j, &c.last_.light_j}) {
+            require(values->empty() || values->size() == c.branches_.size(), "invalid branch energy snapshot");
+            for (double value : *values) require(std::isfinite(value), "nonfinite branch energy snapshot");
+        }
+        require(c.last_.light_j.empty() || (c.last_.dt_s > 0.0 &&
+                c.last_.branch_heat_j.size() == c.branches_.size() && c.last_.shaft_j.size() == c.branches_.size()),
+                "incomplete branch energy snapshot");
         if (!c.last_.voltage_v.empty()) {
             for (const auto &b : doc.at("branches")) {
                 c.last_.current_a.push_back(number(b, "current_a"));
@@ -241,7 +260,7 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
     std::vector<double> g(count), emf(count), gain(count), command(count);
     for (std::size_t i = 0; i < count; ++i) {
         const auto &b = branches_[i];
-        if (!b.closed || b.failed || (b.trip_k > 0.0 && heat_[b.thermal].temperature >= b.trip_k) ||
+        if (!b.present || !b.closed || b.failed || (b.trip_k > 0.0 && heat_[b.thermal].temperature >= b.trip_k) ||
             (b.fuse_limit > 0.0 && b.fuse_used >= b.fuse_limit)) continue;
         const double factor = 1.0 + b.alpha * (heat_[b.thermal].temperature - b.reference_k);
         require(factor > 0.0 && std::isfinite(factor), "resistance law outside positive domain");
@@ -290,7 +309,7 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
         s.voltage_v = solveAt(true, s.source_current_a);
     }
     s.current_a.resize(count); s.motor_current_a.resize(count); s.torque_n_m.resize(count);
-    s.branch_heat_j.resize(count); s.shaft_j.resize(count); s.heat_j.resize(heat_.size());
+    s.branch_heat_j.resize(count); s.shaft_j.resize(count); s.light_j.resize(count); s.heat_j.resize(heat_.size());
     std::vector<double> kcl(n);
     for (std::size_t i = 0; i < count; ++i) {
         const auto &b = branches_[i];
@@ -299,6 +318,9 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
         s.torque_n_m[i] = current * gain[i];
         s.motor_current_a[i] = command[i] != 0.0 ? current / command[i] : 0.0;
         s.branch_heat_j[i] = g[i] > 0.0 ? current * current / g[i] * dt : 0.0;
+        s.light_j[i] = s.branch_heat_j[i] * b.efficiency;
+        s.emitted_j += s.light_j[i];
+        s.branch_heat_j[i] -= s.light_j[i];
         if (b.body.empty()) s.heat_j[b.thermal] += s.branch_heat_j[i];
         else s.exported_j += s.branch_heat_j[i];
         s.shaft_j[i] = emf[i] * current * dt;
@@ -311,7 +333,7 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
     s.heat_j[source_heat_] += std::max(0.0, source_loss);
     s.source_j = voltage * s.source_current_a * dt;
     s.electrical_residual_j = s.source_j - std::accumulate(s.heat_j.begin(), s.heat_j.end(), 0.0) -
-                              std::accumulate(s.shaft_j.begin(), s.shaft_j.end(), 0.0) - s.exported_j;
+                              std::accumulate(s.shaft_j.begin(), s.shaft_j.end(), 0.0) - s.exported_j - s.emitted_j;
     const double scale = 1.0 + std::abs(s.source_j) + s.exported_j +
                         std::accumulate(s.heat_j.begin(), s.heat_j.end(), 0.0);
     require(std::isfinite(s.electrical_residual_j) && std::abs(s.electrical_residual_j) <= 1e-8 * scale &&
@@ -352,6 +374,7 @@ void Circuit::commit(const CircuitStep &s, double actual_work) {
     const double shaft = std::accumulate(s.shaft_j.begin(), s.shaft_j.end(), 0.0);
     elapsed_s_ += s.dt_s; source_j_ += s.source_j; heat_j_ += heat; shaft_j_ += actual_work; ambient_j_ += ambient;
     exported_j_ += s.exported_j;
+    emitted_j_ += s.emitted_j;
     electrical_residual_j_ += s.electrical_residual_j;
     thermal_residual_j_ += stored + ambient - heat;
     coupling_residual_j_ += actual_work - shaft;
@@ -363,6 +386,7 @@ void Circuit::setSwitch(const std::string &id, bool closed) {
     require(it != branches_.end() && it->kind == "switch", "no switch " + id);
     it->closed = closed;
 }
+void Circuit::setPresent(std::size_t branch, bool present) { branches_.at(branch).present = present; }
 void Circuit::addFrictionHeat(CircuitStep &s, std::size_t branch, double joules) const {
     require(std::isfinite(joules) && joules >= 0.0, "invalid friction heat");
     s.heat_j.at(branches_.at(branch).thermal) += joules;
@@ -413,6 +437,12 @@ std::vector<unsigned> Circuit::motors() const {
     return out;
 }
 unsigned Circuit::motor(std::size_t b) const { return branches_.at(b).motor; }
+unsigned Circuit::lamp(std::size_t b) const { return branches_.at(b).lamp; }
+std::vector<unsigned> Circuit::lamps() const {
+    std::vector<unsigned> out;
+    for (const auto &b : branches_) if (b.lamp) out.push_back(b.lamp);
+    return out;
+}
 double Circuit::ratio(std::size_t b) const { return branches_.at(b).ratio; }
 double Circuit::resistanceFactor(std::size_t b) const {
     const auto &branch = branches_.at(b);
@@ -436,6 +466,7 @@ nlohmann::json Circuit::saved() const {
                  {"reference_k", b.reference_k}, {"trip_k", b.trip_k}, {"fuse_a2_s", b.fuse_limit},
                  {"used_a2_s", b.fuse_used}, {"failed", b.failed}, {"closed", b.closed}, {"gear_ratio", b.ratio}};
         if (b.motor) row["motor"] = b.motor;
+        if (b.lamp) { row["lamp"] = b.lamp; row["efficiency"] = b.efficiency; }
         if (!b.body.empty()) row["heats_body"] = b.body;
         if (b.follow_joint)
             row["follows_hinge"] = {{"joint", b.follow_joint},
@@ -448,15 +479,20 @@ nlohmann::json Circuit::saved() const {
         if (last_.current_a.size() == branches_.size()) {
             row["current_a"] = last_.current_a[i]; row["motor_current_a"] = last_.motor_current_a[i];
             row["torque_n_m"] = last_.torque_n_m[i]; row["housing_reaction_n_m"] = -last_.torque_n_m[i];
+            if (last_.light_j.size() == branches_.size() && last_.dt_s > 0.0) {
+                row["power_w"] = last_.current_a[i] * (last_.voltage_v[b.a] - last_.voltage_v[b.b]);
+                row["emitted_w"] = last_.light_j[i] / last_.dt_s;
+            }
         }
         d["branches"].push_back(row);
     }
     d["ledger"] = {{"elapsed_s", elapsed_s_}, {"source_j", source_j_}, {"heat_j", heat_j_}, {"shaft_j", shaft_j_},
-                   {"ambient_j", ambient_j_}, {"exported_j", exported_j_},
+                   {"ambient_j", ambient_j_}, {"exported_j", exported_j_}, {"emitted_j", emitted_j_},
                    {"electrical_residual_j", electrical_residual_j_},
                    {"thermal_residual_j", thermal_residual_j_}, {"coupling_residual_j", coupling_residual_j_}};
     d["last"] = {{"voltage_v", last_.voltage_v}, {"source_current_a", last_.source_current_a},
-                  {"power_limited", last_.limited}, {"max_kcl_a", last_.max_kcl_a}};
+                  {"power_limited", last_.limited}, {"max_kcl_a", last_.max_kcl_a}, {"dt_s", last_.dt_s},
+                  {"branch_heat_j", last_.branch_heat_j}, {"shaft_j", last_.shaft_j}, {"light_j", last_.light_j}};
     return d;
 }
 }

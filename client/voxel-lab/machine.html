@@ -17,6 +17,7 @@
 <button id="follow" aria-pressed="true">Follow</button>
 <button id="path-toggle" aria-pressed="true" hidden title="Show where things will go">Path</button>
 </div>
+<details id="machine-controls" class="machine-controls" hidden><summary>Switches, valves and release</summary><div id="machine-control-rows"></div><output id="machine-control-status" aria-live="polite"></output></details>
 <div id="scene-tray" class="scene-tray" hidden aria-label="Your tray: add a piece"></div>
 <div id="move-pad" class="move-pad" hidden aria-label="Move the piece as you see it"></div>
 <section id="preview-legend" class="preview-legend" hidden aria-live="polite" aria-label="Where things will go"></section>
@@ -83,7 +84,7 @@
 <dialog id="piece-picker" aria-labelledby="piece-picker-title" aria-describedby="piece-picker-help">
 <div class="piece-picker-head"><h1 id="piece-picker-title">Choose a piece</h1><button id="piece-picker-close" type="button">Back to sandbox</button></div>
 <p id="piece-picker-help">Choose a piece to return to your design and place it.</p>
-<div class="piece-picker-filters"><label>Search pieces<input id="piece-search" type="search" aria-label="Search pieces" placeholder="e.g. track, gate, lift" autocomplete="off"></label><label>Category<select id="piece-category" aria-label="Category"><option value="all">All pieces</option><option value="routes">Tracks and routing</option><option value="motion">Motion and triggers</option><option value="structure">Supports and bridges</option><option value="power">Power</option></select></label></div>
+<div class="piece-picker-filters"><label>Search pieces<input id="piece-search" type="search" aria-label="Search pieces" placeholder="e.g. track, gate, lift" autocomplete="off"></label><label>Category<select id="piece-category" aria-label="Category"><option value="all">All pieces</option><option value="routes">Tracks and routing</option><option value="motion">Motion and triggers</option><option value="structure">Supports and bridges</option><option value="power">Power</option><option value="optics">Light and optics</option><option value="electrics">Electricity and wiring</option><option value="water">Water</option></select></label></div>
 <output id="piece-results" aria-live="polite"></output>
 <div id="piece-grid" aria-label="Available pieces"></div>
 <p id="piece-empty" hidden>No pieces match. Try another search or choose All pieces.</p>

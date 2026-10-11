@@ -1,6 +1,32 @@
 # Puzzles on the machine (/play)
 
-October 10, 2026. The machine page has a game: open `/play`. Each level is a small machine you cannot change, a goal, and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+October 11, 2026. Open `/play` to choose eight chain-reaction levels or twenty freely selectable easy challenges. Each level has a fixed machine, a goal and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+
+## Expanded sandbox and easy challenges
+
+The sandbox catalogue has 30 placeable cards, plus the Attach tool. Its 21 prebuilt designs are editable copies. The full-screen library has routing, motion, supports, power, optics, electricity and water categories; **Try example** opens a saved copy that supplies the required environment or connections. Water cards explicitly require a collection-channel base. The knife, mirror, lens, solar panel and block-and-tackle are now independently available alongside springs, gears, weights, motors, batteries, switches, bulbs, wires, finite water tanks, water wheels, heating coils and the counterweight catapult.
+
+| Card/tool | Controls and supported behavior |
+|---|---|
+| Knife | Position, pivot height, arm, blade/weight geometry and orientation; native edge cuts material |
+| Mirror / lens | Size, height, orientation, convex/concave curvature; traced reflected/refracted power |
+| Solar panel | Size, orientation, chosen battery; finite battery charges from declared sunlight; dark empty designs create no power |
+| Block and tackle | Load, counterweight and pulley ratio; included supported load or existing moving load |
+| Spring | Guided material load, stiffness, relaxed length and internal damping; Attach also joins two picked points with a spring |
+| Gears / weight | Tooth ratio, drive, size/material and loose/guided/hanging mounts; explicit motor supply, material-derived mass |
+| Battery / motor | Voltage, capacity, initial charge, power limit; direction/throttle and included or selected physical axle |
+| Switch / bulb / wire | Manual or real paddle switch, initial state, bulb preset, explicit terminal selections; crossing wires never connect |
+| Fixed water tank / wheel | Starting litres, metered flow, valve, height; wheel radius and pour side; finite water remains in the source when exhausted below one parcel |
+| Ignition coil | Selected material target and heater preset; wired electrical input becomes heat; oak combustion remains experimental |
+| Catapult | Cock angle, aim, material/size of counterweight and marble, loaded/empty cradle and held/released restraint; actual contact launches the marble |
+
+**Switches, valves and release**, beside the 3D scene, queues live operations between engine steps. **Run it** continues that same session after a queued operation; **Set up again** restores the saved initial state. These live operations do not change a saved version. Terminal selectors and a wire ghost show both endpoints; wires brighten from measured current, and bulbs glow from measured emitted optical power. Removing a device removes its attached wires and renames surviving references; Undo restores the graph. Saved versions and shared links retain the initial parts, connections, charge, water, preload and restraints.
+
+The Easy filter lists the guide's twenty families in order: cut, reflection, focus, sunlight, tackle, water wheel, spring, gears, weight, motor, battery, switch, bulb, closed loop, receiver fill, ignition, catapult, marble switch, water gate and sunlight-powered lift. Every family has its own private solution, three nominal/nudged engine checks and physical empty/wrong controls. Goals also include sensor power, sustained electrical power, stored charge and actual water received; a green box is shown for spatial goals.
+
+Per-material measurements, conservation receipts, timesteps and limits are in [mechanics and optics](sandbox-mechanics-measured.md), [electrics](sandbox-electrics-measured.md), and [water and launch](sandbox-water-launch-measured.md). These models do not implement free sloshing/tipping buckets, gear-tooth collision, realistic incandescent filaments or calibrated spreading fire. Falling-water ledgers close, but the coupled channel/rigid pipeline is not a complete conservation proof. The counterweight launch is measured experimental behavior; a spring catapult preset remains future work. The combined sunlight challenge uses a direct gravity-loaded motor arm and reports shaft, load, bearing and numerical-correction energy.
+
+Integration verification used `build/agent-integration/Release/banjo_live_world_run.exe`, SHA-256 `b98d68d42734536b6bacc3ca008690d061d7e89fab290ca42bfc1235b0a3161a`. All 147 applicable CTest entries passed across the full run and the corrected browser/water rerun (long/performance labels excluded). The browser suite passed 24 tests, including desktop, 390×844 portrait and 844×390 landscape, explicit wiring, version restoration and queued live controls. The game suite passed 37 tests; the added mechanics/electrics/water/combinations suites passed 11/7/8/2 tests. Source registration accounts for all 269 C++ sources. No complete rigid/fluid/contact energy closure is claimed by these results.
 
 ## Playing a level
 

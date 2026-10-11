@@ -258,10 +258,18 @@ body.on-sandbox main{display:none}
    the prediction's key in one row at the top of the scene; how a run went
    just below the clock, leaving the scene in sight. */
 .scene-top{position:absolute;top:52px;left:10px;right:10px;z-index:3;display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px;pointer-events:none}
-.scene-top>.scene-tray,.scene-top>.move-pad,.scene-top>.scene-actions,.scene-top>.preview-legend{position:static}
+.scene-top>.scene-tray,.scene-top>.move-pad,.scene-top>.scene-actions,.scene-top>.preview-legend,.scene-top>.machine-controls{position:static}
+.scene-top>.machine-controls{pointer-events:auto;margin:0;max-width:100%}
 .scene-top>.scene-actions{padding:0;background:none;border:0;pointer-events:auto}
 .scene-top>.preview-legend{margin-left:auto}
 body.playing-level .level-done{top:52px;transform:translateX(-50%);max-height:calc(100% - 64px);overflow:auto}
 .level-done .how .breakdown{display:block}
 .level-done .unlocked{font-size:15px;color:#ffd34d;font-weight:600}
 @media(max-width:820px){body.playing-level .level-done{padding:8px 12px}.level-done h2{font-size:18px}.level-done .stars{font-size:22px;margin:0}.level-done p{font-size:13px;margin:2px 0}.level-done .energy{font-size:15px;margin:2px 0}.level-done .breakdown{display:none}.level-done .actions{flex-wrap:nowrap;gap:6px;margin-top:6px}.level-done button{min-height:44px;padding:4px 10px;font-size:14px;white-space:nowrap}}
+.machine-controls {position:absolute;right:.6rem;top:4.2rem;z-index:6;background:#14212eee;color:#fff;border:1px solid #52677d;border-radius:.6rem;max-width:min(22rem,85%);padding:.4rem;}
+.machine-controls summary {cursor:pointer;min-height:44px;display:flex;align-items:center;padding:0 .4rem;}
+#machine-control-rows {display:flex;flex-wrap:wrap;gap:.4rem;max-height:30vh;overflow:auto;}
+#machine-control-rows button {min-height:44px;white-space:normal;}
+.piece-example-card {display:flex;flex-direction:column;gap:.4rem;min-width:0;}
+.piece-example-card .piece-card {flex:1;width:100%;}
+.piece-example-card > button {min-height:44px;}

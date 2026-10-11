@@ -1372,8 +1372,15 @@ struct LiveWorld::Impl {
         for (const auto &m : motors)
             if (m.said.store == c.store() && std::find(ids.begin(), ids.end(), m.said.id) == ids.end())
                 throw std::invalid_argument("circuit must include every motor sharing the store");
+        std::set<unsigned> lamp_ids;
+        for (unsigned id : c.lamps()) {
+            auto *lamp = lampById(id);
+            if (!lamp || lamp->on_circuit || !lamp_ids.insert(id).second)
+                throw std::invalid_argument("circuit bulb needs a distinct lamp belonging to no other circuit");
+        }
         circuits.push_back(std::move(c));
         for (unsigned id : ids) motorById(id)->on_circuit = true;
+        for (unsigned id : lamp_ids) lampById(id)->on_circuit = true;
     }
     // Pulls: a force at a point of a body, put on before each step. The work
     // the last step's force did is the force times how far that point moved
@@ -1461,6 +1468,15 @@ struct LiveWorld::Impl {
                                                world->touching(body_of[a->second], body_of[b->second], 0.001));
             }
             const auto *store = energyStoreById(c.store());
+            const auto supply_body = index_of.find(store->body);
+            const bool supply_present = store->body.empty() ||
+                (supply_body != index_of.end() && inWorld(supply_body->second));
+            for (std::size_t b = 0; b < c.size(); ++b) {
+                if (!c.lamp(b)) continue;
+                const auto *lamp = lampById(c.lamp(b));
+                const auto body = index_of.find(lamp->body);
+                c.setPresent(b, lamp->body.empty() || (body != index_of.end() && inWorld(body->second)));
+            }
             std::vector<machines::CircuitMotorInput> inputs;
             for (unsigned id : c.motors()) {
                 auto &m = *motorById(id);
@@ -1470,7 +1486,8 @@ struct LiveWorld::Impl {
                     store->voltage_v / m.said.no_load_rad_s,
                     store->voltage_v * store->voltage_v / (m.said.stall_torque_n_m * m.said.no_load_rad_s), present});
             }
-            circuit_steps.push_back(c.solve(dt, store->voltage_v, store->charge_j, store->max_power_w, inputs));
+            circuit_steps.push_back(c.solve(dt, store->voltage_v, supply_present ? store->charge_j : 0.0,
+                                           store->max_power_w, inputs));
             // A coil wound on a body: its Joule heat for exactly this step goes
             // into that body's thermal parcel as a heater on the network's own
             // clock. Declared before the trial and after the network's saved
@@ -1569,6 +1586,18 @@ struct LiveWorld::Impl {
                 c.addFrictionHeat(s, b, friction); actual_work += work - friction;
             }
             c.commit(s, actual_work);
+            for (std::size_t b = 0; b < c.size(); ++b) {
+                if (!c.lamp(b)) continue;
+                auto &lamp = *lampById(c.lamp(b));
+                lamp.on = true;
+                lamp.drawn_w = (s.branch_heat_j[b] + s.light_j[b]) / dt;
+                lamp.drawn_j += lamp.drawn_w * dt;
+                // The ray source uses 683 lm per radiant watt. This energy
+                // already left the circuit ledger; settleLights never redraws it.
+                lamp.lumens = s.light_j[b] / dt * 683.0;
+                lamp.lit = s.light_j[b] > 0.0;
+                lamp.why = lamp.lit ? "" : "open circuit or exhausted supply";
+            }
             auto *store = energyStoreById(c.store());
             store->charge_j = std::max(0.0, store->charge_j - s.source_j);
             store->given_j += s.source_j;
@@ -1999,9 +2028,11 @@ struct LiveWorld::Impl {
         if (lamps.empty() || !(dt_s > 0.0)) return;
         for (LiveCable &c : cables) c.current_a = c.volts_lost = c.loss_w = c.carried_w = 0.0;
         for (LiveLamp &lamp : lamps) {
-            lamp.drawn_w = lamp.lumens = 0.0;
-            lamp.lit = false;
-            lamp.why.clear();
+            if (!lamp.on_circuit) {
+                lamp.drawn_w = lamp.lumens = 0.0;
+                lamp.lit = false;
+                lamp.why.clear();
+            }
             if (lamp.body.empty()) {
                 lamp.at_m = lamp.at_local_m;             // pinned where it was put
             } else {
@@ -2013,6 +2044,7 @@ struct LiveWorld::Impl {
                 const RigidSnapshot at = world->snapshot(body_of[found->second]);
                 lamp.at_m = at.center_of_mass_world_m + at.orientation_world.rotate(lamp.at_local_m);
             }
+            if (lamp.on_circuit) continue;
             if (lamp.cable == 0 && lamp.store == 0) lamp.why = "not wired to anything";
             else if (!lamp.on) lamp.why = "switched off";
         }
@@ -2021,7 +2053,7 @@ struct LiveWorld::Impl {
         const auto drive = [&](LiveCable *cable, unsigned store_id) {
             double demand_w = 0.0;
             for (const LiveLamp &lamp : lamps)
-                if (lamp.on && lamp.cable == (cable != nullptr ? cable->id : 0U) && lamp.store == store_id &&
+                if (!lamp.on_circuit && lamp.on && lamp.cable == (cable != nullptr ? cable->id : 0U) && lamp.store == store_id &&
                     lamp.why.empty())
                     demand_w += lamp.watts;
             if (!(demand_w > 0.0)) return;
@@ -6841,8 +6873,6 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     impl.next_motor = doc.value("next_motor", 1U);
     if (carrying && doc.contains("circuits") && !doc.at("circuits").empty())
         throw std::invalid_argument("circuit state needs an unchanged-world restore; edited-scene carry is not supported");
-    for (const auto &c : doc.value("circuits", nlohmann::json::array()))
-        impl.attachCircuit(machines::Circuit::read(c, true));
     // Each machine's controller, as it was told; carried while its motor, and a
     // hoist's rope, came back and the host still declares it the same way.
     for (const nlohmann::json &o : doc.value("controls", nlohmann::json::array())) {
@@ -7091,6 +7121,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         lamp.watts = numberFrom(o.at("watts"));
         lamp.efficacy_lm_w = numberFrom(o.at("efficacy_lm_w"));
         lamp.on = o.at("on").get<bool>();
+        lamp.on_circuit = false; // ownership is validated again after every lamp is restored
         lamp.drawn_j = numberFrom(o.at("drawn_j"));
         // What it was giving (older saves do not say: dark until its first step).
         lamp.lit = o.value("lit", false);
@@ -7116,6 +7147,8 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.lamps.push_back(std::move(lamp));
     }
     impl.next_lamp = doc.value("next_lamp", 1U);
+    for (const auto &c : doc.value("circuits", nlohmann::json::array()))
+        impl.attachCircuit(machines::Circuit::read(c, true));
     for (const nlohmann::json &o : doc.value("breakers", nlohmann::json::array())) {
         LiveBreaker breaker;
         breaker.id = o.at("id").get<unsigned>();
@@ -15145,6 +15178,9 @@ std::vector<water::BodyInWater> LiveWorld::waterBodies() {
 }
 
 const terrain::Environment *LiveWorld::environment() const { return impl_->environment.get(); }
+bool LiveWorld::setWaterValve(const std::string &name, bool open) {
+    return impl_->environment && impl_->environment->setWaterValve(name, open);
+}
 
 terrain::TerrainField::Rect LiveWorld::takeChangedGround() {
     return impl_->environment ? impl_->environment->takeChangedGround() : terrain::TerrainField::Rect{};
@@ -19600,6 +19636,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                              {"watts", savedNumber(lamp.watts)},
                              {"efficacy_lm_w", savedNumber(lamp.efficacy_lm_w)},
                              {"on", lamp.on},
+                             {"on_circuit", lamp.on_circuit},
                              {"drawn_j", savedNumber(lamp.drawn_j)},
                              // As the last kept step left it, so that what it
                              // gives -- and the light traced from it -- is the

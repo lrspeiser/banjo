@@ -162,6 +162,13 @@ class Handler(BaseHTTPRequestHandler):
     c=compile_spec(declaration);r={'ok':True,'parts':len(c['parts']),'cells':c['cells'],'notes':c['notes']}
    elif op=='play':r=host.get(data.get('session')).play(bool(data.get('running')),data.get('speed'))
    elif op=='pull':r={'ok':True,**host.get(data.get('session')).pull(data.get('body'),data.get('at'),data.get('force'))}
+   elif op=='electrical_switch':
+    if type(data.get('closed')) is not bool:raise ValueError('Switch state must be true or false')
+    r={'ok':True,**host.get(data.get('session')).electrical_switch(data.get('name'),data['closed'])}
+   elif op=='water_valve':
+    if type(data.get('open')) is not bool:raise ValueError('Valve state must be true or false')
+    r={'ok':True,**host.get(data.get('session')).water_valve(data.get('name'),data['open'])}
+   elif op=='release_joint':r={'ok':True,**host.get(data.get('session')).release_joint(data.get('name'))}
    elif op=='frame':
     after,wait=data.get('after',0),data.get('wait_ms',0)
     if type(after) is not int or not 0<=after<=10**9 or type(wait) is not int or not 0<=wait<=250:raise ValueError('Invalid frame request')

@@ -887,6 +887,12 @@ if(BANJO_BUILD_TESTS)
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_game_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                 set_tests_properties(banjo_machine_game_tests PROPERTIES TIMEOUT 600
                     ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
+                foreach(sandbox_suite mechanics electrics water_launch combinations)
+                    add_test(NAME banjo_sandbox_${sandbox_suite}_tests COMMAND ${Python3_EXECUTABLE}
+                        ${CMAKE_CURRENT_SOURCE_DIR}/tests/sandbox_${sandbox_suite}_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
+                    set_tests_properties(banjo_sandbox_${sandbox_suite}_tests PROPERTIES TIMEOUT 600
+                        ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
+                endforeach()
                 # The same puzzles in Chrome: a piece's ghost moved, turned,
                 # set down and run, on a desktop and a phone.
                 add_test(NAME banjo_machine_game_browser_tests COMMAND ${CMAKE_COMMAND} -E env

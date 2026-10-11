@@ -38,6 +38,7 @@
 #include "core/Math.hpp"
 
 #include <cstdint>
+#include <array>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -54,6 +55,19 @@ struct Spout {
     double discharge_m3_s{};
     double from_s{0.0};
     double until_s{std::numeric_limits<double>::infinity()};
+    // A fixed, metered reservoir; infinity retains the externally supplied
+    // demonstration spout. Residual below one parcel remains in the tank.
+    double initial_volume_m3{std::numeric_limits<double>::infinity()};
+    bool valve_open{true};
+    std::optional<std::array<double,4>> receiver_bounds_m; // xmin,xmax,zmin,zmax
+};
+
+struct SpoutAccount {
+    double emitted_m3{}, landed_m3{}, received_m3{}, ran_off_m3{};
+    double remaining_m3{};
+    // Chosen fixed-mouth reservoir datum: no hydrostatic head or sloshing.
+    double emitted_source_energy_j{};
+    Vec3 emitted_momentum_n_s{};
 };
 
 // What a parcel finds near it: a body's surface (from the host's own shapes).
@@ -95,6 +109,9 @@ struct FallingWaterLedger {
     // joules: where the water's fall went that was not given to a body.
     double contact_loss_j{};
     std::uint64_t parcels_poured{};
+    double source_energy_j{}, receiver_energy_j{}, runoff_energy_j{};
+    double pressure_viscous_work_j{}, numerical_correction_j{}, body_work_j{};
+    Vec3 source_impulse_n_s{}, gravity_impulse_n_s{}, body_impulse_n_s{}, receiver_impulse_n_s{}, runoff_impulse_n_s{};
 };
 
 class FallingWater {
@@ -123,18 +140,23 @@ public:
         std::vector<ParcelPush> pushes;
         std::vector<Landing> landings;
         std::vector<double> owed_m3;
+        std::vector<SpoutAccount> accounts;
         FallingWaterLedger ledger;
         int substeps{};
     };
 
     void addSpout(const Spout &spout);
+    bool setValve(const std::string &name, bool open);
     [[nodiscard]] const std::vector<Spout> &spouts() const { return spouts_; }
     [[nodiscard]] const std::vector<Parcel> &parcels() const { return parcels_; }
     [[nodiscard]] const FallingWaterLedger &ledger() const { return ledger_; }
+    [[nodiscard]] const std::vector<SpoutAccount> &accounts() const { return accounts_; }
     // Water in the air now.
     [[nodiscard]] double inFlight() const { return static_cast<double>(parcels_.size()) * kVolume; }
     // poured - landed - ran off - in the air: zero but for rounding.
     [[nodiscard]] double residual() const;
+    [[nodiscard]] double energyResidual() const;
+    [[nodiscard]] Vec3 momentumResidual() const;
 
     // Works out the next dt_s from time_s without changing anything: where
     // the parcels go, what they push, where they land.
@@ -146,6 +168,7 @@ public:
 private:
     std::vector<Spout> spouts_;
     std::vector<double> owed_m3_;
+    std::vector<SpoutAccount> accounts_;
     std::vector<Parcel> parcels_;
     FallingWaterLedger ledger_;
 };

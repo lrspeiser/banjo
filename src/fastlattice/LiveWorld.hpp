@@ -621,6 +621,7 @@ struct LiveLamp {
     double watts{};                   // what it asks for, switched on
     double efficacy_lm_w{};
     bool on{};
+    bool on_circuit{};                // powered by solved DC branch, never drawn a second time
     // As the last kept step left it: where it is, what it drew, what it gives,
     // and why it is not giving what it asked for.
     Vec3 at_m{};
@@ -2382,6 +2383,7 @@ public:
     // back; the water, the ground's settling and its colliders are brought up
     // to the world's clock after the step is accepted.
     [[nodiscard]] const terrain::Environment *environment() const;
+    bool setWaterValve(const std::string &name, bool open);
     // The rectangle of ground points an edit or a slump has changed since this
     // was last asked, for a host that sends a picture of the ground: nothing
     // when nothing changed, and nothing in a world without ground.

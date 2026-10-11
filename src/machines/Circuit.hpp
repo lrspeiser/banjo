@@ -21,10 +21,10 @@ struct CircuitStep {
     // Joule heat of branches that warm a world body (heats_body) rather than
     // one of the circuit's own lumped nodes. Not in heat_j: it leaves the
     // circuit, and the host hands it to that body's thermal parcel.
-    double exported_j{};
+    double exported_j{}, emitted_j{};
     bool limited{};
     std::vector<double> voltage_v, current_a, motor_current_a, torque_n_m;
-    std::vector<double> heat_j, branch_heat_j, shaft_j;
+    std::vector<double> heat_j, branch_heat_j, shaft_j, light_j;
 };
 
 // A switch worked by a hinge in the world: closed while the pin's measured
@@ -86,9 +86,12 @@ public:
     void commit(const CircuitStep &step, double actual_shaft_work_j);
     void addFrictionHeat(CircuitStep &step, std::size_t branch, double joules) const;
     void setSwitch(const std::string &id, bool closed);
+    void setPresent(std::size_t branch, bool present);
     [[nodiscard]] unsigned store() const { return store_; }
     [[nodiscard]] std::vector<unsigned> motors() const;
     [[nodiscard]] unsigned motor(std::size_t branch) const;
+    [[nodiscard]] unsigned lamp(std::size_t branch) const;
+    [[nodiscard]] std::vector<unsigned> lamps() const;
     [[nodiscard]] double ratio(std::size_t branch) const;
     [[nodiscard]] double resistanceFactor(std::size_t branch) const;
     [[nodiscard]] std::size_t size() const { return branches_.size(); }
@@ -104,8 +107,9 @@ private:
         std::size_t a{}, b{}, thermal{};
         double resistance{}, alpha{}, reference_k{293.15}, trip_k{};
         double fuse_limit{}, fuse_used{}, ratio{1.0};
-        unsigned motor{};
-        bool closed{true}, failed{};
+        unsigned motor{}, lamp{};
+        double efficiency{};
+        bool closed{true}, failed{}, present{true};
         std::string body;                 // heats_body: a world body, not a lumped node
         unsigned follow_joint{};          // follows_hinge: 0 for a hand-worked switch
         double follow_rad{};
@@ -122,7 +126,7 @@ private:
     std::vector<HeatLink> heat_links_;
     std::size_t positive_{}, negative_{}, source_heat_{};
     double source_resistance_{}, ambient_k_{293.15};
-    double elapsed_s_{}, source_j_{}, heat_j_{}, shaft_j_{}, ambient_j_{}, exported_j_{};
+    double elapsed_s_{}, source_j_{}, heat_j_{}, shaft_j_{}, ambient_j_{}, exported_j_{}, emitted_j_{};
     double electrical_residual_j_{}, thermal_residual_j_{}, coupling_residual_j_{};
     CircuitStep last_;
 };

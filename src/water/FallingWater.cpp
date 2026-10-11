@@ -63,16 +63,42 @@ void FallingWater::addSpout(const Spout &spout) {
         throw std::invalid_argument("spout '" + spout.name + "' discharge must be above 0 and at most 0.05 m^3/s");
     if (!(spout.from_s >= 0.0) || !(spout.until_s > spout.from_s))
         throw std::invalid_argument("spout '" + spout.name + "' must stop after it starts");
+    if (!(spout.initial_volume_m3 >= 0.0))
+        throw std::invalid_argument("spout '" + spout.name + "' volume must be nonnegative");
+    if (spout.receiver_bounds_m) {
+        const auto &b=*spout.receiver_bounds_m;
+        if (!std::all_of(b.begin(),b.end(),[](double x){return std::isfinite(x);}) || !(b[0]<b[1]) || !(b[2]<b[3]))
+            throw std::invalid_argument("receiver bounds are xmin,xmax,zmin,zmax");
+    }
     for (const Spout &s : spouts_)
         if (s.name == spout.name) throw std::invalid_argument("two spouts are called '" + spout.name + "'");
     Spout kept = spout;
     kept.direction = spout.direction / d;
     spouts_.push_back(kept);
     owed_m3_.push_back(0.0);
+    accounts_.push_back(SpoutAccount{.remaining_m3 = kept.initial_volume_m3});
+}
+
+bool FallingWater::setValve(const std::string &name, bool open) {
+    for (Spout &s : spouts_) if (s.name == name) { s.valve_open = open; return true; }
+    return false;
 }
 
 double FallingWater::residual() const {
     return ledger_.poured_m3 - ledger_.landed_m3 - ledger_.ran_off_m3 - inFlight();
+}
+
+double FallingWater::energyResidual() const {
+    double flight = 0;
+    for (const Parcel &q : parcels_) flight += kMass * (0.5 * lengthSquared(q.v_m_s) + 9.81*q.x_m.y);
+    return ledger_.source_energy_j + ledger_.pressure_viscous_work_j + ledger_.numerical_correction_j
+        - ledger_.body_work_j - ledger_.contact_loss_j - ledger_.receiver_energy_j - ledger_.runoff_energy_j - flight;
+}
+Vec3 FallingWater::momentumResidual() const {
+    Vec3 flight{};
+    for (const Parcel &q : parcels_) flight += q.v_m_s * kMass;
+    return ledger_.source_impulse_n_s + ledger_.gravity_impulse_n_s - ledger_.body_impulse_n_s
+        - ledger_.receiver_impulse_n_s - ledger_.runoff_impulse_n_s - flight;
 }
 
 FallingWater::Plan FallingWater::plan(double time_s, double dt_s, const SurfacesNear &near,
@@ -81,6 +107,7 @@ FallingWater::Plan FallingWater::plan(double time_s, double dt_s, const Surfaces
     Plan p;
     p.parcels = parcels_;
     p.owed_m3 = owed_m3_;
+    p.accounts = accounts_;
     p.ledger = ledger_;
     const Vec3 g{0.0, -9.81, 0.0};
 
@@ -118,16 +145,26 @@ FallingWater::Plan FallingWater::plan(double time_s, double dt_s, const Surfaces
         // where water that left when it did would be by now.
         for (std::size_t k = 0; k < spouts_.size(); ++k) {
             const Spout &s = spouts_[k];
+            if (!s.valve_open || p.accounts[k].remaining_m3 + 1e-15 < kVolume) continue;
             const double open = std::max(t0, s.from_s), shut = std::min(t1, s.until_s);
             if (!(shut > open)) continue;
-            p.owed_m3[k] += s.discharge_m3_s * (shut - open);
-            while (p.owed_m3[k] >= kVolume) {
+            p.owed_m3[k] = std::min(p.accounts[k].remaining_m3,
+                                  p.owed_m3[k] + s.discharge_m3_s * (shut - open));
+            while (p.owed_m3[k] + 1e-15 >= kVolume && p.accounts[k].remaining_m3 + 1e-15 >= kVolume) {
                 p.owed_m3[k] -= kVolume;
+                auto &account = p.accounts[k];
+                if (std::isfinite(account.remaining_m3)) account.remaining_m3 = std::max(0.0, account.remaining_m3 - kVolume);
+                account.emitted_m3 += kVolume;
+                account.emitted_source_energy_j += kMass * (9.81 * s.at_m.y + 0.5 * s.speed_m_s * s.speed_m_s);
+                account.emitted_momentum_n_s += s.direction * (kMass * s.speed_m_s);
                 const double age = std::min(shut - open, p.owed_m3[k] / s.discharge_m3_s);
                 Parcel q;
                 q.spout = static_cast<std::uint32_t>(k);
                 q.v_m_s = s.direction * s.speed_m_s + g * age;
                 q.x_m = s.at_m + s.direction * (s.speed_m_s * age) + g * (0.5 * age * age);
+                p.ledger.source_energy_j += kMass * (9.81*s.at_m.y + 0.5*s.speed_m_s*s.speed_m_s);
+                p.ledger.source_impulse_n_s += s.direction * (kMass*s.speed_m_s);
+                p.ledger.gravity_impulse_n_s += g * (kMass*age);
                 p.parcels.push_back(q);
                 surfaces.push_back(near(q.x_m, kRadius, (s.speed_m_s + 9.81 * dt_s) * dt_s + reach_extra));
                 p.ledger.poured_m3 += kVolume;
@@ -173,8 +210,17 @@ FallingWater::Plan FallingWater::plan(double time_s, double dt_s, const Surfaces
 
         for (std::size_t i = 0; i < count; ++i) {
             Parcel &q = p.parcels[i];
+            const Vec3 before_v = q.v_m_s;
+            const double before_e = kMass*(0.5*lengthSquared(q.v_m_s) + 9.81*q.x_m.y);
             q.v_m_s += (force[i] / kMass + g) * sub;
             q.x_m += q.v_m_s * sub;
+            p.ledger.gravity_impulse_n_s += g * (kMass*sub);
+            // Pair-force work uses trapezoidal velocity. The remainder is
+            // the explicit integrator's potential-energy correction, reported
+            // separately rather than passed off as physical damping.
+            const double pair_work = dot(force[i], (before_v+q.v_m_s)*0.5)*sub;
+            p.ledger.pressure_viscous_work_j += pair_work;
+            p.ledger.numerical_correction_j += kMass*(0.5*lengthSquared(q.v_m_s)+9.81*q.x_m.y)-before_e-pair_work;
             // Bodies: frictionless, and no bounce. Speed into a surface goes;
             // speed along it stays; the body gets the impulse back.
             for (const NearSurface &s : surfaces[i]) {
@@ -187,12 +233,15 @@ FallingWater::Plan FallingWater::plan(double time_s, double dt_s, const Surfaces
                     const Vec3 impulse = s.normal * (-kMass * closing);
                     q.v_m_s += impulse / kMass;
                     p.ledger.contact_loss_j += 0.5 * kMass * closing * closing;
+                    p.ledger.body_work_j -= dot(impulse, s.velocity_m_s);
+                    p.ledger.body_impulse_n_s -= impulse;
                     auto [at, fresh] = pushed.try_emplace(s.body);
                     if (fresh) pushed_order.push_back(s.body);
                     at->second.impulse -= impulse;
                     at->second.moment -= cross(point, impulse);
                 }
                 q.x_m += s.normal * depth;
+                p.ledger.numerical_correction_j += kMass*9.81*s.normal.y*depth;
             }
             if (!(length(q.v_m_s) <= kMaxSpeed) || !std::isfinite(lengthSquared(q.x_m)))
                 throw std::runtime_error("a parcel of falling water left its admitted speed; step refused");
@@ -207,10 +256,20 @@ FallingWater::Plan FallingWater::plan(double time_s, double dt_s, const Surfaces
             if (height && q.x_m.y - kRadius <= *height) {
                 p.landings.push_back({q.x_m, q.v_m_s * kMass, kVolume});
                 p.ledger.landed_m3 += kVolume;
+                p.accounts[q.spout].landed_m3 += kVolume;
+                const auto &bounds=spouts_[q.spout].receiver_bounds_m;
+                if (!bounds || (q.x_m.x >= (*bounds)[0] && q.x_m.x <= (*bounds)[1] &&
+                                q.x_m.z >= (*bounds)[2] && q.x_m.z <= (*bounds)[3]))
+                    p.accounts[q.spout].received_m3 += kVolume;
+                p.ledger.receiver_energy_j += kMass*(0.5*lengthSquared(q.v_m_s)+9.81*q.x_m.y);
+                p.ledger.receiver_impulse_n_s += q.v_m_s*kMass;
                 continue;
             }
             if (!height && q.x_m.y < floor_y_m) {
                 p.ledger.ran_off_m3 += kVolume;
+                p.accounts[q.spout].ran_off_m3 += kVolume;
+                p.ledger.runoff_energy_j += kMass*(0.5*lengthSquared(q.v_m_s)+9.81*q.x_m.y);
+                p.ledger.runoff_impulse_n_s += q.v_m_s*kMass;
                 continue;
             }
             if (kept != i) {
@@ -233,6 +292,7 @@ FallingWater::Plan FallingWater::plan(double time_s, double dt_s, const Surfaces
 void FallingWater::accept(Plan &&plan) {
     parcels_ = std::move(plan.parcels);
     owed_m3_ = std::move(plan.owed_m3);
+    accounts_ = std::move(plan.accounts);
     ledger_ = plan.ledger;
 }
 

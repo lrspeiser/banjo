@@ -88,6 +88,51 @@ void switchingFailureAndValidation() {
     rejects([&] { c.setSwitch("two", true); });
     rejects([&] { (void)c.solve(-1, 24, 100, 0, {}); });
 }
+void bulbEnergyAndSharedSupply() {
+    auto d = network();
+    d["branches"][0]["kind"] = "bulb";
+    d["branches"][0]["lamp"] = 1;
+    d["branches"][0]["efficiency"] = .2;
+    auto c = Circuit::read(d);
+    const auto s = c.solve(.1, 24, 1000, 48, {});
+    near(s.source_j, 4.8, 1e-12, "bulb shared supply");
+    near(s.emitted_j, .2, 1e-12, "bounded bulb light");
+    near(s.branch_heat_j[0], .8, 1e-12, "bulb heat fraction");
+    near(s.electrical_residual_j, 0, 1e-12, "bulb full energy transfer");
+    c.commit(s, 0);
+    const auto saved = c.saved();
+    near(saved["ledger"]["emitted_j"], .2, 1e-12, "emission ledger");
+    near(saved["branches"][0]["power_w"], 10, 1e-12, "measured bulb power");
+    near(Circuit::read(saved, true).solve(.1, 24, 0, 0, {}).emitted_j, 0, 1e-12, "empty bulb emitted light");
+    rejects([&] { auto bad = d; bad["branches"][0]["efficiency"] = 1.1; Circuit::read(bad); });
+
+    TileImpactRequest scene;
+    scene.cell_size_m = .05; scene.gravity_m_s2 = {0, 0, 0};
+    SceneBody post;
+    post.name = "post"; post.shape = BodyShape::Box; post.material = MaterialPreset::Iron;
+    post.dimensions_m = {.2, .2, .2}; post.center_m = {0, 1, 0}; post.anchored = true;
+    scene.bodies = {post};
+    auto world = LiveWorld::open(scene);
+    const unsigned store = world->energyStore("battery", "post", 100, 100, 24, 0);
+    const unsigned lamp = world->lamp("bulb", "post", 0, 0, {0, 1.3, 0}, 10, 683);
+    check(world->lampLight("bulb light", lamp, {0, 1, 0}, 180, 48, 683) != 0, "bulb optics was not built");
+    auto live = d;
+    live["source"]["store"] = store;
+    live["branches"][0]["lamp"] = lamp;
+    world->circuit(live.dump());
+    for (int i = 0; i < 24; ++i) world->step(1.0 / 240);
+    const auto ledger = json::parse(world->circuits())[0]["ledger"];
+    near(100 - world->energyStores()[0].charge_j, ledger["source_j"], 1e-9, "lamp duplicated battery draw");
+    check(world->lamps()[0].lit, "solved bulb failed to emit");
+    world->traceLight();
+    const auto live_network = json::parse(world->circuits())[0];
+    near(world->optics().watts.sent, live_network["branches"][0]["emitted_w"], 1e-10, "light trace lost solved power");
+    near(world->optics().watts.residual(), 0, 1e-10, "optical transfer ledger");
+    std::string why;
+    const auto restored = LiveWorld::open(scene, world->snapshot(why));
+    restored->step(1.0 / 240);
+    check(restored->lamps()[0].lit, "circuit lamp lost on restore");
+}
 TileImpactRequest room(bool locked = false, bool free_housing = false) {
     TileImpactRequest r; r.cell_size_m = 0.05; r.backend = BackendKind::CpuParallel;
     r.gravity_m_s2 = {0, 0, 0};
@@ -361,7 +406,7 @@ void contactSwitch() {
 int main() {
     try {
         const auto start = std::chrono::steady_clock::now();
-        circuitsAndHeat(); switchingFailureAndValidation(); liveLoopAndRestore(); stalledAndEmpty();
+        circuitsAndHeat(); switchingFailureAndValidation(); bulbEnergyAndSharedSupply(); liveLoopAndRestore(); stalledAndEmpty();
         sharedMotorsAndGeneration(); housingReactionAndConvergence(); hingeSwitchAndBodyHeat(); contactSwitch();
         std::cout << "circuits passed in " << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() << " s\n";
         return 0;

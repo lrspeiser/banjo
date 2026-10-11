@@ -156,6 +156,7 @@ public:
     // Water poured from spouts and still in the air, and its ledger; nothing
     // when the scene declares no spouts.
     [[nodiscard]] const water::FallingWater *fallingWater() const { return falling_.get(); }
+    bool setWaterValve(const std::string &name, bool open) { return falling_ && falling_->setValve(name, open); }
     // How long the world has run, as far as the environment knows.
     [[nodiscard]] double timeS() const { return time_s_; }
 

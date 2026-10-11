@@ -18,7 +18,9 @@ Windows, built and tested on Linux in CI, and not tested on macOS.
 
 ## What there is
 
-**Eight levels.** Each one teaches one way of making something happen:
+**Eight chain-reaction levels and twenty freely selectable easy challenges.**
+The easy challenges introduce cutting, optics, springs, gearing, wiring, water,
+heating and catapults one step at a time. The original chain-reaction levels are:
 
 | Level | What makes it work |
 |---|---|
@@ -38,9 +40,11 @@ three stars.
 **Sandbox** (`/machine`) combines the former Free build and machine sandbox.
 It opens a library of your designs, prebuilt designs, and **Add New Design**.
 Each design has a table with no goal and every piece in
-the tray: marbles, tracks, shelves, gates, flip-flops, bends, funnels, blocks,
-dominoes, levers, planks, ramps, cannons and steam engines. Pieces snap
-together, can be joined with glue, a pin or a string, and a build can be shared
+the tray: 30 cards including knives, mirrors, lenses, solar panels, tackle,
+springs, gears, weights, motors, batteries, switches, bulbs, wires, water
+wheels, finite water tanks, heating coils and counterweight catapults.
+There are 21 editable prebuilt designs. Pieces snap
+together, can be joined with glue, a pin, a string or a spring, and a build can be shared
 as a link. **Add a piece** opens a full-screen library with large thumbnails,
 search and categories; choosing a piece returns to the scene to place it.
 You can also ask the chat to build something in words. Named drafts
@@ -54,6 +58,9 @@ star at most), or builds what you describe in the Sandbox. It uses OpenAI's
 
 [docs/machine-game.md](docs/machine-game.md) says how every control and piece
 works, what was measured, and how to add a level.
+The [physics roadmap](docs/machine-physics-roadmap.md) records the experimental
+models and remaining limits; the measured sandbox reports distinguish working
+controls from full physical validation.
 
 ## How it works
 

@@ -85,11 +85,18 @@ class Tray(unittest.TestCase):
                     if value is None:
                         continue
                     with self.subTest(piece=item['piece'], key=key, value=value):
-                        p = [{'piece': item['piece'], 'x_m': 0, 'z_m': 0, key: value}]
-                        before = mg.ghost(free, p, 0)
-                        after = mg.ghost(free, p, 0, edit_key=key)
+                        context = copy.deepcopy(free)
+                        if item['piece'] in ('water_wheel', 'water_tank'):
+                            context['machine'] = copy.deepcopy(mg.sandbox_water_launch.CHANNEL_BASE)
+                            context['custom_base'] = True
+                        p = [{'piece': item['piece'], **{k: 0 for k in ('x_m', 'z_m') if k in item['knobs']}, key: value}]
+                        before = mg.ghost(context, p, 0)
+                        after = mg.ghost(context, p, 0, edit_key=key)
                         guide = after.pop('edit_guide')
                         self.assertEqual(after, before)
+                        if rule.get('part') or rule.get('hinge') or rule.get('terminal') or not after['parts']:
+                            self.assertIsNone(guide)
+                            continue
                         self.assertEqual(guide['key'], key)
                         for arrow in guide['arrows']:
                             self.assertAlmostEqual(sum(v * v for v in arrow['direction']), 1, places=6)
@@ -102,9 +109,11 @@ class Tray(unittest.TestCase):
             compiled = mw.compile_spec(spec)
             self.assertTrue(compiled['parts'])
             if template['base']:
-                self.assertEqual(spec['stations'], template['base']['stations'])
-                self.assertEqual(spec['kits'], template['base']['kits'])
-                self.assertEqual(spec['parts'], template['base']['parts'], 'the base supports are preserved')
+                self.assertEqual(spec['stations'], template['base'].get('stations', []))
+                for part in template['base'].get('parts', []):
+                    self.assertIn(part, spec['parts'], 'the base supports are preserved')
+                for kit in template['base'].get('kits', []):
+                    self.assertIn(kit, spec['kits'])
                 g = mg.ghost(level, [{'piece': 'marble', 'x_m': -1.8, 'z_m': -1.8}], 0)
                 self.assertTrue(g['fits'], g['problems'])
         base = mg.sandbox_templates()[1]['base']
@@ -116,7 +125,8 @@ class Tray(unittest.TestCase):
             mg.requested_level({'level': 'free', 'base': bad})
 
     def test_every_level_is_well_formed_and_its_solution_fits_its_tray(self):
-        self.assertEqual([l['id'] for l in LEVELS], ['gap', 'cut', 'fire', 'steam', 'chain', 'laser', 'sun', 'tackle'])
+        self.assertEqual([l['id'] for l in LEVELS[:8]], ['gap', 'cut', 'fire', 'steam', 'chain', 'laser', 'sun', 'tackle'])
+        self.assertEqual(len({l['id'] for l in LEVELS}), len(LEVELS))
         for level in LEVELS:
             spec, checked, cost = mg.compose(level, level['solution'])
             mw.compile_spec(spec)
@@ -174,7 +184,8 @@ class Tray(unittest.TestCase):
                 # A mirror turns about the vertical by its own angle_deg; a
                 # counterweight on a rope is not something to turn.
                 self.assertEqual(turning, ['angle_deg', 'pitch_deg', 'roll_deg'] if t['piece'] == 'mirror'
-                                 else [] if t.get('turning') is False
+                                 else sorted(t['turns']) if 'turns' in t
+                                 else [] if t.get('turning') is False or level.get('turning') is False
                                  else ['pitch_deg', 'roll_deg', 'yaw_deg'], level['id'])
                 # Moved across too, but for a counterweight, which hangs in
                 # line with the beam its rope runs along.
@@ -274,7 +285,7 @@ class Tray(unittest.TestCase):
                     p = {'piece': t['piece']}
                     for key, rule in t['knobs'].items():
                         p[key] = rule['choices'][-1 if end == 'max' else 0] if 'choices' in rule else (
-                            rule.get('default', rule['min']) if rule.get('turning') else rule[end])
+                            knob_default(rule) if rule.get('turning') or any(rule.get(k) for k in ('part', 'terminal', 'hinge')) else rule[end])
                     tries.append([p])
             for placements in tries:
                 parts = mg._assemble(level, placements, lenient=True)[3]['parts']
@@ -398,11 +409,33 @@ class Tray(unittest.TestCase):
 
 
 def knob_default(rule):
-    return rule.get('default', rule['choices'][0] if 'choices' in rule else rule['min'])
+    return rule['default'] if 'default' in rule else rule['choices'][0] if 'choices' in rule else rule['min']
 
 
 class FreeBuild(unittest.TestCase):
     FREE = mg.level_by_id('free')
+
+    def test_named_connections_keep_identity_and_can_target_later_placements(self):
+        free = mg.requested_level({'level': 'free', 'base': mg.sandbox_water_launch.CHANNEL_BASE})
+        placed = [{'piece':'water_wheel','side':'off','load_part':'your weight 2'},
+                  {'piece':'weight','x_m':1,'z_m':.7,'height_m':.5,'mount':'guided'}]
+        spec = mg.compose(free, placed)[0]
+        compiled = mw.compile_spec(spec)
+        self.assertTrue(any(j.get('load') == 'your weight 2' and j['kind'] == 'drum' for j in compiled['joints']))
+        with self.assertRaisesRegex(mg.LevelRefused, 'not present'):
+            mg.compose(free, [dict(placed[0], load_part='your weight 99')])
+
+    def test_attach_spring_preserves_real_picked_points_and_parameters(self):
+        placed = [{'piece':'block','x_m':-.5,'z_m':0,'tall_m':.2},
+                  {'piece':'plank','x_m':.5,'z_m':0,'length_m':.2},
+                  {'piece':'link','kind':'spring','a':'your block 1','b':'your plank 2',
+                   'at_m':[-.5,.2,0],'at_b_m':[.5,.05,0],'rest_m':.9,'stiffness_n_m':80,'damping_n_s_m':2}]
+        compiled = mw.compile_spec(mg.compose(self.FREE, placed)[0])
+        joint = next(j for j in compiled['joints'] if j['name'] == 'your link 3')
+        self.assertEqual(joint['kind'], 'spring')
+        self.assertEqual(joint['at_m'], placed[-1]['at_m'])
+        for key in ('rest_m','stiffness_n_m','damping_n_s_m'):
+            self.assertEqual(joint[key], placed[-1][key])
 
     def test_the_free_build_has_no_goal_and_every_piece(self):
         free = self.FREE
@@ -427,8 +460,16 @@ class FreeBuild(unittest.TestCase):
             if t.get('attach'):
                 continue      # a link is made by joining two parts, not from the tray
             placed = dict({k: knob_default(r) for k, r in t['knobs'].items()}, piece=t['piece'])
-            g = mg.ghost(self.FREE, [placed], 0)
+            context = copy.deepcopy(self.FREE)
+            if t['piece'] in ('water_wheel', 'water_tank'):
+                context['machine'] = copy.deepcopy(mg.sandbox_water_launch.CHANNEL_BASE)
+                context['custom_base'] = True
+            g = mg.ghost(context, [placed], 0)
             with self.subTest(piece=t['piece']):
+                if t['piece'] == 'wire':
+                    self.assertFalse(g['fits'], 'a wire needs two real terminals')
+                    self.assertIn('terminal', ' '.join(g['problems']))
+                    continue
                 self.assertTrue(g['fits'], g['problems'])
                 self.assertTrue(g['parts'])
 
@@ -503,7 +544,7 @@ class FreeBuild(unittest.TestCase):
                 self.assertAlmostEqual(made['length_m'], math.dist([0.0, 0.2, 0.0], [0.2, 0.25, 0.0]), places=4)
         with self.assertRaises(mg.LevelRefused):
             mg.compose(free, [block, dict(link, b='your block 1')])
-        with self.assertRaises(mw.MachineRefused):
+        with self.assertRaisesRegex(mg.LevelRefused, 'not present'):
             mg.compose(free, [block, plank, dict(link, b='your plank 9')])
 
     def test_the_chat_builds_by_joining_pieces_and_the_server_lays_them_out(self):

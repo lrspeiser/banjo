@@ -585,7 +585,7 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
         };
         for (const Json &s : spouts) {
             if (!s.is_object()) throw std::invalid_argument("a spout is an object");
-            onlyKeys(s, {"name", "at_m", "direction", "speed_m_s", "discharge_m3_s", "from_s", "until_s"}, "a spout");
+            onlyKeys(s, {"name", "at_m", "direction", "speed_m_s", "discharge_m3_s", "from_s", "until_s", "initial_volume_m3", "valve_open", "receiver_bounds_m"}, "a spout");
             water::Spout spout;
             spout.name = s.value("name", std::string());
             const std::string whose = "spout \"" + spout.name + "\"";
@@ -594,6 +594,10 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
             spout.speed_m_s = number(s, "speed_m_s", 0.0, 0.0, 30.0);
             spout.discharge_m3_s = number(s, "discharge_m3_s", 0.0, 0.0, 0.05);
             spout.from_s = number(s, "from_s", 0.0, 0.0, 1e6);
+            spout.initial_volume_m3 = number(s, "initial_volume_m3", std::numeric_limits<double>::infinity(), 0.0,
+                                           std::numeric_limits<double>::infinity());
+            spout.valve_open = s.value("valve_open", true);
+            if (s.contains("receiver_bounds_m")) spout.receiver_bounds_m=s.at("receiver_bounds_m").get<std::array<double,4>>();
             spout.until_s = number(s, "until_s", std::numeric_limits<double>::infinity(), 0.0,
                                    std::numeric_limits<double>::infinity());
             if (!environment->falling_) environment->falling_ = std::make_unique<water::FallingWater>();

@@ -8,6 +8,19 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 11 update: the sandbox exposes independent cards and twenty easy
+challenges for the guide's cutting, optics, mechanical, electrical, water and
+launch pieces. Explicit electrical terminal graphs support shared finite
+supplies, manual/paddle switches, bulbs, coils and motors. Fixed metered water
+supplies debit actual remaining volume and count receiver landings; source
+valves and arm restraints are queued at engine boundaries. A counterweight
+cradle launches through contact. These additions do not establish calibrated
+fluid turbines, free liquid containment, spreading fire, gear teeth or a spring
+catapult preset. See [mechanical measurements](sandbox-mechanics-measured.md),
+[electrical measurements](sandbox-electrics-measured.md) and
+[water/launch measurements](sandbox-water-launch-measured.md) for per-material
+comparisons, full receipts where available and remaining coupled-pipeline limits.
+
 | Physics | How a machine asks for it | Measured (tests/machine_physics_tests.py) |
 |---|---|---|
 | Rigid bodies: rolling, sliding, falling, toppling, friction, rolling resistance | parts, kits | Marble run, dominoes, falling weight in the default machine |

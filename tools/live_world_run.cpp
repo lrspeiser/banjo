@@ -1958,10 +1958,25 @@ void addEnvironment(LiveWorld &world, nlohmann::json &reply, bool whole) {
             at.push_back(std::lround(q.x_m.z * 1000.0));
         }
         const banjo::water::FallingWaterLedger &fl = falling->ledger();
+        nlohmann::json sources = nlohmann::json::array();
+        for (std::size_t k = 0; k < falling->spouts().size(); ++k) {
+            const auto &s = falling->spouts()[k];
+            const auto &a = falling->accounts()[k];
+            sources.push_back({{"name", s.name}, {"finite", std::isfinite(s.initial_volume_m3)},
+                               {"valve_open", s.valve_open}, {"initial_m3", std::isfinite(s.initial_volume_m3) ? nlohmann::json(s.initial_volume_m3) : nlohmann::json(nullptr)},
+                               {"remaining_m3", std::isfinite(a.remaining_m3) ? nlohmann::json(a.remaining_m3) : nlohmann::json(nullptr)},
+                               {"emitted_m3", a.emitted_m3}, {"landed_m3", a.landed_m3}, {"received_m3", a.received_m3}, {"ran_off_m3", a.ran_off_m3},
+                               {"source_energy_j", a.emitted_source_energy_j},
+                               {"support_reaction_n_s", {-a.emitted_momentum_n_s.x, -a.emitted_momentum_n_s.y, -a.emitted_momentum_n_s.z}}});
+        }
         reply["parcels"] = {{"r_m", banjo::water::FallingWater::kRadius}, {"xyz_mm", at},
                             {"poured_m3", tidy(fl.poured_m3)}, {"landed_m3", tidy(fl.landed_m3)},
                             {"ran_off_m3", tidy(fl.ran_off_m3)}, {"in_air_m3", tidy(falling->inFlight())},
-                            {"residual_m3", falling->residual()}, {"contact_loss_j", tidy(fl.contact_loss_j)}};
+                            {"residual_m3", falling->residual()}, {"contact_loss_j", tidy(fl.contact_loss_j)}, {"sources", sources},
+                            {"energy_residual_j", falling->energyResidual()}, {"numerical_correction_j", fl.numerical_correction_j},
+                            {"pressure_viscous_work_j", fl.pressure_viscous_work_j}, {"body_work_j", fl.body_work_j},
+                            {"receiver_energy_j", fl.receiver_energy_j},
+                            {"momentum_residual_n_s", {falling->momentumResidual().x, falling->momentumResidual().y, falling->momentumResidual().z}}};
     }
 }
 
@@ -3309,6 +3324,9 @@ int main(int argc, char **argv) {
                                      .dump()
                               << std::endl;
                     continue;
+                } else if (op == "water_valve") {
+                    if (!world->setWaterValve(command.at("name").get<std::string>(), command.at("open").get<bool>()))
+                        throw std::invalid_argument("water valve names an existing spout");
                 } else if (op == "environment") {
                     std::cout << nlohmann::json{{"ok", true},
                                                 {"environment", nlohmann::json::parse(world->environmentReport(

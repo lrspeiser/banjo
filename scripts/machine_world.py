@@ -23,6 +23,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+import sandbox_electrics as electrics
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = 'banjo.machine.v1'
@@ -1397,7 +1398,8 @@ def compile_spec(spec, lenient=False):
             continue
         spouts.append({'name': s['name'].strip(), 'at_m': s.get('at_m'), 'direction': s.get('direction', [0, -1, 0]),
                        'speed_m_s': s.get('speed_m_s', 1.0), 'discharge_l_s': s.get('discharge_l_s', 1.0),
-                       'from_s': s.get('from_s', 0.0), 'until_s': s.get('until_s')})
+                       'from_s': s.get('from_s', 0.0), 'until_s': s.get('until_s'),
+                       **({key: s[key] for key in ('initial_volume_l', 'valve_open', 'receiver_bounds_m') if key in s})})
     # Poured water falls until it reaches the river, so it needs the flume's
     # ground under it to land in.
     checked_spouts = []
@@ -1422,6 +1424,16 @@ def compile_spec(spec, lenient=False):
                'from_s': _num(s, 'from_s', what, problems, 0.0, 0, 600)}
         if s.get('until_s') is not None:
             row['until_s'] = _num(s, 'until_s', what, problems, None, row['from_s'] + 0.01, 3600)
+        if 'initial_volume_l' in s:
+            row['initial_volume_l'] = _num(s, 'initial_volume_l', what, problems, 0.0, 0.0, 1000.0)
+        if 'valve_open' in s:
+            if not isinstance(s['valve_open'], bool): problems.append(what + ': valve_open must be true or false')
+            row['valve_open'] = bool(s['valve_open'])
+        if 'receiver_bounds_m' in s:
+            bounds=_vec(s['receiver_bounds_m'],4,what+' receiver_bounds_m',problems)
+            if not bounds[0]<bounds[1] or not bounds[2]<bounds[3]:
+                problems.append(what+': receiver bounds are xmin,xmax,zmin,zmax')
+            row['receiver_bounds_m']=bounds
         checked_spouts.append(row)
     if len({s['name'] for s in checked_spouts}) != len(checked_spouts):
         problems.append('two spouts share a name')
@@ -1675,6 +1687,8 @@ def compile_spec(spec, lenient=False):
             problems.append('a battery needs a name')
             continue
         what = 'battery ' + name
+        if name in battery_names:
+            problems.append(f'{what}: battery names must be unique; shared loads use one store')
         if b.get('in') not in names:
             problems.append(f'{what}: in must name the part it is in')
         battery_names.add(name)
@@ -1693,6 +1707,7 @@ def compile_spec(spec, lenient=False):
                'azimuth_deg': _num(sun_spec, 'azimuth_deg', 'sun', problems, 180, -360, 360),
                'irradiance_w_m2': _num(sun_spec, 'irradiance_w_m2', 'sun', problems, 1000, 0, 1400)}
     light = compile_light(spec, sun, names, battery_names, problems, light_extra)
+    electrical = electrics.compile_electrical(spec, names, joint_rows, battery_names, problems)
     circuits = []
     for c in spec.get('circuits', []) or []:
         name = c.get('name') if isinstance(c, dict) else None
@@ -1841,6 +1856,19 @@ def compile_spec(spec, lenient=False):
                 if not isinstance(arg, dict) or arg.get('joint') not in hinge_names or \
                         not isinstance(arg.get('deg'), (int, float)):
                     problems.append(f'{what}: turned_deg needs a hinge joint name and deg (total turn, either way)')
+            elif kind == 'water_received_l':
+                if not isinstance(arg, dict) or arg.get('spout') not in {p['name'] for p in checked_spouts} or \
+                        not isinstance(arg.get('l'), (int, float)) or not 0 < arg['l'] <= 1000:
+                    problems.append(f'{what}: water_received_l needs a spout name and positive litres')
+            elif kind == 'load_power_w':
+                if not isinstance(arg, dict) or arg.get('device') not in {d['name'] for d in electrical.get('devices', [])} or \
+                        not isinstance(arg.get('at_least_w'), (int, float)) or arg['at_least_w'] <= 0 or \
+                        not isinstance(arg.get('for_s', 0), (int, float)) or arg.get('for_s', 0) < 0:
+                    problems.append(f'{what}: load_power_w needs an electrical device, positive watts and nonnegative for_s')
+            elif kind == 'charged_j':
+                if not isinstance(arg, dict) or arg.get('battery') not in battery_names or \
+                        not isinstance(arg.get('at_least_j'), (int, float)) or arg['at_least_j'] <= 0:
+                    problems.append(f'{what}: charged_j needs a battery and positive stored joules')
             elif kind == 'slid_m':
                 if not isinstance(arg, dict) or arg.get('joint') not in slide_names or \
                         not isinstance(arg.get('m'), (int, float)):
@@ -1883,7 +1911,7 @@ def compile_spec(spec, lenient=False):
     if problems and not lenient:
         raise MachineRefused(problems)
     return ({'problems': problems} if lenient else {}) | {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
-            'parts': checked, 'joints': joint_rows, 'batteries': batteries, 'circuits': circuits,
+            'parts': checked, 'joints': joint_rows, 'batteries': batteries, 'circuits': circuits, 'electrical': electrical,
             'torches': torches, 'spouts': checked_spouts, 'stations': stations, 'cells': round(cells), 'notes': notes,
             'plasticity': bool(spec.get('plasticity', False)), 'sun': sun, 'solar_panels': solar_panels,
             'thermo': {key: rows for key, rows in thermo.items() if rows}, 'blades': checked_blades, 'ropes': ropes,
@@ -1922,6 +1950,10 @@ def scene_of(compiled):
                             'speed_m_s': s['speed_m_s'], 'discharge_m3_s': s['discharge_l_s'] / 1000.0,
                             'from_s': s['from_s'], **({'until_s': s['until_s']} if 'until_s' in s else {})}
                            for s in compiled['spouts']]
+        for source, target in zip(compiled['spouts'], scene['spouts']):
+            if 'initial_volume_l' in source: target['initial_volume_m3'] = source['initial_volume_l'] / 1000.0
+            if 'valve_open' in source: target['valve_open'] = source['valve_open']
+            if 'receiver_bounds_m' in source: target['receiver_bounds_m'] = source['receiver_bounds_m']
     return scene
 
 
@@ -2109,6 +2141,7 @@ def build_engine(exe, compiled, workdir):
                                            'ambient_w_k': 2}] if 'motor' in c else []),
                        'branches': branches}
             circuit_ids[c['name']] = engine.op(op='circuit', network=network)['circuit']
+        circuit_ids.update(electrics.build_electrical(engine, compiled, store_ids, joint_ids))
         for t in compiled['torches']:
             engine.op(op='heat', target=t['target'], power_w=t['power_w'], seconds=t['seconds'])
         # Start working out a collision that is coming before it arrives (up
@@ -2168,9 +2201,12 @@ class MachineSession:
         self._first_impact = set()
         self._parted = set()
         self._switches = {}
+        self._power_since = {}
+        self._electrical_queue = {}
         # Pulls a person asked for, not yet given to the engine (the run's
         # own thread does that, between steps), and whether any ever was.
         self._pull_queue = {}
+        self._water_launch_queue = []
         self._pulled = False
         self._latched = set()
         self._hot = set()
@@ -2420,7 +2456,8 @@ class MachineSession:
                     self._latched.add(name)
                     self._event('latched', f'{name} caught on its ratchet at {j.get("degrees", 0):.1f} degrees')
             for key in ('metres', 'tension_n', 'leaves', 'meets', 'wound_m', 'breaks_at_n', 'member',
-                        'capacity_fraction', 'parted_because'):
+                        'capacity_fraction', 'parted_because', 'force_n', 'stored_j', 'rest_m',
+                        'stiffness_n_m', 'damping_n_s_m'):
                 if key in j:
                     row[key] = j[key]
             if kind == 'hinge' and j.get('degrees') is not None:
@@ -2437,8 +2474,13 @@ class MachineSession:
             out['pulls'] = [{'body': p['body'], 'force_n': p['force_n'], 'work_j': _round(p['work_j'], 3)}
                             for p in self.engine.op(op='pulls').get('pulls', [])]
         circuits = []
+        native_circuits = []
         if self.circuit_ids:
-            for c in self.engine.op(op='circuits').get('circuits', []):
+            native_circuits = self.engine.op(op='circuits').get('circuits', [])
+            legacy_names = {c['name'] for c in self.compiled['circuits']}
+            for c in native_circuits:
+                if c['id'] not in legacy_names:
+                    continue
                 coil = next((b for b in c['branches'] if b['id'] == 'coil'), {})
                 motor = next((b for b in c['branches'] if b['id'] == 'motor'), {})
                 sw = next((b for b in c['branches'] if b['id'] == 'switch'), None)
@@ -2458,6 +2500,7 @@ class MachineSession:
                     self._event('switch', f'{c["id"]}: switch closed, {current:.1f} A into {into}', circuit=c['id'])
                 self._switches[c['id']] = bool(sw and sw.get('closed'))
         out['circuits'] = circuits
+        out['electrical'] = electrics.readouts(self.compiled.get('electrical', {}), native_circuits)
         heat = self.engine.op(op='thermo').get('thermo', {})
         hot = []
         for b in heat.get('bodies', []) or []:
@@ -2503,6 +2546,7 @@ class MachineSession:
             m = self.machines
             out['machines'] = {
                 'batteries': [{'name': s.get('name'), 'charge_j': _round(s.get('charge_j', 0.0), 1),
+                              'given_j': _round(s.get('given_j', 0.0), 3), 'taken_j': _round(s.get('taken_j', 0.0), 3),
                                'capacity_j': s.get('capacity_j')} for s in m.get('stores', [])],
                 'motors': [{'id': x.get('id'), 'speed_rad_s': _round(x.get('speed_rad_s', 0.0), 3),
                             'torque_n_m': _round(x.get('torque_n_m', 0.0), 3), 'power_w': _round(x.get('power_w', 0.0), 2),
@@ -2518,7 +2562,8 @@ class MachineSession:
             out['pour'] = {'poured_l': _round(1000 * p.get('poured_m3', 0.0), 2),
                            'landed_l': _round(1000 * p.get('landed_m3', 0.0), 2),
                            'in_air_l': _round(1000 * p.get('in_air_m3', 0.0), 2),
-                           'parcels': len(p.get('xyz_mm', [])) // 3, 'residual_m3': p.get('residual_m3')}
+                           'parcels': len(p.get('xyz_mm', [])) // 3, 'residual_m3': p.get('residual_m3'),
+                           'sources': p.get('sources', [])}
         self.readouts = out
         out['stations'] = self._stations(out)
 
@@ -2545,6 +2590,21 @@ class MachineSession:
                     j = next((j for j in out['joints'] if j['name'] == r.get('joint')), None)
                     if j and abs(j.get('turned_deg') or 0.0) >= abs(r['deg']):
                         hit = self.t
+                elif 'water_received_l' in rule:
+                    r = rule['water_received_l']
+                    source = next((s for s in out.get('pour', {}).get('sources', []) if s['name'] == r['spout']), None)
+                    if source and source['received_m3'] * 1000.0 >= r['l']: hit = self.t
+                elif 'load_power_w' in rule:
+                    r = rule['load_power_w']
+                    d = next((d for d in out.get('electrical', {}).get('devices', []) if d['name'] == r['device']), {})
+                    if d.get('power_w', 0) >= r['at_least_w']:
+                        self._power_since.setdefault(i, self.t)
+                        if self.t - self._power_since[i] >= r.get('for_s', 0): hit = self.t
+                    else: self._power_since.pop(i, None)
+                elif 'charged_j' in rule:
+                    r = rule['charged_j']
+                    if any(b['name'] == r['battery'] and b['charge_j'] >= r['at_least_j']
+                           for b in out.get('machines', {}).get('batteries', [])): hit = self.t
                 elif 'slid_m' in rule:
                     r = rule['slid_m']
                     j = next((j for j in out['joints'] if j['name'] == r.get('joint')), None)
@@ -2586,6 +2646,47 @@ class MachineSession:
                          'done': i in done_at, 'at_s': done_at.get(i)})
         return rows
 
+    def electrical_switch(self, name, closed):
+        """Queue a hand-operated switch at the next accepted engine boundary.
+
+        The saved setup retains its declared initial state. Runtime operations
+        are reported separately and resetting replays that initial state.
+        """
+        if not isinstance(closed, bool): raise ValueError('Switch state is open or closed')
+        graph = self.compiled.get('electrical', {})
+        device = next((d for d in graph.get('devices', []) if d['name'] == name), None)
+        if not device or device['kind'] != 'switch' or device.get('hinge'):
+            raise ValueError('Choose a manual switch; a paddle follows its physical hinge')
+        if not any(any(d['name'] == name for d in n['devices']) for n in graph.get('networks', [])):
+            raise ValueError('This switch is not wired to a battery')
+        with self.lock:
+            self._electrical_queue[name] = closed
+            self.last_action = time.monotonic()
+            self.lock.notify_all()
+        return {'name': name, 'closed': closed, 'queued': True}
+
+    def water_valve(self, name, opened):
+        """A live fixed-source valve; saved initial water and state stay intact."""
+        if not isinstance(opened, bool): raise ValueError('Water valve state is open or closed')
+        if not any(s['name'] == name and 'initial_volume_l' in s for s in self.compiled.get('spouts', [])):
+            raise ValueError('Choose the outlet of a finite fixed water tank')
+        with self.lock:
+            self._water_launch_queue.append(dict(op='water_valve', name=name, open=opened))
+            self.last_action = time.monotonic()
+            self.lock.notify_all()
+        return dict(name=name, open=opened, queued=True)
+
+    def release_joint(self, name):
+        """Withdraw a named restraint, through the run thread's engine queue."""
+        joint = next((j for j in self.compiled['joints'] if j['name'] == name and
+                      j['kind'] == 'fix' and j['name'].endswith(' restraint')), None)
+        if not joint: raise ValueError('Choose an unreleased arm restraint')
+        with self.lock:
+            self._water_launch_queue.append(dict(op='unhinge', joint=self.joint_ids[name]))
+            self.last_action = time.monotonic()
+            self.lock.notify_all()
+        return dict(name=name, queued=True)
+
     def _run(self):
         clock_start, world_start = time.perf_counter(), self.t
         last_probe = -1.0
@@ -2610,6 +2711,14 @@ class MachineSession:
                 started = time.perf_counter()
                 with self.lock:
                     queued, self._pull_queue = self._pull_queue, {}
+                    switch_queue, self._electrical_queue = self._electrical_queue, {}
+                    water_launch, self._water_launch_queue = self._water_launch_queue, []
+                for command in water_launch:
+                    self.engine.op(**command)
+                for name, closed in switch_queue.items():
+                    network = next(n for n in self.compiled['electrical']['networks']
+                                   if any(d['name'] == name for d in n['devices']))
+                    self.engine.op(op='circuit_switch', circuit=self.circuit_ids[network['name']], branch=name, closed=closed)
                 for body, (at, force) in queued.items():
                     self.engine.op(op='pull', body=body, at=at, force=force)
                     self._pulled = True
@@ -2771,7 +2880,7 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                    'closest_approach': [c for i, c in sorted(getattr(session, 'closest', {}).items()) if i not in done],
                    'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]],
                    # What went in, as it stood at the end: heat, chemistry, batteries.
-                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits')
+                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits', 'electrical')
                                 if (session.readouts or {}).get(k) is not None}}
             if track:
                 out['paths'] = {name: {'points': points, 'turn_wxyz': session.trail_turn.get(name)}

@@ -149,6 +149,18 @@ function syncWires() {
     wires.push({line, from: battery && battery.in, via: hinge && hinge.at_m,
                 to: c.coil ? c.coil.heats : null, toPoint: driven && driven.at_m, name: c.name});
   }
+  const terminals = new Map();
+  for (const device of machine.electrical?.devices || [])
+    for (const [key, at] of Object.entries(device.terminals || {})) terminals.set(`${device.name}:${key}`, at);
+  for (const wire of machine.electrical?.wires || []) {
+    const a = terminals.get(wire.a), b = terminals.get(wire.b);
+    if (!a || !b) continue;
+    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(...a),
+      new THREE.Vector3((a[0] + b[0]) / 2, Math.max(a[1], b[1]) + .1, (a[2] + b[2]) / 2), new THREE.Vector3(...b));
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(20)),
+      new THREE.LineBasicMaterial({color: 0x6b7680}));
+    scene.add(line); wires.push({line, terminalWire: true, name: wire.name});
+  }
 }
 
 // Light (docs/optics-checkpoint.md): the rays the engine last traced, as lines
@@ -373,6 +385,11 @@ function updateWires() {
   updateRopes();
   updateGas();
   for (const w of wires) {
+    if (w.terminalWire) {
+      const live = readouts.electrical?.wires?.find(row => row.name === w.name);
+      w.line.material.color.setHex(Math.abs(live?.current_a || 0) > 1e-4 ? 0xffd34d : 0x6b7680);
+      continue;
+    }
     const at = name => { const b = world.bodies.get(name); return b ? b.position_m : null; };
     const pts = [at(w.from), w.via, w.to ? at(w.to) : w.toPoint].filter(Boolean).map(p => new THREE.Vector3(...p));
     w.line.geometry.setFromPoints(pts);
@@ -421,6 +438,25 @@ function renderReadings(frame) {
     pair(dl, `${c.name}: energy`, `${((c.source_j || 0) / 1000).toFixed(2)} kJ from the battery` +
       (c.heats ? `, ${((c.into_body_j || 0) / 1000).toFixed(1)} kJ into ${c.heats}` : ''));
   }
+  for (const device of readouts.electrical?.devices || []) {
+    if (device.kind === 'battery') continue;
+    pair(dl, device.name, device.kind === 'switch' ? (device.closed ? 'closed' : 'open') :
+      `${(device.current_a || 0).toFixed(3)} A · ${(device.power_w || 0).toFixed(2)} W` +
+      (device.kind === 'bulb' ? ` · ${(device.emitted_w || 0).toFixed(2)} W light` : ''));
+    if (device.kind === 'bulb') {
+      const part = machine.electrical.devices.find(row => row.name === device.name)?.part;
+      meshes.get(part)?.traverse(object => {
+        if (object.material?.emissive) {
+          object.material.emissive.setHex(0xffcb64);
+          object.material.emissiveIntensity = Math.min(1.5, (device.emitted_w || 0) / .6);
+        }
+      });
+    }
+  }
+  for (const network of readouts.electrical?.networks || []) {
+    pair(dl, `${network.id}: supply`, `${(network.last?.source_current_a || 0).toFixed(3)} A · ` +
+      `${(network.ledger?.source_j || 0).toFixed(2)} J from the battery`);
+  }
   for (const h of (readouts.heat || []).slice(0, 4))
     pair(dl, h.name, `${h.temperature_k.toFixed(0)} K` + (h.reacting ? ' · burning' : '') + (h.heater_w ? ` · ${h.heater_w.toFixed(0)} W in` : ''));
   for (const c of readouts.cuts || [])
@@ -442,8 +478,12 @@ function renderReadings(frame) {
   }
   if (readouts.pour)
     pair(dl, 'Poured water', `${readouts.pour.poured_l.toFixed(1)} L poured, ${readouts.pour.landed_l.toFixed(1)} L in the stream, ${readouts.pour.in_air_l.toFixed(1)} L falling`);
+  for (const source of readouts.pour?.sources || [])
+    if (source.finite) pair(dl, source.name, `${source.valve_open ? 'open' : 'closed'} · ${((source.remaining_m3 || 0) * 1000).toFixed(2)} L left · ${((source.received_m3 || 0) * 1000).toFixed(2)} L received`);
   for (const j of (readouts.joints || []).filter(j => j.kind === 'hinge').slice(0, 3))
     pair(dl, j.name, `${(j.degrees || 0).toFixed(1)}°`);
+  for (const j of (readouts.joints || []).filter(j => j.kind === 'spring'))
+    pair(dl, j.name, `${(j.force_n || 0).toFixed(2)} N · ${(j.stored_j || 0).toFixed(3)} J stored · ${(j.rest_m || 0).toFixed(3)} m relaxed`);
   const pieces = [...world.bodies.keys()].filter(n => n.includes(' piece ')).length;
   if (pieces) pair(dl, 'Broken pieces', String(pieces));
   pair(dl, 'Calculation', `${frame.pace.compute_s.toFixed(1)} s of engine time, ${frame.pace.fracture_s.toFixed(1)} s of it breaking`);
@@ -513,7 +553,7 @@ async function build(next, start, request) {
     drumLines.clear();
     if (parcels) { scene.remove(parcels); parcels.geometry.dispose(); parcels = null; }
     syncGround(opened.ground); syncWater(opened.water); syncParcels(opened.parcels);
-    syncMeshes([...world.bodies.values()]); syncWires(); syncRopes(); syncZones(); updateWires(); placeSun(); syncLight(); renderStations(); renderReadings(opened); renderClock(opened);
+    syncMeshes([...world.bodies.values()]); syncWires(); syncRopes(); syncZones(); updateWires(); placeSun(); syncLight(); renderStations(); renderReadings(opened); renderClock(opened); renderMachineControls();
     // A free build is framed once, as it opens: after that the view is
     // where the player put it, not moved every time a piece is set down.
     if (!(LEVEL_MODE && level && level.free && framedFree)) frameCamera();
@@ -547,6 +587,8 @@ async function setPlaying(run) {
 // fast as frames arrive exhausted the machine's sockets.
 const RUNNING_MS = 50, PAUSED_MS = 1000;
 let wake = null;
+let liveControlPending = false;
+let liveControlRequest = null;
 async function poll(mine) {
   let last = 0;
   while (mine === polling && session) {
@@ -795,7 +837,7 @@ function ghostPlacements() { const list = placements.slice(); list[ghost.index] 
 // A knob set as its slider would set it: on its step, within its range.
 function setKnob(p, key, v) {
   const r = trayItem(p.piece).knobs[key];
-  if (!r || r.choices || !Number.isFinite(v)) return false;
+  if (!r || r.choices || r.part || r.hinge || r.terminal || !Number.isFinite(v)) return false;
   if (r.turning) v = ((v + 180) % 360 + 360) % 360 - 180;
   // On its step counted from its minimum, as the slider steps.
   const step = r.step || 0.01;
@@ -1096,9 +1138,22 @@ function trayPicture(t) {
   if (!pictures.has(key)) pictures.set(key, (async () => {
     const p = {piece: t.piece};
     for (const [knob, rule] of Object.entries(t.knobs)) p[knob] = knobDefault(rule);
-    const r = await api({op: 'level_ghost', level: level.id, ...sandboxRequest(), placements: [p], index: 0});
+    const context = sandboxRequest();
+    if (level.free && ['water_wheel', 'water_tank'].includes(t.piece)) {
+      const example = sandboxTemplates.find(example => example.placements?.some(placement => placement.piece === t.piece));
+      if (example?.base) context.base = example.base;
+    }
+    const r = await api({op: 'level_ghost', level: level.id, ...context, placements: [p], index: 0});
     const shot = new THREE.Scene(), piece = new THREE.Group();
     buildParts(piece, r.parts, kind => material(materialColor(kind), kind), null);
+    if (t.piece === 'wire') {
+      const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(-.3, 0, 0), new THREE.Vector3(0, .3, 0), new THREE.Vector3(.3, 0, 0));
+      piece.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, .012, 8, false), new THREE.MeshStandardMaterial({color:0xffd34d})));
+      for (const x of [-.3, .3]) {
+        const terminal = new THREE.Mesh(new THREE.SphereGeometry(.035, 12, 8), new THREE.MeshStandardMaterial({color:x < 0 ? 0xe76858 : 0x83bbff}));
+        terminal.position.x = x; piece.add(terminal);
+      }
+    }
     shot.add(piece, new THREE.HemisphereLight(0xdfefff, 0x334455, 1.6));
     const sun = new THREE.DirectionalLight(0xffffff, 1.8);
     sun.position.set(2, 3, 4); shot.add(sun);
@@ -1144,6 +1199,16 @@ async function askGhost() {
     Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], energy: r.energy, drawnAt: sent, answered: true,
                       joined: r.snap ? `${r.snap.port} of ${r.snap.to}` : null});
     drawGhost(r.parts, r.fits);
+    if (r.wire_preview) {
+      const [a, b] = r.wire_preview;
+      const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(...a),
+        new THREE.Vector3((a[0] + b[0]) / 2, Math.max(a[1], b[1]) + .1, (a[2] + b[2]) / 2), new THREE.Vector3(...b));
+      ghostGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(20)), ghostEdge.fits));
+      for (const at of [a, b]) {
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(.025, 12, 8), ghostLook.fits);
+        dot.position.set(...at); ghostGroup.add(dot);
+      }
+    }
     g.editGuide = r.edit_guide || null;
     drawEditGuide(r.parts);
     drawPorts(r.ports || [], r.snap);
@@ -1245,7 +1310,9 @@ function renderGhostBar() {
   }
   const key = ghost.card, rule = knobs[key], name = knobName(rule, key);
   const row = Object.assign(document.createElement('div'), {className: 'knob-row'});
-  if (rule.choices) {
+  if (rule.part || rule.hinge || rule.terminal) {
+    row.append(referenceControl(ghost.p, key, rule, () => { showGhostKnobs(); askGhost(); }));
+  } else if (rule.choices) {
     const select = document.createElement('select');
     for (const c of rule.choices) select.append(Object.assign(document.createElement('option'), {value: c, textContent: c}));
     select.value = ghost.p[key];
@@ -1723,8 +1790,8 @@ function attachChoice() {
   const mid = one.at.map((v, i) => +((v + two.at[i]) / 2).toFixed(4));
   const join = (kind, extra = {}) => {
     remember();
-    placements.push({piece: 'link', kind, a: one.name, b: two.name, at_m: kind === 'string' ? one.at : mid,
-                     ...(kind === 'string' ? {at_b_m: two.at} : {}), ...extra});
+    placements.push({piece: 'link', kind, a: one.name, b: two.name, at_m: ['string', 'spring'].includes(kind) ? one.at : mid,
+                     ...(['string', 'spring'].includes(kind) ? {at_b_m: two.at} : {}), ...extra});
     setAttach(false); renderTray(); renderPlaced(); scheduleRebuild(0);
   };
   const row = Object.assign(document.createElement('div'), {className: 'actions'});
@@ -1735,6 +1802,15 @@ function attachChoice() {
              button('Pin, axle upright', () => join('pin', {axis: 'upright'}), {ariaLabel: 'Pin them, the axle upright'}),
              button('Cancel', () => setAttach(false)));
   card.append(row);
+  const spring = {rest_m: Math.max(.01, Math.min(3, Math.hypot(...one.at.map((v, i) => v - two.at[i])))), stiffness_n_m: 100, damping_n_s_m: 1};
+  const springOptions = Object.assign(document.createElement('details'), {});
+  springOptions.append(Object.assign(document.createElement('summary'), {textContent: 'Connect with a spring'}));
+  for (const key of Object.keys(spring)) {
+    const rule = trayItem('link').knobs[key];
+    springOptions.append(knobControl(spring, key, rule, 'this spring', () => {}).label);
+  }
+  springOptions.append(button('Add spring between picked points', () => join('spring', spring)));
+  card.append(springOptions);
   card.hidden = false;
 }
 renderer.domElement.addEventListener('pointerup', e => {
@@ -1802,7 +1878,7 @@ function bestStars(id) { return record(id).stars || 0; }
 const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
                     mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens', flipflop: 'flip-flop'};
 // A piece's name on its button: as the tray calls it, but a flip-flop has its hyphen.
-function pieceLabel(piece) { return piece === 'flipflop' ? 'flip-flop' : piece; }
+function pieceLabel(piece) { return ({flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',solar:'solar panel',tackle:'block and tackle',ignition:'ignition coil'})[piece] || piece; }
 function toolsOf(player) {
   if (!player.tools) {
     player.tools = {};
@@ -1869,9 +1945,22 @@ const PIECE_INFO = {
   cannon: ['power', 'A powder charge that launches a ball.'],
   steam: ['power', 'A heated boiler and piston to lift or push.'],
   knife: ['motion', 'A swinging blade to cut a hanging rope.'],
-  mirror: ['power', 'Reflect a beam of light toward another part.'],
-  solar: ['power', 'Collect sunlight to power a machine.'],
-  tackle: ['motion', 'Pulleys and a counterweight to lift a load.']
+  mirror: ['optics', 'Reflect a beam of light toward another part.'],
+  solar: ['optics', 'Collect sunlight to power a machine.'],
+  tackle: ['motion', 'Pulleys and a counterweight to lift a load.'],
+  lens: ['optics', 'Focus or spread a beam through a glass lens.'],
+  spring: ['motion', 'A guided load compresses a spring; change stiffness and damping.'],
+  gears: ['motion', 'Two geared axles with a chosen tooth ratio and optional finite battery drive.'],
+  weight: ['motion', 'A real material block, loose, hanging or guided.'],
+  motor: ['electrics', 'Wire a battery to a motor that applies torque to an axle.'],
+  battery: ['electrics', 'A finite energy store with labelled positive and negative terminals.'],
+  switch: ['electrics', 'Open or close a wired circuit manually or with a physical paddle.'],
+  bulb: ['electrics', 'A wired lamp with measured electrical, light and heat power.'],
+  wire: ['electrics', 'Connect two terminals. Crossed wires stay separate.'],
+  ignition: ['electrics', 'A wired heating coil attached to a material target.'],
+  water_wheel: ['water', 'Falling water pushes a wheel in a collection channel. Open its example to start.'],
+  water_tank: ['water', 'A fixed finite water supply with a metered outlet and valve. Open its channel example.'],
+  catapult: ['motion', 'A counterweight turns a cradle that launches through physical contact.']
 };
 function libraryTray() { return level.free || level.tray.filter(t => !t.attach).length > 4; }
 function piecesLeft(t) { return (t.count || 1) - placements.filter(p => p.piece === t.piece).length; }
@@ -1913,7 +2002,16 @@ function renderPiecePicker() {
     card.append(picture, Object.assign(document.createElement('strong'), {textContent: pieceLabel(t.piece)}),
       Object.assign(document.createElement('span'), {className: 'piece-description', textContent: PIECE_INFO[t.piece]?.[1] || 'Add this piece to your machine.'}));
     if (!level.free || left <= 0) card.append(Object.assign(document.createElement('span'), {className: 'piece-count', textContent: left > 0 ? `${left} left` : 'none left'}));
-    return card;
+    const example = level.free && sandboxTemplates.find(example => (example.pieces || example.placements?.map(p => p.piece) || []).includes(t.piece));
+    if (!example) return card;
+    const wrapper = Object.assign(document.createElement('div'), {className: 'piece-example-card'});
+    wrapper.append(card, button(`Try ${pieceLabel(t.piece)} example`, () => {
+      $('piece-picker').close(); parkDesign();
+      const design = newDesign(example.name, {base: example.base, placements: example.placements});
+      checkpointDesign(design); persist();
+      chooseLevel('free', design).catch(e => { $('clock').textContent = e.message; });
+    }));
+    return wrapper;
   }));
 }
 $('piece-search').addEventListener('input', renderPiecePicker);
@@ -1987,7 +2085,9 @@ function knobControl(p, key, rule, what, changed) {
   label.append(Object.assign(document.createElement('span'), {textContent: rule.label || key}));
   let input;
   const shown = Object.assign(document.createElement('output'), {textContent: String(p[key]) + (rule.turning ? '°' : '')});
-  if (rule.choices) {
+  if (rule.part || rule.hinge || rule.terminal) {
+    input = referenceControl(p, key, rule, () => { shown.textContent = p[key]; changed(); });
+  } else if (rule.choices) {
     input = document.createElement('select');
     for (const c of rule.choices) input.append(Object.assign(document.createElement('option'), {value: c, textContent: c}));
     input.value = p[key];
@@ -2003,6 +2103,60 @@ function knobControl(p, key, rule, what, changed) {
   input.setAttribute('aria-label', `${rule.label || key} of ${what}`);
   label.append(input, shown);
   return {label, input, shown};
+}
+
+function referenceControl(p, key, rule, changed) {
+  const input = document.createElement('select');
+  const values = new Set([rule.default || '', p[key] || '']);
+  if (rule.terminal) {
+    for (const d of machine?.electrical?.devices || [])
+      for (const terminal of Object.keys(d.terminals || {})) values.add(`${d.name}:${terminal}`);
+  } else if (rule.hinge) {
+    for (const j of machine?.joints || []) if (j.kind === 'hinge') values.add(j.name);
+  } else if (key === 'battery') {
+    for (const b of machine?.batteries || []) values.add(b.name);
+  } else {
+    for (const part of machine?.parts || []) values.add(part.name);
+  }
+  for (const value of values) input.append(new Option(value || 'Choose a connection', value));
+  input.value = p[key] || ''; input.setAttribute('aria-label', `Its ${knobName(rule, key)}`);
+  input.addEventListener('change', () => { p[key] = input.value; changed(); });
+  return input;
+}
+
+function renderMachineControls() {
+  liveControlPending = false;
+  const controls = $('machine-controls'), rows = $('machine-control-rows');
+  rows.replaceChildren();
+  const action = (label, command) => {
+    const b = button(label, async () => {
+      b.disabled = true;
+      try {
+        liveControlPending = true;
+        liveControlRequest = api({...command(), session});
+        await liveControlRequest;
+        $('machine-control-status').textContent = playing ? 'Applying at the next engine step.' : 'Queued for the next step. Press Run it to continue.'; if (wake) wake();
+      }
+      catch (e) { liveControlPending = false; $('machine-control-status').textContent = e.message; }
+      finally { b.disabled = false; }
+    });
+    rows.append(b);
+  };
+  for (const device of machine?.electrical?.devices || []) {
+    if (device.kind !== 'switch' || device.hinge) continue;
+    let closed = Boolean(device.closed);
+    action(`Toggle ${device.name}`, () => ({op: 'electrical_switch', name: device.name, closed: closed = !closed}));
+  }
+  for (const source of machine?.spouts || []) {
+    if (source.initial_volume_l == null) continue;
+    let opened = source.valve_open !== false;
+    action(`Toggle ${source.name} valve`, () => ({op: 'water_valve', name: source.name, open: opened = !opened}));
+  }
+  for (const joint of machine?.joints || []) {
+    if (!/^your catapult \d+ restraint$/.test(joint.name)) continue;
+    action(`Release ${joint.name.replace(' restraint', '')}`, () => ({op: 'release_joint', name: joint.name}));
+  }
+  controls.hidden = !rows.childElementCount; controls.open = false; $('machine-control-status').textContent = '';
 }
 
 function describeKnobs(p, t) {
@@ -2106,13 +2260,20 @@ function renderPlaced() {
 // moves with them, and a join to the piece taken away goes with it.
 function removePiece(i) {
   const gone = `your ${placements[i].piece} ${i + 1}`;
+  const belongs = n => typeof n === 'string' && (n === gone || n.startsWith(gone + ' ') || n.startsWith(gone + ':'));
+  const refKeys = p => Object.entries(trayItem(p.piece).knobs).filter(([, r]) => r.part || r.hinge || r.terminal).map(([k]) => k);
+  const remaining = placements.map((p, oldIndex) => ({p, oldIndex})).filter(({p, oldIndex}) => oldIndex !== i &&
+    (!['link', 'wire'].includes(p.piece) || !refKeys(p).some(k => belongs(p[k]))));
+  const names = new Map(remaining.map(({p, oldIndex}, newIndex) => [`your ${p.piece} ${oldIndex + 1}`, `your ${p.piece} ${newIndex + 1}`]));
   const renamed = name => {
-    const m = /^your (\S+) (\d+)(.*)$/.exec(name);
-    return m && Number(m[2]) > i + 1 ? `your ${m[1]} ${Number(m[2]) - 1}${m[3]}` : name;
+    const m = /^(your \S+ \d+)(.*)$/.exec(name);
+    return m && names.has(m[1]) ? names.get(m[1]) + m[2] : name;
   };
-  placements.splice(i, 1);
-  placements = placements.filter(p => p.piece !== 'link' || ![p.a, p.b].some(n => n === gone || n.startsWith(gone + ' ')))
-    .map(p => p.piece === 'link' ? {...p, a: renamed(p.a), b: renamed(p.b)} : p);
+  placements = remaining.map(({p}) => {
+      const next = {...p};
+      for (const key of refKeys(p)) next[key] = belongs(p[key]) ? knobDefault(trayItem(p.piece).knobs[key]) : renamed(p[key] || '');
+      return next;
+    });
 }
 
 function scheduleRebuild(ms = 350) { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildLevel(false).catch(() => {}), ms); }
@@ -2433,6 +2594,7 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
 }
 
 // ---- the levels screen: every level, and how far this player has got --------------------
+let levelDifficulty = 'all';
 function showLevelsScreen(show) {
   const box = $('levels-screen');
   const guide = $('guide');
@@ -2472,15 +2634,21 @@ function showLevelsScreen(show) {
     add(free, 'span', {className: 'teaches', textContent: 'Build freely with every piece. Save designs, reopen versions, or start from a prebuilt machine.'});
     box.append(free);
   }
+  const filters = add(box, 'div', {className: 'chat-actions', role: 'group', ariaLabel: 'Choose challenge difficulty'});
+  for (const [value, label] of [['all', 'All challenges'], ['easy', 'Easy: learn a piece'], ['normal', 'Full chain reactions']]) {
+    const filter = button(label, () => { levelDifficulty = value; showLevelsScreen(true); });
+    filter.setAttribute('aria-pressed', String(levelDifficulty === value)); filters.append(filter);
+  }
   const list = add(box, 'ol', {className: 'ls-list'});
   levels.forEach((l, i) => {
+    if (levelDifficulty !== 'all' && (l.difficulty || 'normal') !== levelDifficulty) return;
     const row = record(l.id), li = add(list, 'li', {});
     li.classList.toggle('won', Boolean(row.stars)); li.classList.toggle('next', l === nextUp);
     const card = button('', () => { showLevelsScreen(false); chooseLevel(l.id).catch(() => {}); },
                         {className: 'ls-card', ariaLabel: `Play level ${i + 1}, ${l.title}`});
     add(card, 'strong', {textContent: `${i + 1}. ${l.title}`});
     add(card, 'span', {className: 'stars', textContent: '★'.repeat(row.stars || 0) + '☆'.repeat(3 - (row.stars || 0))});
-    add(card, 'span', {className: 'teaches', textContent: l.teaches});
+    add(card, 'span', {className: 'teaches', textContent: `${l.difficulty === 'easy' ? 'Easy · ' : ''}${l.teaches}`});
     add(card, 'span', {className: 'status', textContent: row.energy_j != null
       ? `Best win: ${energyText(row.energy_j)} (par ${energyText(l.par_energy_j)})`
       : row.stars ? 'Won' : l === nextUp ? 'Next up' : 'Not won yet'});
@@ -2701,7 +2869,7 @@ async function startGame() {
   // pieces to add (the arrows while one is placed), Run it and Set up again,
   // and the prediction's key. The scene below is left to watch.
   const top = Object.assign(document.createElement('div'), {className: 'scene-top'});
-  top.append($('scene-tray'), $('move-pad'), $('scene-actions'), $('preview-legend'));
+  top.append($('scene-tray'), $('move-pad'), $('scene-actions'), $('machine-controls'), $('preview-legend'));
   view.append(top);
   $('scene-note').textContent = 'Drag to turn the view · Wheel or pinch to zoom · Click one of your pieces to pick it up';
   let seen = false;
@@ -2752,10 +2920,14 @@ function ghostInTheWay() {
 // A level's one button, over the scene: Run it builds the level afresh with
 // the pieces and plays it; while it plays it pauses, then continues; after
 // the run, Run again.
-function runLevel() {
+async function runLevel() {
   const failed = e => { $('clock').textContent = e.message; };
   if (playing) { setPlaying(false).catch(failed); return; }
   if (ghostInTheWay()) return;
+  if (session && liveControlPending && !scored) {
+    try { await liveControlRequest; liveControlPending = false; await setPlaying(true); $('machine-control-status').textContent = 'Applied while running. Set up again restores the initial controls.'; } catch (e) { failed(e); }
+    return;
+  }
   if (session && world.t > 0 && !scored) { setPlaying(true).catch(failed); return; }
   sceneIntoView(); rebuildLevel(true).catch(() => {});
 }

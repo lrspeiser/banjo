@@ -10,6 +10,7 @@
 #include "water/ShallowWater.hpp"
 #include "water/WaterCoupling.hpp"
 #include "water/CompoundWaterSurface.hpp"
+#include "water/FallingWater.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -40,6 +41,41 @@ void near(double actual, double expected, double tolerance, std::string_view mes
         throw std::runtime_error(std::string(message) + ": actual=" + std::to_string(actual) +
                                  " expected=" + std::to_string(expected) +
                                  " tolerance=" + std::to_string(tolerance));
+}
+
+void finiteSpoutDebitsOnlyAcceptedParcelsAndClosesLedgers() {
+    FallingWater water;
+    Spout source;
+    source.name="tank";source.at_m={0,1.1,0};source.direction={0,-1,0};source.speed_m_s=0;
+    source.discharge_m3_s=.002;source.initial_volume_m3=.004017;source.valve_open=false;
+    water.addSpout(source);
+    const auto nearSurface=[](const Vec3 &,double,double) { return std::vector<NearSurface>{}; };
+    const auto ground=[](double,double)->std::optional<double>{return 0.0;};
+    double t=0;
+    for(int k=0;k<100;++k) { water.accept(water.plan(t,.01,nearSurface,ground,-1));t+=.01; }
+    near(water.ledger().poured_m3,0,0,"closed valve emits nothing");
+    require(water.setValve("tank",true),"tank valve opens");
+    auto rejected=water.plan(t,.1,nearSurface,ground,-1);
+    near(water.accounts()[0].remaining_m3,source.initial_volume_m3,0,"unaccepted plan debits no tank");
+    for(int k=0;k<400;++k) { water.accept(water.plan(t,.01,nearSurface,ground,-1));t+=.01; }
+    const auto &a=water.accounts()[0];
+    near(a.emitted_m3+a.remaining_m3,source.initial_volume_m3,1e-14,"source debit ledger");
+    require(a.remaining_m3<FallingWater::kVolume,"empty tank retains only subparcel remainder");
+    near(a.landed_m3,a.emitted_m3,1e-14,"all parcels reach the receiver");
+    near(water.residual(),0,1e-13,"full falling-water mass residual");
+    near(water.energyResidual(),0,1e-10,"source-flight-landing full-step energy ledger");
+    near(banjo::length(water.momentumResidual()),0,1e-10,"source-gravity-landing full-step momentum ledger");
+    require(water.ledger().numerical_correction_j<0,"semi-implicit gravity loss is explicit numerical correction");
+    const double emitted=a.emitted_m3;
+    water.accept(water.plan(t,1,nearSurface,ground,-1));
+    near(water.accounts()[0].emitted_m3,emitted,0,"empty source does not emit again");
+    FallingWater missed;
+    source.valve_open=true;source.initial_volume_m3=FallingWater::kVolume;
+    source.receiver_bounds_m=std::array<double,4>{1,2,-.5,.5};
+    missed.addSpout(source);
+    missed.accept(missed.plan(0,1,nearSurface,ground,-1));
+    near(missed.accounts()[0].landed_m3,FallingWater::kVolume,1e-14,"missed water still lands in the world");
+    near(missed.accounts()[0].received_m3,0,0,"landing outside receiver cannot fill it");
 }
 
 // A bumpy bowl: a hollow with a hump in the middle and uneven slopes, so no
@@ -854,6 +890,7 @@ int main() {
         {"compounds use their closed union and return drag once", compoundsUseTheirClosedUnionAndReturnDragOnce},
         {"compound obstacles preserve gaps and invalidate geometry", compoundObstaclesPreserveGapsAndInvalidateGeometry},
         {"a lake at rest stays exactly at rest", aLakeAtRestStaysExactlyAtRest},
+        {"a finite spout debits only accepted parcels and closes ledgers",finiteSpoutDebitsOnlyAcceptedParcelsAndClosesLedgers},
         {"a closed basin conserves water", aClosedBasinConservesWater},
         {"a flood front advances over dry ground", aFloodFrontAdvancesOverDryGround},
         {"a river settles to passing what it is given", aRiverSettlesToPassingWhatItIsGiven},
