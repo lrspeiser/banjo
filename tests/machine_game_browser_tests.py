@@ -163,6 +163,7 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.ghost()['editGuide']['focus'])
                 self.wait("!document.getElementById('edit-guide-label').hidden", 5)
                 self.assertTrue(self.js("(() => {const a=document.getElementById('edit-guide-label').getBoundingClientRect(),b=document.getElementById('view').getBoundingClientRect();return a.left>=b.left && a.right<=b.right && a.top>=b.top && a.bottom<=b.bottom;})()"))
+                self.assertTrue(self.js("(() => {const a=document.getElementById('edit-guide-label').getBoundingClientRect();return a.top>=0 && a.bottom<=innerHeight;})()"), 'the caption stays visible even when the toolbar wraps')
                 self.press('Throw the ghost away')
                 self.wait("document.getElementById('edit-guide-label').hidden", 5)
 

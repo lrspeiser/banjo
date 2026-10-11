@@ -1066,11 +1066,24 @@ function updateEditGuide() {
   const screen = editAnchor.clone().add(editGroup.position).project(camera);
   label.hidden = Math.abs(screen.x) > 1 || Math.abs(screen.y) > 1 || Math.abs(screen.z) > 1;
   if (label.hidden) return;
-  const sceneRect = view.getBoundingClientRect(), top = document.querySelector('.scene-top')?.getBoundingClientRect();
-  const minY = top ? top.bottom - sceneRect.top + 8 : 100;
+  const sceneRect = view.getBoundingClientRect(), width = label.offsetWidth, height = label.offsetHeight;
+  const minY = Math.max(8, -sceneRect.top + 8), maxY = Math.max(minY, Math.min(view.clientHeight, innerHeight - sceneRect.top) - height - 12);
+  const maxX = Math.max(8, view.clientWidth - width - 8);
   const x = (screen.x + 1) * view.clientWidth / 2 + 14, y = (1 - screen.y) * view.clientHeight / 2 + 16;
-  label.style.left = `${Math.max(8, Math.min(x, view.clientWidth - label.offsetWidth - 8))}px`;
-  label.style.top = `${Math.max(minY, Math.min(y, view.clientHeight - label.offsetHeight - 12))}px`;
+  // A wrapped toolbar can fill a short phone scene. Try spaces beside the
+  // piece and the controls, rather than forcing the caption below every row.
+  const obstacles = [...view.querySelectorAll('#clock, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
+    .filter(e => e.offsetWidth && e.offsetHeight).map(e => e.getBoundingClientRect());
+  let best = null;
+  for (const [cx, cy] of [[x, y], [x, y - height - 40], [x - width - 30, y], [8, maxY], [maxX, maxY], [maxX, minY]]) {
+    const left = Math.max(8, Math.min(cx, maxX)), top = Math.max(minY, Math.min(cy, maxY));
+    const overlap = obstacles.reduce((sum, r) => sum + Math.max(0, Math.min(left + width, r.right - sceneRect.left + 6) - Math.max(left, r.left - sceneRect.left - 6)) *
+      Math.max(0, Math.min(top + height, r.bottom - sceneRect.top + 6) - Math.max(top, r.top - sceneRect.top - 6)), 0);
+    if (!best || overlap < best.overlap) best = {left, top, overlap};
+    if (!overlap) break;
+  }
+  label.style.left = `${best.left}px`;
+  label.style.top = `${best.top}px`;
 }
 
 // A picture of each piece in the tray, as it comes: the ghost op's parts for

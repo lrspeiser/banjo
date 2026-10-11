@@ -30,7 +30,7 @@ October 10, 2026. The machine page has a game: open `/play`. Each level is a sma
 
 ## The eight levels
 
-Editing guides checked on October 11, 2026: all 35 game tests and 20 Chrome browser tests passed, including every free-tray knob at its default and limits, turned/tipped planks, track drop and far-end selection, and visible controls and guide labels at 1280 × 860, 390 × 844 and 844 × 390. Guide requests leave the compiled setup and fit verdict unchanged. On this computer, 150 track-ghost requests averaged 2.19 ms without annotations and 5.43 ms with drop annotations; selecting a knob alone does not request another engine rehearsal. No native physics, timestep, resolution or conservation tolerance changed; this check adds no new material-law or conservation claim.
+Editing guides checked on October 11, 2026: all 35 game tests and 20 Chrome browser tests passed, including every free-tray knob at its default and limits, turned/tipped planks, track drop and far-end selection, and visible controls and guide labels at 1280 × 860, 390 × 844 and 844 × 390. The caption stays inside the visible scene and chooses space beside the controls when the toolbar wraps; the targeted browser regression and manual landscape check passed after this adjustment. Guide requests leave the compiled setup and fit verdict unchanged. On this computer, 150 track-ghost requests averaged 2.19 ms without annotations and 5.43 ms with drop annotations; selecting a knob alone does not request another engine rehearsal. No native physics, timestep, resolution or conservation tolerance changed; this check adds no new material-law or conservation claim.
 
 | Level | What it teaches | The pieces | A solution, as tested |
 |---|---|---|---|
