@@ -130,6 +130,7 @@ def run(spec, seconds, sample=None, wall_s=240.0):
                     s.lock.wait(0.02)
             with s.lock:
                 return {'t': s.t, 'error': s.error, 'events': [e['text'] for e in s.events],
+                        'event_rows': [dict(e) for e in s.events],
                         'stations': list((s.readouts or {}).get('stations', [])),
                         'readouts': dict(s.readouts or {}),
                         'bodies': {b['name']: dict(b) for b in s.bodies.values()}}
@@ -349,21 +350,22 @@ class Engine(unittest.TestCase):
 
     @need_engine
     def test_steam_lifts_a_piston_and_a_cannon_throws_its_ball_hard_enough_to_dent_it(self):
-        speeds = []
-
-        def sample(s):
-            ball = next((b for b in s.bodies.values() if b['name'] == 'cannon ball'), None)
-            if ball:
-                speeds.append(math.hypot(*ball.get('velocity_m_s', [0, 0, 0])))
-
-        r = run(STEAM_AND_POWDER, 3.0, sample)
+        r = run(STEAM_AND_POWDER, 3.0)
         self.assertIsNone(r['error'])
         done = {s['title']: s for s in r['stations']}
         print('\n  ' + ' | '.join(r['events'][:8]))
         self.assertTrue(done['Steam lifts the piston']['done'], r['events'])
         self.assertTrue(done['Cannon fires']['done'], r['events'])
         self.assertTrue(done['Ball hits the anvil']['done'], r['events'])
-        self.assertGreater(max(speeds), 10.0, 'the ball was pushed, not fired')
+        # How fast it flew, as the engine measured it where it struck the
+        # anvil (which does not move, so that is the ball's own speed into
+        # it). Sampling the ball's velocity from this thread, as this did,
+        # missed its flight when the machine was busy: under load on Linux
+        # it saw 4.9 m/s of a ball the engine had hit the anvil at 20.6.
+        into_anvil = [e['speed_m_s'] for e in r['event_rows'] if e['kind'] == 'impact'
+                      and {e.get('by'), e.get('struck')} == {'anvil', 'cannon ball'}]
+        self.assertTrue(into_anvil, r['events'])
+        self.assertGreater(into_anvil[0], 10.0, 'the ball was pushed, not fired')
         gas = {g['name']: g for g in r['readouts']['gas']}
         # Out of the muzzle, the breech is open to the air again.
         self.assertLess(gas['cannon breech']['pressure_kpa'], 110.0)

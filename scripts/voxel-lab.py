@@ -38,8 +38,9 @@ class Allowance:
 
 def repository_state():
  try:
-  revision=subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True,timeout=3).strip()
-  dirty=bool(subprocess.check_output(['git','-C',str(ROOT),'status','--porcelain'],text=True,timeout=3).strip())
+  # Outside a checkout (the image) git says so on stderr; the receipt answers.
+  revision=subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True,timeout=3,stderr=subprocess.DEVNULL).strip()
+  dirty=bool(subprocess.check_output(['git','-C',str(ROOT),'status','--porcelain'],text=True,timeout=3,stderr=subprocess.DEVNULL).strip())
   return revision,dirty
  except (OSError,subprocess.SubprocessError):
   receipt=ROOT/'bin/build-receipt.json'

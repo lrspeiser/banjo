@@ -24,15 +24,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Before configuring: CMake looks for node then, for the page's view test.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
       - name: Configure
         run: cmake -S . -B build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=ON
 
       - name: Build
         run: cmake --build build/ci --parallel 2
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '22'
 
       - name: Test the engine and the game
         # The game's page is driven in Chrome (tests/machine_game_browser_tests.py).
