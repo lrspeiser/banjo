@@ -193,12 +193,21 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 #path-toggle[aria-pressed="false"]{opacity:.6}
 /* The levels screen: every level and how far this player has got. */
 body.on-levels main{display:none}
+body.on-sandbox main{display:none}
 .levels-screen{max-width:960px;margin:0 auto;padding:14px 16px 40px;box-sizing:border-box}
 .levels-screen[hidden]{display:none}
 .ls-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
 .ls-head h1{margin:0}
 .levels-screen button,.levels-screen select,.levels-screen input{min-height:40px;padding:6px 12px;border-radius:8px;border:1px solid #63899d;background:#294c60;color:#e7f2f8;font:14px system-ui}
 .levels-screen input{background:#10202a}
+.levels-screen button,.levels-screen input{min-height:44px}
+#sandbox-controls{padding:10px;border:1px solid #3d5b6d;border-radius:10px;margin-bottom:12px}
+#sandbox-controls label{display:block;margin:8px 0 4px;font-size:13px}
+#sandbox-controls input,#sandbox-controls select{width:100%;min-height:44px;box-sizing:border-box;background:#10202a;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;padding:6px;font:14px system-ui}
+#sandbox-controls button{min-height:44px}
+#design-status{display:block;margin-top:8px;font-size:13px;color:#c9dbe5}
+#design-versions{margin-top:10px}
+#restore-version{margin-top:8px}
 .ls-player{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0}
 .ls-summary{margin:6px 0 12px;color:#c9dbe5}
 .ls-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}

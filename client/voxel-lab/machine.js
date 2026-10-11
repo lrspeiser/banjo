@@ -506,7 +506,7 @@ async function build(next, start, request) {
     spec = request ? opened.machine : next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
     world = mergeFrame({seq: 0, t: 0, bodies: new Map()}, opened);
     $('title').textContent = LEVEL_MODE && level ? levelTitle(level) : machine.title;
-    $('spec').value = JSON.stringify(spec, null, 1);
+    $('spec').value = JSON.stringify(level && level.free ? (activeDesign?.draft.base || sandboxBase) : spec, null, 1);
     const notes = $('notes'); notes.replaceChildren();
     for (const n of machine.notes || []) { const li = document.createElement('li'); li.textContent = n; notes.append(li); }
     for (const [, line] of drumLines) { scene.remove(line); line.geometry.dispose(); }
@@ -699,11 +699,16 @@ $('stations').addEventListener('pointerdown', e => {
   follow = false; $('follow').setAttribute('aria-pressed', 'false');
   goal.set(at[0], Math.max(.25, at[1]), at[2]); distance = 2.6;
 });
-$('build-json').addEventListener('click', () => {
+$('build-json').addEventListener('click', async () => {
   let next;
   try { next = JSON.parse($('spec').value); } catch (e) { $('clock').textContent = 'That is not valid JSON: ' + e.message; return; }
-  undo.push(spec); $('undo').disabled = false;
-  build(next).catch(() => {});
+  try {
+    // Check the complete overlay before changing the stored design. A bad
+    // declaration leaves the last working setup available to reopen.
+    await api({op: 'check', level: 'free', base: next, placements});
+    remember(); activeDesign.draft.base = next; framedFree = false;
+    await rebuildLevel(false);
+  } catch (e) { $('verdict').textContent = e.data?.problems?.join('; ') || e.message; }
 });
 $('undo').addEventListener('click', () => {
   const back = undo.pop(); $('undo').disabled = !undo.length;
@@ -757,9 +762,11 @@ fetch('/api/checkpoint').then(r => r.ok ? r.json() : null).then(c => {
 // the tray and turns their knobs; the server composes the machine and the
 // engine runs it. The stars come from what the engine measured.
 const params = new URLSearchParams(location.search);
-const LEVEL_MODE = location.pathname === '/play' || params.has('level');
+const LEVEL_MODE = true;
 let levels = [], level = null, placements = [], placedCost = [], placedEnergy = {}, helped = false, scored = false, lastRun = null, rebuildTimer = null;
 let freeLevel = null;
+let sandboxBase = null, sandboxTemplates = [], activeDesign = null;
+function sandboxRequest() { return level?.free && activeDesign?.draft.base ? {base: activeDesign.draft.base} : {}; }
 
 // ---- the ghost: a piece before it is set down ------------------------------------
 // A see-through copy of a piece. It follows the pointer over the scene until
@@ -999,7 +1006,7 @@ function trayPicture(t) {
   if (!pictures.has(key)) pictures.set(key, (async () => {
     const p = {piece: t.piece};
     for (const [knob, rule] of Object.entries(t.knobs)) p[knob] = knobDefault(rule);
-    const r = await api({op: 'level_ghost', level: level.id, placements: [p], index: 0});
+    const r = await api({op: 'level_ghost', level: level.id, ...sandboxRequest(), placements: [p], index: 0});
     const shot = new THREE.Scene(), piece = new THREE.Group();
     buildParts(piece, r.parts, kind => material(materialColor(kind), kind), null);
     shot.add(piece, new THREE.HemisphereLight(0xdfefff, 0x334455, 1.6));
@@ -1035,7 +1042,7 @@ async function askGhost() {
   const g = ghost, sent = {x: g.p.x_m ?? 0, z: g.p.z_m ?? 0}, snapping = Boolean(g.snapNext);
   g.busy = true; g.again = false; g.snapNext = false;
   try {
-    const r = await api({op: 'level_ghost', level: level.id, placements: ghostPlacements(), index: g.index, snap: snapping});
+    const r = await api({op: 'level_ghost', level: level.id, ...sandboxRequest(), placements: ghostPlacements(), index: g.index, snap: snapping});
     if (ghost !== g) return;
     // Moved by hand near where it connects to another piece: put where the
     // two connect, and asked about again there.
@@ -1244,17 +1251,17 @@ function clearPreview() {
 
 function schedulePreview(ms = 700) {
   clearTimeout(previewTimer);
-  if (!LEVEL_MODE || !level || !previewOn) return;
+  if (!LEVEL_MODE || !level || !previewOn || document.body.matches('.on-sandbox,.on-levels')) return;
   previewTimer = setTimeout(() => askPreview().catch(() => {}), ms);
 }
 
 async function askPreview() {
-  if (!LEVEL_MODE || !level || !previewOn || playing) return;
+  if (!LEVEL_MODE || !level || !previewOn || playing || document.body.matches('.on-sandbox,.on-levels')) return;
   // A ghost that does not fit, or is still being worked out: nothing to rehearse.
   if (ghost && (!ghost.answered || !ghost.fits)) { clearPreview(); return; }
   const mine = ++previewAsk, list = ghost ? ghostPlacements() : placements;
   try {
-    const r = await api({op: 'level_preview', level: level.id, placements: list});
+    const r = await api({op: 'level_preview', level: level.id, ...sandboxRequest(), placements: list});
     if (mine === previewAsk && !playing) drawPreview(r);
   } catch (e) {
     if (mine !== previewAsk) return;
@@ -1680,7 +1687,7 @@ function loadSave() {
   return s;
 }
 let save = loadSave();
-function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch { /* private window */ } }
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); return true; } catch { return false; } }
 function me() { return save.players[save.current] || (save.players[save.current] = {levels: {}}); }
 function record(id) { return me().levels[id] || {}; }
 function bestStars(id) { return record(id).stars || 0; }
@@ -1740,7 +1747,7 @@ function renderLevels() {
 }
 
 function knobDefault(rule) { return rule.default ?? (rule.choices ? rule.choices[0] : rule.min); }
-function levelTitle(l) { return l.free ? l.title : `${levels.indexOf(l) + 1}. ${l.title}`; }
+function levelTitle(l) { return l.free ? (activeDesign?.name || 'Sandbox') : `${levels.indexOf(l) + 1}. ${l.title}`; }
 function trayItem(piece) { return level.tray.find(t => t.piece === piece); }
 
 // Pieces are added from the scene: a button each, with its picture, over the
@@ -1756,7 +1763,7 @@ function renderSceneTray() {
       const p = {piece: t.piece};
       for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
       startGhost(p, placements.length);
-    }, {ariaLabel: `Add a ${pieceLabel(t.piece)}`, disabled: left <= 0, title: left > 0 ? `${left} left` : 'none left'});
+    }, {ariaLabel: `Add a ${pieceLabel(t.piece)}`, disabled: left <= 0, title: level.free ? `Add a ${pieceLabel(t.piece)}` : left > 0 ? `${left} left` : 'none left'});
     const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
     b.prepend(img); pictureInto(img, t);
     // In a free build there are as many as anyone needs: no count.
@@ -1926,7 +1933,7 @@ function scheduleRebuild(ms = 350) { clearTimeout(rebuildTimer); rebuildTimer = 
 // of them as they were, before each change.
 let undone = [], redone = [];
 function remember() {
-  undone.push(JSON.stringify(placements)); redone = [];
+  undone.push(setupSnapshot()); redone = [];
   if (undone.length > 60) undone.shift();
   showUndo();
 }
@@ -1935,10 +1942,16 @@ function showUndo() {
 }
 function travel(from, to) {
   if (!from.length) return;
-  to.push(JSON.stringify(placements));
-  placements = JSON.parse(from.pop());
+  to.push(setupSnapshot());
+  const back = JSON.parse(from.pop());
+  placements = Array.isArray(back) ? back : back.placements;
+  if (!Array.isArray(back) && activeDesign) {
+    if (JSON.stringify(activeDesign.draft.base) !== JSON.stringify(back.base)) framedFree = false;
+    activeDesign.draft.base = back.base;
+  }
   endGhost(); cancelAttach(); renderTray(); renderPlaced(); showUndo(); scheduleRebuild(0);
 }
+function setupSnapshot() { return JSON.stringify(level?.free ? {placements, base: activeDesign?.draft.base || null} : placements); }
 $('undo-pieces').addEventListener('click', () => travel(undone, redone));
 $('redo-pieces').addEventListener('click', () => travel(redone, undone));
 document.addEventListener('keydown', e => {
@@ -1952,10 +1965,133 @@ document.addEventListener('keydown', e => {
 
 // A free build is kept for the player, in this browser, as it changes.
 function keepBuild() {
-  if (!level || !level.free) return;
-  me().free = {placements: placements.map(p => ({...p})), at: new Date().toISOString()};
-  persist();
+  if (!level?.free || !activeDesign) return;
+  activeDesign.draft.placements = clone(placements);
+  activeDesign.at = new Date().toISOString();
+  $('design-status').textContent = persist() ? 'Draft kept in this browser. Save version to keep a checkpoint.'
+    : 'Could not save in this browser. Keep this tab open and use Share this design to keep a copy.';
 }
+
+// Named designs and immutable checkpoints, alongside this player's progress.
+// The draft is the setup, never the bodies' positions after a simulation.
+const clone = value => JSON.parse(JSON.stringify(value));
+function designStore() {
+  if (!me().sandbox) {
+    me().sandbox = {items: [], last: null};
+    if (me().free?.placements?.length) {
+      const d = newDesign('My free build', {base: null, placements: me().free.placements});
+      me().sandbox.last = d.id;
+    }
+    persist();
+  }
+  return me().sandbox;
+}
+function newDesign(name, draft = {base: null, placements: []}) {
+  const store = me().sandbox || (me().sandbox = {items: [], last: null});
+  const d = {id: crypto.randomUUID(), name: name.trim().slice(0, 60) || 'Untitled design',
+    draft: clone(draft), versions: [], nextVersion: 1, at: new Date().toISOString()};
+  store.items.push(d); store.last = d.id; persist();
+  return d;
+}
+function checkpointDesign(d, label = '') {
+  d.versions.push({number: d.nextVersion++, at: new Date().toISOString(), label, draft: clone(d.draft)});
+  if (d.versions.length > 30) d.versions.shift();
+}
+function renderDesignControls() {
+  $('sandbox-controls').hidden = !level?.free;
+  $('design-versions').hidden = !level?.free;
+  $('machine-data').hidden = !level?.free;
+  if (!level?.free || !activeDesign) return;
+  $('design-name').value = activeDesign.name;
+  const pick = $('version-pick'); pick.replaceChildren();
+  for (const v of [...activeDesign.versions].reverse())
+    pick.append(new Option(`Version ${v.number} · ${new Date(v.at).toLocaleString()}${v.label ? ' · ' + v.label : ''}`, v.number));
+  $('restore-version').disabled = !activeDesign.versions.length;
+}
+function parkDesign() {
+  keepBuild(); clearTimeout(rebuildTimer); clearTimeout(previewTimer); endGhost(); cancelAttach(); closeDone();
+  previewAsk++; clearPreview(); polling++;
+  if (session) api({op: 'close', session}).catch(() => {});
+  session = null; playing = false;
+}
+function showSandboxScreen(show = true) {
+  const box = $('sandbox-screen'); box.hidden = !show;
+  document.body.classList.toggle('on-sandbox', show);
+  if (!show) { resize(); return; }
+  parkDesign(); showLevelsScreen(false);
+  history_.replaceState(null, '', '/machine');
+  box.replaceChildren();
+  const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
+  const head = add(box, 'div', {className: 'ls-head'});
+  add(head, 'h1', {textContent: 'Sandbox'});
+  add(box, 'p', {className: 'ls-summary', textContent: `Build freely with every piece and the live physics engine. Designs for ${save.current} stay in this browser. Drafts save automatically; Save version keeps a checkpoint (the latest 30).`});
+  const form = add(box, 'form', {className: 'ls-player'});
+  const name = add(form, 'input', {id: 'new-design-name', type: 'text', maxLength: 60, placeholder: 'Name your new design'});
+  name.setAttribute('aria-label', 'New design name');
+  const create = add(form, 'button', {type: 'submit', textContent: 'Add New Design'});
+  form.addEventListener('submit', e => {
+    e.preventDefault(); create.disabled = true;
+    chooseLevel('free', newDesign(name.value || 'Untitled design')).catch(e => { $('clock').textContent = e.message; });
+  });
+  add(box, 'h2', {textContent: 'Your designs'});
+  const store = designStore();
+  if (!store.items.length) add(box, 'p', {textContent: 'Start with an empty table or a prebuilt design below.'});
+  const list = add(box, 'div', {className: 'ls-list', id: 'saved-designs'});
+  for (const d of [...store.items].sort((a, b) => b.at.localeCompare(a.at))) {
+    const card = button('', () => chooseLevel('free', d).catch(() => {}), {className: 'ls-card', ariaLabel: `Open design ${d.name}`});
+    add(card, 'strong', {textContent: d.name});
+    add(card, 'span', {className: 'teaches', textContent: `${d.draft.placements.length} tray pieces${d.draft.base ? ' + base machine' : ''} · ${d.versions.length} saved versions`});
+    add(card, 'span', {className: 'status', textContent: `Draft updated ${new Date(d.at).toLocaleString()}`});
+    list.append(card);
+  }
+  add(box, 'h2', {textContent: 'Prebuilt designs'});
+  const examples = add(box, 'div', {className: 'ls-list', id: 'prebuilt-designs'});
+  for (const t of sandboxTemplates) {
+    const card = button('', () => {
+      const d = newDesign(t.name, {base: t.base, placements: t.placements}); checkpointDesign(d); persist();
+      chooseLevel('free', d).catch(() => {});
+    }, {className: 'ls-card', ariaLabel: `Start from ${t.name}`});
+    add(card, 'strong', {textContent: t.name}); add(card, 'span', {className: 'teaches', textContent: t.description});
+    add(card, 'span', {className: 'status', textContent: 'Open your own editable copy'}); examples.append(card);
+  }
+}
+$('sandbox-open').addEventListener('click', e => { e.preventDefault(); if (freeLevel) showSandboxScreen(); });
+$('designs-open').addEventListener('click', () => showSandboxScreen());
+$('design-name').addEventListener('change', () => {
+  if (!activeDesign) return;
+  activeDesign.name = $('design-name').value.trim() || 'Untitled design';
+  $('title').textContent = activeDesign.name; keepBuild();
+});
+$('save-design').addEventListener('click', async () => {
+  if (!activeDesign || ghostInTheWay()) return;
+  const d = activeDesign; $('save-design').disabled = true;
+  const setup = setupSnapshot();
+  try {
+    await api({op: 'check', level: 'free', ...sandboxRequest(), placements});
+    if (activeDesign !== d) return;
+    if (setup !== setupSnapshot()) throw new Error('The setup changed while checking it. Press Save version again.');
+    d.name = $('design-name').value.trim() || 'Untitled design'; keepBuild();
+    const before = clone(d); checkpointDesign(d);
+    if (!persist()) { Object.assign(d, before); throw new Error('Browser storage is full or unavailable. Use Share this design to keep a copy.'); }
+    renderDesignControls(); $('title').textContent = d.name;
+    $('design-status').textContent = `Version ${d.nextVersion - 1} saved. You can reopen it under Saved versions.`;
+  } catch (e) { $('design-status').textContent = 'Version not saved: ' + (e.data?.problems?.join('; ') || e.message); }
+  finally { $('save-design').disabled = false; }
+});
+$('restore-version').addEventListener('click', async () => {
+  if (!activeDesign) return;
+  const v = activeDesign.versions.find(v => v.number === Number($('version-pick').value));
+  if (!v) return;
+  keepBuild(); const before = clone(activeDesign), draft = clone(v.draft);
+  if (JSON.stringify(draft) !== JSON.stringify(activeDesign.draft)) checkpointDesign(activeDesign, 'Before restore');
+  activeDesign.draft = draft;
+  if (!persist()) { Object.assign(activeDesign, before); $('design-status').textContent = 'Could not store the restored version; your draft is unchanged.'; return; }
+  endGhost(); cancelAttach(); placements = clone(draft.placements); undone = []; redone = []; showUndo();
+  framedFree = false; renderTray(); renderPlaced(); renderDesignControls();
+  await rebuildLevel(false);
+  $('design-status').textContent = `Restored version ${v.number}. The previous draft is kept in Saved versions.`;
+});
+window.machineDesign = () => activeDesign ? clone(activeDesign) : null;
 
 async function rebuildLevel(start) {
   // A rebuild still waiting to start would come after this one and undo it
@@ -1964,7 +2100,8 @@ async function rebuildLevel(start) {
   keepBuild();
   scored = false; $('verdict').replaceChildren(); closeDone();
   try {
-    const opened = await build(null, false, {op: 'level_open', level: level.id, placements, helped});
+    const opened = await build(null, false, {op: 'level_open', level: level.id, ...sandboxRequest(), placements, helped});
+    if (opened.session !== session) return;
     placedCost = (opened.placements || []).map(p => p.cost);
     placedEnergy = opened.energy || {};
     renderPlaced();
@@ -1977,7 +2114,7 @@ async function rebuildLevel(start) {
     $('verdict').textContent = problems;
     // Still show the level as it stands, without the pieces that do not fit.
     if (placements.length && e.status === 422)
-      await build(null, false, {op: 'level_open', level: level.id, placements: [], helped}).catch(() => {});
+      await build(null, false, {op: 'level_open', level: level.id, ...sandboxRequest(), placements: [], helped}).catch(() => {});
   }
 }
 
@@ -2014,7 +2151,8 @@ let advanceTimer = null;
 // or change them) or with none.
 function startOver(keep) {
   endGhost();
-  if (!keep && placements.length) remember();
+  if (!keep && (placements.length || (level.free && activeDesign?.draft.base))) remember();
+  if (!keep && level.free && activeDesign) { activeDesign.draft.base = null; framedFree = false; }
   if (!keep) { placements = []; placedCost = []; placedEnergy = {}; helped = false; }
   renderTray(); renderPlaced();
   rebuildLevel(false).then(() => {
@@ -2137,13 +2275,9 @@ function showLevelsScreen(show) {
     `${starsAll} of ${levels.length * 3} stars.` + (nextUp ? ` Next up: ${levels.indexOf(nextUp) + 1}. ${nextUp.title}.` : ' Every level won!')});
   // The free build: no goal, every piece, kept for this player.
   if (freeLevel) {
-    const kept = (me().free || {}).placements || [];
-    const free = button('', () => { showLevelsScreen(false); chooseLevel('free').catch(() => {}); },
-                        {className: 'ls-card ls-free', ariaLabel: 'Free build: build anything'});
-    add(free, 'strong', {textContent: 'Free build'});
-    add(free, 'span', {className: 'teaches', textContent: 'No goal: every piece, as many as you like. Hold marbles up high, ' +
-      'send them down tracks and split them with a flip-flop.'});
-    add(free, 'span', {className: 'status', textContent: kept.length ? `Your build: ${kept.length} ${kept.length === 1 ? 'piece' : 'pieces'}` : 'An empty table'});
+    const free = button('', () => showSandboxScreen(), {className: 'ls-card ls-free', ariaLabel: 'Sandbox: build anything'});
+    add(free, 'strong', {textContent: 'Sandbox'});
+    add(free, 'span', {className: 'teaches', textContent: 'Build freely with every piece. Save designs, reopen versions, or start from a prebuilt machine.'});
     box.append(free);
   }
   const list = add(box, 'ol', {className: 'ls-list'});
@@ -2163,7 +2297,7 @@ function showLevelsScreen(show) {
 }
 $('levels-open').addEventListener('click', e => {
   if (!LEVEL_MODE || !levels.length) return;
-  e.preventDefault(); showLevelsScreen(true);
+  e.preventDefault(); keepBuild(); showSandboxScreen(false); showLevelsScreen(true); history_.replaceState(null, '', '/play');
 });
 // Looking around the scene while it counts down: stay, and look.
 renderer.domElement.addEventListener('pointerdown', () => {
@@ -2173,17 +2307,29 @@ renderer.domElement.addEventListener('pointerdown', () => {
   if (count) count.textContent = '';
 });
 
-async function chooseLevel(id) {
+async function chooseLevel(id, design = null) {
+  keepBuild(); showSandboxScreen(false); showLevelsScreen(false);
   level = id === 'free' && freeLevel ? freeLevel : levels.find(l => l.id === id) || levels[0];
+  activeDesign = null;
+  if (level.free) {
+    const store = designStore();
+    if (sharedBuild) {
+      const shared = sharedBuild; sharedBuild = null;
+      try { const draft = await unpackBuild(shared); design = newDesign(draft.name || 'Shared design', {base: draft.base, placements: draft.placements}); }
+      catch { say('refused', 'That link does not hold a design this page can read.'); }
+    }
+    activeDesign = design || store.items.find(d => d.id === store.last) || store.items[0] || newDesign('Untitled design');
+    store.last = activeDesign.id; persist();
+  }
   endGhost(); closeDone(); previewAsk++; clearPreview();
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
   undone = []; redone = []; showUndo(); cancelAttach();
   $('attach-tool').hidden = !level.free;
-  history_.replaceState(null, '', '/play?level=' + level.id);
+  history_.replaceState(null, '', level.free ? '/machine?design=' + encodeURIComponent(activeDesign.id) : '/play?level=' + level.id);
   $('title').textContent = levelTitle(level);
   $('brief').textContent = level.brief;
   $('goal-line').textContent = level.free
-    ? `No goal: build whatever you like and press Run it. Your build is kept for ${save.current} in this browser.`
+    ? 'No goal: build whatever you like and press Run it. Save a version whenever you want to return to this setup.'
     : `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s, on as little energy as you can `+
       `(par ${energyText(level.par_energy_j)}, pieces and run). It teaches ${level.teaches}.`;
   $('chat-log').replaceChildren();
@@ -2198,31 +2344,30 @@ async function chooseLevel(id) {
     : 'Ask about this level, e.g. “Why does my ball fall short?”';
   $('share-link').hidden = true;
   if (level.free) {
-    placements = ((me().free || {}).placements || []).map(p => ({...p}));
+    placements = clone(activeDesign.draft.placements);
     me().last = 'free'; persist();
-    // Opened from a shared link: that build, in place of this one (Undo brings it back).
-    if (sharedBuild) {
-      const shared = sharedBuild; sharedBuild = null;
-      try {
-        const list = await unpackBuild(shared);
-        if (!placements.length || confirm(`Open the shared build (${list.length} pieces)? It takes the place of what is on your table; ↶ Undo brings yours back.`)) {
-          remember(); placements = list;
-        }
-      } catch { say('refused', 'That link does not hold a build this page can read.'); }
-    }
   }
+  renderDesignControls();
+  $('engine-readings').hidden = $('engine-assumptions').hidden = !level.free;
+  for (const label of ['Stations', 'Measured now', 'What happened'])
+    document.querySelector(`aside section[aria-label="${label}"]`).hidden = !level.free;
+  document.querySelector('#scene-actions .speed').hidden = !level.free;
+  $('follow').hidden = !level.free;
+  if (!level.free) { $('speed').value = '1'; follow = true; $('follow').setAttribute('aria-pressed', 'true'); }
   renderLevels(); renderTray(); renderPlaced();
   await rebuildLevel(false);
 }
 
 // A free build's own buttons: clear the table, or set out the example.
 $('free-clear').addEventListener('click', () => {
-  if (!placements.length || confirm('Take every piece off the table?')) startOver(false);
+  if ((!placements.length && !activeDesign?.draft.base) || confirm('Take every piece and the base machine off the table? Saved versions are kept.')) {
+    startOver(false);
+  }
 });
 $('free-example').addEventListener('click', () => {
   if (!level || !level.example) return;
-  if (placements.length && !confirm('Put the example on the table instead of your build?')) return;
-  endGhost(); remember(); placements = level.example.map(p => ({...p})); renderTray(); renderPlaced();
+  if ((placements.length || activeDesign?.draft.base) && !confirm('Put the example on the table instead of your build? Saved versions are kept.')) return;
+  endGhost(); remember(); activeDesign.draft.base = null; placements = level.example.map(p => ({...p})); renderTray(); renderPlaced();
   framedFree = false; rebuildLevel(false).catch(() => {});
 });
 
@@ -2235,7 +2380,7 @@ async function askFree() {
   $('chat-status').textContent = 'Building it, then rehearsing it once in the engine (up to a minute)…';
   say('you', message);
   try {
-    const r = await api({op: 'chat', level: 'free', placements, message});
+    const r = await api({op: 'chat', level: 'free', ...sandboxRequest(), placements, message});
     say('model', r.reply);
     endGhost(); remember();
     placements = r.placements.map(p => ({...p}));
@@ -2275,19 +2420,22 @@ async function unpackBuild(packed) {
   const json = packed[0] === 'z'
     ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text()
     : new TextDecoder().decode(bytes);
-  const list = JSON.parse(json);
+  const parsed = JSON.parse(json);
+  const draft = Array.isArray(parsed) ? {base: null, placements: parsed} : parsed;
+  const list = draft?.placements;
   if (!Array.isArray(list) || list.length > 200 || !list.every(p => p && typeof p === 'object' && typeof p.piece === 'string'))
     throw new Error('not a build');
-  return list;
+  if (draft.base != null && (typeof draft.base !== 'object' || draft.base.schema !== 'banjo.machine.v1')) throw new Error('not a machine');
+  return {base: draft.base || null, placements: list, name: typeof draft.name === 'string' ? draft.name.slice(0, 60) : 'Shared design'};
 }
 $('free-share').addEventListener('click', async () => {
-  const link = `${location.origin}/play?level=free#build=${await packBuild(placements)}`;
+  const link = `${location.origin}/machine#build=${await packBuild({name: activeDesign.name, base: activeDesign.draft.base, placements})}`;
   const box = $('share-link');
   box.hidden = false; box.value = link; box.select();
   let copied = false;
   try { await navigator.clipboard.writeText(link); copied = true; } catch { /* no clipboard: the link is shown to copy */ }
-  $('verdict').textContent = copied ? 'A link to this build is copied: anyone who opens it gets these pieces on their table.'
-    : 'Copy this link: anyone who opens it gets these pieces on their table.';
+  $('verdict').textContent = copied ? 'Design link copied. Opening it creates a separate copy, including the base machine.'
+    : 'Copy this design link. Opening it creates a separate copy, including the base machine.';
 });
 window.machineShareLink = () => $('share-link').value;
 // A shared link opened in a tab already on the page changes only its #: the
@@ -2327,7 +2475,9 @@ function showGuide(show) {
 $('guide-done').addEventListener('click', () => showGuide(false));
 $('guide-open').addEventListener('click', e => {
   if (!LEVEL_MODE) return;
-  e.preventDefault(); showGuide(true); $('guide').scrollIntoView({block: 'nearest'});
+  e.preventDefault();
+  const open = $('sandbox-screen').hidden ? Promise.resolve() : chooseLevel('free');
+  open.then(() => { showGuide(true); $('guide').scrollIntoView({block: 'nearest'}); });
 });
 
 // What a player tells us: with the level and pieces it is about, to the
@@ -2374,11 +2524,18 @@ async function startGame() {
     if (part) part.hidden = true;
   }
   const r = await api({op: 'levels'});
-  levels = r.levels; freeLevel = r.free || null;
+  levels = r.levels; freeLevel = r.free || null; sandboxBase = r.sandbox_base; sandboxTemplates = r.sandbox || [];
   // /play on its own opens the levels screen, over the level this player is up to.
   const upTo = levels.find(l => !bestStars(l.id)) || levels[0];
-  await chooseLevel(params.get('level') || me().last || upTo.id);
-  if (!params.get('level')) showLevelsScreen(true);
+  if (location.pathname === '/machine') {
+    if (params.has('design') || sharedBuild) {
+      const d = designStore().items.find(d => d.id === params.get('design'));
+      await chooseLevel('free', d);
+    } else showSandboxScreen();
+  } else {
+    await chooseLevel(params.get('level') || (me().last === 'free' ? upTo.id : me().last) || upTo.id);
+    if (!params.get('level')) showLevelsScreen(true);
+  }
 }
 // The scene in sight: on a phone the panel below it (the tray, Run it) is a
 // scroll away, and what happens -- a ghost, a run, how it went -- is up here.
@@ -2412,6 +2569,7 @@ $('solve').addEventListener('click', () => askLevel('build'));
 // Leaving the page: the server is told at once, so its world makes room for
 // someone else instead of waiting to notice that the page has gone quiet.
 addEventListener('pagehide', () => {
+  keepBuild();
   if (session) navigator.sendBeacon('/api/machine', new Blob([JSON.stringify({op: 'close', session})], {type: 'application/json'}));
 });
 

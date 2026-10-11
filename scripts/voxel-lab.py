@@ -76,7 +76,11 @@ class Server(ThreadingHTTPServer):
           'restart_pending':revision!=self.started_revision,'engine_sha256':hashlib.sha256(self.native.read_bytes()).hexdigest()}
 class Handler(BaseHTTPRequestHandler):
  def send(self,status,body,kind='application/json'):
-  self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; frame-ancestors 'none'");self.end_headers();self.wfile.write(body)
+  try:
+   self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; frame-ancestors 'none'");self.end_headers();self.wfile.write(body)
+  except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):
+   # Navigation can close a preview's connection while the engine finishes.
+   self.close_connection=True
  def host_allowed(self):
   host=urlsplit('//'+self.headers.get('Host','')).hostname
   return host in access_gate.LOOPBACK or bool(self.server.app.public_host and host==self.server.app.public_host)
@@ -133,7 +137,8 @@ class Handler(BaseHTTPRequestHandler):
    if op=='open':r=host.open(data.get('spec'))
    elif op=='check':
     from machine_world import compile_spec
-    c=compile_spec(data.get('spec'));r={'ok':True,'parts':len(c['parts']),'cells':c['cells'],'notes':c['notes']}
+    declaration=machine_game.compose(machine_game.requested_level(data),data.get('placements') or [])[0] if data.get('level') else data.get('spec')
+    c=compile_spec(declaration);r={'ok':True,'parts':len(c['parts']),'cells':c['cells'],'notes':c['notes']}
    elif op=='play':r=host.get(data.get('session')).play(bool(data.get('running')),data.get('speed'))
    elif op=='pull':r={'ok':True,**host.get(data.get('session')).pull(data.get('body'),data.get('at'),data.get('force'))}
    elif op=='frame':
@@ -147,17 +152,17 @@ class Handler(BaseHTTPRequestHandler):
     try:
      if data.get('level')=='free':
       # The free build: the chat builds what it is asked, joined piece to piece.
-      r=machine_chat.respond_free(data.get('message'),machine_game.free_build(),data.get('placements') or [],rehearse=host.rehearse)
+      r=machine_chat.respond_free(data.get('message'),machine_game.requested_level(data),data.get('placements') or [],rehearse=host.rehearse)
      elif data.get('level'):
       # A puzzle: the chat hints, or places pieces from the tray -- nothing else.
       r=machine_chat.respond_level(data.get('message'),machine_game.level_by_id(data.get('level')),data.get('placements') or [],
        mode=data.get('mode','hint'),last_run=data.get('last_run'),rehearse=host.rehearse)
      else:r=machine_chat.respond(data.get('message'),data.get('spec'),data.get('history'),rehearse=host.rehearse if data.get('rehearse',True) else None)
     finally:self.server.chat_busy.release()
-   elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build())}
+   elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build()),'sandbox':machine_game.sandbox_templates(),'sandbox_base':machine_game.free_build()['machine']}
    elif op=='level_open':
     # The level's machine with the player's pieces in it, built in the engine.
-    level=machine_game.level_by_id(data.get('level'))
+    level=machine_game.requested_level(data)
     # Before the piece its goal is about is placed, the level is still shown,
     # without its goal, and the page is told what it needs.
     spec,checked,cost=machine_game.compose(level,data.get('placements') or [],leave_out_goal=True)
@@ -187,12 +192,12 @@ class Handler(BaseHTTPRequestHandler):
     # asks again a moment later.
     if self.server.preview_allowance:self.server.preview_allowance.take(self.visitor())
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is working out other previews; trying again in a moment')
-    try:r={'ok':True,**machine_game.preview(machine_game.level_by_id(data.get('level')),data.get('placements') or [],host.exe,host.logs)}
+    try:r={'ok':True,**machine_game.preview(machine_game.requested_level(data),data.get('placements') or [],host.exe,host.logs)}
     finally:self.server.preview_busy.release()
    elif op=='level_ghost':
     # A piece before it is set down: what it would be and where, and why it
     # could not go there. Compiled only, never run, so it is not rationed.
-    r={'ok':True,**machine_game.ghost(machine_game.level_by_id(data.get('level')),data.get('placements'),data.get('index'),snapping=bool(data.get('snap')))}
+    r={'ok':True,**machine_game.ghost(machine_game.requested_level(data),data.get('placements'),data.get('index'),snapping=bool(data.get('snap')))}
    elif op=='level_score':
     # Stars from what the engine measured in this session's run.
     s=host.get(data.get('session'));game=getattr(s,'game',None)

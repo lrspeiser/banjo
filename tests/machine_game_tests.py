@@ -47,6 +47,26 @@ LEVELS = mg.load_levels()
 
 
 class Tray(unittest.TestCase):
+    def test_sandbox_templates_keep_the_base_and_readings_and_cannot_replace_a_level(self):
+        for template in mg.sandbox_templates():
+            level = mg.requested_level({'level': 'free', 'base': template['base']})
+            spec, _, _ = mg.compose(level, template['placements'])
+            compiled = mw.compile_spec(spec)
+            self.assertTrue(compiled['parts'])
+            if template['base']:
+                self.assertEqual(spec['stations'], template['base']['stations'])
+                self.assertEqual(spec['kits'], template['base']['kits'])
+                self.assertEqual(spec['parts'], template['base']['parts'], 'the base supports are preserved')
+                g = mg.ghost(level, [{'piece': 'marble', 'x_m': -1.8, 'z_m': -1.8}], 0)
+                self.assertTrue(g['fits'], g['problems'])
+        base = mg.sandbox_templates()[1]['base']
+        with self.assertRaisesRegex(ValueError, 'not a level'):
+            mg.requested_level({'level': 'gap', 'base': base})
+        bad = copy.deepcopy(mg.free_build()['machine'])
+        bad['parts'].append({'name': 'your block 1', 'shape': 'box', 'material': 'oak', 'size_m': [.1, .1, .1], 'at_m': [0, .05, 0], 'fixed': True})
+        with self.assertRaisesRegex(ValueError, 'reserved'):
+            mg.requested_level({'level': 'free', 'base': bad})
+
     def test_every_level_is_well_formed_and_its_solution_fits_its_tray(self):
         self.assertEqual([l['id'] for l in LEVELS], ['gap', 'cut', 'fire', 'steam', 'chain', 'laser', 'sun', 'tackle'])
         for level in LEVELS:
@@ -521,6 +541,22 @@ class FreeBuild(unittest.TestCase):
 
 
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_sandbox_chain_runs_the_same_declaration_with_live_readings(self):
+        template = mg.sandbox_templates()[1]
+        spec, _, _ = mg.compose(mg.requested_level({'level': 'free', 'base': template['base']}), [])
+        compiled = mw.compile_spec(spec)
+        with tempfile.TemporaryDirectory() as logs:
+            r = mw.rehearse(compiled, ENGINE, Path(logs), seconds=40.0, wall_limit_s=200,
+                            track=['water wheel', 'marble'], after_s=0.25)
+        self.assertTrue(r['stations'], 'readings were not discarded by composition')
+        self.assertIsNone(r['error'])
+        self.assertTrue(all(s['done'] for s in r['stations']), r['stations'])
+        times = [s['at_s'] for s in r['stations']]
+        self.assertEqual(times, sorted(times), 'the base chain happened in order')
+        self.assertNotEqual(r['paths']['water wheel']['turn_wxyz'], [1, 0, 0, 0], 'the wheel turned in the engine')
+        print(f'\n  Sandbox chain: all {len(times)} stations in order at {times}; wall {r["wall_s"]} s')
+
     @need_engine
     def test_the_free_builds_example_works_and_its_preview_follows_the_marbles(self):
         # A marble rolls onto the gate's paddle; the gate opens and its catch

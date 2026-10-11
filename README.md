@@ -35,17 +35,19 @@ A win is scored by energy: what it takes to make your pieces (from their mass
 and material) plus what the machine used while it ran. Win on par or less for
 three stars.
 
-**Free build** (`/play?level=free`) is a table with no goal and every piece in
+**Sandbox** (`/machine`) combines the former Free build and machine sandbox.
+It opens a library of your designs, prebuilt designs, and **Add New Design**.
+Each design has a table with no goal and every piece in
 the tray: marbles, tracks, shelves, gates, flip-flops, bends, funnels, blocks,
 dominoes, levers, planks, ramps, cannons and steam engines. Pieces snap
 together, can be joined with glue, a pin or a string, and a build can be shared
-as a link. You can also ask the chat to build something in words.
-
-**The sandbox** (`/machine`) is the machine the levels are built on, with the
-engine's own controls and readings.
+as a link. You can also ask the chat to build something in words. Named drafts
+save in this browser for the current player; **Save version** keeps a checkpoint
+you can restore. The engine readings and base declaration are available beside
+the scene. Old `/play?level=free` links and previously kept builds still work.
 
 **The chat** gives a hint on a level, places the tray's pieces for you (for one
-star at most), or builds what you describe in free build. It uses OpenAI's
+star at most), or builds what you describe in the Sandbox. It uses OpenAI's
 `gpt-5-mini`. It never sees a level's solution.
 
 [docs/machine-game.md](docs/machine-game.md) says how every control and piece

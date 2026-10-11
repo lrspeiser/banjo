@@ -13,6 +13,7 @@ Needs Chrome (BANJO_CHROME, tests/chrome_driver.py) and the engine. Without them
 it skips, unless BANJO_BROWSER_TESTS=required.
 """
 import importlib.util
+import base64
 import json
 import os
 import sys
@@ -70,7 +71,7 @@ class Puzzles(unittest.TestCase):
             if self.js(expression):
                 return
             time.sleep(0.1)
-        said = self.js("document.getElementById('verdict').textContent")
+        said = self.js("document.getElementById('verdict').textContent + ' · ' + document.getElementById('clock').textContent")
         self.fail(f'waited {seconds:.0f} s for {expression}; the page says {said!r}')
 
     def open(self, level, width=1280, height=860, phone=False):
@@ -229,13 +230,15 @@ class Puzzles(unittest.TestCase):
                                                               'mobile': False})
         self.page.send('Page.navigate', {'url': f'{self.base}/play'})
         self.wait("document.querySelector('.ls-free') && !document.getElementById('levels-screen').hidden", 90)
-        self.press('Free build: build anything')
+        self.press('Sandbox: build anything')
+        self.wait("!document.getElementById('sandbox-screen').hidden", 10)
+        self.press('Add New Design')
         self.wait(READY, 90)
         # An empty table to start from, whatever this player built before.
         self.js('window.confirm = () => true')
         self.press('Clear the table')
         self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
-        self.assertEqual(self.js("document.getElementById('title').textContent"), 'Free build')
+        self.assertEqual(self.js("document.getElementById('title').textContent"), 'Untitled design')
         self.assertGreaterEqual(self.js("document.querySelectorAll('#scene-tray button').length"), 11)
         self.assertNotIn('left', self.js("document.getElementById('scene-tray').textContent"))
         # Its chat builds from words; there is no level to place pieces for.
@@ -255,6 +258,122 @@ class Puzzles(unittest.TestCase):
         self.press('Run it')
         self.wait("(window.machineBodies()['your dominoes 11 6'] || [0, 1])[1] < 0.045", 60)
         self.assertTrue(self.js("document.getElementById('level-done').hidden"), 'no score: there is no goal')
+
+    def test_sandbox_library_migrates_free_build_and_saves_reopens_and_restores_designs(self):
+        # An old free build survives the upgrade. Two named designs keep
+        # independent drafts, and checkpoints survive navigation/reloads.
+        self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+        self.wait("document.getElementById('sandbox-screen') && !document.getElementById('sandbox-screen').hidden", 60)
+        old = self.js("localStorage.getItem('banjo-play-save')")
+        self.js("localStorage.setItem('banjo-play-save', JSON.stringify({current:'Sandbox test',players:{'Sandbox test':{levels:{},free:{placements:[{piece:'marble',x_m:0,z_m:0}]}}}}))")
+        try:
+            self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+            self.wait("document.getElementById('sandbox-screen') && !document.getElementById('sandbox-screen').hidden", 60)
+            self.assertEqual(self.js("document.querySelectorAll('#prebuilt-designs button').length"), 2)
+            self.press('Open design My free build')
+            self.wait(f"window.machinePlacements().length === 1 && {READY}", 60)
+            self.press('Save version')
+            self.wait("/Version 1 saved/.test(document.getElementById('design-status').textContent)", 10)
+            first = self.js('window.machinePlacements()')
+            self.js('window.confirm = () => true')
+            self.press('Clear the table')
+            self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
+            self.press('Save version')
+            self.wait("/Version 2 saved/.test(document.getElementById('design-status').textContent)", 10)
+            self.page.send('Page.navigate', {'url': self.js('location.href')})
+            self.wait(f"document.getElementById('clock') && {READY}", 60)
+            self.assertEqual(self.js('window.machineDesign().versions.length'), 2)
+            self.js("document.getElementById('design-versions').open = true; document.getElementById('version-pick').value = '1'")
+            self.press('Restore version')
+            self.wait(f"window.machinePlacements().length === 1 && {READY}", 60)
+            self.assertEqual(self.js('window.machinePlacements()'), first)
+            self.press('All designs')
+            self.slide('New design name', 'Second design')
+            self.press('Add New Design')
+            self.wait(READY, 60)
+            self.assertEqual(self.js('window.machinePlacements()'), [])
+            self.press('All designs')
+            self.press('Open design My free build')
+            self.wait(f"window.machinePlacements().length === 1 && {READY}", 60)
+            self.assertEqual(self.js("document.getElementById('title').textContent"), 'My free build')
+            before = self.js('window.machineDesign().versions.length')
+            self.js("window.realStore = Storage.prototype.setItem; Storage.prototype.setItem = () => { throw new Error('storage full'); }")
+            self.press('Save version')
+            self.wait("/Version not saved/.test(document.getElementById('design-status').textContent)", 10)
+            self.assertEqual(self.js('window.machineDesign().versions.length'), before)
+            self.js('Storage.prototype.setItem = window.realStore')
+            # Saving a refused setup must not create a green checkpoint.
+            self.js("window.confirm = () => true; document.getElementById('design-versions').open = false")
+            self.press('Add a plank')
+            self.ghost()
+            self.press('Save version')
+            self.assertIn('Set your plank down first', self.js("document.getElementById('verdict').textContent"))
+        finally:
+            self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+            self.wait("document.getElementById('sandbox-screen') && !document.getElementById('sandbox-screen').hidden", 60)
+            self.js(f"localStorage.setItem('banjo-play-save', {json.dumps(old)})")
+
+    def test_sandbox_chain_keeps_readings_tray_additions_and_base_in_shared_versions(self):
+        self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+        self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)
+        self.press('Start from Chain reaction')
+        self.wait(READY, 60)
+        self.assertEqual(self.js("document.querySelectorAll('#stations li').length"), 9)
+
+        self.assertFalse(self.js("document.getElementById('engine-readings').hidden"))
+        self.press('Add a marble')
+        self.ghost()
+        self.slide('x of your marble 1', -1.8)
+        self.slide('across (z, m) of your marble 1', -1.8)
+        self.assertTrue(self.ghost()['fits'])
+        self.press('Set it down')
+        self.wait(f"window.machinePlacements().length === 1 && {READY}", 60)
+        self.press('Save version')
+        self.wait("/Version 2 saved/.test(document.getElementById('design-status').textContent)", 10)
+        base = self.js('window.machineDesign().draft.base')
+        self.js('window.confirm = () => true')
+        self.press('Clear the table')
+        self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
+        self.assertIsNone(self.js('window.machineDesign().draft.base'))
+        self.press('Undo')
+        self.wait(f"window.machinePlacements().length === 1 && {READY}", 60)
+        self.assertEqual(self.js('window.machineDesign().draft.base'), base)
+        self.press('Share this design')
+        self.wait("/#build=/.test(window.machineShareLink())", 10)
+        link = self.js('window.machineShareLink()')
+        self.page.send('Page.navigate', {'url': link})
+        self.wait(f"document.getElementById('clock') && {READY}", 60)
+        self.assertEqual(self.js('window.machineDesign().draft.base'), base)
+        self.assertEqual(self.js('window.machinePlacements().length'), 1)
+        self.press('Run it')
+        self.wait("/World 2\\./.test(document.getElementById('clock').textContent)", 30)
+        self.press('Pause')
+        self.assertTrue(self.js("document.getElementById('level-done').hidden"))
+        self.press('Set up again')
+        self.wait(READY, 60)
+        self.assertEqual(self.js("document.querySelectorAll('#stations li').length"), 9)
+
+
+    def test_sandbox_library_and_controls_fit_phone_portrait_and_landscape(self):
+        for width, height in ((390, 844), (844, 390)):
+            with self.subTest(viewport=(width, height)):
+                self.page.send('Emulation.setDeviceMetricsOverride', {'width': width, 'height': height, 'deviceScaleFactor': 2, 'mobile': True})
+                self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+                self.wait("Boolean(document.querySelector('#prebuilt-designs button'))", 60)
+                self.assertLessEqual(self.js('document.body.scrollWidth'), width)
+                self.assertTrue(self.js("[...document.querySelectorAll('#sandbox-screen button')].every(b => b.getBoundingClientRect().height >= 44 && b.getBoundingClientRect().right <= innerWidth)"))
+                self.press('Start from Gate and split')
+                self.wait(READY, 60)
+                self.assertLessEqual(self.js('document.body.scrollWidth'), width)
+                for selector in ('#start', '#reset', '#pull-tool', '#attach-tool'):
+                    box = self.js(f"(() => {{const r=document.querySelector('{selector}').getBoundingClientRect();return {{h:r.height,x:r.x,right:r.right,top:r.top,bottom:r.bottom}};}})()")
+                    scene = self.js("(() => {const r=document.querySelector('#view').getBoundingClientRect();return {top:r.top,bottom:r.bottom};})()")
+                    self.assertGreaterEqual(box['h'], 44)
+                    self.assertGreaterEqual(box['x'], 0)
+                    self.assertLessEqual(box['right'], width)
+                    self.assertGreaterEqual(box['top'], scene['top'])
+                    self.assertLessEqual(box['bottom'], scene['bottom'])
+                self.press('All designs')
 
     def test_a_track_snaps_to_another_and_pieces_are_copied_undone_and_joined(self):
         # A second track put at the first's far end snaps under it. A piece
@@ -349,16 +468,21 @@ class Puzzles(unittest.TestCase):
         self.press('Set out the example')
         self.wait(f"window.machinePlacements().length === 11 && {READY}", 60)
         made = self.js('window.machinePlacements()')
-        self.press('Share this build')
+        self.press('Share this design')
         self.wait("/#build=z/.test(window.machineShareLink())", 10)
         link = self.js('window.machineShareLink()')
         self.press('Clear the table')
         self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
         self.page.send('Page.navigate', {'url': link})
-        self.wait(f"document.getElementById('clock') && window.machinePlacements().length === 11 && {READY}", 90)
+        self.wait(f"typeof window.machinePlacements === 'function' && window.machinePlacements().length === 11 && {READY}", 90)
         self.assertEqual(self.js('window.machinePlacements()'), made)
         self.assertNotIn('#build', self.js('location.href'), 'the link is read once')
         self.assertEqual(self.js("document.getElementById('send').textContent"), 'Build it', 'the chat builds here')
+        # Links made before named designs held an array, not a declaration.
+        packed = base64.urlsafe_b64encode(json.dumps(made).encode()).decode().rstrip('=')
+        self.page.send('Page.navigate', {'url': f'{self.base}/play?level=free#build=j{packed}'})
+        self.wait(f"typeof window.machinePlacements === 'function' && window.machinePlacements().length === 11 && {READY}", 90)
+        self.assertEqual(self.js('window.machinePlacements()'), made)
 
     def test_a_level_opens_before_its_goal_piece_and_a_missed_goal_starts_over(self):
         # Level 4's goal is its engine's piston: before there is one, the

@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo Machine</title><link rel="stylesheet" href="/machine.css"></head><body>
-<header><strong>Banjo <span>Machine</span></strong><nav><a href="/play" id="levels-open">Levels</a><a href="/play?level=free" id="free-open">Free build</a><a href="/machine">Sandbox</a><a href="/play" id="guide-open">How to play</a></nav><output id="build">Checking…</output></header>
+<header><strong>Banjo <span>Machine</span></strong><nav><a href="/play" id="levels-open">Levels</a><a href="/machine" id="sandbox-open">Sandbox</a><a href="/play" id="guide-open">How to play</a></nav><output id="build">Checking…</output></header>
 <main>
 <section id="view" aria-label="The machine in 3D, as the engine calculates it">
 <output id="clock">Setting up…</output>
@@ -24,15 +24,21 @@
 <aside>
 <div id="ghost-bar" class="ghost-bar" hidden aria-label="The ghost: change it, turn it and set it down"></div>
 <h1 id="title">Chain reaction</h1>
+<section id="sandbox-controls" hidden aria-label="Save this design">
+<div class="chat-actions"><button id="designs-open" type="button">All designs</button><button id="save-design" type="button">Save version</button></div>
+<label for="design-name">Design name</label><input id="design-name" type="text" maxlength="60">
+<output id="design-status" aria-live="polite"></output>
+<details id="design-versions"><summary>Saved versions</summary><label for="version-pick">Version to reopen</label><select id="version-pick"></select><button id="restore-version" type="button">Restore version</button></details>
+</section>
 <section id="game" hidden aria-label="The puzzle">
 <section id="guide" class="guide" hidden aria-label="How to play">
 <h2>How to play</h2>
 <ol>
-<li>Each level has a goal: something has to end up in the <b>green box</b> in time.</li>
+<li>Each level has a goal: something has to end up in the <b>green box</b> in time. In the <b>Sandbox</b>, build freely: open a prebuilt design or press <b>Add New Design</b>, then name it and use <b>Save version</b> to keep setups you want to return to.</li>
 <li>Press a piece's button at the top of the scene (<b>+ plank</b>). A blue <b>ghost</b> of it appears in the scene, ready to move.</li>
 <li>Drag it to move it (on a phone, one finger moves it and two fingers turn the view), tap where it should go, or use the arrows over the scene: they move it left, right, away from you and toward you as you see it, and up and down. To turn the view without moving it, press 👁 in the middle of the arrows (or Esc); ✋ moves it again. Change and turn it with the controls under the scene (or Q/E, R/F, Z/C). Coloured lines through it show where it lines up. A red ghost cannot go there, and says why.</li>
 <li>Press <b>Set it down</b>, then <b>Run it</b>. To change a piece afterwards, click (tap) it in the scene. Nothing is animated: the physics engine calculates every bounce, burn and cut live.</li>
-<li>Win on as little <b>energy</b> as you can: the energy to make your pieces (smaller, lighter, cheaper materials) and what the run burns or draws. Beat a level's par for three stars, and play it again to do better.</li>
+<li>On a level, win on as little <b>energy</b> as you can: the energy to make your pieces (smaller, lighter, cheaper materials) and what the run burns or draws. Beat a level's par for three stars, and play it again to do better. Sandbox designs have no score.</li>
 <li>Stuck? <b>Ask for a hint</b>, or <b>Place it for me</b> (worth one star at most).</li>
 </ol>
 <button id="guide-done" type="button">Got it</button>
@@ -40,7 +46,7 @@
 <nav id="levels" aria-label="Levels"></nav>
 <p id="brief"></p>
 <p id="goal-line" class="legend"></p>
-<div id="free-actions" class="chat-actions" hidden><button id="free-example" type="button">Set out the example</button><button id="free-share" type="button">Share this build</button><button id="free-clear" type="button">Clear the table</button></div>
+<div id="free-actions" class="chat-actions" hidden><button id="free-example" type="button">Set out the example</button><button id="free-share" type="button">Share this design</button><button id="free-clear" type="button">Clear the table</button></div>
 <input id="share-link" class="share-link" type="text" readonly hidden aria-label="A link to this build">
 <h2>Your tray</h2><ul id="tray"></ul>
 <h2 id="placed-head">Your pieces</h2><ol id="placed"></ol>
@@ -60,12 +66,15 @@
 <output id="chat-status" aria-live="polite"></output>
 <ol id="chat-log"></ol>
 </section>
+<details id="engine-readings"><summary>Engine readings</summary>
 <section aria-label="Stations"><h2>Stations</h2><ol id="stations"></ol></section>
 <section aria-label="Measured now"><h2>Measured now</h2><dl id="readings"></dl><p class="legend" id="heat-legend" hidden>Glow shows measured surface temperature: dull red near 600 K, orange near 900 K, yellow above 1100 K.</p></section>
 <section aria-label="What happened"><h2>What happened</h2><ol id="events"></ol></section>
-<details><summary>The machine as data</summary><p>This is the whole declaration. Edit it and build; the server checks it and the engine calculates the rest.</p><textarea id="spec" rows="14" spellcheck="false"></textarea><div class="chat-actions"><button id="build-json" type="button">Build from this</button></div><ul id="notes"></ul></details>
-<details><summary>How honest is each station?</summary><p><b>Calculated</b> uses the engine's tested laws for rigid bodies, hinges and DC circuits. <b>Experimental</b> is calculated but not calibrated against real material tests: oak burning and its loss of strength, and how glass breaks (whether it breaks is computed; the number of pieces is not calibrated). <b>Not built</b> is not in this shared world yet.</p><p>Breaking can take the engine longer than real time; the clock then shows how far world time is behind.</p></details>
+</details>
+<details id="machine-data"><summary>The machine as data</summary><p>The base declaration, before your tray pieces are added. Edit it and build; the server checks it and the engine calculates the rest. Tray pieces are saved separately with the design.</p><textarea id="spec" rows="14" spellcheck="false" aria-label="Base machine declaration"></textarea><div class="chat-actions"><button id="build-json" type="button">Build from this</button></div><ul id="notes"></ul></details>
+<details id="engine-assumptions"><summary>How honest is each station?</summary><p><b>Calculated</b> uses the engine's tested laws for rigid bodies, hinges and DC circuits. <b>Experimental</b> is calculated but not calibrated against real material tests: oak burning and its loss of strength, and how glass breaks (whether it breaks is computed; the number of pieces is not calibrated). <b>Not built</b> is not in this shared world yet.</p><p>Breaking can take the engine longer than real time; the clock then shows how far world time is behind.</p></details>
 </aside>
 </main>
 <section id="levels-screen" class="levels-screen" hidden aria-label="Levels and how far you have got"></section>
+<section id="sandbox-screen" class="levels-screen" hidden aria-label="Sandbox designs"></section>
 <script type="module" src="/machine.js"></script></body></html>

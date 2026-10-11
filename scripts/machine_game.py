@@ -80,6 +80,36 @@ def level_by_id(level_id):
     raise ValueError(f'There is no level called {level_id!s}')
 
 
+def requested_level(data):
+    """Sandbox declarations use the same tray, ghost, preview and live engine.
+
+    A base belongs only to a free design; it cannot replace a puzzle. Names
+    beginning 'your ' are reserved for the placement overlay, so a saved
+    declaration never masquerades as a tray piece or duplicates one.
+    """
+    level = level_by_id(data.get('level'))
+    base = data.get('base')
+    if base is not None:
+        if not level.get('free'):
+            raise ValueError('A custom machine belongs in the Sandbox, not a level')
+        compiled = mw.compile_spec(base)
+        if any(p['name'].startswith('your ') for p in compiled['parts']):
+            raise ValueError('Names starting with "your " are reserved for tray pieces')
+        level['machine'] = copy.deepcopy(base)
+        level['custom_base'] = True
+    return level
+
+
+def sandbox_templates():
+    """Starting designs, copied by the browser; the originals stay unchanged."""
+    return [
+        {'name': 'Gate and split', 'description': 'Release three marbles through a gate and flip-flop; topple six dominoes.',
+         'base': None, 'placements': free_build()['example']},
+        {'name': 'Chain reaction', 'description': 'Water wheel, ramp, dominoes, lever, burning rope and glass. Includes engine readings.',
+         'base': json.loads((ROOT / 'client/voxel-lab/machine-default.json').read_text(encoding='utf-8')), 'placements': []},
+    ]
+
+
 # ---- the pieces ---------------------------------------------------------------
 #
 # Each piece type turns a placement's knobs into the machine's own kits and
@@ -523,7 +553,7 @@ def _assemble(level, placements, lenient=False):
             spec['light']['mirrors'] = spec['light']['mirrors'] + made['mirrors']
     compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
     # And the player's pieces: a mirror stands on a post, not in the air.
-    stands = hold_up(compiled['parts'], spec.get('cell_m', 0.02))
+    stands = hold_up(compiled['parts'], spec.get('cell_m', 0.02), only_player=level.get('custom_base', False))
     if stands:
         spec['parts'] += stands
         compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
@@ -685,13 +715,14 @@ def _stands_for(part, parts, cell=0.02):
     return chosen or nominal
 
 
-def hold_up(parts, cell=0.02):
+def hold_up(parts, cell=0.02, only_player=False):
     """The stands that keep every fixed part in `parts` from floating."""
     parts, stands, tried = list(parts), [], set()
     names = {p['name'] for p in parts}
     while True:
         held = held_up(parts)
-        floating = [p for p in parts if p.get('fixed') and p['name'] not in held and p['name'] not in tried]
+        floating = [p for p in parts if p.get('fixed') and p['name'] not in held and p['name'] not in tried
+                    and (not only_player or owner(p) is not None)]
         if not floating:
             return stands
         # The biggest first: what is bolted to it is held up once it is.
@@ -708,6 +739,11 @@ _level_stands = {}
 
 def _level_held_up(level, spec, lenient):
     """The level's own stands, once a level (its machine never changes)."""
+    if level.get('custom_base'):
+        # Preserve the declaration's explicit anchors and kit supports. The
+        # tray overlay still gets stands; rewriting the base could put a
+        # spout's new stand through its water wheel and change its physics.
+        return []
     key = (level['id'], json.dumps(level['machine'], sort_keys=True))
     if key not in _level_stands:
         _level_stands[key] = hold_up(mw.compile_spec(dict(spec, stations=[]), lenient=lenient)['parts'],
@@ -1023,9 +1059,10 @@ def compose(level, placements, leave_out_goal=False):
     clashes = clashes_of(compiled)
     if clashes:
         raise LevelRefused(clashes[:4])
-    spec['stations'] = []
     if not level.get('goal'):
-        return spec, checked, cost      # the free build: nothing to do but watch
+        spec.setdefault('stations', [])
+        return spec, checked, cost      # sandbox readings are retained, never scored
+    spec['stations'] = []
     goal = level['goal']['station']['done_when']
     rule = next(iter(goal.values()))
     wanted = rule.get('part') if isinstance(rule, dict) else rule
