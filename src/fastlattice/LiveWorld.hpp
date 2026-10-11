@@ -2724,6 +2724,10 @@ private:
     // The box the field is measured against, for the survey and the section:
     // as authored, never what is left of it.
     [[nodiscard]] Vec3 referenceBoxOf(std::size_t body) const;
+    // The share of a body's section across `load_world` that blades have cut
+    // through it: its kerfs' swept area, turned onto that section, over the
+    // section's area; 0 to 1.
+    [[nodiscard]] double cutShareOf(std::size_t body, const Vec3 &load_world) const;
     // A point in the body's own frame, in its reference box's frame.
     [[nodiscard]] Vec3 inReference(std::size_t body, const Vec3 &local_m) const;
     // Give an island's cells and bonds the field of the body each belongs to.
@@ -2851,6 +2855,10 @@ private:
     // step has run. One step of overload before it parts is 4 ms at a live
     // rate, which is not visible; a rope that never parts is.
     void partOverloadedLinks();
+    // A member a blade has cut part way through, carrying more than what is
+    // left of it: the rest of it tears where it was cut and it parts in two
+    // there. False when that would not part it.
+    bool tearAtCut(std::size_t body, double carrying_n, double holds_n);
     // Put the pins back after the body table has been rearranged.
     //
     // Every body in an island is destroyed and rebuilt when anything in it

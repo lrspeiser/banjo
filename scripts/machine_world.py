@@ -2082,7 +2082,10 @@ class MachineSession:
                 # A gear pair's own reading is no angle anyone set; its two
                 # hinges carry the turns.
                 row['degrees'] = None
-            for key in ('metres', 'tension_n', 'leaves', 'meets', 'wound_m'):
+            # And for a joint made of something (a rope's links): what it can
+            # still carry, the share of it left, and why it let go.
+            for key in ('metres', 'tension_n', 'leaves', 'meets', 'wound_m', 'breaks_at_n', 'member',
+                        'capacity_fraction', 'parted_because'):
                 if key in j:
                     row[key] = j[key]
             if kind == 'hinge' and j.get('degrees') is not None:

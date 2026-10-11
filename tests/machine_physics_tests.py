@@ -288,6 +288,41 @@ class Engine(unittest.TestCase):
         # least that much area, each square metre at oak's R for this edge.
         self.assertGreater(cut['area_mm2'], 400.0)
         self.assertGreater(cut['work_j'], 0.9 * 400e-6 * 15000.0)
+        # Cut through, it parts at the cut: the piece above it still hangs
+        # from the arm, whole, and what was below falls with the weight.
+        joints = {j['name']: j for j in r['readouts']['joints']}
+        self.assertTrue(joints['weight rope fixing']['attached'])
+        self.assertEqual(joints['weight rope fixing']['capacity_fraction'], 1.0)
+
+    @need_engine
+    def test_a_rope_cut_part_way_holds_with_what_is_left_and_tears_at_the_cut_when_that_is_not_enough(self):
+        # An aluminium strap costs the steel edge far more to cut than oak:
+        # the swing's energy runs out part way through it. What is left of it
+        # carries the weight -- the strap is still one piece, its fixing holding
+        # with the share of its strength the cut left.
+        strap = {'peg_material': 'aluminum'}
+        held = dict(KNIFE, kits=[dict(KNIFE['kits'][0], **strap), KNIFE['kits'][1]])
+        r = run(held, 1.5)
+        self.assertIsNone(r['error'])
+        fixing = next(j for j in r['readouts']['joints'] if j['name'] == 'weight rope fixing')
+        print(f"\n  cut part way: {fixing['capacity_fraction']:.0%} of the strap left")
+        self.assertTrue(fixing['attached'])
+        self.assertGreater(fixing['capacity_fraction'], 0.5)
+        self.assertLess(fixing['capacity_fraction'], 0.95)
+        self.assertNotIn('weight rope piece 1', r['bodies'])
+        self.assertFalse(next(s for s in r['stations'] if s['title'] == 'Weight falls')['done'])
+        # The same cut in a strap rated at 400 N -- enough for the 32 kg
+        # weight's 316 N till then -- leaves less than that: it tears at the
+        # cut, the piece above still on the arm with all of its strength, and
+        # the weight falls.
+        weak = dict(KNIFE, kits=[dict(KNIFE['kits'][0], holds_tension_n=400, **strap), KNIFE['kits'][1]])
+        r = run(weak, 1.5)
+        self.assertIsNone(r['error'])
+        self.assertTrue(next(s for s in r['stations'] if s['title'] == 'Weight falls')['done'], r['events'])
+        self.assertIn('weight rope piece 1', r['bodies'])
+        fixing = next(j for j in r['readouts']['joints'] if j['name'] == 'weight rope fixing')
+        self.assertTrue(fixing['attached'], fixing)
+        self.assertEqual(fixing['capacity_fraction'], 1.0)
 
     @need_engine
     def test_the_flat_of_the_knife_does_not_cut(self):

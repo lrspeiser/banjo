@@ -8064,6 +8064,42 @@ void LiveWorld::partOverloadedLinks() {
     // throat is a few millimetres deep; past that the string is out of it and
     // there is nothing left of the fixing around what it held.
     constexpr double kThroatM = 0.005;
+    // Joints made of a member a blade has cut part way through, overloaded:
+    // the member tears at the cut after this pass (splitting it rearranges
+    // the joints walked here), and the joint lets go only if that fails.
+    struct Tear { std::size_t joint; std::string member; double carrying, bar, cold; const char *how, *what; };
+    std::vector<Tear> tears;
+    const auto part = [&](Impl::SceneJoint &joint, double carrying, double bar, double cold, const char *how,
+                          const char *what, bool rated) {
+        impl_->world->removeJoint(joint.rigid);
+        joint.rigid = 0;
+        joint.attached = false;
+        // Why, in the numbers that decided it: the load the solver measured
+        // against what the joint could still take -- and, for one made of a
+        // member, what heat had left of that member.
+        joint.parted_load_n = carrying;
+        joint.parted_capacity_n = bar;
+        if (std::string(what) == "came off")
+            // A one-way fixing coming off is what it is for, not a failure: it
+            // held on with all the grip it has, and something pulled harder.
+            joint.parted_because = std::string(how) + ", holding " + newtons(carrying) +
+                                   " -- all the " + newtons(bar) + " it grips with";
+        else
+            joint.parted_because = std::string(how) + ": carrying " + newtons(carrying) +
+                                   " against the " + newtons(bar) +
+                                   (rated ? " it could still take (" + newtons(cold) + " cold) -- " +
+                                                joint.member_said
+                                          : std::string(" it was declared to hold"));
+        impl_->delays.push_back({impl_->time_s, joint.a + " to " + joint.b, what,
+                                 carrying, bar});
+        // Both ends have to wake or what was hanging there stays hanging in the
+        // air until something else disturbs it.
+        for (const std::string &side : {joint.a, joint.b}) {
+            const auto found = impl_->index_of.find(side);
+            if (found != impl_->index_of.end())
+                impl_->world->wake(impl_->body_of[found->second]);
+        }
+    };
     for (Impl::SceneJoint &joint : impl_->joints) {
         const bool a_link = joint.kind == JoltWorld::JointKind::Link;
         const bool a_fixing = joint.kind == JoltWorld::JointKind::Fixing;
@@ -8156,34 +8192,26 @@ void LiveWorld::partOverloadedLinks() {
             bar = joint.breaks_at_n;
             cold = joint.rated_breaks_at_n;
         }
-        impl_->world->removeJoint(joint.rigid);
-        joint.rigid = 0;
-        joint.attached = false;
-        // Why, in the numbers that decided it: the load the solver measured
-        // against what the joint could still take -- and, for one made of a
-        // member, what heat had left of that member.
-        joint.parted_load_n = carrying;
-        joint.parted_capacity_n = bar;
-        if (std::string(what) == "came off")
-            // A one-way fixing coming off is what it is for, not a failure: it
-            // held on with all the grip it has, and something pulled harder.
-            joint.parted_because = std::string(how) + ", holding " + newtons(carrying) +
-                                   " -- all the " + newtons(bar) + " it grips with";
-        else
-            joint.parted_because = std::string(how) + ": carrying " + newtons(carrying) +
-                                   " against the " + newtons(bar) +
-                                   (rated ? " it could still take (" + newtons(cold) + " cold) -- " +
-                                                joint.member_said
-                                          : std::string(" it was declared to hold"));
-        impl_->delays.push_back({impl_->time_s, joint.a + " to " + joint.b, what,
-                                 carrying, bar});
-        // Both ends have to wake or what was hanging there stays hanging in the
-        // air until something else disturbs it.
-        for (const std::string &side : {joint.a, joint.b}) {
-            const auto found = impl_->index_of.find(side);
-            if (found != impl_->index_of.end())
-                impl_->world->wake(impl_->body_of[found->second]);
+        // Made of a member a blade has cut part way through: it gives way at
+        // the cut, not at the joint. The joint keeps its piece; what was
+        // below the cut falls with whatever it carried.
+        if (rated && std::string(what) != "came off") {
+            const auto member = impl_->index_of.find(joint.member_end == 0 ? joint.a : joint.b);
+            if (member != impl_->index_of.end() &&
+                cutShareOf(member->second, impl_->loadDirection(joint)) > 0.0005) {
+                tears.push_back({static_cast<std::size_t>(&joint - impl_->joints.data()),
+                                 impl_->described[member->second].name, carrying, bar, cold, how, what});
+                continue;
+            }
         }
+        part(joint, carrying, bar, cold, how, what, rated);
+    }
+    for (const Tear &t : tears) {
+        const auto member = impl_->index_of.find(t.member);
+        if (member != impl_->index_of.end() && tearAtCut(member->second, t.carrying, t.bar)) continue;
+        // It would not part in two there: the joint lets go, as one does.
+        if (t.joint < impl_->joints.size() && impl_->joints[t.joint].attached && impl_->joints[t.joint].rigid != 0)
+            part(impl_->joints[t.joint], t.carrying, t.bar, t.cold, t.how, t.what, true);
     }
     // A weld that let go between two exact bodies leaves them to meet as
     // their surfaces again.
@@ -13838,16 +13866,20 @@ void LiveWorld::refreshMechanics() {
         const Vec3 load = impl_->loadDirection(j);
         const LiveMaterialState state = materialStateOf(at->second, &load);
         const thermo::SectionState &s = state.section;
+        // And what a blade has cut through it: a rope segment cut half
+        // through carries half of what it did (an elastic made of something
+        // cut half through is half as stiff).
+        const double cut = cutShareOf(at->second, load), left = 1.0 - cut;
         double fraction = 1.0;
         if (j.kind == JoltWorld::JointKind::Fixing) {
-            j.holds_tension_n = j.rated_tension_n * s.tension;
-            j.holds_shear_n = j.rated_shear_n * s.shear;
-            fraction = std::min(s.tension, s.shear);
+            j.holds_tension_n = j.rated_tension_n * s.tension * left;
+            j.holds_shear_n = j.rated_shear_n * s.shear * left;
+            fraction = std::min(s.tension, s.shear) * left;
         } else if (j.kind == JoltWorld::JointKind::Link) {
-            j.breaks_at_n = j.rated_breaks_at_n * s.tension;
-            fraction = s.tension;
+            j.breaks_at_n = j.rated_breaks_at_n * s.tension * left;
+            fraction = s.tension * left;
         } else if (j.kind == JoltWorld::JointKind::Elastic) {
-            fraction = s.axial_stiffness;
+            fraction = s.axial_stiffness * left;
             const double k = j.rated_stiffness_n_m * std::max(fraction, kSoftest);
             if (std::abs(k - j.stiffness_n_m) > 1.0e-9 * j.rated_stiffness_n_m) {
                 // At the stretch it has now, the energy it holds changes by
@@ -13866,6 +13898,7 @@ void LiveWorld::refreshMechanics() {
         }
         j.capacity_fraction = fraction;
         j.member_said = describeMember(state);
+        if (cut >= 0.0005) j.member_said += ", cut " + std::to_string(static_cast<int>(std::lround(100.0 * cut))) + "% through";
         // Heat moved what it can take: ask again, now, whether it still holds.
         // Both ends are woken so the next step's solve MEASURES the load -- a
         // gate asleep on its peg carries its weight all the same, and the
@@ -13938,6 +13971,28 @@ LiveWorld::MatterRecord &LiveWorld::recordOf(std::size_t body) const {
         record.centre_m = 0.5 * (low + high);
     }
     return I.matter_of.emplace(pose.name, record).first->second;
+}
+
+double LiveWorld::cutShareOf(std::size_t body, const Vec3 &load_world) const {
+    const auto found = impl_->kerfs.find(impl_->described[body].name);
+    if (found == impl_->kerfs.end() || found->second.empty() || !(length(load_world) > 0.0)) return 0.0;
+    // The kerfs are in the body's own frame: so is the load, turned into it.
+    const RigidSnapshot s = impl_->world->snapshot(impl_->body_of[body]);
+    const Vec3 along = normalized(conjugateOf(s.orientation_world).rotate(load_world));
+    const Vec3 box = referenceBoxOf(body);
+    const double reach = std::abs(along.x) * box.x + std::abs(along.y) * box.y + std::abs(along.z) * box.z;
+    if (!(reach > 0.0)) return 0.0;
+    const double section = box.x * box.y * box.z / reach;
+    double swept = 0.0;
+    for (const Impl::Kerf &kerf : found->second) {
+        // Only a cut it is still whole across: bonds of it that cross the
+        // kerf's plane, its matter on both sides (found again for each piece
+        // when a cut parts a body). A piece a cut parted off has the kerf at
+        // its face, where it is a surface, not a nick.
+        if (kerf.crossings.empty()) continue;
+        swept += kerf.area() * std::abs(dot(kerf.w, along));
+    }
+    return std::clamp(swept / section, 0.0, 1.0);
 }
 
 Vec3 LiveWorld::referenceBoxOf(std::size_t body) const {
@@ -17276,6 +17331,9 @@ void LiveWorld::prepareCuts(double dt_s) {
 void LiveWorld::settleCuts(double dt_s) {
     (void)dt_s;
     Impl &I = *impl_;
+    // Whether any blade cut anything this step: what a member's joints can
+    // carry is then asked again (a segment cut part way through).
+    bool cut_any = false;
     TileImpactSetup &setup = *I.setup;
     const double cell = I.request.cell_size_m;
 
@@ -17349,11 +17407,18 @@ void LiveWorld::settleCuts(double dt_s) {
     if (!I.pending && I.queued.empty() && !I.split_later.empty()) {
         const std::set<std::string> waiting = std::move(I.split_later);
         I.split_later.clear();
+        bool split = false;
         for (const std::string &name : waiting) {
             const auto found = I.index_of.find(name);
             if (found == I.index_of.end()) continue;
-            if (!stillWhole(I.nodes_of[found->second], setup.matter)) splitCut(found->second);
+            if (!stillWhole(I.nodes_of[found->second], setup.matter)) {
+                splitCut(found->second);
+                split = true;
+            }
         }
+        // The joints are on the pieces now: what each can carry is the
+        // piece's, not what was left of the whole at its cut.
+        if (split) refreshMechanics();
     }
     if (I.engaged.empty()) return;
 
@@ -17610,6 +17675,7 @@ void LiveWorld::settleCuts(double dt_s) {
             still && actual > 0.0 && e.push_n > e.resistance * e.touching_m;
         double work = work_measured;
         double area = overpowered ? std::max(work / e.resistance, actual) : work / e.resistance;
+        if (area > 0.0) cut_any = true;
         // Bought first, then cut, as far as the work goes -- every strip the
         // same share of what the edge went through in it -- and what is not
         // bought is still there under the steel for the next step to find and
@@ -17711,10 +17777,28 @@ void LiveWorld::settleCuts(double dt_s) {
             I.cut_log[e.cut].work_j += work;
         }
 
+        // A thin body something hangs by -- a rope one or two cells thick, the
+        // member of a joint -- is too thin for its bonds to say how far through
+        // it is cut: they cross the kerf in a row or two, and would all go as
+        // the edge passed the middle. So they are kept till it is cut right
+        // through. Cut part way, the joint made of it carries the share of it
+        // left (refreshMechanics), and if its load is more than that it tears
+        // at the cut (tearAtCut).
+        bool keep_bonds = false;
+        if (const auto target = I.index_of.find(e.target); target != I.index_of.end()) {
+            const Vec3 box = referenceBoxOf(target->second);
+            const double thick = std::abs(kerf.v.x) * box.x + std::abs(kerf.v.y) * box.y + std::abs(kerf.v.z) * box.z;
+            if (thick <= 2.0 * cell + 1e-9)
+                for (const Impl::SceneJoint &j : I.joints)
+                    if (j.attached && j.member_end >= 0 && (j.member_end == 0 ? j.a : j.b) == e.target &&
+                        cutShareOf(target->second, I.loadDirection(j)) < 0.999)
+                        keep_bonds = true;
+        }
         // Every bond the kerf has now reached is severed, in the scene's matter,
         // where every later lattice run will find it severed too.
         std::size_t severed = 0;
         for (const auto &crossing : kerf.crossings) {
+            if (keep_bonds) break;
             if (crossing.bond >= setup.matter.bonds.size()) continue;
             ActiveBondState &bond = setup.matter.bonds[crossing.bond];
             if (!bond.alive) continue;
@@ -17757,6 +17841,14 @@ void LiveWorld::settleCuts(double dt_s) {
                 in_matter = gridOf(I.nodes_of[other], I.cell_offset_m, cell).holds(xo);
             }
             if (!in_matter) continue;
+            // A link made of a segment (its member) is parted by the cut only
+            // once the segment is cut right through. Till then its fibres carry
+            // what the uncut share of them can (refreshMechanics, after this),
+            // and it parts when that is less than its load.
+            if (joint.member_end >= 0) {
+                const auto member = I.index_of.find(joint.member_end == 0 ? joint.a : joint.b);
+                if (member != I.index_of.end() && cutShareOf(member->second, I.loadDirection(joint)) < 0.999) continue;
+            }
             I.world->removeJoint(joint.rigid);
             joint.rigid = 0;
             joint.attached = false;
@@ -17796,6 +17888,50 @@ void LiveWorld::settleCuts(double dt_s) {
         }
         splitCut(found->second);
     }
+    if (cut_any) refreshMechanics();
+}
+
+bool LiveWorld::tearAtCut(std::size_t body, double carrying_n, double holds_n) {
+    Impl &I = *impl_;
+    const std::string name = I.described[body].name;
+    const auto found = I.kerfs.find(name);
+    if (found == I.kerfs.end() || found->second.empty()) return false;
+    TileImpactSetup &setup = *I.setup;
+    // Every bond its kerfs cross: the uncut fibres of a rope snapping at a
+    // nick. Only if that parts it in two -- tearing bonds that leave it whole
+    // would change it and part nothing.
+    std::vector<std::uint32_t> torn;
+    for (const Impl::Kerf &kerf : found->second)
+        for (const auto &crossing : kerf.crossings)
+            if (crossing.bond < setup.matter.bonds.size() && setup.matter.bonds[crossing.bond].alive)
+                torn.push_back(crossing.bond);
+    for (const std::uint32_t b : torn) setup.matter.bonds[b].alive = false;
+    if (cutTrace())
+        std::fprintf(stderr, "tear t=%.4f %s kerfs=%zu torn=%zu whole=%d pending=%d carrying=%.1f holds=%.1f\n",
+                     I.time_s, name.c_str(), found->second.size(), torn.size(),
+                     int(stillWhole(I.nodes_of[body], setup.matter)), int(I.pending || !I.queued.empty()),
+                     carrying_n, holds_n);
+    if (stillWhole(I.nodes_of[body], setup.matter)) {
+        for (const std::uint32_t b : torn) setup.matter.bonds[b].alive = true;
+        return false;
+    }
+    // Already torn and waiting for a fracture run to finish before it is
+    // split (split_later): it is tearing, and is said once.
+    for (const std::uint32_t b : torn) {
+        setup.matter.bonds[b].damage = 1.0;
+        setup.matter.bonds[b].failure_mode = BondFailureMode::Tension;
+    }
+    if (!torn.empty()) I.delays.push_back({I.time_s, name, "tore at its cut", carrying_n, holds_n});
+    // A fracture holds indices into the body table while it runs.
+    if (I.pending || !I.queued.empty()) {
+        I.split_later.insert(name);
+    } else {
+        splitCut(body);
+        // The joints are on the pieces now: what each can carry is the
+        // piece's, not what was left of the whole at its cut.
+        refreshMechanics();
+    }
+    return true;
 }
 
 std::size_t LiveWorld::splitCut(std::size_t which) {

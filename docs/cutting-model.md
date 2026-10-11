@@ -422,6 +422,47 @@ mid-span is overloaded by the same statics that said it was fine -- a quarter
 of the section modulus at the place the moment is largest -- and a host that
 answers it runs the lattice on a plank whose severed bonds are already there.
 
+### A rope cut part way through
+
+A rope or a strap one or two cells thick is too thin for its bonds to say how
+far through it is cut: they cross the kerf in a row or two, and would all go
+the moment the edge passed the middle, whatever the edge had paid for. So for
+a thin body that something hangs by -- the member of a joint (a fixing made
+of the rope, a link tied through it) -- the bonds at the kerf are kept until
+the kerf has swept right across it. Until then:
+
+- **What is left carries.** The share of its section across the joint's load
+  that its kerfs have swept (`LiveWorld::cutShareOf`: the kerf's area turned
+  onto that section, over the section) is taken off what the joint can carry,
+  as heat's damage is (`refreshMechanics`, now run after every step that cut
+  something, and after a split). A strap cut 28% through holds with 72% of its
+  strength; an elastic made of something cut half through is half as stiff.
+  A kerf counts only while the body is whole across it -- bonds of it still
+  cross its plane -- so the pieces of something cut through are whole again.
+- **It tears at the cut.** When the joint's load is more than what is left,
+  the body does not let go of its joint: it tears where it was cut
+  (`LiveWorld::tearAtCut`). Every bond its kerf crosses goes, it parts in two
+  there, the joint keeps the piece it is fixed to with all of that piece's
+  strength, and what was below the cut falls with what it carried.
+- **A link** (`tie`) made of a cut member parts only when the member is cut
+  right through, or when its load is more than what is left -- not when the
+  kerf first crosses its line, as a link with no member still does.
+
+Measured (`tests/machine_physics_tests.py`): a knife pendulum's 3.8 m/s swing
+through a 20 mm oak cord cuts it through and the weight falls, the piece above
+the cut staying on its arm; the same swing into an aluminium strap, which costs
+the edge far more per square metre, runs out of energy 28% of the way through,
+and the strap holds the 32 kg weight with 72% of its strength. Rated at 400 N
+instead of 800 N, the same cut leaves 288 N against the weight's 316 N: it tears
+at the cut and the weight falls.
+
+A rope made of a run of one-cell segments tied together (it would flex and
+drape) was tried for this and does not hold a real load: an iterative solver
+passes load through a light body to a heavy one at about their mass ratio per
+iteration, and 5.6 g oak segments under a 13.6 kg weight would need ten
+thousand iterations to carry it; Jolt allows 255. Sixteen such links let the
+weight down 40 cm. The rope stays one body, stiff, until that is solved.
+
 ## 9. What this does not capture
 
 Said plainly, because every one of these would change an answer:
