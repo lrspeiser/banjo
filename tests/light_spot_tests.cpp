@@ -235,7 +235,10 @@ void aLaserPartsAnOakCord() {
     const double spot_in = heat.at("spot_in_j"), taken = heat.at("taken_by_light_j"),
                  returned = heat.at("spot_returned_j");
     double held = 0.0;
-    for (const auto &b : nlohmann::json::parse(world->thermoReport(false)).at("bodies"))
+    // Held in a variable: a range-for over a member of the temporary parse()
+    // returns reads a destroyed object (C++20), and on Linux it read nothing.
+    const nlohmann::json report = nlohmann::json::parse(world->thermoReport(false));
+    for (const auto &b : report.at("bodies"))
         held += b.value("spot_j", 0.0);
     std::cout << "    light: sent " << o.joules.sent << " J, heated " << o.joules.heated << " J, of which into spots "
               << o.joules.spots << " J; residual " << o.joules.residual() << " J\n"
@@ -262,7 +265,8 @@ void aSavedWorldKeepsItsSpots() {
     laser(*world, {-1.0, 0.575, 0.0}, {1.0, 0.0, 0.0}, 5000.0);
     for (int i = 0; i < 240; ++i) tick(*world);   // 1 s: part way through its first cell
     double held = 0.0;
-    for (const auto &b : nlohmann::json::parse(world->thermoReport(false)).at("bodies")) held += b.value("spot_j", 0.0);
+    const nlohmann::json report = nlohmann::json::parse(world->thermoReport(false));
+    for (const auto &b : report.at("bodies")) held += b.value("spot_j", 0.0);
     std::string why;
     const std::string saved = world->snapshot(why);
     require(!saved.empty(), "the world would not save: " + why);
@@ -270,7 +274,8 @@ void aSavedWorldKeepsItsSpots() {
     auto again = LiveWorld::open(requestFor(rig()), saved);
     require(again->restored().tier == "whole", "the world did not come back whole: " + again->restored().why);
     double held_again = 0.0;
-    for (const auto &b : nlohmann::json::parse(again->thermoReport(false)).at("bodies"))
+    const nlohmann::json report_again = nlohmann::json::parse(again->thermoReport(false));
+    for (const auto &b : report_again.at("bodies"))
         held_again += b.value("spot_j", 0.0);
     const Parting a = runUntilParted(*world, 10.0), b = runUntilParted(*again, 10.0);
     std::cout << "    saved at 1 s with " << held << " J held in the cord's spots, opened with " << held_again
@@ -340,7 +345,8 @@ void theMirrorIsNotCut() {
     const LiveOptics o = world->optics();
     const LiveOptics::Lit *mirror = litRow(o, "mirror");
     double mirror_k = 0.0;
-    for (const auto &b : nlohmann::json::parse(world->thermoReport(false)).at("bodies"))
+    const nlohmann::json report = nlohmann::json::parse(world->thermoReport(false));
+    for (const auto &b : report.at("bodies"))
         if (b.at("name") == "mirror") mirror_k = b.at("temperature_k");
     bool taken = false;
     for (const LiveOptics::Taken &t : o.taken) taken = taken || t.body.rfind("mirror", 0) == 0;
