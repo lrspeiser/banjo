@@ -148,14 +148,39 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 /* The tray in the scene: add a piece without leaving the 3D view. */
 .scene-tray{position:absolute;top:52px;left:10px;right:10px;z-index:2;display:flex;flex-wrap:wrap;gap:6px;pointer-events:none}
 .scene-tray[hidden]{display:none}
-/* A free build's tray has every piece: one row that scrolls sideways. */
-.scene-tray.many{flex-wrap:nowrap;overflow-x:auto;pointer-events:auto;padding-bottom:4px;scrollbar-width:thin}
-.scene-tray.many button{flex:none}
-.scene-top>.scene-tray.many{max-width:100%}
-.scene-tray button{pointer-events:auto;min-height:38px;padding:5px 12px;background:#1f6b45;color:#e7f2f8;border:1px solid #5fe08f;border-radius:8px;cursor:pointer;font:600 14px system-ui;box-shadow:0 3px 10px #0007}
+.scene-tray button{pointer-events:auto;min-height:44px;padding:5px 12px;background:#1f6b45;color:#e7f2f8;border:1px solid #5fe08f;border-radius:8px;cursor:pointer;font:600 14px system-ui;box-shadow:0 3px 10px #0007}
 .scene-tray button{display:inline-flex;align-items:center;gap:6px}
 .scene-tray img{width:28px;height:28px;margin:-4px 0 -4px -6px}
 .scene-tray button:disabled{background:#294c60;border-color:#63899d;opacity:.55;cursor:not-allowed}
+/* A large tray gets a full-screen, keyboard-accessible library. Only its
+   grid scrolls, so search and the way back remain reachable on phones. */
+body.choosing-piece{overflow:hidden}
+#piece-picker{position:fixed;inset:0;width:100%;max-width:none;height:100dvh;max-height:none;margin:0;padding:18px max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));border:0;background:#0d1720;color:#e4edf4;overflow:hidden}
+#piece-picker:not([open]){display:none}
+#piece-picker[open]{display:flex;flex-direction:column;gap:12px}
+#piece-picker::backdrop{background:#0d1720}
+.piece-picker-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none}
+.piece-picker-head h1{margin:0;font-size:26px}
+#piece-picker-help{margin:0;color:#b9cbd6}
+#piece-picker button,#piece-picker input,#piece-picker select{min-height:44px;padding:8px 12px;border:1px solid #63899d;border-radius:8px;background:#294c60;color:#e7f2f8;font:15px system-ui}
+#piece-picker button{cursor:pointer}
+#piece-picker :focus-visible{outline:3px solid #9fdcff;outline-offset:2px}
+.piece-picker-filters{display:flex;gap:12px;flex:none}
+.piece-picker-filters label{display:grid;gap:4px;font-size:13px;min-width:0}
+.piece-picker-filters label:first-child{flex:1}
+.piece-picker-filters input,.piece-picker-filters select{width:100%}
+#piece-results{color:#b9cbd6;font-size:13px}
+#piece-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));grid-auto-rows:max-content;gap:12px;overflow-y:auto;min-height:0;padding:4px;align-content:start;overscroll-behavior:contain}
+#piece-grid .piece-card{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px;background:#1b2f3c;border-color:#3d5b6d;text-align:center}
+#piece-grid .piece-card:hover{background:#244255;border-color:#5fe08f}
+#piece-grid .piece-card:disabled{opacity:.5;cursor:not-allowed}
+.piece-picture{display:grid;place-items:center;flex:none;width:100%;height:150px;background:#11222d;border-radius:6px}
+.piece-picture img{width:150px;height:150px;object-fit:contain}
+.piece-card strong{font-size:17px}
+.piece-description{color:#b9cbd6;font-size:13px;line-height:1.4}
+.piece-count{color:#9fdcff;font-size:12px}
+@media(max-width:500px){#piece-picker{padding-top:12px;gap:10px}.piece-picker-head h1{font-size:22px}.piece-picker-head button{max-width:155px}#piece-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#piece-grid .piece-card{padding:8px}.piece-picture,.piece-picture img{height:125px}.piece-picture img{width:125px}.piece-picker-filters{gap:8px}.piece-picker-filters label:last-child{width:145px}}
+@media(max-height:500px){#piece-picker{padding-top:8px;gap:6px}.piece-picker-head h1{font-size:22px}#piece-picker-help{display:none}.piece-picker-filters label{display:flex;align-items:center;gap:6px}.piece-picture,.piece-picture img{height:120px}.piece-picture img{width:120px}}
 /* The ghost's controls: docked just below the scene (the top of the side
    panel, which on a phone comes right after the scene), kept in sight. */
 .ghost-bar{position:sticky;top:0;z-index:5;display:grid;gap:6px;margin:0 0 12px;padding:8px 10px;background:#142836;border:1px solid #6cc6ff;border-radius:10px;box-shadow:0 4px 14px #0007}

@@ -41,7 +41,9 @@ Each design has a table with no goal and every piece in
 the tray: marbles, tracks, shelves, gates, flip-flops, bends, funnels, blocks,
 dominoes, levers, planks, ramps, cannons and steam engines. Pieces snap
 together, can be joined with glue, a pin or a string, and a build can be shared
-as a link. You can also ask the chat to build something in words. Named drafts
+as a link. **Add a piece** opens a full-screen library with large thumbnails,
+search and categories; choosing a piece returns to the scene to place it.
+You can also ask the chat to build something in words. Named drafts
 save in this browser for the current player; **Save version** keeps a checkpoint
 you can restore. The engine readings and base declaration are available beside
 the scene. Old `/play?level=free` links and previously kept builds still work.

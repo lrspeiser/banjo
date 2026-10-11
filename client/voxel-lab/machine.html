@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Banjo Machine</title><link rel="stylesheet" href="/machine.css"></head><body>
 <header><strong>Banjo <span>Machine</span></strong><nav><a href="/play" id="levels-open">Levels</a><a href="/machine" id="sandbox-open">Sandbox</a><a href="/play" id="guide-open">How to play</a></nav><output id="build">Checking…</output></header>
 <main>
-<section id="view" aria-label="The machine in 3D, as the engine calculates it">
+<section id="view" tabindex="-1" aria-label="The machine in 3D, as the engine calculates it">
 <output id="clock">Setting up…</output>
 <div id="labels" aria-hidden="true"></div>
 <div id="scene-actions" class="scene-actions">
@@ -35,7 +35,7 @@
 <h2>How to play</h2>
 <ol>
 <li>Each level has a goal: something has to end up in the <b>green box</b> in time. In the <b>Sandbox</b>, build freely: open a prebuilt design or press <b>Add New Design</b>, then name it and use <b>Save version</b> to keep setups you want to return to.</li>
-<li>Press a piece's button at the top of the scene (<b>+ plank</b>). A blue <b>ghost</b> of it appears in the scene, ready to move.</li>
+<li>Press a piece's button at the top of the scene (<b>+ plank</b>). In the Sandbox, press <b>Add a piece</b> and choose from the full-screen library. A blue <b>ghost</b> of it appears in the scene, ready to move.</li>
 <li>Drag it to move it (on a phone, one finger moves it and two fingers turn the view), tap where it should go, or use the arrows over the scene: they move it left, right, away from you and toward you as you see it, and up and down. To turn the view without moving it, press 👁 in the middle of the arrows (or Esc); ✋ moves it again. Change and turn it with the controls under the scene (or Q/E, R/F, Z/C). Coloured lines through it show where it lines up. A red ghost cannot go there, and says why.</li>
 <li>Press <b>Set it down</b>, then <b>Run it</b>. To change a piece afterwards, click (tap) it in the scene. Nothing is animated: the physics engine calculates every bounce, burn and cut live.</li>
 <li>On a level, win on as little <b>energy</b> as you can: the energy to make your pieces (smaller, lighter, cheaper materials) and what the run burns or draws. Beat a level's par for three stars, and play it again to do better. Sandbox designs have no score.</li>
@@ -48,7 +48,7 @@
 <p id="goal-line" class="legend"></p>
 <div id="free-actions" class="chat-actions" hidden><button id="free-example" type="button">Set out the example</button><button id="free-share" type="button">Share this design</button><button id="free-clear" type="button">Clear the table</button></div>
 <input id="share-link" class="share-link" type="text" readonly hidden aria-label="A link to this build">
-<h2>Your tray</h2><ul id="tray"></ul>
+<h2 id="tray-head">Your tray</h2><ul id="tray"></ul>
 <h2 id="placed-head">Your pieces</h2><ol id="placed"></ol>
 <p id="cost-line"></p>
 <output id="verdict" aria-live="polite"></output>
@@ -77,4 +77,12 @@
 </main>
 <section id="levels-screen" class="levels-screen" hidden aria-label="Levels and how far you have got"></section>
 <section id="sandbox-screen" class="levels-screen" hidden aria-label="Sandbox designs"></section>
+<dialog id="piece-picker" aria-labelledby="piece-picker-title" aria-describedby="piece-picker-help">
+<div class="piece-picker-head"><h1 id="piece-picker-title">Choose a piece</h1><button id="piece-picker-close" type="button">Back to sandbox</button></div>
+<p id="piece-picker-help">Choose a piece to return to your design and place it.</p>
+<div class="piece-picker-filters"><label>Search pieces<input id="piece-search" type="search" aria-label="Search pieces" placeholder="e.g. track, gate, lift" autocomplete="off"></label><label>Category<select id="piece-category" aria-label="Category"><option value="all">All pieces</option><option value="routes">Tracks and routing</option><option value="motion">Motion and triggers</option><option value="structure">Supports and bridges</option><option value="power">Power</option></select></label></div>
+<output id="piece-results" aria-live="polite"></output>
+<div id="piece-grid" aria-label="Available pieces"></div>
+<p id="piece-empty" hidden>No pieces match. Try another search or choose All pieces.</p>
+</dialog>
 <script type="module" src="/machine.js"></script></body></html>

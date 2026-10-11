@@ -90,6 +90,9 @@ class Puzzles(unittest.TestCase):
 
     def press(self, name):
         """A button, by what it says or by its label."""
+        # Large trays live in the library; use its ordinary scene entry point.
+        if name.startswith('Add a ') and name != 'Add a piece' and self.js("Boolean(document.querySelector('#scene-tray button[aria-label=\"Add a piece\"]')) && !document.getElementById('piece-picker').open"):
+            self.press('Add a piece')
         found = self.js(f"""(() => {{ const b = [...document.querySelectorAll('button')].find(b =>
             !b.disabled && b.offsetParent !== null && ((b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(name)}));
             if (b) b.click(); return Boolean(b); }})()""")
@@ -239,8 +242,11 @@ class Puzzles(unittest.TestCase):
         self.press('Clear the table')
         self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
         self.assertEqual(self.js("document.getElementById('title').textContent"), 'Untitled design')
-        self.assertGreaterEqual(self.js("document.querySelectorAll('#scene-tray button').length"), 11)
-        self.assertNotIn('left', self.js("document.getElementById('scene-tray').textContent"))
+        self.assertEqual(self.js("document.querySelectorAll('#scene-tray button').length"), 1)
+        self.press('Add a piece')
+        self.assertGreaterEqual(self.js("document.querySelectorAll('#piece-grid button').length"), 11)
+        self.assertNotIn('left', self.js("document.getElementById('piece-grid').textContent"))
+        self.press('Back to sandbox')
         # Its chat builds from words; there is no level to place pieces for.
         self.assertEqual(self.js("document.getElementById('send').textContent"), 'Build it')
         self.assertTrue(self.js("document.getElementById('solve').hidden"))
@@ -353,6 +359,65 @@ class Puzzles(unittest.TestCase):
         self.wait(READY, 60)
         self.assertEqual(self.js("document.querySelectorAll('#stations li').length"), 9)
 
+
+    def test_piece_library_search_filter_cancel_and_placement_on_desktop_and_phones(self):
+        for width, height in ((1280, 860), (390, 844), (844, 390)):
+            with self.subTest(viewport=(width, height)):
+                self.page.send('Emulation.setDeviceMetricsOverride', {'width': width, 'height': height, 'deviceScaleFactor': 1, 'mobile': width != 1280})
+                self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+                self.wait("Boolean(document.querySelector('#prebuilt-designs button'))", 60)
+                self.press('Start from Gate and split')
+                self.wait(READY, 60)
+                before = self.js('window.machinePlacements()')
+                self.assertEqual(self.js("document.querySelectorAll('#scene-tray button').length"), 1)
+                self.press('Add a piece')
+                self.assertTrue(self.js("document.getElementById('piece-picker').open"))
+                self.assertTrue(self.js("document.getElementById('tray').hidden"))
+                self.wait("[...document.querySelectorAll('#piece-grid img')].every(i => i.complete && i.naturalWidth >= 300)", 30)
+                bounds = self.js("""(() => {const d=document.getElementById('piece-picker').getBoundingClientRect();
+                    const c=document.getElementById('piece-picker-close').getBoundingClientRect();
+                    return {x:d.x,y:d.y,w:d.width,h:d.height,closeRight:c.right,closeBottom:c.bottom,closeHeight:c.height};})()""")
+                self.assertEqual((bounds['x'], bounds['y'], bounds['w'], bounds['h']), (0, 0, width, height))
+                self.assertGreaterEqual(bounds['closeHeight'], 44)
+                self.assertLessEqual(bounds['closeRight'], width)
+                self.assertLessEqual(bounds['closeBottom'], height)
+                cards = self.js("[...document.querySelectorAll('#piece-grid button')].map(b=>{const r=b.getBoundingClientRect();return {name:b.textContent,w:r.width,h:r.height,left:r.left,right:r.right};})")
+                self.assertTrue(all(r['w'] >= 140 and r['h'] >= 180 and r['left'] >= 0 and r['right'] <= width for r in cards), cards)
+                # Modal keyboard focus cannot escape to the live scene.
+                self.js("document.getElementById('piece-picker-close').focus()")
+                self.page.send('Input.dispatchKeyEvent', {'type': 'keyDown', 'key': 'Tab', 'code': 'Tab', 'windowsVirtualKeyCode': 9, 'modifiers': 8})
+                self.page.send('Input.dispatchKeyEvent', {'type': 'keyUp', 'key': 'Tab', 'code': 'Tab', 'windowsVirtualKeyCode': 9, 'modifiers': 8})
+                self.assertTrue(self.js("Boolean(document.activeElement.closest('#piece-picker'))"))
+                self.slide('Search pieces', 'gate')
+                self.assertEqual(self.js("[...document.querySelectorAll('#piece-grid strong')].map(e=>e.textContent)"), ['track', 'shelf'])
+                self.slide('Category', 'power')
+                self.assertFalse(self.js("document.getElementById('piece-empty').hidden"))
+                self.slide('Search pieces', '')
+                self.assertEqual(self.js("[...document.querySelectorAll('#piece-grid strong')].map(e=>e.textContent)"), ['cannon', 'steam'])
+                self.press('Back to sandbox')
+                self.assertEqual(self.js('window.machinePlacements()'), before)
+                self.assertIsNone(self.js('window.machineGhostState()'))
+                self.wait("document.activeElement.getAttribute('aria-label') === 'Add a piece'", 5)
+                self.press('Add a piece')
+                self.assertEqual(self.js("document.querySelectorAll('#piece-grid button').length"), 13)
+                self.key('Escape')
+                self.assertFalse(self.js("document.getElementById('piece-picker').open"))
+                self.assertEqual(self.js('window.machinePlacements()'), before)
+                self.press('Add a marble')
+                self.assertFalse(self.js("document.getElementById('piece-picker').open"))
+                self.assertEqual(self.ghost()['p']['piece'], 'marble')
+                self.slide('x of your marble 12', -1.8)
+                self.slide('across (z, m) of your marble 12', -1.8)
+                self.assertTrue(self.ghost()['fits'])
+                self.press('Set it down')
+                self.wait(f"window.machinePlacements().length === 12 && {READY}", 60)
+                self.assertEqual(self.js('window.machinePlacements()')[:11], before)
+                self.press('Run it')
+                self.wait("/World 2\\./.test(document.getElementById('clock').textContent)", 30)
+                self.press('Pause')
+                self.press('Set up again')
+                self.wait(READY, 60)
+                self.assertEqual(self.js('window.machinePlacements().length'), 12)
 
     def test_sandbox_library_and_controls_fit_phone_portrait_and_landscape(self):
         for width, height in ((390, 844), (844, 390)):

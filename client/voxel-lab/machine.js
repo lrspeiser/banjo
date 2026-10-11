@@ -1020,7 +1020,7 @@ function trayPicture(t) {
     eye.lookAt(mid);
     if (!pictureRenderer) {
       pictureRenderer = new THREE.WebGLRenderer({antialias: true, alpha: true, preserveDrawingBuffer: true});
-      pictureRenderer.setSize(160, 160, false);
+      pictureRenderer.setSize(320, 320, false);
     }
     pictureRenderer.render(shot, eye);
     piece.traverse(o => { if (o.geometry) o.geometry.dispose(); });
@@ -1653,7 +1653,7 @@ renderer.domElement.addEventListener('wheel', e => {
   turnGhost(e.altKey ? 'pitch_deg' : 'yaw_deg', Math.sign(e.deltaY || e.deltaX) * -15);
 }, {passive: false});
 document.addEventListener('keydown', e => {
-  if (!ghost || e.ctrlKey || e.metaKey || e.target.closest('input, textarea, select')) return;
+  if ($('piece-picker').open || !ghost || e.ctrlKey || e.metaKey || e.target.closest('input, textarea, select')) return;
   const key = e.key.toLowerCase(), step = e.shiftKey ? 1 : 15;
   const nudge = {arrowleft: 'left', arrowright: 'right', arrowup: 'forward', arrowdown: 'back', pageup: 'up', pagedown: 'down'}[key];
   if (TURN_KEYS[key]) turnGhost(TURN_KEYS[key][0], TURN_KEYS[key][1] * step);
@@ -1750,20 +1750,98 @@ function knobDefault(rule) { return rule.default ?? (rule.choices ? rule.choices
 function levelTitle(l) { return l.free ? (activeDesign?.name || 'Sandbox') : `${levels.indexOf(l) + 1}. ${l.title}`; }
 function trayItem(piece) { return level.tray.find(t => t.piece === piece); }
 
+const PIECE_INFO = {
+  marble: ['motion', 'A ball to roll, drop, or set a machine moving.'],
+  track: ['routes', 'A straight, sloping track with rails and an optional gate.'],
+  bend: ['routes', 'A curved track to carry marbles around a corner.'],
+  shelf: ['routes', 'Hold marbles behind a gate until its paddle is pressed.'],
+  flipflop: ['routes', 'A rocker that sends arriving marbles to alternating sides.'],
+  funnel: ['routes', 'Gather marbles into one outlet.'],
+  block: ['structure', 'A post, wall, step, or stop to support your build.'],
+  dominoes: ['motion', 'A row of dominoes to topple in a chain.'],
+  lever: ['motion', 'A seesaw on a pin to transfer a push.'],
+  plank: ['structure', 'A loose board to bridge a gap or join to another part.'],
+  ramp: ['routes', 'A slope with a ball to start a rolling chain reaction.'],
+  cannon: ['power', 'A powder charge that launches a ball.'],
+  steam: ['power', 'A heated boiler and piston to lift or push.'],
+  knife: ['motion', 'A swinging blade to cut a hanging rope.'],
+  mirror: ['power', 'Reflect a beam of light toward another part.'],
+  solar: ['power', 'Collect sunlight to power a machine.'],
+  tackle: ['motion', 'Pulleys and a counterweight to lift a load.']
+};
+function libraryTray() { return level.free || level.tray.filter(t => !t.attach).length > 4; }
+function piecesLeft(t) { return (t.count || 1) - placements.filter(p => p.piece === t.piece).length; }
+function addTrayPiece(t) {
+  if (ghost || piecesLeft(t) <= 0) return;
+  const p = {piece: t.piece};
+  for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
+  startGhost(p, placements.length);
+}
+function openPiecePicker() {
+  if (!level || ghost || $('piece-picker').open) return;
+  $('piece-search').value = ''; $('piece-category').value = 'all';
+  $('piece-picker-close').textContent = level.free ? 'Back to sandbox' : 'Back to puzzle';
+  renderPiecePicker();
+  document.body.classList.add('choosing-piece');
+  $('piece-picker').showModal();
+  // Do not raise the phone keyboard before a player asks to search.
+  $('piece-picker-close').focus({preventScroll: true});
+}
+function renderPiecePicker() {
+  const query = $('piece-search').value.trim().toLowerCase(), category = $('piece-category').value;
+  const items = level.tray.filter(t => !t.attach).filter(t => {
+    const [group, description] = PIECE_INFO[t.piece] || ['structure', 'Add this piece to your machine.'];
+    return (category === 'all' || category === group) && `${pieceLabel(t.piece)} ${description}`.toLowerCase().includes(query);
+  });
+  $('piece-results').textContent = `${items.length} ${items.length === 1 ? 'piece' : 'pieces'}`;
+  $('piece-empty').hidden = Boolean(items.length);
+  $('piece-grid').replaceChildren(...items.map(t => {
+    const left = piecesLeft(t);
+    const card = button('', () => {
+      if (ghost || piecesLeft(t) <= 0) return;
+      $('piece-picker').close();
+      addTrayPiece(t);
+      view.focus({preventScroll: true});
+    }, {className: 'piece-card', ariaLabel: `Add a ${pieceLabel(t.piece)}`, disabled: left <= 0});
+    const picture = Object.assign(document.createElement('span'), {className: 'piece-picture'});
+    const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
+    picture.append(img); pictureInto(img, t);
+    card.append(picture, Object.assign(document.createElement('strong'), {textContent: pieceLabel(t.piece)}),
+      Object.assign(document.createElement('span'), {className: 'piece-description', textContent: PIECE_INFO[t.piece]?.[1] || 'Add this piece to your machine.'}));
+    if (!level.free || left <= 0) card.append(Object.assign(document.createElement('span'), {className: 'piece-count', textContent: left > 0 ? `${left} left` : 'none left'}));
+    return card;
+  }));
+}
+$('piece-search').addEventListener('input', renderPiecePicker);
+$('piece-category').addEventListener('change', renderPiecePicker);
+$('piece-picker-close').addEventListener('click', () => $('piece-picker').close());
+$('piece-picker').addEventListener('close', () => {
+  document.body.classList.remove('choosing-piece');
+  const target = ghost ? view : $('scene-tray').querySelector('button');
+  target?.focus({preventScroll: true});
+});
+$('piece-picker').addEventListener('keydown', e => {
+  if (e.key !== 'Tab') return;
+  const controls = [...$('piece-picker').querySelectorAll('button:not(:disabled), input, select')];
+  const first = controls[0], last = controls.at(-1);
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
 // Pieces are added from the scene: a button each, with its picture, over the
 // 3D view, so a piece is added, placed and set down without leaving it.
 function renderSceneTray() {
   const bar = $('scene-tray');
   bar.hidden = !LEVEL_MODE || !level || Boolean(ghost);
   if (bar.hidden) return;
-  bar.classList.toggle('many', level.tray.length > 4);
+  if (libraryTray()) {
+    bar.replaceChildren(button('+ Add a piece', openPiecePicker, {ariaLabel: 'Add a piece', title: 'Open the piece library'}));
+    return;
+  }
   bar.replaceChildren(...level.tray.filter(t => !t.attach).map(t => {
     const left = (t.count || 1) - placements.filter(p => p.piece === t.piece).length;
-    const b = button(`+ ${pieceLabel(t.piece)}`, () => {
-      const p = {piece: t.piece};
-      for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
-      startGhost(p, placements.length);
-    }, {ariaLabel: `Add a ${pieceLabel(t.piece)}`, disabled: left <= 0, title: level.free ? `Add a ${pieceLabel(t.piece)}` : left > 0 ? `${left} left` : 'none left'});
+    const b = button(`+ ${pieceLabel(t.piece)}`, () => addTrayPiece(t),
+      {ariaLabel: `Add a ${pieceLabel(t.piece)}`, disabled: left <= 0, title: left > 0 ? `${left} left` : 'none left'});
     const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
     b.prepend(img); pictureInto(img, t);
     // In a free build there are as many as anyone needs: no count.
@@ -1777,6 +1855,8 @@ function renderSceneTray() {
 function renderTray() {
   renderSceneTray();
   const ul = $('tray'); ul.replaceChildren();
+  $('tray-head').hidden = ul.hidden = libraryTray();
+  if (ul.hidden) return;
   for (const t of level.tray.filter(t => !t.attach)) {
     const used = placements.filter(p => p.piece === t.piece).length + (ghost && !ghost.was && ghost.p.piece === t.piece ? 1 : 0);
     const count = t.count || 1, li = document.createElement('li');
@@ -1955,7 +2035,7 @@ function setupSnapshot() { return JSON.stringify(level?.free ? {placements, base
 $('undo-pieces').addEventListener('click', () => travel(undone, redone));
 $('redo-pieces').addEventListener('click', () => travel(redone, undone));
 document.addEventListener('keydown', e => {
-  if (!LEVEL_MODE || !(e.ctrlKey || e.metaKey) || e.target.closest('input, textarea, select')) return;
+  if ($('piece-picker').open || !LEVEL_MODE || !(e.ctrlKey || e.metaKey) || e.target.closest('input, textarea, select')) return;
   const key = e.key.toLowerCase();
   if (key === 'z' && !e.shiftKey) travel(undone, redone);
   else if (key === 'y' || (key === 'z' && e.shiftKey)) travel(redone, undone);
@@ -2009,6 +2089,7 @@ function renderDesignControls() {
   $('restore-version').disabled = !activeDesign.versions.length;
 }
 function parkDesign() {
+  if ($('piece-picker').open) $('piece-picker').close();
   keepBuild(); clearTimeout(rebuildTimer); clearTimeout(previewTimer); endGhost(); cancelAttach(); closeDone();
   previewAsk++; clearPreview(); polling++;
   if (session) api({op: 'close', session}).catch(() => {});
@@ -2308,6 +2389,7 @@ renderer.domElement.addEventListener('pointerdown', () => {
 });
 
 async function chooseLevel(id, design = null) {
+  if ($('piece-picker').open) $('piece-picker').close();
   keepBuild(); showSandboxScreen(false); showLevelsScreen(false);
   level = id === 'free' && freeLevel ? freeLevel : levels.find(l => l.id === id) || levels[0];
   activeDesign = null;
