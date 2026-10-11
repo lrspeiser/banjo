@@ -735,12 +735,15 @@ async function setPlaying(run) {
   // A level whose world the server closed while it sat idle is built again
   // and started, as Run it would: the pieces are kept here, in the page.
   if (!session) { if (LEVEL_MODE && run && level) await rebuildLevel(true); return; }
+  const mine = polling, requestedSession = session;
   let frame;
-  try { frame = await api({op: 'play', session, running: run, speed: Number($('speed').value)}); }
+  try { frame = await api({op: 'play', session: requestedSession, running: run, speed: Number($('speed').value)}); }
   catch (e) {
+    if (mine !== polling || session !== requestedSession) return;
     if (e.status === 410 && LEVEL_MODE && run && level) { session = null; await rebuildLevel(true); return; }
     throw e;
   }
+  if (mine !== polling || session !== requestedSession) return;
   playing = frame.playing; renderClock(frame);
   if (wake) wake();
 }
@@ -1457,11 +1460,11 @@ function renderGhostBar() {
   const card = $('ghost-bar');
   card.hidden = !ghost;
   ghost && (ghost.cardInput = null);
-  if (!ghost) { card.replaceChildren(); return; }
+  $('piece-edit-row').hidden = Boolean(ghost) || !placements.length;
+  if (!ghost) { $('control-panel').append($('move-pad')); card.replaceChildren(); return; }
   const throwAway = button('✕', cancelGhost, {ariaLabel: 'Throw the ghost away', title: 'Throw the ghost away'});
   const head = Object.assign(document.createElement('p'), {className: 'head',
-    textContent: looking ? `Looking around: drag to turn the view; ✋ (or Esc) to move your ${ghost.p.piece} again`
-      : `Your ${ghost.p.piece}: drag it, use the arrows, or ${matchMedia('(pointer: coarse)').matches ? 'tap' : 'click'} where it goes; 👁 (or Esc) to look around`});
+    textContent: looking ? `View mode · ${pieceLabel(ghost.p.piece)}` : `Adjust ${pieceLabel(ghost.p.piece)}`});
   // Where it stands is the arrows' and the drag's; the chips change the rest.
   const knobs = trayItem(ghost.p.piece).knobs, keys = Object.keys(knobs).filter(k => k !== 'x_m' && k !== 'z_m');
   if (!keys.includes(ghost.card)) ghost.card = keys[0];
@@ -1470,6 +1473,7 @@ function renderGhostBar() {
     const chip = button(knobName(knobs[key], key), () => selectGhostKnob(key),
                         {ariaLabel: `Change its ${knobName(knobs[key], key)}`});
     chip.setAttribute('aria-pressed', String(key === ghost.card));
+    if (key === ghost.card) chip.append(Object.assign(document.createElement('span'), {className:'knob-value'}));
     chips.append(chip);
   }
   const key = ghost.card, rule = knobs[key], name = knobName(rule, key);
@@ -1500,7 +1504,7 @@ function renderGhostBar() {
   const state = Object.assign(document.createElement('p'), {className: 'state'});
   const actions = Object.assign(document.createElement('div'), {className: 'actions'});
   actions.append(button('✓ Set down', setGhostDown, {className: 'down', disabled: !ghost.fits || ghost.busy}), throwAway);
-  card.replaceChildren(head, chips, row, state, actions);
+  card.replaceChildren(head, chips, $('move-pad'), row, state, actions);
   showGhostKnobs(); showGhostState();
 }
 
@@ -1546,6 +1550,8 @@ function showGhostState() {
 function showGhostKnobs() {
   if (!ghost) return;
   const knobs = trayItem(ghost.p.piece).knobs;
+  const value = document.querySelector('#ghost-bar .knob-value');
+  if (value) value.textContent = ` ${ghost.p[ghost.card]}${knobs[ghost.card].turning ? '°' : ''}`;
   for (const [key, [input, shown]] of Object.entries(ghost.inputs)) {
     if (String(input.value) !== String(ghost.p[key])) input.value = ghost.p[key];
     shown.textContent = String(ghost.p[key]) + (knobs[key].turning ? '°' : '');
@@ -1724,13 +1730,28 @@ const GRAB_MARGIN_PX = 40;
 function placedAt(clientX, clientY) {
   if (!LEVEL_MODE || !level || !placements.length) return -1;
   pointerRay(clientX, clientY);
+  const owner = name => {
+    const m = name?.match(/^your (\S+) (\d+)(?: |$)/), i = m ? Number(m[2]) - 1 : -1;
+    return i >= 0 && placements[i]?.piece === m[1] ? i : -1;
+  };
   const nameOf = new Map([...meshes].map(([name, m]) => [m, name]));
-  const hit = raycaster.intersectObjects([...nameOf.keys()].filter(m => m.visible), true).find(h => h.object.isMesh);
+  // A pulley device includes its drawn rope and its connected load. A load
+  // shared by several devices is ambiguous; use the piece selector instead.
+  const loadOwners = new Map();
+  for (const j of machine?.joints || []) {
+    if (j.kind !== 'pulley' || owner(j.name) < 0) continue;
+    const owners = loadOwners.get(j.b) || new Set(); owners.add(owner(j.name)); loadOwners.set(j.b, owners);
+  }
+  for (const r of ropes) if (r.line.visible && owner(r.name) >= 0) nameOf.set(r.line, r.name);
+  // Keep thin ropes easy to select without a one-metre raycaster tolerance.
+  raycaster.params.Line.threshold = Math.max(.002, distance * 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 6 / view.clientHeight);
+  const hit = raycaster.intersectObjects([...nameOf.keys()].filter(m => m.visible), true)[0];
   let o = hit && hit.object;
   while (o && !nameOf.has(o)) o = o.parent;
-  const m = o && nameOf.get(o).match(/^your (\S+) (\d+)(?: |$)/);
-  const i = m ? Number(m[2]) - 1 : -1;
-  return i >= 0 && placements[i] && placements[i].piece === m[1] ? i : -1;
+  const name = o && nameOf.get(o), i = owner(name);
+  if (i >= 0) return i;
+  const attached = loadOwners.get(name);
+  return attached?.size === 1 ? [...attached][0] : -1;
 }
 // For tests: where a body is on the page (the middle of its mesh).
 window.machineBodyScreen = name => {
@@ -2196,8 +2217,8 @@ $('piece-picker').addEventListener('keydown', e => {
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 });
 
-// Pieces are added from the scene: a button each, with its picture, over the
-// 3D view, so a piece is added, placed and set down without leaving it.
+// Pieces are added beside the scene: a button each, with its picture, in the
+// combined control panel, so adding and editing stay together.
 function renderSceneTray() {
   const bar = $('scene-tray');
   bar.hidden = !LEVEL_MODE || !level || Boolean(ghost);
@@ -2219,7 +2240,7 @@ function renderSceneTray() {
 }
 
 // The panel's tray: a picture of each piece the level gives and how many are
-// left to place (they are added with the buttons over the scene).
+// left to place (they are added with the control panel's buttons).
 function renderTray() {
   renderSceneTray();
   const ul = $('tray'); ul.replaceChildren();
@@ -2382,6 +2403,9 @@ function ghostItem() {
 }
 
 function renderPlaced() {
+  const edit = $('piece-edit');
+  edit.replaceChildren(new Option('Choose a piece', ''), ...placements.map((p, i) => new Option(`${i + 1}. ${pieceLabel(p.piece)}`, String(i))));
+  $('piece-edit-row').hidden = Boolean(ghost) || !placements.length;
   const ol = $('placed'); ol.replaceChildren();
   placements.forEach((p, i) => {
     if (ghost && ghost.was && ghost.index === i) { ol.append(ghostItem()); return; }
@@ -2472,6 +2496,9 @@ function travel(from, to) {
 function setupSnapshot() { return JSON.stringify(level?.free ? {placements, base: activeDesign?.draft.base || null} : placements); }
 $('undo-pieces').addEventListener('click', () => travel(undone, redone));
 $('redo-pieces').addEventListener('click', () => travel(redone, undone));
+$('piece-edit').addEventListener('change', () => {
+  if ($('piece-edit').value !== '') pickUp(Number($('piece-edit').value));
+});
 document.addEventListener('keydown', e => {
   if ($('guide').open || $('piece-picker').open || !LEVEL_MODE || !(e.ctrlKey || e.metaKey) || e.target.closest('input, textarea, select')) return;
   const key = e.key.toLowerCase();
@@ -3099,11 +3126,19 @@ async function startGame() {
   for (const id of ['undo-pieces', 'redo-pieces']) $(id).hidden = false;
   document.querySelector('#scene-actions .speed').hidden = true;
   // What the player works with, together at the top of the scene: the
-  // pieces to add (the arrows while one is placed), Run it and Set up again,
-  // and the prediction's key. The scene below is left to watch.
+  // Running, viewing and piece editing share the adjacent control panel.
+  // Only the prediction key overlays the scene.
   const top = Object.assign(document.createElement('div'), {className: 'scene-top'});
-  top.append($('scene-tray'), $('move-pad'), $('scene-actions'), $('machine-controls'), $('preview-legend'));
+  top.append($('preview-legend'));
   view.append(top);
+  const controls = $('control-panel');
+  controls.prepend($('scene-tray'), $('scene-actions'));
+  $('view-controls').prepend($('undo-pieces'), $('redo-pieces'));
+  controls.append($('machine-controls'));
+  for (const [id, change] of [
+    ['view-left', () => { azimuth -= .2; }], ['view-right', () => { azimuth += .2; }],
+    ['view-in', () => { distance = Math.max(.4, distance / 1.2); }], ['view-out', () => { distance = Math.min(40, distance * 1.2); }]
+  ]) $(id).addEventListener('click', change);
   $('scene-note').textContent = 'Drag to turn the view · Wheel or pinch to zoom · Click one of your pieces to pick it up';
   $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;

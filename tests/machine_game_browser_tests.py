@@ -157,6 +157,44 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_tackle_rope_and_crate_reopen_adjustments_without_running_on_desktop_and_phones(self):
+        for width, height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('tackle', width, height, phone=width != 1280)
+                self.press('Add a block and tackle'); self.ghost()
+                for label, value in [('counterweight (kg)',4.7),('pulleys',3),('hangs at x',-.5),('hung at height',1.75)]:
+                    self.slide(f'{label} of your tackle 1', value)
+                self.ghost(); self.press('Set it down'); self.wait(READY,60)
+                setup = self.js('window.machinePlacements()')
+                self.wait('window.machineCamera().settled', 30)
+                for point in ((-.5,1.88,0),(.4,.06,0)):
+                    x,y = self.screen_point(point)
+                    self.assertTrue(self.js(f"document.elementFromPoint({x},{y}).tagName==='CANVAS'"), (point,x,y))
+                    self.mouse('mousePressed',x,y); self.mouse('mouseReleased',x,y)
+                    self.wait('Boolean(window.machineGhostState())',5)
+                    self.assertEqual(self.ghost()['p'], setup[0])
+                    self.assertTrue(self.js(READY), 'selecting a device never starts the live simulation')
+                    for label in ('Run it','Set up again','Turn the view left','Zoom in','✓ Set down','Throw the ghost away'):
+                        target = self.js(f"(() => {{const b=[...document.querySelectorAll('#control-panel button')].find(b=>(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(label)}),r=b?.getBoundingClientRect();return r?{{visible:r.x>=0 && r.right<=innerWidth && r.y>=0 && r.bottom<=innerHeight,uncovered:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),h:r.height,w:r.width}}:null;}})()")
+                        self.assertIsNotNone(target,label)
+                        self.assertTrue(target['visible'] and target['uncovered'],(label,target))
+                        self.assertGreaterEqual(target['h'],44); self.assertGreaterEqual(target['w'],44)
+                    camera = self.js('window.machineCamera().azimuth')
+                    self.click_visible('Turn the view left')
+                    self.assertAlmostEqual(self.js('window.machineCamera().azimuth'), camera-.2)
+                    self.assertEqual(self.ghost()['p'],setup[0], 'view controls do not move the piece')
+                    self.click_visible('Turn the view right')
+                    self.press('Cancel'); self.wait('!window.machineGhostState()',5)
+                self.press('Run it'); self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                # The selector remains reachable even when the win card covers geometry.
+                self.slide('Adjust a piece','0'); self.ghost(); self.wait(READY,30)
+                self.assertEqual(self.ghost()['p'],setup[0])
+                self.press('Change its pulleys'); self.slide('Its pulleys',2); self.ghost()
+                self.click_visible('✓ Set down'); self.wait(READY,30)
+                self.assertEqual(self.js('window.machinePlacements()[0].ratio'),2)
+                self.assertTrue(self.js(READY))
+
     def test_solar_meters_and_explicit_winch_cable_work_on_desktop_and_phones(self):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
@@ -796,8 +834,9 @@ class Puzzles(unittest.TestCase):
                     self.assertGreaterEqual(box['h'], 44)
                     self.assertGreaterEqual(box['x'], 0)
                     self.assertLessEqual(box['right'], width)
-                    self.assertGreaterEqual(box['top'], scene['top'])
-                    self.assertLessEqual(box['bottom'], scene['bottom'])
+                    self.assertGreaterEqual(box['top'], 0)
+                    self.assertLessEqual(box['bottom'], height)
+                    self.assertTrue(self.js(f"Boolean(document.querySelector('{selector}').closest('#control-panel'))"))
                 self.press('All designs')
 
     def test_a_track_snaps_to_another_and_pieces_are_copied_undone_and_joined(self):
@@ -1064,9 +1103,9 @@ class Puzzles(unittest.TestCase):
         # The panel's tray shows each piece, with a picture, and how many are left.
         self.wait("Boolean(document.querySelector('#tray img:not([hidden])'))", 30)
         self.assertEqual(self.js("document.querySelector('#tray li').textContent"), 'plank1 of 1 left')
-        self.js("scrollTo(0, document.documentElement.scrollHeight)")
-        self.assertLess(self.js("document.getElementById('view').getBoundingClientRect().top"), -41,
-                        'at the foot of the page, the scene has scrolled up out of sight')
+        self.js("document.querySelector('aside').scrollTop = document.querySelector('aside').scrollHeight")
+        self.assertGreaterEqual(self.js("document.getElementById('view').getBoundingClientRect().top"), 0,
+                                'the scene remains visible while the phone panel scrolls')
         self.press('Add a plank')
         self.ghost()
         self.assertGreater(self.js("document.getElementById('view').getBoundingClientRect().top"), -41,

@@ -27,7 +27,14 @@
 <p id="scene-note">Drag to turn · Wheel or pinch to zoom · Every motion is calculated live</p>
 </section>
 <aside>
+<section id="control-panel" class="control-panel" aria-label="Machine and piece controls">
+<div id="view-controls" class="view-controls" aria-label="View controls">
+<button id="view-left" type="button" aria-label="Turn the view left" title="Turn the view left">◀</button><button id="view-right" type="button" aria-label="Turn the view right" title="Turn the view right">▶</button>
+<button id="view-in" type="button" aria-label="Zoom in" title="Zoom in">＋</button><button id="view-out" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+</div>
+<label id="piece-edit-row" class="piece-edit-row" hidden>Adjust a piece<select id="piece-edit" aria-label="Adjust a piece"></select></label>
 <div id="ghost-bar" class="ghost-bar" hidden aria-label="The ghost: change it, turn it and set it down"></div>
+</section>
 <h1 id="title">Chain reaction</h1>
 <section id="sandbox-controls" hidden aria-label="Save this design">
 <div class="chat-actions"><button id="designs-open" type="button">All designs</button><button id="save-design" type="button">Save version</button></div>

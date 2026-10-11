@@ -93,7 +93,7 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 #view.pickable canvas{cursor:pointer}
 #view.pulling-mode canvas{cursor:grab}
 #pull-tool[aria-pressed=true]{background:#7a5a12;border-color:#ffd34d}
-.move-pad{position:absolute;top:52px;left:10px;z-index:3;display:grid;grid-template-columns:repeat(3,42px);grid-template-rows:repeat(3,42px);gap:4px;pointer-events:none}
+.move-pad{position:absolute;top:52px;left:10px;z-index:3;display:grid;grid-template-columns:repeat(3,44px);grid-template-rows:repeat(3,44px);gap:3px;pointer-events:none}
 .move-pad[hidden]{display:none}
 .move-pad button{pointer-events:auto;padding:0;font:700 20px system-ui;color:#fff;background:#142836d9;border:2px solid #9fb6c4;border-radius:9px;cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 2px 8px #0006}
 .move-pad button:active{background:#2f6f94}
@@ -298,3 +298,51 @@ body.playing-level .level-done{top:52px;transform:translateX(-50%);max-height:ca
 .piece-example-card {display:flex;flex-direction:column;gap:.4rem;min-width:0;}
 .piece-example-card .piece-card {flex:1;width:100%;}
 .piece-example-card > button {min-height:44px;}
+
+/* One module beside the scene contains running, viewing and piece editing. */
+.control-panel{position:sticky;top:0;z-index:6;padding:10px;margin-bottom:14px;background:#142836;border:1px solid #4e7287;border-radius:10px;display:grid;gap:8px;box-shadow:0 4px 14px #0006}
+.control-panel>.scene-actions{position:static;padding:0;border:0;background:none;gap:4px}
+.control-panel>.scene-tray{position:static;max-width:100%;flex-wrap:wrap}
+.control-panel .scene-actions button{padding:6px 9px;min-width:44px}
+.control-panel #start{min-width:72px}
+.view-controls{display:flex;gap:4px;flex-wrap:wrap}
+.view-controls button{min-width:44px;min-height:44px;padding:4px 8px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer;font:20px system-ui}
+.view-controls button:disabled{opacity:.45;cursor:default}
+.piece-edit-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:center;font-size:13px}
+.piece-edit-row select{width:100%;min-height:44px;background:#10202a;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;font:14px system-ui}
+.control-panel .ghost-bar{position:static;padding:0;margin:0;border:0;background:none;box-shadow:none;grid-template-columns:138px minmax(0,1fr);gap:6px}
+.control-panel .ghost-bar>.head,.control-panel .ghost-bar>.chips,.control-panel .ghost-bar>.actions{grid-column:1/-1}
+.control-panel .ghost-bar>.actions{grid-row:5}
+.control-panel .ghost-bar>.head{margin:0;font-size:14px;font-weight:600}
+.control-panel .ghost-bar>.move-pad{position:static;grid-column:1;grid-row:3/span 2;align-self:start}
+.control-panel .ghost-bar>.knob-row{grid-column:2;grid-row:3;grid-template-columns:44px minmax(0,1fr) 44px;gap:4px}
+.control-panel .ghost-bar .knob-row button{min-height:44px}
+.control-panel .ghost-bar .knob-row output{grid-column:1/-1;text-align:center;line-height:18px}
+.control-panel .ghost-bar .knob-row select{background:#10202a;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;width:100%}
+.control-panel .ghost-bar>.state{grid-column:2;grid-row:4;font-size:12px;line-height:1.35}
+.control-panel .ghost-bar .chips button{min-height:44px;font-size:13px}
+.control-panel .knob-value{display:none}
+.control-panel .ghost-bar .actions button{min-width:44px}
+.control-panel .machine-controls{position:static;max-width:100%;margin:0}
+.control-panel :focus-visible{outline:3px solid #9fdcff;outline-offset:1px}
+@media(max-width:820px) and (min-height:501px){
+  main{height:calc(100dvh - 53px);grid-template-rows:42dvh minmax(0,1fr)}
+  #view{height:auto;min-height:240px}
+  aside{padding:8px 10px;min-height:0}
+  .control-panel{padding:8px;gap:6px;margin-bottom:12px}
+}
+@media(max-height:500px) and (min-width:600px){
+  main{grid-template-columns:minmax(0,1fr) 360px}
+  aside{padding:6px 8px}
+  .control-panel{padding:6px;gap:4px}
+  .control-panel .ghost-bar{gap:4px}
+  .control-panel .ghost-bar>.head{font-size:12px}
+  .control-panel .ghost-bar .chips button{padding:4px 8px}
+  .control-panel .ghost-bar>.head{display:none}
+  .control-panel .ghost-bar>.move-pad{grid-column:1/-1;grid-row:3;grid-template-columns:repeat(7,44px);grid-template-rows:44px;gap:3px}
+  .control-panel .move-pad button{grid-area:auto}
+  .control-panel .ghost-bar>.knob-row{grid-column:1;grid-row:4}
+  .control-panel .ghost-bar .knob-row output{display:none}
+  .control-panel .knob-value{display:inline}
+  .control-panel .ghost-bar>.state{grid-column:2;grid-row:4}
+}
