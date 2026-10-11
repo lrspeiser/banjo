@@ -279,6 +279,8 @@ FREE_HELP = {
              'whose far end is joined to it',
     'bend': 'a curved chute: its top end at (x_m, top_height_m, z_m), starting the way yaw_deg turns it, turning '
             'turn_deg (90 turns it from +x toward -z; -90 the other way) round radius_m and dropping drop_m',
+    'funnel': 'a square funnel that gathers what lands on it out of the hole in its middle: its mouth at '
+              '(x_m, height_m, z_m). Ports "mouth" (join a far end to it) and "hole" (join the top end of a track to it)',
     'flipflop': 'a rocker that sends marbles dropped on its middle one way, then the other: its ports "left end" '
                 'and "right end" are where marbles leave. Iron marbles only; marbles arriving together go the same '
                 'way',

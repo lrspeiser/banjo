@@ -2072,6 +2072,43 @@
     }
    },
    {
+    "piece": "funnel",
+    "count": 20,
+    "cost": 0,
+    "turning": false,
+    "knobs": {
+     "x_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "x"
+     },
+     "z_m": {
+      "min": -2.0,
+      "max": 2.0,
+      "default": 0.0,
+      "step": 0.01,
+      "label": "across (z, m)",
+      "free": true
+     },
+     "height_m": {
+      "min": 0.2,
+      "max": 2.0,
+      "default": 0.5,
+      "step": 0.01,
+      "label": "mouth height"
+     },
+     "size_m": {
+      "min": 0.2,
+      "max": 1.0,
+      "default": 0.4,
+      "step": 0.02,
+      "label": "mouth across"
+     }
+    }
+   },
+   {
     "piece": "block",
     "count": 40,
     "cost": 0,

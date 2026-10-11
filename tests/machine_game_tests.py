@@ -660,6 +660,42 @@ class Engine(unittest.TestCase):
         self.assertGreaterEqual(len(set(ends.values())), 2, 'they went more than one way')
 
     @need_engine
+    def test_a_funnel_gathers_what_lands_anywhere_on_it_into_its_hole(self):
+        # Marbles dropped on its corners, its edges and near its middle all go
+        # down through its hole, near its middle; and a funnel moved near a
+        # track's far end goes under it.
+        free = mg.level_by_id('free')
+        funnel = {'piece': 'funnel', 'x_m': 0.0, 'z_m': 0.0, 'height_m': 0.5, 'size_m': 0.4}
+        base = mg.compose(free, [funnel])[0]
+        hole = 0.5 - 0.12
+        for x, z in ((0.15, 0.15), (-0.15, -0.15), (0.17, 0.0), (0.0, -0.17), (-0.08, 0.02)):
+            spec = copy.deepcopy(base)
+            spec['parts'].append({'name': 'm', 'shape': 'sphere', 'material': 'iron', 'size_m': [0.04] * 3, 'at_m': [x, 0.75, z]})
+            with tempfile.TemporaryDirectory() as logs:
+                s = mw.MachineSession(mw.compile_spec(spec), ENGINE, Path(logs), paced=False)
+                try:
+                    s.play(True)
+                    began, last, crossed = time.perf_counter(), None, None
+                    while time.perf_counter() - began < 60 and crossed is None:
+                        with s.lock:
+                            if s.t >= 2.0 or s.error:
+                                break
+                            at = list(s.bodies['m']['position_m'])
+                            if last is not None and last[1] >= hole > at[1]:
+                                crossed = at
+                            last = at
+                            s.lock.wait(0.005)
+                finally:
+                    s.close()
+            with self.subTest(dropped_at=(x, z)):
+                self.assertIsNotNone(crossed, 'it went down past the hole')
+                self.assertLess(math.hypot(crossed[0], crossed[2]), 0.03, f'through the hole: {crossed}')
+        track = {'piece': 'track', 'x_m': -0.6, 'z_m': 0.0, 'top_height_m': 0.9, 'run_m': 0.6, 'drop_m': 0.1, 'end': 'open'}
+        g = mg.ghost(free, [track, dict(funnel, x_m=0.05, z_m=0.03)], 1, snapping=True)
+        self.assertEqual(g['snap']['port'], 'far end')
+        self.assertEqual(g['snap']['knobs'], {'x_m': 0.06, 'z_m': 0.0, 'height_m': 0.72})
+
+    @need_engine
     def test_a_marble_goes_round_a_bend(self):
         # Down a track, round a bend 90 degrees either way and onto the track
         # snapped to its far end, to that track's stop.

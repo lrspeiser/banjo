@@ -568,6 +568,40 @@ def _kit_bend(k, problems, name):
     return parts, []
 
 
+def _kit_funnel(k, problems, name):
+    """A square funnel: four boards sloping in from the sides of its mouth,
+    size_m across at height top_m above at_m's ground point... its hole,
+    hole_m across, depth_m lower. Each board is a full-width plank, so
+    neighbours cross at the corners and leave no gap there; the hole in the
+    middle stays open. What lands on it rolls in and drops out of the hole.
+    Its middle is at at_m [x, height of the mouth, z]."""
+    at = _vec(k.get('at_m'), 3, name + ' at_m', problems)
+    size = _num(k, 'size_m', name, problems, 0.4, 0.15, 2.0)
+    hole = _num(k, 'hole_m', name, problems, 0.06, 0.05, 0.3)
+    depth = _num(k, 'depth_m', name, problems, 0.12, 0.03, 1.0)
+    thick = 0.02
+    if hole >= size - 0.04:
+        problems.append(name + ': the hole is narrower than the mouth')
+    run = 0.5 * (size - hole)
+    slope = math.degrees(math.atan2(depth, run))
+    length = math.hypot(run, depth)
+    parts = []
+    for i, (way, tag) in enumerate(((0.0, 'east'), (90.0, 'north'), (180.0, 'west'), (270.0, 'south'))):
+        # The board on this side runs from the mouth's edge in and down to the
+        # hole's edge: its outward direction is `way` (0 is +x, 90 is -z).
+        h = math.radians(way)
+        out = [math.cos(h), 0.0, -math.sin(h)]
+        # Turned to face inward (+x of the board pointing in), tipped down.
+        m = heading(way + 180.0, -slope, 0.0)
+        normal = _mat_apply(m, [0.0, 1.0, 0.0])
+        mid = [at[0] + out[0] * 0.5 * (0.5 * size + 0.5 * hole), at[1] - 0.5 * depth,
+               at[2] + out[2] * 0.5 * (0.5 * size + 0.5 * hole)]
+        parts.append({'name': f'{name} {tag} side', 'shape': 'box', 'material': k.get('material', 'oak'),
+                      'size_m': [length, thick, size], 'turn_deg': turn_of(m), 'fixed': True,
+                      'at_m': [mid[j] - normal[j] * 0.5 * thick for j in range(3)]})
+    return parts, []
+
+
 def _kit_flip_flop(k, problems, name):
     """A rocker that sends what drops on its middle one way, then the other:
     a trough (a base with a lip along each side) on a pin across its middle,
@@ -1207,7 +1241,7 @@ KITS = {'ramp': _kit_ramp, 'domino_row': _kit_domino_row, 'lever': _kit_lever,
         'hanging_weight': _kit_hanging_weight, 'plate_on_supports': _kit_plate,
         'pendulum': _kit_pendulum, 'block_tower': _kit_block_tower, 'water_wheel': _kit_water_wheel,
         'steam_engine': _kit_steam_engine, 'cannon': _kit_cannon, 'knife_pendulum': _kit_knife_pendulum,
-        'flip_flop': _kit_flip_flop, 'bend': _kit_bend}
+        'flip_flop': _kit_flip_flop, 'bend': _kit_bend, 'funnel': _kit_funnel}
 
 KIT_HELP = {
     'ramp': 'anchored plank from top_m down to bottom_m (centre of its upper surface at each end, metres), '
@@ -1222,6 +1256,9 @@ KIT_HELP = {
             '0.04 m from the foot and 0.06-0.10 m out past the outer face of the rail -- press that paddle down '
             '(drop something on it, a lever, a pull) and the flap lifts out of the way; it falls shut again unless '
             'stays_open',
+    'funnel': 'a square funnel gathering what lands on it: at_m [x, height of its mouth, z] (its middle), size_m '
+              '(the mouth, 0.4), hole_m (0.06; a 4 cm marble drops through), depth_m (0.12, how much lower the hole '
+              'is). Four boards "<name> east side" etc. slope in to the hole',
     'bend': 'a curved track: start_m [x, y, z] (the middle of its surface where it starts), heading_deg (the way it '
             'starts: 0 is +x, 90 is -z), turn_deg (90 turns it from +x toward -z; negative the other way), radius_m, '
             'drop_m (how much lower it ends), width_m. Straight sections "<name> 1", "<name> 2"... with rails, one for '

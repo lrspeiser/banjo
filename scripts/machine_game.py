@@ -326,6 +326,13 @@ def _bend(name, k, ctx=None):
                       'drop_m': k['drop_m']}]}
 
 
+def _funnel(name, k, ctx=None):
+    """A funnel, its mouth's middle at (x_m, height_m, z_m): what lands on
+    it rolls in and drops out of the hole in its middle."""
+    return {'kits': [{'kit': 'funnel', 'name': name, 'at_m': [k['x_m'], k['height_m'], k.get('z_m', 0.0)],
+                      'size_m': k['size_m'], 'depth_m': k.get('depth_m', 0.12)}]}
+
+
 def _flipflop(name, k, ctx=None):
     """A flip-flop on its pin at (x_m, height_m, z_m): marbles dropped on its
     middle go one way, then the other. It starts tipped left (its -x end
@@ -392,7 +399,7 @@ def _link(name, k, ctx=None):
 PIECES = {'plank': _plank, 'knife': _knife, 'cannon': _cannon, 'steam': _steam, 'ramp': _ramp, 'mirror': _mirror,
           'solar': _solar, 'tackle': _tackle, 'lens': _lens, 'marble': _marble, 'track': _track, 'shelf': _track,
           'flipflop': _flipflop, 'block': _block, 'dominoes': _dominoes, 'lever': _lever, 'link': _link,
-          'bend': _bend}
+          'bend': _bend, 'funnel': _funnel}
 
 
 class LevelRefused(ValueError):
@@ -788,6 +795,11 @@ def ports(checked, compiled):
             h = math.radians(way)
             add('top end', 'in', top, fwd)
             add('far end', 'out', end, [math.cos(h), 0.0, -math.sin(h)])
+        elif p['piece'] == 'funnel':
+            # In at its mouth, from above; out of its hole, falling straight down.
+            depth = p.get('depth_m', 0.12)
+            add('mouth', 'in', [p['x_m'], p['height_m'] + 0.06, p.get('z_m', 0.0)], fwd)
+            add('hole', 'out', [p['x_m'], p['height_m'] - depth - 0.02, p.get('z_m', 0.0)], [0.0, 0.0, 0.0])
         elif p['piece'] == 'flipflop':
             pin = [p['x_m'], p['height_m'], p.get('z_m', 0.0)]
             # Its board is behind it (-z before it is turned): marbles come in
@@ -814,7 +826,7 @@ def _connect(p, m, q):
     another piece -- moved by the gap between m and where m should be,
     across by x_m and z_m and up by its height -- or None when the two do not
     connect."""
-    rise_knob = 'height_m' if p['piece'] == 'flipflop' else 'top_height_m'
+    rise_knob = 'height_m' if p['piece'] in ('flipflop', 'funnel') else 'top_height_m'
 
     def moved_by(target):
         return {'x_m': p['x_m'] + target[0] - m['at'][0], 'z_m': p.get('z_m', 0.0) + target[2] - m['at'][2],
@@ -830,6 +842,9 @@ def _connect(p, m, q):
             # Short of the paddle: what rolls off flies on a little as it falls.
             return moved_by([q['at'][0] - 0.05 * way[0], q['at'][1] + 0.065, q['at'][2] - 0.05 * way[2]])
         return moved_by([q['at'][0] - LEAD_M * way[0], q['at'][1], q['at'][2] - LEAD_M * way[2]])
+    if p['piece'] == 'funnel' and m['port'] == 'mouth' and q['kind'] == 'out':
+        # Under what comes out there, a little past it, its mouth 8 cm lower.
+        return moved_by([q['at'][0] + 0.06 * q['dir'][0], q['at'][1] - 0.02, q['at'][2] + 0.06 * q['dir'][2]])
     if p['piece'] == 'flipflop' and m['port'] == 'middle' and q['kind'] == 'out':
         way = q['dir']
         pin = [q['at'][0] + LEAD_M * way[0], q['at'][1] - FLIP_DROP_M, q['at'][2] + LEAD_M * way[2]]
