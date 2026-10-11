@@ -2074,7 +2074,7 @@ function toolsOf(player) {
   }
   return player.tools;
 }
-function toolName(piece) { return TOOL_NAMES[piece] || piece; }
+function toolName(piece) { return TOOL_NAMES[piece] || pieceLabel(piece); }
 
 function keepResult(id, r) {
   const tools = toolsOf(me()), unlocked = [];
