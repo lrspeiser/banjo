@@ -184,6 +184,8 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 .preview-legend .head{font-weight:600;margin-bottom:2px}
 .preview-legend .chips{display:flex;flex-wrap:wrap;gap:4px 10px}
 .preview-legend .more{opacity:.75}
+/* On a phone the key keeps out of the way of the scene: what moves, and the first thing hit. */
+@media (max-width:600px){.preview-legend .chips .chip:nth-child(n+3),.preview-legend .more{display:none}}
 .preview-legend .chip::before{content:"";display:inline-block;width:10px;height:10px;margin-right:4px;border-radius:50%;background:var(--c);vertical-align:-1px}
 #path-toggle[aria-pressed="false"]{opacity:.6}
 /* The levels screen: every level and how far this player has got. */
