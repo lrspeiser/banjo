@@ -105,11 +105,13 @@ class Puzzles(unittest.TestCase):
 
     def key(self, key):
         self.js('document.activeElement && document.activeElement.blur()')
-        code = ord(key.upper())
+        named = {'Escape': 27, 'Enter': 13}
+        code = named.get(key) or ord(key.upper())
         for kind in ('keyDown', 'keyUp'):
-            self.page.send('Input.dispatchKeyEvent', {'type': kind, 'key': key, 'code': 'Key' + key.upper(),
+            self.page.send('Input.dispatchKeyEvent', {'type': kind, 'key': key,
+                                                      'code': key if key in named else 'Key' + key.upper(),
                                                       'windowsVirtualKeyCode': code,
-                                                      **({'text': key} if kind == 'keyDown' else {})})
+                                                      **({'text': key} if kind == 'keyDown' and key not in named else {})})
 
     # ---- the tests ---------------------------------------------------------------------
     def test_a_ghost_is_placed_at_once_follows_on_request_changed_turned_set_down_and_run(self):
@@ -161,8 +163,10 @@ class Puzzles(unittest.TestCase):
         # The goal says so, over the scene, and leads on to the next level.
         self.wait("!document.getElementById('level-done').hidden", 10)
         done = self.js("document.getElementById('level-done').textContent")
-        self.assertIn('Level complete!', done)
+        self.assertIn('Achievement Unlocked', done)
+        self.assertIn('Your first win with a plank!', done)
         self.assertIn('Energy used: 30.6 MJ', done)
+        self.assertIn('Your plank 1: 2.94 kg, 30.6 MJ', done)
         self.press('Next level')
         self.wait("/^2\\. /.test(document.getElementById('title').textContent)", 30)
 
@@ -234,6 +238,60 @@ class Puzzles(unittest.TestCase):
         self.wait(READY, 60)
         self.assertEqual(self.js("document.querySelectorAll('#placed li').length"), 0)
         self.assertFalse(self.js("document.getElementById('scene-tray').hidden"))
+
+    def test_energy_against_par_is_said_while_a_piece_is_changed_and_on_a_win_over_par(self):
+        # Level 1: a 0.78 m plank still bridges the gap, and takes 34.1 MJ to
+        # make, 3.5 MJ over par. The ghost's bar says so as it is cut; the win
+        # card says what each piece took and how much lighter reaches par.
+        self.open('gap')
+        self.press('Add a plank')
+        self.ghost()
+        self.slide('Cut to length of your plank 1', 0.78)
+        self.slide('Set down at x of your plank 1', 0.3)
+        self.slide('across (z, m) of your plank 1', 0.0)
+        self.ghost()
+        self.wait("/over par \\(30.6 MJ\\)/.test(document.querySelector('#ghost-bar .state').textContent)", 10)
+        self.assertIn('34.1 MJ to make', self.js("document.querySelector('#ghost-bar .state').textContent"))
+        self.press('Set it down')
+        self.wait('!window.machineGhostState()', 5)
+        self.wait(READY, 60)
+        self.press('Run it')
+        self.wait("!document.getElementById('level-done').hidden", 60)
+        done = self.js("document.getElementById('level-done').textContent")
+        self.assertIn('Your plank 1: 3.28 kg, 34.1 MJ', done)
+        self.assertIn('your plank 1 about 11% lighter', done)
+
+    def test_the_eye_looks_around_without_moving_the_piece_and_esc_goes_back_to_the_hand(self):
+        # Level 2's knife fills much of the view: in the hand, a drag across it
+        # moves it; with the eye, the same drag turns the view and leaves it.
+        self.open('cut')
+        self.press('Add a knife')
+        p0 = self.ghost()['p']
+        time.sleep(0.4)
+        box = self.js('window.machineGhostScreen()')
+        x, y = (box['x0'] + box['x1']) / 2, (box['y0'] + box['y1']) / 2
+
+        def drag():
+            self.mouse('mousePressed', x, y)
+            for k in range(1, 9):
+                self.page.send('Input.dispatchMouseEvent', {'type': 'mouseMoved', 'x': x + 12 * k, 'y': y,
+                                                            'button': 'left', 'buttons': 1})
+                time.sleep(0.03)
+            self.mouse('mouseReleased', x + 96, y)
+        self.press('Moving the piece: press to look around')
+        self.assertIn('looking', self.js("document.getElementById('view').className"))
+        turned = self.js('window.machineCamera().azimuth')
+        drag()
+        time.sleep(0.3)
+        self.assertEqual(self.ghost()['p'], p0, 'looking around leaves the knife where it was')
+        self.assertNotEqual(self.js('window.machineCamera().azimuth'), turned, 'and turns the view')
+        self.key('Escape')
+        self.assertNotIn('looking', self.js("document.getElementById('view').className"), 'Esc: back to the hand')
+        self.assertTrue(self.js('Boolean(window.machineGhostState())'), 'the knife is still there to place')
+        box = self.js('window.machineGhostScreen()')
+        x, y = (box['x0'] + box['x1']) / 2, (box['y0'] + box['y1']) / 2
+        drag()
+        self.assertNotEqual(self.ghost()['p']['x_m'], p0['x_m'], 'in the hand, the drag moves it')
 
     def test_a_ghost_inside_a_wall_is_red_says_why_and_cannot_be_set_down(self):
         self.open('laser')
@@ -355,8 +413,13 @@ class Puzzles(unittest.TestCase):
         self.open('gap')
         self.press('Add a plank')
         self.ghost()
-        self.assertTrue(self.js("document.getElementById('move-pad').querySelectorAll('button').length === 4"),
+        self.assertTrue(self.js("document.getElementById('move-pad').querySelectorAll('button[data-dir]').length === 4"),
                         'a plank rests on what is under it: no up or down')
+        # Long enough to rest across the gap, so it is still there to click.
+        self.slide('Cut to length of your plank 1', 0.7)
+        self.slide('Set down at x of your plank 1', 0.3)
+        self.slide('across (z, m) of your plank 1', 0.0)
+        self.ghost()
         self.press('Set it down')
         self.wait('!window.machineGhostState()', 5)
         self.wait(READY, 60)

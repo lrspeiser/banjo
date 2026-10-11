@@ -830,6 +830,17 @@ const MOVE_STEP_M = 0.02;
 const PAD = [['forward', '↑', 'Move it away from you'], ['left', '←', 'Move it left'], ['right', '→', 'Move it right'],
              ['back', '↓', 'Move it toward you'], ['up', '▲', 'Raise it'], ['down', '▼', 'Lower it']];
 let padAxes = '';
+// Looking around while a piece is placed: every drag and tap turns the view
+// and none moves the piece (the arrows still do). The switch in the middle
+// of the arrows, or Esc, goes back and forth; a new piece starts in the hand.
+let looking = false;
+function setLooking(on) {
+  looking = Boolean(on && ghost);
+  draggingGhost = null;
+  view.classList.toggle('looking', looking);
+  view.classList.remove('grab');
+  if (ghost) renderGhostBar();
+}
 function renderMovePad() {
   const pad = $('move-pad');
   pad.hidden = !LEVEL_MODE || !ghost;
@@ -840,7 +851,9 @@ function renderMovePad() {
     const b = holdButton(glyph, () => moveGhostBy(dir, MOVE_STEP_M), {ariaLabel: say, title: say});
     b.dataset.dir = dir;
     return b;
-  }));
+  }), button(looking ? '👁' : '✋', () => setLooking(!looking), {
+    className: 'mode', ariaLabel: looking ? 'Looking around: press to move the piece' : 'Moving the piece: press to look around',
+    title: looking ? 'Looking around (Esc): press to move the piece again' : 'Moving the piece (Esc): press to look around'}));
   syncMovePad();
 }
 function syncMovePad() {
@@ -852,7 +865,7 @@ function syncMovePad() {
   // A piece kept in line (level 8's counterweight, under its beam) has no z:
   // an arrow that would move it that way is greyed out.
   const knobs = trayItem(ghost.p.piece).knobs;
-  for (const b of pad.querySelectorAll('button')) {
+  for (const b of pad.querySelectorAll('button[data-dir]')) {
     const dir = b.dataset.dir;
     b.dataset.axis = dir === 'up' || dir === 'down' ? 'y' : viewAxis(dir)[0] === 'x_m' ? 'x' : 'z';
     if (b.dataset.axis !== 'y') b.disabled = !knobs[viewAxis(dir)[0]];
@@ -982,7 +995,8 @@ function startGhost(p, index) {
   endGhost();
   ghost = {p, index, was: index < placements.length ? placements[index] : null, follow: false, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {}};
-  view.classList.add('placing'); view.classList.remove('pickable');
+  view.classList.add('placing'); view.classList.remove('pickable', 'looking');
+  looking = false;
   renderTray(); renderPlaced(); renderGhostBar();
   // Where the ghost is: in sight (a phone's page has scrolled down to the tray).
   sceneIntoView();
@@ -1006,7 +1020,8 @@ function pickUp(i) {
 function endGhost() {
   ghost = null; draggingGhost = null;
   clearGhostMeshes(); ghostGroup.position.set(0, 0, 0);
-  view.classList.remove('placing');
+  view.classList.remove('placing', 'looking');
+  looking = false;
   renderGhostBar();
 }
 
@@ -1036,7 +1051,8 @@ function renderGhostBar() {
   if (!ghost) { card.replaceChildren(); return; }
   const throwAway = button('✕', cancelGhost, {ariaLabel: 'Throw the ghost away', title: 'Throw the ghost away'});
   const head = Object.assign(document.createElement('p'), {className: 'head',
-    textContent: `Your ${ghost.p.piece}: drag it, use the arrows, or ${matchMedia('(pointer: coarse)').matches ? 'tap' : 'click'} where it goes`});
+    textContent: looking ? `Looking around: drag to turn the view; ✋ (or Esc) to move your ${ghost.p.piece} again`
+      : `Your ${ghost.p.piece}: drag it, use the arrows, or ${matchMedia('(pointer: coarse)').matches ? 'tap' : 'click'} where it goes; 👁 (or Esc) to look around`});
   // Where it stands is the arrows' and the drag's; the chips change the rest.
   const knobs = trayItem(ghost.p.piece).knobs, keys = Object.keys(knobs).filter(k => k !== 'x_m' && k !== 'z_m');
   if (!keys.includes(ghost.card)) ghost.card = keys[0];
@@ -1077,6 +1093,20 @@ function renderGhostBar() {
   showGhostKnobs(); showGhostState();
 }
 
+// What the pieces take to make with the ghost as it is, against the level's
+// par: said while it is changed, so cutting a plank shorter shows the
+// number fall. (Par is for the whole win, the run's energy too; on most
+// levels that is next to nothing.)
+function madeAgainstPar() {
+  const mine = `your ${ghost.p.piece} ${ghost.index + 1}`;
+  const others = Object.entries(placedEnergy).filter(([name]) => name !== mine).reduce((a, [, e]) => a + (e.j || 0), 0);
+  const it = ghost.energy.j, all = others + it, par = level && level.par_energy_j;
+  let said = `It takes ${energyText(it)} to make`;
+  if (others) said += `; with your other pieces, ${energyText(all)}`;
+  if (!par) return said + '.';
+  return said + (all <= par ? `: under par (${energyText(par)}).` : `: ${energyText(all - par)} over par (${energyText(par)}).`);
+}
+
 function showGhostState() {
   const bar = document.querySelector('#ghost-bar .down');
   if (bar && ghost) bar.disabled = !ghost.fits || ghost.busy || !ghost.answered;
@@ -1085,7 +1115,7 @@ function showGhostState() {
     said.className = 'state ' + (ghost.fits ? 'fits' : 'refused');
     said.textContent = (ghost.follow ? 'It follows the pointer: click where it should go. ' : '') + (ghost.fits ? (ghost.sun && ghost.sun.length
       ? `Faces ${ghost.sun[0].off_sun_deg}° off the sun: about ${Math.round(ghost.sun[0].sunlight_w)} W.` : 'It fits here.')
-      : ghost.problems.join('; ')) + (ghost.fits && ghost.energy ? ` It takes ${energyText(ghost.energy.j)} to make.` : '');
+      : ghost.problems.join('; ')) + (ghost.fits && ghost.energy ? ' ' + madeAgainstPar() : '');
   }
   const state = $('ghost-state'), down = $('ghost-down');
   if (!ghost || !state) return;
@@ -1299,7 +1329,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
   pressedAt = [e.clientX, e.clientY];
   draggingGhost = null;
   // A second finger: the view, not the piece.
-  if (!ghost || ghost.follow || pointers.size > 1) return;
+  if (!ghost || ghost.follow || pointers.size > 1 || looking) return;
   if (e.pointerType === 'touch' || nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX)) {
     const box = ghostScreenBox(), y = box ? box.bottom : 0, from = slidePoint(e.clientX, e.clientY, y);
     if (from) draggingGhost = {y, from, x: ghost.p.x_m ?? 0, z: ghost.p.z_m ?? 0};
@@ -1320,11 +1350,11 @@ renderer.domElement.addEventListener('pointermove', e => {
                    setKnob(ghost.p, 'z_m', draggingGhost.z + at.z - draggingGhost.from.z)].some(Boolean);
     if (moved) { followGhost(); showGhostKnobs(); askGhost(); }
   } else if (ghost.follow && !e.buttons) moveGhostTo(e.clientX, e.clientY);
-  else if (!e.buttons) view.classList.toggle('grab', !ghost.follow && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
+  else if (!e.buttons) view.classList.toggle('grab', !ghost.follow && !looking && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
 });
 renderer.domElement.addEventListener('pointerup', e => {
   const click = pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6;
-  if (ghost && click && (ghost.follow || !nearGhost(e.clientX, e.clientY, 0))) {
+  if (ghost && click && !looking && (ghost.follow || !nearGhost(e.clientX, e.clientY, 0))) {
     moveGhostTo(e.clientX, e.clientY);
     if (ghost.follow) { ghost.follow = false; renderPlaced(); renderGhostBar(); showGhostState(); }
   } else if (!ghost && click) {
@@ -1387,7 +1417,7 @@ document.addEventListener('keydown', e => {
   if (TURN_KEYS[key]) turnGhost(TURN_KEYS[key][0], TURN_KEYS[key][1] * step);
   else if (nudge) moveGhostBy(nudge, e.shiftKey ? 0.1 : 0.01);
   else if (key === 'enter' && !e.target.closest('button')) setGhostDown();
-  else if (key === 'escape') cancelGhost();
+  else if (key === 'escape') setLooking(!looking);
   else return;
   e.preventDefault();
 });
@@ -1420,7 +1450,27 @@ function me() { return save.players[save.current] || (save.players[save.current]
 function record(id) { return me().levels[id] || {}; }
 function bestStars(id) { return record(id).stars || 0; }
 // A run's result, kept where it is better: more stars, or a win on less energy.
+// The tools a player has won with -- a plank, a cannon, a steam engine --
+// each first win with one an achievement. A player whose wins were kept
+// before tools were counted has the tools of the levels they won.
+const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
+                    mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens'};
+function toolsOf(player) {
+  if (!player.tools) {
+    player.tools = {};
+    for (const [id, row] of Object.entries(player.levels || {})) {
+      const won = levels.find(l => l.id === id);
+      if (won && (row.won_at || row.stars)) for (const t of won.tray) player.tools[t.piece] ??= id;
+    }
+  }
+  return player.tools;
+}
+function toolName(piece) { return TOOL_NAMES[piece] || piece; }
+
 function keepResult(id, r) {
+  const tools = toolsOf(me()), unlocked = [];
+  if (r.earned.goal) for (const piece of new Set(placements.map(p => p.piece)))
+    if (!tools[piece]) { tools[piece] = id; unlocked.push(piece); }
   const row = me().levels[id] || (me().levels[id] = {}), was = {...row};
   const lessEnergy = r.earned.goal && r.energy_j != null && (row.energy_j == null || r.energy_j < row.energy_j);
   if (r.stars > (row.stars || 0)) row.stars = r.stars;
@@ -1428,7 +1478,7 @@ function keepResult(id, r) {
   if (r.earned.goal && !row.won_at) row.won_at = new Date().toISOString();
   me().last = id;
   persist();
-  return {was, better: lessEnergy || r.stars > (was.stars || 0)};
+  return {was, better: lessEnergy || r.stars > (was.stars || 0), unlocked};
 }
 window.machineSave = () => JSON.parse(JSON.stringify(save));
 
@@ -1565,7 +1615,7 @@ function ghostItem() {
       for (const [key, rule] of Object.entries(t.knobs)) if (rule.turning) setKnob(p, key, 0);
       showGhostKnobs(); askGhost();
     }), Object.assign(document.createElement('p'), {className: 'legend',
-      textContent: 'Keys: Q/E turn · R/F tip · Z/C roll (with Shift, 1°) · arrows move it as you see it, Page Up/Down raise and lower it · Enter sets it down · Esc cancels. ' +
+      textContent: 'Keys: Q/E turn · R/F tip · Z/C roll (with Shift, 1°) · arrows move it as you see it, Page Up/Down raise and lower it · Enter sets it down · Esc switches between moving it and looking around. ' +
                    'Shift+wheel turns it, Alt+wheel tips it. Drag the pinned ghost to move it; click anywhere to put it there.'}));
     li.append(turning);
   }
@@ -1671,14 +1721,20 @@ function closeDone() {
   clearInterval(advanceTimer); advanceTimer = null;
   $('level-done').hidden = true; $('level-done').replaceChildren();
 }
-function showDone(r, kept = {was: {}, better: false}) {
+function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   closeDone();
   const box = $('level-done'), next = levels[levels.indexOf(level) + 1];
   const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
   const allLevels = button('All levels', () => { closeDone(); showLevelsScreen(true); });
   if (r.earned.goal) {
     // The win, and what it took: less energy is better.
-    add('h2', {textContent: next ? 'Level complete!' : 'You finished every level!'});
+    // A first win with a tool is an achievement; a win again is the level.
+    const unlocked = (kept.unlocked || []).map(toolName);
+    if (unlocked.length) {
+      add('h2', {textContent: 'Achievement Unlocked'});
+      add('p', {className: 'unlocked', textContent: `Your first win with ${unlocked.map(t => (/^[aeiou]/.test(t) ? 'an ' : 'a ') + t)
+        .join(' and ')}!` + (next ? '' : ' And you finished every level!')});
+    } else add('h2', {textContent: next ? 'Level complete!' : 'You finished every level!'});
     add('p', {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)});
     const e = r.energy || {}, run = e.run || {};
     add('p', {className: 'energy', textContent: `Energy used: ${energyText(r.energy_j)}`});
@@ -1691,9 +1747,19 @@ function showDone(r, kept = {was: {}, better: false}) {
     const best = kept.was.energy_j != null
       ? (r.energy_j < kept.was.energy_j ? ` New best for ${save.current}!` : ` Your best: ${energyText(kept.was.energy_j)}.`) : '';
     add('p', {textContent: `Goal at ${describeTime(r.goal_at_s)}. ${verdict}${best}`});
-    if (r.stars < 3) add('p', {className: 'hint', textContent: r.helped
-      ? 'Place the pieces yourself for more stars.'
-      : 'Win on less energy for more stars: smaller or lighter pieces, cheaper materials, less fuel.'});
+    // What each piece took, and how far from par: a piece made of the same
+    // stuff takes energy in proportion to its weight.
+    const pieces = Object.entries(e.pieces || {});
+    if (pieces.length) add('p', {className: 'breakdown', textContent: pieces.map(([name, m]) =>
+      `${name[0].toUpperCase() + name.slice(1)}: ${Number(Number(m.kg).toPrecision(3))} kg, ${energyText(m.j)}`).join('; ') + '.'});
+    if (r.stars < 3) {
+      const over = r.energy_j - par, heavy = pieces.sort((a, b) => b[1].j - a[1].j)[0];
+      add('p', {className: 'hint', textContent: r.helped ? 'Place the pieces yourself for more stars.'
+        : heavy && over > 0 && over < heavy[1].j
+          ? `To reach par, take ${energyText(over)} off: ${heavy[0]} about ${Math.ceil(100 * over / heavy[1].j)}% lighter ` +
+            '(shorter, smaller or a cheaper material) and still reaching the goal.'
+          : 'Win on less energy for more stars: smaller or lighter pieces, cheaper materials, less fuel.'});
+    }
     const actions = add('div', {className: 'actions'});
     if (next) actions.append(button('Next level ▶', () => { closeDone(); chooseLevel(next.id).catch(() => {}); },
                                     {className: 'primary', ariaLabel: 'Next level'}));
@@ -1838,6 +1904,12 @@ async function startGame() {
   // shown: the sandbox's switches for those are not on the game page.
   for (const id of ['follow', 'path-toggle']) $(id).hidden = true;
   document.querySelector('#scene-actions .speed').hidden = true;
+  // What the player works with, together at the top of the scene: the
+  // pieces to add (the arrows while one is placed), Run it and Set up again,
+  // and the prediction's key. The scene below is left to watch.
+  const top = Object.assign(document.createElement('div'), {className: 'scene-top'});
+  top.append($('scene-tray'), $('move-pad'), $('scene-actions'), $('preview-legend'));
+  view.append(top);
   $('scene-note').textContent = 'Drag to turn the view · Wheel or pinch to zoom · Click one of your pieces to pick it up';
   let seen = false;
   try { seen = Boolean(localStorage.getItem('banjo-play-guide-seen')); } catch { /* private window */ }
