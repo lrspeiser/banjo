@@ -47,6 +47,54 @@ LEVELS = mg.load_levels()
 
 
 class Tray(unittest.TestCase):
+    def test_edit_guides_follow_compiled_geometry_and_do_not_change_the_setup(self):
+        free = mg.free_build()
+        placement = [{'piece': 'plank', 'x_m': 0, 'z_m': 0, 'length_m': .6}]
+        kept = copy.deepcopy(placement)
+        ordinary = mg.ghost(free, placement, 0)
+        annotated = mg.ghost(free, placement, 0, edit_key='length_m')
+        guide = annotated.pop('edit_guide')
+        self.assertEqual(annotated, ordinary)
+        self.assertEqual(placement, kept)
+        self.assertEqual(len(guide['arrows']), 2)
+        self.assertEqual(sorted(a['direction'][0] for a in guide['arrows']), [-1, 1])
+        self.assertEqual(sorted(round(a['at'][0], 6) for a in guide['arrows']), [-.3, .3])
+        for yaw, pitch in ((90, 0), (37, 25), (-65, -35)):
+            turned = [dict(placement[0], yaw_deg=yaw, pitch_deg=pitch)]
+            guide = mg.ghost(free, turned, 0, edit_key='length_m')['edit_guide']
+            axis = mw._mat_apply(mw.heading(yaw, pitch, 0), [1, 0, 0])
+            self.assertEqual(len(guide['arrows']), 2)
+            for a in guide['arrows']:
+                self.assertAlmostEqual(abs(sum(v * w for v, w in zip(a['direction'], axis))), 1, places=5)
+        track = [{'piece': 'track', 'x_m': 0, 'z_m': 0, 'yaw_deg': 90}]
+        drop = mg.ghost(free, track, 0, edit_key='drop_m')['edit_guide']
+        self.assertEqual(len(drop['arrows']), 1)
+        self.assertLess(drop['arrows'][0]['direction'][1], -.9)
+        self.assertLess(drop['arrows'][0]['at'][2], -.5, 'the lower end follows the turned board')
+        end = mg.ghost(free, track, 0, edit_key='end')['edit_guide']
+        self.assertLess(end['marker'][2], -.5)
+        self.assertEqual(end['arrows'], [])
+        for item in free['tray']:
+            if item.get('attach'):
+                continue
+            for key, rule in item['knobs'].items():
+                if key in ('x_m', 'z_m'):
+                    continue
+                values = rule.get('choices', [rule.get('default', rule.get('min')), rule.get('min'), rule.get('max')])
+                for value in values:
+                    if value is None:
+                        continue
+                    with self.subTest(piece=item['piece'], key=key, value=value):
+                        p = [{'piece': item['piece'], 'x_m': 0, 'z_m': 0, key: value}]
+                        before = mg.ghost(free, p, 0)
+                        after = mg.ghost(free, p, 0, edit_key=key)
+                        guide = after.pop('edit_guide')
+                        self.assertEqual(after, before)
+                        self.assertEqual(guide['key'], key)
+                        for arrow in guide['arrows']:
+                            self.assertAlmostEqual(sum(v * v for v in arrow['direction']), 1, places=6)
+        self.assertIsNone(mg.ghost(free, placement, 0, edit_key='unrecognised')['edit_guide'])
+
     def test_sandbox_templates_keep_the_base_and_readings_and_cannot_replace_a_level(self):
         for template in mg.sandbox_templates():
             level = mg.requested_level({'level': 'free', 'base': template['base']})

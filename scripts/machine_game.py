@@ -1002,7 +1002,99 @@ def snap(level, placed, index, compiled):
     return {'knobs': {k: round(v, 4) for k, v in knobs.items()}, 'to': to['name'], 'port': to['port']}
 
 
-def ghost(level, placements, index, snapping=False):
+def editing_guide(level, checked, index, compiled, key):
+    """Editor annotations from compiled geometry, never forces or simulation.
+
+    Compare a small permitted adjustment with the current setup. Face centres
+    identify the moving edges even after turning, tipping or resting a piece.
+    The comparison is discarded; it cannot modify the player's placements.
+    """
+    p = checked[index]
+    rule = next(t for t in level['tray'] if t['piece'] == p['piece'])['knobs'].get(key)
+    if not rule:
+        return None
+    name = f'your {p["piece"]} {index + 1}'
+    mine = [q for q in compiled['parts'] if owner(q) == name and not q['name'].endswith(' stand')]
+    if not mine:
+        return None
+    guide = {'key': key, 'label': rule.get('label', key), 'arrows': [], 'focus': [], 'marker': None}
+    if key == 'end':
+        # A track's physical board, including its compiled turn and elevation.
+        board = next((q for q in mine if q['name'] == name), mine[0])
+        solid = mw.solids_of(board)[0]
+        axes, half = mw._axes(solid), mw._half(solid)
+        guide['marker'] = [solid['at_m'][i] + axes[0][i] * half[0] + axes[1][i] * half[1] for i in range(3)]
+        guide['focus'] = [q['name'] for q in mine if q['name'].endswith((' stop', ' barrier'))]
+        return guide
+    value = p[key]
+    choices = rule.get('choices')
+    if choices:
+        candidate = next((v for v in choices if v != value), value)
+    elif 'min' not in rule or 'max' not in rule:
+        guide['focus'] = [q['name'] for q in mine]
+        return guide
+    else:
+        step = max(rule.get('step', .01), (rule['max'] - rule['min']) * .05)
+        candidate = min(rule['max'], value + step)
+        if candidate == value:
+            candidate = max(rule['min'], value - step)
+    if candidate == value:
+        guide['focus'] = [q['name'] for q in mine]
+        return guide
+    alternative = [{k: copy.deepcopy(v) for k, v in q.items() if k != 'cost'} for q in checked]
+    alternative[index][key] = candidate
+    try:
+        _, _, _, probe = _assemble(level, alternative, lenient=True)
+    except (ValueError, mw.MachineRefused):
+        # A boundary adjustment can be unbuildable; the current fit verdict
+        # stays authoritative and the control still identifies its piece.
+        guide['focus'] = [q['name'] for q in mine]
+        return guide
+    other = {q['name']: q for q in probe['parts'] if owner(q) == name}
+    increasing = isinstance(value, (int, float)) and isinstance(candidate, (int, float))
+    sign = -1 if increasing and candidate < value else 1
+    moves = []
+    for q in mine:
+        after = other.get(q['name'])
+        if not after or after == q:
+            continue
+        guide['focus'].append(q['name'])
+        for before, changed in zip(mw.solids_of(q), mw.solids_of(after)):
+            a_axes, a_half = mw._axes(before), mw._half(before)
+            b_axes, b_half = mw._axes(changed), mw._half(changed)
+            resizing = before['turn_deg'] == changed['turn_deg'] and before['size_m'] != changed['size_m']
+            for axis in range(3):
+                if resizing and abs(a_half[axis] - b_half[axis]) < 1e-8:
+                    continue
+                for side in (-1, 1):
+                    at = [before['at_m'][i] + side * a_axes[axis][i] * a_half[axis] for i in range(3)]
+                    to = [changed['at_m'][i] + side * b_axes[axis][i] * b_half[axis] for i in range(3)]
+                    d = [sign * (to[i] - at[i]) for i in range(3)]
+                    distance = math.sqrt(sum(v * v for v in d))
+                    if resizing and distance > .001:
+                        # Show growth along the changed dimension, rather
+                        # than a second arrow for re-seating a tilted body.
+                        d = [sign * side * a_axes[axis][i] * (b_half[axis] - a_half[axis]) for i in range(3)]
+                        distance = math.sqrt(sum(v * v for v in d))
+                    if distance > .001:
+                        moves.append((distance, at, [v / distance for v in d]))
+    # One arrow per direction; favour the actual moving end over the centre
+    # and avoid repeated arrows on the rails, supports and neighbouring faces.
+    largest = max((row[0] for row in moves), default=0)
+    for distance, at, direction in sorted(moves, key=lambda row: -row[0]):
+        if distance < largest * .25:
+            continue
+        if any(sum(a * b for a, b in zip(direction, old['direction'])) > .9 for old in guide['arrows']):
+            continue
+        guide['arrows'].append({'at': at, 'direction': direction})
+        if len(guide['arrows']) == 4:
+            break
+    if not guide['focus']:
+        guide['focus'] = [q['name'] for q in mine]
+    return guide
+
+
+def ghost(level, placements, index, snapping=False, edit_key=None):
     """Piece `index` of `placements` as it would be built -- its parts where
     they would be, set down on what is there, turned as it is turned -- and
     why it could not be built there, for the see-through piece the page shows
@@ -1033,6 +1125,8 @@ def ghost(level, placements, index, snapping=False):
              'energy': pieces_energy(compiled).get(name),
              'parts': [dict({k: p[k] for k in keys if k in p},
                             **({'parts': p['parts']} if p['shape'] == 'compound' else {})) for p in mine]}
+    if isinstance(edit_key, str):
+        reply['edit_guide'] = editing_guide(level, checked, index, compiled, edit_key)
     if level.get('free'):
         # Where the other pieces connect, and where this one would.
         reply['ports'] = [q for q in ports(checked, compiled) if q['piece'] != index]

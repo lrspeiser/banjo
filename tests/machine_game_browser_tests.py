@@ -122,6 +122,50 @@ class Puzzles(unittest.TestCase):
                                                       **({'text': key} if kind == 'keyDown' and key not in named else {})})
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_selected_controls_highlight_the_piece_and_follow_its_orientation(self):
+        self.open('gap')
+        self.press('Add a plank')
+        guide = self.ghost()['editGuide']
+        self.assertEqual(guide['key'], 'length_m')
+        self.assertEqual(len(guide['arrows']), 2)
+        self.wait("!document.getElementById('edit-guide-label').hidden", 5)
+        self.press('More Cut to length')
+        changed = self.ghost()['editGuide']
+        self.assertGreater(max(a['at'][0] for a in changed['arrows']), max(a['at'][0] for a in guide['arrows']))
+        self.press('Change its turn')
+        self.assertEqual(self.ghost()['editGuide']['key'], 'yaw_deg')
+        self.slide('Its turn', 90)
+        self.ghost()
+        self.press('Change its Cut to length')
+        guide = self.ghost()['editGuide']
+        self.assertEqual(len(guide['arrows']), 2)
+        self.assertTrue(all(abs(a['direction'][2]) > .99 for a in guide['arrows']))
+        self.press('turn on 15 degrees')
+        self.assertEqual(self.ghost()['editGuide']['key'], 'yaw_deg')
+        self.assertEqual(self.ghost()['p']['yaw_deg'], 105)
+        self.press('Throw the ghost away')
+        self.wait("document.getElementById('edit-guide-label').hidden", 5)
+        for width, height in ((1280, 860), (390, 844), (844, 390)):
+            with self.subTest(viewport=(width, height)):
+                self.open('free', width, height, phone=width != 1280)
+                self.press('Add a track')
+                self.ghost()
+                self.press('Change its drop')
+                guide = self.ghost()['editGuide']
+                self.assertEqual(guide['key'], 'drop_m')
+                self.assertEqual(len(guide['arrows']), 1)
+                self.assertLess(guide['arrows'][0]['direction'][1], -.9)
+                self.press('Change its far end')
+                guide = self.ghost()['editGuide']
+                self.assertEqual(guide['key'], 'end')
+                self.assertIsNotNone(guide['marker'])
+                self.slide('Its far end', 'gate')
+                self.assertTrue(self.ghost()['editGuide']['focus'])
+                self.wait("!document.getElementById('edit-guide-label').hidden", 5)
+                self.assertTrue(self.js("(() => {const a=document.getElementById('edit-guide-label').getBoundingClientRect(),b=document.getElementById('view').getBoundingClientRect();return a.left>=b.left && a.right<=b.right && a.top>=b.top && a.bottom<=b.bottom;})()"))
+                self.press('Throw the ghost away')
+                self.wait("document.getElementById('edit-guide-label').hidden", 5)
+
     def test_a_ghost_is_placed_at_once_follows_on_request_changed_turned_set_down_and_run(self):
         self.open('gap')
         self.js("window.machineView({azimuth: -0.35, elevation: 0.75, distance: 3.2, at: [0.3, 0.2, 0]})")

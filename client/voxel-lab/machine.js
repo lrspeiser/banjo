@@ -675,7 +675,7 @@ function render() {
   }
   target.lerp(goal, .05);
   aimCamera();
-  if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); syncMovePad(); }
+  if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); updateEditGuide(); syncMovePad(); }
   drawPull();
   renderer.render(scene, camera);
   renderLabels();
@@ -853,7 +853,10 @@ function turnKnob(p, key) {
 
 function turnGhost(key, by) {
   const k = ghost && turnKnob(ghost.p, key);
-  if (k && setKnob(ghost.p, k, (ghost.p[k] || 0) + by)) { showGhostKnobs(); askGhost(); }
+  if (k && setKnob(ghost.p, k, (ghost.p[k] || 0) + by)) {
+    if (ghost.card !== k) { ghost.card = k; clearEditGuide(); renderGhostBar(); }
+    showGhostKnobs(); askGhost();
+  }
 }
 
 // Moving it as it is seen: left, right, away from you and toward you go
@@ -997,6 +1000,79 @@ function drawGhost(parts, fits) {
   followGhost();
 }
 
+// Editing annotations use the server's comparison of compiled part geometry.
+// They never participate in picking, collisions, or a physics preview.
+const editGroup = new THREE.Group();
+scene.add(editGroup);
+const editLook = new THREE.MeshBasicMaterial({color: 0xffcf59, transparent: true, opacity: .12, depthTest: false, depthWrite: false});
+const editEdge = new THREE.LineBasicMaterial({color: 0xffcf59, depthTest: false, depthWrite: false});
+const editArrowLook = new THREE.MeshBasicMaterial({color: 0xffcf59, depthTest: false, depthWrite: false});
+const editShaft = new THREE.CylinderGeometry(1, 1, 1, 10);
+const editHead = new THREE.ConeGeometry(1, 1, 14);
+const editRing = new THREE.TorusGeometry(1, .09, 8, 40);
+const editShared = new Set([editShaft, editHead, editRing]);
+let editArrows = [], editMarker = null, editAnchor = null;
+
+function clearEditGuide() {
+  for (const c of [...editGroup.children]) {
+    editGroup.remove(c);
+    c.traverse(o => { if (o.geometry && !editShared.has(o.geometry)) o.geometry.dispose(); });
+  }
+  editArrows = []; editMarker = editAnchor = null;
+  $('edit-guide-label').hidden = true;
+}
+function drawEditGuide(parts) {
+  clearEditGuide();
+  const guide = ghost?.editGuide;
+  if (!guide || guide.key !== ghost.card) return;
+  buildParts(editGroup, parts.filter(p => guide.focus.includes(p.name)), () => editLook, editEdge);
+  for (const a of guide.arrows) {
+    const arrow = new THREE.Group(), shaft = new THREE.Mesh(editShaft, editArrowLook), head = new THREE.Mesh(editHead, editArrowLook);
+    arrow.position.set(...a.at);
+    arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...a.direction).normalize());
+    arrow.add(shaft, head); editGroup.add(arrow);
+    editArrows.push({arrow, shaft, head});
+  }
+  if (guide.marker) {
+    editMarker = new THREE.Mesh(editRing, editArrowLook);
+    editMarker.position.set(...guide.marker); editGroup.add(editMarker);
+  }
+  editGroup.traverse(o => { o.renderOrder = 100; });
+  const at = guide.marker || guide.arrows[0]?.at;
+  editAnchor = at ? new THREE.Vector3(...at) : new THREE.Box3().setFromObject(ghostGroup).getCenter(new THREE.Vector3()).sub(ghostGroup.position);
+  const label = knobName(trayItem(ghost.p.piece).knobs[guide.key], guide.key);
+  $('edit-guide-label').textContent = `${label}: ${guide.marker ? 'this end' : guide.arrows.length ? 'arrows show the change' : 'highlighted part'}`;
+  updateEditGuide();
+}
+function updateEditGuide() {
+  const label = $('edit-guide-label');
+  editGroup.visible = Boolean(ghost && editAnchor && ghost.editGuide?.key === ghost.card);
+  if (!editGroup.visible) { label.hidden = true; return; }
+  editGroup.position.copy(ghostGroup.position);
+  // Keep the arrows legible as the camera zooms, without changing their anchors.
+  const metresPerPixel = at => 2 * camera.position.distanceTo(at) * Math.tan(camera.fov * Math.PI / 360) / Math.max(1, view.clientHeight);
+  for (const {arrow, shaft, head} of editArrows) {
+    const pixel = metresPerPixel(arrow.position.clone().add(editGroup.position));
+    const length = Math.max(.08, Math.min(.8, 48 * pixel)), tip = length * .27;
+    shaft.scale.set(Math.max(.002, pixel * 1.5), length - tip, Math.max(.002, pixel * 1.5));
+    shaft.position.y = (length - tip) / 2;
+    head.scale.set(Math.max(.008, pixel * 6), tip, Math.max(.008, pixel * 6));
+    head.position.y = length - tip / 2;
+  }
+  if (editMarker) {
+    editMarker.quaternion.copy(camera.quaternion);
+    editMarker.scale.setScalar(Math.max(.04, 22 * metresPerPixel(editMarker.position.clone().add(editGroup.position))));
+  }
+  const screen = editAnchor.clone().add(editGroup.position).project(camera);
+  label.hidden = Math.abs(screen.x) > 1 || Math.abs(screen.y) > 1 || Math.abs(screen.z) > 1;
+  if (label.hidden) return;
+  const sceneRect = view.getBoundingClientRect(), top = document.querySelector('.scene-top')?.getBoundingClientRect();
+  const minY = top ? top.bottom - sceneRect.top + 8 : 100;
+  const x = (screen.x + 1) * view.clientWidth / 2 + 14, y = (1 - screen.y) * view.clientHeight / 2 + 16;
+  label.style.left = `${Math.max(8, Math.min(x, view.clientWidth - label.offsetWidth - 8))}px`;
+  label.style.top = `${Math.max(minY, Math.min(y, view.clientHeight - label.offsetHeight - 12))}px`;
+}
+
 // A picture of each piece in the tray, as it comes: the ghost op's parts for
 // it, drawn in their materials by a small renderer of its own, once a level.
 const pictures = new Map();
@@ -1040,9 +1116,10 @@ async function askGhost() {
   if (!ghost) return;
   if (ghost.busy) { ghost.again = true; return; }
   const g = ghost, sent = {x: g.p.x_m ?? 0, z: g.p.z_m ?? 0}, snapping = Boolean(g.snapNext);
+  const setupStamp = JSON.stringify(ghostPlacements());
   g.busy = true; g.again = false; g.snapNext = false;
   try {
-    const r = await api({op: 'level_ghost', level: level.id, ...sandboxRequest(), placements: ghostPlacements(), index: g.index, snap: snapping});
+    const r = await api({op: 'level_ghost', level: level.id, ...sandboxRequest(), placements: ghostPlacements(), index: g.index, snap: snapping, edit_key: g.card});
     if (ghost !== g) return;
     // Moved by hand near where it connects to another piece: put where the
     // two connect, and asked about again there.
@@ -1053,8 +1130,11 @@ async function askGhost() {
     Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], energy: r.energy, drawnAt: sent, answered: true,
                       joined: r.snap ? `${r.snap.port} of ${r.snap.to}` : null});
     drawGhost(r.parts, r.fits);
+    g.editGuide = r.edit_guide || null;
+    drawEditGuide(r.parts);
     drawPorts(r.ports || [], r.snap);
-    schedulePreview();
+    // Selecting a control changes annotations, not the simulated setup.
+    if (!g.again && setupStamp !== g.previewStamp) { g.previewStamp = setupStamp; schedulePreview(); }
   } catch (e) {
     if (ghost === g) Object.assign(g, {fits: false, problems: e.data && e.data.problems ? e.data.problems : [e.message], answered: true});
   } finally {
@@ -1096,6 +1176,7 @@ function pickUp(i) {
 function endGhost() {
   ghost = null; draggingGhost = null;
   clearGhostMeshes(); ghostGroup.position.set(0, 0, 0); drawPorts([]);
+  clearEditGuide();
   view.classList.remove('placing', 'looking');
   looking = false;
   renderGhostBar();
@@ -1120,6 +1201,14 @@ function nudgeKnob(key, by) {
   if (ghost && setKnob(ghost.p, key, (ghost.p[key] ?? 0) + by)) { followGhost(); showGhostKnobs(); askGhost(); }
 }
 
+function selectGhostKnob(key) {
+  if (!ghost || ghost.card === key) return;
+  ghost.card = key;
+  clearEditGuide();
+  renderGhostBar();
+  askGhost();
+}
+
 function renderGhostBar() {
   renderMovePad();
   const card = $('ghost-bar');
@@ -1135,7 +1224,7 @@ function renderGhostBar() {
   if (!keys.includes(ghost.card)) ghost.card = keys[0];
   const chips = Object.assign(document.createElement('div'), {className: 'chips'});
   for (const key of keys) {
-    const chip = button(knobName(knobs[key], key), () => { ghost.card = key; renderGhostBar(); },
+    const chip = button(knobName(knobs[key], key), () => selectGhostKnob(key),
                         {ariaLabel: `Change its ${knobName(knobs[key], key)}`});
     chip.setAttribute('aria-pressed', String(key === ghost.card));
     chips.append(chip);
@@ -1224,7 +1313,8 @@ function showGhostKnobs() {
 }
 
 window.machineGhostState = () => ghost ? {p: {...ghost.p}, index: ghost.index, fits: ghost.fits, problems: ghost.problems,
-  follow: ghost.follow, busy: ghost.busy, answered: ghost.answered, parts: ghostGroup.children.length} : null;
+  follow: ghost.follow, busy: ghost.busy, answered: ghost.answered, parts: ghostGroup.children.length,
+  editGuide: ghost.editGuide?.key === ghost.card ? ghost.editGuide : null} : null;
 
 // ---- the preview: where things will go ----------------------------------------------
 // Before a run (and while it plays), the engine's own rehearsal of the level
@@ -1928,7 +2018,11 @@ function ghostItem() {
   const turning = Object.assign(document.createElement('fieldset'), {className: 'turning'});
   turning.append(Object.assign(document.createElement('legend'), {textContent: 'Turn it (degrees)'}));
   for (const [key, rule] of Object.entries(t.knobs)) {
-    const c = knobControl(p, key, rule, what, () => { followGhost(); showGhostKnobs(); askGhost(); });
+    const c = knobControl(p, key, rule, what, () => {
+      if (key !== 'x_m' && key !== 'z_m' && ghost.card !== key) { ghost.card = key; renderGhostBar(); }
+      followGhost(); showGhostKnobs(); askGhost();
+    });
+    if (key !== 'x_m' && key !== 'z_m') c.input.addEventListener('focus', () => selectGhostKnob(key));
     ghost.inputs[key] = [c.input, c.shown];
     if (!rule.turning) { li.append(c.label); continue; }
     // − and + by 15 degrees either side of the slider; the slider for the rest.
