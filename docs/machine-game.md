@@ -88,6 +88,59 @@ real output/input clicks and native wins at 1280×860, 390×844 and 844×390,
 unobstructed 44 px targets, moving both endpoints and saved graph restoration.
 Source registration still accounts for all 269 C++ sources.
 
+## Light, water and current in the build preview
+
+The same engine rehearsal that draws a marble's path also samples light,
+falling water, wet channel surfaces and wire current. This works in challenges
+and saved sandbox designs, including a fitting ghost as if it were set down.
+Dashed pink lines follow native reflected/refracted rays. Blue dots show the
+native falling parcels and translucent blue tiles show measured wet surfaces.
+Yellow wire arrows show **conventional current**, with the direction taken
+from the signed native branch current and a label in amperes. An open circuit
+has no arrows. A solar charging lead reports watts instead; this ideal lead
+does not have a modeled voltage/current conversion. Bulb preview glow follows
+measured emitted optical power.
+
+**Flow preview** in the combined control panel plays the sampled timeline
+automatically. Open it to pause, replay or scrub **Preview time** and read
+released/remaining water and electrical power. The actual world's clock stays
+at zero: this does not run the live machine, drain its battery/tank or change a
+saved design. Editing rebuilds the rehearsal; outdated flow responses are
+discarded. The flow layer hides during the live run, when the ordinary native
+readings and water/rays take over. A stopped or unfinished rehearsal is labelled
+incomplete. Run/Pause remains visible while the expanded panel scrolls on a
+short phone screen.
+
+Samples use the existing 0.1 s readout cadence, spaced further apart for a
+longer rehearsal (`max(0.1, horizon/180)`), with a final sample. Geometry is
+bounded to 32 representative traced rays, 128 falling parcel positions and
+512 wet cells per sample; the full native volume/current readings are retained.
+The free-design rehearsal keeps its existing maximum 12.3 s horizon and can
+stop half a second after all underlying machine stations finish. Playback holds
+the last sample between timestamps. Water has no persistent parcel IDs in
+the protocol, so successive array entries are never joined into invented
+trajectories. Wire curves and arrows are display annotations, not moving
+electrons or a propagation-speed model. Future flow is shown over the initial
+setup and its existing body paths, rather than moving every solid body in the
+preview.
+
+The native regression compares a closed circuit (~0.2496 A) with an open
+circuit (<1e-8 A), reverses a wire's endpoints to check its current sign, shows
+a finite 4 L source stop emitting before 3 s while the channel remains wet,
+and verifies the reflected laser solution and blocked control. The water
+volume residual stays below 1e-8 m³. Native physics, materials, timesteps and
+conservation tolerances are unchanged; these are checks of sampled display
+data, not new physical models or a full energy-closure claim.
+
+Measured on 11 October 2026: all 40 game tests pass (46.744 s), including each
+level's three nudged solutions. All 30 browser tests pass (127.437 s), with
+real preview buttons, paused scrubbing, water-valve edits, Save version and
+All designs at 1280×860, 390×844 and 844×390. Existing solar output/input clicks
+and tackle selection also pass. Host, world, live-control and view integration
+pass their four CTest entries (21.28 s). Source registration accounts for all
+269 C++ sources. The unchanged tested Windows engine SHA-256 is
+`569a441595274e13128e1b8f06ff54d392232409b312d2089a77c2451315c976`.
+
 ## Fresh easy challenges
 
 **New easy challenge** on the level chooser lets the player select any of the twenty families. The same action beside an easy challenge makes another setup in that family. It changes one bounded physical input: source power, sunlight elevation, supply voltage, cord or lever length, load height, bearing friction, starting water, flow or catapult cock angle. Prepared settings are fixed in that challenge's tray; its goal and deadline remain the family's own. There are 78 physical presets across the twenty families; different seeds can select the same preset. This is repeatable authored variation, not unlimited procedural geometry or a language-model-generated level.

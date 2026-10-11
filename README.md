@@ -86,6 +86,9 @@ The rules the engine keeps: an outcome comes from the materials, shapes and
 forces, never from a name or a canned animation. Nothing floats: every fixed
 part stands on the ground or on something that does. The path shown before a
 run is the engine rehearsing the same machine, not a guess.
+The build preview also shows traced laser rays, falling water and wet channel
+surfaces, and signed current through wires. **Flow preview** can be paused or
+scrubbed without running the live machine or changing a saved design.
 
 ## Run it yourself
 

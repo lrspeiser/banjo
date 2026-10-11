@@ -298,6 +298,9 @@ document.addEventListener('keydown', e => {
 });
 
 function positionPowerLabels() {
+  // A rehearsal may finish between selecting an output and pressing an input.
+  // Keep its changing legend out of the wiring layout during that gesture.
+  $('preview-legend').style.visibility = pickedPowerPort ? 'hidden' : '';
   if (!machine || !powerLabels.size) return;
   const rect = renderer.domElement.getBoundingClientRect();
   const clock = $('clock').getBoundingClientRect();
@@ -305,7 +308,7 @@ function positionPowerLabels() {
   const status = $('power-status');
   const bottom = rect.height - (status.hidden ? 10 : status.offsetHeight + 18);
   const occupied = ['scene-tray','scene-actions','move-pad','machine-controls','preview-legend','edit-guide-label']
-    .map(id => $(id)).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight)
+    .map(id => $(id)).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !(pickedPowerPort && el.id === 'preview-legend'))
     .map(el => { const r = el.getBoundingClientRect(); return {x:r.left - rect.left,y:r.top - rect.top,w:r.width,h:r.height}; });
   // Place the larger meters first, then fit receiver buttons beside them.
   const rows = [...powerLabels.values()].sort((a,b) => (a.port.kind === 'input') - (b.port.kind === 'input'));
@@ -886,6 +889,7 @@ function render() {
   aimCamera();
   if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); updateEditGuide(); syncMovePad(); }
   drawPull();
+  updateFlowPreview();
   renderer.render(scene, camera);
   positionPowerLabels();
 }
@@ -1459,6 +1463,8 @@ function renderGhostBar() {
   renderMovePad();
   const card = $('ghost-bar');
   card.hidden = !ghost;
+  if (ghost) card.after($('flow-preview'));
+  else $('view-controls').before($('flow-preview'));
   ghost && (ghost.cardInput = null);
   $('piece-edit-row').hidden = Boolean(ghost) || !placements.length;
   if (!ghost) { $('control-panel').append($('move-pad')); card.replaceChildren(); return; }
@@ -1580,8 +1586,138 @@ const FREE_COLOUR = 0x9fdcff, GOAL_COLOUR = 0x5fe08f;
 const PREVIEW_DOT = new THREE.SphereGeometry(.02, 12, 8);
 const previewEndLook = new THREE.MeshStandardMaterial({color: 0xcdeeff, transparent: true, opacity: .3, depthWrite: false});
 let previewAsk = 0, previewTimer = null, previewOn = true, previewShown = null;
+const flowGroup = new THREE.Group();
+scene.add(flowGroup);
+let flowIndex = -1, flowTime = 0, flowPlaying = true, flowTick = 0;
+let flowPending=false;
+const flowLabels = [];
+
+function clearFlowFrame() {
+  for (const child of [...flowGroup.children]) {
+    flowGroup.remove(child);
+    child.traverse(o => {
+      o.geometry?.dispose();
+      for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
+        m.map?.dispose(); m.dispose();
+      }
+    });
+  }
+  flowLabels.length = 0;
+}
+
+function flowLabel(text, point) {
+  const canvas = document.createElement('canvas'); canvas.width = 160; canvas.height = 40;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#112431ee'; ctx.fillRect(0,0,160,40);
+  ctx.font = 'bold 24px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffe066'; ctx.fillText(text,80,20);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),depthTest:false,depthWrite:false}));
+  sprite.position.copy(point); flowGroup.add(sprite); flowLabels.push(sprite);
+}
+
+function drawFlowFrame(frame) {
+  clearFlowFrame();
+  const light = beamSegments(frame.light);
+  let arrows=0,bulbs=0;
+  if (light.legs) {
+    const line = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(light.positions,3)),
+      new THREE.LineDashedMaterial({color:0xff8cdc,dashSize:.035,gapSize:.015,transparent:true,opacity:.85,depthWrite:false}));
+    line.computeLineDistances(); flowGroup.add(line);
+  }
+  const water = frame.water?.xyz_mm || [];
+  if (water.length) flowGroup.add(new THREE.Points(new THREE.BufferGeometry().setAttribute('position',
+    new THREE.Float32BufferAttribute(water.map(v=>v/1000),3)),
+    new THREE.PointsMaterial({color:0x62cfff,size:.045,transparent:true,opacity:.8,depthWrite:false})));
+  const surface = frame.surface;
+  if (surface?.xyz_mm?.length) {
+    const tile = new THREE.PlaneGeometry(surface.cell_m,surface.cell_m); tile.rotateX(-Math.PI/2);
+    const mesh = new THREE.InstancedMesh(tile,new THREE.MeshBasicMaterial({color:0x62cfff,transparent:true,opacity:.45,side:THREE.DoubleSide,depthWrite:false}),surface.xyz_mm.length/3);
+    const matrix = new THREE.Matrix4();
+    for (let i=0;i<mesh.count;i++) mesh.setMatrixAt(i,matrix.makeTranslation(...surface.xyz_mm.slice(i*3,i*3+3).map(v=>v/1000)));
+    mesh.frustumCulled=false; flowGroup.add(mesh);
+  }
+  for (const [i,w] of (frame.wires || []).entries()) {
+    const pts = w.points_m.map(p=>new THREE.Vector3(...p));
+    const curve = pts.length===2 ? new THREE.QuadraticBezierCurve3(pts[0],new THREE.Vector3(
+      (pts[0].x+pts[1].x)/2,Math.max(pts[0].y,pts[1].y)+(w.unit==='W'?.18:.1),(pts[0].z+pts[1].z)/2),pts[1])
+      : new THREE.CatmullRomCurve3(pts);
+    const active = Math.abs(w.value)>1e-4;
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(32)),
+      new THREE.LineBasicMaterial({color:active?0xffe066:0x788994,transparent:true,opacity:active?.9:.35,depthWrite:false}));
+    flowGroup.add(line);
+    if (active) {
+      for (const t of [.3,.7]) {
+        const direction=curve.getTangent(t).normalize().multiplyScalar(Math.sign(w.value));
+        flowGroup.add(new THREE.ArrowHelper(direction,curve.getPoint(t),.07,0xffe066,.035,.025));
+        arrows++;
+      }
+    }
+    if (i<8) flowLabel(`${Math.abs(w.value).toFixed(w.unit==='W'?1:3)} ${w.unit}`,curve.getPoint(.5).add(new THREE.Vector3(0,.055,0)));
+  }
+  for (const d of frame.devices || []) if (d.kind==='bulb' && d.at_m && d.emitted_w>1e-4) {
+    const glow=new THREE.Mesh(new THREE.SphereGeometry(d.diameter_m*.51,12,8),
+      new THREE.MeshBasicMaterial({color:0xffed9d,transparent:true,opacity:Math.min(.85,.3+.3*Math.sqrt(d.emitted_w)),depthWrite:false}));
+    glow.position.set(...d.at_m); flowGroup.add(glow); bulbs++;
+  }
+  flowGroup.userData.drawn={lightSegments:light.legs,waterPoints:water.length/3,
+    wetCells:surface?.xyz_mm?.length/3||0,wires:frame.wires.length,arrows,bulbs};
+  const rows=[];
+  if (frame.light.length) rows.push(`Light: ${frame.light.length} sampled rays`);
+  const amps=(frame.wires||[]).filter(w=>w.unit==='A').map(w=>Math.abs(w.value));
+  if (amps.length) rows.push(`Wire current: up to ${Math.max(...amps).toFixed(3)} A · arrows show conventional current`);
+  const watts=(frame.wires||[]).filter(w=>w.unit==='W').map(w=>w.value);
+  if (watts.length) rows.push(`Charging lead: ${Math.max(...watts).toFixed(1)} W`);
+  const emitted=(frame.devices||[]).filter(d=>d.kind==='bulb').reduce((n,d)=>n+d.emitted_w,0);
+  if ((frame.devices||[]).some(d=>d.kind==='bulb')) rows.push(`Bulb light: ${emitted.toFixed(2)} W`);
+  if (frame.water) {
+    const left=frame.water.sources.filter(s=>s.remaining_m3!=null).reduce((n,s)=>n+s.remaining_m3*1000,0);
+    rows.push(`Water: ${frame.water.poured_l.toFixed(2)} L released${frame.water.sources.some(s=>s.remaining_m3!=null)?`, ${left.toFixed(2)} L left`:''}`);
+    if (frame.water.sources.length && frame.water.sources.every(s=>!s.valve_open)) rows.push('Water valves closed');
+  }
+  $('flow-readings').textContent=rows.join(' · ');
+}
+
+function updateFlowPreview() {
+  const frames=previewShown?.flow_frames || [];
+  const visible=Boolean(frames.length) && !flowPending && !playing && !(world?.t>0) && previewOn && !document.body.matches('.on-sandbox,.on-levels');
+  flowGroup.visible=visible; $('flow-preview').hidden=!visible;
+  if (beams) beams.visible=visible?false:Boolean(readouts.light?.paths?.length);
+  if (parcels) parcels.visible=!visible;
+  if (water) water.visible=!visible;
+  const now=performance.now();
+  if (!visible) {flowTick=now;return;}
+  const end=frames[frames.length-1].t;
+  if (flowPlaying && flowTick) flowTime+=Math.min(.1,(now-flowTick)/1000);
+  flowTick=now;
+  if (flowTime>end) flowTime=0;
+  let index=0;
+  while (index+1<frames.length && frames[index+1].t<=flowTime) index++;
+  if (index!==flowIndex) {flowIndex=index;drawFlowFrame(frames[index]);}
+  $('flow-summary').textContent=`Flow preview · ${describeTime(frames[index].t)}${previewShown.complete?'':' · incomplete'}`;
+  $('flow-time').max=String(end); $('flow-time').value=String(flowTime);
+  $('flow-play').textContent=flowPlaying?'Pause preview':'Play preview';
+  $('flow-play').setAttribute('aria-pressed',String(flowPlaying));
+  const scale=distance*2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/view.clientHeight;
+  const rect=view.getBoundingClientRect(), occupied=[...view.querySelectorAll('.power-label, #clock, #preview-legend')]
+    .filter(e=>!e.hidden).map(e=>{const r=e.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
+  for (const sprite of flowLabels) {
+    sprite.scale.set(scale*76,scale*19,1);
+    const p=sprite.position.clone().project(camera), x=(p.x+1)*view.clientWidth/2-38, y=(1-p.y)*view.clientHeight/2-9.5;
+    sprite.visible=p.z<1 && x>=0 && y>=0 && x+76<=view.clientWidth && y+19<=view.clientHeight &&
+      !occupied.some(r=>x<r.x+r.w && x+76>r.x && y<r.y+r.h && y+19>r.y);
+    if (sprite.visible) occupied.push({x,y,w:76,h:19});
+  }
+}
+
+$('flow-play').addEventListener('click',()=>{flowPlaying=!flowPlaying;flowTick=performance.now();});
+$('flow-time').addEventListener('input',()=>{flowPlaying=false;flowTime=Number($('flow-time').value);flowIndex=-1;});
+$('flow-preview').addEventListener('toggle',()=>{
+  if ($('flow-preview').open) $('flow-time').scrollIntoView({block:'nearest',inline:'nearest'});
+});
 
 function clearPreview() {
+  clearFlowFrame(); flowIndex=-1; flowTime=0; flowTick=0;
+  $('flow-preview').hidden=true;
   for (const c of [...previewGroup.children]) {
     previewGroup.remove(c);
     c.traverse(o => { if (o.geometry && !o.userData.shared) o.geometry.dispose(); });
@@ -1592,6 +1728,7 @@ function clearPreview() {
 
 function schedulePreview(ms = 700) {
   clearTimeout(previewTimer);
+  previewAsk++; flowPending=true; flowGroup.visible=false; $('flow-preview').hidden=true;
   if (!LEVEL_MODE || !level || !previewOn || document.body.matches('.on-sandbox,.on-levels')) return;
   previewTimer = setTimeout(() => askPreview().catch(() => {}), ms);
 }
@@ -1614,6 +1751,8 @@ async function askPreview() {
 function drawPreview(r) {
   clearPreview();
   previewShown = r;
+  flowPending=false;
+  flowPlaying=true;
   const zone = level.goal && level.goal.station.done_when.in_zone;
   const inZone = p => Boolean(zone) && [0, 1, 2].every(i => Math.abs(p[i] - zone.at_m[i]) <= zone.size_m[i] / 2);
   const colourOf = new Map(), dotShape = PREVIEW_DOT;
@@ -1664,7 +1803,8 @@ function showPreviewLegend(r, colourOf) {
   box.hidden = !r;
   if (!r) return;
   box.append(Object.assign(document.createElement('p'), {className: 'head',
-    textContent: !level.goal ? 'Predicted: where things will go'
+    textContent: r.error ? 'Preview stopped: '+r.error : !r.complete ? 'Preview incomplete'
+      : !level.goal ? 'Predicted: where things will go'
       : r.goal_at_s != null ? `Predicted: the goal at ${describeTime(r.goal_at_s)}` : 'Predicted: the goal does not happen'}));
   const chip = (colour, text) => {
     const s = Object.assign(document.createElement('span'), {className: 'chip', textContent: text});
@@ -1678,12 +1818,18 @@ function showPreviewLegend(r, colourOf) {
   const hit = [...colourOf];
   for (const [name, colour] of hit.slice(0, 4)) row.append(chip(colour, `after it hits ${name}`));
   if (hit.length > 4) row.append(Object.assign(document.createElement('span'), {className: 'more', textContent: `and ${hit.length - 4} more`}));
-  box.append(row);
+  const frames=r.flow_frames || [], keys=[];
+  if (frames.some(f=>f.light.length)) keys.push(chip(0xff8cdc,'light preview'));
+  if (frames.some(f=>f.water || f.surface)) keys.push(chip(0x62cfff,'water preview'));
+  if (frames.some(f=>f.wires.length)) keys.push(chip(0xffe066,'current preview'));
+  row.prepend(...keys); box.append(row);
 }
 
 window.machinePreviewState = () => previewShown && {paths: previewShown.paths.map(p => ({name: p.name, goal: p.goal,
   points: p.points.length})), hits: previewShown.hits.length, goal_at_s: previewShown.goal_at_s,
   legend: $('preview-legend').textContent};
+window.machineFlowPreviewState=()=>!flowPending && previewShown && {frames:previewShown.flow_frames?.length||0,time:flowTime,
+  playing:flowPlaying,visible:flowGroup.visible,index:flowIndex,drawn:flowGroup.userData.drawn,sample:previewShown.flow_frames?.[flowIndex]};
 
 $('path-toggle').addEventListener('click', () => {
   previewOn = !previewOn;
@@ -2469,7 +2615,12 @@ function removePiece(i) {
     });
 }
 
-function scheduleRebuild(ms = 350) { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => rebuildLevel(false).catch(() => {}), ms); }
+function scheduleRebuild(ms = 350) {
+  clearTimeout(rebuildTimer);
+  // Set down must leave ready immediately: the old session is not the new setup.
+  if (!ms) { rebuildLevel(false).catch(() => {}); return; }
+  rebuildTimer = setTimeout(() => rebuildLevel(false).catch(() => {}), ms);
+}
 
 // Every change to the pieces can be taken back, and put back again: a copy
 // of them as they were, before each change.
@@ -3133,8 +3284,12 @@ async function startGame() {
   view.append(top);
   const controls = $('control-panel');
   controls.prepend($('scene-tray'), $('scene-actions'));
+  $('view-controls').before($('flow-preview'));
   $('view-controls').prepend($('undo-pieces'), $('redo-pieces'));
   controls.append($('machine-controls'));
+  // Browser scroll-to-target must leave secondary buttons below this sticky
+  // module, including when its prediction timeline changes its height.
+  new ResizeObserver(() => controls.parentElement.style.setProperty('--control-height',`${controls.offsetHeight+8}px`)).observe(controls);
   for (const [id, change] of [
     ['view-left', () => { azimuth -= .2; }], ['view-right', () => { azimuth += .2; }],
     ['view-in', () => { distance = Math.max(.4, distance / 1.2); }], ['view-out', () => { distance = Math.min(40, distance * 1.2); }]

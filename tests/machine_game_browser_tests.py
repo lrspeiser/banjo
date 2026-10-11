@@ -157,6 +157,62 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_flow_preview_can_be_paused_scrubbed_and_edited_without_running_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
+                for template,channel in [('Build your first circuit','wires'),('A tank that runs dry','water')]:
+                    self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+                    self.wait("!document.getElementById('sandbox-screen').hidden",30)
+                    self.press('Start from '+template)
+                    self.wait("window.machineFlowPreviewState()?.frames>2 && !document.getElementById('flow-preview').hidden",60)
+                    setup=self.js('window.machinePlacements()')
+                    # Open the actual disclosure and use real pointer clicks.
+                    x,y=self.js("(() => {const r=document.getElementById('flow-summary').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()")
+                    self.mouse('mousePressed',x,y); self.mouse('mouseReleased',x,y)
+                    self.wait("document.getElementById('flow-play').getBoundingClientRect().bottom<=innerHeight",5)
+                    self.click_visible('Pause preview')
+                    self.slide('Preview time',1)
+                    self.wait('!window.machineFlowPreviewState().playing && window.machineFlowPreviewState().time===1 && window.machineFlowPreviewState().index>=0',5)
+                    state=self.js('window.machineFlowPreviewState()')
+                    if channel=='wires':
+                        self.assertTrue(any(w['value']>.24 for w in state['sample']['wires']))
+                        self.assertGreater(state['drawn']['arrows'],0)
+                        self.assertEqual(state['drawn']['bulbs'],1)
+                        self.assertIn('current preview',self.js("document.getElementById('preview-legend').textContent"))
+                    else:
+                        self.assertTrue(state['sample']['water']['xyz_mm'])
+                        self.assertGreater(state['drawn']['waterPoints'],0)
+                        self.slide('Preview time',3)
+                        self.wait('window.machineFlowPreviewState().time===3 && window.machineFlowPreviewState().index>=0',5)
+                        self.assertEqual(self.js('window.machineFlowPreviewState().sample.water.xyz_mm'),[])
+                        self.assertGreater(self.js('window.machineFlowPreviewState().sample.surface.wet_cells'),0)
+                    self.assertEqual(self.js('window.machinePlacements()'),setup)
+                    self.assertTrue(self.js(READY),'preview playback never advances the live world')
+                    self.click_visible('Play preview')
+                    self.wait('window.machineFlowPreviewState().playing',5)
+                    # A tall preview module must still leave Save accessible.
+                    self.js("document.getElementById('save-design').scrollIntoView({block:'center'})")
+                    self.click_visible('Save version')
+                    self.wait("/saved/.test(document.getElementById('design-status').textContent)",5)
+                    if channel=='water':
+                        self.slide('Adjust a piece','0'); self.ghost()
+                        self.slide('valve of your water_tank 1','closed'); self.ghost()
+                        self.wait('window.machineFlowPreviewState()?.frames>2',60)
+                        self.slide('Preview time',1); self.wait('window.machineFlowPreviewState().time===1 && window.machineFlowPreviewState().index>=0',5)
+                        self.assertEqual(self.js('window.machineFlowPreviewState().sample.water.xyz_mm'),[])
+                        self.assertIn('Water valves closed',self.js("document.getElementById('flow-readings').textContent"))
+                        self.press('Cancel'); self.wait('!window.machineGhostState()',5)
+                    self.js("document.getElementById('designs-open').scrollIntoView({block:'center'})")
+                    self.click_visible('All designs')
+                    self.wait("!document.getElementById('sandbox-screen').hidden",5)
+                self.open('easy-mirror',width,height,phone=width!=1280)
+                self.press('Add a mirror'); self.ghost()
+                self.wait('window.machineFlowPreviewState()?.frames>2',60)
+                self.wait('window.machineFlowPreviewState()?.drawn.lightSegments>0',5)
+                self.assertIn('light preview',self.js("document.getElementById('preview-legend').textContent"))
+                self.assertTrue(self.js(READY))
+
     def test_tackle_rope_and_crate_reopen_adjustments_without_running_on_desktop_and_phones(self):
         for width, height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

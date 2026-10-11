@@ -992,6 +992,55 @@ class Engine(unittest.TestCase):
         self.assertTrue(all(abs(end[i] - zone['at_m'][i]) <= zone['size_m'][i] / 2 for i in range(3)), end)
 
     @need_engine
+    def test_flow_preview_reports_native_light_water_and_signed_current_without_changing_the_setup(self):
+        import sandbox_electrics as electrical
+        import sandbox_water_launch as water
+        with tempfile.TemporaryDirectory() as logs:
+            logs = Path(logs)
+            runs = []
+            for closed in (True, False):
+                spec = electrical.manual_loop(closed=closed)
+                before = copy.deepcopy(spec)
+                result = mw.rehearse(mw.compile_spec(spec), ENGINE, logs, seconds=1, flows=True)
+                self.assertIsNone(result['error']); self.assertTrue(result['complete'])
+                self.assertEqual(spec, before)
+                rows = result['flow_frames']
+                self.assertEqual(rows[0]['t'], 0)
+                self.assertTrue(all(a['t'] < b['t'] for a,b in zip(rows, rows[1:])))
+                self.assertLessEqual(len(rows), 182)
+                last = {w['name']: w for w in rows[-1]['wires']}
+                native = {w['name']: w['current_a'] for w in result['readouts']['electrical']['wires']}
+                self.assertEqual({name:w['value'] for name,w in last.items()}, native)
+                self.assertEqual(last['supply wire']['points_m'][0], [-.68,.18,.07])
+                runs.append(max(abs(w['value']) for w in last.values()))
+            self.assertGreater(runs[0], .24)
+            self.assertLess(runs[1], 1e-8, 'an open circuit must not predict flowing current')
+            # Swapping a wire's declared endpoints changes only the sign and
+            # arrow direction, not the physical magnitude.
+            spec = electrical.manual_loop()
+            w = spec['electrical']['wires'][0]; w['a'],w['b']=w['b'],w['a']
+            reverse = mw.rehearse(mw.compile_spec(spec), ENGINE, logs, seconds=1, flows=True)
+            self.assertLess(reverse['flow_frames'][-1]['wires'][0]['value'], -.24)
+            template = water.TEMPLATES[1]
+            level = mg.requested_level(dict(level='free',base=template['base']))
+            compiled = mw.compile_spec(mg.compose(level,template['placements'])[0])
+            poured = mw.rehearse(compiled, ENGINE, logs, seconds=3, flows=True)
+            frames = poured['flow_frames']
+            self.assertTrue(any(f.get('water',{}).get('xyz_mm') for f in frames))
+            self.assertEqual(frames[-1]['water']['xyz_mm'], [], 'finite source stops pouring')
+            self.assertGreater(frames[-1]['surface']['wet_cells'], 0)
+            self.assertLessEqual(max(len(f.get('water',{}).get('xyz_mm',[]))//3 for f in frames),128)
+            self.assertLessEqual(max(len(f.get('surface',{}).get('xyz_mm',[]))//3 for f in frames),512)
+            self.assertAlmostEqual(frames[-1]['water']['poured_l'], poured['readouts']['pour']['poured_l'], places=2)
+            self.assertLess(abs(poured['readouts']['pour']['residual_m3']),1e-8)
+            blocked = mg.preview(mg.level_by_id('laser'),[],ENGINE,logs)
+            laser = mg.level_by_id('laser')
+            bounced = mg.preview(laser,laser['solution'],ENGINE,logs)
+            self.assertIsNone(blocked['goal_at_s']); self.assertIsNotNone(bounced['goal_at_s'])
+            self.assertTrue(any(len(p['w'])>=3 for f in bounced['flow_frames'] for p in f['light']))
+            self.assertTrue(all(len(f['light'])<=32 for f in bounced['flow_frames']))
+
+    @need_engine
     def test_a_misplaced_piece_fails_for_a_physical_reason(self):
         # The knife set too high swings over the rope and into the weight's arm.
         level = mg.level_by_id('cut')

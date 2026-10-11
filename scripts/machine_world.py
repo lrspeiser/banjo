@@ -13,11 +13,13 @@ the default machine; no part of it has a scripted outcome.
 from __future__ import annotations
 
 import copy
+import base64
 import json
 import math
 import os
 import queue
 import subprocess
+import struct
 import tempfile
 import threading
 import time
@@ -2203,6 +2205,7 @@ class MachineSession:
         self.last_used = self.last_action = time.monotonic()
         # For a preview (rehearse(track=...)): tracked bodies' paths and hits.
         self.trail, self.trail_turn, self.trail_hits = None, {}, []
+        self.flow_trail = None
         self.wall_compute_s = 0.0
         self.fracture_s = 0.0
         self.behind_s = 0.0
@@ -2299,7 +2302,7 @@ class MachineSession:
         if isinstance(reply.get('water'), dict):
             # The engine's own picture of the water: the box of wet columns,
             # each surface in millimetres above base_m.
-            self.water = {k: reply['water'].get(k) for k in ('box', 'base_m', 'surface_mm_b64', 'in_m3_s',
+            self.water = {k: reply['water'].get(k) for k in ('t', 'box', 'base_m', 'surface_mm_b64', 'in_m3_s',
                                                              'out_m3_s', 'volume_m3', 'wet_cells', 'residual_m3')}
             self.water_seq = self.seq
         if reply.get('cuts'):
@@ -2579,6 +2582,91 @@ class MachineSession:
                            'sources': p.get('sources', [])}
         self.readouts = out
         out['stations'] = self._stations(out)
+        self._capture_flows()
+
+    def _capture_flows(self, final=False):
+        """Bounded samples of native readings, only for the build preview.
+
+        Water parcels have no persistent IDs: send measured point clouds,
+        never join successive array indices into invented trajectories.
+        """
+        if self.flow_trail is None or (self.flow_trail and not final and
+                self.t - self.flow_trail[-1]['t'] < self.flow_interval - 1e-6):
+            return
+        def subset_xyz(xyz, limit=128):
+            count = len(xyz) // 3
+            stride = max(1, math.ceil(count / limit))
+            return [v for i in range(0, count, stride) for v in xyz[3*i:3*i+3]]
+
+        def rotate(q, v):
+            w, x, y, z = q
+            tx, ty, tz = 2*(y*v[2]-z*v[1]), 2*(z*v[0]-x*v[2]), 2*(x*v[1]-y*v[0])
+            return [v[0]+w*tx+y*tz-z*ty, v[1]+w*ty+z*tx-x*tz, v[2]+w*tz+x*ty-y*tx]
+
+        def at(part, point):
+            old, now = self.flow_starts.get(part), self.bodies.get(part)
+            if not old or not now:
+                return None
+            q = old.get('orientation_wxyz', [1, 0, 0, 0])
+            local = rotate([q[0], -q[1], -q[2], -q[3]],
+                           [point[i]-old['position_m'][i] for i in range(3)])
+            offset = rotate(now.get('orientation_wxyz', [1, 0, 0, 0]), local)
+            return [round(now['position_m'][i]+offset[i], 4) for i in range(3)]
+
+        r, graph = self.readouts, self.compiled.get('electrical', {})
+        frame = {'t': round(self.t, 4), 'light': copy.deepcopy((r.get('light') or {}).get('paths', [])[:32]),
+                 'wires': [], 'devices': copy.deepcopy((r.get('electrical') or {}).get('devices', []))}
+        for device in frame['devices']:
+            declaration = next(d for d in graph['devices'] if d['name'] == device['name'])
+            body = self.bodies.get(declaration['part'])
+            if device['kind'] == 'bulb' and body and body.get('shape') == 'sphere':
+                device.update(at_m=body['position_m'], diameter_m=body['dimensions_m'][0])
+        terminals = {d['name']+':'+key: at(d['part'], point) for d in graph.get('devices', [])
+                     for key, point in d.get('terminals', {}).items()}
+        for w in (r.get('electrical') or {}).get('wires', []):
+            a, b = terminals.get(w['a']), terminals.get(w['b'])
+            if a and b:
+                frame['wires'].append({'name': w['name'], 'points_m': [a, b], 'value': w['current_a'], 'unit': 'A'})
+        ports = {p['name']: p for p in graph.get('power_ports', [])}
+        panels = {p['name']: p for p in (r.get('machines') or {}).get('solar_panels', [])}
+        for cable in graph.get('power_cables', []):
+            a, b = ports[cable['a']], ports[cable['b']]
+            pa, pb = at(a['part'], a['at_m']), at(b['part'], b['at_m'])
+            if pa and pb:
+                frame['wires'].append({'name': cable['name'], 'points_m': [pa, pb], 'unit': 'W',
+                                       'value': panels.get(a['solar_panel'], {}).get('power_w', 0)})
+        for c in self.compiled['circuits']:
+            battery = next((b for b in self.compiled['batteries'] if b['name'] == c['battery']), {})
+            start = self.bodies.get(battery.get('in'), {}).get('position_m')
+            hinge = next((j for j in self.compiled['joints'] if j['name'] == (c.get('motor') or {}).get('hinge')), {})
+            end = self.bodies.get((c.get('coil') or {}).get('heats'), {}).get('position_m') or hinge.get('at_m')
+            via = next((j.get('at_m') for j in self.compiled['joints'] if j['name'] == (c.get('switch') or {}).get('hinge')), None)
+            if start and end:
+                reading = next((x for x in r.get('circuits', []) if x['name'] == c['name']), {})
+                frame['wires'].append({'name': c['name'], 'points_m': [p for p in (start, via, end) if p],
+                                       'value': reading.get('current_a', 0), 'unit': 'A', 'legacy': True})
+        if self.parcels is not None:
+            p = self.parcels
+            frame['water'] = {'xyz_mm': subset_xyz(p.get('xyz_mm', [])), 'parcel_count': len(p.get('xyz_mm', []))//3,
+                              'poured_l': (p.get('poured_m3') or 0)*1000,
+                              'sources': [{k: s.get(k) for k in ('name', 'valve_open', 'remaining_m3', 'received_m3')}
+                                          for s in p.get('sources', [])]}
+        if self.water and self.water.get('surface_mm_b64') and self.ground_view:
+            w, g = self.water, self.ground_view['grid']
+            i0, j0, ni, nj = w['box']
+            raw = base64.b64decode(w['surface_mm_b64'])
+            xyz = []
+            for k, (mm,) in enumerate(struct.iter_unpack('<H', raw)):
+                if mm and ni:
+                    xyz.extend([round(1000*(g['x0_m']+(i0+k%ni)*g['cell_m'])),
+                                round(1000*w['base_m'])+mm,
+                                round(1000*(g['z0_m']+(j0+k//ni)*g['cell_m']))])
+            frame['surface'] = {'xyz_mm': subset_xyz(xyz, 512), 'cell_m': g['cell_m'],
+                                'wet_cells': len(xyz)//3, 't': w.get('t')}
+        if self.flow_trail and abs(self.flow_trail[-1]['t']-frame['t']) < 1e-6:
+            self.flow_trail[-1] = frame
+        else:
+            self.flow_trail.append(frame)
 
     def _stations(self, out):
         """Each station is done when the engine has MEASURED what it names:
@@ -2859,7 +2947,7 @@ class MachineSession:
             pass
 
 
-def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, after_s=0.0):
+def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, after_s=0.0, flows=False):
     """Run a machine once, unpaced, and report what the engine measured: which
     stations happened, when, and the events. Nothing is kept and nothing is
     changed; a person still watches the real run afterwards. track: names of
@@ -2870,6 +2958,11 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
         # Each path starts where the body stands before anything moves.
         session.trail = {name: [[0.0] + [round(v, 4) for v in session.bodies[name]['position_m']]]
                          if name in session.bodies else [] for name in track}
+    if flows:
+        session.flow_trail = []
+        session.flow_interval = max(.1, seconds/180)
+        session.flow_starts = copy.deepcopy(session.bodies)
+        session._capture_flows()
     started = time.perf_counter()
     try:
         session.play(True)
@@ -2899,6 +2992,11 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                 out['paths'] = {name: {'points': points, 'turn_wxyz': session.trail_turn.get(name)}
                                 for name, points in session.trail.items()}
                 out['hits'] = list(session.trail_hits)
+            if flows:
+                session._capture_flows(final=True)
+                out['flow_frames'] = session.flow_trail
+                out['complete'] = not session.error and (session.t >= seconds or
+                    (all_done_at is not None and session.t >= all_done_at+after_s))
             return out
     finally:
         session.close()

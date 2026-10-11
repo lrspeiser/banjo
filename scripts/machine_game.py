@@ -1492,7 +1492,10 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0):
     loose.sort(key=lambda n: ' marble ' not in n + ' ')
     track = ([wanted] if wanted in loose else []) + [n for n in loose if n != wanted][:7]
     r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=wall_limit_s,
-                    track=track, after_s=0.5)
+                    track=track, after_s=0.5, flows=bool(compiled.get('light') or compiled.get('spouts') or
+                        (compiled.get('ground') or {}).get('kind') == 'flume' or
+                        compiled.get('circuits') or compiled.get('electrical', {}).get('wires') or
+                        compiled.get('electrical', {}).get('power_cables')))
     row = (r['stations'] or [{}])[0]
     goal_at = row.get('at_s') if row.get('done') and row.get('at_s') is not None and row['at_s'] <= level['time_s'] else None
     paths = []
@@ -1512,6 +1515,7 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0):
             hits.append(h)
         last[key] = h['t']
     return {'paths': paths, 'hits': hits, 'goal_at_s': goal_at, 'world_time_s': r['world_time_s'],
+            'flow_frames': r.get('flow_frames', []), 'complete': r.get('complete', not r['error']),
             'wall_s': r['wall_s'], 'error': r['error'], 'zone': rule if 'at_m' in (rule if isinstance(rule, dict) else {}) else None}
 
 

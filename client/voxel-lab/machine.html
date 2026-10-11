@@ -34,6 +34,9 @@
 </div>
 <label id="piece-edit-row" class="piece-edit-row" hidden>Adjust a piece<select id="piece-edit" aria-label="Adjust a piece"></select></label>
 <div id="ghost-bar" class="ghost-bar" hidden aria-label="The ghost: change it, turn it and set it down"></div>
+<details id="flow-preview" class="flow-preview" hidden><summary id="flow-summary">Flow preview</summary>
+<div class="flow-time-row"><button id="flow-play" type="button" aria-pressed="true">Pause preview</button><label>Preview time<input id="flow-time" type="range" min="0" max="1" step="0.01" value="0" aria-label="Preview time"></label></div>
+<output id="flow-readings"></output></details>
 </section>
 <h1 id="title">Chain reaction</h1>
 <section id="sandbox-controls" hidden aria-label="Save this design">

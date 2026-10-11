@@ -300,8 +300,10 @@ body.playing-level .level-done{top:52px;transform:translateX(-50%);max-height:ca
 .piece-example-card > button {min-height:44px;}
 
 /* One module beside the scene contains running, viewing and piece editing. */
-.control-panel{position:sticky;top:0;z-index:6;padding:10px;margin-bottom:14px;background:#142836;border:1px solid #4e7287;border-radius:10px;display:grid;gap:8px;box-shadow:0 4px 14px #0006}
-.control-panel>.scene-actions{position:static;padding:0;border:0;background:none;gap:4px}
+aside{scroll-padding-top:min(var(--control-height,0px),calc(100% - 56px))}
+.control-panel{position:sticky;top:0;z-index:6;padding:10px;margin-bottom:14px;background:#142836;border:1px solid #4e7287;border-radius:10px;display:grid;gap:8px;box-shadow:0 4px 14px #0006;max-height:calc(100dvh - 65px);overflow-y:auto;box-sizing:border-box}
+.control-panel>.scene-actions{position:sticky;top:0;z-index:2;padding:0;border:0;background:#142836;gap:4px}
+.control-panel:not(:has(.ghost-bar:not([hidden]))){max-height:calc(100dvh - 130px)}
 .control-panel>.scene-tray{position:static;max-width:100%;flex-wrap:wrap}
 .control-panel .scene-actions button{padding:6px 9px;min-width:44px}
 .control-panel #start{min-width:72px}
@@ -325,11 +327,20 @@ body.playing-level .level-done{top:52px;transform:translateX(-50%);max-height:ca
 .control-panel .ghost-bar .actions button{min-width:44px}
 .control-panel .machine-controls{position:static;max-width:100%;margin:0}
 .control-panel :focus-visible{outline:3px solid #9fdcff;outline-offset:1px}
+.flow-preview{border-top:1px solid #4e7287;font-size:13px;min-width:0}
+.flow-preview summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
+.flow-time-row{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px;align-items:center}
+.flow-time-row button{min-height:44px;white-space:normal;padding:4px 8px}
+.flow-time-row label{display:grid;font-size:12px;min-width:0}
+.flow-time-row input{min-height:44px;width:100%;margin:0}
+#flow-readings{display:block;line-height:1.4;padding:4px 0}
 @media(max-width:820px) and (min-height:501px){
   main{height:calc(100dvh - 53px);grid-template-rows:42dvh minmax(0,1fr)}
   #view{height:auto;min-height:240px}
   aside{padding:8px 10px;min-height:0}
   .control-panel{padding:8px;gap:6px;margin-bottom:12px}
+  .control-panel{max-height:calc(58dvh - 69px)}
+  .control-panel:not(:has(.ghost-bar:not([hidden]))){max-height:calc(58dvh - 125px)}
 }
 @media(max-height:500px) and (min-width:600px){
   main{grid-template-columns:minmax(0,1fr) 360px}
