@@ -24,7 +24,11 @@
 <button id="path-toggle" aria-pressed="true" hidden title="Show where things will go">Path</button>
 </div>
 <details id="machine-controls" class="machine-controls" hidden><summary>Switches, valves and release</summary><div id="machine-control-rows"></div><output id="machine-control-status" aria-live="polite"></output></details>
-<div id="scene-tray" class="scene-tray" hidden aria-label="Your tray: add a piece"></div>
+<section id="scene-tray" class="scene-tray" hidden aria-label="Your tray: add a piece">
+<div class="tray-heading"><h2 id="tray-head">Your tray</h2><output id="tray-page" aria-live="polite"></output></div>
+<div class="tray-carousel"><button id="tray-prev" type="button" hidden aria-label="Previous piece" title="Previous piece">‹</button><ul id="tray"></ul><button id="tray-next" type="button" hidden aria-label="Next piece" title="Next piece">›</button></div>
+<button id="tray-library" type="button" hidden aria-label="Add a piece" title="Open the full piece library">+ Add a piece</button>
+</section>
 <div id="move-pad" class="move-pad" hidden aria-label="Move the piece as you see it"></div>
 <section id="preview-legend" class="preview-legend" hidden aria-live="polite" aria-label="Where things will go"></section>
 <section id="level-done" class="level-done" hidden aria-live="polite" aria-label="How the run went"></section>
@@ -65,7 +69,6 @@
 <input id="challenge-link" class="share-link" type="text" readonly hidden aria-label="A link to this challenge">
 <div id="free-actions" class="chat-actions" hidden><button id="free-example" type="button">Set out the example</button><button id="free-share" type="button">Share this design</button><button id="free-clear" type="button">Clear the table</button></div>
 <input id="share-link" class="share-link" type="text" readonly hidden aria-label="A link to this build">
-<h2 id="tray-head">Your tray</h2><ul id="tray"></ul>
 <h2 id="placed-head">Your pieces</h2><ol id="placed"></ol>
 <p id="cost-line"></p>
 <output id="verdict" aria-live="polite"></output>
@@ -99,7 +102,7 @@
 <div class="guide-body" tabindex="0" aria-label="Playing instructions">
 <ol>
 <li><b>Choose a challenge.</b> Read its goal beside the scene. Green boxes mark destinations; other challenges measure things like light, power or water.</li>
-<li><b>Add a piece.</b> Use the buttons above the scene. In the Sandbox, <b>Add a piece</b> opens the piece library.</li>
+<li><b>Add a piece.</b> Click the pictured card in <b>Your tray</b>, beside the scene controls. If there are several pieces, use its arrows to browse them. Browsing does not place a piece. In the Sandbox, <b>Add a piece</b> also opens the full piece library.</li>
 <li><b>Move and tweak it.</b> Drag the blue ghost, tap where it should go, or use the arrows. Change its size and angle with the piece controls. On a phone, one finger moves the piece and two fingers turn the view. Choose <b>View</b> in the scene corner to look around without moving the piece; <b>Move</b> resumes adjusting it. A red ghost tells you why it cannot fit.</li>
 <li><b>Try your machine.</b> Press <b>Run it</b> to place the piece you are adjusting and start the machine. A piece that does not fit stays red so you can move it. <b>Pause</b> stops the run; <b>Set up again</b> restores your setup. Tap a piece to move or change it. Solar collectors connect by clicking <b>Output</b>, then the receiving <b>Input</b>.</li>
 <li><b>Keep building.</b> Beat a challenge's energy par for three stars. In the Sandbox, choose a prebuilt design or <b>Add New Design</b>, name your build and use <b>Save version</b> to keep a setup you can reopen.</li>

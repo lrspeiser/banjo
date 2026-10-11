@@ -95,11 +95,11 @@ class Puzzles(unittest.TestCase):
     def press(self, name):
         """A button, by what it says or by its label."""
         # Large trays live in the library; use its ordinary scene entry point.
-        if name.startswith('Add a ') and name != 'Add a piece' and self.js("Boolean(document.querySelector('#scene-tray button[aria-label=\"Add a piece\"]')) && !document.getElementById('piece-picker').open"):
+        if name.startswith('Add a ') and name != 'Add a piece' and self.js("!document.getElementById('tray-library').hidden && !document.getElementById('piece-picker').open"):
             self.press('Add a piece')
         self.reveal_control(f"[...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(name)})")
         found = self.js(f"""(() => {{ const b = [...document.querySelectorAll('button')].find(b =>
-            !b.disabled && b.offsetParent !== null && ((b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(name)}));
+            !b.disabled && b.offsetParent !== null && (!document.getElementById('piece-picker').open || b.closest('#piece-picker')) && ((b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(name)}));
             if (b) b.click(); return Boolean(b); }})()""")
         self.assertTrue(found, f'no button {name!r} to press')
 
@@ -131,7 +131,7 @@ class Puzzles(unittest.TestCase):
         """Hit the actual visible target, rather than invoking its DOM handler."""
         self.reveal_control(f"[...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(label)})")
         target = self.js(f"""(() => {{ const el = [...document.querySelectorAll('button')].find(b =>
-            !b.disabled && b.offsetParent !== null && (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(label)});
+            !b.disabled && b.offsetParent !== null && (!document.getElementById('piece-picker').open || b.closest('#piece-picker')) && (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(label)});
             if (!el) return null; const r = el.getBoundingClientRect(), x = r.left + r.width/2, y = r.top + r.height/2;
             return {{x,y,w:r.width,h:r.height,visible:r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight,
                 uncovered:el.contains(document.elementFromPoint(x,y))}}; }})()""")
@@ -149,8 +149,10 @@ class Puzzles(unittest.TestCase):
             self.click_visible(panel)
         tools = self.js(f"(() => {{const el={expression}; const d=el?.closest('#phone-tools'); return Boolean(d && !d.hidden && !d.open);}})()")
         if tools:
+            self.js("document.querySelector('#phone-tools summary').scrollIntoView({block:'nearest',inline:'nearest'})")
             x,y = self.js("(() => {const r=document.querySelector('#phone-tools summary').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()")
             self.mouse('mousePressed',x,y); self.mouse('mouseReleased',x,y)
+        self.js(f"(() => {{const el={expression}; if (document.body.classList.contains('phone-panels') && el?.closest('.phone-pane')) el.scrollIntoView({{block:'nearest',inline:'nearest'}});}})()")
 
     def assert_power_layout(self):
         # A rebuild reframes the camera; the anchors follow it each frame.
@@ -170,6 +172,69 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_tray_cards_live_at_the_add_controls_and_arrows_only_browse(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width<1000)
+                self.assertTrue(self.js("Boolean(document.getElementById('tray').closest('#scene-tray')) && Boolean(document.getElementById('tray').closest('#control-panel'))"))
+                self.assertEqual(self.js("document.querySelectorAll('#tray-head').length"),1)
+                self.assertTrue(self.js("document.getElementById('tray-prev').hidden && document.getElementById('tray-next').hidden"))
+                self.wait("document.querySelector('#tray img')?.naturalWidth > 0",30)
+                self.assertGreaterEqual(self.js("document.querySelector('#tray img').getBoundingClientRect().width"),72)
+                self.click_visible('Add a plank'); self.ghost()
+                self.assertTrue(self.js("document.getElementById('scene-tray').hidden"))
+                self.press('Throw the ghost away')
+                self.open('sun',width,height,phone=width<1000)
+                before=self.js('window.machinePlacements()')
+                self.page.events.clear()
+                self.click_visible('Next piece')
+                self.assertEqual(self.js("document.getElementById('tray-add').getAttribute('aria-label')"),'Add a power cable')
+                self.assertEqual(self.js('window.machinePlacements()'),before)
+                opens=[e for e in self.page.events if e['method']=='Network.requestWillBeSent' and e['params']['request'].get('postData') and json.loads(e['params']['request']['postData']).get('op')=='level_open']
+                self.assertEqual(opens,[], 'browsing must not rebuild the live setup')
+                self.assertIsNone(self.js('window.machineGhostState()'))
+                self.click_visible('Next piece')
+                self.assertEqual(self.js("document.getElementById('tray-add').getAttribute('aria-label')"),'Add a solar panel')
+                self.click_visible('Previous piece')
+                self.assertEqual(self.js("document.getElementById('tray-page').textContent"),'2 / 2')
+                self.click_visible('Add a power cable'); self.ghost()
+                self.assertEqual(self.js("window.machineGhostState().p.piece"),'power_cable')
+                self.press('Throw the ghost away')
+                self.assertEqual(self.js("document.getElementById('tray-add').getAttribute('aria-label')"),'Add a power cable')
+                self.open('free',width,height,phone=width<1000)
+                before=self.js('window.machinePlacements()')
+                self.click_visible('Next piece')
+                self.assertEqual(self.js("document.getElementById('tray-add').getAttribute('aria-label')"),'Add a track')
+                self.assertEqual(self.js('window.machinePlacements()'),before)
+                self.click_visible('Add a piece')
+                self.assertTrue(self.js("document.getElementById('piece-picker').open"))
+                self.press('Back to sandbox')
+                self.assertEqual(self.js("document.getElementById('tray-add').getAttribute('aria-label')"),'Add a track')
+
+    def test_exhausted_sandbox_battery_card_is_disabled_and_says_none_left(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('free',width,height,phone=width!=1280)
+                self.press('All designs')
+                self.press('Add New Design'); self.wait(READY,30)
+                self.assertEqual(self.js('window.machinePlacements()'),[])
+                positions=[(x,z) for z in (-.6,.6) for x in (-.9,-.3,.3,.9)]
+                for number,(x,z) in enumerate(positions,1):
+                    if number==1:
+                        self.press('Add a battery')
+                    else:
+                        self.click_visible('Add a battery')
+                    self.ghost()
+                    self.slide(f'along (m) of your battery {number}',x)
+                    self.slide(f'across (m) of your battery {number}',z)
+                    self.assertTrue(self.ghost()['fits'])
+                    self.press('Set it down')
+                    self.wait(f'!window.machineGhostState() && window.machinePlacements().length==={number} && {READY}',30)
+                self.assertEqual(self.js("document.getElementById('tray-add').getAttribute('aria-label')"),'Add a battery')
+                self.assertTrue(self.js("document.getElementById('tray-add').disabled"))
+                self.assertEqual(self.js("document.querySelector('#tray-add .tray-left').textContent"),'none left')
+                self.assertTrue(self.js("window.machinePlacements().every(p=>p.piece==='battery')"))
+
     def test_run_places_new_and_adjusted_pieces_once_on_desktop_and_phones(self):
         self.page.send('Network.enable')
         for width,height in ((1280,860),(390,844),(844,390)):
@@ -256,6 +321,11 @@ class Puzzles(unittest.TestCase):
         for width,height in ((390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.open('free',width,height,phone=True)
+                # Each viewport gets an empty design, regardless of the
+                # preceding test's saved build or this test's first viewport.
+                self.press('All designs')
+                self.press('Add New Design'); self.wait(READY,30)
+                self.assertEqual(self.js('window.machinePlacements()'),[])
                 self.click_visible('Design')
                 self.assertTrue(self.js("document.getElementById('control-panel').hidden && document.getElementById('phone-help-panel').hidden"))
                 pane=self.js("document.getElementById('phone-design-panel').getBoundingClientRect().toJSON()")
@@ -616,6 +686,7 @@ class Puzzles(unittest.TestCase):
             self.wait(f'!window.machineGhostState() && {READY}', 60)
         for terminal in ('plus', 'minus'):
             self.wait('window.machineCamera().settled', 30)
+            self.wait("!window.machineWiringState().busy && [...document.querySelectorAll('#terminal-labels button')].some(b=>!b.disabled && b.offsetParent!==null)", 10)
             self.click_visible(f'Connect your battery 1 {terminal}'); self.ghost()
             self.click_visible(f'Connect your bulb 2 {terminal}')
             self.wait(f'!window.machineGhostState() && {READY}', 60)
@@ -893,7 +964,7 @@ class Puzzles(unittest.TestCase):
         self.press('Clear the table')
         self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
         self.assertEqual(self.js("document.getElementById('title').textContent"), 'Untitled design')
-        self.assertEqual(self.js("document.querySelectorAll('#scene-tray button').length"), 1)
+        self.assertEqual(self.js("document.querySelectorAll('#tray button').length"), 1)
         self.press('Add a piece')
         self.assertGreaterEqual(self.js("document.querySelectorAll('#piece-grid button').length"), 11)
         self.assertNotIn('left', self.js("document.getElementById('piece-grid').textContent"))
@@ -1020,10 +1091,10 @@ class Puzzles(unittest.TestCase):
                 self.press('Start from Gate and split')
                 self.wait(READY, 60)
                 before = self.js('window.machinePlacements()')
-                self.assertEqual(self.js("document.querySelectorAll('#scene-tray button').length"), 1)
+                self.assertEqual(self.js("document.querySelectorAll('#tray button').length"), 1)
                 self.press('Add a piece')
                 self.assertTrue(self.js("document.getElementById('piece-picker').open"))
-                self.assertTrue(self.js("document.getElementById('tray').hidden"))
+                self.assertTrue(self.js("Boolean(document.getElementById('tray').closest('#control-panel'))"))
                 self.wait("[...document.querySelectorAll('#piece-grid img')].every(i => i.complete && i.naturalWidth >= 300)", 30)
                 bounds = self.js("""(() => {const d=document.getElementById('piece-picker').getBoundingClientRect();
                     const c=document.getElementById('piece-picker-close').getBoundingClientRect();
@@ -1089,7 +1160,7 @@ class Puzzles(unittest.TestCase):
                     self.assertGreaterEqual(box['x'], 0)
                     self.assertLessEqual(box['right'], width)
                     self.assertGreaterEqual(box['top'], 0)
-                    self.assertLessEqual(box['bottom'], height)
+                    self.assertLessEqual(box['bottom'], height, (selector,box))
                     self.assertTrue(self.js(f"Boolean(document.querySelector('{selector}').closest('#control-panel,#phone-toolbar'))"))
                 self.press('All designs')
 
@@ -1384,7 +1455,7 @@ class Puzzles(unittest.TestCase):
         self.open('gap', 390, 844, phone=True)
         # The panel's tray shows each piece, with a picture, and how many are left.
         self.wait("Boolean(document.querySelector('#tray img:not([hidden])'))", 30)
-        self.assertEqual(self.js("document.querySelector('#tray li').textContent"), 'plank1 of 1 left')
+        self.assertEqual(self.js("document.querySelector('#tray li').textContent"), 'plank1 left')
         self.click_visible('Level')
         self.js("document.getElementById('phone-design-panel').scrollTop = document.getElementById('phone-design-panel').scrollHeight")
         self.assertGreaterEqual(self.js("document.getElementById('view').getBoundingClientRect().top"), 0,
@@ -1465,7 +1536,7 @@ class Puzzles(unittest.TestCase):
         # Level 7's solar panel has a height of its own, so all six arrows;
         # there is no x or z to pick: the arrows (and dragging) move it.
         self.open('sun')
-        self.assertIn('1 left', self.js("document.querySelector('#scene-tray button').textContent"))
+        self.assertIn('1 left', self.js("document.getElementById('tray-add').textContent"))
         self.press('Add a solar panel')
         start = self.ghost()['p']
         self.assertFalse({'x', 'z'} & set(self.js("[...document.querySelectorAll('#ghost-bar .chips button')].map(b => b.textContent)")))
@@ -1499,8 +1570,8 @@ class Puzzles(unittest.TestCase):
         self.press('Set it down')
         self.wait('!window.machineGhostState()', 5)
         self.wait(READY, 60)
-        self.assertTrue(self.js("document.querySelector('#scene-tray button').disabled"))
-        self.assertIn('none left', self.js("document.querySelector('#scene-tray button').textContent"))
+        self.assertTrue(self.js("document.getElementById('tray-add').disabled"))
+        self.assertIn('none left', self.js("document.getElementById('tray-add').textContent"))
         self.press('Run it')
         self.wait("/calculating live/.test(document.getElementById('clock').textContent)", 30)
         x, y = self.js("window.machineBodyScreen('your plank 1')")

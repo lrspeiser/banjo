@@ -241,7 +241,7 @@ async function pickTerminal(name) {
       if (level === sourceLevel) powerMessage('Wire connected. Run it to try the circuit.');
     }
   } catch (e) { powerMessage(e.message); }
-  finally { terminalBusy = false; }
+  finally { terminalBusy = false; positionTerminalLabels(); }
 }
 function positionTerminalLabels() {
   syncTerminalLabels();
@@ -2450,6 +2450,7 @@ function libraryTray() { return level.free || level.tray.filter(t => !t.attach).
 function piecesLeft(t) { return (t.count || 1) - placements.filter(p => p.piece === t.piece).length; }
 function addTrayPiece(t) {
   if (ghost || piecesLeft(t) <= 0) return;
+  trayPiece = t.piece;
   const p = {piece: t.piece};
   for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
   startGhost(p, placements.length);
@@ -2503,7 +2504,7 @@ $('piece-category').addEventListener('change', renderPiecePicker);
 $('piece-picker-close').addEventListener('click', () => $('piece-picker').close());
 $('piece-picker').addEventListener('close', () => {
   document.body.classList.remove('choosing-piece');
-  const target = ghost ? view : $('scene-tray').querySelector('button');
+  const target = ghost ? view : !$('tray-library').hidden ? $('tray-library') : $('tray-add');
   target?.focus({preventScroll: true});
 });
 $('piece-picker').addEventListener('keydown', e => {
@@ -2514,47 +2515,47 @@ $('piece-picker').addEventListener('keydown', e => {
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 });
 
-// Pieces are added beside the scene: a button each, with its picture, in the
-// combined control panel, so adding and editing stay together.
+// One pictured tray card lives where the player adds/adjusts a piece.
+// Browsing changes only this card, never the setup or the engine session.
+let trayLevel = null, trayDesign = null, trayPiece = null;
+function browseTray(direction) {
+  if (!level || ghost) return;
+  const items = level.tray.filter(t => !t.attach);
+  if (items.length < 2) return;
+  const index = Math.max(0, items.findIndex(t => t.piece === trayPiece));
+  trayPiece = items[(index + direction + items.length) % items.length].piece;
+  renderSceneTray();
+}
+$('tray-prev').addEventListener('click', () => browseTray(-1));
+$('tray-next').addEventListener('click', () => browseTray(1));
+$('tray-library').addEventListener('click', openPiecePicker);
 function renderSceneTray() {
   const bar = $('scene-tray');
   bar.hidden = !LEVEL_MODE || !level || Boolean(ghost);
   if (bar.hidden) return;
-  if (libraryTray()) {
-    bar.replaceChildren(button('+ Add a piece', openPiecePicker, {ariaLabel: 'Add a piece', title: 'Open the piece library'}));
-    return;
+  const items = level.tray.filter(t => !t.attach);
+  if (trayLevel !== level || trayDesign !== activeDesign?.id || !items.some(t => t.piece === trayPiece)) {
+    trayLevel = level; trayDesign = activeDesign?.id; trayPiece = items[0]?.piece;
   }
-  bar.replaceChildren(...level.tray.filter(t => !t.attach).map(t => {
-    const left = (t.count || 1) - placements.filter(p => p.piece === t.piece).length;
-    const b = button(`+ ${pieceLabel(t.piece)}`, () => addTrayPiece(t),
-      {ariaLabel: `Add a ${pieceLabel(t.piece)}`, disabled: left <= 0, title: left > 0 ? `${left} left` : 'none left'});
-    const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
-    b.prepend(img); pictureInto(img, t);
-    // In a free build there are as many as anyone needs: no count.
-    if (!level.free) b.append(Object.assign(document.createElement('small'), {textContent: left > 0 ? `${left} left` : 'none left'}));
-    return b;
-  }));
-}
-
-// The panel's tray: a picture of each piece the level gives and how many are
-// left to place (they are added with the control panel's buttons).
-function renderTray() {
-  renderSceneTray();
   const ul = $('tray'); ul.replaceChildren();
-  $('tray-head').hidden = ul.hidden = libraryTray();
-  if (ul.hidden) return;
-  for (const t of level.tray.filter(t => !t.attach)) {
-    const used = placements.filter(p => p.piece === t.piece).length + (ghost && !ghost.was && ghost.p.piece === t.piece ? 1 : 0);
-    const count = t.count || 1, li = document.createElement('li');
-    li.className = used >= count ? 'used-up' : '';
-    const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
-    li.append(img, Object.assign(document.createElement('span'), {className: 'tray-name', textContent: pieceLabel(t.piece)}),
-              Object.assign(document.createElement('span'), {className: 'tray-left',
-                textContent: level.free ? 'as many as you like' : `${count - used} of ${count} left`}));
-    pictureInto(img, t);
-    ul.append(li);
-  }
+  $('tray-prev').hidden = $('tray-next').hidden = items.length < 2;
+  $('tray-page').hidden = items.length < 2;
+  $('tray-page').textContent = `${items.findIndex(t => t.piece === trayPiece)+1} / ${items.length}`;
+  $('tray-library').hidden = !libraryTray();
+  const t = items.find(t => t.piece === trayPiece);
+  if (!t) { bar.hidden = true; return; }
+  const left = piecesLeft(t), li = document.createElement('li');
+  const card = button('', () => addTrayPiece(t), {id:'tray-add', ariaLabel:`Add a ${pieceLabel(t.piece)}`,
+    disabled:left <= 0, title:left > 0 ? 'Click to place this piece' : 'All of these pieces are placed'});
+  const picture = Object.assign(document.createElement('span'), {className:'tray-picture'});
+  const img = Object.assign(document.createElement('img'), {alt:'', hidden:true});
+  picture.append(img); pictureInto(img,t);
+  const caption = Object.assign(document.createElement('span'), {className:'tray-caption'});
+  caption.append(Object.assign(document.createElement('strong'), {className:'tray-name', textContent:pieceLabel(t.piece)}),
+    Object.assign(document.createElement('small'), {className:'tray-left', textContent:left <= 0 ? 'none left' : level.free ? 'Click to add' : `${left} left`}));
+  card.append(picture,caption); li.append(card); ul.append(li);
 }
+function renderTray() { renderSceneTray(); }
 
 function button(text, onClick, extra = {}) {
   const b = Object.assign(document.createElement('button'), {type: 'button', textContent: text}, extra);
