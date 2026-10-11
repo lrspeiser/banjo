@@ -1964,18 +1964,31 @@ struct LiveWorld::Impl {
             panel.cos_incidence = panel.sunlight_w = panel.power_w = 0.0;
             panel.shaded = false;
             panel.shaded_by.clear();
+            panel.valid = panel.ray_cast = false;
+            panel.toward_sun = sun.declared ? sun.toward : Vec3{};
+            panel.irradiance_w_m2 = sun.declared ? sun.irradiance_w_m2 : 0.0;
+            panel.ray_from_m = panel.shadow_hit_m = Vec3{};
+            panel.shadow_distance_m = panel.off_sun_deg = 0.0;
             const auto found = index_of.find(panel.body);
             if (found == index_of.end() || !inWorld(found->second)) continue;
             const RigidSnapshot at = world->snapshot(body_of[found->second]);
             panel.at_m = at.center_of_mass_world_m + at.orientation_world.rotate(panel.at_local_m);
             panel.normal = at.orientation_world.rotate(panel.normal_local);
+            panel.ray_from_m = panel.at_m + kOffFaceM * panel.normal;
+            panel.valid = sun.declared;
+            if (sun.declared)
+                panel.off_sun_deg = std::acos(std::clamp(dot(panel.normal, sun.toward), -1.0, 1.0)) *
+                                    180.0 / 3.14159265358979323846;
             if (!sun.declared || sun.toward.y < 0.0) continue;   // none, or below the horizon
             panel.cos_incidence = std::max(0.0, dot(panel.normal, sun.toward));
             if (!(panel.cos_incidence > 0.0)) continue;
             // Anything between it and the sun: a thing, or the ground itself.
-            const RayHit hit = world->castRay(panel.at_m + kOffFaceM * panel.normal, sun.toward, kReachM);
+            panel.ray_cast = true;
+            const RayHit hit = world->castRay(panel.ray_from_m, sun.toward, kReachM);
             if (hit.hit) {
                 panel.shaded = true;
+                panel.shadow_hit_m = hit.point_world_m;
+                panel.shadow_distance_m = hit.distance_m;
                 panel.shaded_by = "the ground";
                 if (hit.named)
                     for (std::size_t i = 0; i < body_of.size(); ++i)
@@ -1983,6 +1996,15 @@ struct LiveWorld::Impl {
                 continue;
             }
             panel.sunlight_w = sun.irradiance_w_m2 * panel.area_m2 * panel.cos_incidence;
+            if (!(dt_s > 0.0)) {
+                // Ready-state metering costs no time and transfers no charge.
+                // It reports the instantaneous power the store could accept,
+                // with a full store spilling all converted sunlight.
+                const LiveEnergyStore *store = energyStoreById(panel.store);
+                panel.power_w = store && store->charge_j < store->capacity_j ?
+                    panel.sunlight_w * panel.efficiency : 0.0;
+                continue;
+            }
             const double sunlight = panel.sunlight_w * dt_s;
             const double made = sunlight * panel.efficiency;
             double taken = 0.0;
@@ -7456,6 +7478,7 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.ground_actions[actor] = std::nullopt; // reopen is idle, never a cutting authorization
     }
     impl.restored = std::move(said);
+    impl.settlePanels(0.0);
     return live;
 }
 
@@ -9530,6 +9553,7 @@ bool LiveWorld::setSun(double elevation_deg, double azimuth_deg, double irradian
     sun.zenith_irradiance_w_m2 = irradiance_w_m2;
     const double el = elevation_deg * kRadPerDeg, az = azimuth_deg * kRadPerDeg;
     sun.toward = Vec3{std::cos(el) * std::sin(az), std::sin(el), std::cos(el) * std::cos(az)};
+    impl_->settlePanels(0.0);
     return true;
 }
 
@@ -9548,6 +9572,7 @@ bool LiveWorld::setDay(double day_s, double noon_elevation_deg, double hour, dou
     // `hour` now.
     sun.hour_at_start = hour - 24.0 * impl_->time_s / day_s;
     impl_->advanceSun();
+    impl_->settlePanels(0.0);
     return true;
 }
 
@@ -9580,6 +9605,7 @@ unsigned LiveWorld::solarPanel(const std::string &name, const std::string &body,
     panel.at_m = at_world_m;
     panel.normal = normalized(normal_world);
     I.panels.push_back(std::move(panel));
+    I.settlePanels(0.0);
     return I.panels.back().id;
 }
 

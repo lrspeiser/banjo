@@ -357,10 +357,18 @@ def _solar(name, k, ctx):
              'turn_deg': mw.turn_of(m), 'fixed': True}
     post = {'name': name + ' post', 'shape': 'box', 'material': 'concrete', 'size_m': [0.06, round(h - 0.02, 4), 0.06],
             'at_m': [x, round((h - 0.02) / 2, 4), z], 'fixed': True}
-    return {'parts': [plate, post],
+    made = {'parts': [plate, post],
             'solar_panels': [{'name': name, 'part': name, 'battery': ctx['tray'].get('battery', 'battery'),
                               'normal': [round(v, 9) for v in mw._mat_apply(m, [0.0, 1.0, 0.0])],
                               'area_m2': 0.25, 'efficiency': 0.2}]}
+    if ctx['tray'].get('explicit_power'):
+        # The panel collects into its own finite store until a cable chooses
+        # a receiver. No energy reaches the winch through an implicit link.
+        store = name + ' local battery'
+        made['solar_panels'][0]['battery'] = store
+        made['batteries'] = [{'name': store, 'in': post['name'], 'capacity_j': 20000,
+                              'voltage_v': 12, 'charge_j': 0}]
+    return made
 
 
 # Counterweights, by mass: a block of whole cells, aluminium for the light
@@ -548,7 +556,7 @@ def check_placements(level, placements, budget=True):
         knobs = {}
         for key, rule in t['knobs'].items():
             value = p.get(key, rule.get('default'))
-            if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal')):
+            if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal', 'power_port')):
                 # A link's ends: a part of the machine, named.
                 if not isinstance(value, str) or not 0 <= len(value) <= 120:
                     problems.append(f'{what}: {key} names an existing connection')
@@ -647,7 +655,7 @@ def _assemble(level, placements, lenient=False):
         ready = None
         for pos, (i, p) in enumerate(pending):
             refs = [p.get(key, '') for key, rule in tray[p['piece']]['knobs'].items()
-                    if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal'))]
+                    if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal', 'power_port'))]
             dependencies = {int(match.group(1)) - 1 for ref in refs
                             for match in [re.match(r'^your \S+ (\d+)(?:\b|:)', ref)] if match and int(match.group(1)) - 1 != i}
             if dependencies <= complete:
@@ -1132,7 +1140,7 @@ def editing_guide(level, checked, index, compiled, key):
     rule = next(t for t in level['tray'] if t['piece'] == p['piece'])['knobs'].get(key)
     if not rule:
         return None
-    if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal', 'point')):
+    if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal', 'power_port', 'point')):
         return None
     name = f'your {p["piece"]} {index + 1}'
     mine = [q for q in compiled['parts'] if owner(q) == name and not q['name'].endswith(' stand')]
@@ -1252,6 +1260,11 @@ def ghost(level, placements, index, snapping=False, edit_key=None):
         wire = next((wire for wire in compiled.get('electrical', {}).get('wires', []) if wire['name'] == name), None)
         if wire:
             reply['wire_preview'] = [terminals[wire['a']], terminals[wire['b']]]
+    if checked[index]['piece'] == 'power_cable':
+        power_ports = {p['name']: p['at_m'] for p in compiled.get('electrical', {}).get('power_ports', [])}
+        cable = next((c for c in compiled.get('electrical', {}).get('power_cables', []) if c['name'] == name), None)
+        if cable:
+            reply['wire_preview'] = [power_ports[cable['a']], power_ports[cable['b']]]
     if isinstance(edit_key, str):
         reply['edit_guide'] = editing_guide(level, checked, index, compiled, edit_key)
     if level.get('free'):
@@ -1538,7 +1551,7 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
     best_miss, runs = miss_m(level, best_run), 1
     tray = {t['piece']: t for t in level['tray']}
     knobs = [(i, key, rule) for i, p in enumerate(best) for key, rule in tray[p['piece']]['knobs'].items()
-             if 'choices' not in rule and not rule.get('free')]
+             if 'min' in rule and 'max' in rule and not rule.get('free')]
     rng = random.Random(seed)
     for _ in range(scatter):
         if best_miss == 0 or runs >= budget:

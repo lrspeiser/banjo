@@ -573,6 +573,12 @@ struct LiveSolarPanel {
     // thing's name, or "the ground"; the sunlight on its face, and what it put
     // into its store, watts.
     Vec3 at_m{}, normal{};
+    // The authoritative single-center occlusion sample. These transient
+    // measurements are recomputed when opened; their ray does not trace the
+    // collector's full area or transmit through transparent blockers.
+    Vec3 toward_sun{}, ray_from_m{}, shadow_hit_m{};
+    double shadow_distance_m{}, off_sun_deg{}, irradiance_w_m2{};
+    bool valid{}, ray_cast{};
     double cos_incidence{};
     bool shaded{};
     std::string shaded_by;

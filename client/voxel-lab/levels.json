@@ -1290,7 +1290,7 @@
    "id": "sun",
    "title": "Catch the sun",
    "teaches": "sunlight: a panel facing the sun catches the most",
-   "brief": "The winch runs on sunlight, but the sun is low behind the shed and its shadow is long. Set a solar panel down in the sun, then turn it and tip it to face the sun, so the winch winds the weight up to the green mark.",
+   "brief": "The winch runs on sunlight, but the sun is low behind the shed and its shadow is long. Set a panel down in the sun, turn and tip it to face the sun, then connect its output to the winch input with a power cable.",
    "time_s": 8,
    "budget": 20,
    "par": 10,
@@ -1478,7 +1478,22 @@
        "no_load_rad_s": 12
       }
      }
-    ]
+    ],
+    "electrical": {
+     "power_ports": [
+      {
+       "name": "winch:power",
+       "kind": "input",
+       "battery": "solar battery",
+       "part": "winch post",
+       "at_m": [
+        0,
+        1.26,
+        -0.2
+       ]
+      }
+     ]
+    }
    },
    "goal": {
     "title": "The weight is up at the green mark",
@@ -1548,13 +1563,50 @@
        "label": "tip",
        "turning": true
       }
-     }
+     },
+     "explicit_power": true
+    },
+    {
+     "piece": "power_cable",
+     "label": "Power cable",
+     "count": 1,
+     "cost": 0,
+     "turning": false,
+     "description": "An ideal two-conductor lead from a solar output to a battery input. Cable losses and mass are not modeled.",
+     "knobs": {
+      "x_m": {
+       "default": 0,
+       "min": -2,
+       "max": 2,
+       "step": 0.02,
+       "label": "along (m)"
+      },
+      "z_m": {
+       "default": 0,
+       "min": -2,
+       "max": 2,
+       "step": 0.02,
+       "label": "across (m)"
+      },
+      "a_port": {
+       "default": "",
+       "power_port": "output",
+       "label": "from solar output"
+      },
+      "b_port": {
+       "default": "",
+       "power_port": "input",
+       "label": "to power input"
+      }
+     },
+     "sandbox_builder": true
     }
    ],
    "hints": [
     "The sun stands 15 degrees above the ground, behind the shed: toward -x and -z, half way between them.",
     "A panel stores a fifth of the sunlight on its face. Facing the sun squarely it gets 250 W of sunlight; lying flat, about a quarter of that, because the sun meets it so slantwise.",
-    "The winch lifts the weight only with more than about 185 W of sunlight on the panel; with less its motor just warms. Turn the panel about -45 degrees, then tip it up."
+    "The winch lifts the weight only with more than about 185 W of sunlight on the panel; with less its motor just warms. Turn the panel about -45 degrees, then tip it up.",
+    "Click the panel output, then the winch input to add a saved power cable. An unconnected panel charges only its own finite store; the winch battery starts empty."
    ],
    "solution": [
     {
@@ -1564,6 +1616,11 @@
      "height_m": 0.6,
      "yaw_deg": -45,
      "pitch_deg": 75
+    },
+    {
+     "piece": "power_cable",
+     "a_port": "your solar 1:power",
+     "b_port": "winch:power"
     }
    ],
    "par_energy_j": 193000000

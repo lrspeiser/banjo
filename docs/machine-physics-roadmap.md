@@ -21,6 +21,14 @@ catapult preset. See [mechanical measurements](sandbox-mechanics-measured.md),
 [water/launch measurements](sandbox-water-launch-measured.md) for per-material
 comparisons, full receipts where available and remaining coupled-pipeline limits.
 
+Solar collectors now expose their native center-ray obstruction, incidence
+angle, instantaneous charging power and energy account before and during a
+run. The original solar winch requires a saved output-to-input power lead.
+That lead routes collected energy to a finite receiving store; it is ideal,
+with cable mass, resistance, voltage conversion and breakage unsupported.
+The shade model still samples only the center, rather than partial lit area.
+See [solar controls and limitations](machine-game.md#solar-feedback-and-explicit-power-leads).
+
 | Physics | How a machine asks for it | Measured (tests/machine_physics_tests.py) |
 |---|---|---|
 | Rigid bodies: rolling, sliding, falling, toppling, friction, rolling resistance | parts, kits | Marble run, dominoes, falling weight in the default machine |

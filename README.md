@@ -32,7 +32,7 @@ The original chain-reaction levels are:
 | 4. Up she goes | a steam engine whose piston rises |
 | 5. Chain reaction | a ball down a ramp onto a lever that closes a switch and fires a cannon |
 | 6. Bounce the beam | two mirrors that bounce a laser round a wall onto a cord |
-| 7. Catch the sun | a solar panel turned and tipped to face a low sun |
+| 7. Catch the sun | a solar panel aimed at the low sun and explicitly cabled to the winch |
 | 8. Lift with less | a counterweight on a block and tackle |
 
 A win is scored by energy: what it takes to make your pieces (from their mass
@@ -42,7 +42,7 @@ three stars.
 **Sandbox** (`/machine`) combines the former Free build and machine sandbox.
 It opens a library of your designs, prebuilt designs, and **Add New Design**.
 Each design has a table with no goal and every piece in
-the tray: 30 cards including knives, mirrors, lenses, solar panels, tackle,
+the tray: 31 cards including knives, mirrors, lenses, solar panels, tackle,
 springs, gears, weights, motors, batteries, switches, bulbs, wires, water
 wheels, finite water tanks, heating coils and counterweight catapults.
 There are 21 editable prebuilt designs. Pieces snap

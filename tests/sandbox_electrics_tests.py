@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import sandbox_electrics as e
 import machine_world as mw
 import machine_game as mg
+import machine_chat as mc
 
 ENGINE = Path(os.environ.get('BANJO_LIVE_ENGINE', ROOT / 'build/agent-circuits/Release/banjo_live_world_run.exe'))
 if '--engine' in sys.argv:
@@ -19,6 +20,53 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_saved_power_lead_and_generic_ports(self):
+        level = mg.level_by_id('sun')
+        saved = copy.deepcopy(level['solution'])
+        spec = mg.compose(level, saved)[0]
+        before = copy.deepcopy(spec)
+        compiled = mw.compile_spec(spec)
+        self.assertEqual(spec, before)
+        self.assertEqual(saved, level['solution'])
+        ports = {p['name']: p for p in compiled['electrical']['power_ports']}
+        self.assertEqual(ports['your solar 1:power']['solar_panel'], 'your solar 1')
+        self.assertEqual(ports['winch:power']['battery'], 'solar battery')
+        self.assertEqual(compiled['solar_panels'][0]['battery'], 'solar battery')
+        disconnected = mw.compile_spec(mg.compose(level, saved[:1])[0])
+        self.assertEqual(disconnected['solar_panels'][0]['battery'], 'your solar 1 local battery')
+        # Place the cable before its panel to exercise dependency staging.
+        reordered = [dict(saved[1], a_port='your solar 2:power'), saved[0]]
+        self.assertEqual(mw.compile_spec(mg.compose(level, reordered)[0])['solar_panels'][0]['battery'], 'solar battery')
+        free = copy.deepcopy(mg.free_build())
+        free['machine']['sun'] = {'elevation_deg': 90, 'azimuth_deg': 0}
+        placements = [{'piece': 'solar', 'x_m': -.7}, {'piece': 'battery', 'x_m': .7, 'charge_percent': 0},
+                      {'piece': 'power_cable', 'a_port': 'your solar 1:power', 'b_port': 'your battery 2:power'}]
+        c = mw.compile_spec(mg.compose(free, placements)[0])
+        self.assertEqual(c['solar_panels'][0]['battery'], 'your battery 2 battery')
+        self.assertEqual(len(c['electrical']['power_cables']), 1)
+        self.assertTrue(mg.ghost(level, saved, 1)['wire_preview'])
+        assisted = mc.respond_level('Place it', level, [], mode='build',
+                                    call=lambda messages: ({'reply': 'Connect the panel to the winch.', 'placements': saved}, {}))
+        self.assertEqual(assisted['placements'][1]['b_port'], 'winch:power')
+        self.assertIn('winch:power', mc.level_prompt(level, 'build'))
+        # Search geometry while retaining the actual string connection.
+        refined, _, runs = mg.refine(level, saved,
+            lambda compiled: {'stations': [{'done': False}], 'zone_nearest_m': {level['goal']['title']: 1}},
+            budget=2, scatter=1)
+        self.assertEqual(refined[1]['b_port'], 'winch:power')
+        self.assertEqual(runs, 2)
+        for bad in (dict(saved[1], a_port='absent:power'),
+                    dict(saved[1], a_port='winch:power', b_port='your solar 1:power')):
+            with self.assertRaises(mw.MachineRefused): mg.compose(level, [saved[0], bad])
+        duplicate = copy.deepcopy(spec)
+        duplicate['electrical']['power_cables'].append(dict(duplicate['electrical']['power_cables'][0], name='second lead'))
+        with self.assertRaises(mw.MachineRefused): mw.compile_spec(duplicate)
+        # An already declared solar destination cannot sneak around the
+        # explicit one-source-per-store restriction.
+        parallel = copy.deepcopy(spec)
+        parallel['solar_panels'].append(dict(parallel['solar_panels'][0], name='other solar', battery='solar battery'))
+        with self.assertRaises(mw.MachineRefused): mw.compile_spec(parallel)
+
     def test_saved_graph_keeps_terminals_crossings_and_shared_supply(self):
         spec = e.manual_loop(second_bulb=True)
         before = copy.deepcopy(spec)
@@ -48,6 +96,96 @@ class Native(unittest.TestCase):
             result = mw.rehearse(mw.compile_spec(spec), ENGINE, Path(logs), seconds=seconds, wall_limit_s=40)
         self.assertIsNone(result.get('error'), result)
         return result
+
+    def test_explicit_solar_lead_disconnect_shade_and_nudged_solution(self):
+        level = mg.level_by_id('sun')
+        with tempfile.TemporaryDirectory(prefix='banjo-sun-lead-') as logs:
+            trial = mg.trial(level, level['solution'], ENGINE, Path(logs), runs=3)
+        self.assertEqual(trial['worked'], 3, trial)
+        for mode in ('disconnected', 'flat', 'shaded'):
+            placements = copy.deepcopy(level['solution'])
+            if mode == 'disconnected': placements.pop()
+            if mode == 'flat':
+                placements[0]['yaw_deg'] = 0; placements[0]['pitch_deg'] = 0
+            if mode == 'shaded':
+                placements[0]['x_m'] = -.8; placements[0]['z_m'] = .6
+            result = self.run_spec(mg.compose(level, placements)[0], level['time_s'])
+            self.assertFalse(result['stations'][0]['done'], mode)
+            batteries = {b['name']: b for b in result['readouts']['machines']['batteries']}
+            panel = result['readouts']['machines']['solar_panels'][0]
+            if mode == 'disconnected':
+                self.assertEqual(batteries['solar battery']['charge_j'], 0)
+                self.assertEqual(batteries['solar battery']['given_j'], 0)
+                self.assertGreater(batteries['your solar 1 local battery']['charge_j'], 390)
+                self.assertAlmostEqual(batteries['your solar 1 local battery']['charge_j'], panel['charged_j'], delta=.001)
+                self.assertAlmostEqual(panel['sunlight_j'], panel['collected_j'] + panel['spilled_j'] + panel['heat_j'], delta=.003)
+            if mode == 'shaded': self.assertEqual(panel['sunlight_w'], 0)
+        print('sun explicit lead: 3/3 nudged wins; disconnected, flat and shaded fail')
+
+    def test_ready_solar_geometry_and_no_energy_before_running(self):
+        level = mg.level_by_id('sun')
+        for shaded in (False, True):
+            placements = copy.deepcopy(level['solution'])
+            if shaded: placements[0].update(x_m=-.8, z_m=.6)
+            compiled = mw.compile_spec(mg.compose(level, placements)[0])
+            with tempfile.TemporaryDirectory(prefix='banjo-sun-ready-') as logs:
+                session = mw.MachineSession(compiled, ENGINE, Path(logs), paced=True)
+                try:
+                    deadline = time.monotonic() + 5
+                    frame = session.frame(0, 10)
+                    while 'machines' not in frame.get('readouts', {}) and time.monotonic() < deadline:
+                        time.sleep(.01)
+                        frame = session.frame(0, 10)
+                    panel = frame['readouts']['machines']['solar_panels'][0]
+                    self.assertEqual(session.t, 0)
+                    self.assertTrue(panel['valid'])
+                    self.assertEqual(panel['battery'], 'solar battery')
+                    self.assertEqual(panel['occlusion_model'], 'center_ray')
+                    self.assertAlmostEqual(panel['off_sun_deg'], 0, delta=.001)
+                    self.assertEqual(len(panel['at_m']), 3)
+                    self.assertEqual(len(panel['normal']), 3)
+                    self.assertEqual(len(panel['toward_sun']), 3)
+                    self.assertEqual(len(panel['ray_from_m']), 3)
+                    if shaded:
+                        self.assertEqual(panel['sunlight_w'], 0)
+                        self.assertIsNotNone(panel['shadow_hit_m'])
+                        self.assertGreater(panel['shadow_distance_m'], 0)
+                    else:
+                        self.assertAlmostEqual(panel['sunlight_w'], 250, delta=.001)
+                        self.assertIsNone(panel['shadow_hit_m'])
+                    for key in ('charged_j', 'sunlight_j', 'collected_j', 'spilled_j', 'heat_j'):
+                        self.assertEqual(panel[key], 0, key)
+                    for b in frame['readouts']['machines']['batteries']:
+                        self.assertEqual(b['given_j'], 0)
+                        self.assertEqual(b['taken_j'], 0)
+                finally: session.close()
+
+    def test_power_lead_routes_one_finite_store_and_accounts_for_overflow(self):
+        free = copy.deepcopy(mg.free_build())
+        free['machine']['sun'] = {'elevation_deg': 90, 'azimuth_deg': 0}
+        for charge in (0, 100):
+            placements = [{'piece': 'solar', 'x_m': -.7},
+                          {'piece': 'battery', 'x_m': .7, 'capacity_j': 100, 'charge_percent': charge},
+                          {'piece': 'power_cable', 'a_port': 'your solar 1:power', 'b_port': 'your battery 2:power'}]
+            result = self.run_spec(mg.compose(free, placements)[0], 1)
+            machines = result['readouts']['machines']
+            batteries = {b['name']: b for b in machines['batteries']}
+            panel = machines['solar_panels'][0]
+            self.assertEqual(batteries['your solar 1 battery']['charge_j'], 0)
+            self.assertEqual(panel['battery'], 'your battery 2 battery')
+            self.assertAlmostEqual(panel['sunlight_j'], panel['collected_j'] + panel['spilled_j'] + panel['heat_j'], delta=.003)
+            if charge:
+                self.assertEqual(batteries['your battery 2 battery']['charge_j'], 100)
+                self.assertEqual(panel['collected_j'], 0)
+                self.assertEqual(panel['charged_j'], 100)
+                self.assertGreater(panel['spilled_j'], 45)
+            else:
+                self.assertGreater(panel['charged_j'], 45)
+                self.assertEqual(panel['spilled_j'], 0)
+                # Public charge readout is rounded to 0.1 J; taken_j retains
+                # millijoules for the conservation comparison.
+                self.assertEqual(batteries['your battery 2 battery']['charge_j'], round(panel['charged_j'], 1))
+                self.assertAlmostEqual(batteries['your battery 2 battery']['taken_j'], panel['charged_j'], delta=.001)
 
     def test_closed_open_missing_return_and_empty_battery(self):
         closed = self.run_spec(e.manual_loop())

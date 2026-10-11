@@ -201,8 +201,11 @@ def level_prompt(level, mode):
         for key, rule in t['knobs'].items():
             if 'choices' in rule:
                 knobs.append(f'{key} ({rule.get("label", key)}): one of {rule["choices"]}')
-            else:
+            elif 'min' in rule and 'max' in rule:
                 knobs.append(f'{key} ({rule.get("label", key)}): {rule["min"]} to {rule["max"]}')
+            else:
+                kind = next((ref for ref in ('power_port', 'terminal', 'hinge', 'part', 'point') if rule.get(ref)), 'connection')
+                knobs.append(f'{key} ({rule.get("label", key)}): existing {kind} reference; default {rule.get("default", "")}')
         price = f'{t["cost"]}' + (f' + {t["cost_per"]["each"]} per {t["cost_per"]["unit"]:g} of '
                                    f'{t["cost_per"]["knob"]}' if 'cost_per' in t else '')
         tray.append(f'- {t["piece"]} (up to {t.get("count", 1)}; costs {price}): ' + '; '.join(knobs))
@@ -230,11 +233,15 @@ The player may add only these pieces (the tray):
 {tray}
 What each piece is:
 {pieces}
+Connection references use exact saved names. A placed panel in row N exposes "your solar N:power";
+a placed battery in row N exposes "your battery N:power". A power_cable uses a_port for the solar
+output and b_port for the receiver input. Base power ports: {json.dumps(level['machine'].get('electrical', {}).get('power_ports', []))}
 {TURNING_HELP if any('yaw_deg' in t['knobs'] or 'pitch_deg' in t['knobs'] for t in level['tray']) else ''}
 {answer}"""
 
 
 PIECE_HELP = {
+    'power_cable': 'an ideal two-conductor power lead from a solar output to a finite battery input; no cable loss or mass is modeled',
     'plank': 'a loose oak plank 2 cm thick and 0.3 m wide, cut to length_m and set down with its middle at x_m: it '
              'is lowered onto the highest thing under it and rests there; gravity holds it, nothing bolts it',
     'knife': 'a knife pendulum held out level and let go: its pivot at (x_m, pivot_height_m, z_m), arm_m long, '
@@ -308,6 +315,9 @@ def free_prompt(level):
                 knobs.append(f'{key}: one of {rule["choices"]}')
             elif 'min' in rule:
                 knobs.append(f'{key} ({rule.get("label", key)}): {rule["min"]} to {rule["max"]}')
+            else:
+                kind = next((ref for ref in ('power_port', 'terminal', 'hinge', 'part', 'point') if rule.get(ref)), 'connection')
+                knobs.append(f'{key}: existing {kind} reference; default {rule.get("default", "")}')
         tray.append(f'- {t["piece"]}: {FREE_HELP.get(t["piece"], "")}. Knobs: ' + '; '.join(knobs))
     tray = '\n'.join(tray)
     return f"""You build marble runs and contraptions on the free build table in Banjo, a physics game. The engine
@@ -493,7 +503,7 @@ def respond_level(message, level, placements, mode='hint', last_run=None, call=N
             if key not in p:
                 continue
             value = p[key]
-            if 'choices' not in rule and isinstance(value, (int, float)) and not isinstance(value, bool):
+            if 'min' in rule and 'max' in rule and isinstance(value, (int, float)) and not isinstance(value, bool):
                 value = min(rule['max'], max(rule['min'], value))
             out[key] = value
         return out

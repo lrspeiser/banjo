@@ -94,7 +94,7 @@ class Tray(unittest.TestCase):
                         after = mg.ghost(context, p, 0, edit_key=key)
                         guide = after.pop('edit_guide')
                         self.assertEqual(after, before)
-                        if rule.get('part') or rule.get('hinge') or rule.get('terminal') or not after['parts']:
+                        if rule.get('part') or rule.get('hinge') or rule.get('terminal') or rule.get('power_port') or not after['parts']:
                             self.assertIsNone(guide)
                             continue
                         self.assertEqual(guide['key'], key)
@@ -285,7 +285,7 @@ class Tray(unittest.TestCase):
                     p = {'piece': t['piece']}
                     for key, rule in t['knobs'].items():
                         p[key] = rule['choices'][-1 if end == 'max' else 0] if 'choices' in rule else (
-                            knob_default(rule) if rule.get('turning') or any(rule.get(k) for k in ('part', 'terminal', 'hinge')) else rule[end])
+                            knob_default(rule) if rule.get('turning') or any(rule.get(k) for k in ('part', 'terminal', 'hinge', 'power_port')) else rule[end])
                     tries.append([p])
             for placements in tries:
                 parts = mg._assemble(level, placements, lenient=True)[3]['parts']
@@ -466,9 +466,9 @@ class FreeBuild(unittest.TestCase):
                 context['custom_base'] = True
             g = mg.ghost(context, [placed], 0)
             with self.subTest(piece=t['piece']):
-                if t['piece'] == 'wire':
+                if t['piece'] in ('wire', 'power_cable'):
                     self.assertFalse(g['fits'], 'a wire needs two real terminals')
-                    self.assertIn('terminal', ' '.join(g['problems']))
+                    self.assertIn('terminal' if t['piece'] == 'wire' else 'power input', ' '.join(g['problems']))
                     continue
                 self.assertTrue(g['fits'], g['problems'])
                 self.assertTrue(g['parts'])
@@ -1004,8 +1004,8 @@ class Engine(unittest.TestCase):
         # A panel lying flat in the sun, and one facing the sun in the shed's
         # shadow: too little sunlight for the winch to lift the weight.
         sun = mg.level_by_id('sun')
-        flat = [{k: v for k, v in sun['solution'][0].items() if k not in ('yaw_deg', 'pitch_deg')}]
-        shaded = [dict(sun['solution'][0], x_m=-0.8, z_m=0.6)]
+        flat = [{k: v for k, v in sun['solution'][0].items() if k not in ('yaw_deg', 'pitch_deg')}, *sun['solution'][1:]]
+        shaded = [dict(sun['solution'][0], x_m=-0.8, z_m=0.6), *sun['solution'][1:]]
         # The counterweight hung too low: it reaches the ground before the
         # crate, rising a third as far, reaches the shelf.
         tackle = mg.level_by_id('tackle')

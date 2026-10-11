@@ -4,7 +4,7 @@ October 11, 2026. Open `/play` to choose eight chain-reaction levels or twenty f
 
 ## Expanded sandbox and easy challenges
 
-The sandbox catalogue has 30 placeable cards, plus the Attach tool. Its 21 prebuilt designs are editable copies. The full-screen library has routing, motion, supports, power, optics, electricity and water categories; **Try example** opens a saved copy that supplies the required environment or connections. Water cards explicitly require a collection-channel base. The knife, mirror, lens, solar panel and block-and-tackle are now independently available alongside springs, gears, weights, motors, batteries, switches, bulbs, wires, finite water tanks, water wheels, heating coils and the counterweight catapult.
+The sandbox catalogue has 31 placeable cards, plus the Attach tool. Its 21 prebuilt designs are editable copies. The full-screen library has routing, motion, supports, power, optics, electricity and water categories; **Try example** opens a saved copy that supplies the required environment or connections. Water cards explicitly require a collection-channel base. The knife, mirror, lens, solar panel and block-and-tackle are now independently available alongside springs, gears, weights, motors, batteries, switches, bulbs, wires, finite water tanks, water wheels, heating coils and the counterweight catapult.
 
 | Card/tool | Controls and supported behavior |
 |---|---|
@@ -28,7 +28,65 @@ Per-material measurements, conservation receipts, timesteps and limits are in [m
 
 Integration verification used `build/agent-integration/Release/banjo_live_world_run.exe`, SHA-256 `b98d68d42734536b6bacc3ca008690d061d7e89fab290ca42bfc1235b0a3161a`. All 147 applicable CTest entries passed across the full run and the corrected browser/water rerun (long/performance labels excluded). The browser suite passed 24 tests, including desktop, 390×844 portrait and 844×390 landscape, explicit wiring, version restoration and queued live controls. The game suite passed 37 tests; the added mechanics/electrics/water/combinations suites passed 11/7/8/2 tests. Source registration accounts for all 269 C++ sources. No complete rigid/fluid/contact energy closure is claimed by these results.
 
-The catalogue checkpoint was published as `874c2796`; `banjo.is` served that header and its water-wheel example poured 12 litres and turned its axle in a live browser run. The local site uses the tested executable above.
+The catalogue checkpoint was published as `874c2796`; `banjo.is` served that header and its water-wheel example poured 12 litres and turned its axle in a live browser run. That catalogue checkpoint used the tested executable above; the solar update below records its replacement.
+
+## Solar feedback and explicit power leads
+
+The collector has a scene-attached meter in challenges and the sandbox:
+incident sunlight in watts, power accepted by its battery in watts, current
+stored energy in joules, and angle off the sun. It updates while running and
+also measures the ready setup without advancing time or adding charge. A full
+store accepts no charging power even if sunlight still reaches the panel.
+The ghost's aiming estimate is labelled **before shade**; set it down to see
+the native measurement.
+
+Solar shading currently uses one ray from the center of the collecting face,
+offset 10 mm outward, toward the declared sun. It tests the engine's actual
+collision shapes. A blocked center makes this model shade the entire
+collector; it does not integrate partially lit area or transmit through glass.
+The visual shadow map is illustrative. **Center blocked by …** names the
+measured obstruction, and an orange dashed ray ends at its actual hit point.
+A clear collector draws a short yellow ray toward the sun. The unrecoverable
+earlier player placement did not establish a specific false pillar hit.
+
+In **Catch the sun**, place and aim a collector, then click **Output** on its
+meter and **Input** on the winch. This saves a visible **power cable**. Its
+absence leaves the winch's battery empty: collection goes into the panel's
+own finite store and cannot lift the weight. Click an output and a different
+input to replace its connection. Remove its cable to disconnect it. Esc
+cancels an unfinished connection. Wiring rebuilds the setup at time zero.
+The same ports support charging a placeable battery in a saved sandbox design;
+the battery's plus/minus terminal graph powers bulbs, motors and switches.
+Existing prepared sandbox declarations retain their declared charging store.
+
+`electrical.power_ports` identify a solar output or finite-battery input by
+name, housing and world position; `electrical.power_cables` save their explicit
+connections. The **Power cable** card also offers endpoint selectors. A cable
+is an ideal two-conductor charging lead, with no modeled mass, resistance,
+voltage conversion, sag, breakage or heating. Each output and receiver accepts
+one cable; parallel solar sources are unsupported. Collection, battery
+saturation and motor torque remain native calculations. Cable endpoints follow
+piece edits, rename with piece indices, and in saved sandbox designs survive Undo, reload, version
+restoration and shared saved declarations; removing an endpoint removes its
+cables.
+
+Measured with `build/agent-integration/Release/banjo_live_world_run.exe`, SHA-256
+`569a441595274e13128e1b8f06ff54d392232409b312d2089a77c2451315c976`:
+the original winch solution wins at 2.400, 2.450 and 2.383 seconds under the
+three nudges; disconnected, flat and shaded controls fail. Its goal, deadline
+and energy par are unchanged. An aligned ready collector reads 250 W sunlight,
+50 W charging and 0 J stored. At `dt = 1/240 s`, one second gives
+250 J sunlight = 50 J collected + 200 J conversion heat, with residual
+−1.56 × 10⁻¹² J. An initially full 100 J receiver spills the 50 J instead,
+with zero change to its reserve. These are solar/store accounts, not proof of
+full motor/contact energy closure. Native solar and sun-day suites pass 11
+and 7 cases. The full game suite passes 39 tests (all 28 solutions, three
+nudges each); the electrical suite passes 11. Host, world, physics, live
+controls and view integration also pass their targeted CTest entries.
+The complete browser suite passes 27 tests, including ready-state metering,
+real output/input clicks and native wins at 1280×860, 390×844 and 844×390,
+unobstructed 44 px targets, moving both endpoints and saved graph restoration.
+Source registration still accounts for all 269 C++ sources.
 
 ## Fresh easy challenges
 
@@ -78,7 +136,7 @@ Editing guides checked on October 11, 2026: all 35 game tests and 20 Chrome brow
 | 4. Up she goes | steam | a steam engine | over the marker with a 12 kW firebox: the piston reaches the zone at 3.4 s |
 | 5. Chain reaction | a chain | a ramp with a ball | the ball tips the lever, which closes the switch; the coil lights the cannon's powder; the ball knocks the block into the zone at 1.5 s |
 | 6. Bounce the beam | light: reflection, and light heating what it lands on | two mirrors | a 5 kW laser's beam bounced around a wall by two mirrors at 45 and -45 degrees burns through the cord; the weight is in the bin at about 5 s (within 12 s) |
-| 7. Catch the sun | sunlight: a panel facing the sun catches the most | a solar panel | a sun 15 degrees up behind the shed; the panel at x = 1.0, z = 0.4, turned -45 degrees and tipped 75 to face the sun squarely, takes 250 W of sunlight and stores 50 W, and the solar winch lifts the weight to the mark at 2.4 s |
+| 7. Catch the sun | sunlight: a panel facing the sun catches the most | a solar panel and an explicit power cable | a sun 15 degrees up behind the shed; the panel at x = 1.0, z = 0.4, turned -45 degrees and tipped 75 to face the sun squarely, takes 250 W of sunlight and stores 50 W, and the solar winch lifts the weight to the mark at 2.4 s |
 | 8. Lift with less | mechanical advantage: a block and tackle | a counterweight on a block and tackle | a 4.7 kg counterweight through 3 pulleys, hung 1.75 m up, lifts the 13.6 kg crate to the shelf mark at 3.65 s for a cost of 11.4 |
 
 How forgiving they are, measured: in level 2 the knife works with its pivot anywhere from 16 cm behind the rope's line to level with it, across about 25 cm of height. In level 3, 1 g of powder works from several places; 0.5 g falls short and 2 g throws the block past the zone. In level 7 the winch needs about 185 W of sunlight on the panel: lying flat in the sun it gets 65 W and the weight never moves; tipped only 30 degrees, or tipped without being turned toward the sun, is not enough; tipped 45 degrees toward the sun it lifts the weight by 3.2 s; in the shed's shadow it gets nothing, however it faces. The ghost of a panel says how squarely it faces the sun and how much sunlight that gives, if nothing shades it. In level 8, measured: 21.6 kg on one pulley lifts the crate at 0.67 s but costs 45; 13.6 kg on one pulley, the crate's own weight, does not move it at all; 7.4 kg on two lifts it at 1.9 s for 16.8; 4.7 kg on three, hung 1.75 m up, lifts it at 3.65 s for 11.4, but hung at 1.4 m it reaches the ground first and the crate stops 6 cm short; 4 kg on four would have to fall from higher than the gantry allows.

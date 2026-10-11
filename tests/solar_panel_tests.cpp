@@ -154,6 +154,50 @@ void inShadeNothingAndItSaysWhat() {
     require(!panelOf(*r.world).shaded && panelOf(*r.world).power_w > 0.0, "from under the awning's edge, it is lit");
 }
 
+void readyMeterUsesTheActualCenterRayWithoutTransferringEnergy() {
+    TileImpactRequest request = slabRoom();
+    request.cell_size_m = 0.02;
+    request.bodies.push_back(block("narrow pillar", {0.12, 1.3, 0.12}, {0.4, 0.65, 0.0}));
+    const auto world = LiveWorld::open(request);
+    const unsigned store = world->energyStore("battery", "slab", 1000.0, 0.0, 24.0, 0.0);
+    require(world->setSun(45.0, 90.0, 1000.0), "the sun is declared before the panels");
+    const unsigned centered = world->solarPanel("centered", "slab", store,
+                                                {0.0, 0.1, 0.0}, {0.0, 1.0, 0.0}, 0.8, 0.2);
+    const unsigned beside = world->solarPanel("beside", "slab", store,
+                                              {0.0, 0.1, 0.25}, {0.0, 1.0, 0.0}, 0.8, 0.2);
+    require(centered != 0 && beside != 0, "both collectors were added");
+    const auto panels = world->solarPanels();
+    const LiveSolarPanel &blocked = panels.front(), &clear = panels.back();
+    require(blocked.valid && blocked.ray_cast && blocked.shaded && blocked.shaded_by == "narrow pillar",
+            "the center sample reports the narrow pillar before any step");
+    require(near(blocked.at_m.y, 0.1) && near(blocked.ray_from_m.y, 0.11) &&
+                near(blocked.toward_sun.x, std::sqrt(0.5)) && near(blocked.off_sun_deg, 45.0),
+            "the ready meter exposes its actual face, offset ray and sun angle");
+    // Jolt ray fractions use float precision. A 10 micrometre absolute
+    // tolerance bounds that numerical readout, not the shading decision.
+    require(std::abs(blocked.shadow_hit_m.x - 0.34) < 1e-5 &&
+                std::abs(blocked.shadow_hit_m.y - 0.45) < 1e-5 &&
+                std::abs(blocked.shadow_distance_m - std::hypot(0.34, 0.34)) < 1e-5,
+            "the ray hits the pillar's true near face at the analytical point");
+    require(clear.valid && clear.ray_cast && !clear.shaded &&
+                near(clear.power_w, 160.0 * std::sqrt(0.5)),
+            "moving the center 25 cm sideways clears that narrow shadow");
+    require(storeOf(*world).charge_j == 0.0 && storeOf(*world).taken_j == 0.0 &&
+                clear.sunlight_j == 0.0 && clear.collected_j == 0.0 && clear.heat_j == 0.0,
+            "ready measurements neither advance time nor manufacture charge");
+    const double ready_power = clear.power_w;
+    tick(*world);
+    const LiveSolarPanel stepped = world->solarPanels().back();
+    require(near(stepped.power_w, ready_power) && near(storeOf(*world).charge_j, ready_power * kDt),
+            "the first real step agrees with the ready instantaneous power and transfers only dt joules");
+    require(near(stepped.sunlight_j, stepped.collected_j + stepped.spilled_j + stepped.heat_j),
+            "the solar ledger closes after the first real step");
+    std::cout << "    ready center hits pillar at (" << blocked.shadow_hit_m.x << ", "
+              << blocked.shadow_hit_m.y << ", " << blocked.shadow_hit_m.z << "), "
+              << blocked.shadow_distance_m << " m; clear side sample " << ready_power
+              << " W, charge before Run 0 J\n";
+}
+
 void aFullStoreTakesNoMore() {
     Rig r = rig(false, 100.0, 90.0);
     require(r.world->setSun(90.0, 0.0, 1000.0), "the sun would not go in the sky");
@@ -393,6 +437,8 @@ int main() {
         {"square to the sun, it puts in what the sun gives", squareToTheSunItPutsInWhatTheSunGives},
         {"at an angle the cosine of it, and from behind nothing", atAnAngleTheCosineOfItAndFromBehindNothing},
         {"in shade nothing, and it says what shades it", inShadeNothingAndItSaysWhat},
+        {"ready solar meter uses the actual center ray without transferring energy",
+            readyMeterUsesTheActualCenterRayWithoutTransferringEnergy},
         {"a full store takes no more", aFullStoreTakesNoMore},
         {"a saved world keeps its sun and panels", aSavedWorldKeepsItsSunAndPanels},
         {"a lamp draws its watts and gives its lumens", aLampDrawsItsWattsAndGivesItsLumens},

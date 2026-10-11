@@ -563,15 +563,24 @@ nlohmann::json panelOf(const LiveSolarPanel &panel) {
             {"efficiency", tidy(panel.efficiency)},
             {"at_m", vec(panel.at_m)},
             {"normal", vec(panel.normal)},
+            {"toward_sun", vec(panel.toward_sun)},
+            {"ray_from_m", vec(panel.ray_from_m)},
+            {"shadow_hit_m", panel.shaded ? vec(panel.shadow_hit_m) : nlohmann::json(nullptr)},
+            {"shadow_distance_m", panel.shaded ? nlohmann::json(panel.shadow_distance_m) : nlohmann::json(nullptr)},
+            {"ray_cast", panel.ray_cast},
+            {"valid", panel.valid},
+            {"off_sun_deg", tidy(panel.off_sun_deg)},
+            {"irradiance_w_m2", panel.irradiance_w_m2},
+            {"occlusion_model", "center_ray"},
             {"cos_incidence", tidy(panel.cos_incidence)},
             {"shaded", panel.shaded},
             {"shaded_by", panel.shaded_by},
             {"sunlight_w", tidy(panel.sunlight_w)},
             {"power_w", tidy(panel.power_w)},
-            {"sunlight_j", tidy(panel.sunlight_j)},
-            {"collected_j", tidy(panel.collected_j)},
-            {"spilled_j", tidy(panel.spilled_j)},
-            {"heat_j", tidy(panel.heat_j)}};
+            {"sunlight_j", panel.sunlight_j},
+            {"collected_j", panel.collected_j},
+            {"spilled_j", panel.spilled_j},
+            {"heat_j", panel.heat_j}};
 }
 
 // A run of cable and a lamp as a host reads them (LiveCable, LiveLamp). The
@@ -836,7 +845,16 @@ nlohmann::json machinesOf(const LiveWorld &world) {
     }
     if (!panels.empty()) {
         out["panels"] = nlohmann::json::array();
-        for (const LiveSolarPanel &panel : panels) out["panels"].push_back(panelOf(panel));
+        for (const LiveSolarPanel &panel : panels) {
+            nlohmann::json measured = panelOf(panel);
+            for (const LiveEnergyStore &store : stores)
+                if (store.id == panel.store) {
+                    measured["battery"] = store.name;
+                    measured["charged_j"] = store.charge_j;
+                    break;
+                }
+            out["panels"].push_back(std::move(measured));
+        }
     }
     // And only a world with a cable or a lamp says anything of those.
     if (!cables.empty()) {

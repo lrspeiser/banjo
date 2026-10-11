@@ -2,7 +2,7 @@
 
 October 11, 2026. `scripts/sandbox_electrics.py` defines placeable batteries,
 manual or hinged paddle switches, bulbs, wires, motor mounts and attached
-heating coils. Their terminal graph compiles to `machines::Circuit`; positions
+heating coils, plus explicit solar power leads. Their terminal graph compiles to `machines::Circuit`; positions
 and names do not substitute for a circuit solve. Existing solar panels charge
 the same declared battery store used by the graph.
 
@@ -23,6 +23,15 @@ the same declared battery store used by the graph.
   resistance. Delete or disconnect a terminal and no electrical shortcut remains.
   Wires are electrical graph elements, with no simulated cable mass, sag or
   mechanical attachment; their fixed resistance is a disclosed idealization.
+- Power cable: a saved two-conductor charging lead from a solar output to a
+  finite battery input. It chooses the existing native panel's charging store;
+  no energy is copied or recreated. Each output and receiver accepts one cable.
+  Cable loss, mass, sag and parallel charging electronics are not modeled.
+  A generic solar panel exposes `<panel>:power`; a graph battery exposes
+  `<device>:power`. The original Catch the sun challenge provides `winch:power`.
+  Until connected, that challenge's panel charges its own empty 20 kJ local
+  store, and its winch battery stays empty. Older sandbox templates retain their
+  declared store connection until an explicit cable chooses another receiver.
 - Motor: forward/reverse, throttle 0–1 and either the included axle or an
   explicitly selected existing hinge. The preset is 2 N m stall torque and
   8 rad/s no-load speed. The selected hinge's housing takes the reaction torque;
@@ -61,6 +70,26 @@ The thermal solve tracks storage and heat lost to ambient separately. The ray
 tracer receives exactly the bulb branch's emitted watts and independently
 balances absorbed, escaped, ground, scattered and unfollowed power. Its heat
 is therefore not a second electrical draw.
+
+Power-cable regressions preserve saved endpoint names, compile a cable declared
+before its source panel, reject reversed/missing endpoints and duplicate or
+parallel charging sources, and exercise empty and full receiving stores. In a
+full battery the accepted panel energy stays zero and excess converted energy
+is reported as spilled. Panel `collected_j` is cumulative accepted solar energy;
+`charged_j` is the receiving store's current balance, including initial charge
+and motor withdrawals. The panel audit is
+`sunlight_j = collected_j + spilled_j + heat_j`, within 0.003 J in the Python
+readout regression; store `taken_j` matches accepted input within 0.001 J.
+Public current charge is rounded to 0.1 J and is tested at that display precision.
+
+The original sun goal, time limit and energy par are unchanged. Its panel plus
+explicit cable wins at 2.400, 2.450 and 2.383 s in the three nudged runs. A facing
+but disconnected panel stores about 397.5 J locally after the last sampled
+8-second run state and gives the winch zero joules. Connected flat and shaded
+controls still fail. Before Run, meters report geometry and available sunlight
+(250 W for the aligned clear panel), while stored/taken/collected joules remain
+zero. A ray hit and shadow distance are exposed for the shaded control. Solar
+occlusion remains one center ray: partial-area shadowing is unsupported.
 
 Native checks preserve battery/circuit/lamp state through an unchanged-world
 snapshot, reject two owners of one supply, and exercise finite final joules,

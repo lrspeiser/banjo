@@ -73,6 +73,12 @@ def wire(name, k, ctx):
                                      'b': k.get('b_terminal', '')}]}}
 
 
+def power_cable(name, k, ctx):
+    """An ideal two-conductor charging lead; no cable loss or mass is modeled."""
+    return {'electrical': {'power_cables': [{'name': name, 'a': k.get('a_port', ''),
+                                            'b': k.get('b_port', '')}]}}
+
+
 def motor(name, k, ctx):
     x, z = k.get('x_m', 0), k.get('z_m', 0)
     part = name + ' housing'
@@ -122,7 +128,7 @@ def connected(builder):
 
 PIECES = {key: connected(value) for key, value in
           {'battery': battery, 'switch': switch, 'bulb': bulb, 'wire': wire,
-           'motor': motor, 'ignition': ignition}.items()}
+           'motor': motor, 'ignition': ignition, 'power_cable': power_cable}.items()}
 
 
 def knob(default, minimum, maximum, step, label):
@@ -150,6 +156,10 @@ TRAY = [
      'description': 'Connect two labelled electrical terminals; crossing lines never connect.',
      'knobs': {**POS, 'a_terminal': {'default': '', 'terminal': True, 'label': 'from terminal'},
                'b_terminal': {'default': '', 'terminal': True, 'label': 'to terminal'}}},
+    {'piece': 'power_cable', 'label': 'Power cable', 'count': 20, 'cost': 0, 'turning': False,
+     'description': 'An ideal two-conductor lead from a solar output to a battery input. Cable losses and mass are not modeled.',
+     'knobs': {**POS, 'a_port': {'default': '', 'power_port': 'output', 'label': 'from solar output'},
+               'b_port': {'default': '', 'power_port': 'input', 'label': 'to power input'}}},
     {'piece': 'motor', 'label': 'Motor', 'count': 8, 'cost': 1, 'turning': False,
      'description': 'A powered axle that reacts against its real hinge mount.',
      'knobs': {**POS, 'hinge': {'default': 'included axle', 'hinge': True, 'label': 'driven axle'},
@@ -160,6 +170,94 @@ TRAY = [
      'knobs': {**POS, 'target': {'default': 'included oak cord', 'part': True, 'label': 'attached target'},
                'preset': {'default': 'warm', 'choices': ['warm', 'hot'], 'label': 'coil preset'}}},
 ]
+
+
+def compile_power(spec, names, battery_names, problems):
+    """Resolve explicit charging destinations without mutating saved declarations.
+
+    A source may charge one store, and a store accepts one source. Parallel
+    charging electronics, cable heating, sag and transmission loss are outside
+    this model. Collection, saturation and consumption remain native laws.
+    """
+    raw = spec.get('electrical', {}) or {}
+    if not isinstance(raw, dict):
+        return {'power_ports': [], 'power_cables': []}, {}
+    if any(not isinstance(raw.get(key, []), list) for key in ('power_ports', 'power_cables')):
+        problems.append('electrical power_ports and power_cables must be arrays')
+        return {'power_ports': [], 'power_cables': []}, {}
+    ports, cables, overrides = {}, [], {}
+    panels = {}
+    for i, panel in enumerate(spec.get('solar_panels', []) or []):
+        if not isinstance(panel, dict):
+            continue
+        name = panel.get('name') or f'panel {i + 1}'
+        if not isinstance(name, str) or name in panels:
+            problems.append('solar panel names must be strings and unique'); continue
+        panels[name] = panel
+
+    def valid_point(point):
+        return (isinstance(point, list) and len(point) == 3 and
+                all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in point))
+
+    for p in raw.get('power_ports', []):
+        if not isinstance(p, dict):
+            problems.append('power ports must be objects'); continue
+        name, kind = p.get('name'), p.get('kind')
+        if not isinstance(name, str) or not name or name in ports:
+            problems.append('power port names must be nonempty and unique'); continue
+        if kind not in ('input', 'output') or not isinstance(p.get('part'), str) or p['part'] not in names or not valid_point(p.get('at_m')):
+            problems.append(f'power port {name}: needs a housing, finite world position and input/output kind'); continue
+        if kind == 'input' and (not isinstance(p.get('battery'), str) or p['battery'] not in battery_names):
+            problems.append(f'power port {name}: input battery must name a finite store'); continue
+        if kind == 'output' and (not isinstance(p.get('solar_panel'), str) or p['solar_panel'] not in panels or panels[p['solar_panel']].get('part') != p['part']):
+            problems.append(f'power port {name}: output must name its solar panel'); continue
+        ports[name] = copy.deepcopy(p)
+    for panel, p in panels.items():
+        if isinstance(p.get('part'), str) and p['part'] in names:
+            name = panel + ':power'
+            ports.setdefault(name, {'name': name, 'kind': 'output', 'solar_panel': panel,
+                                    'part': p['part'], 'at_m': list(names[p['part']]['at_m'])})
+    for device in raw.get('devices', []) if isinstance(raw.get('devices', []), list) else []:
+        if not isinstance(device, dict) or device.get('kind') != 'battery' or device.get('part') not in names:
+            continue
+        terminals = device.get('terminals', {})
+        pts = list(terminals.values()) if isinstance(terminals, dict) else []
+        if pts and all(valid_point(p) for p in pts) and isinstance(device.get('name'), str):
+            name = device['name'] + ':power'
+            ports.setdefault(name, {'name': name, 'kind': 'input', 'battery': device.get('battery'),
+                                    'part': device['part'], 'at_m': [sum(p[i] for p in pts) / len(pts) for i in range(3)]})
+    used_sources, used_stores, cable_names = set(), set(), set()
+    if len(ports) > 128 or len(raw.get('power_cables', [])) > 64:
+        problems.append('electrical supports at most 128 power ports and 64 power cables')
+    for cable in raw.get('power_cables', []):
+        if not isinstance(cable, dict):
+            problems.append('power cables must be objects'); continue
+        name = cable.get('name')
+        a = ports.get(cable.get('a')) if isinstance(cable.get('a'), str) else None
+        b = ports.get(cable.get('b')) if isinstance(cable.get('b'), str) else None
+        if not isinstance(name, str) or not name or name in cable_names:
+            problems.append('power cable names must be nonempty and unique'); continue
+        cable_names.add(name)
+        if not a or not b or a['kind'] != 'output' or b['kind'] != 'input':
+            problems.append(f'power cable {name}: connect an existing solar output to an existing power input'); continue
+        source, store = a['solar_panel'], b['battery']
+        if source in used_sources or store in used_stores:
+            problems.append(f'power cable {name}: each solar output and battery input accepts one cable'); continue
+        used_sources.add(source); used_stores.add(store)
+        overrides[source] = store
+        cables.append({'name': name, 'a': a['name'], 'b': b['name']})
+    # Refuse implicit and explicit multi-source charging as well: otherwise a
+    # second panel could bypass the unsupported parallel-source restriction.
+    stores = {}
+    for panel, p in panels.items():
+        store = overrides.get(panel, p.get('battery'))
+        if not isinstance(store, str):
+            continue
+        stores.setdefault(store, []).append(panel)
+    for store, sources in stores.items():
+        if len(sources) > 1 and any(source in overrides for source in sources):
+            problems.append(f'power input {store}: parallel solar sources are not supported')
+    return {'power_ports': list(ports.values()), 'power_cables': cables}, overrides
 
 
 def compile_electrical(spec, names, joints, battery_names, problems):

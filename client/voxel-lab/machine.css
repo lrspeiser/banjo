@@ -15,6 +15,21 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 380px;height:calc(100dvh -
 .station-label{position:absolute;transform:translate(-50%,-100%);background:#142836e0;border:1px solid #5d8197;border-radius:12px;padding:2px 8px;font-size:12px;white-space:nowrap;color:#dbe9f1}
 .station-label.done{border-color:#7fd1a6;color:#bff0d2}
 .station-label.current{border-color:#ffd27a;color:#ffe8b8}
+.power-labels{position:absolute;inset:0;pointer-events:none;z-index:2}
+.power-leaders{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;pointer-events:none}
+.power-leaders line{stroke:#cce4ec;stroke-width:1;stroke-dasharray:3 3;opacity:.75}
+.power-leaders circle{fill:#ffcf59;stroke:#11222d;stroke-width:1}
+.power-label{position:absolute;width:168px;padding:6px;background:#142836f2;border:1px solid #e2bc63;border-radius:8px;line-height:1.3;font-size:12px;pointer-events:auto;box-shadow:0 3px 12px #0007}
+.power-label.input{width:142px;border-color:#83bbff}
+.power-label strong,.power-label output{display:block;overflow-wrap:anywhere}
+.power-label .solar-watts{font-size:17px;color:#ffe29b;font-variant-numeric:tabular-nums}
+.power-label .solar-detail{color:#c9dbe5;margin:2px 0}
+.power-label button{width:100%;min-height:44px;margin-top:4px;padding:5px;border:1px solid #e2bc63;border-radius:6px;background:#5d481d;color:#fff;font:600 13px system-ui;cursor:pointer}
+.power-label.input button{background:#294c60;border-color:#83bbff}
+.power-label button[aria-pressed=true]{outline:2px solid #ffe29b;outline-offset:1px}
+.power-label button:disabled{opacity:.65;cursor:default}
+.power-label button:focus-visible{outline:3px solid #fff;outline-offset:2px}
+.power-status{position:absolute;left:10px;right:10px;bottom:8px;z-index:3;padding:6px 9px;background:#142836ed;border:1px solid #e2bc63;border-radius:6px;font-size:12px;pointer-events:none}
 .edit-guide-label{position:absolute;z-index:2;max-width:220px;padding:4px 8px;border:1px solid #ffcf59;border-radius:7px;background:#302817ed;color:#ffe299;font-size:12px;pointer-events:none;line-height:1.3}
 .scene-actions{position:absolute;left:10px;right:10px;bottom:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px;background:#142836e8;border:1px solid #4e7287;border-radius:8px}
 .scene-actions button,.scene-actions select{min-height:44px;font:14px system-ui;padding:8px 12px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer}

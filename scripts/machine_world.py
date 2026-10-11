@@ -1708,6 +1708,8 @@ def compile_spec(spec, lenient=False):
                'irradiance_w_m2': _num(sun_spec, 'irradiance_w_m2', 'sun', problems, 1000, 0, 1400)}
     light = compile_light(spec, sun, names, battery_names, problems, light_extra)
     electrical = electrics.compile_electrical(spec, names, joint_rows, battery_names, problems)
+    power, panel_batteries = electrics.compile_power(spec, names, battery_names, problems)
+    electrical.update(power)
     circuits = []
     for c in spec.get('circuits', []) or []:
         name = c.get('name') if isinstance(c, dict) else None
@@ -1774,7 +1776,9 @@ def compile_spec(spec, lenient=False):
     solar_panels = []
     for i, sp in enumerate(spec.get('solar_panels', []) or []):
         what = 'solar panel ' + str(sp.get('name', i + 1) if isinstance(sp, dict) else i + 1)
-        if not isinstance(sp, dict) or sp.get('part') not in names or sp.get('battery') not in battery_names:
+        panel_name = (sp.get('name') or f'panel {i + 1}') if isinstance(sp, dict) else None
+        battery = panel_batteries.get(panel_name, sp.get('battery')) if isinstance(sp, dict) else None
+        if not isinstance(sp, dict) or sp.get('part') not in names or battery not in battery_names:
             problems.append(f'{what}: part must name the part it is on and battery the battery it charges')
             continue
         if sun is None:
@@ -1793,7 +1797,7 @@ def compile_spec(spec, lenient=False):
         else:
             axes, half = _axes(part_row), _half(part_row)
             reach = sum(abs(sum(axes[j][k] * unit[k] for k in range(3))) * half[j] for j in range(3))
-        solar_panels.append({'name': sp.get('name') or f'panel {i + 1}', 'part': sp['part'], 'battery': sp['battery'],
+        solar_panels.append({'name': panel_name, 'part': sp['part'], 'battery': battery,
                              'at_m': [part_row['at_m'][k] + unit[k] * reach for k in range(3)], 'normal': normal,
                              'area_m2': _num(sp, 'area_m2', what, problems, 0.25, 0.001, 100),
                              'efficiency': _num(sp, 'efficiency', what, problems, 0.2, 0.01, 1.0)})
@@ -2146,7 +2150,11 @@ def build_engine(exe, compiled, workdir):
             engine.op(op='heat', target=t['target'], power_w=t['power_w'], seconds=t['seconds'])
         # Start working out a collision that is coming before it arrives (up
         # to 2.5 s ahead), so a break is often ready when the pieces meet.
-        engine.op(op='foresee', horizon_s=float(os.environ.get('BANJO_MACHINE_FORESEE', 2.5)))
+        ready = engine.op(op='foresee', horizon_s=float(os.environ.get('BANJO_MACHINE_FORESEE', 2.5)))
+        # This final paused-state reply includes all constructed machine
+        # meters. Preserve it in the opening state without taking a step.
+        if isinstance(ready.get('machines'), dict):
+            engine.first['machines'] = ready['machines']
     except Exception:
         engine.close()
         raise
@@ -2553,7 +2561,12 @@ class MachineSession:
                             'turned_rad': _round(x.get('turned_rad', 0.0), 3)} for x in m.get('motors', [])],
                 'solar_panels': [{'name': x.get('name'), 'sunlight_w': _round(x.get('sunlight_w', 0.0), 2),
                                   'power_w': _round(x.get('power_w', 0.0), 2), 'shaded': x.get('shaded'),
-                                  'shaded_by': x.get('shaded_by')} for x in m.get('panels', [])]}
+                                  'shaded_by': x.get('shaded_by'),
+                                  **{key: x.get(key) for key in ('at_m', 'normal', 'toward_sun', 'ray_from_m',
+                                      'shadow_hit_m', 'shadow_distance_m', 'ray_cast', 'valid', 'off_sun_deg',
+                                      'irradiance_w_m2', 'occlusion_model', 'battery', 'charged_j',
+                                      'sunlight_j', 'collected_j', 'spilled_j', 'heat_j')}}
+                                 for x in m.get('panels', [])]}
         light = probe_light(self)
         if light is not None:
             out['light'] = light

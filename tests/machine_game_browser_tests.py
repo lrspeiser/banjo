@@ -125,7 +125,109 @@ class Puzzles(unittest.TestCase):
                                                       'windowsVirtualKeyCode': code,
                                                       **({'text': key} if kind == 'keyDown' and key not in named else {})})
 
+    def click_visible(self, label):
+        """Hit the actual visible target, rather than invoking its DOM handler."""
+        target = self.js(f"""(() => {{ const el = [...document.querySelectorAll('button')].find(b =>
+            !b.disabled && b.offsetParent !== null && (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(label)});
+            if (!el) return null; const r = el.getBoundingClientRect(), x = r.left + r.width/2, y = r.top + r.height/2;
+            return {{x,y,w:r.width,h:r.height,visible:r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight,
+                uncovered:el.contains(document.elementFromPoint(x,y))}}; }})()""")
+        self.assertIsNotNone(target, label)
+        self.assertTrue(target['visible'] and target['uncovered'], (label, target))
+        self.assertGreaterEqual(target['w'], 44, (label, target))
+        self.assertGreaterEqual(target['h'], 44, (label, target))
+        self.mouse('mousePressed', target['x'], target['y'])
+        self.mouse('mouseReleased', target['x'], target['y'])
+
+    def assert_power_layout(self):
+        # A rebuild reframes the camera; the anchors follow it each frame.
+        self.wait('window.machineCamera().settled', 30)
+        geometry = """(() => {const cards=[...document.querySelectorAll('.power-label')].filter(e=>!e.hidden),
+            run=document.getElementById('start').getBoundingClientRect(), view=document.getElementById('view').getBoundingClientRect();
+            const overlaps=(a,b)=>a.left<b.right && a.right>b.left && a.top<b.bottom && a.bottom>b.top;
+            return cards.map((e,i)=>{const r=e.getBoundingClientRect();return {name:e.dataset.port,
+                visible:r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight,
+                inView:r.left>=view.left && r.right<=view.right && r.top>=view.top && r.bottom<=view.bottom,
+                coversRun:overlaps(r,run),overlapsOther:cards.some((b,j)=>j!==i && overlaps(r,b.getBoundingClientRect()))};});})()"""
+        # Readouts change card heights; allow the next render frame to lay
+        # them out before trying to press the real on-screen targets.
+        self.wait(f"(() => {{const rows={geometry};return rows.length>=2 && rows.every(r=>r.visible && r.inView && !r.coversRun && !r.overlapsOther);}})()", 10)
+        layout = self.js(geometry)
+        self.assertGreaterEqual(len(layout), 2, layout)
+        self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
+
     # ---- the tests ---------------------------------------------------------------------
+    def test_solar_meters_and_explicit_winch_cable_work_on_desktop_and_phones(self):
+        for width, height in ((1280, 860), (390, 844), (844, 390)):
+            with self.subTest(viewport=(width, height)):
+                self.open('sun', width, height, phone=width != 1280)
+                if self.js("!document.getElementById('guide').hidden"):
+                    self.press('Got it')
+                self.press('Add a solar panel'); self.ghost()
+                for label, value in [('x', 1), ('z', .4), ('height', .6), ('turn', -45), ('tip', 75)]:
+                    self.slide(f'{label} of your solar 1', value)
+                self.assertTrue(self.ghost()['fits'])
+                self.press('Set it down'); self.wait(f'!window.machineGhostState() && {READY}', 60)
+                self.wait("/50\\.0 W charging/.test(document.getElementById('power-labels').textContent) && /250 W sunlight/.test(document.getElementById('power-labels').textContent)", 20)
+                self.assertIn('0.0 J stored', self.js("document.getElementById('power-labels').textContent"))
+                self.assertIn('Output not wired', self.js("document.getElementById('power-labels').textContent"))
+                self.assert_power_layout()
+                self.click_visible('Power output of your solar 1')
+                self.wait("document.querySelector('[aria-label=\"Power output of your solar 1\"]').getAttribute('aria-pressed') === 'true'", 5)
+                self.assert_power_layout()
+                self.click_visible('Power input of winch')
+                self.wait(f'window.machinePlacements().length === 2 && {READY}', 60)
+                cable = self.js('window.machinePlacements()[1]')
+                self.assertEqual(cable, {'piece':'power_cable','a_port':'your solar 1:power','b_port':'winch:power'})
+                self.assertIn('Cable connected', self.js("document.getElementById('power-labels').textContent"))
+                self.assert_power_layout()
+                self.click_visible('Run it')
+                self.wait("!document.getElementById('level-done').hidden", 30)
+                self.assertIn('Goal', self.js("document.getElementById('level-done').textContent"))
+
+    def test_saved_solar_cable_survives_motion_renaming_reload_undo_and_version_restore(self):
+        self.page.send('Emulation.setDeviceMetricsOverride', {'width':1280,'height':860,'deviceScaleFactor':1,'mobile':False})
+        self.page.send('Emulation.setTouchEmulationEnabled', {'enabled':False})
+        self.page.send('Page.navigate', {'url':f'{self.base}/machine'})
+        self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)
+        self.slide('New design name', 'Saved solar cable')
+        self.press('Add New Design'); self.wait(READY, 60)
+        for number, piece, x in [(1,'marble',-1.4),(2,'solar',0),(3,'battery',1)]:
+            self.press('Add a solar panel' if piece == 'solar' else f'Add a {piece}'); self.ghost()
+            label = {'battery':'along (m)', 'solar':'Position along (m)'}.get(piece, 'x')
+            self.slide(f'{label} of your {piece} {number}', x)
+            self.assertTrue(self.ghost()['fits'])
+            self.press('Set it down'); self.wait(f'!window.machineGhostState() && {READY}', 60)
+        self.click_visible('Power output of your solar 2')
+        self.click_visible('Power input of your battery 3')
+        self.wait(f'window.machinePlacements().length === 4 && {READY}', 60)
+        self.press('Pick up your battery 3'); self.ghost()
+        self.slide('along (m) of your battery 3', 1.2)
+        self.assertTrue(self.ghost()['fits'])
+        self.press('Set it down'); self.wait(f'!window.machineGhostState() && {READY}', 60)
+        self.press('Pick up your solar 2'); self.ghost()
+        self.slide('Position along (m) of your solar 2', -.2)
+        self.assertTrue(self.ghost()['fits'])
+        self.press('Set it down'); self.wait(f'!window.machineGhostState() && {READY}', 60)
+        first = self.js('window.machinePlacements()')
+        self.press('Save version')
+        self.wait("/Version 1 saved/.test(document.getElementById('design-status').textContent)", 10)
+        self.press('Remove your marble 1'); self.wait(f'window.machinePlacements().length === 3 && {READY}', 60)
+        self.assertEqual(self.js('window.machinePlacements()[2]'),
+                         {'piece':'power_cable','a_port':'your solar 1:power','b_port':'your battery 2:power'})
+        self.page.send('Page.navigate', {'url':self.js('location.href')}); self.wait(READY, 60)
+        self.assertEqual(self.js('window.machinePlacements()[2].b_port'), 'your battery 2:power')
+        self.press('Remove your solar 1'); self.wait(f'window.machinePlacements().length === 1 && {READY}', 60)
+        self.assertEqual(self.js('window.machinePlacements()[0].piece'), 'battery')
+        self.press('Undo'); self.wait(f'window.machinePlacements().length === 3 && {READY}', 60)
+        self.assertEqual(self.js('window.machinePlacements()[2].a_port'), 'your solar 1:power')
+        self.press('Save version')
+        self.wait("/Version 2 saved/.test(document.getElementById('design-status').textContent)", 10)
+        self.js("document.getElementById('design-versions').open=true;document.getElementById('version-pick').value='1'")
+        self.press('Restore version'); self.wait(f'window.machinePlacements().length === 4 && {READY}', 60)
+        self.assertEqual(self.js('window.machinePlacements()'), first)
+        self.assertIn('Cable connected', self.js("document.getElementById('power-labels').textContent"))
+
     def test_fresh_easy_challenge_can_be_solved_shared_and_reopened_on_phones(self):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
