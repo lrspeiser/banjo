@@ -2,6 +2,129 @@
 
 October 11, 2026. Open `/play` to choose eight chain-reaction levels or twenty-one freely selectable piece lessons. Each level has a fixed machine, a goal and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+## Player-operated cannon and level-control audit
+
+October 11, 2026: **Knock it off** now has four player tasks: place and aim
+the cannon, draw its two firing leads, and operate its physical trigger.
+In **Readings and wiring**, choose **Connect wires**, connect **trigger Out**
+to **cannon +**, then **cannon −** to **supply −**. The supply-to-trigger
+lead is part of the fixed apparatus and is visible from the start. Drag the
+**Drag to fire ↓** handle down to close the circuit. A tap applies no force;
+**Run it** alone leaves it open. Reset restores the original open handle.
+The scene keeps only compact endpoints during wiring and the handle during
+operation; the current, coil watts and available charge-temperature readings
+stay in the disclosure below/beside the view.
+
+The trigger has the engine's existing ideal ratchet: after its hinge passes
+−30° relative to its initial 25° pose, it can travel further closed but cannot
+rebound open. This keeps the heating circuit closed after a short pull. Reset
+releases the latch by rebuilding the original open apparatus. It is a native
+joint constraint, not a Boolean firing command or a forced angle.
+
+The old falling trigger weight and automatic `fired_by` connection are gone.
+The coil must receive solved circuit current and heat the charge, its gas
+must break the wad and accelerate the ball, and the ball must hit the block
+into the existing green zone. Position, height, direction and powder still
+determine the shot. Wires explicitly retain their terminal graph when the
+cannon is moved; they do not appear merely because it was placed. This uses
+the existing fixed-resistance ideal wiring model (0.01 Ω per lead): cable
+length, mass, elasticity and detachment are not modeled.
+
+**Close the switch** also had a shortcut: choosing an initially closed
+handle could finish the field-operation lesson without operating it. New
+canonical and version-3 seeded challenges permit only the open manual
+starting pose. The player must drag it to close the lamp circuit. Sandbox
+still permits either initial pose. Version-1 and version-2 shared challenges
+retain their earlier pose/mode choices and original seed policies.
+
+Manual-input previews say **waiting for your handle drag** and rehearse the
+actual open starting machine, without firing or closing it for the player.
+**Place it for me** delivers a checked setup and asks the player to operate
+the handle; it does not search for a way around the operation or claim a
+rehearsed win. The offline reference `solution_inputs` are bounded forces
+through the same validated handle API, supplied explicitly by tests and
+seeded-challenge verification only. They never enter a live declaration,
+ordinary preview, save or public level response.
+
+All 29 canonical levels were inspected and run with correct, empty and
+incorrect configurations, three trials each. Correct configurations won
+87/87; empty configurations won 0/87; incorrect controls won 0/87, with no
+engine errors. For Light the bulb, the negative control kept the bulb and
+leads but emptied its source battery, since spatial movement cannot break
+an ideal wired circuit. For manual lessons, a correct placement without
+handle input is the negative control. These checks preserve goals, deadlines
+and tolerances.
+
+| Levels audited | Source of action and player responsibility |
+|---|---|
+| Mind the gap; Cut it down; Cut the cord | Gravity starts the ball or pendulum; bridge/edge geometry must work. |
+| Knock it off; Close the switch | Explicit wiring and/or actual handle force; no automatic start shortcut in new challenges. |
+| Chain reaction; Marble turns on a light | A real ball tips the lever/paddle. The first level includes its fixed firing circuit; the second includes visible prepared leads. |
+| Up she goes; Heat to release | Declared firebox or wired coil supplies heat; native pressure or cord weakening reaches the goal. |
+| Bounce the beam; Bounce to the target; Find the focus | Native rays must reach the cord/sensor through the player's optical geometry. |
+| Catch the sun; Catch the sun (collector lesson); Charge then lift | Catch the sun requires its player-drawn power cable. The two introductory fixtures explicitly include their store connection; light still determines power. |
+| Lift with less; Raise the crate; Tip the lever; Spring lifts the load | Material-derived weight, gravitational travel or stored spring energy provides the motion. |
+| Turn the big wheel; Turn the axle; Light the bulb | Prepared drive/leads are stated in the brief. Position does not create a socket connection. Gear drive and motor direction remain player settings. |
+| Give it power; Finish the loop | Actual battery-cap contacts or the explicit missing return wire must complete the circuit. |
+| Pour onto the paddles; Fill the receiver; Water opens a gate; River-powered lift | Water must reach the receiving area/paddles. Valve/pour state is a setup control; gate lessons also require a drum rope. |
+| Gentle first launch | Arm restraint is a setup control; a released raised counterweight turns the cradle and contact launches the marble. |
+
+The motor, bulb and gear briefs now distinguish prepared wiring/drive from
+spatial placement. Water valves and catapult restraints remain declared
+starting conditions plus the existing live controls; they are not new
+mechanical valve/trigger models. No timed cannon primer was found in an
+authored level. The Sandbox retains its explicit primer-time option.
+
+Measured on native SHA-256
+`807ae9c34f0516a0d0dbf588400451b865083043d614cd1aab8040140c830f87`,
+dt = 1/240 s, four steps per host call: the aimed, wired cannon with an
+explicit 8 N downward reference grip force reaches the unchanged goal at
+0.925, 0.979 and 0.858 s. No input, no leads, each missing lead, 35° wrong
+aim, a 0.5 g weak charge and a 0.20 m low bore all fail 0/3 with no engine
+error. Its nominal win takes 904,301,244.324 J against the unchanged 905 MJ
+par: 904,295,646 J fabrication, 2,799.993 J declared powder, 2,797.790 J
+battery draw and 0.541 J grip work. Electrical ledger residual is
+−1.8741e−12 J; thermal residual is 1.1515e−8 J. These are circuit ledgers,
+not a full gas/rigid/contact momentum or energy conservation claim. The
+existing simplified powder, warm charge and ball-at-muzzle model limits
+remain in [the physics roadmap](machine-physics-roadmap.md).
+
+The original 82-preset native recipe sweep passes 246/246 correct trials and
+zero empty/wrong wins; fresh switch recipes now exercise actual grip force.
+The 19 electrical regressions still include glass/oak/iron under matching
+declared conditions. No native model, material property, timestep or scoring
+tolerance changed.
+
+Short-pull comparison: identical 0.20×0.04×0.06 m handles, the same 8 N
+downward grip force released at 0.25 s, the same circuit and 1 g charge,
+dt = 1/240 s. All three handles remained latched near −50.0002° with zero
+remaining applied force and normal goal scoring. Glass/oak/iron reached the
+goal at 1.012/0.954/1.079 s. Their sampled electrical residuals were
+−2.5402e−12/−2.6112e−12/−2.3981e−12 J and thermal residuals
+1.5537e−8/1.5985e−8/1.4650e−8 J. Grip work was 0.541 J in each run. The
+ratchet has no tooth compliance, wear or separately modeled pawl losses.
+
+An initial aggregate run passed 14/15 CTests, including all 62 browser checks
+in 315.41 s; the recipe target caught an indentation error in its new test,
+which was fixed and passed its separate 13-test run in 107.49 s. Repeated
+unlatched cannon drags then caught two desktop failures: the handle rebounded
+open after briefly closing the circuit, giving only 729.282 J from the supply
+and a weak shot that fell short. The native latch above resolves that physical
+failure. Its nine repeated desktop/portrait/landscape browser plays passed
+in 65.672 s; the glass/oak/iron short-pull test and all seven negative cannon
+controls also pass. These initial failures are retained here rather than
+treated as successful final verification.
+
+Final local verification: all 15 relevant registered CTest targets passed in
+314.62 s, including 62 browser checks (314.61 s), 46 game checks (61.34 s),
+13 recipe checks (107.97 s), and the world, physics, mechanics, electrics,
+water/launch, combinations, HTTP, save and client suites. The final canonical
+29-level audit repeats all 261 scenarios in 48.505 s with the outcomes above.
+JavaScript syntax and source registration (269/269 C++ sources) pass. The
+cannon browser regression uses actual visible clicks and pointer/touch drags
+at 1280×860, 390×844 and 844×390, preserves both saved terminal leads, verifies
+Run alone fails, and earns three stars only after the physical trigger drag.
+
 The chooser shows every level together, with no difficulty filters or Easy
 labels. Each card says **1 thing to do**, **2 things to do**, and so on.
 This counts the expected player tasks: placing and adjusting one piece is
@@ -379,7 +502,7 @@ Checked on October 11, 2026: all 29 Chrome browser tests passed in 112.5 seconds
 - **Energy against par, while you change it.** The ghost's bar says what the piece takes to make, with your other pieces, against the level's par: "It takes 34.1 MJ to make: 3.47 MJ over par (30.6 MJ)" for a 0.78 m plank on level 1, falling as it is cut shorter. The win card's **Energy details** lists what each piece weighed and took, and on a win over par how much lighter the heaviest piece would need to be: "your plank 1 about 11% lighter". Level 1's par is its 0.70 m plank, which bridges the gap with its middle anywhere from x = 0.26 to 0.34 m; 0.66 m still does from 0.28 to 0.32 m (under par), and 0.62 m does not reach.
 - **Turn it any way.** Every piece can be turned about the vertical (turn), tipped end up or down (tip), and rolled about its length (roll), by any angle: with the −15° and +15° buttons, with the sliders, or with keys (Q/E turn, R/F tip, Z/C roll; with Shift, one degree at a time). Shift and the mouse wheel turn it; Alt and the wheel tip it. Square it up puts it back level. Turning costs nothing. Everything the piece is made of turns with it: a cannon turned 20° fires 20° off to the side, and tipped up it fires upward. A piece tipped so far that part of it would go into the ground is lifted to stand on the ground.
 - **Blue fits, red does not.** While you move, change and turn the ghost, the server works out where the piece would really be (a plank is lowered onto the highest thing under it) and whether it can go there. This takes a few milliseconds and runs nothing in the engine. A red ghost says why, for example "your mirror 1 goes 120 mm into wall; move it", and cannot be set down. Nothing of yours may go into anything solid, the level's or another of your pieces.
-- **A cannon is fired by a pull cord** (level 3). Beside the level stands a trigger: an aluminium arm on a pin, with an iron weight hanging from one end on a cord with 2 cm of slack. As the run starts the weight drops, the cord pulls that end of the arm down onto an aluminium contact, and the weight keeps it there. The contact closes the firing circuit -- a switch closed while the two metal parts touch, measured from their shapes every step -- and the battery's current heats a coil on the cannon's powder until it burns (about 3 kJ, 0.4 s). Your cannon is wired to the trigger wherever you put it (the tray's `fired_by`); there is no timer. Level 5 closes its circuit the same way: an aluminium contact under the lever's left end, where the ball lands, and an aluminium plate under it. The ball comes off the ramp hard enough to knock the lever down and fly on -- a contact alone would touch for a moment, too short to heat the powder -- so the lever has a **ratchet**: past 4 degrees a pawl catches and it can go on down but not come back up, and the contact stays pressed on the plate while the coil lights the powder (the lever is a metre long so the ball lands on it rather than clipping its end).
+- **A cannon is fired by the player** (level 3). Draw both firing leads in Readings and wiring, then drag the physical trigger handle down. Current must heat the powder before the gas launches the ball. Run alone does not operate the trigger; location affects the shot, and placement does not wire it. Level 5 closes its circuit the same way: an aluminium contact under the lever's left end, where the ball lands, and an aluminium plate under it. The ball comes off the ramp hard enough to knock the lever down and fly on -- a contact alone would touch for a moment, too short to heat the powder -- so the lever has a **ratchet**: past 4 degrees a pawl catches and it can go on down but not come back up, and the contact stays pressed on the plate while the coil lights the powder (the lever is a metre long so the ball lands on it rather than clipping its end).
 - **Test a part: 🖐 Pull.** Beside Run it is a Pull switch. With it on, press on any loose part in the scene and drag: the engine pulls that point of the part that way, harder the further you drag (400 N a metre, at most 200 N), a line showing the string, and letting go lets go. It is a force on the part, not a hand in the world. Pulling starts the world if it was not running. The work your pulls do counts in the run's energy, and a run using this general Pull tool is **a test run**: it says whether the goal happened, earns no stars and is not kept -- to win, the machine has to do it. (On level 5 with no ramp, pulling the lever's end down closes the firing circuit and the cannon fires.) While Pull is on, clicking one of your pieces pulls it rather than picking it up. Right/middle or Ctrl+drag turns the camera without starting a pull. A second touch releases the force to zero before turning the camera; cancelling or losing pointer capture also releases it.
 - **A rope cut part way** (level 2) is weaker by what was cut: it holds the weight if what is left can carry it, and tears at the cut if not -- the piece above the cut staying on its arm, the piece below falling with the weight. A knife whose swing runs out part way through, or a blade that only clips the rope, leaves it hanging by what is left (docs/cutting-model.md, "A rope cut part way through").
 - **A cord that sways** (level 6): the weight hangs on a chain of small oak segments that swings and is knocked about, with a cord through it carrying the weight exactly; the laser chars one segment away and the cord parts there, the chain with it, and the weight falls. Level 2's rope is still the stiff one, because a knife swung into a slack chain knocks it aside (docs/cutting-model.md, "A cord that bends and sways").
@@ -409,7 +532,7 @@ Editing guides checked on October 11, 2026: all 35 game tests and 20 Chrome brow
 |---|---|---|---|
 | 1. Mind the gap | rolling | a plank | a plank cut to 0.7 m and set down at x = 0.3 drops into the ledges each table has at the gap, level with the tables: the ball reaches the cup at 1.9 s |
 | 2. Cut it down | cutting | a knife pendulum | pivot at x = -0.08 m, 1.31 m up, a 0.6 m arm: the edge cuts the oak rope and the weight is in the bin at 0.7 s |
-| 3. Knock it off | a powder charge, fired by a pull cord | a cannon | muzzle at x = 1.4 m, bore 0.48 m up, 1 g of powder: the cord pulls the trigger at 0.13 s, the cannon fires at 0.55 s, and the block is in the zone at 0.8-0.9 s |
+| 3. Knock it off | a wired heating coil, pressure and impact, operated by the player | a cannon and two firing leads | muzzle x = 1.4 m, bore 0.48 m up, 1 g of powder; with the explicitly applied 8 N reference grip force the block reaches the zone at 0.858–0.979 s |
 | 4. Up she goes | steam | a steam engine | over the marker with a 12 kW firebox: the piston reaches the zone at 3.4 s |
 | 5. Chain reaction | a chain | a ramp with a ball | the ball tips the lever, which closes the switch; the coil lights the cannon's powder; the ball knocks the block into the zone at 1.5 s |
 | 6. Bounce the beam | light: reflection, and light heating what it lands on | two mirrors | a 5 kW laser's beam bounced around a wall by two mirrors at 45 and -45 degrees burns through the cord; the weight is in the bin at about 5 s (within 12 s) |

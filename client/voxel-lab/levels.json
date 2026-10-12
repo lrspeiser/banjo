@@ -375,7 +375,7 @@
    "id": "fire",
    "title": "Knock it off",
    "teaches": "a powder charge",
-   "brief": "Knock the iron block off its pedestal into the green zone behind it with a cannon. It fires when the trigger closes its circuit: a weight on a cord pulls the trigger arm down onto its contact as the run starts, and the battery's current heats the powder.",
+   "brief": "Aim the cannon at the block. Connect trigger Out to cannon +, then cannon − to supply − in Readings and wiring. Drag the trigger handle down to fire. Current heats the powder; gas pushes the ball, which knocks the block into the green zone.",
    "time_s": 4,
    "budget": 40,
    "par": 26,
@@ -418,114 +418,186 @@
       "fixed": false
      },
      {
-      "name": "contact post",
-      "shape": "box",
-      "material": "concrete",
-      "size_m": [
-       0.04,
-       0.28,
-       0.04
-      ],
-      "at_m": [
-       -1.03,
-       0.14,
-       0.6
-      ],
-      "fixed": true
-     },
-     {
-      "name": "contact plate",
-      "shape": "box",
-      "material": "aluminum",
-      "size_m": [
-       0.04,
-       0.02,
-       0.04
-      ],
-      "at_m": [
-       -1.03,
-       0.29,
-       0.6
-      ],
-      "fixed": true
-     },
-     {
-      "name": "trigger weight",
+      "name": "supply housing",
       "shape": "box",
       "material": "iron",
-      "size_m": [
-       0.06,
-       0.06,
-       0.06
-      ],
-      "at_m": [
-       -1.1,
-       0.15,
-       0.6
-      ]
-     },
-     {
-      "name": "battery box",
-      "shape": "box",
-      "material": "concrete",
-      "size_m": [
-       0.1,
-       0.1,
-       0.1
-      ],
       "at_m": [
        -0.9,
-       0.05,
-       0.8999999999999999
+       0.08,
+       0.85
+      ],
+      "size_m": [
+       0.2,
+       0.16,
+       0.14
       ],
       "fixed": true
-     }
-    ],
-    "kits": [
+     },
      {
-      "kit": "lever",
-      "name": "trigger",
-      "pivot_m": [
-       -0.9,
-       0.3,
+      "name": "trigger housing",
+      "shape": "box",
+      "material": "concrete",
+      "at_m": [
+       -0.45,
+       0.05,
        0.6
       ],
-      "length_m": 0.4,
-      "width_m": 0.04,
-      "thickness_m": 0.02,
-      "limit_deg": 20,
-      "along": "x",
-      "material": "aluminum",
-      "friction_n_m": 0.05
+      "size_m": [
+       0.22,
+       0.1,
+       0.16
+      ],
+      "fixed": true
+     },
+     {
+      "name": "trigger post",
+      "shape": "box",
+      "material": "concrete",
+      "at_m": [
+       -0.45,
+       0.12,
+       0.48
+      ],
+      "size_m": [
+       0.04,
+       0.24,
+       0.04
+      ],
+      "fixed": true
+     },
+     {
+      "name": "trigger axle",
+      "shape": "box",
+      "material": "iron",
+      "at_m": [
+       -0.45,
+       0.22,
+       0.53
+      ],
+      "size_m": [
+       0.02,
+       0.02,
+       0.08
+      ],
+      "fixed": true
+     },
+     {
+      "name": "trigger handle",
+      "shape": "box",
+      "material": "oak",
+      "at_m": [
+       -0.45,
+       0.22,
+       0.6
+      ],
+      "size_m": [
+       0.2,
+       0.04,
+       0.06
+      ],
+      "fixed": false,
+      "turn_deg": [
+       0,
+       0,
+       25
+      ]
      }
     ],
+    "kits": [],
     "joints": [
      {
-      "name": "trigger cord",
-      "kind": "tie",
-      "a": "trigger",
-      "b": "trigger weight",
+      "name": "trigger rocker hinge",
+      "kind": "hinge",
+      "a": "trigger axle",
+      "b": "trigger handle",
       "at_m": [
-       -1.1,
-       0.32,
-       0.6
+       -0.45,
+       0.22,
+       0.57
       ],
-      "at_b_m": [
-       -1.1,
-       0.18,
-       0.6
+      "axis": [
+       0,
+       0,
+       1
       ],
-      "length_m": 0.16
+      "lower_deg": -50,
+      "upper_deg": 0,
+      "friction_n_m": 0.08,
+      "ratchet": {
+       "at_or_below_deg": -30
+      }
      }
     ],
     "batteries": [
      {
-      "name": "battery",
-      "in": "battery box",
+      "name": "supply battery",
+      "in": "supply housing",
       "capacity_j": 100000,
-      "voltage_v": 24
+      "charge_j": 100000.0,
+      "voltage_v": 24,
+      "max_power_w": 10000
      }
-    ]
+    ],
+    "electrical": {
+     "devices": [
+      {
+       "name": "supply",
+       "kind": "battery",
+       "part": "supply housing",
+       "battery": "supply battery",
+       "terminals": {
+        "plus": [
+         -0.98,
+         0.18,
+         0.9199999999999999
+        ],
+        "minus": [
+         -0.8200000000000001,
+         0.18,
+         0.9199999999999999
+        ]
+       }
+      },
+      {
+       "name": "trigger",
+       "kind": "switch",
+       "part": "trigger housing",
+       "closed": false,
+       "terminals": {
+        "in": [
+         -0.53,
+         0.13,
+         0.6699999999999999
+        ],
+        "out": [
+         -0.37,
+         0.13,
+         0.6699999999999999
+        ]
+       },
+       "hinge": "trigger rocker hinge",
+       "closed_at_or_below_deg": -25,
+       "handle": {
+        "part": "trigger handle",
+        "at_m": [
+         -0.37749537703706804,
+         0.25380946093925594,
+         0.6
+        ],
+        "label": "Drag to fire ↓",
+        "help": "Drag down until the trigger latches. Reset restores the open trigger."
+       }
+      }
+     ],
+     "wires": [
+      {
+       "name": "trigger supply lead",
+       "a": "supply:plus",
+       "b": "trigger:in"
+      }
+     ],
+     "contacts": []
+    }
    },
    "goal": {
     "title": "The block is in the zone",
@@ -591,19 +663,48 @@
        "label": "Powder (g)"
       }
      },
-     "fired_by": {
-      "battery": "battery",
-      "touch": [
-       "trigger",
-       "contact plate"
-      ]
-     }
+     "explicit_ignition": true
+    },
+    {
+     "piece": "wire",
+     "label": "Wire",
+     "count": 2,
+     "cost": 0,
+     "turning": false,
+     "description": "Connect two labelled electrical terminals; crossing lines never connect.",
+     "knobs": {
+      "x_m": {
+       "default": 0,
+       "min": -2,
+       "max": 2,
+       "step": 0.02,
+       "label": "along (m)"
+      },
+      "z_m": {
+       "default": 0,
+       "min": -2,
+       "max": 2,
+       "step": 0.02,
+       "label": "across (m)"
+      },
+      "a_terminal": {
+       "default": "",
+       "terminal": true,
+       "label": "from terminal"
+      },
+      "b_terminal": {
+       "default": "",
+       "terminal": true,
+       "label": "to terminal"
+      }
+     },
+     "sandbox_builder": true
     }
    ],
    "hints": [
-    "The block sits 0.4 m up; its middle is 0.45 m above the ground. The ball flies level, dropping a little.",
-    "Heavier charges throw the ball faster, but cost more.",
-    "The cannon fires a moment after the start: the weight drops, its cord pulls the trigger onto the contact, and the current takes about a second to light the powder."
+    "The block is 0.45 m above the ground. A level shot drops during flight: adjust bore height, direction and powder.",
+    "Open Readings and wiring, choose Connect wires, then draw both firing leads. The existing supply lead powers the trigger; crossings do not connect.",
+    "Run it alone does not fire. Drag the trigger handle down; watch switch state and coil current in Readings and wiring. The coil must heat the powder before the ball moves."
    ],
    "solution": [
     {
@@ -612,17 +713,30 @@
      "bore_height_m": 0.48,
      "z_m": 0.0,
      "powder_g": 1.0
+    },
+    {
+     "piece": "wire",
+     "a_terminal": "trigger:out",
+     "b_terminal": "your cannon 1:plus"
+    },
+    {
+     "piece": "wire",
+     "a_terminal": "your cannon 1:minus",
+     "b_terminal": "supply:minus"
     }
    ],
    "par_energy_j": 905000000,
    "milestones": [
     {
-     "title": "The cord pulls the trigger",
+     "title": "The player closes the trigger",
      "done_when": {
-      "switch_closed": "firing circuit"
+      "hinge_beyond_deg": {
+       "joint": "trigger rocker hinge",
+       "deg": -25
+      }
      },
      "focus": [
-      "trigger"
+      "trigger handle"
      ]
     },
     {
@@ -635,6 +749,16 @@
      },
      "focus": [
       "your cannon 1 ball"
+     ]
+    }
+   ],
+   "solution_inputs": [
+    {
+     "name": "trigger",
+     "force_n": [
+      0,
+      -8,
+      0
      ]
     }
    ]

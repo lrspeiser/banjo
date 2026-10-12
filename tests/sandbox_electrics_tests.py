@@ -200,9 +200,10 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
-    def run_spec(self, spec, seconds=1):
+    def run_spec(self, spec, seconds=1, *, handle_inputs=None):
         with tempfile.TemporaryDirectory(prefix='banjo-electrical-') as logs:
-            result = mw.rehearse(mw.compile_spec(spec), ENGINE, Path(logs), seconds=seconds, wall_limit_s=40)
+            result = mw.rehearse(mw.compile_spec(spec), ENGINE, Path(logs), seconds=seconds, wall_limit_s=40,
+                                 handle_inputs=handle_inputs)
         self.assertIsNone(result.get('error'), result)
         return result
 
@@ -363,10 +364,11 @@ class Native(unittest.TestCase):
         for level in e.EASY_LEVELS:
             with self.subTest(level=level['id']):
                 spec = mg.compose(level, level['solution'])[0]
-                result = self.run_spec(spec, level['time_s'])
+                result = self.run_spec(spec, level['time_s'], handle_inputs=level.get('solution_inputs'))
                 self.assertTrue(result['stations'][0]['done'], result)
                 with tempfile.TemporaryDirectory(prefix='banjo-electrical-nudged-') as logs:
-                    trial = mg.trial(level, level['solution'], ENGINE, Path(logs), runs=3)
+                    trial = mg.trial(level, level['solution'], ENGINE, Path(logs), runs=3,
+                                     handle_inputs=level.get('solution_inputs'))
                     self.assertEqual(trial['worked'], 3, trial)
                 if level.get('wrong'):
                     wrong = mg.compose(level, level['wrong'])[0]

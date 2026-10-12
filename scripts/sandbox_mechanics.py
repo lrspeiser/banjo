@@ -314,7 +314,7 @@ def _easy_levels():
         ('easy-spring', 'Spring lifts the load', 'spring', 'Lengthen the relaxed spring to store energy before the run.',
          {'rose_m': {'part': 'your spring 1 load', 'm': .05}},
          {'height_m': .4, 'rest_m': .7}, {'rest_m': .2}, 1),
-        ('easy-gears', 'Turn the big wheel', 'gears', 'Connect the included finite battery drive to the gear pair.',
+        ('easy-gears', 'Turn the big wheel', 'gears', 'Choose forward drive on the prebuilt motor and gear pair. The included finite battery powers its axle; the teeth transfer torque to the big wheel.',
          {'turned_deg': {'joint': 'your gears 1 output axle', 'deg': 180}}, {}, {'drive': 'off'}, 2),
         ('easy-weight', 'Tip the lever', 'weight', 'Put the raised weight above one end of the lever.',
          {'turned_deg': {'joint': 'lever hinge', 'deg': 15}}, {}, {'x_m': 0}, 1.5),

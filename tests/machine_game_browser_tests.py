@@ -1270,6 +1270,53 @@ class Puzzles(unittest.TestCase):
         self.assertIn('easy-switch',self.js('Object.keys(window.machineSave().players[window.machineSave().current].levels)'))
         self.assertIn('your pulls',result,'actual external work remains in the scored energy receipt')
 
+    def test_cannon_player_draws_both_leads_and_operates_trigger_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('fire',width,height,phone=width<1000)
+                self.press('Add a cannon');self.ghost()
+                self.slide('Muzzle x of your cannon 1',1.4)
+                self.slide('Bore height of your cannon 1',.48)
+                self.slide('Muzzle z of your cannon 1',0)
+                self.assertTrue(self.ghost()['fits'])
+                self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.assertEqual(len(self.js('window.machineWiringState().wires')),1,'placing does not wire the cannon')
+                self.wait("[...document.querySelectorAll('#terminal-labels section')].some(c=>c.textContent.includes('cannon 1')&&c.textContent.includes('0.000 A'))",10)
+                for a,b in [('Connect trigger out','Connect your cannon 1 plus'),
+                            ('Connect your cannon 1 minus','Connect supply minus')]:
+                    self.click_visible(a);self.ghost();self.click_visible(b)
+                    self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.assertEqual(len(self.js('window.machineWiringState().wires')),3)
+                self.assertEqual(self.js('window.machinePlacements().slice(1).map(p=>[p.a_terminal,p.b_terminal])'),
+                    [['trigger:out','your cannon 1:plus'],['your cannon 1:minus','supply:minus']])
+                self.key('Escape')
+                self.wait("window.machinePreviewState()?.legend.includes('waiting for your handle drag')",20)
+                self.click_visible('Run it')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Not this time',self.js("document.getElementById('level-done').textContent"))
+                self.assertFalse(self.js("window.machineSwitchState().handles.find(h=>h.name==='trigger').closed"))
+                self.press('Keep my pieces');self.wait(READY,60)
+                self.assertEqual(self.js("document.querySelector('[aria-label=\"Drag trigger handle\"]').textContent"),'Drag to fire ↓')
+                self.click_visible('Drag trigger handle')
+                self.assertTrue(self.js(READY),'a tap does not fire')
+                x,y=self.switch_handle_target('trigger')
+                self.drag([x,y],[x,y+85],touch=width<1000,steps=12)
+                self.wait("!document.getElementById('level-done').hidden",30)
+                result=self.js("document.getElementById('level-done').textContent")
+                if 'Not this time' in result:
+                    print('CANNON_DRAG_FAILURE',json.dumps(self.js('({switch:machineSwitchState(),contact:machineContactState(),placements:machinePlacements()})')),flush=True)
+                    for native in self.server.machines.sessions.values():
+                        if native.compiled['title']=='Knock it off':
+                            frame=native.frame(0,0)
+                            print('CANNON_NATIVE_FAILURE',json.dumps(dict(t=frame['t'],
+                                readouts={key:frame['readouts'].get(key) for key in ('joints','pulls','heat','gas','stations')},
+                                ledgers=[n['ledger'] for n in frame['readouts']['electrical']['networks']],
+                                bodies=[b for b in frame['bodies'] if b['name'] in ('block','your cannon 1 ball','trigger handle')])) ,flush=True)
+                self.assertNotIn('Not this time',result)
+                self.assertNotIn('A test run',result)
+                self.assertIn('your pulls',result)
+                self.assertEqual(self.js('machineSave().players[machineSave().current].levels.fire.stars'),3)
+
     def test_saved_terminal_graph_removal_undo_reload_and_restore(self):
         self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
         self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)

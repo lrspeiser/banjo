@@ -13,6 +13,7 @@ from pathlib import Path
 
 VERSION = 1
 FAMILY_VERSIONS = {family: 2 for family in ('easy-power', 'easy-switch', 'easy-bulb', 'easy-loop')}
+FAMILY_VERSIONS['easy-switch'] = 3
 MAX_ATTEMPTS = 3
 
 # Each family changes one physical input. Prepared-piece parameters are
@@ -68,7 +69,7 @@ def family_version(family_id):
 def _version(family_id, version):
     current = family_version(family_id)
     version = current if version is None else version
-    supported = (1, current) if current != VERSION else (VERSION,)
+    supported = tuple(range(1, current + 1))
     if isinstance(version, bool) or not isinstance(version, int) or version not in supported:
         raise ValueError('Unsupported challenge recipe version.')
     return version
@@ -113,6 +114,14 @@ def _apparatus(family_level, version):
     """
     result = copy.deepcopy(family_level)
     family = family_level['id']
+    if family == 'easy-switch' and version < 3:
+        # Keep both earlier recipes' starting-pose choice and solution.
+        result['tray'][0]['knobs']['state']['choices'] = ['open', 'closed']
+        result['tray'][0]['knobs']['mode']['choices'] = ['manual', 'paddle']
+        result['solution'] = [{'piece': 'switch', 'state': 'closed'}]
+        result.pop('solution_inputs', None)
+        result['brief'] = 'Place the wired switch, then drag its field handle downward to close the lamp circuit. Its initial state sets its starting physical position.'
+        result['hints'][0] = result['brief']
     if family not in FAMILY_VERSIONS or version != 1:
         return result
     import sandbox_electrics as electrical
@@ -208,7 +217,7 @@ def construct(family_level, seed, *, attempt=0, version=None):
     return result
 
 
-def _trial(level, placements, native, logs):
+def _trial(level, placements, native, logs, *, handle_inputs=None):
     import machine_game as game
     import machine_world as world
     # A missing inserted part is an absent physical goal, not a declaration
@@ -218,7 +227,8 @@ def _trial(level, placements, native, logs):
     outcomes = []
     for nudge in range(3):
         run = world.rehearse(game.nudged(compiled, nudge + 1) if nudge else compiled,
-                             native, logs, seconds=level['time_s'] + .5, wall_limit_s=120)
+                             native, logs, seconds=level['time_s'] + .5, wall_limit_s=120,
+                             handle_inputs=handle_inputs)
         station = (run.get('stations') or [{}])[0]
         reached = station.get('at_s') if station.get('done') else None
         error = run.get('error')
@@ -247,7 +257,9 @@ def validate(candidate, native, logs):
     for label, placements in [('solution', candidate['solution']), ('empty', []),
                                ('wrong', candidate.get('wrong', []))]:
         try:
-            receipt['scenarios'][label] = _trial(candidate, placements, native, logs)
+            receipt['scenarios'][label] = _trial(candidate, placements, native, logs,
+                **({'handle_inputs':candidate['solution_inputs']}
+                   if label=='solution' and candidate.get('solution_inputs') else {}))
         except Exception as error:
             receipt['scenarios'][label] = {'runs': 0, 'worked': 0,
                                            'error': f'{type(error).__name__}: {error}'}

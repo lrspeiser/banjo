@@ -249,8 +249,9 @@ PIECE_HELP = {
              'pivot, its sharp edge about 0.06 m ahead of the pivot, 0.2 m wide across the swing. It cuts oak and '
              'rubber, not iron',
     'cannon': 'a cannon firing level toward +x: its muzzle at (x_m, bore_height_m, z_m), the barrel behind it; '
-              'it fires when the level\'s trigger closes its firing circuit (on level 3 a weight on a cord pulls '
-              'the trigger as the run starts) and the current heats its powder; powder_g of powder throws its 2.1 kg '
+              'on Knock it off connect trigger:out to your cannon N:plus and your cannon N:minus to supply:minus '
+              'with two wires, then the PLAYER drags the physical trigger. Placement alone does not connect or fire it. '
+              'Current heats its powder; powder_g of powder throws its 2.1 kg '
               'iron ball at very '
               'roughly 9 m/s for 1 g and 20 m/s for 2 g. The ball drops as it flies',
     'steam': 'a steam engine: a cylinder at (x_m, z_m) on the ground with a piston on top, the piston at about '
@@ -296,7 +297,7 @@ FREE_HELP = {
     'lever': 'a seesaw on a block standing on the ground',
     'plank': 'a loose plank set down on what is under it',
     'ramp': 'a ramp with an 8 cm iron ball at its top',
-    'cannon': 'a cannon that fires at fire_at_s',
+    'cannon': 'a cannon whose charge needs a declared heating coil and circuit, or an explicit primer fire_at_s',
     'steam': 'a steam engine whose piston rises',
 }
 
@@ -522,6 +523,14 @@ def respond_level(message, level, placements, mode='hint', last_run=None, call=N
                         'usage': usage}
             r = rehearse(compiled)
             row = (r.get('stations') or [{}])[0]
+            if level.get('solution_inputs') and not r.get('error'):
+                # A build-only rehearsal cannot know the player's later drag.
+                # Deliver the valid setup, without searching for a way to
+                # bypass the handle or claiming a win before they operate it.
+                return {'ok': True, 'reply': answer['reply'] + ' Drag the field handle to try it.',
+                        'placements': checked, 'cost': cost, 'helped': True, 'usage': usage,
+                        'tried': len(tried)+1, 'rehearsal': {'goal_at_s': None,
+                            'manual_input_required': True, 'events': [e['text'] for e in r['events'][:20]]}}
             if row.get('done'):
                 return {'ok': True, 'reply': answer['reply'], 'placements': checked, 'cost': cost, 'helped': True,
                         'usage': usage, 'tried': len(tried) + 1,

@@ -2981,12 +2981,17 @@ class MachineSession:
             pass
 
 
-def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, after_s=0.0, flows=False):
+def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, after_s=0.0, flows=False,
+             *, handle_inputs=None):
     """Run a machine once, unpaced, and report what the engine measured: which
     stations happened, when, and the events. Nothing is kept and nothing is
     changed; a person still watches the real run afterwards. track: names of
     bodies whose paths and hits to report too (a preview), running on after_s
-    once every station is done, to show where things come to rest."""
+    once every station is done, to show where things come to rest.
+    handle_inputs is an explicit offline verification intervention: bounded
+    forces at declared handle grips, never Boolean switch states. Ordinary
+    previews and live sessions do not supply these reference player inputs.
+    """
     session = MachineSession(compiled, exe, logs, paced=False)
     if track:
         # Each path starts where the body stands before anything moves.
@@ -2999,6 +3004,11 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
         session._capture_flows()
     started = time.perf_counter()
     try:
+        for command in handle_inputs or []:
+            device = next(d for d in compiled.get('electrical', {}).get('devices', [])
+                          if d['name'] == command['name'] and d.get('handle'))
+            session.mechanical_switch_pull(device['name'], device['handle']['part'],
+                                            device['handle']['at_m'], command['force_n'])
         session.play(True)
         with session.lock:
             all_done_at = None
@@ -3020,7 +3030,7 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                    'closest_approach': [c for i, c in sorted(getattr(session, 'closest', {}).items()) if i not in done],
                    'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]],
                    # What went in, as it stood at the end: heat, chemistry, batteries.
-                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits', 'electrical', 'pour')
+                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits', 'electrical', 'pour', 'pulls', 'test_pulled')
                                 if (session.readouts or {}).get(k) is not None}}
             if track:
                 out['paths'] = {name: {'points': points, 'turn_wxyz': session.trail_turn.get(name)}

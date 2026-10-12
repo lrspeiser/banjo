@@ -628,9 +628,17 @@ def easy_levels():
                        s, tray('switch', connect_to={'in': 'supply:plus', 'out': 'lamp:plus'}),
                        {'piece': 'switch', 'state': 'closed'}, {'load_power_w': {'device': 'lamp', 'at_least_w': 2, 'for_s': .5}},
                        {'piece': 'switch', 'state': 'open'}))
+    # This lesson teaches field operation, so it cannot be completed by
+    # selecting an already-closed starting pose (Sandbox retains that option).
+    levels[-1]['tray'][0]['knobs']['state'].update(default='open', choices=['open'])
+    levels[-1]['tray'][0]['knobs']['mode'].update(default='manual', choices=['manual'])
+    levels[-1]['solution'] = [{'piece': 'switch', 'state': 'open'}]
+    levels[-1]['solution_inputs'] = [dict(name='your switch 1', force_n=[0,-8,0])]
+    levels[-1]['brief'] = 'Add the prewired switch. Drag its field handle downward to close the lamp circuit. Run it alone leaves the handle open.'
+    levels[-1]['hints'][0] = levels[-1]['brief']
     s = empty('Light the bulb'); merge(s, battery('supply', {'x_m': -.6}, {})); merge(s, switch('control', {'state': 'closed'}, {}))
     link(s, 'supply wire', 'supply:plus', 'control:in')
-    levels.append(easy('easy-bulb', 'Light the bulb', 'Put a bulb into the prepared switched socket and run the circuit.',
+    levels.append(easy('easy-bulb', 'Light the bulb', 'Add a prewired bulb and run the prepared circuit. Visible leads already join the closed switch and supply; moving the bulb does not make or break a connection.',
                        s, tray('bulb', connect_to={'plus': 'control:out', 'minus': 'supply:minus'}),
                        {'piece': 'bulb', 'x_m': .6}, {'load_power_w': {'device': 'your bulb 1', 'at_least_w': 2, 'for_s': .5}},
                        {'piece': 'bulb', 'x_m': .6, 'preset': 'small'}, seconds=4))
@@ -643,7 +651,7 @@ def easy_levels():
                        {'load_power_w': {'device': 'lamp', 'at_least_w': 2, 'for_s': .5}},
                        {'piece': 'wire', 'a_terminal': 'lamp:minus', 'b_terminal': 'lamp:plus'}))
     s = empty('Turn the axle'); merge(s, battery('supply', {'x_m': -.6}, {}))
-    levels.append(easy('easy-motor', 'Turn the axle', 'Place the motor into the prepared power socket, facing forward, to turn its flag.',
+    levels.append(easy('easy-motor', 'Turn the axle', 'Add the prewired motor and choose its direction to turn the flag. Its visible leads reach the supply; its location does not connect it.',
                        s, tray('motor', connect_to={'plus': 'supply:plus', 'minus': 'supply:minus'}),
                        {'piece': 'motor', 'direction': 'forward'}, {'hinge_beyond_deg': {'joint': 'your motor 1 axle', 'deg': 20}},
                        {'piece': 'motor', 'direction': 'reverse'}, seconds=1))

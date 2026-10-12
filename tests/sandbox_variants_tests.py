@@ -144,7 +144,7 @@ class Recipes(unittest.TestCase):
         for family in [f for f in families() if f['id'] in oracles]:
             original = copy.deepcopy(family)
             current = variants.construct(family, 42)
-            self.assertEqual(current['id'], f'{family["id"]}--v2--0000002a--0')
+            self.assertEqual(current['id'], f'{family["id"]}--v{variants.family_version(family["id"])}--0000002a--0')
             raw = game.compose(current, current['solution'])[0]
             compiled = world.compile_spec(raw)
             switch = next(d for d in compiled['electrical']['devices'] if d['kind'] == 'switch')
@@ -157,7 +157,8 @@ class Recipes(unittest.TestCase):
                     self.assertEqual(legacy['variant']['value'], expected)
                     self.assertEqual(legacy['goal'], family['goal'])
                     self.assertEqual(legacy['time_s'], family['time_s'])
-                    self.assertEqual(legacy['solution'], family['solution'])
+                    self.assertEqual(legacy['solution'], [{'piece':'switch','state':'closed'}]
+                                     if family['id']=='easy-switch' else family['solution'])
                     self.assertEqual(legacy['wrong'], family['wrong'])
                     if family['id'] == 'easy-switch':
                         self.assertTrue(legacy['tray'][0]['legacy_manual'])
@@ -194,6 +195,23 @@ class Recipes(unittest.TestCase):
                 self.assertEqual(body['size_m'], [.36, .04, .16])
                 self.assertFalse(body['fixed'])
             self.assertEqual(family, original)
+
+    def test_switch_v3_requires_player_input_and_v2_keeps_its_original_pose_choice(self):
+        family=next(f for f in families() if f['id']=='easy-switch')
+        new=variants.construct(family,42)
+        self.assertEqual(new['variant']['version'],3)
+        self.assertEqual(new['tray'][0]['knobs']['state']['choices'],['open'])
+        self.assertEqual(new['tray'][0]['knobs']['mode']['choices'],['manual'])
+        self.assertEqual(new['solution'],[dict(piece='switch',state='open')])
+        self.assertTrue(new['solution_inputs'])
+        with self.assertRaises(game.LevelRefused):
+            game.compose(new,[dict(piece='switch',state='closed')])
+        old=variants.construct(family,42,version=2)
+        self.assertEqual(old['variant']['version'],2)
+        self.assertEqual(old['solution'],[dict(piece='switch',state='closed')])
+        self.assertEqual(old['tray'][0]['knobs']['state']['choices'],['open','closed'])
+        self.assertNotIn('solution_inputs',old)
+        self.assertEqual(variants.parse(old['id'])['version'],2)
 
     def test_native_legacy_switch_family_shares_reopen_with_physical_handles(self):
         if not ENGINE.is_file():

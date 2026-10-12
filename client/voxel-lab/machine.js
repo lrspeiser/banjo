@@ -262,9 +262,9 @@ function syncTerminalLabels() {
     overlay.append(controls); pins.append(overlay);
     let handle;
     if (device.handle) {
-      handle=button('↕',()=>{}, {ariaLabel:`Drag ${device.name} handle`});
+      handle=button(device.handle.label||'↕',()=>{}, {ariaLabel:`Drag ${device.name} handle`});
       handle.style.cssText='min-height:44px;min-width:44px;touch-action:none;cursor:ns-resize';
-      handle.title='Drag down to close, up to open. The engine moves the rocker.';
+      handle.title=device.handle.help||'Drag down to close, up to open. The engine moves the rocker.';
       handle.addEventListener('pointerdown',e=>{
         if (!startSwitchDrag(device,e)) return;
         e.preventDefault();e.stopPropagation();pointers.set(e.pointerId,[e.clientX,e.clientY]);handle.setPointerCapture(e.pointerId);
@@ -334,6 +334,13 @@ function positionTerminalLabels() {
       } else if (device.kind==='bulb') {
         const bulb=snapshot.devices.find(d=>d.name===device.name);
         feedback.textContent=prefix+`${(bulb?.power_w||0).toFixed(2)} W lamp`;
+      } else if (device.kind==='coil' || device.kind==='motor') {
+        const measured=snapshot.devices.find(d=>d.name===device.name);
+        feedback.textContent=prefix+`${Math.abs(measured?.current_a||0).toFixed(3)} A · ${(measured?.power_w||0).toFixed(1)} W`;
+        if(device.kind==='coil') {
+          const heat=!snapshot.preview&&readouts.heat?.find(h=>h.name===device.heats);
+          feedback.textContent+=heat?` · ${heat.temperature_k.toFixed(0)} K${heat.reacting?' · burning':''}`:` → ${device.heats.replace(/^your /,'')}`;
+        }
       } else if (device.kind==='socket') {
         feedback.textContent=prefix+Object.keys(device.terminals||{}).map(key=>{
           const contacts=snapshot.contacts.filter(c=>c.a===`${device.name}:${key}`||c.b===`${device.name}:${key}`);
@@ -2273,7 +2280,8 @@ function showPreviewLegend(r, colourOf) {
   box.append(Object.assign(document.createElement('p'), {className: 'head',
     textContent: r.error ? 'Preview stopped: '+r.error : !r.complete ? 'Preview incomplete'
       : !level.goal ? 'Preview'
-      : r.goal_at_s != null ? `Preview · goal at ${describeTime(r.goal_at_s)}` : 'Preview · goal not reached'}));
+      : r.goal_at_s != null ? `Preview · goal at ${describeTime(r.goal_at_s)}`
+      : r.manual_input_required ? 'Preview · waiting for your handle drag' : 'Preview · goal not reached'}));
   const chip = (colour, text) => {
     const s = Object.assign(document.createElement('span'), {className: 'chip', textContent: text});
     s.style.setProperty('--c', '#' + new THREE.Color(colour).getHexString());
@@ -3943,7 +3951,8 @@ async function askLevel(mode) {
       endGhost(); remember();
       placements = r.placements.map(p => { const q = {...p}; delete q.cost; return q; });
       helped = true; renderTray(); renderPlaced();
-      if (r.rehearsal) say(r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.goal_at_s != null
+      if (r.rehearsal) say(r.rehearsal.manual_input_required || r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.manual_input_required
+        ? 'Setup checked. Drag the field handle to try the machine.' : r.rehearsal.goal_at_s != null
         ? `Rehearsed once in the engine: the goal happened at ${describeTime(r.rehearsal.goal_at_s)}.`
         : 'Rehearsed once in the engine: the goal did not happen. Try moving the pieces.');
       await rebuildLevel(false);

@@ -47,7 +47,7 @@ EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle
 # piece is one task; a separate cable, field operation or drum connection adds
 # another. This metadata never participates in simulation or scoring.
 PLAYER_TASK_COUNTS = {
-    'gap': 1, 'cut': 1, 'fire': 1, 'steam': 1, 'chain': 1,
+    'gap': 1, 'cut': 1, 'fire': 4, 'steam': 1, 'chain': 1,
     'laser': 2, 'sun': 2, 'tackle': 1,
     'easy-cut': 1, 'easy-mirror': 1, 'easy-lens': 1, 'easy-solar': 1,
     'easy-tackle': 1, 'easy-water-wheel': 1, 'easy-spring': 1,
@@ -331,14 +331,21 @@ def _cannon(name, k, ctx=None):
     if k.get('fire_at_s') is not None:
         kit['fire_at_s'] = k['fire_at_s']
     made = {'kits': [_turned_kit(kit, k, muzzle)]}
-    # Wired to the level's trigger: a coil on the charge, in a circuit the
-    # trigger's contact closes, on the level's battery (level 3: a weight on
-    # a cord pulls the trigger arm down onto its contact).
-    fired = (ctx or {}).get('tray', {}).get('fired_by')
-    if fired:
-        made['circuits'] = [{'name': fired.get('circuit', 'firing circuit'), 'battery': fired['battery'],
-                             'switch': {'touch': list(fired['touch'])},
-                             'coil': {'heats': f'{name} charge', 'resistance_ohm': fired.get('coil_ohm', 0.1)}}]
+    if (ctx or {}).get('tray', {}).get('explicit_ignition'):
+        # A real coil branch with player-drawn leads. Its pins turn with the
+        # barrel; merely placing a cannon does not connect it to any battery.
+        # Use the compiled barrel pose, including the kit's clearance lift
+        # after a tip/roll, so its visible leads cannot remain underground.
+        base = (ctx or {}).get('spec', {})
+        probe = mw.compile_spec(dict(made, cell_m=base.get('cell_m', .02),
+                                     ground=base.get('ground')), lenient=True)
+        barrel = next(p for p in probe['parts'] if p['name']==name+' barrel')
+        transform = mw.rotation(barrel['turn_deg'])
+        pins = {key: [round(barrel['at_m'][i] + value, 9) for i, value in enumerate(
+                    mw._mat_apply(transform, offset))]
+                for key, offset in (('plus', [0, .075, -.045]), ('minus', [0, .075, .045]))}
+        made['electrical'] = {'devices': [dict(name=name, kind='coil', part=name+' barrel',
+            heats=name+' charge', resistance_ohm=.1, terminals=pins)]}
     return made
 
 
@@ -1285,7 +1292,7 @@ def ghost(level, placements, index, snapping=False, edit_key=None):
                             **({'parts': p['parts']} if p['shape'] == 'compound' else {})) for p in mine]}
     # Draw the compiled terminals while placing a device, including its
     # prepared socket leads. This does not advance the engine.
-    if checked[index]['piece'] in ('battery', 'switch', 'bulb', 'motor', 'ignition', 'wire'):
+    if checked[index]['piece'] in ('battery', 'switch', 'bulb', 'motor', 'ignition', 'wire', 'cannon'):
         reply['electrical_preview'] = compiled.get('electrical', {})
     if checked[index]['piece'] == 'wire':
         terminals = {device['name'] + ':' + key: at for device in compiled.get('electrical', {}).get('devices', [])
@@ -1450,12 +1457,13 @@ def energy_of(compiled, readouts, t_s=0.0):
     return {'j': made + run['j'], 'pieces_j': made, 'pieces': pieces, 'run': run}
 
 
-def measure_energy(level, placements, exe, logs):
+def measure_energy(level, placements, exe, logs, *, handle_inputs=None):
     """A rehearsal to the goal: when it happened and what the win took (a
     level's par is its own solution's)."""
     spec, _, _ = compose(level, placements)
     compiled = mw.compile_spec(spec)
-    r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=120)
+    r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=120,
+                    handle_inputs=handle_inputs)
     row = (r['stations'] or [{}])[0]
     return dict(energy_of(compiled, r.get('readouts'), r['world_time_s']),
                 goal_at_s=row.get('at_s') if row.get('done') else None)
@@ -1492,7 +1500,7 @@ def nudged(compiled, seed, metres=0.0015):
     return out
 
 
-def trial(level, placements, exe, logs, runs=3):
+def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None):
     """Run the machine `runs` times, nudged, and say in how many the goal
     happened in time. Unpaced: as fast as the engine goes."""
     spec, checked, cost = compose(level, placements)
@@ -1500,7 +1508,7 @@ def trial(level, placements, exe, logs, runs=3):
     results = []
     for seed in range(runs):
         r = mw.rehearse(nudged(compiled, seed + 1) if seed else compiled, exe, logs,
-                        seconds=level['time_s'] + 0.5, wall_limit_s=120)
+                        seconds=level['time_s'] + 0.5, wall_limit_s=120, handle_inputs=handle_inputs)
         row = r['stations'][0] if r['stations'] else {}
         at = row.get('at_s') if row.get('done') else None
         results.append({'goal_at_s': at, 'error': r.get('error'),
@@ -1549,6 +1557,7 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0):
             hits.append(h)
         last[key] = h['t']
     return {'paths': paths, 'hits': hits, 'goal_at_s': goal_at, 'world_time_s': r['world_time_s'],
+            'manual_input_required': bool(level.get('solution_inputs')),
             'flow_frames': r.get('flow_frames', []), 'complete': r.get('complete', not r['error']),
             'wall_s': r['wall_s'], 'error': r['error'], 'zone': rule if 'at_m' in (rule if isinstance(rule, dict) else {}) else None}
 

@@ -159,6 +159,7 @@ class Tray(unittest.TestCase):
         self.assertEqual(mg.public(mg.level_by_id('gap'))['task_count'], 1)
         self.assertEqual(mg.public(mg.level_by_id('laser'))['task_count'], 2)
         self.assertEqual(mg.public(mg.level_by_id('sun'))['task_count'], 2)
+        self.assertEqual(mg.public(mg.level_by_id('fire'))['task_count'], 4)
         self.assertEqual(mg.public(mg.level_by_id('easy-switch'))['task_count'], 2)
         variant = copy.deepcopy(mg.level_by_id('easy-switch'))
         variant['id'] = 'easy-switch--v2--12345678--0'
@@ -270,6 +271,12 @@ class Tray(unittest.TestCase):
         low = min(mw.lowest_point(s) for p in tipped['parts'] for s in mw.solids_of(p))
         self.assertGreaterEqual(low, 0.0)
         self.assertLess(low, 0.01)
+        for setup in (c,tipped):
+            barrel=next(p for p in setup['parts'] if p['name']=='your cannon 1 barrel')
+            coil=next(d for d in setup['electrical']['devices'] if d['name']=='your cannon 1')
+            for key,offset in (('plus',[0,.075,-.045]),('minus',[0,.075,.045])):
+                expected=[barrel['at_m'][i]+v for i,v in enumerate(mw._mat_apply(mw.rotation(barrel['turn_deg']),offset))]
+                self.assertLess(math.dist(coil['terminals'][key],expected),1e-8,'pins turn and lift with the actual barrel')
         # A tipped plank is set down clear of what is under it.
         gap = mg.level_by_id('gap')
         spec, _, _ = mg.compose(gap, [dict(gap['solution'][0], pitch_deg=12, yaw_deg=25)])
@@ -445,6 +452,21 @@ class Tray(unittest.TestCase):
         hint = mc.respond_level('Help', level, [], mode='hint', call=lambda m: ({'reply': 'Bridge the gap.'}, {}))
         self.assertEqual(hint['reply'], 'Bridge the gap.')
         self.assertNotIn('placements', hint)
+
+    def test_chat_delivers_manual_setup_without_searching_for_an_automatic_win(self):
+        level=mg.level_by_id('fire')
+        seen=[]
+        def rehearse(compiled):
+            seen.append(compiled)
+            return dict(stations=[dict(done=False)],events=[],error=None)
+        result=mc.respond_level('Place it',level,[],mode='build',rehearse=rehearse,
+            call=lambda messages: (dict(reply='Aim and connect the cannon.',placements=level['solution']),{}))
+        self.assertEqual(len(seen),1)
+        self.assertTrue(result['rehearsal']['manual_input_required'])
+        self.assertIsNone(result['rehearsal']['goal_at_s'])
+        self.assertTrue(result['helped'])
+        self.assertEqual(len(result['placements']),3)
+        self.assertIn('Drag the field handle',result['reply'])
 
 
 def knob_default(rule):
@@ -669,6 +691,81 @@ class FreeBuild(unittest.TestCase):
 
 
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_cannon_latch_keeps_heat_on_after_a_short_pull_for_glass_oak_and_iron(self):
+        level=mg.level_by_id('fire')
+        with tempfile.TemporaryDirectory() as logs:
+            for material in ('glass','oak','iron'):
+                with self.subTest(material=material):
+                    spec=mg.compose(level,level['solution'])[0]
+                    next(p for p in spec['parts'] if p['name']=='trigger handle')['material']=material
+                    session=mw.MachineSession(mw.compile_spec(spec),ENGINE,Path(logs),paced=True)
+                    try:
+                        grip=next(d for d in session.compiled['electrical']['devices'] if d['name']=='trigger')['handle']['at_m']
+                        session.mechanical_switch_pull('trigger','trigger handle',grip,[0,-8,0])
+                        session.play(True)
+                        deadline=time.monotonic()+15
+                        while session.t<.25 and not session.error and time.monotonic()<deadline:
+                            session.frame(session.seq,20)
+                        session.mechanical_switch_pull('trigger','trigger handle',session.bodies['trigger handle']['position_m'],[0,0,0])
+                        while session.t<1.3 and not session.error and time.monotonic()<deadline:
+                            session.frame(session.seq,20)
+                        frame=session.frame(0,0)
+                        self.assertIsNone(frame['error'])
+                        self.assertTrue(frame['readouts']['stations'][0]['done'],frame['readouts'])
+                        hinge=next(j for j in frame['readouts']['joints'] if j['name']=='trigger rocker hinge')
+                        self.assertLessEqual(hinge['degrees'],-30+1e-3)
+                        self.assertTrue(next(d for d in frame['readouts']['electrical']['devices'] if d['name']=='trigger')['closed'])
+                        self.assertTrue(all(p['force_n']==[0,0,0] for p in frame['readouts']['pulls']))
+                        self.assertFalse(frame['readouts']['test_pulled'])
+                        ledger=frame['readouts']['electrical']['networks'][0]['ledger']
+                        self.assertLess(abs(ledger['electrical_residual_j']),1e-6)
+                        print('CANNON_LATCH_MATERIAL',material,'dt',mw.DT_S,'goal',frame['readouts']['stations'][0]['at_s'],
+                              'hinge',hinge['degrees'],'pulls',frame['readouts']['pulls'],'ledger',ledger)
+                    finally:session.close()
+
+    @need_engine
+    def test_cannon_requires_both_leads_and_player_force_then_real_aim_and_charge(self):
+        fire = mg.level_by_id('fire')
+        before = copy.deepcopy(fire)
+        placements = fire['solution']
+        inputs = fire['solution_inputs']
+        with tempfile.TemporaryDirectory() as logs:
+            logs = Path(logs)
+            good = mg.trial(fire, placements, ENGINE, logs, runs=3, handle_inputs=inputs)
+            self.assertEqual(good['worked'], 3, good)
+            scenarios = [
+                ('no player input', placements, None),
+                ('no leads', placements[:1], inputs),
+                ('no feed', [placements[0], placements[2]], inputs),
+                ('no return', placements[:2], inputs),
+                ('wrong aim', [dict(placements[0], yaw_deg=35), *placements[1:]], inputs),
+                ('weak charge', [dict(placements[0], powder_g=.5), *placements[1:]], inputs),
+                ('too low', [dict(placements[0], bore_height_m=.2), *placements[1:]], inputs),
+            ]
+            for label, placed, forces in scenarios:
+                with self.subTest(scenario=label):
+                    result = mg.trial(fire, placed, ENGINE, logs, runs=3, handle_inputs=forces)
+                    self.assertEqual(result['worked'], 0, result)
+                    self.assertTrue(all(r['error'] is None for r in result['results']), result)
+            compiled = mw.compile_spec(mg.compose(fire, placements)[0])
+            self.assertFalse(compiled['circuits'], 'no invisible legacy firing circuit')
+            self.assertFalse(compiled['thermo'].get('heaters'), 'no timer primer')
+            self.assertEqual(len(compiled['electrical']['wires']), 3)
+            dry = mg.preview(fire, placements, ENGINE, logs)
+            self.assertIsNone(dry['goal_at_s'])
+            self.assertTrue(dry['manual_input_required'])
+            self.assertFalse(any(p['name']=='your cannon 1 ball' for p in dry['paths']))
+            run = mw.rehearse(compiled, ENGINE, logs, seconds=4, flows=True, track=['your cannon 1 ball','block'],
+                              handle_inputs=inputs)
+            self.assertFalse(run['readouts']['test_pulled'])
+            self.assertGreater(mg.run_energy(compiled, run['readouts'], run['world_time_s'])['pull_j'], 0)
+            self.assertTrue(any(h['body']=='your cannon 1 ball' and h['other']=='block' for h in run['hits']))
+            for network in run['readouts']['electrical']['networks']:
+                self.assertLess(abs(network['ledger']['electrical_residual_j']), 1e-6)
+            print('cannon force oracle:', good, 'electrical ledger:', run['readouts']['electrical']['networks'][0]['ledger'])
+        self.assertEqual(fire, before, 'reference inputs never alter the saved setup')
+        self.assertNotIn('solution_inputs', mg.public(fire))
     @need_engine
     def test_empty_learning_fields_open_and_step_without_dummy_bodies(self):
         for identity in EMPTY_START_LEVELS:
@@ -956,7 +1053,8 @@ class Engine(unittest.TestCase):
         with tempfile.TemporaryDirectory() as logs:
             for level in LEVELS:
                 with self.subTest(level=level['id']):
-                    t = mg.trial(level, level['solution'], ENGINE, Path(logs), runs=3)
+                    t = mg.trial(level, level['solution'], ENGINE, Path(logs), runs=3,
+                                 handle_inputs=level.get('solution_inputs'))
                     print(f"\n  {level['id']}: works {t['worked']} of 3, goal at {[r['goal_at_s'] for r in t['results']]}")
                     self.assertEqual(t['worked'], 3, t['results'])
                     try:
@@ -984,11 +1082,13 @@ class Engine(unittest.TestCase):
     def test_turned_pieces_work_as_turned_in_the_engine(self):
         # A cannon turned 20 degrees fires 20 degrees off its old line.
         fire = mg.level_by_id('fire')
-        spec, _, _ = mg.compose(fire, [dict(fire['solution'][0], yaw_deg=20)])
+        spec, _, _ = mg.compose(fire, [dict(fire['solution'][0], yaw_deg=20), *fire['solution'][1:]])
         with tempfile.TemporaryDirectory() as logs:
             s = mw.MachineSession(mw.compile_spec(spec), ENGINE, Path(logs), paced=False)
             try:
                 start, flown, began = None, None, time.perf_counter()
+                trigger = next(d for d in s.compiled['electrical']['devices'] if d['name']=='trigger')
+                s.mechanical_switch_pull('trigger', trigger['handle']['part'], trigger['handle']['at_m'], [0,-8,0])
                 s.play(True)
                 while time.perf_counter() - began < 120:
                     with s.lock:
@@ -1017,7 +1117,8 @@ class Engine(unittest.TestCase):
         # on par, and a better one (level 1's plank a little shorter) beats it.
         with tempfile.TemporaryDirectory() as logs:
             for level in LEVELS:
-                m = mg.measure_energy(level, level['solution'], ENGINE, Path(logs))
+                m = mg.measure_energy(level, level['solution'], ENGINE, Path(logs),
+                                      handle_inputs=level.get('solution_inputs'))
                 with self.subTest(level=level['id']):
                     self.assertIsNotNone(m['goal_at_s'])
                     self.assertLessEqual(m['j'], level['par_energy_j'])
@@ -1102,7 +1203,7 @@ class Engine(unittest.TestCase):
         high = [dict(level['solution'][0], pivot_height_m=level['solution'][0]['pivot_height_m'] + 0.2)]
         # The cannon too weak: its ball falls short of the block.
         fire = mg.level_by_id('fire')
-        weak = [dict(fire['solution'][0], powder_g=0.5)]
+        weak = [dict(fire['solution'][0], powder_g=0.5), *fire['solution'][1:]]
         # One mirror where two are needed: the beam goes into the wall.
         laser = mg.level_by_id('laser')
         # A panel lying flat in the sun, and one facing the sun in the shed's
@@ -1117,7 +1218,8 @@ class Engine(unittest.TestCase):
         with tempfile.TemporaryDirectory() as logs:
             for lv, placed in ((level, high), (fire, weak), (laser, laser['solution'][:1]), (sun, flat), (sun, shaded),
                                (tackle, low)):
-                t = mg.trial(lv, placed, ENGINE, Path(logs), runs=1)
+                t = mg.trial(lv, placed, ENGINE, Path(logs), runs=1,
+                             handle_inputs=lv.get('solution_inputs'))
                 self.assertEqual(t['worked'], 0, lv['id'])
 
 
