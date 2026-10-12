@@ -1841,10 +1841,12 @@ function renderGhostBar() {
   renderMovePad();
   const card = $('ghost-bar');
   card.hidden = !ghost;
-  card.after($('flow-preview'));
   ghost && (ghost.cardInput = null);
   $('piece-edit-row').hidden = Boolean(ghost) || !placements.length;
-  if (!ghost) { $('control-panel').append($('move-pad')); card.replaceChildren(); return; }
+  if (!ghost) {
+    for(const id of ['flow-preview','phone-tools','move-pad']) if($(id)) $('control-panel').append($(id));
+    card.replaceChildren(); return;
+  }
   const throwAway = button('✕', cancelGhost, {ariaLabel: 'Throw the ghost away', title: 'Throw the ghost away'});
   const head = Object.assign(document.createElement('p'), {className: 'head',
     textContent: looking ? `View mode · ${pieceLabel(ghost.p.piece)}` : `Adjust ${pieceLabel(ghost.p.piece)}`});
@@ -1908,7 +1910,10 @@ function renderGhostBar() {
   precision.open=precisionOpen;
   precision.append(Object.assign(document.createElement('summary'),{textContent:'Precision controls'}),ghostItem(),
     Object.assign(document.createElement('p'),{id:'ghost-cost',className:'legend'}));
-  card.replaceChildren(head, chips, row, state, $('move-pad'), actions, precision);
+  const fields=Object.assign(document.createElement('div'),{className:'ghost-fields'});
+  fields.append(head,chips,row,state,$('move-pad'),precision,$('flow-preview'));
+  if($('phone-tools')) fields.append($('phone-tools'));
+  card.replaceChildren(fields,actions);
   showGhostKnobs(); showGhostState();
 }
 

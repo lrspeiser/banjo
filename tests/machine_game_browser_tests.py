@@ -722,6 +722,16 @@ class Puzzles(unittest.TestCase):
                 self.assertGreaterEqual(geometry['slider']['width'],geometry['row']['width']*.6,geometry)
                 self.assertGreaterEqual(geometry['number']['height'],44,geometry)
                 self.assertTrue(geometry['uncovered'],geometry)
+                # Probe inside the buttons' 9px rounded corners; the full
+                # rectangular bounds must still clear the scroll edge/footer.
+                for label in ('Move it away from you','Move it left','Move it right','Move it toward you'):
+                    self.reveal_control(self.button_expression(label))
+                    touch=self.js(f"""(()=>{{const el={self.button_expression(label)},r=el.getBoundingClientRect(),fields=el.closest('.ghost-fields').getBoundingClientRect(),actions=document.querySelector('#ghost-bar .actions').getBoundingClientRect();
+                      return {{h:r.height,w:r.width,inside:r.top>=fields.top&&r.bottom<=fields.bottom,
+                        overlaps:r.left<actions.right&&r.right>actions.left&&r.top<actions.bottom&&r.bottom>actions.top,
+                        corners:[[r.left+8,r.top+8],[r.right-8,r.top+8],[r.left+8,r.bottom-8],[r.right-8,r.bottom-8]].every(([x,y])=>el.contains(document.elementFromPoint(x,y)))}};}})()""")
+                    self.assertGreaterEqual(touch['h'],44,(label,touch));self.assertGreaterEqual(touch['w'],44,(label,touch))
+                    self.assertTrue(touch['inside'] and touch['corners'] and not touch['overlaps'],(label,touch))
                 self.slide('Cut to length of your plank 1',.68)
                 self.assertTrue(self.js("document.getElementById('precision-controls').open"))
                 self.assertEqual(self.ghost()['p']['length_m'],.68)
