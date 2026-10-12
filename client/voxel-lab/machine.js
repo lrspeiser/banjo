@@ -15,7 +15,8 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 view.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x11222d);
-scene.add(new THREE.HemisphereLight(0xdfefff, 0x2a3a2a, 1.1));
+const ambient = new THREE.HemisphereLight(0xdfefff, 0x2a3a2a, 1.1);
+scene.add(ambient);
 const sun = new THREE.DirectionalLight(0xffffff, 1.6);
 sun.position.set(4, 8, 5);
 scene.add(sun);
@@ -499,10 +500,9 @@ function updatePowerLabels() {
       badge.textContent = measured ? `${(measured.power_w || 0).toFixed(1)} W` : '… W';
       detail.textContent = measured ? `${(measured.sunlight_w || 0).toFixed(0)} W sunlight · ${(battery?.charge_j || 0).toFixed(1)} J stored` : '';
       const aim = Number.isFinite(measured?.off_sun_deg) ? `${measured.off_sun_deg.toFixed(0)}° off sun` : '';
-      state.textContent = measured?.shaded ? `Center blocked by ${measured.shaded_by || 'a part'}`
-        : [aim, battery && battery.charge_j >= battery.capacity_j ? 'Store full' : '',
-          cable ? 'Cable connected' : 'Output not wired'].filter(Boolean).join(' · ');
-      if (measured?.shaded && aim) state.textContent += ` · ${aim}`;
+      state.textContent = [measured?.shaded ? `In shadow · ${measured.shaded_by || 'a part'}` : '', aim,
+        battery && battery.charge_j >= battery.capacity_j ? 'Store full' : '',
+        cable ? 'Cable connected' : 'Output not wired'].filter(Boolean).join(' · ');
     } else state.textContent = cable ? 'Cable connected' : 'Waiting for a cable';
     badge.hidden = port.kind !== 'output' || (wiringMode && !playing);
     if (control) {
@@ -657,6 +657,9 @@ function syncLight() {
 }
 function placeSun() {
   const s = machine && (machine.sun || (machine.light && machine.light.sun));
+  // Keep real cast shadows legible under the declared sun. This adjusts only
+  // display fill lighting; the native ray and energy readings remain final.
+  ambient.intensity = s && s.irradiance_w_m2 > 0 ? .65 : 1.1;
   if (!s) { sun.position.set(4, 8, 5); sunDisc.visible = false; return; }
   const el = s.elevation_deg * Math.PI / 180, az = s.azimuth_deg * Math.PI / 180;
   const toward = [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)];
@@ -1155,7 +1158,21 @@ async function poll(mine) {
 let framedFree = false;
 function frameCamera() {
   // A free build's table corners mark where pieces can go; the view is of what is built.
-  const pts = [...world.bodies.values()].filter(b => !b.name.startsWith('table corner ')).map(b => b.position_m);
+  const pts = [];
+  for (const body of world.bodies.values()) {
+    if (body.name.startsWith('table corner ')) continue;
+    const mesh = meshes.get(body.name);
+    const bounds = new THREE.Box3();
+    mesh?.updateWorldMatrix(true, true);
+    // Composite native shapes keep a disposal shim on their Group. Only
+    // actual rendered geometry contributes to the bounds.
+    mesh?.traverse(child => {
+      if (child.isMesh && child.geometry?.isBufferGeometry)
+        bounds.union(new THREE.Box3().setFromObject(child));
+    });
+    if (!bounds.isEmpty()) pts.push(bounds.min.toArray(), bounds.max.toArray());
+    else pts.push(body.position_m);
+  }
   // A level's goal zone is in the picture too, and the ground under it:
   // where the player is to build, even before anything stands there.
   const zone = LEVEL_MODE && level && level.goal && level.goal.station.done_when.in_zone;
@@ -1167,10 +1184,11 @@ function frameCamera() {
   // A level is looked at from half its height (its goal zone is often high), a little further back.
   goal.set((lo[0] + hi[0]) / 2, Math.max(.3, (lo[1] + hi[1]) / (zone ? 2 : 3)), (lo[2] + hi[2]) / 2);
   target.copy(goal);
-  const span = Math.max(hi[0] - lo[0], hi[2] - lo[2], hi[1] - lo[1]);
-  // Far enough that the whole width fits the narrower of the two view angles.
+  // Fit full geometry, including rotated walls, rather than just body centers.
+  // A bounding sphere around the look-at point fits either aspect ratio.
   const half = Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
-  distance = Math.min(40, Math.max(zone ? 2.2 : 1.6, (zone ? .8 : .6) * span / Math.tan(half)));
+  const radius = Math.hypot(...lo.map((low, i) => Math.max(Math.abs(low - goal.getComponent(i)), Math.abs(hi[i] - goal.getComponent(i)))));
+  distance = Math.min(40, Math.max(zone ? 2.2 : 1.6, 1.12 * radius / Math.sin(half)));
   azimuth = -.25; elevation = .38;
 }
 
@@ -1196,7 +1214,12 @@ window.machineScreenPoint = point => {
 function resize() {
   const w = view.clientWidth, h = view.clientHeight;
   if (!w || !h) return;
+  const vertical = camera.fov * Math.PI / 360;
+  const oldHalf = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
   renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
+  const half = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
+  // Preserve the framing when controls collapse or the phone rotates.
+  distance = Math.min(40, distance * Math.sin(oldHalf) / Math.sin(half));
 }
 addEventListener('resize', resize);
 

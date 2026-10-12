@@ -34,7 +34,7 @@ The original chain-reaction levels are:
 | 4. Up she goes | a steam engine whose piston rises |
 | 5. Chain reaction | a ball down a ramp onto a lever that closes a switch and fires a cannon |
 | 6. Bounce the beam | two mirrors that bounce a laser round a wall onto a cord |
-| 7. Catch the sun | a solar panel aimed at the low sun and explicitly cabled to the winch |
+| 7. Catch the sun | move a solar panel out of a broad wall's shadow, aim at the low sun and draw its power cable to the winch |
 | 8. Lift with less | a counterweight on a block and tackle |
 
 A win is scored by energy: what it takes to make your pieces (from their mass

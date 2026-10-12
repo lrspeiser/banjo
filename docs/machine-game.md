@@ -1,6 +1,69 @@
 # Puzzles on the machine (/play)
 
-October 11, 2026. Open `/play` to choose eight chain-reaction levels or twenty-one freely selectable piece lessons. Each level has a fixed machine, a goal and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-one freely selectable piece lessons. Each level has a fixed machine, a goal and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+
+## Clear solar shadows and required delivery cables
+
+Both **Catch the sun** cards now have a concrete wall, 2 m wide, 1.6 m high
+and 0.12 m thick. The winch wall is turned 45° across the low sun's direction;
+the introductory wall stands across its south-facing sunlight. Move the
+collector beside the wall, aim it toward the sun, and open **Readings and
+wiring → Connect wires**. Click collector **Out**, then winch **In** or the
+introductory battery **In**. The cable is visible and follows piece edits.
+**In shadow · shade wall** identifies native obstruction; the same line
+always reports **Cable connected** or **Output not wired**. The rendered sun
+uses lower ambient fill for clearer cast shadows, without changing physics.
+The initial overview frames full rendered geometry rather than body centers,
+including composite shapes. Resizing or collapsing controls preserves that
+framing so a broad wall and its collector stay visible on a phone.
+
+The collector lesson has two tasks and an empty fixed receiving battery.
+Its unchanged 20 J / 1 s goal now measures delivered energy in that receiver;
+an unwired collector charging its own local store cannot finish it. New seeded
+solar challenges use recipe version 2; version-1 URLs retain their original
+preconnected apparatus, goal and 532 MJ par. Current par is 192 MJ, rounded
+above measured 191,439,840 J fabrication because the receiver housing is now
+fixed apparatus rather than a player-built included battery.
+
+Measured at dt = 1/240 s on native SHA-256
+`807ae9c34f0516a0d0dbf588400451b865083043d614cd1aab8040140c830f87`:
+at 1000 W/m², collector area 0.25 m² and 20% conversion, the winch sun is
+15° above ground at azimuth 225°, and the lesson sun is 20° at azimuth 180°.
+Both aimed, unshaded collectors deliver 50 W; the declared shaded controls
+deliver 0 W. Each correct setup wins 3/3 nudged runs. Each disconnected,
+shaded and flat-panel control wins 0/3; disconnected receivers retain zero
+charge while the panel's local store charges. Solar energy-account residuals
+for these controls are within 9.7e−11 J. The intro wins at 0.467 s; the winch
+wins at 2.400, 2.450 and 2.383 s, with its existing goal and 193 MJ par.
+These are solar/store measurements, not full motor/contact energy closure.
+The center-ray shade approximation and ideal charging cable limitations
+remain unchanged; this adds no material or electrical law.
+
+The five registered game, mechanics, electrics, recipe and client-geometry
+checks pass (115.58 s), including all 29 level solutions and the 82-preset
+native recipe sweep. Source registration covers all 269 C++ files. Both
+previous published Linux CI runs reached the browser suite's 600 s aggregate
+cap with passing cases still in progress; the aggregate cap is now 1200 s.
+Individual browser waits, physical deadlines, goals and assertions are
+unchanged. Linux CI must complete before its new result can be claimed.
+
+A preceding complete Chrome run passed 62/63 in 402.00 s; the landscape
+save-restore request failed with `net::ERR_NO_BUFFER_SPACE`. Its unchanged
+three-viewport test passed separately in 5.89 s. This was a local browser
+transport failure, not a native or save assertion failure; the underlying
+socket exhaustion cause remains unproven. No click retries or relaxed waits
+were introduced. The game and recipe metadata recheck passes both registered
+targets in 118.04 s.
+The full confirmation run also passes 62/63 (400.66 s), this time with the
+same socket-buffer error on a profile request while reopening a fresh
+challenge. Its previously failing save-restore case passes. Every solar,
+wiring, framing and touch case passes both complete runs; the complete local
+browser suite is nevertheless not green. This Windows transport limitation
+remains recorded separately from the verified outgoing solar scope.
+The unchanged fresh-challenge test and all three solar/clear-scene tests
+pass together, 4/4 in 66.02 s across desktop and both phone viewports. Manual
+ordinary-control play completes both solar levels with three stars; captured
+portrait, landscape and desktop views show the full wall, shadow and cable.
 
 ## Player-operated cannon and level-control audit
 
@@ -62,7 +125,7 @@ and tolerances.
 | Chain reaction; Marble turns on a light | A real ball tips the lever/paddle. The first level includes its fixed firing circuit; the second includes visible prepared leads. |
 | Up she goes; Heat to release | Declared firebox or wired coil supplies heat; native pressure or cord weakening reaches the goal. |
 | Bounce the beam; Bounce to the target; Find the focus | Native rays must reach the cord/sensor through the player's optical geometry. |
-| Catch the sun; Catch the sun (collector lesson); Charge then lift | Catch the sun requires its player-drawn power cable. The two introductory fixtures explicitly include their store connection; light still determines power. |
+| Catch the sun; Catch the sun (collector lesson); Charge then lift | Both Catch the sun cards require a player-drawn power cable and an unshaded collector. Charge then lift retains its declared store connection; light still determines power. |
 | Lift with less; Raise the crate; Tip the lever; Spring lifts the load | Material-derived weight, gravitational travel or stored spring energy provides the motion. |
 | Turn the big wheel; Turn the axle; Light the bulb | Prepared drive/leads are stated in the brief. Position does not create a socket connection. Gear drive and motor direction remain player settings. |
 | Give it power; Finish the loop | Actual battery-cap contacts or the explicit missing return wire must complete the circuit. |
@@ -369,7 +432,7 @@ Solar shading currently uses one ray from the center of the collecting face,
 offset 10 mm outward, toward the declared sun. It tests the engine's actual
 collision shapes. A blocked center makes this model shade the entire
 collector; it does not integrate partially lit area or transmit through glass.
-The visual shadow map is illustrative. **Center blocked by …** names the
+The visual shadow map is illustrative. **In shadow · …** names the
 measured obstruction, and an orange dashed ray ends at its actual hit point.
 A clear collector draws a short yellow ray toward the sun. The unrecoverable
 earlier player placement did not establish a specific false pillar hit.

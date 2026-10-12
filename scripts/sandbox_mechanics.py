@@ -344,3 +344,29 @@ def _easy_levels():
 
 
 EASY_LEVELS = _easy_levels()
+
+# The current collector lesson includes the same two player decisions as the
+# winch: get into sunlight and explicitly deliver that energy to a receiver.
+# _easy_levels() retains the v1 apparatus for old seeded share links.
+_solar_lesson = next(level for level in EASY_LEVELS if level['id']=='easy-solar')
+_solar_lesson['machine']['parts'] = [
+    box('shade wall',[2,1.6,.12],[0,.8,-.9]),
+    box('solar battery box',[.12,.12,.12],[1.6,.06,.6],'iron')]
+_solar_lesson['machine']['batteries'] = [{'name':'solar battery','in':'solar battery box',
+    'capacity_j':10000,'charge_j':0,'voltage_v':12}]
+_solar_lesson['machine']['electrical'] = dict(power_ports=[dict(name='battery:power',kind='input',
+    battery='solar battery',part='solar battery box',at_m=[1.6,.14,.6])])
+_solar_lesson['tray'][0].update(explicit_power=True,battery='solar battery')
+_solar_lesson['tray'][0]['knobs'].pop('battery')
+import sandbox_electrics as _electrics
+_solar_lesson['tray'].append(_electrics.tray('power_cable'))
+_solar_lesson['solution'][0].update(x_m=1.4,z_m=0)
+_solar_lesson['solution'].append(dict(piece='power_cable',a_port='your solar 1:power',b_port='battery:power'))
+_solar_lesson['wrong'] = copy.deepcopy(_solar_lesson['solution'])
+_solar_lesson['wrong'][0]['pitch_deg'] = 0
+_solar_lesson['goal']['station']['done_when']['charged_j']['battery'] = 'solar battery'
+_solar_lesson['brief'] = 'Move the panel out of the wall’s shadow and aim it at the low sun. In Readings and wiring, connect its output to the battery input to deliver 20 J.'
+_solar_lesson['hints'] = [_solar_lesson['brief'],
+    'The wall blocks sunlight behind it. A panel at either side can collect power; the watts meter and the ray to the sun show whether it is shaded.',
+    'Open Readings and wiring, choose Connect wires, then click panel Out and battery In. Without the cable only the panel’s local store charges.']
+_solar_lesson['par_energy_j'] = 192000000  # 191,439,840 J fabrication, rounded up to three figures

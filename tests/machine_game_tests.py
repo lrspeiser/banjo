@@ -44,7 +44,7 @@ def need_engine(test):
 
 
 LEVELS = mg.load_levels()
-EMPTY_START_LEVELS = ('easy-solar', 'easy-tackle', 'easy-spring', 'easy-gears',
+EMPTY_START_LEVELS = ('easy-tackle', 'easy-spring', 'easy-gears',
                       'easy-water-wheel', 'easy-water-receiver')
 
 
@@ -159,6 +159,7 @@ class Tray(unittest.TestCase):
         self.assertEqual(mg.public(mg.level_by_id('gap'))['task_count'], 1)
         self.assertEqual(mg.public(mg.level_by_id('laser'))['task_count'], 2)
         self.assertEqual(mg.public(mg.level_by_id('sun'))['task_count'], 2)
+        self.assertEqual(mg.public(mg.level_by_id('easy-solar'))['task_count'], 2)
         self.assertEqual(mg.public(mg.level_by_id('fire'))['task_count'], 4)
         self.assertEqual(mg.public(mg.level_by_id('easy-switch'))['task_count'], 2)
         variant = copy.deepcopy(mg.level_by_id('easy-switch'))

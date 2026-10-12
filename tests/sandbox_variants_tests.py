@@ -32,6 +32,27 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
+    def test_solar_v2_has_a_wall_and_lead_and_preserves_the_original_v1_recipe(self):
+        family=next(f for f in families() if f['id']=='easy-solar')
+        new=variants.construct(family,42)
+        self.assertEqual(new['variant']['version'],2)
+        self.assertEqual(game.public(new)['task_count'],2)
+        self.assertEqual(new['goal']['station']['done_when'],{'charged_j':{'battery':'solar battery','at_least_j':20}})
+        self.assertEqual(new['time_s'],1)
+        self.assertEqual([p['piece'] for p in new['solution']],['solar','power_cable'])
+        self.assertTrue(new['tray'][0]['explicit_power'])
+        for seed in (0,42):
+            old=variants.construct(family,seed,version=1)
+            self.assertEqual(old['variant']['version'],1)
+            self.assertEqual(game.public(old)['task_count'],1)
+            self.assertEqual(old['machine']['parts'],[])
+            self.assertEqual(old['goal']['station']['done_when'],{'charged_j':{'battery':'your solar 1 battery','at_least_j':20}})
+            self.assertEqual(len(old['solution']),1)
+            self.assertNotIn('explicit_power',old['tray'][0])
+            self.assertEqual(old['par_energy_j'],532000000)
+            self.assertEqual(variants.parse(old['id'])['version'],1)
+            world.compile_spec(game.compose(old,old['solution'])[0])
+
     def test_all_twenty_one_are_physical_reproducible_deep_copies(self):
         self.assertEqual(len(families()), 21)
         for family in families():

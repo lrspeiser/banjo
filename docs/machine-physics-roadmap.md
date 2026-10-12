@@ -48,7 +48,8 @@ pressure-dependent resistance, elastic bounce and a snap detent.
 
 Solar collectors now expose their native center-ray obstruction, incidence
 angle, instantaneous charging power and energy account before and during a
-run. The original solar winch requires a saved output-to-input power lead.
+run. Both Catch the sun challenges require a player-drawn output-to-input
+power lead, to the winch or the introductory lesson's receiving battery.
 That lead routes collected energy to a finite receiving store; it is ideal,
 with cable mass, resistance, voltage conversion and breakage unsupported.
 The shade model still samples only the center, rather than partial lit area.

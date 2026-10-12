@@ -1414,7 +1414,7 @@
    "id": "sun",
    "title": "Catch the sun",
    "teaches": "sunlight: a panel facing the sun catches the most",
-   "brief": "The winch runs on sunlight, but the sun is low behind the shed and its shadow is long. Set a panel down in the sun, turn and tip it to face the sun, then connect its output to the winch input with a power cable.",
+   "brief": "Move the solar panel out of the big wall’s shadow, then turn and tip it toward the low sun. In Readings and wiring, connect panel Out to winch In. The empty winch battery receives no power without your cable.",
    "time_s": 8,
    "budget": 20,
    "par": 10,
@@ -1508,20 +1508,25 @@
       ]
      },
      {
-      "name": "shed",
+      "name": "shade wall",
       "shape": "box",
       "material": "concrete",
       "size_m": [
-       0.4,
-       1.4,
-       0.4
+       2,
+       1.6,
+       0.12
       ],
       "at_m": [
        -1.5,
-       0.7,
+       0.8,
        -0.1
       ],
-      "fixed": true
+      "fixed": true,
+      "turn_deg": [
+       0,
+       45,
+       0
+      ]
      },
      {
       "name": "battery box",
@@ -1727,7 +1732,7 @@
     }
    ],
    "hints": [
-    "The sun stands 15 degrees above the ground, behind the shed: toward -x and -z, half way between them.",
+    "The sun stands 15 degrees above the ground, behind the broad wall: toward -x and -z, half way between them.",
     "A panel stores a fifth of the sunlight on its face. Facing the sun squarely it gets 250 W of sunlight; lying flat, about a quarter of that, because the sun meets it so slantwise.",
     "The winch lifts the weight only with more than about 185 W of sunlight on the panel; with less its motor just warms. Turn the panel about -45 degrees, then tip it up.",
     "Click the panel output, then the winch input to add a saved power cable. An unconnected panel charges only its own finite store; the winch battery starts empty."

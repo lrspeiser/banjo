@@ -937,6 +937,48 @@ class Puzzles(unittest.TestCase):
                 self.wait("!document.getElementById('level-done').hidden", 30)
                 self.assertIn('Goal', self.js("document.getElementById('level-done').textContent"))
 
+    def test_solar_wall_shadow_and_explicit_storage_cable_on_desktop_and_phones(self):
+        def assert_wall_in_view():
+            self.wait('machineCamera().settled',30)
+            rect=self.js("(()=>{const r=document.querySelector('#view canvas').getBoundingClientRect();return [r.left,r.top,r.right,r.bottom];})()")
+            for x in (-1,1):
+                for y in (0,1.6):
+                    for z in (-.96,-.84):
+                        px,py=self.screen_point([x,y,z])
+                        self.assertTrue(rect[0]<=px<=rect[2] and rect[1]<=py<=rect[3],(rect,(px,py),'Full wall must fit, not only its center'))
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-solar',width,height,phone=width<1000)
+                self.press('Add a solar panel');self.ghost()
+                for label,value in [('Position along (m)',0),('Position across (m)',0),('Post height (m)',.5),('turn',-90),('tip',70)]:
+                    self.slide(f'{label} of your solar 1',value)
+                self.assertTrue(self.ghost()['fits'])
+                self.press('Set it down');self.wait(f'!machineGhostState() && {READY}',60)
+                assert_wall_in_view()
+                self.wait("document.getElementById('power-labels').textContent.includes('In shadow')",20)
+                self.assertIn('Output not wired',self.js("document.getElementById('power-labels').textContent"))
+                self.assertIn('0.0 W charging',self.js("document.getElementById('power-labels').textContent"))
+                self.click_visible('Power output of your solar 1');self.assert_power_layout()
+                self.click_visible('Power input of battery');self.wait(f'machinePlacements().length===2 && {READY}',60)
+                self.wait("document.getElementById('power-labels').textContent.includes('In shadow') && document.getElementById('power-labels').textContent.includes('Cable connected')",20)
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Not this time',self.js("document.getElementById('level-done').textContent"))
+                self.press('Keep my pieces');self.wait(READY,60)
+                self.slide('Adjust a piece','0');self.ghost()
+                self.slide('Position along (m) of your solar 1',1.4);self.ghost()
+                self.press('Set it down');self.wait(f'!machineGhostState() && {READY}',60)
+                self.wait("document.getElementById('power-labels').textContent.includes('50.0 W charging')",20)
+                assert_wall_in_view()
+                self.press('Collapse controls');assert_wall_in_view();self.press('Expand controls')
+                self.assertNotIn('In shadow',self.js("document.getElementById('power-labels').textContent"))
+                self.assertEqual(self.js('machinePlacements()[1].b_port'),'battery:power')
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertNotIn('Not this time',self.js("document.getElementById('level-done').textContent"))
+                self.press('Play this level again');self.wait(READY,60)
+                self.press('Remove your power_cable 2');self.wait(f'machinePlacements().length===1 && {READY}',60)
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Not this time',self.js("document.getElementById('level-done').textContent"),'Sunlight alone cannot fill the disconnected receiver')
+
     def test_scene_stays_clear_until_wiring_is_requested_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

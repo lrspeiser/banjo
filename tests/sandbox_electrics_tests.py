@@ -200,6 +200,37 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_both_solar_challenges_need_sunlight_and_a_player_drawn_power_lead(self):
+        for identity in ('sun','easy-solar'):
+            level=mg.level_by_id(identity)
+            with self.subTest(level=identity), tempfile.TemporaryDirectory() as logs:
+                wall=next(p for p in level['machine']['parts'] if p['name']=='shade wall')
+                self.assertGreaterEqual(wall['size_m'][0],2)
+                self.assertGreaterEqual(wall['size_m'][1],1.6)
+                self.assertEqual(wall['at_m'][1],wall['size_m'][1]/2)
+                good=mg.trial(level,level['solution'],ENGINE,Path(logs),runs=3)
+                self.assertEqual(good['worked'],3,good)
+                for condition in ('disconnected','shaded','flat'):
+                    placed=copy.deepcopy(level['solution'])
+                    if condition=='disconnected':placed.pop()
+                    elif condition=='shaded':placed[0].update(x_m=-.8 if identity=='sun' else 0,z_m=.6 if identity=='sun' else 0)
+                    else:placed[0].update(yaw_deg=0,pitch_deg=0)
+                    bad=mg.trial(level,placed,ENGINE,Path(logs),runs=3)
+                    self.assertEqual(bad['worked'],0,(condition,bad))
+                    result=self.run_spec(mg.compose(level,placed)[0],level['time_s'])
+                    panel=result['readouts']['machines']['solar_panels'][0]
+                    stores={b['name']:b for b in result['readouts']['machines']['batteries']}
+                    if condition=='shaded':
+                        self.assertTrue(panel['shaded'])
+                        self.assertEqual(panel['shaded_by'],'shade wall')
+                        self.assertEqual(panel['power_w'],0)
+                    if condition=='disconnected':
+                        self.assertEqual(stores['solar battery']['charge_j'],0)
+                        self.assertGreater(stores['your solar 1 local battery']['charge_j'],20)
+                    self.assertAlmostEqual(panel['sunlight_j'],panel['collected_j']+panel['spilled_j']+panel['heat_j'],delta=.003)
+                    print('SOLAR_WALL_AND_LEAD',identity,condition,bad['worked'],'power_w',panel['power_w'],
+                          'energy_residual_j',panel['sunlight_j']-panel['collected_j']-panel['spilled_j']-panel['heat_j'])
+
     def run_spec(self, spec, seconds=1, *, handle_inputs=None):
         with tempfile.TemporaryDirectory(prefix='banjo-electrical-') as logs:
             result = mw.rehearse(mw.compile_spec(spec), ENGINE, Path(logs), seconds=seconds, wall_limit_s=40,

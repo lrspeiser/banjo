@@ -14,6 +14,7 @@ from pathlib import Path
 VERSION = 1
 FAMILY_VERSIONS = {family: 2 for family in ('easy-power', 'easy-switch', 'easy-bulb', 'easy-loop')}
 FAMILY_VERSIONS['easy-switch'] = 3
+FAMILY_VERSIONS['easy-solar'] = 2
 MAX_ATTEMPTS = 3
 
 # Each family changes one physical input. Prepared-piece parameters are
@@ -114,6 +115,10 @@ def _apparatus(family_level, version):
     """
     result = copy.deepcopy(family_level)
     family = family_level['id']
+    if family == 'easy-solar' and version == 1:
+        import sandbox_mechanics as mechanics
+        import machine_game as game
+        return game._with_free_knobs(copy.deepcopy(next(l for l in mechanics._easy_levels() if l['id']==family)))
     if family == 'easy-switch' and version < 3:
         # Keep both earlier recipes' starting-pose choice and solution.
         result['tray'][0]['knobs']['state']['choices'] = ['open', 'closed']
