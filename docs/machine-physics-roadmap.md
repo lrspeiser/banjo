@@ -77,6 +77,8 @@ What the measurements show, and what they do not:
 
 ## In the engine, not yet in the machine
 
+October 11 contact-holder update: **Give it power** and the new saved sandbox example expose the existing geometric native contact switch. Separate iron caps and holder pads close a finite battery/bulb circuit only while touching. Glass/oak/iron housing comparisons, two timesteps, electrical receipts and the limits of the mechanical audit are in [sandbox-electrics-measured.md](sandbox-electrics-measured.md#physical-battery-holder-october-11-2026). This is a fixed-resistance binary connector model. Pressure-dependent contact resistance, corrosion, arcing, connector elasticity and battery chemistry are still absent; rigid drop energy changes are not full coupled conservation proof.
+
 | Physics | What the engine does | Planned use |
 |---|---|---|
 | Rocket thrust | A region with a nozzle pushes its vessel (thrust 2·Cd·A·Δp) | A rocket cart along a rail |

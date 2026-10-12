@@ -1710,7 +1710,7 @@ def compile_spec(spec, lenient=False):
                'azimuth_deg': _num(sun_spec, 'azimuth_deg', 'sun', problems, 180, -360, 360),
                'irradiance_w_m2': _num(sun_spec, 'irradiance_w_m2', 'sun', problems, 1000, 0, 1400)}
     light = compile_light(spec, sun, names, battery_names, problems, light_extra)
-    electrical = electrics.compile_electrical(spec, names, joint_rows, battery_names, problems)
+    electrical = electrics.compile_electrical(spec, names, joint_rows, battery_names, problems, parts=parts)
     power, panel_batteries = electrics.compile_power(spec, names, battery_names, problems)
     electrical.update(power)
     circuits = []
@@ -2622,8 +2622,14 @@ class MachineSession:
             body = self.bodies.get(declaration['part'])
             if device['kind'] == 'bulb' and body and body.get('shape') == 'sphere':
                 device.update(at_m=body['position_m'], diameter_m=body['dimensions_m'][0])
-        terminals = {d['name']+':'+key: at(d['part'], point) for d in graph.get('devices', [])
+        terminals = {d['name']+':'+key: at(d.get('terminal_parts',{}).get(key,d['part']), point) for d in graph.get('devices', [])
                      for key, point in d.get('terminals', {}).items()}
+        frame['terminals']=[dict(name=name,at_m=point) for name,point in terminals.items() if point]
+        frame['batteries']=copy.deepcopy((r.get('machines') or {}).get('batteries',[]))
+        frame['contacts']=[]
+        for c in (r.get('electrical') or {}).get('contacts',[]):
+            a,b=terminals.get(c['a']),terminals.get(c['b'])
+            if a and b: frame['contacts'].append(dict(c,points_m=[a,b]))
         for w in (r.get('electrical') or {}).get('wires', []):
             a, b = terminals.get(w['a']), terminals.get(w['b'])
             if a and b:

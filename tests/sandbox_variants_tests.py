@@ -45,7 +45,8 @@ class Recipes(unittest.TestCase):
                 self.assertEqual(candidate['budget'], family['budget'])
                 self.assertFalse(candidate['variant']['validated'])
                 self.assertEqual(variants.parse(candidate['id']),
-                                 dict(family=family['id'], seed=42, attempt=0, version=variants.VERSION))
+                                 dict(family=family['id'], seed=42, attempt=0,
+                                      version=variants.family_version(family['id'])))
                 old, _, _ = game.compose(family, family['solution'])
                 new, _, _ = game.compose(candidate, candidate['solution'])
                 self.assertNotEqual(world.compile_spec(old), world.compile_spec(new))
@@ -68,9 +69,74 @@ class Recipes(unittest.TestCase):
                 variants.construct(family, seed)
         for identity in ('easy-cut', 'easy-cut--v2--0000002a--0',
                          'easy-cut--v1--0000002a--9', 'free--v1--0000002a--0',
-                         'easy-cut--v1--0000002A--0', 'easy-cut--v1--0000002a--00'):
+                         'easy-cut--v1--0000002A--0', 'easy-cut--v1--0000002a--00',
+                         'easy-power--v3--0000002a--0', 'easy-power--v02--0000002a--0'):
             with self.assertRaises(ValueError):
                 variants.parse(identity)
+
+    def test_power_versions_preserve_legacy_seed_policy_and_physical_identity(self):
+        family = next(row for row in families() if row['id'] == 'easy-power')
+        before = copy.deepcopy(family)
+        current = variants.construct(family, 42)
+        self.assertEqual(current['id'], 'easy-power--v2--0000002a--0')
+        self.assertEqual(current['variant']['version'], 2)
+        physical = world.compile_spec(game.compose(current, current['solution'])[0])
+        self.assertEqual(len(physical['electrical']['contacts']), 4)
+        self.assertEqual(current['tray'][0]['knobs']['mount']['default'], 'contact pack')
+        self.assertTrue(any(d['kind'] == 'socket' for d in physical['electrical']['devices']))
+        self.assertTrue(any(not p['fixed'] for p in physical['parts'] if p['name'].startswith('your battery')))
+        for seed, original_watts in ((0, 5), (1, 5), (42, 3.5), (0xffffffff, 3.5)):
+            for attempt in (0, 1, 2, None):
+                with self.subTest(seed=seed, attempt=attempt):
+                    identifier = variants.identity('easy-power', seed, attempt, version=1)
+                    decoded = variants.parse(identifier)
+                    legacy = variants.reconstruct(family, decoded['seed'], decoded['attempt'], version=decoded['version'])
+                    self.assertEqual(legacy['id'], identifier)
+                    self.assertEqual(legacy['variant']['version'], 1)
+                    self.assertEqual(legacy['goal'], family['goal'])
+                    self.assertEqual(legacy['time_s'], family['time_s'])
+                    self.assertEqual(legacy['budget'], family['budget'])
+                    expected = 3 if attempt is None else (3.5, 4, 4.5, 5)[
+                        ((3.5, 4, 4.5, 5).index(original_watts) + attempt) % 4]
+                    lamp = next(d for d in legacy['machine']['electrical']['devices'] if d['name'] == 'lamp')
+                    self.assertEqual(lamp['watts'], expected)
+                    self.assertEqual(legacy['solution'], [{'piece': 'battery', 'x_m': -.5}])
+                    self.assertEqual(legacy['wrong'], [{'piece': 'battery', 'x_m': -.5, 'charge_percent': 0}])
+                    self.assertNotIn('contact_holder', legacy['tray'][0])
+                    self.assertNotIn('mount', legacy['tray'][0]['knobs'])
+                    compiled = world.compile_spec(game.compose(legacy, legacy['solution'])[0])
+                    self.assertFalse(compiled['electrical'].get('contacts'))
+                    self.assertEqual(len(compiled['electrical']['wires']), 2)
+                    self.assertTrue(all(p['fixed'] for p in compiled['parts']))
+        self.assertEqual(family, before)
+        self.assertEqual(variants.identity('easy-loop', 42), 'easy-loop--v1--0000002a--0')
+        for version in (0, 3, True, '1'):
+            with self.assertRaises(ValueError):
+                variants.construct(family, 42, version=version)
+
+    def test_native_legacy_power_share_reopens_exact_apparatus_after_cache_loss(self):
+        if not ENGINE.is_file():
+            if os.environ.get('BANJO_MACHINE_ENGINE') == 'required':
+                self.fail('A verified native engine is required.')
+            self.skipTest('Native engine unavailable.')
+        identifier = 'easy-power--v1--0000002a--0'
+        with tempfile.TemporaryDirectory() as logs, patch.dict(game._variants, clear=True), \
+                patch.dict(game._variant_requests, clear=True):
+            first = game.fresh_easy('easy-power', 42, ENGINE, logs, recipe_id=identifier)
+            game._variants.clear(); game._variant_requests.clear()
+            reopened = game.fresh_easy('easy-power', 42, ENGINE, logs, recipe_id=identifier)
+        for level in (first, reopened):
+            self.assertEqual(level['id'], identifier)
+            self.assertEqual(level['variant']['version'], 1)
+            report = level['variant']['validation']
+            self.assertTrue(report['valid'])
+            self.assertEqual(report['scenarios']['solution']['worked'], 3)
+            self.assertEqual(report['scenarios']['empty']['worked'], 0)
+            self.assertEqual(report['scenarios']['wrong']['worked'], 0)
+            self.assertEqual(level['machine'], first['machine'])
+            self.assertNotIn('contact_holder', level['tray'][0])
+        print('LEGACY_POWER_SHARE_MEASUREMENTS ' + json.dumps([
+            level['variant']['validation'] for level in (first, reopened)], sort_keys=True))
 
     def test_retry_identity_and_three_run_energy_par(self):
         family = families()[0]

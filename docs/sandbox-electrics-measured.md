@@ -59,7 +59,27 @@ electrical arcs and selectable conductor thickness. A manual switch is an ideal
 contact with 0.001 ohm closed resistance; its decorative handle is not a force
 sensor. The paddle follows measured hinge travel rather than an invented load.
 
-## Verification
+## Physical battery holder, October 11, 2026
+
+`scripts/sandbox_battery_socket.py` declares a loose pack and an anchored two-pad holder. The pack comprises a 200×80×100 mm housing, two 40×40×80 mm glass insulating spacers and two same-sized iron caps; four ordinary fix joints hold them together. Housing material changes actual mass, rather than changing a display label. The concrete holder base is 400×80×280 mm, with two separately collidable 60×40×100 mm iron pads at x ±80 mm. At release the housing centre is 0.4 m high; the cap bottoms are 0.28 m high and pads top out at 0.12 m. Pack rotation rotates the bodies, fix points and terminals together.
+
+The graph declares four possible cap-to-pad paths, each a 0.001 Ω native `follows_contact` switch. Native shape touching with the existing 1 mm contact-query margin closes each path; the 20 mm broadphase proximity test does not energize the lamp. Both terminals are bound to their separate cap bodies and both holder terminals to their pads. Declared contact bodies must be iron or aluminium and carry the graph terminals. The holder has no branch shorting its poles. Reversed packs use the crossed paths and reverse lamp current; I²R power remains positive. The solver still uses the original 12 V, 1,000 J store, 200 W ceiling, 0.05 Ω source resistance and two 0.01 Ω floor leads. The lamp is a 48 Ω load with 20% optical efficiency. Steady native power is 2.99102021 W.
+
+`tests/battery_socket_tests.py`, registered as `banjo_battery_socket_tests`, passes nine native-backed regressions: zero/one/two contacts, off-holder and crosswise controls, housing-only contact, depleted charge, reversed polarity, detached cap, actual 200 N pull-out, sleeping bodies, native snapshots and three nudges per material. The canonical solution wins three nudges at 0.933 s; empty and misplaced controls win zero of three. The goal is unchanged at ≥2 W for 0.5 s within four seconds. The comparative pack goals are 0.817 s for glass and 0.933 s for oak/iron.
+
+Windows Release engine SHA-256 `807ae9c34f0516a0d0dbf588400451b865083043d614cd1aab8040140c830f87`, 20 mm game cells, identical geometry and source, simulated for two seconds at 1/240 and 1/480 s:
+
+| Housing | Pack mass kg | Source energy J, dt240 / dt480 | Heat J, dt240 / dt480 | Light J, dt240 / dt480 | Rigid Δ(KE+PE) J, dt240 / dt480 |
+|---|---:|---:|---:|---:|---:|
+| Glass | 6.65472 | 5.354468 / 5.441837 | 4.285179 / 4.355100 | 1.069290 / 1.086737 | −10.509944 / −10.461993 |
+| Oak | 3.77472 | 5.029955 / 5.061158 | 4.025471 / 4.050443 | 1.004484 / 1.010716 | −5.925891 / −5.925114 |
+| Iron | 15.24672 | 5.379431 / 5.129805 | 4.305156 / 4.105381 | 1.074275 / 1.024424 | −23.981266 / −23.889497 |
+
+All six electrical residuals (source − heat − light) are below 2×10⁻¹¹ J, against this regression’s fixed 10⁻⁸ J tolerance; the existing native solver checks use their scale-dependent tolerance. Thermal residual magnitude is below 10⁻⁷ J. Charge debit equals measured source energy; heat storage and ambient loss are tracked separately. The timestep-dependent contact settling time changes total energized duration, especially for iron; steady electrical power agrees at both steps, but these totals are not a convergence proof. A 200 N pull lifts the iron pack away, with measured external pull work 84.405 J, opening both contacts and stopping the lamp.
+
+Rigid Δ(KE+PE) is a measured change, **not a conservation residual**. Ground/holder reactions, contact dissipation and numerical correction have not been reconciled into an independent full drop-and-support energy or momentum closure. The contact rule is a binary geometric idealization with fixed resistance, not a pressure-dependent or calibrated connector law. Oxidation, arcing, capacitance, elastic contact bounce waveforms, battery chemistry/voltage sag and temperature-dependent filament resistance remain unsupported. Contact/wire heat is lumped into the supply thermal node, not a cap temperature model. No fracture, wood grain, plasticity or new native contact law is claimed.
+
+## Earlier circuit verification
 
 Native: `tests/circuit_tests.cpp`, built as `banjo_circuit_tests`. Python:
 `tests/sandbox_electrics_tests.py`, registered in CMake. Windows Release,

@@ -142,8 +142,26 @@ function routedCurve(a, b, lane) {
   return curve;
 }
 function wireColor(wire) { return wire.a.endsWith(':minus') || wire.b.endsWith(':minus') ? 0x83bbff : 0xf19076; }
+const electricalStartPoses = new Map();
+function terminalAt(device, key, at) {
+  const part = device.terminal_parts?.[key] || device.part;
+  if (ghost && (device.name === ghostName() || device.name.startsWith(ghostName()+' '))) return at;
+  const start = electricalStartPoses.get(part), now = world.bodies.get(part);
+  if (!start) return at; // A new ghost's body does not exist in the engine yet.
+  if (!now) return null;
+  const q = start.orientation_wxyz, n = now.orientation_wxyz;
+  return new THREE.Vector3(...at).sub(new THREE.Vector3(...start.position_m))
+    .applyQuaternion(new THREE.Quaternion(q[1],q[2],q[3],q[0]).invert())
+    .applyQuaternion(new THREE.Quaternion(n[1],n[2],n[3],n[0]))
+    .add(new THREE.Vector3(...now.position_m)).toArray();
+}
 function terminalMap(electrical) {
-  return new Map((electrical?.devices || []).flatMap(d => Object.entries(d.terminals || {}).map(([key, at]) => [`${d.name}:${key}`, at])));
+  return new Map((electrical?.devices || []).flatMap(d => Object.entries(d.terminals || {})
+    .map(([key, at]) => [`${d.name}:${key}`,terminalAt(d,key,at)]).filter(([,at])=>at)));
+}
+function powerPortAt(port) {
+  return port.part?terminalAt({name:'',part:port.part},'',port.at_m)
+    :readouts.machines?.solar_panels?.find(p=>p.name===port.solar_panel)?.at_m||port.at_m;
 }
 function syncWires() {
   for (const w of wires) { scene.remove(w.line); w.line.geometry.dispose(); w.line.material.dispose(); }
@@ -165,18 +183,20 @@ function syncWires() {
     if (!a || !b) continue;
     const line = new THREE.Mesh(new THREE.TubeGeometry(routedCurve(a, b, lane), 64, .009, 6, false),
       new THREE.MeshBasicMaterial({color: wireColor(wire)}));
-    scene.add(line); wires.push({line, terminalWire: true, name: wire.name, color: wireColor(wire), route: wireRoute(a, b, lane)});
+    scene.add(line); wires.push({line, terminalWire: true, name: wire.name, a:wire.a, b:wire.b, lane,
+      color: wireColor(wire), route: wireRoute(a, b, lane)});
   }
   const ports = new Map((machine.electrical?.power_ports || []).map(p => [p.name, p]));
   for (const cable of machine.electrical?.power_cables || []) {
-    const a = ports.get(cable.a), b = ports.get(cable.b);
+    const from = ports.get(cable.a), to = ports.get(cable.b), a=from&&powerPortAt(from), b=to&&powerPortAt(to);
     if (!a || !b) continue;
-    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(...a.at_m),
-      new THREE.Vector3((a.at_m[0] + b.at_m[0]) / 2, Math.max(a.at_m[1], b.at_m[1]) + .18,
-        (a.at_m[2] + b.at_m[2]) / 2), new THREE.Vector3(...b.at_m));
+    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(...a),
+      new THREE.Vector3((a[0] + b[0]) / 2, Math.max(a[1], b[1]) + .18,
+        (a[2] + b[2]) / 2), new THREE.Vector3(...b));
     const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 24, .008, 6, false),
       new THREE.MeshBasicMaterial({color: 0x83bbff}));
-    scene.add(tube); wires.push({line: tube, powerCable: true, panel: a.solar_panel, name: cable.name});
+    scene.add(tube); wires.push({line: tube, powerCable: true, panel: from.solar_panel, name: cable.name,
+      fromPort:from,toPort:to,points_m:[a,b]});
   }
   syncPowerLabels();
   syncTerminalLabels();
@@ -198,6 +218,7 @@ function syncTerminalLabels() {
   svg.classList.add('power-leaders'); svg.setAttribute('aria-hidden', 'true'); host.append(svg);
   for (const device of electrical.devices || []) {
     const card = document.createElement('section'); card.className = 'terminal-label';
+    card.dataset.device=device.name;card.dataset.kind=device.kind;
     const title = document.createElement('strong'); title.textContent = device.name.replace(/^your /, '');
     const controls = document.createElement('div'); controls.className = 'terminal-buttons';
     const rows = [];
@@ -208,10 +229,11 @@ function syncTerminalLabels() {
       const leader = document.createElementNS(svg.namespaceURI, 'line'); svg.append(leader);
       const pin = new THREE.Mesh(new THREE.SphereGeometry(.016, 12, 8), new THREE.MeshBasicMaterial({color:key === 'minus' ? 0x83bbff : 0xf19076}));
       pin.position.set(...at); terminalPins.add(pin);
-      rows.push({name, at, control, leader});
+      rows.push({name, at, declaredAt:at, key, device, pin, control, leader});
     }
     if (!rows.length) continue;
-    card.append(title, controls); host.append(card); terminalLabels.set(device.name, {card, rows});
+    const feedback=document.createElement('output'); feedback.className='contact-feedback'; feedback.style.display='block';
+    card.append(title, controls, feedback); host.append(card); terminalLabels.set(device.name, {card, rows, device, feedback});
   }
 }
 async function pickTerminal(name) {
@@ -255,8 +277,34 @@ function positionTerminalLabels() {
     });
   const tray = level?.tray.find(t => t.piece === 'wire');
   const editable = !playing && !terminalBusy && Boolean(tray && (ghost?.p.piece === 'wire' || (!ghost && piecesLeft(tray) > 0)));
-  for (const {card, rows} of terminalLabels.values()) {
-    const p = new THREE.Vector3(...rows[0].at).project(camera);
+  const snapshot=contactSnapshot(), previewTerminals=snapshot.preview?new Map((snapshot.terminals||[]).map(t=>[t.name,t.at_m])):null;
+  const physical=shownElectrical().devices?.some(d=>d.kind==='socket');
+  for (const {card, rows, device, feedback} of terminalLabels.values()) {
+    feedback.hidden=!physical;
+    if (physical) {
+      const prefix=snapshot.preview?'Preview · ':'';
+      if (device.kind==='battery') {
+        const battery=snapshot.batteries.find(b=>b.name===device.battery);
+        feedback.textContent=prefix+(battery?`${battery.charge_j.toFixed(1)} J · ${Math.round(100*battery.charge_j/battery.capacity_j)}% charged`:'Charge measured on Run');
+      } else if (device.kind==='bulb') {
+        const bulb=snapshot.devices.find(d=>d.name===device.name);
+        feedback.textContent=prefix+`${(bulb?.power_w||0).toFixed(2)} W lamp`;
+      } else if (device.kind==='socket') {
+        feedback.textContent=prefix+Object.keys(device.terminals||{}).map(key=>{
+          const contacts=snapshot.contacts.filter(c=>c.a===`${device.name}:${key}`||c.b===`${device.name}:${key}`);
+          return `${key==='plus'?'+':'−'} ${contacts.some(c=>c.closed===true)?'closed':contacts.length?contacts.every(c=>c.closed===false)?'open':'not measured':'no pack'}`;
+        }).join(' · ');
+      } else feedback.hidden=true;
+    }
+    for (const row of rows) {
+      row.at = previewTerminals?.get(row.name)||terminalAt(row.device,row.key,row.declaredAt);
+      row.pin.visible = Boolean(row.at);
+      if (row.at) row.pin.position.set(...row.at);
+      if (physical) row.control.title=editable?'Connect this terminal':'Physical terminal: contact is measured by the engine';
+    }
+    const first = rows.find(row=>row.at);
+    if (!first) {card.hidden=true; for (const row of rows) row.leader.style.display='none'; continue;}
+    const p = new THREE.Vector3(...first.at).project(camera);
     card.hidden = Math.abs(p.z) > 1 || Math.abs(p.x) > 1.4 || Math.abs(p.y) > 1.4;
     for (const row of rows) { row.leader.style.display = card.hidden ? 'none' : ''; row.control.disabled = !editable; row.control.setAttribute('aria-pressed', String(row.name === terminalStart)); }
     if (card.hidden) continue;
@@ -276,6 +324,7 @@ function positionTerminalLabels() {
     if (!pos) { card.hidden = true; for (const row of rows) row.leader.style.display = 'none'; continue; }
     card.style.left = `${pos.x}px`; card.style.top = `${pos.y}px`; occupied.push({...pos,w,h});
     for (const row of rows) {
+      if (!row.at) {row.leader.style.display='none'; continue;}
       const pin = new THREE.Vector3(...row.at).project(camera), b = row.control.getBoundingClientRect();
       row.leader.setAttribute('x1', String((pin.x+1)*rect.width/2)); row.leader.setAttribute('y1', String((1-pin.y)*rect.height/2));
       row.leader.setAttribute('x2', String(b.left-rect.left+b.width/2)); row.leader.setAttribute('y2', String(b.bottom-rect.top));
@@ -284,7 +333,40 @@ function positionTerminalLabels() {
 }
 window.machineWiringState = () => ({selected:terminalStart, busy:terminalBusy,
   wires:wires.filter(w => w.terminalWire).map(w => ({name:w.name, route:w.route, visible:w.line.visible, color:w.line.material.color.getHex()})),
-  ghostWires:terminalGhostWires.children.length});
+  ghostWires:terminalGhostWires.children.length,
+  terminals:Object.fromEntries([...terminalLabels.values()].flatMap(({rows})=>rows.filter(r=>r.at).map(r=>[r.name,r.at]))),
+  powerPorts:Object.fromEntries((machine?.electrical?.power_ports||[]).map(p=>[p.name,powerPortAt(p)])),
+  powerCables:wires.filter(w=>w.powerCable).map(w=>({name:w.name,points_m:w.points_m,visible:w.line.visible}))});
+
+function contactSnapshot() {
+  const frame=flowGroup.visible&&flowIndex>=0?previewShown?.flow_frames?.[flowIndex]:null;
+  return frame?{preview:true,contacts:frame.contacts||[],devices:frame.devices||[],batteries:frame.batteries||[],terminals:frame.terminals||[]}
+    :{preview:false,contacts:readouts.electrical?.contacts||[],devices:readouts.electrical?.devices||[],batteries:readouts.machines?.batteries||[]};
+}
+const contactGaps=new Map();
+function updateContactGaps() {
+  const contacts=readouts.electrical?.contacts||[], terminals=terminalMap(machine?.electrical), seen=new Set();
+  for (const contact of contacts) {
+    const a=terminals.get(contact.a), b=terminals.get(contact.b);
+    if (!a||!b) continue;
+    seen.add(contact.name);
+    let line=contactGaps.get(contact.name);
+    if (!line) {
+      line=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineDashedMaterial({color:0xffad66,dashSize:.015,gapSize:.012,depthWrite:false}));
+      scene.add(line);contactGaps.set(contact.name,line);
+    }
+    line.geometry.setFromPoints([new THREE.Vector3(...a),new THREE.Vector3(...b)]);line.computeLineDistances();
+    line.material.color.setHex(contact.closed===true?0x5fe08f:0xffad66);
+    line.visible=!flowGroup.visible;
+  }
+  for (const [name,line] of contactGaps) if (!seen.has(name)) {
+    scene.remove(line);line.geometry.dispose();line.material.dispose();contactGaps.delete(name);
+  }
+}
+window.machineContactState=()=>({...contactSnapshot(),terminals:window.machineWiringState().terminals,
+  liveContacts:readouts.electrical?.contacts||[],liveDevices:readouts.electrical?.devices||[],
+  liveTerminals:Object.fromEntries(terminalMap(machine?.electrical)),
+  guides:[...contactGaps].map(([name,line])=>({name,visible:line.visible,color:line.material.color.getHex()}))});
 
 // Power ports are explicit two-conductor leads. These buttons only save
 // topology; the native collector, energy store and motor decide the power.
@@ -300,6 +382,9 @@ function syncPowerLabels() {
   svg.classList.add('power-leaders'); svg.setAttribute('aria-hidden','true'); host.append(svg);
   pickedPowerPort = null; powerBusy = false; powerMessage('');
   for (const port of machine.electrical?.power_ports || []) {
+    const pack=machine.electrical.devices?.find(d=>d.kind==='battery'&&d.battery===port.battery&&d.terminal_parts);
+    if (pack&&!machine.solar_panels?.length&&!machine.electrical.power_cables?.length) continue;
+    if (machine.electrical.devices?.some(d=>d.kind==='socket')&&!machine.solar_panels?.length&&!level?.tray.some(t=>t.piece==='solar'||t.piece==='power_cable')) continue;
     // Show charging sockets when a collector or charging cable can be used.
     if (port.kind === 'input' && !machine.solar_panels?.length && !machine.electrical?.power_cables?.length
         && !level?.tray.some(t => t.piece === 'solar' || t.piece === 'power_cable')) continue;
@@ -427,8 +512,7 @@ function positionPowerLabels() {
   // Place the larger meters first, then fit receiver buttons beside them.
   const rows = [...powerLabels.values()].sort((a,b) => (a.port.kind === 'input') - (b.port.kind === 'input'));
   for (const {port, card, leader, dot} of rows) {
-    const panel = readouts.machines?.solar_panels?.find(p => p.name === port.solar_panel);
-    const at = panel?.at_m || port.at_m;
+    const at = powerPortAt(port);
     if (!at) { card.hidden = true; continue; }
     const p = new THREE.Vector3(...at).project(camera);
     card.hidden = p.z > 1 || p.z < -1 || Math.abs(p.x) > 1.4 || Math.abs(p.y) > 1.4;
@@ -729,13 +813,31 @@ function updateGas() {
 function updateWires() {
   updateRopes();
   updateGas();
+  const terminals=terminalMap(machine.electrical);
   for (const w of wires) {
     if (w.powerCable) {
+      const a=powerPortAt(w.fromPort),b=powerPortAt(w.toPort);
+      w.line.visible=Boolean(a&&b);
+      if (a&&b&&JSON.stringify([a,b])!==JSON.stringify(w.points_m)) {
+        const curve=new THREE.QuadraticBezierCurve3(new THREE.Vector3(...a),
+          new THREE.Vector3((a[0]+b[0])/2,Math.max(a[1],b[1])+.18,(a[2]+b[2])/2),new THREE.Vector3(...b));
+        w.line.geometry.dispose();w.line.geometry=new THREE.TubeGeometry(curve,24,.008,6,false);w.points_m=[a,b];
+      }
       const panel = readouts.machines?.solar_panels?.find(p => p.name === w.panel);
       w.line.material.color.setHex(panel?.power_w > .01 ? 0xffd34d : 0x83bbff);
       continue;
     }
     if (w.terminalWire) {
+      const a = terminals.get(w.a), b = terminals.get(w.b);
+      if (a && b) {
+        const route = wireRoute(a,b,w.lane);
+        if (JSON.stringify(route)!==JSON.stringify(w.route)) {
+          w.line.geometry.dispose();
+          w.line.geometry = new THREE.TubeGeometry(routedCurve(a,b,w.lane),64,.009,6,false);
+          w.route = route;
+        }
+      }
+      w.connected=Boolean(a&&b); w.line.visible=w.connected;
       const live = readouts.electrical?.wires?.find(row => row.name === w.name);
       w.line.material.color.setHex(Math.abs(live?.current_a || 0) > 1e-4 ? 0xffd34d : w.color);
       continue;
@@ -881,6 +983,9 @@ async function build(next, start, request) {
     if (mine !== polling) { api({op: 'close', session: opened.session}).catch(() => {}); return opened; }
     spec = request ? opened.machine : next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
     world = mergeFrame({seq: 0, t: 0, bodies: new Map()}, opened);
+    electricalStartPoses.clear();
+    for (const [name,body] of world.bodies) electricalStartPoses.set(name,
+      {position_m:[...body.position_m],orientation_wxyz:[...body.orientation_wxyz]});
     $('title').textContent = LEVEL_MODE && level ? levelTitle(level) : machine.title;
     $('spec').value = JSON.stringify(level && level.free ? (activeDesign?.draft.base || sandboxBase) : spec, null, 1);
     const notes = $('notes'); notes.replaceChildren();
@@ -908,6 +1013,7 @@ async function setPlaying(run) {
   // A level whose world the server closed while it sat idle is built again
   // and started, as Run it would: the pieces are kept here, in the page.
   if (!session) { if (LEVEL_MODE && run && level) await rebuildLevel(true); return; }
+  if (run) {clearTimeout(previewTimer);previewAsk++;clearPreview();}
   const mine = polling, requestedSession = session;
   let frame;
   try { frame = await api({op: 'play', session: requestedSession, running: run, speed: Number($('speed').value)}); }
@@ -1080,8 +1186,9 @@ function render() {
   aimCamera();
   if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); updateEditGuide(); syncMovePad(); }
   drawPull();
-  for (const w of wires) if (w.terminalWire) w.line.visible = !hiddenPiece(w.name) && !ghost?.electrical;
+  for (const w of wires) if (w.terminalWire) w.line.visible = w.connected!==false && !hiddenPiece(w.name) && !ghost?.electrical;
   updateFlowPreview();
+  updateContactGaps();
   renderer.render(scene, camera);
   positionPowerLabels();
   positionTerminalLabels();
@@ -1266,7 +1373,7 @@ function turnGhost(key, by) {
 const HEIGHT_KNOBS = ['height_m', 'pivot_height_m', 'bore_height_m', 'drop_from_m', 'top_height_m', 'foot_height_m'];
 function heightKnobs(p) {
   const knobs = trayItem(p.piece).knobs;
-  return HEIGHT_KNOBS.filter(k => knobs[k] && !knobs[k].choices);
+  return HEIGHT_KNOBS.filter(k => knobs[k] && !knobs[k].choices && pieceKnobVisible(p,k));
 }
 function viewAxis(dir) {
   // The camera looks along (-sin a, -cos a) on the ground; its right is (cos a, -sin a).
@@ -1663,6 +1770,9 @@ function setGhostDown() {
 // of pieces is a scroll away. One knob at a time -- its chip picks which --
 // with - and + either side of its slider, and Set down.
 function knobName(rule, key) { return (rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
+function pieceKnobVisible(p,key) {
+  return !(p.piece==='battery' && p.mount!=='contact pack' && ['height_m','yaw_deg','housing_material'].includes(key));
+}
 
 function nudgeKnob(key, by) {
   if (ghost && setKnob(ghost.p, key, (ghost.p[key] ?? 0) + by)) { followGhost(); showGhostKnobs(); askGhost(); }
@@ -1689,7 +1799,7 @@ function renderGhostBar() {
   const head = Object.assign(document.createElement('p'), {className: 'head',
     textContent: looking ? `View mode · ${pieceLabel(ghost.p.piece)}` : `Adjust ${pieceLabel(ghost.p.piece)}`});
   // Where it stands is the arrows' and the drag's; the chips change the rest.
-  const knobs = trayItem(ghost.p.piece).knobs, keys = Object.keys(knobs).filter(k => k !== 'x_m' && k !== 'z_m');
+  const knobs = trayItem(ghost.p.piece).knobs, keys = Object.keys(knobs).filter(k => k !== 'x_m' && k !== 'z_m' && pieceKnobVisible(ghost.p,k));
   if (!keys.includes(ghost.card)) ghost.card = keys[0];
   const chips = Object.assign(document.createElement('div'), {className: 'chips'});
   for (const key of keys) {
@@ -1712,6 +1822,7 @@ function renderGhostBar() {
     select.setAttribute('aria-label', `Its ${name}`);
     select.addEventListener('change', () => {
       ghost.p[key] = rule.choices.find(c => String(c) === select.value) ?? select.value;
+      if (key==='mount' && ghost.p.piece==='battery') {renderPlaced();renderGhostBar();}
       showGhostKnobs(); askGhost();
     });
     row.append(select);
@@ -1857,6 +1968,13 @@ function drawFlowFrame(frame) {
   }
   const riverArrows = waterCurrentArrows(surface?.flow_samples || [],surface?.cell_m || .02);
   if (riverArrows) flowGroup.add(riverArrows);
+  for (const contact of frame.contacts||[]) {
+    if (!contact.points_m?.length) continue;
+    const points=contact.points_m.map(p=>new THREE.Vector3(...p));
+    const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),
+      new THREE.LineDashedMaterial({color:contact.closed===true?0x5fe08f:0xffad66,dashSize:.015,gapSize:.012,depthWrite:false}));
+    line.computeLineDistances();flowGroup.add(line);
+  }
   for (const [i,w] of (frame.wires || []).entries()) {
     const pts = w.points_m.map(p=>new THREE.Vector3(...p));
     const electrical = shownElectrical();
@@ -1888,7 +2006,8 @@ function drawFlowFrame(frame) {
   }
   flowGroup.userData.drawn={lightSegments:light.legs,waterPoints:water.length/3,
     wetCells:surface?.xyz_mm?.length/3||0,wires:frame.wires.length,arrows,bulbs,
-    riverArrows:riverArrows?.userData.samples.length||0};
+    riverArrows:riverArrows?.userData.samples.length||0,
+    contacts:(frame.contacts||[]).map(c=>({name:c.name,closed:c.closed,current_a:c.current_a}))};
   const rows=[];
   if (frame.light.length) rows.push(`Light: ${frame.light.length} sampled rays`);
   const amps=(frame.wires||[]).filter(w=>w.unit==='A').map(w=>Math.abs(w.value));
@@ -1897,6 +2016,8 @@ function drawFlowFrame(frame) {
   if (watts.length) rows.push(`Charging lead: ${Math.max(...watts).toFixed(1)} W`);
   const emitted=(frame.devices||[]).filter(d=>d.kind==='bulb').reduce((n,d)=>n+d.emitted_w,0);
   if ((frame.devices||[]).some(d=>d.kind==='bulb')) rows.push(`Bulb light: ${emitted.toFixed(2)} W`);
+  if (frame.contacts?.length) rows.push(`Contact paths: ${frame.contacts.filter(c=>c.closed===true).length} touching`);
+  for (const battery of frame.batteries||[]) rows.push(`${battery.name}: ${battery.charge_j.toFixed(1)} J stored`);
   if (frame.water) {
     const left=frame.water.sources.filter(s=>s.remaining_m3!=null).reduce((n,s)=>n+s.remaining_m3*1000,0);
     rows.push(`Water: ${frame.water.poured_l.toFixed(2)} L released${frame.water.sources.some(s=>s.remaining_m3!=null)?`, ${left.toFixed(2)} L left`:''}`);
@@ -2750,8 +2871,8 @@ function renderMachineControls() {
 }
 
 function describeKnobs(p, t) {
-  const turned = Object.entries(t.knobs).filter(([k, r]) => r.turning && p[k]).map(([k, r]) => `${r.label || k} ${p[k]}°`);
-  const rest = Object.entries(t.knobs).filter(([k, r]) => !r.turning && p[k] != null && !(r.free && !p[k]))
+  const turned = Object.entries(t.knobs).filter(([k, r]) => pieceKnobVisible(p,k) && r.turning && p[k]).map(([k, r]) => `${r.label || k} ${p[k]}°`);
+  const rest = Object.entries(t.knobs).filter(([k, r]) => pieceKnobVisible(p,k) && !r.turning && p[k] != null && !(r.free && !p[k]))
     .map(([k, r]) => `${(r.label || k).replace(/ \(.*\)$/, '')} ${p[k]}`);
   return [...rest, ...turned].join(' · ');
 }
@@ -2772,7 +2893,9 @@ function ghostItem() {
   const turning = Object.assign(document.createElement('fieldset'), {className: 'turning'});
   turning.append(Object.assign(document.createElement('legend'), {textContent: 'Turn it (degrees)'}));
   for (const [key, rule] of Object.entries(t.knobs)) {
+    if (!pieceKnobVisible(p,key)) continue;
     const c = knobControl(p, key, rule, what, () => {
+      if (key==='mount' && p.piece==='battery') {renderPlaced();renderGhostBar();}
       if (key !== 'x_m' && key !== 'z_m' && ghost.card !== key) { ghost.card = key; renderGhostBar(); }
       followGhost(); showGhostKnobs(); askGhost();
     });

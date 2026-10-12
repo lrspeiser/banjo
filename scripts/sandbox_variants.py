@@ -3,7 +3,7 @@
 Constructing a recipe is cheap and deterministic; it does not prove a win.
 Only preflight() returns a recipe marked validated. Seeds use an unsigned
 32-bit integer, suitable for a share URL. Changing a recipe policy requires
-a VERSION bump so previously shared designs retain their meaning.
+a family version bump so previously shared designs retain their meaning.
 """
 import copy
 import hashlib
@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 VERSION = 1
+FAMILY_VERSIONS = {'easy-power': 2}
 MAX_ATTEMPTS = 3
 
 # Each family changes one physical input. Prepared-piece parameters are
@@ -58,35 +59,74 @@ def _seed(seed):
     return seed
 
 
-def identity(family_id, seed, attempt=0):
+def family_version(family_id):
+    if family_id not in POLICIES:
+        raise ValueError('Only authored Easy families support seeded variants.')
+    return FAMILY_VERSIONS.get(family_id, VERSION)
+
+
+def _version(family_id, version):
+    current = family_version(family_id)
+    version = current if version is None else version
+    supported = (1, 2) if family_id == 'easy-power' else (VERSION,)
+    if isinstance(version, bool) or not isinstance(version, int) or version not in supported:
+        raise ValueError('Unsupported challenge recipe version.')
+    return version
+
+
+def identity(family_id, seed, attempt=0, *, version=None):
     if family_id not in POLICIES:
         raise ValueError('Only authored Easy families support seeded variants.')
     if attempt is not None and (isinstance(attempt, bool) or not isinstance(attempt, int) or not 0 <= attempt < MAX_ATTEMPTS):
         raise ValueError('Unsupported challenge recipe attempt.')
-    return f'{family_id}--v{VERSION}--{_seed(seed):08x}--{attempt if attempt is not None else "c"}'
+    version = _version(family_id, version)
+    return f'{family_id}--v{version}--{_seed(seed):08x}--{attempt if attempt is not None else "c"}'
 
 
 def parse(identifier):
     """Decode an exact shared recipe, including its accepted retry/fallback."""
     try:
         family, version, seed, attempt = identifier.split('--')
-        if version != f'v{VERSION}' or len(seed) != 8:
+        if not version.startswith('v') or len(seed) != 8:
             raise ValueError()
+        version = int(version[1:])
         seed = int(seed, 16)
         attempt = None if attempt == 'c' else int(attempt)
-        if identity(family, seed, attempt) != identifier:
+        if identity(family, seed, attempt, version=version) != identifier:
             raise ValueError()
-        return {'family': family, 'seed': seed, 'attempt': attempt, 'version': VERSION}
+        return {'family': family, 'seed': seed, 'attempt': attempt, 'version': version}
     except (AttributeError, TypeError, ValueError):
         raise ValueError('Unsupported generated challenge ID.') from None
 
 
-def _metadata(family, seed, attempt, fallback=False):
-    return {'family': family, 'seed': seed, 'version': VERSION,
+def _metadata(family, seed, attempt, fallback=False, *, version=None):
+    return {'family': family, 'seed': seed, 'version': _version(family, version),
             'attempt': attempt, 'fallback': fallback, 'validated': False}
 
 
-def construct(family_level, seed, *, attempt=0):
+def _apparatus(family_level, version):
+    """Keep v1 power shares as the original fixed, automatically wired supply."""
+    result = copy.deepcopy(family_level)
+    if family_level['id'] != 'easy-power' or version != 1:
+        return result
+    import sandbox_electrics as electrical
+    base = electrical.empty('Give it power')
+    electrical.merge(base, electrical.bulb('lamp', {'x_m': .6}, {}))
+    row = electrical.tray('battery', connect_to={'plus': 'lamp:plus', 'minus': 'lamp:minus'})
+    # The original tray had only these knobs; later mobile-pack defaults must
+    # never turn an old share into a falling or material-selectable battery.
+    keys = ('x_m', 'z_m', 'voltage_v', 'capacity_j', 'charge_percent', 'max_power_w')
+    row['knobs'] = {key: row['knobs'][key] for key in keys}
+    row['knobs']['x_m']['default'] = -.5
+    result.update(machine=base, tray=[row], solution=[{'piece': 'battery', 'x_m': -.5}],
+                  wrong=[{'piece': 'battery', 'x_m': -.5, 'charge_percent': 0}],
+                  brief='Place a charged battery in the prepared two-terminal socket to keep the lamp on.',
+                  par_energy_j=882000000)
+    result['hints'] = [result['brief'], 'Inspect the measured power, charge and physical positions. An open loop cannot power the load.']
+    return result
+
+
+def construct(family_level, seed, *, attempt=0, version=None):
     """Deep-copy a canonical family and change a single bounded input.
 
     Private solution/wrong arrays remain private; callers must use the game
@@ -98,10 +138,11 @@ def construct(family_level, seed, *, attempt=0):
         raise ValueError('Construct requires an authored canonical Easy family.')
     if isinstance(attempt, bool) or not isinstance(attempt, int) or not 0 <= attempt < MAX_ATTEMPTS:
         raise ValueError(f'Retry index must be between 0 and {MAX_ATTEMPTS - 1}.')
-    result = copy.deepcopy(family_level)
-    result['id'] = identity(family, seed, attempt)
+    version = _version(family, version)
+    result = _apparatus(family_level, version)
+    result['id'] = identity(family, seed, attempt, version=version)
     kind, name, parameter, values = POLICIES[family]
-    digest = hashlib.sha256(f'banjo-easy:{VERSION}:{family}:{seed}'.encode('ascii')).digest()
+    digest = hashlib.sha256(f'banjo-easy:{version}:{family}:{seed}'.encode('ascii')).digest()
     value = values[(int.from_bytes(digest[:8], 'big') + attempt) % len(values)]
     if kind == 'piece':
         row = next(row for row in result['tray'] if row['piece'] == name)
@@ -132,7 +173,7 @@ def construct(family_level, seed, *, attempt=0):
             item['at_m'][1] = value
         else:
             item[parameter] = value
-    result['variant'] = dict(_metadata(family, seed, attempt), parameter=parameter,
+    result['variant'] = dict(_metadata(family, seed, attempt, version=version), parameter=parameter,
                              parameter_label=PARAMETER_LABELS[parameter],
                              kind=kind, value=value)
     return result
@@ -231,12 +272,13 @@ def preflight(family_level, seed, native, logs, *, max_attempts=MAX_ATTEMPTS):
     raise VariantRefused(receipts)
 
 
-def reconstruct(family_level, seed, attempt):
+def reconstruct(family_level, seed, attempt, *, version=None):
     """Recreate an exact recipe; callers must validate it before first use."""
     if attempt is not None:
-        return construct(family_level, seed, attempt=attempt)
+        return construct(family_level, seed, attempt=attempt, version=version)
     seed = _seed(seed)
-    fallback = copy.deepcopy(family_level)
-    fallback['id'] = identity(family_level['id'], seed, None)
-    fallback['variant'] = _metadata(family_level['id'], seed, None, fallback=True)
+    version = _version(family_level['id'], version)
+    fallback = _apparatus(family_level, version)
+    fallback['id'] = identity(family_level['id'], seed, None, version=version)
+    fallback['variant'] = _metadata(family_level['id'], seed, None, fallback=True, version=version)
     return fallback

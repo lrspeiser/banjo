@@ -20,6 +20,52 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_contact_holder_template_preserves_editable_physical_pack(self):
+        template = next(t for t in e.TEMPLATES if t['name']=='Drop a battery into its holder')
+        before = copy.deepcopy(template)
+        level = mg.requested_level({'level':'free','base':template['base']})
+        compiled = mw.compile_spec(mg.compose(level,template['placements'])[0])
+        self.assertEqual(len(compiled['electrical']['contacts']),4)
+        self.assertTrue(all(not p['fixed'] for p in compiled['parts'] if p['name'].startswith('your battery')))
+        self.assertEqual(level['tray'][next(i for i,t in enumerate(level['tray']) if t['piece']=='battery')]['knobs']['mount']['default'],'contact pack')
+        self.assertEqual(template,before)
+        # Dry saved designs retain the old fixed battery default and wire graph.
+        dry = mg.requested_level({'level':'free','base':e.empty('dry')})
+        old = mw.compile_spec(mg.compose(dry,[{'piece':'battery'}])[0])
+        self.assertTrue(next(p for p in old['parts'] if p['name']=='your battery 1 housing')['fixed'])
+        self.assertEqual(old['electrical']['contacts'],[])
+        empty_graph = e.empty('dry without an electrical graph')
+        empty_graph['electrical'] = None
+        self.assertTrue(mg.requested_level({'level':'free','base':empty_graph})['custom_base'])
+
+    def test_source_free_socket_has_no_branch_shorting_its_pads(self):
+        level = next(t for t in e.easy_levels() if t['id']=='easy-power')
+        ready = mw.compile_spec(level['machine'])
+        self.assertEqual(ready['electrical']['networks'],[])
+        placed = mw.compile_spec(mg.compose(level,level['solution'])[0])
+        self.assertEqual(len(placed['electrical']['networks']),1)
+        self.assertEqual(len(placed['electrical']['networks'][0]['contacts']),4)
+        self.assertEqual(level['goal']['station']['done_when'],
+                         {'load_power_w':{'device':'lamp','at_least_w':2,'for_s':.5}})
+        self.assertEqual(level['time_s'],4)
+
+    def test_contact_graph_rejects_nonconducting_or_unbound_bodies(self):
+        level = next(t for t in e.easy_levels() if t['id']=='easy-power')
+        valid = mg.compose(level,level['solution'])[0]
+        for mutation in ('unhashable','missing','same','insulator','mismatched','bad-resistance','bad-binding'):
+            bad = copy.deepcopy(valid)
+            contact = bad['electrical']['contacts'][0]
+            if mutation=='unhashable': contact['a']=[]
+            elif mutation=='missing': contact['touch'][0]='missing body'
+            elif mutation=='same': contact['touch'][1]=contact['touch'][0]
+            elif mutation=='insulator':
+                next(p for p in bad['parts'] if p['name']==contact['touch'][0])['material']='glass'
+            elif mutation=='mismatched': contact['touch'][0]='your battery 1 housing'
+            elif mutation=='bad-resistance': contact['resistance_ohm']=-1
+            else: next(d for d in bad['electrical']['devices'] if d['kind']=='battery')['terminal_parts']=[]
+            with self.subTest(mutation=mutation), self.assertRaises(mw.MachineRefused):
+                mw.compile_spec(bad)
+
     def test_ghost_shows_prepared_terminal_graph_without_changing_the_level(self):
         level = next(row for row in e.easy_levels() if row['id'] == 'easy-marble-light')
         before = copy.deepcopy(level)

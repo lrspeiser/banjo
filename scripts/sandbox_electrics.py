@@ -5,6 +5,7 @@ fixed 0.01 ohm resistance. One finite supply owns all loads in its component.
 """
 import copy
 import math
+import sandbox_battery_socket as socket
 
 
 def box(name, at, size, material='iron', fixed=True):
@@ -18,6 +19,8 @@ def terminal_rows(name, x, y, z, switch=False):
 
 
 def battery(name, k, ctx):
+    if k.get('mount') == 'contact pack':
+        return socket.battery(name, k, ctx)
     x, z = k.get('x_m', 0), k.get('z_m', 0)
     capacity = k.get('capacity_j', 1000)
     part = name + ' housing'
@@ -139,7 +142,11 @@ POS = {'x_m': knob(0, -2, 2, .02, 'along (m)'), 'z_m': knob(0, -2, 2, .02, 'acro
 TRAY = [
     {'piece': 'battery', 'label': 'Battery', 'count': 8, 'cost': 1, 'turning': False,
      'description': 'A finite 12 V energy store with two labelled terminals.',
-     'knobs': {**POS, 'voltage_v': knob(12, 6, 24, 6, 'voltage (V)'),
+     'knobs': {**POS, 'mount': {'default':'fixed','choices':['fixed','contact pack'],'label':'battery mount'},
+               'height_m': knob(.4,.24,1,.02,'release height (m)'),
+               'yaw_deg': knob(0,-180,180,15,'pack rotation (degrees)'),
+               'housing_material': {'default':'iron','choices':['glass','oak','iron'],'label':'pack housing'},
+               'voltage_v': knob(12, 6, 24, 6, 'voltage (V)'),
                'capacity_j': knob(1000, 100, 10000, 100, 'capacity (J)'),
                'charge_percent': knob(100, 0, 100, 10, 'initial charge (%)'),
                'max_power_w': knob(200, 10, 2000, 10, 'maximum power (W)')}},
@@ -260,13 +267,14 @@ def compile_power(spec, names, battery_names, problems):
     return {'power_ports': list(ports.values()), 'power_cables': cables}, overrides
 
 
-def compile_electrical(spec, names, joints, battery_names, problems):
+def compile_electrical(spec, names, joints, battery_names, problems, parts=None):
     raw = spec.get('electrical', {}) or {}
     if not isinstance(raw, dict):
         problems.append('electrical must contain devices and wires'); return {}
-    if any(not isinstance(raw.get(key, []), list) for key in ('devices', 'wires')):
-        problems.append('electrical devices and wires must be arrays'); return {}
-    devices, wires, terminals = [], [], {}
+    if any(not isinstance(raw.get(key, []), list) for key in ('devices', 'wires', 'contacts')):
+        problems.append('electrical devices, wires and contacts must be arrays'); return {}
+    devices, wires, contacts, terminals = [], [], [], {}
+    bodies = {p['name']:p for p in parts or []}
     ids = set()
     hinges = {j['name'] for j in joints if j['kind'] == 'hinge'}
     def number(row, key, default, low, high):
@@ -274,8 +282,8 @@ def compile_electrical(spec, names, joints, battery_names, problems):
         if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or not low <= value <= high:
             problems.append(f'electrical {row.get("name")}: {key} must be {low}..{high}'); return default
         return value
-    if len(raw.get('devices', [])) > 64 or len(raw.get('wires', [])) > 128:
-        problems.append('electrical supports at most 64 devices and 128 wires'); return {}
+    if len(raw.get('devices', [])) > 64 or len(raw.get('wires', [])) > 128 or len(raw.get('contacts', [])) > 128:
+        problems.append('electrical supports at most 64 devices, 128 wires and 128 contacts'); return {}
     for item in raw.get('devices', []):
         if not isinstance(item, dict):
             problems.append('electrical devices must be objects'); continue
@@ -284,7 +292,7 @@ def compile_electrical(spec, names, joints, battery_names, problems):
         if not isinstance(name, str) or not name or name in ids:
             problems.append('electrical device names must be nonempty and unique'); continue
         ids.add(name)
-        if kind not in ('battery', 'switch', 'bulb', 'motor', 'coil') or not isinstance(d.get('part'), str) or d['part'] not in names:
+        if kind not in ('battery', 'switch', 'bulb', 'motor', 'coil', 'socket') or not isinstance(d.get('part'), str) or d['part'] not in names:
             problems.append(f'electrical {name}: unsupported kind or missing housing'); continue
         keys = ('in', 'out') if kind == 'switch' else ('plus', 'minus')
         if not isinstance(d.get('terminals'), dict) or set(d['terminals']) != set(keys):
@@ -293,6 +301,10 @@ def compile_electrical(spec, names, joints, battery_names, problems):
             if not isinstance(xyz, list) or len(xyz) != 3 or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in xyz):
                 problems.append(f'electrical {name}: terminal positions are finite world coordinates'); continue
             terminals[name + ':' + key] = xyz
+        bindings = d.get('terminal_parts', {})
+        if not isinstance(bindings, dict) or any(key not in keys or not isinstance(part,str) or part not in names
+                                               for key,part in bindings.items()):
+            problems.append(f'electrical {name}: terminal_parts must bind declared terminals to existing bodies')
         if kind == 'battery' and (not isinstance(d.get('battery'), str) or d['battery'] not in battery_names):
             problems.append(f'electrical {name}: battery names its energy store')
         if kind == 'bulb':
@@ -320,6 +332,24 @@ def compile_electrical(spec, names, joints, battery_names, problems):
         if not isinstance(w.get('a'), str) or not isinstance(w.get('b'), str) or w['a'] not in terminals or w['b'] not in terminals or w['a'] == w['b']:
             problems.append(f'electrical {w["name"]}: choose two different existing terminals'); continue
         wires.append({key: w[key] for key in ('name', 'a', 'b')})
+    for item in raw.get('contacts', []):
+        if not isinstance(item,dict) or not isinstance(item.get('name'),str) or not item['name'] or item['name'] in ids:
+            problems.append('electrical contact names must be nonempty and unique'); continue
+        ids.add(item['name'])
+        touch = item.get('touch')
+        if (not isinstance(item.get('a'),str) or not isinstance(item.get('b'),str) or
+            item['a'] not in terminals or item['b'] not in terminals or item['a']==item['b'] or
+            not isinstance(touch,list) or len(touch)!=2 or not all(isinstance(p,str) and p in names for p in touch) or touch[0]==touch[1]):
+            problems.append(f'electrical {item["name"]}: contact needs two terminals and two existing distinct contact bodies'); continue
+        if bodies and any(bodies[p]['material'] not in ('iron','aluminum') for p in touch):
+            problems.append(f'electrical {item["name"]}: conducting contact bodies must be iron or aluminum'); continue
+        terminal_bodies = {d['name']+':'+key:part for d in devices
+                           if isinstance(d.get('terminal_parts',{}),dict)
+                           for key,part in d.get('terminal_parts',{}).items()}
+        if any(terminal_bodies.get(item[key]) != part for key,part in zip(('a','b'),touch)):
+            problems.append(f'electrical {item["name"]}: contact bodies must carry the declared terminals'); continue
+        contacts.append(dict(name=item['name'],a=item['a'],b=item['b'],touch=list(touch),
+                             resistance_ohm=number(item,'resistance_ohm',.001,.00001,1000)))
     parent = {t: t for t in terminals}
     def find(t):
         while parent[t] != t: t = parent[t]
@@ -327,12 +357,14 @@ def compile_electrical(spec, names, joints, battery_names, problems):
     def join(a, b): parent[find(a)] = find(b)
     for d in devices:
         ts = [d['name'] + ':' + k for k in d['terminals']]
-        if all(t in parent for t in ts): join(*ts)
+        if d['kind']!='socket' and all(t in parent for t in ts): join(*ts)
     for w in wires: join(w['a'], w['b'])
+    for c in contacts: join(c['a'],c['b'])
     groups = {}
     for d in devices:
         ts = [d['name'] + ':' + k for k in d['terminals']]
-        if all(t in parent for t in ts): groups.setdefault(find(ts[0]), []).append(d)
+        if all(t in parent for t in ts):
+            for root in {find(t) for t in ts}: groups.setdefault(root, []).append(d)
     networks = []
     occupied = {c.get('battery') for c in spec.get('circuits', [])}
     for root, ds in groups.items():
@@ -345,8 +377,9 @@ def compile_electrical(spec, names, joints, battery_names, problems):
             problems.append(f'electrical: {b["battery"]} already supplies another circuit'); continue
         occupied.add(b['battery'])
         networks.append({'name': 'electrical ' + b['name'], 'battery': b['battery'], 'source': b,
-                         'devices': ds, 'wires': [w for w in wires if find(w['a']) == root]})
-    return {'devices': devices, 'wires': wires, 'networks': networks}
+                         'devices': ds, 'wires': [w for w in wires if find(w['a']) == root],
+                         'contacts':[c for c in contacts if find(c['a'])==root]})
+    return {'devices': devices, 'wires': wires, 'contacts':contacts, 'networks': networks}
 
 
 def build_electrical(engine, compiled, store_ids, joint_ids):
@@ -356,7 +389,7 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
         nodes = [d['name'] + ':' + t for d in n['devices'] for t in d['terminals']]
         heats.append({'id': 'supply', 'component': source['battery'], 'capacity_j_k': 2000, 'ambient_w_k': 1})
         for d in n['devices']:
-            if d['kind'] == 'battery': continue
+            if d['kind'] in ('battery','socket'): continue
             keys = list(d['terminals'])
             row = {'id': d['name'], 'component': d['name'], 'a': d['name'] + ':' + keys[0],
                    'b': d['name'] + ':' + keys[1], 'thermal': d['name']}
@@ -383,6 +416,10 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
         for w in n['wires']:
             branches.append({'id': w['name'], 'component': w['name'], 'kind': 'wire', 'a': w['a'], 'b': w['b'],
                              'resistance_ohm': .01, 'thermal': 'supply'})
+        for c in n.get('contacts',[]):
+            branches.append(dict(id=c['name'],component=c['name'],kind='switch',a=c['a'],b=c['b'],
+                resistance_ohm=c['resistance_ohm'],thermal='supply',closed=False,
+                follows_contact=dict(zip(('a','b'),c['touch']))))
         network = {'schema': 'banjo.circuit.v1', 'id': n['name'], 'nodes': nodes,
                    'source': {'store': store_ids[n['battery']], 'positive': source['name'] + ':plus',
                               'negative': source['name'] + ':minus', 'resistance_ohm': .05, 'thermal': 'supply'},
@@ -398,13 +435,16 @@ def readouts(graph, native):
                             power_w=branches.get(d['name'], {}).get('power_w', 0),
                             emitted_w=branches.get(d['name'], {}).get('emitted_w', 0)) for d in graph.get('devices', [])],
             'wires': [dict(w, current_a=branches.get(w['name'], {}).get('current_a', 0)) for w in graph.get('wires', [])],
+            'contacts':[dict(c,closed=branches.get(c['name'],{}).get('closed',False),
+                             current_a=branches.get(c['name'],{}).get('current_a',0),
+                             power_w=branches.get(c['name'],{}).get('power_w',0)) for c in graph.get('contacts',[])],
             'networks': [c for c in native if c['id'].startswith('electrical ')]}
 
 
 def merge(spec, fragment):
     for key in ('parts', 'joints', 'batteries', 'kits'):
         spec.setdefault(key, []).extend(fragment.get(key, []))
-    for key in ('devices', 'wires'):
+    for key in ('devices', 'wires', 'contacts'):
         spec.setdefault('electrical', {}).setdefault(key, []).extend(fragment.get('electrical', {}).get(key, []))
     return spec
 
@@ -499,13 +539,16 @@ def easy(identifier, title, brief, base, row, solution, rule, wrong, seconds=4):
 
 def easy_levels():
     levels = []
-    s = empty('Give it power'); merge(s, bulb('lamp', {'x_m': .6}, {}))
-    row = tray('battery', connect_to={'plus': 'lamp:plus', 'minus': 'lamp:minus'})
+    s = empty('Give it power'); merge(s, bulb('lamp', {'x_m': .6}, {})); merge(s,socket.holder())
+    link(s,'holder positive lead','battery holder:plus','lamp:plus')
+    link(s,'holder return lead','lamp:minus','battery holder:minus')
+    row = tray('battery', contact_holder=socket.holder_metadata())
     row['knobs']['x_m']['default'] = -.5
-    levels.append(easy('easy-power', 'Give it power', 'Place a charged battery in the prepared two-terminal socket to keep the lamp on.',
-                       s, row, {'piece': 'battery', 'x_m': -.5},
+    row['knobs']['mount'].update(default='contact pack',choices=['contact pack'])
+    levels.append(easy('easy-power', 'Give it power', 'Drop the charged battery onto both metal pads in the holder. Both contacts must complete the lamp circuit.',
+                       s, row, {'piece': 'battery', 'x_m': -.5, 'z_m':0, 'mount':'contact pack','height_m':.4},
                        {'load_power_w': {'device': 'lamp', 'at_least_w': 2, 'for_s': .5}},
-                       {'piece': 'battery', 'x_m': -.5, 'charge_percent': 0}))
+                       {'piece': 'battery', 'x_m': .6, 'z_m':0, 'mount':'contact pack','height_m':.4}))
     s = empty('Close the switch'); merge(s, battery('supply', {'x_m': -.6}, {})); merge(s, bulb('lamp', {'x_m': .6}, {}))
     link(s, 'return wire', 'lamp:minus', 'supply:minus')
     levels.append(easy('easy-switch', 'Close the switch', 'Set the manual switch to closed, then place it into the prepared circuit socket.',
@@ -554,10 +597,15 @@ def easy_levels():
 
 
 EASY_LEVELS = easy_levels()
-_PARS = {'easy-power': 882000000, 'easy-switch': 9200000, 'easy-bulb': 102000000,
+_PARS = {'easy-power': 375000000, 'easy-switch': 9200000, 'easy-bulb': 102000000,
          'easy-loop': 2, 'easy-motor': 1550000000, 'easy-heat': 4690000, 'easy-marble-light': 462000000}
 for _level in EASY_LEVELS:
     _level['par_energy_j'] = _PARS[_level['id']]
 for _template, _pieces in zip(TEMPLATES, [['battery', 'switch', 'bulb', 'wire'], ['battery', 'bulb', 'wire'],
                                        ['switch', 'bulb'], ['motor', 'battery'], ['ignition', 'battery']]):
     _template['pieces'] = _pieces
+TEMPLATES.append({'name':'Drop a battery into its holder',
+                  'description':'A loose battery falls onto two metal pads. Lift it away to break the lamp circuit.',
+                  'base':copy.deepcopy(EASY_LEVELS[0]['machine']),
+                  'placements':copy.deepcopy(EASY_LEVELS[0]['solution']),
+                  'pieces':['battery','bulb','wire']})

@@ -45,7 +45,7 @@ Each design has a table with no goal and every piece in
 the tray: 31 cards including knives, mirrors, lenses, solar panels, tackle,
 springs, gears, weights, motors, batteries, switches, bulbs, wires, water
 wheels, finite water tanks, heating coils and counterweight catapults.
-There are 23 editable prebuilt designs, including a river workbench and a
+There are 24 editable prebuilt designs, including a battery holder, a river workbench and a
 river-powered gate lift. The river's current pushes submerged wheel paddles;
 connect the wheel's drum rope to a load to lift it. Pieces snap
 together, can be joined with glue, a pin, a string or a spring, and a build can be shared

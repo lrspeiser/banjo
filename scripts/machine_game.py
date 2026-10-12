@@ -144,7 +144,7 @@ def fresh_easy(family_id, seed, exe, logs, recipe_id=None):
             return copy.deepcopy(_variants[cached])
     family = next(level for level in load_levels() if level['id'] == family_id)
     if decoded:
-        level = sandbox_variants.reconstruct(family, seed, decoded['attempt'])
+        level = sandbox_variants.reconstruct(family, seed, decoded['attempt'], version=decoded['version'])
         receipt = sandbox_variants.validate(level, exe, logs)
         if not receipt['valid']:
             raise ValueError('This shared challenge no longer passes its physics checks.')
@@ -181,6 +181,14 @@ def requested_level(data):
             raise ValueError('Names starting with "your " are reserved for tray pieces')
         level['machine'] = copy.deepcopy(base)
         level['custom_base'] = True
+        sockets = [d for d in (base.get('electrical') or {}).get('devices',[]) if d.get('kind')=='socket']
+        if len(sockets)==1 and set(sockets[0].get('terminal_parts',{}))=={'plus','minus'}:
+            holder = sockets[0]
+            row = next(t for t in level['tray'] if t['piece']=='battery')
+            row['contact_holder'] = {'name':holder['name'],'terminal_parts':copy.deepcopy(holder['terminal_parts'])}
+            row['knobs']['mount'].update(default='contact pack',choices=['contact pack'])
+            row['knobs']['x_m']['default'] = sum(p[0] for p in holder['terminals'].values())/2
+            row['knobs']['z_m']['default'] = sum(p[2] for p in holder['terminals'].values())/2
         if (base.get('ground') or {}).get('discharge_m3_s',0)>0:
             wheel=next((t for t in level['tray'] if t['piece']=='water_wheel'),None)
             if wheel:
@@ -1504,6 +1512,7 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0):
                     track=track, after_s=0.5, flows=bool(compiled.get('light') or compiled.get('spouts') or
                         (compiled.get('ground') or {}).get('kind') == 'flume' or
                         compiled.get('circuits') or compiled.get('electrical', {}).get('wires') or
+                        compiled.get('electrical', {}).get('contacts') or
                         compiled.get('electrical', {}).get('power_cables')))
     row = (r['stations'] or [{}])[0]
     goal_at = row.get('at_s') if row.get('done') and row.get('at_s') is not None and row['at_s'] <= level['time_s'] else None

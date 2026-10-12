@@ -50,6 +50,7 @@ class Puzzles(unittest.TestCase):
         cls.template_count = len(machine_game.sandbox_templates())
         cls.piece_count = len([row for row in machine_game.free_build()['tray'] if not row.get('attach')])
         cls.river_solution = dict(machine_game.sandbox_water_launch.RIVER_SOLUTION)
+        cls.power_level = machine_game.level_by_id('easy-power')
         # An engine still closing as the tests end holds its log open a moment.
         cls.logs = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         # The game site as deployed: open to anyone, nothing else served.
@@ -209,6 +210,128 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def place_contact_battery(self, placement, charge=None):
+        self.press('Add a battery'); self.ghost()
+        knobs = next(t['knobs'] for t in self.power_level['tray'] if t['piece'] == 'battery')
+        for key, value in placement.items():
+            if key == 'piece': continue
+            self.slide(f"{knobs[key].get('label', key)} of your battery 1", value)
+        if charge is not None:
+            self.slide(f"{knobs['charge_percent']['label']} of your battery 1", charge)
+        self.assertTrue(self.ghost()['fits'])
+        self.press('Set it down'); self.wait(f'!window.machineGhostState() && {READY}', 60)
+
+    def test_contact_battery_drop_powers_lamp_on_desktop_and_phones(self):
+        for width, height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-power',width,height,phone=width!=1280)
+                self.place_contact_battery(self.power_level['solution'][0])
+                start = self.js('window.machineContactState()')
+                self.assertEqual(len(start['liveContacts']), 4)
+                self.assertTrue(all(c['closed'] is False for c in start['liveContacts']))
+                cap = next(name for name in start['liveTerminals'] if name.startswith('your battery 1:plus'))
+                self.assertEqual(self.js("document.querySelectorAll('#power-labels .power-label').length"),0)
+                self.assertTrue(self.js("[...document.querySelectorAll('#terminal-labels button')].every(b=>b.disabled)"))
+                self.click_visible('Run it')
+                self.assertTrue(self.js("document.getElementById('preview-legend').hidden"))
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertTrue(self.js("document.getElementById('preview-legend').hidden"))
+                state = self.js('window.machineContactState()')
+                self.assertFalse(state['preview'])
+                self.assertGreaterEqual(sum(c['closed'] for c in state['liveContacts']),2)
+                self.assertGreater(next(d for d in state['liveDevices'] if d['kind']=='bulb')['power_w'],2)
+                self.assertLess(state['liveTerminals'][cap][1],start['liveTerminals'][cap][1]-.1)
+                battery = next(b for b in state['batteries'] if b['name'].startswith('your battery 1'))
+                self.assertLess(battery['charge_j'],battery['capacity_j'])
+                self.assertIn('+ closed',self.js("document.querySelector('.terminal-label[data-kind=socket]').textContent"))
+                self.assertIn('− closed',self.js("document.querySelector('.terminal-label[data-kind=socket]').textContent"))
+                self.assertIn('W lamp',self.js("document.querySelector('.terminal-label[data-kind=bulb]').textContent"))
+
+    def test_contact_battery_misalignment_and_empty_charge_stay_dark(self):
+        for width, height in ((1280,860),(390,844),(844,390)):
+            for mode in ('misaligned','empty'):
+                with self.subTest(viewport=(width,height),mode=mode):
+                    self.open('easy-power',width,height,phone=width!=1280)
+                    placement = self.power_level['wrong'][0] if mode=='misaligned' else self.power_level['solution'][0]
+                    self.place_contact_battery(placement,charge=0 if mode=='empty' else None)
+                    self.click_visible('Run it')
+                    self.wait("/World 2\\./.test(document.getElementById('clock').textContent)",30)
+                    self.press('Pause')
+                    state = self.js('window.machineContactState()')
+                    self.assertLess(abs(next(d for d in state['liveDevices'] if d['kind']=='bulb')['power_w']),1e-9)
+                    self.assertTrue(self.js("document.getElementById('level-done').hidden"))
+                    if mode=='empty':
+                        self.assertGreaterEqual(sum(c['closed'] for c in state['liveContacts']),2)
+                        self.assertEqual(next(b for b in state['batteries'] if b['name'].startswith('your battery 1'))['charge_j'],0)
+                    else:
+                        self.assertFalse(any(c['closed'] for c in state['liveContacts']))
+
+    def test_contact_battery_setup_saves_reloads_and_restores_versions(self):
+        for width, height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
+                self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':width!=1280,'maxTouchPoints':5})
+                self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+                self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
+                self.press('Start from Drop a battery into its holder');self.wait(READY,60)
+                initial=self.js('window.machinePlacements()')
+                base=self.js('window.machineDesign().draft.base')
+                first_version=self.js('Math.max(0,...window.machineDesign().versions.map(v=>v.number))+1')
+                self.assertEqual(initial[0]['mount'],'contact pack')
+                self.assertEqual(len(self.js('window.machineContactState().liveContacts')),4)
+                self.click_visible('Save version');self.wait(f"/Version {first_version} saved/.test(document.getElementById('design-status').textContent)",10)
+                self.press('Pick up your battery 1');self.ghost()
+                self.slide('initial charge (%) of your battery 1',0)
+                self.assertTrue(self.ghost()['fits'])
+                self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.click_visible('Save version');self.wait(f"/Version {first_version+1} saved/.test(document.getElementById('design-status').textContent)",10)
+                self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,60)
+                self.assertEqual(self.js('window.machinePlacements()[0].charge_percent'),0)
+                self.assertEqual(self.js('window.machineDesign().draft.base'),base)
+                self.reveal_control("document.querySelector('#design-versions summary')")
+                self.js("document.querySelector('#design-versions summary').scrollIntoView({block:'nearest'})")
+                x,y=self.js("(() => {const r=document.querySelector('#design-versions summary').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()")
+                self.mouse('mousePressed',x,y);self.mouse('mouseReleased',x,y)
+                self.wait("document.getElementById('design-versions').open",5)
+                self.reveal_control("document.getElementById('version-pick')")
+                self.js(f"document.getElementById('version-pick').value='{first_version}';document.getElementById('version-pick').dispatchEvent(new Event('change',{{bubbles:true}}))")
+                self.click_visible('Restore version');self.wait(READY,60)
+                self.assertEqual(self.js('window.machinePlacements()'),initial)
+                self.assertEqual(self.js('window.machineDesign().draft.base'),base)
+                self.click_visible('Run it')
+                self.wait("window.machineContactState().liveDevices.some(d=>d.kind==='bulb' && d.power_w>2)",30)
+                self.press('Pause')
+                self.assertGreaterEqual(sum(c['closed'] for c in self.js('window.machineContactState().liveContacts')),2)
+
+    def test_contact_battery_solar_cable_and_input_follow_the_fallen_pack(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
+                self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':width!=1280,'maxTouchPoints':5})
+                self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+                self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
+                self.press('Start from Drop a battery into its holder');self.wait(READY,60)
+                self.assertEqual(self.js("document.querySelectorAll('#power-labels .power-label').length"),0)
+                self.press('Add a solar panel');self.ghost()
+                self.slide('Position along (m) of your solar 2',0)
+                self.slide('Position across (m) of your solar 2',.7)
+                self.assertTrue(self.ghost()['fits'])
+                self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.assert_power_layout()
+                self.click_visible('Power output of your solar 2')
+                self.click_visible('Power input of your battery 1')
+                self.wait(f'window.machinePlacements().length===3 && {READY}',60)
+                before=self.js("window.machineWiringState().powerPorts['your battery 1:power']")
+                self.click_visible('Run it')
+                self.wait("window.machineContactState().liveDevices.some(d=>d.kind==='bulb' && d.power_w>2)",30)
+                self.press('Pause')
+                state=self.js('window.machineWiringState()')
+                after=state['powerPorts']['your battery 1:power']
+                self.assertLess(after[1],before[1]-.1)
+                self.assertEqual(state['powerCables'][0]['points_m'][1],after)
+                self.assertIn('Cable connected',self.js("document.getElementById('power-labels').textContent"))
+
+
     def test_gear_lesson_starts_empty_then_its_battery_drive_turns_the_wheels(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
