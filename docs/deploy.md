@@ -51,13 +51,17 @@ players' feedback remain under `/data/machine-logs`.
 
 **Disk setup was reported complete by the owner on October 11, 2026.**
 The requested setting is 1 GB mounted at `/data` on the existing Banjo service.
-Release `97931d7e` served on October 11, 2026 and its profile API reported
-`storage.persistent: true`. An isolated public profile completed the native
-Turn the big wheel challenge, placed a plank of length 0.66, and saved Version
-1 through the ordinary controls. A cookie-free API read confirmed the design,
-version and progress at profile revision 5. Recovery of that profile after a
-redeploy is still pending; mount detection alone does not establish that.
-Merely creating `/data` inside the image does not provide persistence.
+**Runtime persistence was verified on October 11, 2026.** Release `97931d7e`
+reported `storage.persistent: true`. An isolated public profile completed the
+native Turn the big wheel challenge with three stars, placed a plank of length
+0.66, and saved Version 1 through ordinary controls. After Render deployed
+`4953231d`, a new HTTP client with no cookies recovered the exact same profile
+at revision 5: design, version and progress all matched the predeploy JSON.
+Its SHA-256 was `2f05285d4f493b58cdebcf3f3feddbb43c5194b5dddad7aecb2eac30bb818a8e`.
+The private return credential is retained only in ignored local QA files.
+This measures redeploy retention for that profile; independent backups and
+disk-loss recovery remain unconfigured. Merely creating `/data` inside the
+image does not provide persistence.
 
 ## Render's settings
 
@@ -75,7 +79,7 @@ Merely creating `/data` inside the image does not provide persistence.
 - **Health check path:** none is set, so Render waits for the port to open.
   `/play` would do; `/login` would not, since a public server has no login.
 - **Instance:** one CPU and 2 GB (`1c-2g`); keep one service instance for the
-  SQLite store. The runtime detects the mount; redeploy recovery verification is pending.
+  SQLite store. Runtime mount detection and saved-profile redeploy recovery passed.
 
 ## Persistent profiles: required service change
 
