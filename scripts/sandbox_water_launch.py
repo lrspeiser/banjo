@@ -290,6 +290,7 @@ river_wheel=easy_level('easy-river-wheel','Wheel in the river',
     river_base,'water_wheel',dict(radius_m=.65,side='off',x_m=0,z_m=0),
     {'turned_deg':{'joint':'your water_wheel 1 hinge','deg':30}},10)
 river_wheel['tray'][0].update(start_at_defaults=True)
+river_wheel['tray'][0]['frame_on_add']=True
 river_wheel['tray'][0]['knobs']['radius_m']['default']=.65
 river_wheel['tray'][0]['knobs']['z_m']['default']=1
 river_wheel['tray'][0]['knobs']['side'].update(default='off',choices=['off'])
@@ -321,3 +322,25 @@ for example in TEMPLATES:
     if example['id']=='finite-water':
         example['placements']=[dict(piece='water_tank',outlet_model='gravity',opening_percent=100)]
         example['description']='A separate four-litre gravity tank. Widen the tap to pour faster; falling head slows the flow as it drains.'
+
+LEGACY_MODULAR_LEVELS={row['id']:copy.deepcopy(row) for row in EASY_LEVELS}
+_pour=EASY_LEVELS[0]
+_target=water_wheel('wheel target',dict(side='off'),dict(spec=_pour['machine']))
+for key,value in _target.items():_pour['machine'].setdefault(key,[]).extend(value)
+_pour['tray']=[_pour['tray'][1]]
+_pour['solution']=[_pour['solution'][1]]
+_pour['wrong']=[dict(_pour['solution'][0],opening_percent=0)]
+_pour['goal'].pop('roles',None)
+_pour['goal'].update(needs='Place a tank and aim its outlet at the waiting wheel.',focus=['wheel target'])
+_pour['goal']['station']['done_when']={'turned_deg':{'joint':'wheel target hinge','deg':30}}
+_pour['style_pieces']=1
+_pour['par_energy_j']=460651224
+_pour['brief']='A wheel is waiting in the dry channel. Place a separate tank, increase the tap opening and aim the pour at its left paddles.'
+_pour['hints'][0]=_pour['brief']
+
+for _row in (receiver,river_wheel):
+    _g=_row['machine']['ground']
+    _row['goal']['area']={
+        'at_m':[0,.002,_g.get('trench_z_m',0)],
+        'size_m':[(_g['nx']-1)*_g['cell_m'],.02,_g['trench_width_m']],
+        'label':'Collect 3 L here' if _row['id']=='easy-water-receiver' else 'Put the paddles in this current'}

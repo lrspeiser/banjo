@@ -8,6 +8,16 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+Later October 12 update: the spring, tackle and gear lessons now start with
+the loads or wheels they act on, and the pour lesson starts with its wheel.
+The spring builder can connect its existing native linear spring/slide joints
+to a named moving load. A grounded fork cradle and pedestal support the waiting
+loads. All authored levels show apparatus or a visual goal area at opening;
+empty worlds remain supported for sandbox/engine use. This changes scene
+declarations, not contact, spring, pulley, gear or motor laws. Marked height
+guides do not collide or decide outcomes. See the
+[waiting-load comparison](sandbox-mechanics-measured.md#waiting-load-spring-october-12).
+
 October 12 update: independent fixed tanks now have a constant-area gravity
 reservoir and an adjustable outlet. The native engine derives flow from
 remaining head and opening, debits only accepted parcels, and reports source

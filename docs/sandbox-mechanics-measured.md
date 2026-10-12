@@ -159,3 +159,64 @@ General tooth contact/backlash, textile rope, arbitrary blade release angles,
 diffuse reflected illumination and calibrated wood-grain cutting remain
 unsupported. The optical and pulley source fixtures are reusable saved bases;
 the card alone does not invent a source or target.
+
+
+## Waiting load spring October 12
+
+The current spring lesson starts with a separate 12 cm oak load at y=0.4 m,
+resting on two fixed fork prongs (top y=0.34 m). A grounded rear post carries
+those prongs and leaves the center clear for the spring. Adding the spring
+creates its fixed base at y=0.04 m, guide and existing general native spring
+and slide joints, connected to the waiting body; it does not recreate or move
+the load. The native 5 cm rise goal and one-second deadline are unchanged.
+The 20 cm default relaxed length cannot lift it; increasing to 70 cm stores
+energy in the declared compressed spring. A source one metre aside produces
+downward tension rather than the needed lift and fails three nudges.
+
+The sandbox's spring card can select an existing moving Load or retain its
+original included load. An external load supplies its own material, mass and
+initial position; the corresponding included-load height/material controls
+are hidden. The axis guide and spring use that body's actual attachment
+point. No arbitrary launch velocity, material-name exception or scripted
+displacement was added. This remains an ideal linear force element, not a
+constitutive model of metal coil geometry or buckling.
+
+Matched full-fixture probe: oak/glass/iron, identical 12 cm load and cradle,
+spring anchor y=0.08 m, k=200 N/m, rest=0.7 m, internal damping c=6 N s/m,
+g=9.81 m/s², chosen initial velocity zero, duration 0.1 s, rigid steps
+1/240 and 1/480 s, 2 cm solid lattice. Body masses are material-derived.
+The motion window ends before the upper guide stop for the lifted loads.
+The dense iron load instead remains on its physical cradle.
+
+| Load | Mass (kg) | Final y, coarse / fine (m) | Initial load+spring energy (J) | Final energy, coarse / fine (J) | Damping quadrature, coarse / fine (J) |
+|---|---:|---:|---:|---:|---:|
+| Oak | 1.2096 | 0.59833 / 0.59802 | 19.1864704 | 15.8854084 / 16.0915492 | 2.5874690 / 2.7230532 |
+| Glass | 4.3200 | 0.43681 / 0.43629 | 31.3916800 | 31.2398385 / 31.2649871 | 0.0922386 / 0.0958666 |
+| Iron | 13.59936 | 0.40000 / 0.40000 | 67.8038886 | 67.8038886 / 67.8038886 | 0 / 0 |
+
+Energy E=m*g*y + m*v²/2 + k*(y-0.78)²/2 includes gravity and the actual
+spring preload. E_final + integral(c*v² dt) - E_initial is -0.713593 /
+-0.371868 J for oak, -0.059603 / -0.030826 J for glass, and zero for iron.
+This reported correction/contact remainder decreases on halving dt; it is
+not reclassified as internal damping or claimed as a closed conservation
+residual. The existing implicit joint solver and old-time quadrature are
+unchanged. The +0.01 J no-new-energy check uses the existing mechanical
+receipt allowance; no level or conservation tolerance changed.
+
+Momentum m*v_final - integral((-m*g - k*(y-0.78) - c*v) dt) is -0.244974 /
+-0.125415 N s for oak, -0.049859 / -0.026279 N s for glass, and +5.740972 N s
+at both steps for iron. The last value includes the required external cradle
+reaction: its weight exceeds spring preload by 57.40972 N over 0.1 s.
+Native joint/contact support reactions and integration corrections are not
+independently reconciled in this probe, so these values are explicitly
+unaccounted support/numerical impulses, not full-pipeline momentum closure.
+Fixed supports perform zero work in this geometry. Detailed constraint,
+pose-correction and contact-loss reconciliation remains unsupported.
+
+The nominal oak lesson reaches its unchanged goal at 0.050 s in all three
+whole-apparatus nudges. Empty, default-length, short-length and one-metre
+misplaced setups fail 0/3. The existing material-matched spring/damping and
+tackle regressions still pass. Twelve mechanics tests complete in 7.8 s;
+the new six-fixture plus misplaced/default control check takes 0.58 s alone.
+The native engine remains SHA-256
+3fac18bff131cf0d819e6186969c4ed64b27210eef04e36f420bd497ce39d24a.

@@ -150,6 +150,41 @@ class DeclarationChecks(unittest.TestCase):
 
 class EngineChecks(unittest.TestCase):
     @engine_test
+    def test_spring_acts_on_the_waiting_load_and_compares_materials_at_two_steps(self):
+        for material,density in [('oak',700),('glass',2500),('iron',7870)]:
+            for dt in (1/240,1/480):
+                level=copy.deepcopy(mg.level_by_id('easy-spring'))
+                next(p for p in level['machine']['parts'] if p['name']=='spring load')['material']=material
+                spec=mg.compose(level,level['solution'])[0]
+                with tempfile.TemporaryDirectory() as td:
+                    engine,_,_=mw.build_engine(ENGINE,mw.compile_spec(spec),td)
+                    try:
+                        body=next(b for b in engine.first['bodies'] if b['name']=='spring load')
+                        mass=body['mass_kg'];self.assertAlmostEqual(mass,.12**3*density,delta=1e-6)
+                        y=body['position_m'][1];speed=0
+                        initial=mass*9.81*y+.5*200*(y-.78)**2
+                        damping=impulse=0
+                        for _ in range(round(.1/dt)):
+                            damping+=6*speed*speed*dt;impulse+=(-mass*9.81-200*(y-.78)-6*speed)*dt
+                            r=engine.op(op='step',dt=dt,n=1,moved=False)
+                            body=next(b for b in r['bodies'] if b['name']=='spring load')
+                            y,speed=body['position_m'][1],body['velocity_m_s'][1]
+                        final=mass*9.81*y+.5*mass*speed**2+.5*200*(y-.78)**2
+                        self.assertLessEqual(final,initial+.01,'The fixed cradle cannot supply unaccounted lifting energy')
+                        if material=='iron':self.assertLess(y,.405,'The same preload cannot lift the heavy iron load')
+                        else:self.assertGreater(y,.41)
+                        print('WAITING SPRING',dict(material=material,dt=dt,mass_kg=mass,y_m=y,
+                            initial_j=initial,final_j=final,damping_j=damping,
+                            energy_correction_and_contact_j=final+damping-initial,
+                            unaccounted_support_and_numerical_impulse_n_s=mass*speed-impulse))
+                    finally:engine.close()
+        level=mg.level_by_id('easy-spring')
+        with tempfile.TemporaryDirectory() as td:
+            off=[dict(level['solution'][0],x_m=1)]
+            self.assertEqual(mg.trial(level,off,ENGINE,Path(td),runs=3)['worked'],0)
+            self.assertEqual(mg.trial(level,[dict(piece='spring')],ENGINE,Path(td),runs=3)['worked'],0)
+
+    @engine_test
     def test_easy_solutions_win_nudged_and_physically_wrong_setups_fail(self):
         for original in sm.EASY_LEVELS:
             level = mg.level_by_id(original['id'])

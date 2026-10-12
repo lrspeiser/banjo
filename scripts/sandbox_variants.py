@@ -16,6 +16,8 @@ FAMILY_VERSIONS = {family: 2 for family in ('easy-power', 'easy-switch', 'easy-b
 FAMILY_VERSIONS['easy-switch'] = 3
 FAMILY_VERSIONS['easy-solar'] = 2
 FAMILY_VERSIONS.update({family:2 for family in ('easy-water-wheel','easy-water-gate','easy-water-receiver')})
+FAMILY_VERSIONS.update({family:2 for family in ('easy-spring','easy-tackle','easy-gears')})
+FAMILY_VERSIONS['easy-water-wheel']=3
 MAX_ATTEMPTS = 3
 
 # Each family changes one physical input. Prepared-piece parameters are
@@ -49,8 +51,11 @@ POLICIES = {
 LEGACY_POLICIES=copy.deepcopy(POLICIES)
 for family in ('easy-water-wheel','easy-water-gate'):
     POLICIES[family]=('piece','water_tank','fill_l',(3.5,4.5,5,5.5))
+POLICIES['easy-spring']=('piece','spring','stiffness_n_m',(180,200,220,240))
+POLICIES['easy-gears']=('battery','supply battery','voltage_v',(11,11.5,12.5,13))
 
 PARAMETER_LABELS = {
+    'stiffness_n_m':'Spring stiffness (N/m)',
     'rope_m': 'Cord length (m)', 'watts': 'Optical or load power (W)',
     'elevation_deg': 'Sun elevation (degrees)', 'drop_from_m': 'Counterweight height (m)',
     'height_m': 'Starting height (m)', 'friction_n_m': 'Bearing friction (N m)',
@@ -121,6 +126,14 @@ def _apparatus(family_level, version):
     """
     result = copy.deepcopy(family_level)
     family = family_level['id']
+    if family in ('easy-spring','easy-tackle','easy-gears') and version==1:
+        import sandbox_mechanics as mechanics
+        import machine_game as game
+        return game._with_free_knobs(copy.deepcopy(mechanics.LEGACY_LEVELS[family]))
+    if family=='easy-water-wheel' and version==2:
+        import sandbox_water_launch as water
+        import machine_game as game
+        return game._with_free_knobs(copy.deepcopy(water.LEGACY_MODULAR_LEVELS[family]))
     if family in ('easy-water-wheel','easy-water-gate','easy-water-receiver') and version==1:
         import sandbox_water_launch as water
         import machine_game as game

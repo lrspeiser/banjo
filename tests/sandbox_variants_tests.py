@@ -32,10 +32,23 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
+    def test_target_lessons_preserve_the_earlier_native_apparatus(self):
+        if not ENGINE.is_file():
+            if os.environ.get('BANJO_MACHINE_ENGINE')=='required':self.fail('Native engine required')
+            self.skipTest('Native engine unavailable')
+        with tempfile.TemporaryDirectory() as td:
+            for family,version in [('easy-spring',1),('easy-tackle',1),('easy-gears',1),('easy-water-wheel',1),('easy-water-wheel',2)]:
+                with self.subTest(family=family,version=version):
+                    old=variants.construct(game.level_by_id(family),42,version=version)
+                    self.assertEqual(variants.reconstruct(game.level_by_id(family),42,0,version=version),old)
+                    report=variants.validate(old,ENGINE,Path(td))
+                    self.assertTrue(report['valid'],report)
+                    if family=='easy-water-wheel':self.assertEqual(game.public(old)['task_count'],version)
+
     def test_water_v2_uses_independent_tanks_and_keeps_the_v1_feed_recipe(self):
         for name in ('easy-water-wheel','easy-water-gate','easy-water-receiver'):
             family=game.level_by_id(name)
-            current=variants.construct(family,42)
+            current=variants.construct(family,42,version=2)
             self.assertEqual(current['variant']['version'],2)
             self.assertTrue(any(p.get('outlet_model')=='gravity' for p in current['solution']))
             old=variants.construct(family,42,version=1)

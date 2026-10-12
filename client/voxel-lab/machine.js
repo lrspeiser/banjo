@@ -968,19 +968,29 @@ function updateRopes() {
 // translucent green box where the engine will look.
 const zones = [];
 function syncZones() {
-  for (const z of zones) { scene.remove(z); z.geometry.dispose(); }
+  for (const z of zones) {scene.remove(z);z.traverse(child=>{
+    if(!child.isSprite)child.geometry?.dispose();
+    for(const material of Array.isArray(child.material)?child.material:[child.material]){material?.map?.dispose();material?.dispose();}
+  });}
   zones.length = 0;
   const shown = (machine?.stations || []).map(s => s.done_when && s.done_when.in_zone).filter(Boolean);
   // A level's goal zone is drawn even before the piece it is about is placed
   // (the goal is then left out of the run): it is where to build.
   const goalZone = LEVEL_MODE && level && level.goal && level.goal.station.done_when.in_zone;
   if (goalZone && !shown.some(z => z.at_m.every((v, i) => v === goalZone.at_m[i]))) shown.push(goalZone);
+  if(LEVEL_MODE && level?.goal?.area)shown.push(level.goal.area);
   for (const z of shown) {
     const box = new THREE.Mesh(new THREE.BoxGeometry(...z.size_m),
       new THREE.MeshStandardMaterial({color: 0x3fbf6f, transparent: true, opacity: .22, depthWrite: false}));
     box.position.set(...z.at_m);
     box.add(new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), new THREE.LineBasicMaterial({color: 0x5fe08f})));
     scene.add(box); zones.push(box);
+    if(z.label){
+      const canvas=document.createElement('canvas');canvas.width=512;canvas.height=64;
+      const context=canvas.getContext('2d');context.fillStyle='#aaffc5';context.font='bold 28px sans-serif';context.textAlign='center';context.fillText(z.label,256,42);
+      const texture=new THREE.CanvasTexture(canvas),label=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false}));
+      label.position.set(z.at_m[0],z.at_m[1]+.12,z.at_m[2]);label.scale.set(1.6,.2,1);box.add(label);label.position.sub(box.position);
+    }
   }
 }
 
@@ -1306,12 +1316,13 @@ function frameCamera(includeGhost=false) {
     else pts.push(body.position_m);
   }
   if(includeGhost && ghostGroup.children.length) {
-    const bounds=new THREE.Box3().setFromObject(ghostGroup);
+    const bounds=new THREE.Box3();ghostGroup.updateWorldMatrix(true,true);
+    ghostGroup.traverse(child=>{if(child.isMesh && child.geometry?.isBufferGeometry)bounds.union(new THREE.Box3().setFromObject(child));});
     if(!bounds.isEmpty())pts.push(bounds.min.toArray(),bounds.max.toArray());
   }
   // A level's goal zone is in the picture too, and the ground under it:
   // where the player is to build, even before anything stands there.
-  const zone = LEVEL_MODE && level && level.goal && level.goal.station.done_when.in_zone;
+  const zone = LEVEL_MODE && level && level.goal && (level.goal.station.done_when.in_zone || level.goal.area);
   if (zone) pts.push(zone.at_m, [zone.at_m[0], 0, zone.at_m[2]]);
   // An empty table: its middle, from a little way off.
   if (!pts.length && LEVEL_MODE && level && level.free) pts.push([-1, 0, -.6], [1, .8, .6]);
@@ -2068,6 +2079,8 @@ function setGhostDown() {
 // with - and + either side of its slider, and Set down.
 function knobName(rule, key) { return (rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
 function pieceKnobVisible(p,key) {
+  if(p.piece==='spring' && p.load && p.load!=='included load' && ['height_m','material','load'].includes(key))return false;
+  if(p.piece==='tackle' && p.load && p.load!=='included load' && key==='load_material')return false;
   if(p.piece==='water_wheel' && p.side==='off' && ['side','discharge_l_s'].includes(key))return false;
   if(p.piece==='water_tank') {
     if(p.outlet_model==='gravity' && (['outlet_model','discharge_l_s'].includes(key) || (key==='valve' && p.valve!=='closed')))return false;

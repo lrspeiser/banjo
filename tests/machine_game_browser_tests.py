@@ -383,18 +383,33 @@ class Puzzles(unittest.TestCase):
                 self.assertIn('Cable connected',self.js("document.getElementById('power-labels').textContent"))
 
 
-    def test_gear_lesson_starts_empty_then_its_battery_drive_turns_the_wheels(self):
+    def test_lift_lessons_start_with_the_load_and_the_added_device_lifts_that_same_body(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for ident,piece,target,control,value in [('easy-spring','spring','spring load','Its Relaxed length',.7),
+                    ('easy-tackle','block and tackle','crate','Its Counterweight preset',4.7)]:
+                with self.subTest(viewport=(width,height),level=ident):
+                    self.open(ident,width,height,phone=width!=1280)
+                    before=self.js(f'window.machineBodies()[{json.dumps(target)}]')
+                    self.assertIsNotNone(before)
+                    self.press('Add a '+piece);self.ghost()
+                    self.slide(control,value);self.ghost()
+                    self.assertEqual(self.ghost()['p']['load'],target)
+                    self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                    after=self.js(f'window.machineBodies()[{json.dumps(target)}]')
+                    self.assertGreater(after[1],before[1]+(.049 if ident=='easy-spring' else .249))
+                    self.assertFalse(self.js(f"Object.keys(window.machineBodies()).some(n=>/^your (spring|tackle) \\d+ load$/.test(n))"))
+
+    def test_gear_lesson_starts_with_wheels_then_the_added_motor_turns_them(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.open('easy-gears',width,height,phone=width!=1280)
-                self.assertEqual(self.js('Object.keys(window.machineBodies())'),[],
-                                 'No unrelated box should appear before the player adds the gear pair')
-                self.press('Add a gears');self.ghost()
-                self.slide('Included battery drive of your gears 1','forward');self.ghost()
+                self.assertIn('target gears output wheel',self.js('Object.keys(window.machineBodies())'))
+                self.press('Add a motor');self.ghost()
+                self.slide('throttle of your motor 1',1);self.ghost()
                 self.click_visible('Run it')
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
-                self.assertIn('your gears 1 battery box',self.js('Object.keys(window.machineBodies())'))
+                self.assertIn('target gears output wheel',self.js('Object.keys(window.machineBodies())'))
 
     def place_river_wheel(self):
         self.press('Add a water wheel');initial=self.ghost()['p']
@@ -427,10 +442,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390),(320,568)):
             with self.subTest(viewport=(width,height)):
                 self.open('easy-water-wheel',width,height,phone=width!=1280)
-                self.press('Add a water wheel');self.ghost()
-                self.assertEqual(self.ghost()['p']['side'],'off')
-                self.click_visible('Set it down');self.wait(READY,60)
-                self.click_visible('Next piece')
+                self.assertIn('wheel target',self.js('Object.keys(window.machineBodies())'))
                 self.press('Add a water tank');self.ghost()
                 self.assertEqual(self.ghost()['p']['opening_percent'],0)
                 self.assertEqual(self.ghost()['p']['x_m'],-.2)
@@ -449,12 +461,12 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js(READY))
                 self.click_visible('Run it')
                 self.wait("!document.getElementById('level-done').hidden",30)
-                self.assertEqual(len(self.js('window.machinePlacements()')),2)
+                self.assertEqual(len(self.js('window.machinePlacements()')),1)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
                 self.assertLess(self.js('window.machineWaterDisplay()[0].litres'),4)
                 self.click_visible('Set up again');self.wait(READY,60)
                 self.wait('window.machineWaterDisplay()[0].litres===4',10)
-                self.assertEqual(self.js('window.machinePlacements()[1].opening_percent'),75)
+                self.assertEqual(self.js('window.machinePlacements()[0].opening_percent'),75)
 
     def test_water_shares_preserve_legacy_feeds_and_new_tap_versions(self):
         import sandbox_water_launch as water
@@ -1324,7 +1336,7 @@ class Puzzles(unittest.TestCase):
             self.assertFalse(self.js("[...document.querySelectorAll('#levels-screen button')].some(b=>/^(All challenges|Easy: learn a piece|Full chain reactions)$/.test(b.textContent))"))
             # Counts belong to level IDs; ordering changes as lessons are added.
             for ident,count in [('gap',1),('sun',2),('laser',2),('easy-solar',2),
-                    ('easy-water-wheel',2),('easy-river-wheel',1),('easy-water-gate',3)]:
+                    ('easy-water-wheel',1),('easy-river-wheel',1),('easy-water-gate',3)]:
                 text=f'{count} '+('thing' if count==1 else 'things')+' to do'
                 self.assertEqual(self.js(f"document.querySelector('[data-level=\"{ident}\"] .task-count').textContent"),text)
             self.assertTrue(self.js("[...document.querySelectorAll('#levels-screen .ls-list li .task-count')].every(el=>/^[1-9][0-9]* things? to do$/.test(el.textContent))"))

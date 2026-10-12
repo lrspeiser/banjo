@@ -44,11 +44,24 @@ def need_engine(test):
 
 
 LEVELS = mg.load_levels()
-EMPTY_START_LEVELS = ('easy-tackle', 'easy-spring', 'easy-gears',
-                      'easy-water-wheel', 'easy-water-receiver','easy-river-wheel')
+EMPTY_START_LEVELS = ('easy-water-receiver','easy-river-wheel')
 
 
 class Tray(unittest.TestCase):
+    def test_every_level_starts_with_an_object_or_visible_goal_area(self):
+        for level in LEVELS:
+            initial=mw.compile_spec(mg.compose(level,[],leave_out_goal=True)[0])
+            self.assertTrue(initial['parts'] or level['goal'].get('area') or level['goal']['station']['done_when'].get('in_zone'),level['id'])
+        for ident,target in [('easy-spring','spring load'),('easy-tackle','crate'),('easy-gears','target gears output wheel'),('easy-water-wheel','wheel target')]:
+            row=mg.level_by_id(ident);initial=mw.compile_spec(mg.compose(row,[],leave_out_goal=True)[0])
+            names={p['name'] for p in initial['parts']}
+            self.assertIn(target,names)
+            compiled=mw.compile_spec(mg.compose(row,row['solution'])[0])
+            self.assertEqual(sum(p['name']==target for p in compiled['parts']),1,'The added device must act on the existing target')
+        for ident,target in [('easy-spring','spring load'),('easy-tackle','crate')]:
+            row=mg.level_by_id(ident);body=next(p for p in row['machine']['parts'] if p['name']==target)
+            self.assertAlmostEqual(row['goal']['area']['at_m'][1],body['at_m'][1]+body['size_m'][1]/2+row['goal']['station']['done_when']['rose_m']['m'])
+
     def test_catalogue_bases_have_no_unrelated_reference_boxes(self):
         for row in mg.load_levels():
             self.assertFalse({'reference marker', 'channel marker'} &
@@ -57,10 +70,10 @@ class Tray(unittest.TestCase):
             self.assertFalse({'reference marker', 'channel marker'} &
                              {p['name'] for p in (row['base'] or {}).get('parts', [])}, row['name'])
         gears = mg.level_by_id('easy-gears')
-        self.assertEqual(mw.compile_spec(mg.compose(gears, [], leave_out_goal=True)[0])['parts'], [])
+        self.assertIn('target gears output wheel',{p['name'] for p in mw.compile_spec(mg.compose(gears, [], leave_out_goal=True)[0])['parts']})
         compiled = mw.compile_spec(mg.compose(gears, gears['solution'])[0])
-        self.assertIn('your gears 1 battery box', {p['name'] for p in compiled['parts']})
-        self.assertEqual(compiled['batteries'][0]['in'], 'your gears 1 battery box')
+        self.assertIn('supply housing', {p['name'] for p in compiled['parts']})
+        self.assertEqual(compiled['electrical']['devices'][-1]['hinge'],'target gears input axle')
 
     def test_edit_guides_follow_compiled_geometry_and_do_not_change_the_setup(self):
         free = mg.free_build()

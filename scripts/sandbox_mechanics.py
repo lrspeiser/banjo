@@ -140,13 +140,18 @@ def spring(name, k, ctx):
     side = .12
     base = box(name + ' base', [.3, .08, .3], [x, .04, z])
     load = box(name + ' load', [side] * 3, [x, height, z], k.get('material', 'oak'), False)
+    included=k.get('load','included load')=='included load'
+    if not included:
+        load=next((p for p in ctx['parts'] if p['name']==k['load']),None)
+        if load is None or load['fixed']:raise ValueError('Choose an existing moving load for the spring')
+        height=load['at_m'][1]
     guide = box(name + ' guide', [.06, height + .2, .06], [x, (height + .2) / 2, z + .18])
-    return {'parts': [base, load, guide], 'joints': [
+    return {'parts': [base, guide]+([load] if included else []), 'joints': [
         {'name': name + ' spring', 'kind': 'spring', 'a': base['name'], 'b': load['name'],
-         'at_m': [x, .08, z], 'at_b_m': [x, height, z], 'rest_m': rest,
+         'at_m': [x, .08, z], 'at_b_m': list(load['at_m']), 'rest_m': rest,
          'stiffness_n_m': k.get('stiffness_n_m', 200), 'damping_n_s_m': k.get('damping_n_s_m', 6)},
         {'name': name + ' slide', 'kind': 'slide', 'a': guide['name'], 'b': load['name'],
-         'at_m': [x, height, z], 'axis': [0, 1, 0], 'lower_m': .145 - height,
+         'at_m': list(load['at_m']), 'axis': [0, 1, 0], 'lower_m': .145 - height,
          'upper_m': .4, 'friction_n': 0}]}
 
 
@@ -219,7 +224,8 @@ TRAY = [
          'rest_m': number('Relaxed length (m)', .2, .7, .5),
          'stiffness_n_m': number('Stiffness (N/m)', 50, 1000, 200, 10),
          'damping_n_s_m': number('Internal damping (N s/m)', 0, 30, 6, 1),
-         'material': choice('Load material', ['oak', 'glass', 'iron'], 'oak')}, turning=False),
+         'material': choice('Load material', ['oak', 'glass', 'iron'], 'oak'),
+         'load': {'part':True,'default':'included load','label':'Load'}}, turning=False),
     tray('gears', 'Gear pair', {'height_m': number('Axle height (m)', .35, .8, .4),
          'teeth_a': choice('Input teeth', [12, 18, 24], 12),
          'teeth_b': choice('Output teeth', [12, 18, 24], 24),
@@ -344,6 +350,57 @@ def _easy_levels():
 
 
 EASY_LEVELS = _easy_levels()
+LEGACY_LEVELS={row['id']:copy.deepcopy(row) for row in EASY_LEVELS}
+
+# Goal objects belong to the starting apparatus, not to the added device.
+_spring_lesson=next(row for row in EASY_LEVELS if row['id']=='easy-spring')
+_spring_lesson['machine']['parts']=[
+    box('spring load',[.12]*3,[0,.4,0],'oak',False),
+    box('load cradle post',[.2,.34,.06],[0,.17,.35]),
+    box('load cradle left fork',[.02,.02,.42],[-.05,.33,.14]),
+    box('load cradle right fork',[.02,.02,.42],[.05,.33,.14])]
+_spring_lesson['goal']['station']['done_when']={'rose_m':{'part':'spring load','m':.05}}
+_spring_lesson['goal']['focus']=['spring load']
+_spring_lesson['goal']['area']=dict(at_m=[0,.51,0],size_m=[.22,.02,.22])
+_spring_lesson['par_energy_j']=21341800
+_spring_lesson['tray'][0]['knobs']['load'].update(default='spring load',choices=['spring load'])
+_spring_lesson['tray'][0]['knobs']['height_m'].update(default=.4,min=.4,max=.4)
+_spring_lesson['tray'][0]['knobs']['rest_m']['default']=.2
+_spring_lesson['tray'][0].update(start_at_defaults=True,focus_knob='rest_m')
+for key in ('solution','wrong'):_spring_lesson[key][0]['load']='spring load'
+_spring_lesson['brief']='Place the spring beneath the waiting oak load. Increase its relaxed length to lift the load five centimetres off its cradle.'
+_spring_lesson['hints'][0]=_spring_lesson['brief']
+
+_tackle_lesson=next(row for row in EASY_LEVELS if row['id']=='easy-tackle')
+_tackle_lesson['machine']['parts']=[box('crate',[.14]*3,[.6,.25,0],'glass',False),
+    box('crate pedestal',[.22,.18,.22],[.6,.09,0])]
+_tackle_lesson['goal']['station']['done_when']={'rose_m':{'part':'crate','m':.25}}
+_tackle_lesson['goal']['focus']=['crate']
+_tackle_lesson['goal']['area']=dict(at_m=[.6,.57,0],size_m=[.24,.02,.24])
+_tackle_lesson['par_energy_j']=827064040
+_tackle_lesson['tray'][0]['knobs']['load'].update(default='crate',choices=['crate'])
+_tackle_lesson['tray'][0].update(start_at_defaults=True,focus_knob='counterweight_kg')
+for key in ('solution','wrong'):_tackle_lesson[key][0]['load']='crate'
+_tackle_lesson['brief']='The glass crate is waiting on its pedestal. Add the tackle and choose enough counterweight to lift it twenty-five centimetres.'
+_tackle_lesson['hints'][0]=_tackle_lesson['brief']
+
+import sandbox_electrics as _starter_electrics
+_gear_lesson=next(row for row in EASY_LEVELS if row['id']=='easy-gears')
+_gear_lesson['machine'].update(gears('target gears',dict(drive='off'),{}))
+_starter_electrics.merge(_gear_lesson['machine'],_starter_electrics.battery('supply',dict(x_m=-.6),{}))
+_gear_motor=_starter_electrics.tray('motor',connect_to={'plus':'supply:plus','minus':'supply:minus'})
+_gear_motor.update(count=1,sandbox_builder=True,start_at_defaults=True,focus_knob='throttle')
+_gear_motor['knobs']['hinge'].update(default='target gears input axle',choices=['target gears input axle'])
+_gear_motor['knobs']['z_m']['default']=-.2
+_gear_motor['knobs']['throttle']['default']=0
+_gear_lesson['tray']=[_gear_motor]
+_gear_lesson['goal']['station']['done_when']={'turned_deg':{'joint':'target gears output axle','deg':180}}
+_gear_lesson['goal']['focus']=['target gears output wheel']
+_gear_lesson['par_energy_j']=32833000
+_gear_lesson['solution']=[dict(piece='motor',hinge='target gears input axle',x_m=0,z_m=-.2,throttle=1)]
+_gear_lesson['wrong']=[dict(_gear_lesson['solution'][0],throttle=0)]
+_gear_lesson['brief']='The gear pair is already here. Add the motor, increase its throttle and turn the big wheel through half a revolution.'
+_gear_lesson['hints'][0]=_gear_lesson['brief']
 
 # The current collector lesson includes the same two player decisions as the
 # winch: get into sunlight and explicitly deliver that energy to a receiver.

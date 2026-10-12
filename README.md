@@ -31,6 +31,10 @@ its source and receiver in view, and **Whole machine** restores the overview.
 The lessons introduce cutting, optics, springs, gearing, wiring, water,
 heating and catapults one step at a time. **New challenge** offers tested
 physical variations with repeatable seed links and a recent-challenges list.
+Every authored level opens with a visible object or goal area. The spring
+and tackle act on waiting loads, the gear lesson starts with wheels to power,
+and the pour lesson starts with a wheel waiting for a separate tank. Water-only
+lessons mark their collection channel or river current before a piece is added.
 The one-mirror lesson **Bounce to the target** comes immediately before
 **Bounce the beam**. The eight original chain-reaction challenges, with their
 current menu numbers, are:

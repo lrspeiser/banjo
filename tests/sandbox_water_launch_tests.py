@@ -173,7 +173,7 @@ class WaterLaunchTests(unittest.TestCase):
             for dt in (1/240,1/480):
                 raw=mg.compose(level,level['solution'])[0]
                 next(k for k in raw['kits'] if k['kit']=='water_wheel')['material']=material
-                next(p for p in raw['parts'] if p['name']=='your water_tank 2 tank')['material']=material
+                next(p for p in raw['parts'] if p['name']=='your water_tank 1 tank')['material']=material
                 with tempfile.TemporaryDirectory() as td:
                     e,j,_=mw.build_engine(ENGINE,mw.compile_spec(raw),td)
                     started=time.perf_counter()
@@ -185,7 +185,7 @@ class WaterLaunchTests(unittest.TestCase):
                         self.assertLess(math.hypot(*p['momentum_residual_n_s']),1e-8)
                         self.assertGreater(p['body_work_j'],0)
                         self.assertAlmostEqual(s['remaining_m3']+s['emitted_m3'],.004,delta=1e-12)
-                        angle=next(x for x in e.op(op='joints')['joints'] if x['id']==j['your water_wheel 1 hinge'])['degrees']
+                        angle=next(x for x in e.op(op='joints')['joints'] if x['id']==j['wheel target hinge'])['degrees']
                         print('\n gravity',material,'dt',dt,'angle',angle,'volume',s['remaining_m3'],
                             'source J',s['source_energy_j'],'body J',p['body_work_j'],'energy residual',p['energy_residual_j'],
                             'momentum residual',p['momentum_residual_n_s'],'numerical correction',p['numerical_correction_j'],
@@ -194,7 +194,8 @@ class WaterLaunchTests(unittest.TestCase):
                     finally:e.close()
 
     def test_modular_pour_requires_opening_and_aim_and_accepts_either_piece_order(self):
-        level=mg.level_by_id('easy-water-wheel')
+        # Version-2 shared challenges keep the former two-piece lesson.
+        level=mg._with_free_knobs(copy.deepcopy(sw.LEGACY_MODULAR_LEVELS['easy-water-wheel']))
         with tempfile.TemporaryDirectory() as td:
             for label,placements in [('closed',level['wrong']),('small opening',[level['solution'][0],dict(level['solution'][1],opening_percent=1)]),
                     ('misses across channel',[level['solution'][0],dict(level['solution'][1],z_m=1)]),('misses along channel',[level['solution'][0],dict(level['solution'][1],x_m=1)]),

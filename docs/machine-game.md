@@ -1,6 +1,77 @@
 # Puzzles on the machine (/play)
 
-October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-one freely selectable piece lessons. Each level has a fixed machine, a goal and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-two freely selectable piece lessons. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+
+## Start with an object or visible goal area
+
+October 12 update, superseding the earlier empty learning fields: every one
+of the 30 authored levels now opens with existing apparatus or a visible goal
+area. No unrelated reference boxes were reintroduced.
+
+* **Spring lifts the load:** an oak load rests on a real fork cradle. Add the
+  spring underneath it and increase its relaxed length from the 20 cm starting
+  setting. The existing load must rise the same 5 cm; a green height mark is
+  drawn at its starting top plus 5 cm. The spring can attach to an existing
+  moving load in the sandbox too; its original included-load mode remains.
+* **Raise the crate:** the glass crate waits on a physical pedestal. The added
+  tackle connects to that crate instead of creating another load. Its unchanged
+  target is a 25 cm rise, with a mark above the crate's original top.
+* **Turn the big wheel:** the gear pair and finite supply start on the field.
+  Add its prewired motor and increase throttle from zero; the actual output
+  hinge must turn 180 degrees within the same two-second deadline. The motor
+  drives the named input hinge through the existing ideal gear constraint.
+  Its location does not engage/disengage a simulated shaft or gear tooth.
+* **Pour onto the paddles:** the independent wheel is already in the dry
+  channel. Add a separate tank, open its initially closed tap and aim the
+  pour at the paddles. The unchanged target is 30 degrees within six seconds.
+* **Fill the receiver / Wheel in the river:** the existing collection channel
+  or river has a green area and a short field label before any piece is added.
+  The receiver marking agrees with the actual source's collection bounds;
+  the river marking identifies the current, not an additional scoring zone.
+
+The green guides are visual descriptions, not colliders or scripted win
+conditions. Existing apparatus, native movement and the original goal rules
+still decide success. Goal areas contribute to initial camera framing; adding
+the river wheel frames it once so its bank position remains draggable. Other
+camera gestures and exact controls keep their behavior. Goal label textures,
+line geometry and materials are disposed when the scene is rebuilt.
+
+Correct spring, tackle, gear and pour solutions win all three native nudges
+at 0.050, 0.733, 1.283 and 1.517/1.867/1.400 s respectively. Empty and authored
+wrong setups win 0/3 each without engine errors. The default 20 cm spring and
+a spring one metre beside the load also fail 0/3. No goal, deadline or
+conservation tolerance was relaxed. Scoring excludes already supplied targets:
+measured construction plus the usual 1 kJ margin gives current authored pars
+21,341,800 / 827,064,040 / 32,833,000 / 460,651,224 J respectively.
+
+Current spring/tackle/gear recipes use version 2; pour uses version 3.
+Earlier v1 mechanical/pour and v2 modular-pour links retain their apparatus,
+goals and seed policies. Their native solution/empty/wrong checks pass in
+three nudges; v2 pour keeps its former two-player-piece task count. The new
+spring seeds vary stiffness 180/200/220/240 N/m; gear seeds vary supply
+11/11.5/12.5/13 V. All 22 families' 88 presets pass 264 correct nudges with
+zero empty/wrong wins. The recipe suite passes 15 tests in 137.5 s, plus
+the added legacy-target recipe regression in 4.4 s.
+
+The full game suite passes 50 tests, plus the new all-level starting-target
+regression; water/launch passes 12 in 29.8 s and mechanics 12 in 7.8 s.
+The client-view CTest, JavaScript syntax and all 269 source registrations pass.
+The native executable is unchanged:
+`3fac18bff131cf0d819e6186969c4ed64b27210eef04e36f420bd497ce39d24a`.
+These change authored apparatus and presentation, not engine laws. Spring
+comparisons and unreconciled support/numerical receipts are recorded in
+[the mechanics measurements](sandbox-mechanics-measured.md#waiting-load-spring-october-12).
+
+Five focused Chrome checks pass in 45.6 s: the original waiting loads are
+visible before Add and the added spring/tackle lift those same bodies, the
+supplied gears respond to the added motor, the waiting wheel responds to
+the tank, and the river wheel remains draggable after area framing. They
+cover 1280×860 desktop, 390×844 portrait and 844×390 landscape; the tank also
+passes at 320×568. Run/Set down/Reset use visible, unobstructed 44 px targets.
+The new area initially made the bank wheel too large for a reliable drag;
+framing the newly added wheel fixes that case without changing gesture or
+goal tolerances. Manual phone play wins the spring lesson. Broader earlier
+CI failures in other controls remain outside this verified scope.
 
 ## Learn one reflection before routing two
 
