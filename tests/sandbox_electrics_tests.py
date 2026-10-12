@@ -20,6 +20,20 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_paddle_contacts_require_conductors_and_bound_terminals(self):
+        spec=e.marble_light()
+        control=next(d for d in spec['electrical']['devices'] if d['kind']=='switch')
+        self.assertEqual(control['touch'],['control contact leaf','control contact pad'])
+        self.assertEqual([control['terminal_parts'][key] for key in ('in','out')],control['touch'])
+        self.assertIn('control leaf mounting',{j['name'] for j in spec['joints']})
+        for material in ('glass','oak'):
+            bad=copy.deepcopy(spec)
+            next(p for p in bad['parts'] if p['name']==control['touch'][0])['material']=material
+            with self.assertRaisesRegex(mw.MachineRefused,'contacts must be iron or aluminum'):mw.compile_spec(bad)
+        bad=copy.deepcopy(spec)
+        next(d for d in bad['electrical']['devices'] if d['kind']=='switch')['terminal_parts']['out']='lamp bulb'
+        with self.assertRaisesRegex(mw.MachineRefused,'carry its in/out terminals'):mw.compile_spec(bad)
+
     def test_bulb_family_has_declared_ratings_and_preserves_old_presets(self):
         for size,watts,diameter in [('large',12,.16),('medium',6,.13),('small',2.5,.1)]:
             fragment=e.bulb('lamp',dict(size=size),{})
@@ -242,6 +256,56 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_contact_paddle_current_requires_a_closed_metal_gap_and_complete_loop(self):
+        level=mg.level_by_id('easy-marble-light')
+        spec=mg.compose(level,level['solution'])[0]
+        for mode in ('correct','displaced pad','missing return','flat battery'):
+            probe=copy.deepcopy(spec)
+            if mode=='displaced pad':
+                next(p for p in probe['parts'] if p['name']=='your switch 1 contact pad')['at_m'][2]+=.2
+            elif mode=='missing return':probe['electrical']['wires'].pop(0)
+            elif mode=='flat battery':probe['batteries'][0]['charge_j']=0
+            with tempfile.TemporaryDirectory() as logs:
+                out=mw.rehearse(mw.compile_spec(probe),ENGINE,Path(logs),seconds=3,flows=True)
+            self.assertIsNone(out['error'])
+            self.assertEqual(out['stations'][0]['done'],mode=='correct',mode)
+            switch=next(d for d in out['flow_frames'][0]['devices'] if d['kind']=='switch')
+            self.assertFalse(switch['closed'])
+            self.assertTrue(all(abs(w['value'])<1e-10 for w in out['flow_frames'][0]['wires']))
+            for frame in out['flow_frames']:
+                switch=next(d for d in frame['devices'] if d['kind']=='switch')
+                if not switch['closed'] or mode in ('missing return','flat battery'):
+                    self.assertTrue(all(abs(w['value'])<1e-10 for w in frame['wires']),frame)
+            ledger=out['readouts']['electrical']['networks'][0]['ledger']
+            self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+            self.assertIn('your switch 1 contact leaf',{p['name'] for p in out['mechanism_shapes']})
+
+    def test_paddle_material_comparison_and_timestep_contact_receipts(self):
+        for material in ('glass','oak','iron'):
+            for dt in (1/240,1/480):
+                spec=e.marble_light()
+                next(p for p in spec['parts'] if p['name']=='control paddle')['material']=material
+                compiled=mw.compile_spec(spec)
+                with tempfile.TemporaryDirectory() as logs:
+                    engine,_,_=mw.build_engine(ENGINE,compiled,Path(logs))
+                    try:
+                        closed=0;opened=0;energy=0
+                        for _ in range(60):
+                            engine.op(op='step',dt=dt,n=round(.05/dt))
+                            networks=engine.op(op='circuits')['circuits']
+                            rows=e.readouts(compiled['electrical'],networks,compiled['batteries'])
+                            switch=next(d for d in rows['devices'] if d['kind']=='switch')
+                            if switch['closed']:closed+=1
+                            else:
+                                opened+=1
+                                self.assertTrue(all(abs(w['current_a'])<1e-10 for w in rows['wires']))
+                            energy=networks[0]['ledger']['electrical_residual_j']
+                            self.assertLess(abs(energy),1e-8)
+                        if material=='iron':self.assertGreater(closed,2,(material,dt))
+                        self.assertGreater(opened,0,(material,dt))
+                        print('CONTACT PADDLE',material,dt,'closed samples',closed,'open samples',opened,'electrical residual J',energy)
+                    finally:engine.close()
+
     def test_shrink_the_bulb_matches_native_current_limit_and_full_electrical_ledger(self):
         level=mg.level_by_id('easy-bulb')
         self.assertEqual(level['tray'][0]['knobs']['size']['default'],'large')

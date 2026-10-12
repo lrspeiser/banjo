@@ -1245,7 +1245,7 @@ class Puzzles(unittest.TestCase):
                     self.click_summary('#flow-preview > summary')
                     self.reveal_control("document.getElementById('flow-play')")
                     self.wait("document.getElementById('flow-play').getBoundingClientRect().bottom<=innerHeight",5)
-                    self.click_visible('Pause preview')
+                    self.click_visible('Play preview' if channel=='wires' else 'Pause preview')
                     self.slide('Preview time',1)
                     self.wait('!window.machineFlowPreviewState().playing && window.machineFlowPreviewState().time===1 && window.machineFlowPreviewState().index>=0',5)
                     state=self.js('window.machineFlowPreviewState()')
@@ -1874,6 +1874,41 @@ class Puzzles(unittest.TestCase):
         self.assertNotIn('A test run',result)
         self.assertIn('easy-switch',self.js('Object.keys(window.machineSave().players[window.machineSave().current].levels)'))
         self.assertIn('your pulls',result,'actual external work remains in the scored energy receipt')
+
+    def test_marble_switch_wires_stay_dark_until_actual_contact_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-marble-light',width,height,phone=width<1000)
+                self.press('Add a switch');self.ghost()
+                self.slide('along (m) of your switch 1',0);self.slide('across (m) of your switch 1',0)
+                self.assertTrue(self.ghost()['fits'])
+                self.click_visible('✓ Set down')
+                self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.wait('window.machineFlowPreviewState()?.frames>2 && window.machineFlowPreviewState().index===0',60)
+                preview=self.js('window.machineFlowPreviewState()')
+                self.assertFalse(preview['playing'])
+                self.assertEqual(preview['time'],0)
+                self.assertEqual(preview['drawn']['arrows'],0)
+                self.assertEqual(preview['drawn']['bulbs'],0)
+                self.assertEqual(self.js('window.machinePowerFeedbackState().dots'),0)
+                self.assertTrue(all(w['color']!=0xffd34d for w in self.js('window.machineWiringState().wires')))
+                self.assertTrue(all(abs(w['value'])<1e-10 for w in preview['sample']['wires']))
+                self.assertIn('your switch 1 contact leaf',[p['name'] for p in preview['drawn']['mechanisms']])
+                self.click_visible('Run it')
+                self.wait('window.machineWiringState().wires.every(w=>w.color===0xffd34d)',10)
+                self.assertGreater(self.js('window.machinePowerFeedbackState().dots'),0)
+                self.assertFalse(self.js('Boolean(window.machineFlowPreviewState()?.visible)'))
+                self.assertTrue(self.js("window.machineContactState().liveDevices.find(d=>d.kind==='switch').closed"))
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.click_visible('Inspect your switch 1 contacts')
+                self.wait('window.machineCamera().settled',15)
+                for terminal in ('your switch 1:in','your switch 1:out'):
+                    x,y=self.screen_point(self.js(f'window.machineContactState().liveTerminals[{json.dumps(terminal)}]'))
+                    bounds=self.js("(()=>{const r=document.getElementById('view').getBoundingClientRect();return [r.left,r.top,r.right,r.bottom];})()")
+                    self.assertTrue(bounds[0]<=x<=bounds[2] and bounds[1]<=y<=bounds[3],(terminal,x,y,bounds))
+                self.click_visible('Set up again')
+                self.wait(READY,60)
+                self.wait('window.machinePowerFeedbackState().dots===0',15)
 
     def test_cannon_player_draws_both_leads_and_operates_trigger_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):

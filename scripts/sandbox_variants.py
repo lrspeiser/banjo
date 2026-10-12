@@ -14,6 +14,7 @@ from pathlib import Path
 VERSION = 1
 FAMILY_VERSIONS = {family: 2 for family in ('easy-power', 'easy-switch', 'easy-bulb', 'easy-loop')}
 FAMILY_VERSIONS['easy-switch'] = 3
+FAMILY_VERSIONS['easy-marble-light'] = 2
 FAMILY_VERSIONS['easy-solar'] = 2
 FAMILY_VERSIONS.update({family:2 for family in ('easy-water-wheel','easy-water-gate','easy-water-receiver')})
 FAMILY_VERSIONS.update({family:2 for family in ('easy-spring','easy-tackle','easy-gears')})
@@ -60,6 +61,7 @@ for family in ('easy-water-wheel','easy-water-gate'):
 POLICIES['easy-spring']=('piece','spring','stiffness_n_m',(180,200,220,240))
 POLICIES['easy-gears']=('battery','supply battery','voltage_v',(11,11.5,12.5,13))
 POLICIES['easy-bulb']=('battery','supply battery','max_power_w',(2.5,2.6,2.7,2.8))
+POLICIES['easy-marble-light']=('part','trigger marble','height_m',(.48,.51,.58,.59))
 
 PARAMETER_LABELS = {
     'stiffness_n_m':'Spring stiffness (N/m)',
@@ -135,6 +137,11 @@ def _apparatus(family_level, version):
     """
     result = copy.deepcopy(family_level)
     family = family_level['id']
+    if family=='easy-marble-light' and version==1:
+        import sandbox_electrics as electrical
+        import machine_game as game
+        result=game._with_free_knobs(copy.deepcopy(electrical.LEGACY_SWITCH_LEVELS[family]))
+        return result
     if family in ('easy-motor','easy-river-lift','easy-charge-lift') and version==1:
         import machine_game as game
         if family=='easy-motor':

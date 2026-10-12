@@ -2706,6 +2706,20 @@ class MachineSession:
             frame['mechanism_joints']=[copy.deepcopy(j) for j in r.get('joints',[])
                                       if j.get('a') in names or j.get('b') in names]
             self.flow_mechanism_names=names
+        # Circuit previews carry the native switch poses alongside current.
+        # Otherwise a future closed branch would be drawn over an open rocker.
+        switch_names=set()
+        for device in graph.get('devices',[]):
+            if device['kind']!='switch' or not device.get('touch') or not device.get('hinge'): continue
+            joint=next(j for j in self.compiled['joints'] if j['name']==device['hinge'])
+            switch_names.update([joint['b'],device['touch'][0]])
+        names=set(getattr(self,'flow_mechanism_names',set()))|switch_names
+        if switch_names:
+            frame['mechanisms']=[dict(name=name,position_m=self.bodies[name]['position_m'],
+                orientation_wxyz=self.bodies[name]['orientation_wxyz'],
+                initial_position_m=self.flow_starts[name]['position_m']) for name in sorted(names)[:32]
+                if name in self.bodies and name in self.flow_starts]
+            self.flow_mechanism_names=names
         for device in frame['devices']:
             declaration = next(d for d in graph['devices'] if d['name'] == device['name'])
             body = self.bodies.get(declaration['part'])

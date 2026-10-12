@@ -107,8 +107,13 @@ and friction; measured angle controls the circuit. Saved starting poses reset
 normally, and the former Toggle command is refused. The glass/oak/iron,
 two-timestep comparison and the remaining native Pull receipt gap are recorded
 in [manual rocker measurements](sandbox-electrics-measured.md#physical-manual-rocker-october-11-2026).
-The ideal electrical contact still lacks internal metal-contact geometry,
-pressure-dependent resistance, elastic bounce and a snap detent.
+Manual rockers still use their measured hinge threshold. Paddle switches now
+carry an iron leaf that must touch a separate supported iron output pad;
+native body contact determines that branch. Their interface is still a lumped
+0.001 ohm resistance, with no metal/pressure-dependent contact law, oxidation,
+arcing, elastic contact bounce or snap detent. Wire displays require current;
+electrical rehearsals start paused, with native switch poses included on explicit
+playback. See [contact measurements](sandbox-electrics-measured.md#current-driven-display-and-paddle-metal-contact-october-12).
 
 Solar collectors now expose their native center-ray obstruction, incidence
 angle, instantaneous charging power and energy account before and during a

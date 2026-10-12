@@ -101,6 +101,14 @@ Manual switches have physical hinged rockers. Drag their scene handle to open
 or close the circuit; the measured hinge angle determines the contact state.
 The saved starting pose returns with **Set up again**.
 
+The marble-operated paddle now carries an iron contact leaf beside a separate
+iron output pad. Native body contact closes its branch; an open gap, missing
+return or empty battery carries no current. **Inspect contacts** in Readings
+and wiring zooms in. Wire highlights require measured current, and electrical
+previews start paused until **Play preview** or scrubbing is requested. Manual
+rockers still use their measured hinge angle; pressure-dependent contact
+resistance, oxidation, arcing and realistic filament failure remain future work.
+
 **The chat** gives a hint on a level, places the tray's pieces for you (for one
 star at most), or builds what you describe in the Sandbox. It uses OpenAI's
 `gpt-5-mini`. It never sees a level's solution.

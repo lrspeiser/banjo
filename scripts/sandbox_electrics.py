@@ -8,6 +8,9 @@ import copy
 import math
 import sandbox_battery_socket as socket
 
+# Build the archived recipes first; new pieces below use measured metal contact.
+CONTACT_SWITCHES = False
+
 
 def box(name, at, size, material='iron', fixed=True):
     return {'name': name, 'shape': 'box', 'material': material, 'at_m': at,
@@ -75,7 +78,53 @@ def switch(name, k, ctx):
         device['closed_at_or_below_deg'] = -initial_deg
         device['handle'] = dict(part=handle,
             at_m=[x + .08 * math.cos(angle), .22 + .08 * math.sin(angle), z])
-    return {'parts': parts, 'joints': joints, 'electrical': {'devices': [device]}}
+    result = {'parts': parts, 'joints': joints, 'electrical': {'devices': [device]}}
+    if CONTACT_SWITCHES and not (ctx or {}).get('tray', {}).get('legacy_contacts'):
+        add_switch_contacts(result, device)
+    return result
+
+
+def add_switch_contacts(spec, device):
+    """A leaf fixed to the rocker touches a supported metal output pad.
+
+    Native body contact closes the branch, not its angle or a drawn animation.
+    Iron conductors and concrete supports are separate from the handle material.
+    The existing 1 mm contact observation and 0.001 ohm lumped interface apply.
+    """
+    hinge = next(j for j in spec['joints'] if j['name'] == device['hinge'])
+    moving = next(p for p in spec['parts'] if p['name'] == hinge['b'])
+    x, y, z = moving['at_m']
+    initial = moving.get('turn_deg', [0, 0, 0])[2]
+    manual = bool(device.get('handle'))
+    # Keep the already measured frictional manual rocker. Contact hardware on
+    # it needs a separate calibration; do not turn a drawing into a switch law.
+    if manual: return
+    # A narrower paddle makes room for its separate contact hardware rather
+    # than adding an overlapping second conductor to the old solid slab.
+    moving['size_m']=[.38,.04,.12]
+    close_deg = device['closed_at_or_below_deg']
+    r = .12
+    zi = z + .16
+    angle = math.radians(close_deg)
+    leaf, pad, post = (device['name'] + suffix for suffix in (' contact leaf', ' contact pad', ' contact post'))
+    # The pad lies one full conductor thickness below the leaf at closure.
+    end = [x + r * math.cos(angle), y + r * math.sin(angle), zi]
+    normal = [-math.sin(angle), math.cos(angle), 0]
+    pad_at = [end[i] - .02 * normal[i] for i in range(3)]
+    support_top = pad_at[1] - .01 * abs(math.cos(angle)) - .02 * abs(math.sin(angle))
+    edge = .063
+    stem_length = .13-edge
+    spec['parts'] += [dict(name=leaf, shape='compound', material='iron', at_m=[x,y,zi], fixed=False,
+        turn_deg=[0,0,initial], parts=[
+            dict(shape='box',at_m=[0,0,0],size_m=[2*r+.08,.02,.06]),
+            dict(shape='box',at_m=[0,0,(edge+.13)/2-.16],size_m=[.02,.02,stem_length])]),
+        dict(box(pad, pad_at, [.04, .02, .06]), turn_deg=[0, 0, close_deg]),
+        box(post, [pad_at[0], support_top/2, zi], [.04, support_top, .06], 'concrete')]
+    spec['joints'].append(dict(name=device['name']+' leaf mounting', kind='fix', a=moving['name'], b=leaf,
+                              at_m=[x, y, z]))
+    device['touch'] = [leaf, pad]
+    device['terminal_parts'] = {'in':leaf, 'out':pad}
+    device['terminals'] = {'in': [x-r*math.cos(math.radians(initial)), y-r*math.sin(math.radians(initial)), zi], 'out': pad_at}
 
 
 def legacy_manual_switch(name, k, ctx):
@@ -104,7 +153,7 @@ def physical_manual_switches(spec):
         housing=next((p for p in result.get('parts',[]) if isinstance(p,dict) and p.get('name')==original.get('part')),None)
         at=housing.get('at_m') if housing else None
         if not isinstance(at,list) or len(at)!=3 or not all(isinstance(v,(int,float)) and math.isfinite(v) for v in at): continue
-        fragment=switch(original['name'],dict(x_m=at[0],z_m=at[2],state='closed' if original.get('closed') else 'open'),{})
+        fragment=switch(original['name'],dict(x_m=at[0],z_m=at[2],state='closed' if original.get('closed') else 'open'),{'tray':{'legacy_contacts':True}})
         handle=original['name']+' handle'
         old_handle=next((p for p in result.get('parts',[]) if isinstance(p,dict) and p.get('name')==handle),None)
         if old_handle and 'material' in old_handle:
@@ -397,6 +446,15 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
             if d.get('hinge'):
                 if d['hinge'] not in hinges: problems.append(f'electrical {name}: paddle hinge is missing')
                 d['closed_at_or_below_deg'] = number(d, 'closed_at_or_below_deg', -8, -179, 179)
+            if 'touch' in d:
+                touch = d['touch']
+                if (not isinstance(touch, list) or len(touch)!=2 or
+                    not all(isinstance(p,str) and p in bodies for p in touch) or touch[0]==touch[1]):
+                    problems.append(f'electrical {name}: switch needs two distinct contact bodies')
+                elif any(bodies[p]['material'] not in ('iron','aluminum') for p in touch):
+                    problems.append(f'electrical {name}: switch contacts must be iron or aluminum')
+                elif [bindings.get(key) for key in ('in','out')] != touch:
+                    problems.append(f'electrical {name}: switch contacts must carry its in/out terminals')
             if 'handle' in d:
                 h=d['handle']
                 joint=next((j for j in joints if j['name']==d.get('hinge')),None)
@@ -489,7 +547,8 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
             heats.append({'id': d['name'], 'component': d['name'], 'capacity_j_k': 100, 'ambient_w_k': 1})
             if d['kind'] == 'switch':
                 row.update(kind='switch', resistance_ohm=.001, closed=d.get('closed', False))
-                if d.get('hinge'): row['follows_hinge'] = {'joint': joint_ids[d['hinge']], 'closed_at_or_below_deg': d['closed_at_or_below_deg']}
+                if d.get('touch'): row['follows_contact'] = dict(zip(('a','b'),d['touch']))
+                elif d.get('hinge'): row['follows_hinge'] = {'joint': joint_ids[d['hinge']], 'closed_at_or_below_deg': d['closed_at_or_below_deg']}
             elif d['kind'] == 'coil':
                 row.update(kind='resistor', resistance_ohm=d['resistance_ohm'], heats_body=d['heats'])
             elif d['kind'] == 'bulb':
@@ -840,3 +899,18 @@ TEMPLATES.append({'name':'Drop a battery into its holder',
                   'base':copy.deepcopy(LEGACY_CONTACT_POWER['machine']),
                   'placements':copy.deepcopy(LEGACY_CONTACT_POWER['solution']),
                   'pieces':['battery','bulb','wire']})
+
+LEGACY_SWITCH_LEVELS = {row['id']:copy.deepcopy(row) for row in EASY_LEVELS
+                       if row['id']=='easy-marble-light'}
+for _row in LEGACY_SWITCH_LEVELS.values():
+    for _tray in _row['tray']:
+        if _tray['piece']=='switch': _tray['legacy_contacts']=True
+CONTACT_SWITCHES = True
+for _spec in [row['machine'] for row in EASY_LEVELS] + [row['base'] for row in TEMPLATES]:
+    for _device in (_spec.get('electrical') or {}).get('devices',[]):
+        if _device['kind']=='switch' and _device.get('hinge'): add_switch_contacts(_spec,_device)
+_marble_lesson=next(row for row in EASY_LEVELS if row['id']=='easy-marble-light')
+_marble_lesson['tray'][0]['knobs']['threshold_deg']['default']=5
+_marble_lesson['tray'][0]['knobs']['mode']['choices']=['paddle']
+_marble_lesson['brief']='Place the paddle beneath the marble. Its iron contact leaf must touch the separate iron output pad to complete the wired bulb loop.'
+_marble_lesson['hints'][0]=_marble_lesson['brief']

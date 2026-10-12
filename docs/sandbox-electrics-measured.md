@@ -419,3 +419,79 @@ energy and actual `given_j`. Solar charging's `taken_j` is reported separately;
 net charge loss cannot substitute for consumption while the sun is charging.
 The measured nominal motor reaches its 20 degree goal at 0.700 s; its nudged
 runs reach it at 0.817 and 0.583 s. The goal and 1 s deadline stayed unchanged.
+
+
+## Current-driven display and paddle metal contact — October 12
+
+This checkpoint uses the unchanged native engine
+`1ebc084656f9b4c0206e6c7ca7f9d0e12546700c60e495781ca781493587c352`.
+No native solver, contact tolerance, goal or energy-par tolerance was changed.
+
+A current paddle has a 0.38×0.04×0.12 m iron plate and its original hinge,
+limits and friction. A separate material-derived iron compound leaf consists
+of a 0.32×0.02×0.06 m bar and 0.02×0.02×0.067 m mounting stem, beside the
+paddle at z=0.16 m. A native fixed joint mounts it to the paddle. The ideal
+mount has a 3 mm modeled clearance rather than overlapping collision bodies;
+it is not a resolved welded seam or a stress-calibrated elastic leaf. An iron
+0.04×0.02×0.06 m output pad has a concrete support. Paddle travel positions
+that pad geometrically; it no longer switches the branch at a named angle.
+The leaf/pad branch uses the existing native body-touch observation (1 mm)
+and 0.001 ohm lumped closed resistance. Broken/missing conductors do not touch.
+The source and output terminals must bind to the declared conducting bodies;
+glass and oak conductors are refused, while iron/aluminum are admitted.
+
+The reference marble drops at x=0.12 m from y=0.55 m, on the same 12 V,
+1000 J source and 3 W resistive lamp with a full three-lead circuit. The
+unchanged goal is at least 2 W for 0.1 s within 3 s. All three reference nudges
+win at 0.933 s. Embodied-plus-run energy is 457786660.911 J, under the unchanged
+462000000 J par and within the existing one-percent par calibration check.
+The slimmer plate makes room for separate hardware in that budget; no impulse,
+forced angle, current, emissive power or goal event is assigned by the lesson.
+An outlet pad displaced by 20 cm, missing return and flat source all fail.
+Every sampled open-contact state has zero wire current within 1e-10 A, as do
+incomplete/exhausted circuits. The native electrical-ledger limit remains 1e-8 J.
+
+Equal geometry/source/drop conditions compare only the paddle's bulk material;
+the leaf and output pad remain iron, separate from that material. Integration
+covers 3 s, observed every 0.05 s, with 20 mm lattice solids and an exact rigid
+compound leaf. Counts describe sampled contact closures, not a calibrated
+contact-bounce frequency or proof of sustained closure for every material.
+
+| Paddle material | Closed/open samples at 1/240 s | Closed/open samples at 1/480 s | Final electrical residual J, 1/240 / 1/480 s |
+| --- | ---: | ---: | ---: |
+| Glass | 0 / 60 | 0 / 60 | 0 / 0 |
+| Oak | 8 / 52 | 9 / 51 | −8.369e−13 / −9.239e−13 |
+| Iron | 12 / 48 | 43 / 17 | −1.185e−12 / −4.201e−12 |
+
+Glass does not close in these probes; oak is intermittent, and the iron lesson
+passes its native goal. The difference between iron closure counts at the two
+steps remains a contact-resolution sensitivity. These circuits conserve their
+own electrical energy within the stated test bound; the tests do not establish
+a closed whole-system rigid/contact/heat momentum or energy audit. Fixed-support
+reactions, hinge/contact losses and ideal mounting work remain unseparated.
+The new contact resistance is not derived from material resistivity, pressure,
+microscopic contact area or oxidation. Arcing, elastic switch bounce, a snap
+detent, electron transport and realistic filament failure remain unsupported.
+Manual rockers retain the prior measured hinge threshold; a trial contact
+retrofit did not pass their nudged tests and was removed from this checkpoint.
+
+Wire yellow highlights and flow dots require |I| > 0.0001 A. The legacy
+schematic no longer equates a closed switch with current. Insulation stays
+polarity-colored at zero current; arrows show conventional current, not an
+electron speed. Electrical rehearsals start paused at their initial state.
+Explicit Play preview/scrubbing carries the native paddle/leaf poses with its
+sampled current. Run switches to live readings and Reset restores zero-current
+initial state. Readings and wiring offers a 44 px Inspect contacts control,
+verified to frame both conducting terminal points in all three viewports.
+
+Current v2 recipes test 0.48/0.51/0.58/0.59 m drops. Each passes correct/empty/
+wrong preflight, including three nudges. The previous 0.62 m drop lost sustained
+contact in one nudge, so it is outside the new version's offered domain.
+Version-1 recipes preserve their original hinge apparatus, 0.48/0.51/0.59/0.62 m
+policy and identities, including a separately verified old recipe.
+
+Verification: 28/28 electrical tests in 39.214 s; 53/53 game tests in 89.624 s;
+three browser regressions in 24.000 s cover live current, initial paused
+rehearsal, explicit playback/scrubbing, reset and manual drag. The final
+inspection/current browser regression passes all desktop, phone portrait and
+landscape cases separately in 7.287 s. The current/retained recipe test passes in 6.083 s.

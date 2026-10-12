@@ -1331,3 +1331,42 @@ completes at 3.483 s in all three. Full flow placed outside the box also fails.
 All four seeded initial-fill presets keep the same 3 L/5 s goal and pass
 native correct/empty/wrong preflight. See
 [timed-receiver measurements](sandbox-water-launch-measured.md#timed-receiver-fill-october-12).
+
+
+## Current-driven wires and metal paddle contacts — October 12
+
+Wire insulation retains its positive/negative color without current. Yellow
+highlights and moving dots require the native branch current magnitude to exceed
+0.0001 A; a closed switch alone is insufficient. An open DC loop can have voltage
+available at its source but has no steady current through either series lead.
+Arrows indicate conventional current, not a simulated electron transit speed.
+
+Electrical flow rehearsals start paused at their initial snapshot. **Play
+preview** or scrubbing explicitly shows future measured current. The preview
+includes the native moving paddle/contact-leaf poses, so its closed-current
+sample no longer appears over an unchanged open mechanism. **Run it** uses the
+live circuit and hides the rehearsal. Water-only rehearsals retain playback.
+
+New paddle switches have a 38×4×12 cm iron paddle, a separate iron contact leaf
+fixed beside it, a grounded output pad and concrete support. The native engine's
+existing body-contact observation closes the branch only when the two conductors
+touch (within its existing 1 mm observation distance). Wiring In to the leaf and
+Out to the pad completes the same terminal graph used in Sandbox. Crossing wires
+still do not form a connection. Glass/oak contact conductors and terminals bound
+to different bodies are rejected. **Readings and wiring → Inspect contacts**
+zooms in on the actual leaf and pad; the reading reports open/closed and amperes.
+
+**Marble turns on a light** uses 5° initial contact placement; changing paddle
+travel moves the physical output pad. Its goal remains at least 2 W for 0.1 s
+within 3 s, with its unchanged 462 MJ energy par. The reference machine wins
+at 0.933 s in all three nudged runs and takes 457.787 MJ. Current v2 seeded
+starts use 0.48, 0.51, 0.58 and 0.59 m drops, all verified; the former 0.62 m
+preset did not hold contact reliably and is outside the new recipe domain.
+Version-1 links keep their earlier hinge switch and height presets.
+
+Manual rockers still use the native measured hinge threshold. The paddle's
+interface remains a lumped 0.001 ohm contact: metal body types are validated,
+but resistance is not yet derived from contact pressure, real surface area,
+metal resistivity or oxidation. No electron, arcing or elastic contact-bounce
+model is claimed. Existing wire sizing uses copper resistance at 20 °C.
+See [contact measurements](sandbox-electrics-measured.md#current-driven-display-and-paddle-metal-contact-october-12).

@@ -383,6 +383,13 @@ function syncTerminalLabels() {
     if (!rows.length) continue;
     const feedback=document.createElement('output'); feedback.className='contact-feedback'; feedback.style.display='block';
     card.append(title, feedback);
+    if(device.touch){const inspect=button('Inspect contacts',()=>{
+      const points=device.touch.map(name=>world.bodies.get(name)?.position_m).filter(Boolean);
+      if(!points.length)points.push(device.terminals.out);
+      new THREE.Box3().setFromPoints(points.map(p=>new THREE.Vector3(...p))).getCenter(goal);
+      target.copy(goal);distance=.85;azimuth=.15;elevation=.22;follow=false;
+      $('follow').setAttribute('aria-pressed','false');freshView();
+    },{ariaLabel:`Inspect ${device.name} contacts`});inspect.className='contact-inspect';card.append(inspect);}
     const overlay = document.createElement('section'); overlay.className='terminal-control-pin';
     overlay.append(controls); pins.append(overlay);
     let handle;
@@ -472,6 +479,9 @@ function positionTerminalLabels() {
           const contacts=snapshot.contacts.filter(c=>c.a===`${device.name}:${key}`||c.b===`${device.name}:${key}`);
           return `${key==='plus'?'+':'−'} ${contacts.some(c=>c.closed===true)?'closed':contacts.length?contacts.every(c=>c.closed===false)?'open':'not measured':'no pack'}`;
         }).join(' · ');
+      } else if(device.kind==='switch' && device.touch) {
+        const measured=snapshot.devices.find(d=>d.name===device.name);
+        feedback.textContent=prefix+`Metal contacts ${measured?.closed?'closed':'open'} · ${Math.abs(measured?.current_a||0).toFixed(3)} A`;
       } else feedback.hidden=true;
     }
     if (handle) {
@@ -1209,7 +1219,7 @@ function updateWires() {
     const pts = [at(w.from), w.via, w.to ? at(w.to) : w.toPoint].filter(Boolean).map(p => new THREE.Vector3(...p));
     w.line.geometry.setFromPoints(pts);
     const live = (readouts.circuits || []).find(c => c.name === w.name);
-    const flowing = live && (live.closed || (live.closed === null && Math.abs(live.current_a || 0) > 1e-3));
+    const flowing = Math.abs(live?.current_a || 0) > 1e-4;
     w.line.material.color.setHex(flowing ? 0xffd34d : 0x6b7680);
   }
 }
@@ -2933,7 +2943,9 @@ function drawPreview(r) {
   clearPreview();
   previewShown = r;
   flowPending=false;
-  flowPlaying=true;
+  // Electrical rehearsals start at their initial state. Future current and
+  // bulb light appear only if the player explicitly plays/scrubs the preview.
+  flowPlaying=!(r.flow_frames||[]).some(f=>f.wires?.some(w=>w.unit==='A'));
   const zone = level.goal && level.goal.station.done_when.in_zone;
   const inZone = p => Boolean(zone) && [0, 1, 2].every(i => Math.abs(p[i] - zone.at_m[i]) <= zone.size_m[i] / 2);
   const colourOf = new Map(), dotShape = PREVIEW_DOT;

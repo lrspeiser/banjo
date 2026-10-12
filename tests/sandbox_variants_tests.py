@@ -32,6 +32,22 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
+    def test_marble_v2_uses_metal_contacts_and_retains_v1_hinge_shares(self):
+        family=game.level_by_id('easy-marble-light')
+        self.assertEqual(variants.family_version(family['id']),2)
+        old=variants.construct(family,42,version=1)
+        self.assertTrue(old['tray'][0]['legacy_contacts'])
+        self.assertEqual(old,variants.reconstruct(family,42,0,version=1))
+        old_spec=game.compose(old,old['solution'])[0]
+        self.assertNotIn('touch',next(d for d in old_spec['electrical']['devices'] if d['kind']=='switch'))
+        seen={variants.construct(family,seed)['variant']['value']:variants.construct(family,seed) for seed in range(32)}
+        self.assertEqual(set(seen),set(variants.POLICIES[family['id']][-1]))
+        for candidate in [old,*seen.values()]:
+            self.assertEqual(candidate['goal'],family['goal'])
+            self.assertEqual(candidate['time_s'],family['time_s'])
+            with tempfile.TemporaryDirectory() as logs:
+                if ENGINE.is_file():self.assertTrue(variants.validate(candidate,ENGINE,Path(logs))['valid'],candidate)
+
     def test_timed_receiver_v3_preserves_old_receipts_and_validates_all_fills(self):
         import sandbox_water_launch as water
         family=game.level_by_id('easy-water-receiver')
