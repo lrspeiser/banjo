@@ -1,5 +1,7 @@
 import * as THREE from '/three.module.js';
 import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, wireRoute} from '/machine-view.mjs';
+import {anonymousSave, validVisitor, returnURL} from '/anonymous-profile.mjs';
+import {ProfileSync, mergeProfiles} from '/profile-sync.mjs';
 
 // The machine page. It asks the server to build a declaration, then shows
 // what the engine measures, frame by frame. It never moves a body itself.
@@ -226,6 +228,9 @@ function syncTerminalLabels() {
     for (const [key, at] of Object.entries(device.terminals || {})) {
       const name = `${device.name}:${key}`, text = {plus:'+', minus:'−', in:'In', out:'Out'}[key] || key;
       const control = button(text, () => pickTerminal(name), {ariaLabel:`Connect ${device.name} ${key}`});
+      // New labels remain inert until the current tray and scene position
+      // have been evaluated, including between a rebuild and its next frame.
+      control.disabled = true;
       control.dataset.terminal = name; control.className = `terminal-${key}`; controls.append(control);
       const leader = document.createElementNS(svg.namespaceURI, 'line'); svg.append(leader);
       const pin = new THREE.Mesh(new THREE.SphereGeometry(.016, 12, 8), new THREE.MeshBasicMaterial({color:key === 'minus' ? 0x83bbff : 0xf19076}));
@@ -466,6 +471,9 @@ function updatePowerLabels() {
   }
   updateSolarRays();
   positionPowerLabels();
+  // A new or resized meter can occupy an old terminal card's position before
+  // the next animation frame. Move both sets before exposing ready controls.
+  positionTerminalLabels();
 }
 function updateSolarRays() {
   const seen = new Set();
@@ -2709,20 +2717,22 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
 });
 
-// ---- who is playing, and how far each has got --------------------------------------
-// Kept in this browser: a record per player (by name) of, for each level, the
-// best stars, the least energy a win took and when it was first won. Stars
-// kept the old way (one key a level) belong to the first player.
+// ---- anonymous return links and server saves ---------------------------------------
+// The HttpOnly cookie remembers an opaque ID; the browser caches unsent edits.
 const SAVE_KEY = 'banjo-play-save';
+let provisionalVisitor = null;
 function loadSave() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch { /* private window */ }
-  if (!s || typeof s !== 'object' || !s.players || !Object.keys(s.players).length)
-    s = {current: 'Player 1', players: {'Player 1': {levels: {}}}};
-  if (!s.players[s.current]) s.current = Object.keys(s.players)[0];
+  const importOldStars = s?.format !== 2 && !validVisitor(params.get('visitor'));
+  const cachedIds = Object.keys(s?.players || {});
+  s = anonymousSave(s, {visitor:params.get('visitor'), cookie:document.cookie});
+  if (!cachedIds.includes(s.current) && !s.migratedProfiles.includes(s.current) && !validVisitor(params.get('visitor')))
+    provisionalVisitor = s.current;
   try {
-    const first = s.players[Object.keys(s.players)[0]];
+    const first = s.players[s.current];
     for (let i = 0; i < localStorage.length; i++) {
+      if (!importOldStars) break;
       const m = (localStorage.key(i) || '').match(/^banjo-level-(.+)$/);
       if (!m) continue;
       const row = first.levels[m[1]] || (first.levels[m[1]] = {});
@@ -2732,7 +2742,81 @@ function loadSave() {
   return s;
 }
 let save = loadSave();
-function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); return true; } catch { return false; } }
+let profileStoragePersistent = false;
+function cacheSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); return true; } catch { return false; } }
+async function profileRequest(body) {
+  const encoded = JSON.stringify(body);
+  const response = await fetch('/api/profile', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:encoded, keepalive:new TextEncoder().encode(encoded).byteLength < 60000});
+  const data = await response.json();
+  if (!response.ok) { const error = new Error(data.error || 'Could not save your profile.'); error.status = response.status; error.data = data; throw error; }
+  return data;
+}
+function profileStatus() {
+  const state = profileSync.state();
+  if (state.error) return 'Not synced: ' + state.error + ' Keep this tab open; saving again retries.';
+  if (!state.ready) return 'Opening your save…';
+  if (state.pending) return 'Saving your changes…';
+  return profileStoragePersistent ? 'Saved. Your return link restores progress and designs on any device.'
+    : 'Temporary server storage: saves may be lost on deployment. Keep a design export until persistent storage is connected.';
+}
+function updateProfileStatus() {
+  for (const node of document.querySelectorAll('.profile-sync-status')) node.textContent = profileStatus();
+  const node = $('design-status');
+  if (node && /^(Draft|Saving your changes|Not synced|Saved\. Your return|Temporary server)/.test(node.textContent))
+    node.textContent = profileStatus() + ' Save version to keep a checkpoint.';
+}
+const profileSync = new ProfileSync({request:profileRequest, read:() => me(),
+  onChange:() => { cacheSave(); updateProfileStatus(); },
+  onCommit:({visitor,revision,profile}) => {
+    const metadata = save.cloud || (save.cloud = {});
+    metadata[visitor] = {revision, base:profile, dirty:profileSync.state().dirty}; cacheSave();
+  },
+  onMerge:({profile,remappedDesignIds}) => {
+    const selected = activeDesign?.id;
+    save.players[save.current] = profile;
+    if (selected) {
+      activeDesign = profile.sandbox?.items?.find(d => d.id === (remappedDesignIds[selected] || selected)) || null;
+      if (activeDesign) {
+        $('title').textContent = activeDesign.name; renderDesignControls();
+        history_.replaceState(null, '', '/machine?design=' + encodeURIComponent(activeDesign.id));
+      }
+    }
+    cacheSave();
+  }
+});
+function persist() {
+  const metadata = save.cloud || (save.cloud = {});
+  metadata[save.current] = {...metadata[save.current], dirty:true};
+  const cached = cacheSave(); profileSync.schedule();
+  return cached || profileSync.state().ready;
+}
+async function openAnonymousProfile() {
+  const imports = [...save.migratedProfiles];
+  for (const id of imports) {
+    try {
+      const imported = await profileRequest({op:'create', visitor:id, profile:save.players[id]});
+      (save.cloud || (save.cloud = {}))[id] = {revision:imported.revision, base:imported.profile, dirty:false};
+    } catch (error) { if (error.status !== 409) throw error; }
+    save.migratedProfiles = save.migratedProfiles.filter(value => value !== id); cacheSave();
+  }
+  const explicit = validVisitor(params.get('visitor')) ? params.get('visitor').toLowerCase() : null;
+  const opened = await profileRequest({op:'open', visitor:explicit || (imports.length ? save.current : null), cached_visitor:save.current});
+  const cached = save.players[opened.visitor], metadata = save.cloud?.[opened.visitor];
+  if (provisionalVisitor && provisionalVisitor !== opened.visitor) delete save.players[provisionalVisitor];
+  provisionalVisitor = null;
+  save.current = opened.visitor;
+  // Clean caches defer to the server. An old browser save or interrupted save
+  // merges with the last acknowledged snapshot, preserving concurrent drafts.
+  save.players[opened.visitor] = cached && (metadata?.dirty || !metadata)
+    ? mergeProfiles(opened.profile, cached, metadata?.base || {}).profile : opened.profile;
+  me().levels ||= {};
+  profileStoragePersistent = Boolean(opened.storage?.persistent);
+  (save.cloud || (save.cloud = {}))[opened.visitor] = {revision:opened.revision, base:opened.profile,
+    dirty:JSON.stringify(me()) !== JSON.stringify(opened.profile)};
+  profileSync.initialize(opened); cacheSave();
+  await profileSync.flush();
+}
 function me() { return save.players[save.current] || (save.players[save.current] = {levels: {}}); }
 function record(id) { return me().levels[id] || {}; }
 function bestStars(id) { return record(id).stars || 0; }
@@ -2770,6 +2854,7 @@ function keepResult(id, r) {
   return {was, better: lessEnergy || r.stars > (was.stars || 0), unlocked};
 }
 window.machineSave = () => JSON.parse(JSON.stringify(save));
+window.machineProfileState = () => profileSync.state();
 
 // Energy as a person reads it: joules, kilo-, mega-, giga-.
 function energyText(j) {
@@ -3187,13 +3272,12 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
 });
 
-// A free build is kept for the player, in this browser, as it changes.
+// A free build's setup is synced as it changes, separately from the live world.
 function keepBuild() {
   if (!level?.free || !activeDesign) return;
   activeDesign.draft.placements = clone(placements);
   activeDesign.at = new Date().toISOString();
-  $('design-status').textContent = persist() ? 'Draft kept in this browser. Save version to keep a checkpoint.'
-    : 'Could not save in this browser. Keep this tab open and use Share this design to keep a copy.';
+  persist(); $('design-status').textContent = 'Draft: ' + profileStatus() + ' Save version to keep a checkpoint.';
 }
 
 // Named designs and immutable checkpoints, alongside this player's progress.
@@ -3250,7 +3334,8 @@ function showSandboxScreen(show = true) {
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Sandbox'});
-  add(box, 'p', {className: 'ls-summary', textContent: `Build freely with every piece and the live physics engine. Designs for ${save.current} stay in this browser. Drafts save automatically; Save version keeps a checkpoint (the latest 30).`});
+  add(box, 'p', {className: 'ls-summary', textContent: 'Build freely with every piece and the live physics engine. Your drafts save automatically; your private return link opens them on any device. Save version keeps a checkpoint (the latest 30).'});
+  renderReturnLink(box);
   const form = add(box, 'form', {className: 'ls-player'});
   const name = add(form, 'input', {id: 'new-design-name', type: 'text', maxLength: 60, placeholder: 'Name your new design'});
   name.setAttribute('aria-label', 'New design name');
@@ -3292,30 +3377,38 @@ $('save-design').addEventListener('click', async () => {
   if (!activeDesign || ghostInTheWay()) return;
   const d = activeDesign; $('save-design').disabled = true;
   const setup = setupSnapshot();
+  let savedVersion = null;
   try {
     await api({op: 'check', level: 'free', ...sandboxRequest(), placements});
     if (activeDesign !== d) return;
     if (setup !== setupSnapshot()) throw new Error('The setup changed while checking it. Press Save version again.');
     d.name = $('design-name').value.trim() || 'Untitled design'; keepBuild();
-    const before = clone(d); checkpointDesign(d);
-    if (!persist()) { Object.assign(d, before); throw new Error('Browser storage is full or unavailable. Use Share this design to keep a copy.'); }
-    renderDesignControls(); $('title').textContent = d.name;
-    $('design-status').textContent = `Version ${d.nextVersion - 1} saved. You can reopen it under Saved versions.`;
-  } catch (e) { $('design-status').textContent = 'Version not saved: ' + (e.data?.problems?.join('; ') || e.message); }
+    checkpointDesign(d); savedVersion = d.versions.at(-1); persist();
+    await profileSync.flush();
+    if (!activeDesign?.versions.some(v => v.number === savedVersion.number && v.at === savedVersion.at)) return;
+    renderDesignControls(); $('title').textContent = activeDesign.name;
+    $('design-status').textContent = `Version ${savedVersion.number} saved${profileStoragePersistent ? '' : ' in temporary server storage'}. You can reopen it under Saved versions.`;
+  } catch (e) { if (activeDesign === d || activeDesign?.versions.some(v => v.number === savedVersion?.number && v.at === savedVersion?.at)) {
+    renderDesignControls(); $('design-status').textContent = 'Version not synced: ' + (e.data?.problems?.join('; ') || e.message) + '. Keep this tab open and save again to retry.';
+  } }
   finally { $('save-design').disabled = false; }
 });
 $('restore-version').addEventListener('click', async () => {
   if (!activeDesign) return;
+  const restoredDesign = activeDesign.id;
   const v = activeDesign.versions.find(v => v.number === Number($('version-pick').value));
   if (!v) return;
-  keepBuild(); const before = clone(activeDesign), draft = clone(v.draft);
+  keepBuild(); const draft = clone(v.draft);
   if (JSON.stringify(draft) !== JSON.stringify(activeDesign.draft)) checkpointDesign(activeDesign, 'Before restore');
   activeDesign.draft = draft;
-  if (!persist()) { Object.assign(activeDesign, before); $('design-status').textContent = 'Could not store the restored version; your draft is unchanged.'; return; }
+  persist();
   endGhost(); cancelAttach(); placements = clone(draft.placements); undone = []; redone = []; showUndo();
   framedFree = false; renderTray(); renderPlaced(); renderDesignControls();
-  await rebuildLevel(false);
-  $('design-status').textContent = `Restored version ${v.number}. The previous draft is kept in Saved versions.`;
+  try {
+    await rebuildLevel(false); await profileSync.flush();
+    if (activeDesign?.id !== restoredDesign) return;
+    $('design-status').textContent = `Restored version ${v.number}. The previous draft is kept in Saved versions.`;
+  } catch (error) { if (activeDesign?.id === restoredDesign) $('design-status').textContent = 'Restored locally, but not synced: ' + error.message + '. Keep this tab open and save again.'; }
 });
 window.machineDesign = () => activeDesign ? clone(activeDesign) : null;
 
@@ -3477,6 +3570,25 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
 
 // ---- the levels screen: every level, and how far this player has got --------------------
 let levelDifficulty = 'all';
+function renderReturnLink(box) {
+  for (const old of document.querySelectorAll('.visitor-return,.previous-saves')) old.remove();
+  const line = document.createElement('div'); line.className = 'visitor-return';
+  const link = document.createElement('a'); link.id = 'visitor-return-link'; link.href = returnURL(location.origin, save.current); link.textContent = 'Your return link';
+  const copy = button('Copy return link', async () => {
+    try { await navigator.clipboard.writeText(link.href); status.textContent = 'Return link copied.'; }
+    catch { status.textContent = 'Open Your return link and copy its address.'; }
+  }, {id:'copy-return-link'});
+  const status = document.createElement('span'); status.className = 'visitor-return-status'; status.setAttribute('role','status');
+  status.textContent = 'No name needed. Keep this link private: anyone with it can open and edit your saves.';
+  const sync = document.createElement('span'); sync.className = 'visitor-return-status profile-sync-status'; sync.setAttribute('role','status'); sync.textContent = profileStatus();
+  line.append(link, copy, status, sync); box.append(line);
+  const others = Object.keys(save.players).filter(id => id !== save.current);
+  if (others.length) {
+    const previous = document.createElement('details'), summary = document.createElement('summary'); previous.className = 'previous-saves'; summary.textContent = 'Previous saves'; previous.append(summary);
+    others.forEach((id, index) => { const a = document.createElement('a'); a.href = returnURL(location.origin, id); a.textContent = `Saved profile ${index + 1}`; a.className = 'previous-save'; previous.append(a); });
+    box.append(previous);
+  }
+}
 function showLevelsScreen(show) {
   const box = $('levels-screen');
   box.hidden = !show;
@@ -3488,24 +3600,11 @@ function showLevelsScreen(show) {
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Levels'});
   if (level) head.append(button(`Back to ${levelTitle(level)}`, () => showLevelsScreen(false)));
-  // Who is playing: each name keeps its own progress, in this browser.
-  const who = add(box, 'form', {className: 'ls-player'});
-  add(who, 'label', {textContent: 'Player', htmlFor: 'player-pick'});
-  const pick = add(who, 'select', {id: 'player-pick'});
-  for (const name of Object.keys(save.players)) pick.append(new Option(name, name, false, name === save.current));
-  pick.addEventListener('change', () => { save.current = pick.value; persist(); renderLevels(); showLevelsScreen(true); });
-  const fresh = add(who, 'input', {type: 'text', maxLength: 24, placeholder: 'New player’s name'});
-  fresh.setAttribute('aria-label', 'New player’s name');
-  who.append(button('Add player', () => {
-    const name = fresh.value.trim();
-    if (!name) { fresh.focus(); return; }
-    if (!save.players[name]) save.players[name] = {levels: {}};
-    save.current = name; persist(); renderLevels(); showLevelsScreen(true);
-  }, {type: 'submit'}));
-  who.addEventListener('submit', e => e.preventDefault());
+  renderReturnLink(box);
+  history_.replaceState(null, '', returnURL(location.origin, save.current));
   const won = levels.filter(l => bestStars(l.id) > 0).length, starsAll = levels.reduce((s, l) => s + bestStars(l.id), 0);
   const nextUp = levels.find(l => !bestStars(l.id));
-  add(box, 'p', {className: 'ls-summary', textContent: `${save.current}: ${won} of ${levels.length} levels won, ` +
+  add(box, 'p', {className: 'ls-summary', textContent: `${won} of ${levels.length} levels won, ` +
     `${starsAll} of ${levels.length * 3} stars.` + (nextUp ? ` Next up: ${levels.indexOf(nextUp) + 1}. ${nextUp.title}.` : ' Every level won!')});
   // The free build: no goal, every piece, kept for this player.
   if (freeLevel) {
@@ -3554,7 +3653,7 @@ function showLevelsScreen(show) {
 }
 $('levels-open').addEventListener('click', e => {
   if (!LEVEL_MODE || !levels.length) return;
-  e.preventDefault(); keepBuild(); showSandboxScreen(false); showLevelsScreen(true); history_.replaceState(null, '', '/play');
+  e.preventDefault(); keepBuild(); showSandboxScreen(false); showLevelsScreen(true);
 });
 // Looking around the scene while it counts down: stay, and look.
 renderer.domElement.addEventListener('pointerdown', () => {
@@ -3899,6 +3998,7 @@ async function startGame() {
     const part = document.querySelector(`aside section[aria-label="${label}"]`);
     if (part) part.hidden = true;
   }
+  await openAnonymousProfile();
   const r = await api({op: 'levels'});
   levels = r.levels; freeLevel = r.free || null; sandboxBase = r.sandbox_base; sandboxTemplates = r.sandbox || [];
   // Browse first. A landing page does not build a world or replace /play
@@ -3972,6 +4072,7 @@ $('solve').addEventListener('click', () => askLevel('build'));
 // someone else instead of waiting to notice that the page has gone quiet.
 addEventListener('pagehide', () => {
   keepBuild();
+  if (profileSync.state().ready) profileSync.flush().catch(() => {});
   if (session) navigator.sendBeacon('/api/machine', new Blob([JSON.stringify({op: 'close', session})], {type: 'application/json'}));
 });
 

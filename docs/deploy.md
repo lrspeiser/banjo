@@ -4,7 +4,11 @@ The game is hosted on Render as the web service **banjo**
 (`srv-dajite67bikc73c8echg`), at <https://banjo-f1sv.onrender.com/play>. Render
 builds it from the `main` branch of `lrspeiser/banjo` and deploys every new
 commit by itself, so a push to main is a deploy. It takes about six minutes, and
-Render keeps the old version serving until the new one is up.
+Render keeps the old version serving until the new one is up while the service
+has no persistent disk. Attaching the disk described below changes this:
+deploys stop the previous instance before starting the next one, briefly
+interrupting play. [Render's disk limitations](https://render.com/docs/disks#disk-limitations-and-considerations)
+explain why.
 
 ## What runs
 
@@ -28,7 +32,7 @@ It starts:
       --site game --public
 
 - `--site game` serves the game and nothing else: `/play`, `/machine`, the
-  files those pages load, `/api/machine` and `/api/checkpoint`. `/` goes to
+  files those pages load, `/api/machine`, `/api/profile` and `/api/checkpoint`. `/` goes to
   `/play`; everything else is 404.
 - `--public` opens it to anyone with no password. In return, what costs money
   or a lot of engine time is rationed per visitor: the chat, the reliability
@@ -39,10 +43,17 @@ It starts:
   the image). When it is full, a newcomer takes the place of a level whose page
   has closed or gone quiet, or else is told to try again in a minute or two.
 
-A player's progress (stars, best energy, their free build) is kept in their own
-browser, not on the server. The server writes only the machines' logs and
-players' feedback, under `/data/machine-logs`. Without a persistent disk at
-`/data`, those are lost when the service restarts or deploys.
+Anonymous profiles save progress, sandbox drafts and saved versions in SQLite
+through `/api/profile`; the browser also keeps its local copy. Profile revisions
+prevent a stale device from overwriting a newer save. This stores starting
+designs and results, rather than running engine processes. Machine logs and
+players' feedback remain under `/data/machine-logs`.
+
+**Provisioning is pending as of October 11, 2026.** The last recorded service
+configuration has no persistent disk. The local profile store and HTTP tests
+pass, but public saves must not be described as surviving redeploys until the
+disk is attached and the restart check below succeeds. Merely creating `/data`
+inside the image does not provide persistence.
 
 ## Render's settings
 
@@ -59,7 +70,98 @@ players' feedback, under `/data/machine-logs`. Without a persistent disk at
   between them. Render redirects `www.banjo.is` to `banjo.is`.
 - **Health check path:** none is set, so Render waits for the port to open.
   `/play` would do; `/login` would not, since a public server has no login.
-- **Instance:** one CPU and 2 GB (`1c-2g`), with no persistent disk.
+- **Instance:** one CPU and 2 GB (`1c-2g`); keep one service instance for the
+  SQLite store. Persistent disk provisioning is pending.
+
+## Persistent profiles: required service change
+
+On the existing **banjo** service (`srv-dajite67bikc73c8echg`), open its **Disk**
+page and attach **1 GB** at mount path **`/data`**. The Dockerfile sets
+**`BANJO_PROFILE_DB=/data/banjo/profiles.sqlite3`**; any service environment
+override must point below that mount too. The directory is created at
+runtime; it need not exist during the image build. Saving the disk triggers a
+deployment. Only files below its mount persist, and a disk-backed service
+supports one instance. [Render's persistent disk setup](https://render.com/docs/disks#setup)
+documents these requirements.
+
+Render's published disk price, checked October 11, 2026, is **$0.25 per GB per
+month**: this proposed 1 GB disk adds **$0.25/month** to the existing compute
+bill. Recheck [Render pricing](https://render.com/pricing) before provisioning.
+This guide does not record a completed disk purchase or configuration change.
+
+The server defaults to `--logs`' parent plus `profiles.sqlite3` when
+`BANJO_PROFILE_DB` is absent, so the explicit setting above is required for the
+documented location. SQLite uses WAL and synchronous FULL transactions. Profiles
+are capped at 8 MB each; total JSON content defaults to 512 MB
+(`BANJO_PROFILE_MAX_BYTES` can change it), and the main database is bounded at
+640 MB. Machine logs, WAL files and backups also consume disk space. Monitor
+usage; increasing a profile budget does not resize the disk. A full store
+refuses the new save and preserves the prior one.
+
+After provisioning, create a design and save a version. Copy its private return
+link, then deploy or restart the service and open the link in another browser
+with no local data. Confirm the design, version and progress return. The
+successful `/api/profile` response must report `storage.persistent: true`.
+On Render this flag requires a non-root mount ancestor of the database path;
+it does not prove backups or replace this restart test. Check the page's commit
+and `/api/checkpoint` as usual, and play a level after the deploy. Record that
+evidence before changing the provisioning status above.
+
+## Private return links
+
+The `/play?visitor=<UUID>` link is the credential for that anonymous profile:
+anyone with it can restore and change its saves. Keep it private, outside public
+screenshots, issues and shared machine links. The database indexes profiles by
+a SHA-256 hash of the UUID; this is not encryption of the saved designs.
+
+Successful profile opens set an HttpOnly, SameSite=Lax cookie for one year;
+public HTTPS cookies are Secure. An explicit return link takes precedence over
+the cookie, then the cached browser identity. The application omits request
+access logs and sends `Referrer-Policy: no-referrer`, but a token URL can still
+remain in browser history or hosting/proxy request records. There is no Google
+login, email recovery or independent account credential. Retain the return link
+and a private backup.
+
+## SQLite backups and recovery
+
+Take a database-consistent backup with Python's
+[SQLite backup API](https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.backup).
+It works while other connections access the source. Do not copy only the live
+`profiles.sqlite3` file: committed data can still be in its `-wal` sidecar.
+
+Run this in the running service's shell, with `BANJO_PROFILE_DB` set as above:
+
+```python
+import os
+from pathlib import Path
+import sqlite3
+
+source_path = Path(os.environ['BANJO_PROFILE_DB']).resolve()
+backup_path = Path('/tmp/banjo-profiles-backup.sqlite3')
+source = sqlite3.connect(source_path.as_uri() + '?mode=ro', uri=True)
+target = sqlite3.connect(backup_path)
+try:
+    source.backup(target)
+    assert target.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+finally:
+    target.close()
+    source.close()
+```
+
+Transfer that backup to private storage outside the service and retain dated
+copies. `/tmp` is temporary, and a backup on the same disk is lost with that
+disk. Backup scheduling and an off-service destination are not configured by
+this change. Protect backups as saved player data; never commit them, the live
+database or its WAL/SHM sidecars.
+
+Render takes daily disk snapshots, but recommends database-native backups for
+custom databases instead of disk-snapshot recovery.
+[Render's recovery guidance](https://render.com/docs/disks#restoring-a-custom-database)
+applies here. To recover, validate the chosen SQLite backup, stop all application
+writers, retain the old database and sidecars separately, and replace the
+database with the backup without old WAL/SHM sidecars beside it. Restart the
+service and verify a known private return link before accepting new saves.
+Recovery returns profiles to the backup's revisions; later saves are absent.
 
 The custom-domain fix was checked on October 11, 2026 with six HTTP regressions
 (`tests/machine_host_tests.py`, also registered with CTest): pages, assets and

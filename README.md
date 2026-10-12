@@ -51,9 +51,13 @@ connect the wheel's drum rope to a load to lift it. Pieces snap
 together, can be joined with glue, a pin, a string or a spring, and a build can be shared
 as a link. **Add a piece** opens a full-screen library with large thumbnails,
 search and categories; choosing a piece returns to the scene to place it.
-You can also ask the chat to build something in words. Named drafts
-save in this browser for the current player; **Save version** keeps a checkpoint
-you can restore. The engine readings and base declaration are available beside
+You can also ask the chat to build something in words. No player name or login
+is needed: a private return URL selects your anonymous save, and a cookie
+remembers it. Progress, designs and saved versions sync to the server so the
+same link restores them on another device. **Save version** keeps a checkpoint
+you can restore. The public service needs the persistent disk described in
+[the deployment guide](docs/deploy.md); its save status warns while storage is
+temporary. The engine readings and base declaration are available beside
 the scene. Old `/play?level=free` links and previously kept builds still work.
 
 Manual switches have physical hinged rockers. Drag their scene handle to open
@@ -78,7 +82,8 @@ controls from full physical validation.
    builds a level with `scripts/machine_game.py`, which turns pieces and knobs
    into a machine declaration, and runs it with `scripts/machine_world.py`,
    which starts the engine and speaks to it one JSON line at a time. The chat
-   is `scripts/machine_chat.py`.
+   is `scripts/machine_chat.py`. `scripts/anonymous_profiles.py` stores anonymous
+   progress and design setups in SQLite, independently of live engine sessions.
 3. **The engine** (`banjo_live_world_run`, from `tools/live_world_run.cpp` and
    `src/`) is C++. Solid bodies, joints and contact use
    [Jolt Physics](https://github.com/jrouwe/JoltPhysics) 5.6. Anything that can

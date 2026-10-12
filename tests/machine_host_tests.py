@@ -8,6 +8,7 @@ import os
 import tempfile
 import threading
 import unittest
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,7 +39,8 @@ class Requests(unittest.TestCase):
             raise RuntimeError('pass --engine or BANJO_LIVE_ENGINE: the verified game executable')
         cls.logs = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls.server = lab.Server(('127.0.0.1', 0), ENGINE, Path(cls.logs.name), site='game', public=True,
-                                public_host='banjo-f1sv.onrender.com', public_hosts='banjo.is,www.banjo.is')
+                                public_host='banjo-f1sv.onrender.com', public_hosts='banjo.is,www.banjo.is',
+                                profile_db=Path(cls.logs.name)/'profiles.sqlite3')
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
 
     @classmethod
@@ -48,9 +50,10 @@ class Requests(unittest.TestCase):
         cls.server.server_close()
         cls.logs.cleanup()
 
-    def request(self, hosts, method='GET', path='/play', origin=None, extra=None):
+    def request(self, hosts, method='GET', path='/play', origin=None, extra=None, payload=None):
         connection = http.client.HTTPConnection('127.0.0.1', self.server.server_address[1], timeout=10)
-        body = json.dumps({'op': 'levels'}).encode() if method == 'POST' else b''
+        body = (payload if isinstance(payload, bytes) else
+                json.dumps(payload if payload is not None else {'op': 'levels'}).encode()) if method == 'POST' else b''
         connection.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
         for host in hosts:
             connection.putheader('Host', host)
@@ -64,6 +67,118 @@ class Requests(unittest.TestCase):
         result = response.status, response.read(), response.getheaders()
         connection.close()
         return result
+
+    def profile(self, payload, extra=None, host='127.0.0.1', origin=None):
+        status, body, headers = self.request([host], 'POST', '/api/profile', origin, extra, payload)
+        self.assertEqual(dict(headers)['Referrer-Policy'], 'no-referrer')
+        return status, json.loads(body), dict(headers)
+
+    def test_profile_reopen_and_stale_device_do_not_overwrite(self):
+        status, opened, headers = self.profile({'op': 'open'})
+        self.assertEqual(status, 200)
+        self.assertEqual(str(uuid.UUID(opened['visitor'])), opened['visitor'])
+        self.assertEqual((opened['revision'], opened['profile'], opened['created']), (0, {}, True))
+        self.assertTrue(opened['storage']['persistent'])
+        cookie = headers['Set-Cookie']
+        for attribute in ('Path=/', 'Max-Age=31536000', 'SameSite=Lax', 'HttpOnly'):
+            self.assertIn(attribute, cookie)
+        self.assertNotIn('Secure', cookie)
+        visitor = opened['visitor']
+        profile = {'designs': [{'name': 'Marble path', 'versions': [{'placements': []}]}], 'wins': ['cut']}
+        status, saved, headers = self.profile({'op': 'save', 'visitor': visitor, 'revision': 0, 'profile': profile})
+        self.assertEqual((status, saved['revision'], saved['profile']), (200, 1, profile))
+        self.assertNotIn('Set-Cookie', headers)
+        status, second, _ = self.profile({'op': 'open', 'visitor': visitor})
+        self.assertEqual((status, second['profile'], second['created']), (200, profile, False))
+        status, stale, _ = self.profile({'op': 'save', 'visitor': visitor, 'revision': 0, 'profile': {'wins': []}})
+        self.assertEqual((status, stale['revision'], stale['profile']), (409, 1, profile))
+        self.assertEqual(self.profile({'op': 'open', 'visitor': visitor})[1]['profile'], profile)
+
+    def test_profile_explicit_cookie_cached_precedence_and_missing_identity(self):
+        ids = [str(uuid.uuid4()) for _ in range(3)]
+        for visitor in ids:
+            self.assertEqual(self.profile({'op': 'create', 'visitor': visitor, 'profile': {'id': visitor}})[0], 200)
+        cookie = {'Cookie': 'banjo-visitor=' + ids[1]}
+        self.assertEqual(self.profile({'op': 'open', 'visitor': ids[0], 'cached_visitor': ids[2]}, cookie)[1]['visitor'], ids[0])
+        self.assertEqual(self.profile({'op': 'open', 'cached_visitor': ids[2]}, cookie)[1]['visitor'], ids[1])
+        self.assertEqual(self.profile({'op': 'open', 'cached_visitor': ids[2]})[1]['visitor'], ids[2])
+        unknown = str(uuid.uuid4())
+        for payload, extra in (({'op': 'open', 'visitor': unknown}, cookie),
+                               ({'op': 'open', 'cached_visitor': ids[0]}, {'Cookie': 'banjo-visitor=' + unknown})):
+            status, missing, _ = self.profile(payload, extra)
+            self.assertEqual((status, missing['visitor']), (404, unknown))
+        status, imported, _ = self.profile({'op': 'open', 'cached_visitor': unknown})
+        self.assertEqual((status, imported['visitor'], imported['created']), (200, unknown, True))
+
+    def test_profile_import_is_create_only_and_profiles_are_isolated(self):
+        a, b = str(uuid.uuid4()), str(uuid.uuid4())
+        self.assertEqual(self.profile({'op': 'create', 'visitor': a, 'profile': {'design': 'a'}})[0], 200)
+        status, conflict, headers = self.profile({'op': 'create', 'visitor': a, 'profile': {'design': 'replace'}})
+        self.assertEqual((status, conflict['revision'], conflict['profile']), (409, 1, {'design': 'a'}))
+        self.assertNotIn('Set-Cookie', headers)
+        status, created, _ = self.profile({'op': 'create', 'visitor': b, 'profile': {'design': 'b'}})
+        self.assertEqual((status, created['revision']), (200, 1))
+        self.assertEqual(self.profile({'op': 'open', 'visitor': a})[1]['profile'], {'design': 'a'})
+        self.assertEqual(self.profile({'op': 'open', 'visitor': b})[1]['profile'], {'design': 'b'})
+
+    def test_profile_simultaneous_device_saves_have_exactly_one_winner(self):
+        opened = self.profile({'op': 'open'})[1]
+        barrier = threading.Barrier(2)
+        def save(label):
+            barrier.wait(timeout=10)
+            return self.profile({'op': 'save', 'visitor': opened['visitor'], 'revision': 0, 'profile': {'device': label}})
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(save, ('a', 'b')))
+        self.assertEqual(sorted(result[0] for result in results), [200, 409])
+        winner = next(result[1] for result in results if result[0] == 200)
+        conflict = next(result[1] for result in results if result[0] == 409)
+        self.assertEqual(conflict['profile'], winner['profile'])
+        self.assertEqual(self.profile({'op': 'open', 'visitor': opened['visitor']})[1]['profile'], winner['profile'])
+
+    def test_profile_secure_cookie_and_origin_guards(self):
+        opened = self.profile({'op': 'open'})[1]
+        payload = {'op': 'open', 'visitor': opened['visitor']}
+        self.assertIn('Secure', self.profile(payload, host='banjo.is', origin='https://banjo.is')[2]['Set-Cookie'])
+        self.assertIn('Secure', self.profile(payload, {'X-Forwarded-Proto': 'https'})[2]['Set-Cookie'])
+        status, _, _ = self.profile(payload, host='banjo.is', origin='https://evil.example')
+        self.assertEqual(status, 400)
+
+    def test_profile_validation_and_independent_body_limits(self):
+        opened = self.profile({'op': 'open'})[1]
+        base = {'op': 'save', 'visitor': opened['visitor'], 'revision': 0, 'profile': {}}
+        for change in ({'visitor': 'not-a-uuid'}, {'revision': True}, {'revision': -1}, {'profile': []}):
+            self.assertEqual(self.profile(dict(base, **change))[0], 400)
+        self.assertEqual(self.profile(b'{"op":"save","profile":{"x":NaN}}')[0], 400)
+        missing = str(uuid.uuid4())
+        status, result, _ = self.profile(dict(base, visitor=missing))
+        self.assertEqual((status, result['visitor']), (404, missing))
+        large = {'draft': 'x' * 2_100_000}
+        self.assertEqual(self.profile(dict(base, profile=large))[0], 200)
+        self.assertEqual(self.profile(dict(base, revision=1, profile={'draft': 'x' * 8_000_000}))[0], 400)
+        self.assertEqual(self.profile({'op': 'open', 'visitor': opened['visitor']})[1]['profile'], large)
+        # Reject excessive Content-Length before reading a body. Neither cap is
+        # implemented by retries, nor by silently truncating saved designs.
+        for path, length in (('/api/profile', 8_100_001), ('/api/machine', 2_010_001)):
+            connection = http.client.HTTPConnection('127.0.0.1', self.server.server_address[1], timeout=10)
+            connection.request('POST', path, body=None, headers={'Content-Length': str(length)})
+            response = connection.getresponse()
+            self.assertEqual(response.status, 413)
+            response.read()
+            connection.close()
+
+    def test_profile_creation_budget_does_not_charge_existing_imports(self):
+        visitor = str(uuid.uuid4())
+        payload = {'op': 'create', 'visitor': visitor, 'profile': {'legacy': True}}
+        self.assertEqual(self.profile(payload)[0], 200)
+        original = self.server.profile_creations
+        self.server.profile_creations = lab.Allowance(1, 100, 'new visitor profiles')
+        try:
+            self.assertEqual(self.profile(payload)[0], 409)
+            self.assertEqual(self.profile({'op': 'open'})[0], 200)
+            self.assertEqual(self.profile({'op': 'open'})[0], 429)
+            self.assertEqual(self.profile({'op': 'open', 'visitor': visitor})[0], 200)
+        finally:
+            self.server.profile_creations = original
 
     def test_pages_and_assets_accept_each_exact_alias_and_loopback(self):
         for host in ('banjo.is', 'www.banjo.is', 'banjo-f1sv.onrender.com', 'BANJO.IS:443',

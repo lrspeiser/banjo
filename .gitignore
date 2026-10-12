@@ -32,6 +32,10 @@ _deps/
 # Python analysis tools
 __pycache__/
 *.pyc
+# Private anonymous save stores and SQLite sidecars are runtime data.
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 
 # A virtual environment for a lane that needs packages of its own. It stays out
 # of the system interpreter, which runs the engine's suites in other worktrees:

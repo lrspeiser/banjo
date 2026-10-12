@@ -22,7 +22,9 @@ import tempfile
 import threading
 import time
 import unittest
+import uuid
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tests'))
@@ -54,7 +56,8 @@ class Puzzles(unittest.TestCase):
         # An engine still closing as the tests end holds its log open a moment.
         cls.logs = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         # The game site as deployed: open to anyone, nothing else served.
-        cls.server = lab.Server(('127.0.0.1', 0), ENGINE, Path(cls.logs.name), site='game', public=True)
+        cls.server = lab.Server(('127.0.0.1', 0), ENGINE, Path(cls.logs.name), site='game', public=True,
+                                profile_db=Path(cls.logs.name)/'profiles.sqlite3')
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
         cls.base = f'http://127.0.0.1:{cls.server.server_address[1]}'
         cls.chrome = chrome_driver.Chrome(1280, 860)
@@ -1278,8 +1281,10 @@ class Puzzles(unittest.TestCase):
         self.page.events.clear()
         try:
             self.page.send('Page.navigate', {'url': self.base + '/'})
-            self.wait(f"document.querySelectorAll('.ls-list li').length === {self.level_count} && document.querySelector('.ls-summary').textContent.startsWith('Landing test:')", 30)
-            self.assertEqual(self.js('location.pathname + location.search'), '/play')
+            self.wait(f"document.querySelectorAll('.ls-list li').length === {self.level_count} && Boolean(document.getElementById('visitor-return-link'))", 30)
+            self.assertNotIn('Landing test', self.js("document.getElementById('levels-screen').textContent"))
+            self.assertEqual(self.js('location.pathname'), '/play')
+            self.assertEqual(self.js("new URLSearchParams(location.search).get('visitor')"),self.js('machineSave().current'))
             self.assertEqual(self.js("document.querySelector('main').getBoundingClientRect().height"), 0)
             requests = [e['params']['request'] for e in self.page.events if e['method'] == 'Network.requestWillBeSent']
             ops = [json.loads(r['postData'])['op'] for r in requests if r['url'].endswith('/api/machine') and 'postData' in r]
@@ -1293,37 +1298,212 @@ class Puzzles(unittest.TestCase):
         finally:
             self.js("localStorage.removeItem('banjo-play-save')")
 
-    def test_the_levels_screen_shows_each_players_own_progress(self):
-        # /play on its own: every level and how far this player has got.
-        self.page.send('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 860, 'deviceScaleFactor': 1,
-                                                              'mobile': False})
-        self.page.send('Page.navigate', {'url': f'{self.base}/play'})
-        self.wait("document.getElementById('levels-screen') && !document.getElementById('levels-screen').hidden", 90)
-        # Use distinct known progress: earlier tests also earn real wins,
-        # including the same 28.8 MJ result assigned to Tester below.
-        self.js("localStorage.setItem('banjo-play-save',JSON.stringify({current:'Player 1',players:{'Player 1':{levels:{gap:{stars:1,energy_j:12300000}}}}}))")
-        self.page.send('Page.navigate', {'url': f'{self.base}/play'})
-        self.wait("document.querySelector('.ls-list li')?.textContent.includes('Best win: 12.3 MJ')",30)
-        self.assertEqual(self.js("document.querySelectorAll('.ls-list li').length"), self.level_count)
-        self.js("document.querySelector('.ls-player input').value = 'Tester'")
-        self.press('Add player')
-        self.assertIn(f'Tester: 0 of {self.level_count} levels won', self.js("document.querySelector('.ls-summary').textContent"))
-        # A win kept for this player shows on the screen; another player's is
-        # their own.
-        self.js("""(() => { const s = JSON.parse(localStorage.getItem('banjo-play-save'));
-            s.players.Tester.levels.gap = {stars: 3, energy_j: 28800000}; localStorage.setItem('banjo-play-save', JSON.stringify(s)); })()""")
-        self.page.send('Page.navigate', {'url': f'{self.base}/play'})
-        self.wait("!document.getElementById('levels-screen').hidden", 90)
-        self.assertIn(f'Tester: 1 of {self.level_count} levels won, 3 of {self.level_count * 3} stars', self.js("document.querySelector('.ls-summary').textContent"))
-        self.assertIn('Best win: 28.8 MJ', self.js("document.querySelector('.ls-list li').textContent"))
-        self.js("(() => { const p = document.getElementById('player-pick'); p.value = 'Player 1'; p.dispatchEvent(new Event('change')); })()")
-        self.assertTrue(self.js("document.querySelector('.ls-summary').textContent.startsWith('Player 1:')"))
-        self.assertIn('Best win: 12.3 MJ',self.js("document.querySelector('.ls-list li').textContent"))
-        self.assertNotIn('28.8 MJ', self.js("document.querySelector('.ls-list li').textContent"), 'Tester’s best is Tester’s')
-        self.press('Play level 2, Cut it down')
-        self.wait(READY, 90)
-        self.assertTrue(self.js("document.getElementById('levels-screen').hidden"))
-        self.assertTrue(self.js("document.getElementById('title').textContent.startsWith('2. ')"))
+    def anonymous_levels(self, url=None, width=1280, height=860):
+        self.page.send('Emulation.setDeviceMetricsOverride', {'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
+        self.page.send('Emulation.setTouchEmulationEnabled', {'enabled':width!=1280,'maxTouchPoints':5})
+        previous=self.js('performance.timeOrigin')
+        response=self.page.send('Page.navigate',{'url':url or f'{self.base}/play'})
+        self.assertFalse(response.get('errorText'),response)
+        self.wait(f"performance.timeOrigin!=={previous} && document.getElementById('levels-screen')?.hidden===false && Boolean(document.getElementById('visitor-return-link'))",90)
+        link=self.js("document.getElementById('visitor-return-link').href")
+        visitor=parse_qs(urlsplit(link).query)['visitor'][0]
+        self.assertEqual(str(uuid.UUID(visitor)),visitor,'Return links use canonical anonymous UUIDs')
+        self.assertEqual(self.js('machineSave().current'),visitor)
+        self.assertIsNone(self.js("document.getElementById('player-pick')"))
+        self.assertFalse(self.js("[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Add player')"))
+        self.assertFalse(self.js("[...document.querySelectorAll('#levels-screen input')].some(e=>/player|your name/i.test(e.placeholder+' '+e.getAttribute('aria-label')))"))
+        return visitor,link
+
+    def anonymous_fixture_backup(self):
+        self.anonymous_levels()
+        return {'storage':self.js("Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('banjo-')))"),
+                'cookies':self.page.send('Network.getCookies',{'urls':[self.base]})['cookies']}
+
+    def anonymous_fixture_clear(self, clear_cookies=True):
+        # A live page flushes its in-memory cache on pagehide. Park it first,
+        # then clear the origin as browser settings would, with no old page
+        # able to repopulate the intended fresh-device fixture.
+        previous=self.js('performance.timeOrigin')
+        parked=f'{self.base}/machine.css'
+        self.page.send('Page.navigate',{'url':parked})
+        deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            if self.js(f"location.href==={json.dumps(parked)} && performance.timeOrigin!=={previous}"):break
+            time.sleep(.1)
+        else:self.fail('The owned test browser did not leave the app before clearing its data')
+        if clear_cookies:self.page.send('Network.clearBrowserCookies')
+        self.js("Object.keys(localStorage).filter(k=>k.startsWith('banjo-')).forEach(k=>localStorage.removeItem(k))")
+
+    def anonymous_storage_put(self, key, value):
+        self.js(f'localStorage.setItem({json.dumps(key)},{json.dumps(value)})')
+
+    def anonymous_fixture_restore(self, backup):
+        self.anonymous_fixture_clear()
+        for key,value in backup['storage'].items():self.anonymous_storage_put(key,value)
+        cookies=[{k:v for k,v in cookie.items() if k in ('name','value','domain','path','secure','httpOnly','sameSite','expires') and not (k=='expires' and v<0)} for cookie in backup['cookies']]
+        if cookies:self.page.send('Network.setCookies',{'cookies':cookies})
+
+    def anonymous_cloud_saved(self):
+        self.wait("(()=>{const s=window.machineProfileState?.();return s?.ready&&!s.pending&&!s.error;})()",30)
+
+    def test_first_visit_has_anonymous_return_link_and_cookie_without_name_controls(self):
+        backup=self.anonymous_fixture_backup()
+        try:
+            self.anonymous_fixture_clear()
+            visitor,link=self.anonymous_levels()
+            self.assertEqual(urlsplit(link).path,'/play')
+            cookies=self.page.send('Network.getCookies',{'urls':[self.base]})['cookies']
+            self.assertTrue(any(c['value']==visitor and c['httpOnly'] for c in cookies),'The server remembers the return identity in an HttpOnly cookie')
+            for width,height in ((1280,860),(390,844),(844,390)):
+                returned,_=self.anonymous_levels(width=width,height=height)
+                self.assertEqual(returned,visitor)
+                self.click_visible('Copy return link')
+                self.wait("/Return link copied|copy its address/.test(document.querySelector('#levels-screen .visitor-return-status').textContent)",10)
+            self.assertEqual(self.anonymous_levels(link)[0],visitor)
+        finally:self.anonymous_fixture_restore(backup)
+
+    def test_named_progress_migrates_to_isolated_anonymous_return_links(self):
+        backup=self.anonymous_fixture_backup()
+        try:
+            self.anonymous_fixture_clear()
+            self.anonymous_storage_put('banjo-play-save',json.dumps({'current':'Returning builder','players':{'Returning builder':{'levels':{'gap':{'stars':1,'energy_j':12300000}}},'Other builder':{'levels':{'gap':{'stars':3,'energy_j':28800000}}}}}))
+            first,first_link=self.anonymous_levels()
+            migrated=self.js('machineSave()')
+            self.assertEqual(len(migrated['players']),2)
+            for key in migrated['players']:self.assertEqual(str(uuid.UUID(key)),key)
+            self.assertIn('Best win: 12.3 MJ',self.js("document.querySelector('.ls-list li').textContent"))
+            self.assertNotIn('Returning builder',self.js("document.getElementById('levels-screen').textContent"))
+            self.assertNotIn('Other builder',self.js("document.getElementById('levels-screen').textContent"))
+            second=next(key for key in migrated['players'] if key!=first)
+            second_link=f'{self.base}/play?visitor={second}'
+            self.assertTrue(self.js(f"[...document.querySelectorAll('#levels-screen .previous-save')].some(a=>a.href==={json.dumps(second_link)})"))
+            self.js(f"(()=>{{const a=[...document.querySelectorAll('#levels-screen .previous-save')].find(a=>a.href==={json.dumps(second_link)});a.closest('details').open=true;a.click();}})()")
+            self.wait(f"window.machineSave?.().current==={json.dumps(second)} && document.querySelector('.ls-list li')?.textContent.includes('Best win: 28.8 MJ')",30)
+            self.assertEqual(self.anonymous_levels()[0],second,'The Previous saves link updates the remembered cookie')
+            self.assertIn('Best win: 28.8 MJ',self.js("document.querySelector('.ls-list li').textContent"))
+            self.assertNotIn('12.3 MJ',self.js("document.querySelector('.ls-list li').textContent"))
+            self.assertEqual(self.anonymous_levels(first_link)[0],first)
+            self.assertIn('Best win: 12.3 MJ',self.js("document.querySelector('.ls-list li').textContent"))
+            self.assertNotIn('28.8 MJ',self.js("document.querySelector('.ls-list li').textContent"))
+            self.press('Play level 2, Cut it down');self.wait(READY,90)
+            self.assertEqual(self.js('machineSave().current'),first)
+        finally:self.anonymous_fixture_restore(backup)
+
+    def test_return_url_and_cookie_reopen_saved_sandbox_versions(self):
+        backup=self.anonymous_fixture_backup()
+        try:
+            self.anonymous_fixture_clear()
+            visitor,link=self.anonymous_levels()
+            self.test_legitimate_switch_handle_operation_can_win_with_actual_work()
+            self.anonymous_cloud_saved()
+            self.anonymous_levels()
+            self.press('Sandbox: build anything')
+            self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+            self.press('Add New Design');self.wait(READY,90)
+            self.press('Add a marble');self.assertTrue(self.ghost()['fits'])
+            self.press('Set it down');self.wait(f'!machineGhostState() && {READY}',60)
+            self.press('Save version');self.wait('machineDesign().versions.length===1',10)
+            design=self.js('machineDesign()');placed=self.js('machinePlacements()')
+            self.anonymous_cloud_saved()
+            original_page=self.page
+            other=chrome_driver.Chrome(1280,860)
+            try:
+                self.page=other.page;self.page.send('Network.enable')
+                self.assertEqual(self.page.send('Network.getCookies',{'urls':[self.base]})['cookies'],[],'A second browser has no identity or cached save')
+                self.assertEqual(self.anonymous_levels(link)[0],visitor)
+                self.assertGreater(self.js('machineSave().players[machineSave().current].levels["easy-switch"].stars'),0,'A real native win returns on the other device')
+                self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+                self.press(f"Open design {design['name']}");self.wait(READY,90)
+                self.assertEqual(self.js('machinePlacements()'),placed)
+                self.assertEqual(self.js('machineDesign().versions'),design['versions'])
+                self.anonymous_cloud_saved()
+                self.anonymous_fixture_clear()
+                separate,_=self.anonymous_levels()
+                self.assertNotEqual(separate,visitor)
+                self.assertEqual(self.js('machineSave().players[machineSave().current].levels'),{})
+                self.assertFalse(self.js('machineSave().players[machineSave().current].sandbox?.items.length'))
+                self.assertEqual(self.anonymous_levels(link)[0],visitor)
+                self.assertGreater(self.js('machineSave().players[machineSave().current].levels["easy-switch"].stars'),0)
+            finally:
+                self.page=original_page;other.close()
+            self.anonymous_fixture_clear()
+            self.assertEqual(self.anonymous_levels(link)[0],visitor)
+            self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+            self.press(f"Open design {design['name']}");self.wait(READY,90)
+            self.assertEqual(self.js('machinePlacements()'),placed)
+            self.assertEqual(self.js('machineDesign().versions'),design['versions'])
+            self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,90)
+            self.assertEqual(self.js('machineSave().current'),visitor)
+            self.assertEqual(self.js('machineDesign().versions'),design['versions'])
+        finally:self.anonymous_fixture_restore(backup)
+
+    def test_malformed_visitor_links_and_cookie_do_not_replace_saved_identity(self):
+        backup=self.anonymous_fixture_backup()
+        try:
+            self.anonymous_fixture_clear()
+            visitor,_=self.anonymous_levels()
+            cookie=next(c for c in self.page.send('Network.getCookies',{'urls':[self.base]})['cookies'] if c['value']==visitor)
+            for bad in ('not-a-uuid','__proto__','%3Cscript%3E','00000000-0000-0000-0000-00000000000'):
+                self.assertEqual(self.anonymous_levels(f'{self.base}/play?visitor={bad}')[0],visitor)
+                self.assertEqual(len(self.js('Object.keys(machineSave().players)')),1)
+            self.page.send('Network.setCookie',{'name':cookie['name'],'value':'%E0%A4%A','url':self.base,'path':'/'})
+            self.assertEqual(self.anonymous_levels()[0],visitor)
+            self.assertEqual(len(self.js('Object.keys(machineSave().players)')),1)
+        finally:self.anonymous_fixture_restore(backup)
+
+    def test_cookie_only_recovery_keeps_saved_versions_without_orphan_previous_saves(self):
+        backup=self.anonymous_fixture_backup()
+        try:
+            self.anonymous_fixture_clear()
+            visitor,_=self.anonymous_levels()
+            self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+            self.slide('New design name','Cookie return');self.press('Add New Design');self.wait(READY,90)
+            self.press('Save version');self.wait('machineDesign().versions.length===1',10)
+            self.anonymous_cloud_saved();design=self.js('machineDesign()')
+            self.anonymous_fixture_clear(clear_cookies=False)
+            self.assertEqual(self.anonymous_levels()[0],visitor,'The server cookie alone restores the existing save')
+            self.assertEqual(self.js('Object.keys(machineSave().players)'),[visitor])
+            self.assertEqual(self.js("document.querySelectorAll('#levels-screen .previous-save').length"),0,'A temporary bootstrap ID must not become an orphan Previous save')
+            self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+            self.press('Open design Cookie return');self.wait(READY,90)
+            self.assertEqual(self.js('machineDesign().versions'),design['versions'])
+        finally:self.anonymous_fixture_restore(backup)
+
+    def test_large_unicode_design_is_acknowledged_and_recovers_in_a_fresh_browser(self):
+        backup=self.anonymous_fixture_backup()
+        try:
+            self.anonymous_fixture_clear()
+            visitor,link=self.anonymous_levels()
+            self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+            self.slide('New design name','Unicode declaration');self.press('Add New Design');self.wait(READY,90)
+            self.js("""window.unicodeSaves=[];const original=window.fetch;
+              window.fetch=async (...args)=>{let data;try{data=JSON.parse(args[1]?.body||'null');}catch{}
+                const row=data?.op==='save'&&String(args[0]).endsWith('/api/profile')
+                  ?{characters:args[1].body.length,bytes:new TextEncoder().encode(args[1].body).byteLength,keepalive:args[1].keepalive}:null;
+                if(row)unicodeSaves.push(row);
+                const response=await original(...args);if(row)row.status=response.status;return response;};
+              document.getElementById('machine-data').open=true;
+              const spec=JSON.parse(document.getElementById('spec').value);spec.description='水'.repeat(12000);
+              document.getElementById('spec').value=JSON.stringify(spec);""")
+            self.press('Build from this')
+            self.wait(f"machineDesign().draft.base?.description==='水'.repeat(12000) && {READY}",60)
+            self.press('Save version');self.wait('machineDesign().versions.length===1',10)
+            self.anonymous_cloud_saved()
+            requests=self.js('unicodeSaves')
+            large=[r for r in requests if r['characters']<60000 and r['bytes']>65536]
+            self.assertTrue(large,requests)
+            self.assertTrue(all(r['keepalive'] is False and r.get('status')==200 for r in large),large)
+            self.assertGreater(self.js('machineProfileState().revision'),0)
+            original_page=self.page;other=chrome_driver.Chrome(1280,860)
+            try:
+                self.page=other.page;self.page.send('Network.enable')
+                self.assertEqual(self.anonymous_levels(link)[0],visitor)
+                self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+                self.press('Open design Unicode declaration');self.wait(READY,90)
+                self.assertTrue(self.js("machineDesign().draft.base.description==='水'.repeat(12000)"))
+                self.assertTrue(self.js("machineDesign().versions[0].draft.base.description==='水'.repeat(12000)"))
+            finally:self.page=original_page;other.close()
+        finally:self.anonymous_fixture_restore(backup)
 
     def test_the_free_build_has_every_piece_keeps_a_build_and_sets_out_the_example(self):
         # The levels screen's free build: every piece, no count, no goal. A
@@ -1372,7 +1552,9 @@ class Puzzles(unittest.TestCase):
         self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
         self.wait("document.getElementById('sandbox-screen') && !document.getElementById('sandbox-screen').hidden", 60)
         old = self.js("localStorage.getItem('banjo-play-save')")
-        self.js("localStorage.setItem('banjo-play-save', JSON.stringify({current:'Sandbox test',players:{'Sandbox test':{levels:{},free:{placements:[{piece:'marble',x_m:0,z_m:0}]}}}}))")
+        cookies=self.page.send('Network.getCookies',{'urls':[self.base]})['cookies']
+        self.anonymous_fixture_clear()
+        self.anonymous_storage_put('banjo-play-save',json.dumps({'current':'Sandbox test','players':{'Sandbox test':{'levels':{},'free':{'placements':[{'piece':'marble','x_m':0,'z_m':0}]}}}}))
         try:
             self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
             self.wait("document.getElementById('sandbox-screen') && !document.getElementById('sandbox-screen').hidden", 60)
@@ -1404,10 +1586,27 @@ class Puzzles(unittest.TestCase):
             self.wait(f"window.machinePlacements().length === 1 && {READY}", 60)
             self.assertEqual(self.js("document.getElementById('title').textContent"), 'My free build')
             before = self.js('window.machineDesign().versions.length')
+            self.anonymous_cloud_saved()
+            revision = self.js('machineProfileState().revision')
             self.js("window.realStore = Storage.prototype.setItem; Storage.prototype.setItem = () => { throw new Error('storage full'); }")
             self.press('Save version')
-            self.wait("/Version not saved/.test(document.getElementById('design-status').textContent)", 10)
-            self.assertEqual(self.js('window.machineDesign().versions.length'), before)
+            self.wait("/Version .* saved/.test(document.getElementById('design-status').textContent)", 10)
+            self.anonymous_cloud_saved()
+            self.assertEqual(self.js('window.machineDesign().versions.length'), before + 1)
+            self.assertGreater(self.js('machineProfileState().revision'), revision,'The server acknowledged a new version despite a full local cache')
+            kept = self.js('machineDesign()')
+            visitor = self.js('machineSave().current')
+            original_page=self.page
+            other=chrome_driver.Chrome(1280,860)
+            try:
+                self.page=other.page;self.page.send('Network.enable')
+                self.assertEqual(self.anonymous_levels(f'{self.base}/play?visitor={visitor}')[0],visitor)
+                self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+                self.press('Open design My free build');self.wait(READY,90)
+                self.assertEqual(self.js('machineDesign().versions'),kept['versions'])
+                self.assertEqual(self.js('machinePlacements()'),first)
+            finally:
+                self.page=original_page;other.close()
             self.js('Storage.prototype.setItem = window.realStore')
             # Saving a refused setup must not create a green checkpoint.
             self.js("window.confirm = () => true; document.getElementById('design-versions').open = false")
@@ -1416,9 +1615,7 @@ class Puzzles(unittest.TestCase):
             self.press('Save version')
             self.assertIn('Set your plank down first', self.js("document.getElementById('verdict').textContent"))
         finally:
-            self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
-            self.wait("document.getElementById('sandbox-screen') && !document.getElementById('sandbox-screen').hidden", 60)
-            self.js(f"localStorage.setItem('banjo-play-save', {json.dumps(old)})")
+            self.anonymous_fixture_restore({'storage':{'banjo-play-save':old} if old is not None else {},'cookies':cookies})
 
     def test_sandbox_chain_keeps_readings_tray_additions_and_base_in_shared_versions(self):
         self.page.send('Page.navigate', {'url': f'{self.base}/machine'})

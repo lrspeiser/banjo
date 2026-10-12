@@ -4,6 +4,65 @@ October 11, 2026. Open `/play` to choose eight chain-reaction levels or twenty-o
 
 ## Expanded sandbox and easy challenges
 
+**Anonymous saves (October 11, 2026).** The Levels and Sandbox screens offer
+**Your return link** and **Copy return link**, with no player-name entry.
+The URL is `/play?visitor=<random UUIDv4>`; a one-year HttpOnly, SameSite=Lax
+cookie remembers the selected save (Secure on the public site). Keep the link
+private: possession grants access to its progress and designs. Shared challenge
+and design links do not contain this identifier.
+
+`POST /api/profile` opens the save or writes a numbered revision to SQLite.
+Progress, earned tools, recent challenges, drafts and the latest 30 versions
+travel together. Browser storage is a cache and backup of unsent changes;
+the server is authoritative for a clean cache. Old named browser profiles
+migrate to distinct anonymous saves, retaining their progress and versions;
+**Previous saves** offers anonymous links to the other migrated profiles.
+Existing free-build and saved-design URLs continue to use the selected cookie.
+
+Drafts debounce writes by 250 ms. Save version confirms success only after a
+server acknowledgement; browser storage being full does not prevent a cloud
+save. A failed request leaves the draft and dirty cache available and reports
+that it is not synced. Saving again explicitly retries. Concurrent device saves
+use revision comparison: progress is merged, independent designs are retained,
+and conflicting edits to one design keep both complete histories, with the
+local design becoming a **recovered copy**. This is conflict recovery on writes,
+not a live multiplayer editor. A page closes its native world independently.
+
+The database path is `BANJO_PROFILE_DB` (the image defaults to
+`/data/banjo/profiles.sqlite3`). The [deployment guide](deploy.md) records the
+pending public persistent-disk requirement. Local storage survives a server
+restart; an unmounted Render filesystem does not survive a deployment, and the
+page explicitly reports temporary storage. Public durability is not yet
+verified. These changes do not alter any engine law, goal or score tolerance.
+
+Anonymous-save verification uses the unchanged native SHA-256
+`807ae9c34f0516a0d0dbf588400451b865083043d614cd1aab8040140c830f87`.
+The five registered storage, HTTP, identity, sync and client-geometry CTests
+pass in 4.96 s (8 SQLite, 14 HTTP, 4 identity and 11 sync checks, plus the
+existing geometry suite). The full Chrome suite passes 53/53 in 265.909 s.
+Two added browser regressions bring the registered suite to 55: cookie-only
+recovery after clearing the cache, and a Unicode design larger than 64 KiB
+saved and recovered in a fresh browser. Both pass in the scoped final run;
+the complete 55-test suite has not been rerun.
+
+One later focused run passes 10/11 and records a Chrome
+`net::ERR_NO_BUFFER_SPACE` on `/api/machine` during named-save migration.
+The same migration check passes separately in 1.978 s without code, timeout
+or request-retry changes. Subsequent socket and memory counts do not establish
+the failure's cause. This failed run remains recorded. Browser checks also
+confirm a real earned win and immutable version recovery with no prior cookie
+or cache, and successful server saves when browser storage rejects writes.
+
+The preceding published `ca8d68b1` Linux CI passes 149/150 CTests; its only
+failed target is the browser suite (48/50), reporting an enabled battery
+terminal before Run and a covered solar-output target. New terminal buttons
+now start disabled until positioned, and a power-meter update immediately
+repositions terminal cards before the next animation frame. This closes
+observed readiness gaps without claiming to prove the earlier timing cause.
+The battery and exact moving solar-input checks pass with unchanged click,
+contact and goal assertions on desktop and both phone orientations; the latter
+passes separately in 4.862 s. A new Linux CI result is not yet available.
+
 **Manual switches are operated on the field.** Drag the rocker itself or its
 44 px **Drag handle** label; a six-pixel movement starts or resumes the whole
 simulation and applies force to the native loose body. Its actual hinge angle
@@ -280,7 +339,7 @@ Checked on October 11, 2026: all 29 Chrome browser tests passed in 112.5 seconds
 - **Run it** is in the control panel alongside Set up again and Pull on desktop. On phones, Run and **Reset** stay visible beside the section tabs; Pull, Attach and the sandbox's speed/follow controls are in **Tools and speed** within Controls. The prediction key stays over the scene. Run commits any valid new piece or adjustment at its current position (one Undo step), builds the machine afresh and plays it at real time; while it plays it is Pause, then Continue, and after the run Run again. Reset (Set up again on desktop) puts the level back at its start with your pieces. When the goal happens, a card just below the clock says **Level complete!** with the stars, **Energy details** and the next actions, and the world stops a moment later; the card sits at the top of the scene so what the machine did stays in sight below it (the details start folded away; opening them shows the total, the run and each piece on desktop and phone, with the card scrolling within the scene when needed). A first win with a tool -- a plank, a knife, a cannon, a steam engine, a ramp, a mirror, a solar panel, a block and tackle -- says **Achievement Unlocked** instead, and which tool; each player's tools are kept with their progress (a player's wins from before tools were counted bring the tools of the levels won). After the last level it says so and offers level 1 again. When time runs out without the goal, the card says so and offers **Start over** (the level as it began, no pieces) or **Keep my pieces** (back to the start with them, to move or change): running the same pieces again would only do the same thing.
 - **Energy: win on as little as you can.** A win is scored by the energy it took, two kinds, both real: making your pieces (each part's mass, from the engine's densities, times its material's embodied energy -- typical cradle-to-gate values from ICE, the Inventory of Carbon and Energy: oak 10.4 MJ/kg, iron 25, aluminium 155, glass 15, concrete 0.95; ice is the heat taken out to freeze it), and what came into the machine during the run, each once: what its batteries gave, as the engine measured it (a coil's heat, a laser's light, a motor's work all come out of a battery and are counted there, not again where they end up; the sun's is free), fuel burned in its heaters (level 4's firebox: its 12 kW for as long as the run has gone), and the powder in its charges at 2.8 MJ/kg. Making the pieces dwarfs the run (a 0.7 m oak plank is 30.6 MJ; a gram of powder 2.8 kJ), so smaller pieces and cheaper materials count most: on level 8 an iron counterweight, heavier, takes less energy to make than an aluminium one. Each level's par (`par_energy_j`) is its own solution's energy, measured, rounded up to three figures.
 - **Stars**, from what the engine measured: one for the goal in time, a second for winning on no more than a quarter more energy than par, a third for par or less. If the chat placed the pieces, one star at most. The win card offers Next level, **Play again** (back to the start with your pieces, to win on less) and All levels. Its **Energy details** says what it took (pieces and run), against par and your best. Checked in Chrome at 1280 × 860, 390 × 844 and 844 × 390: the details open and close, the piece breakdown is visible when open, and the next actions are reachable inside the scene (tests/machine_game_browser_tests.py, October 11, 2026).
-- **The levels screen** (`/play` on its own, the header's Levels, or All levels): every level with its stars and your best win's energy against par, how many you have won, and which is next. Opening the site's root redirects to `/play` before serving a page. The initial HTML hides the editor while loading; browsing levels keeps `/play` and creates no live machine until you choose a level. How to play opens on demand from the header link. Direct `/play?level=…` and saved sandbox design links still open their setups. Checked with the page module blocked during initial load and the actual API requests recorded (Chrome, October 11, 2026); the levels screen fits desktop and phone portrait/landscape without horizontal overflow. **Players**: each name keeps its own progress -- stars, least energy, the last level played -- in this browser; add a player there and pick who is playing.
+- **The levels screen** (`/play` on its own, the header's Levels, or All levels): every level with its stars and your best win's energy against par, how many you have won, and which is next. Opening the site's root redirects to `/play` before serving a page. The initial HTML hides the editor while loading; browsing levels keeps `/play` and creates no live machine until you choose a level. How to play opens on demand from the header link. Direct `/play?level=…` and saved sandbox design links still open their setups. Checked with the page module blocked during initial load and the actual API requests recorded (Chrome, October 11, 2026); the levels screen fits desktop and phone portrait/landscape without horizontal overflow. **Your return link** opens your anonymous progress -- stars, least energy and the last level played -- and designs on another device. A cookie remembers the selected save; no player name is requested.
 - **What the game page leaves out.** The sandbox (`/machine`) has the engine's own controls, and the game page hides them: the speed (a level plays at real time), Follow (the camera follows what moves), Path (the path is always shown), the list of levels (they have their own screen), and the engine's readings (stations, measurements, the list of what happened). The server's reliability check, the `trial` op (a machine run three times with every loose part nudged by up to 1.5 mm), is still there for scripts and tests, but has no button.
 
 Drag-only placement checked October 11, 2026: the full 39-test Chrome suite passed in 193.1 s. A final four-test rerun passed in 8.8 s after excluding fixed-port power cables from object dragging and adding the second-finger Pull release test (40 browser regressions in total). Checks cover clicks and 5 px jitter leaving all placement knobs unchanged, 7 px near-piece drags resuming Move, background/right/middle/Ctrl camera drags, zoom while holding a piece, two-finger release quarantine, touch cancellation, snapped track endpoints, unchanged gap wins and energy, explicit solar wiring, saved versions and 44 px unobstructed controls at 1280×860, 390×844 and 844×390. Wire and power-cable previews stay attached to their named sockets; dragging near them turns the camera. The Pull regression records an active force request followed by a zero-force release before camera movement. The client view CTest, JavaScript syntax check and all 269 source registrations passed. This changes client gestures only, using engine SHA-256 569a441595274e13128e1b8f06ff54d392232409b312d2089a77c2451315c976; it changes no native physics, material model, timestep, goal or conservation tolerance.
@@ -315,7 +374,7 @@ The header's **Sandbox** link and the levels screen's Sandbox card open `/machin
 
 **Choose a piece.** **Add a piece**, attached to the scene beside Run it, opens a full-screen library with large thumbnails drawn from each piece's actual parts, descriptions, search and category filters. Choose a card to return to the same design with that piece as a ghost, ready to place. **Back to sandbox** or Escape closes the library without adding anything. Only the cards scroll: search and Back stay visible. Keyboard focus stays inside the library and returns to the scene when it closes. Puzzle trays of four pieces or fewer keep their individual buttons in the control panel; larger puzzle trays use the same library with remaining counts and **Back to puzzle**. Attach remains beside the scene. Checked on October 11, 2026 (`tests/machine_game_browser_tests.py`): search, category filters, no matches, closing without changing the setup, selecting and placing a piece, running and resetting the resulting machine at 1280 × 860, 390 × 844 and 844 × 390. No engine or physics model changed.
 
-**Saving and reopening.** Drafts are kept as you change the setup, separately for each named design and player in this browser. **Save version** validates the setup and keeps a checkpoint; **Saved versions** restores one of the latest 30 checkpoints. Restoring a different version also checkpoints the previous draft, so you can return to it. **All designs** returns to the library and stops the current simulation. Reloading a design's URL reopens its draft. Saved setups contain initial declarations and placements, not bodies' positions after running. Existing free builds migrate into **My free build**; old `/play?level=free` links reopen the last design. Browser storage failures are reported; use a shared design link to keep a copy elsewhere. These saves do not sync across devices.
+**Saving and reopening.** Drafts sync as you change the setup, separately for each design in your anonymous save. **Save version** validates the setup and keeps a checkpoint; **Saved versions** restores one of the latest 30 checkpoints. Restoring a different version also checkpoints the previous draft, so you can return to it. **All designs** returns to the library and stops the current simulation. Reloading a design's URL reopens its draft. Saved setups contain initial declarations and placements, not bodies' positions after running. Existing free builds migrate into **My free build**; old `/play?level=free` links reopen the last design. Server save failures are reported and unsent changes remain in the browser cache when available; use a shared design link to export a copy. Your private return link restores server saves on another device. The save-status message distinguishes durable storage from an unmounted public filesystem.
 
 **The machine as data** edits the base declaration, before tray pieces are added; both are kept together in saves and shared links. A base can contain its own stations, which remain visible under **Engine readings**. Its explicit anchors and kit supports are retained; automatic stands are added to tray pieces only. Names starting with `your ` belong to tray pieces and are refused in a base. A custom base cannot replace a puzzle level. **Set out the example** replaces the setup with Gate and split. **Clear the table** removes both the base and tray pieces; saved versions remain and Undo restores the cleared setup.
 

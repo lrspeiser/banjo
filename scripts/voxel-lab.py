@@ -3,21 +3,25 @@ and the machine sandbox (/machine), each a live engine world (scripts/machine_wo
 with the chat that helps (scripts/machine_chat.py). Deployed as `--site game --public`."""
 import os,re,sys
 from types import SimpleNamespace
-import argparse, hashlib, json, subprocess, threading, time
+import argparse, hashlib, json, sqlite3, subprocess, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 # Its own folder, for when another program loads this file as a module.
 if str(ROOT/'scripts') not in sys.path:sys.path.insert(0,str(ROOT/'scripts'))
 import access_gate
+import anonymous_profiles
+from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 # The pages and what they load. /play is the game; /machine is the sandbox it is built on.
 ASSETS={'/play':'client/voxel-lab/machine.html','/machine':'client/voxel-lab/machine.html',
  '/machine.js':'client/voxel-lab/machine.js','/machine.css':'client/voxel-lab/machine.css',
  '/machine-view.mjs':'client/voxel-lab/machine-view.mjs','/machine-default.json':'client/voxel-lab/machine-default.json',
+ '/anonymous-profile.mjs':'client/voxel-lab/anonymous-profile.mjs',
+ '/profile-sync.mjs':'client/voxel-lab/profile-sync.mjs',
  '/three.module.js':'client/vendor/three.module.js','/three.core.js':'client/vendor/three.core.js'}
 GAME_ROUTES=set(ASSETS)|{'/api/checkpoint'}
-GAME_POSTS={'/login','/api/machine'}
+GAME_POSTS={'/login','/api/machine','/api/profile'}
 
 def public_hostnames(*values):
  """Explicit hostnames only: the existing setting and additional aliases."""
@@ -61,7 +65,7 @@ def repository_state():
 class Server(ThreadingHTTPServer):
  request_queue_size=128
  daemon_threads=True
- def __init__(self,address,native,logs,password=None,public_host=None,site='all',public=False,public_hosts=None):
+ def __init__(self,address,native,logs,password=None,public_host=None,site='all',public=False,public_hosts=None,profile_db=None):
   # Public: deliberately open to anyone, with no password -- only for the
   # game (--site game), where the chat and the trials are rationed instead.
   if public and site!='game':raise ValueError('only the game (--site game) may be public with no password')
@@ -82,6 +86,9 @@ class Server(ThreadingHTTPServer):
   self.started_revision,_=repository_state()
   from machine_world import MachineHost,engine_path
   self.machines=MachineHost(engine_path(native),logs/'machines');self.chat_busy=threading.BoundedSemaphore(2)
+  self.profiles=anonymous_profiles.ProfileStore(profile_db or os.environ.get('BANJO_PROFILE_DB') or logs.parent/'profiles.sqlite3')
+  self.profile_creations=Allowance(20,2000,'new visitor profiles')
+  self.profile_requests=Allowance(6000,100000,'profile requests')
  def checkpoint_status(self):
   # What the page's header shows: the code's revision, and whether this
   # server is still running an older one.
@@ -89,9 +96,11 @@ class Server(ThreadingHTTPServer):
   return {'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,
           'restart_pending':revision!=self.started_revision,'engine_sha256':hashlib.sha256(self.native.read_bytes()).hexdigest()}
 class Handler(BaseHTTPRequestHandler):
- def send(self,status,body,kind='application/json'):
+ def send(self,status,body,kind='application/json',headers=None):
   try:
-   self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; frame-ancestors 'none'");self.end_headers();self.wfile.write(body)
+   self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; frame-ancestors 'none'")
+   for key,value in (headers or {}).items():self.send_header(key,value)
+   self.end_headers();self.wfile.write(body)
   except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):
    # Navigation can close a preview's connection while the engine finishes.
    self.close_connection=True
@@ -115,7 +124,7 @@ class Handler(BaseHTTPRequestHandler):
   path=self.path.split('?')[0]
   # The game is the whole site: its front door is the levels.
   if path in ('/','/index.html'):
-   self.send_response(303);self.send_header('Location','/play');self.end_headers();return
+   self.send_response(303);self.send_header('Location','/play');self.send_header('Referrer-Policy','no-referrer');self.end_headers();return
   if path not in GAME_ROUTES:self.send(404,b'{}');return
   if path=='/api/checkpoint':
    try:self.send(200,json.dumps(self.server.checkpoint_status()).encode())
@@ -128,7 +137,9 @@ class Handler(BaseHTTPRequestHandler):
    # Consume the bounded body before any refusal. Closing a socket with an
    # unread POST can reset the client connection instead of delivering 401/400.
    length=int(self.headers.get('Content-Length','0'))
-   if not 0<=length<=2_010_000:raise ValueError('Request size invalid')
+   limit=anonymous_profiles.MAX_REQUEST_BYTES if self.path=='/api/profile' else 2_010_000
+   if not 0<=length<=limit:
+    self.close_connection=True;self.send(413,b'{"ok":false,"error":"Request size invalid"}');return
    self.connection.settimeout(30.)
    body=self.rfile.read(length)
    if not self.host_allowed() or not self.origin_allowed():raise ValueError('Host or cross-origin request refused')
@@ -138,6 +149,7 @@ class Handler(BaseHTTPRequestHandler):
    elif access_gate.answered(self,'POST'):return
    if self.path not in GAME_POSTS:self.send(404,b'{}');return
    if self.path=='/api/machine':self.machine(body);return
+   if self.path=='/api/profile':self.profile(body);return
    raise ValueError('Unknown endpoint')
   except (ValueError,TypeError,KeyError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def visitor(self):
@@ -145,6 +157,40 @@ class Handler(BaseHTTPRequestHandler):
   # visitor is the first address it forwarded; otherwise the socket's.
   forwarded=self.headers.get('X-Forwarded-For','') if self.server.public else ''
   return forwarded.split(',')[0].strip() or self.client_address[0]
+ def profile(self,body):
+  try:
+   def rate(allowance):
+    try:allowance.take(self.visitor())
+    except ValueError as error:raise anonymous_profiles.ProfileRateLimited(str(error)) from None
+   rate(self.server.profile_requests)
+   data=json.loads(body,parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Nonfinite JSON is invalid')))
+   if not isinstance(data,dict):raise ValueError('Profile request must be a JSON object')
+   op=data.get('op');cookie=None
+   if op=='open':
+    jar=SimpleCookie()
+    try:jar.load(self.headers.get('Cookie',''))
+    except Exception:pass
+    if anonymous_profiles.COOKIE_NAME in jar:
+     try:cookie=anonymous_profiles.visitor_id(jar[anonymous_profiles.COOKIE_NAME].value)
+     except anonymous_profiles.ProfileError:pass
+    reply=self.server.profiles.open(data.get('visitor'),data.get('cached_visitor'),cookie,
+      before_create=lambda:rate(self.server.profile_creations))
+   elif op=='create':reply=self.server.profiles.create(data.get('visitor'),data.get('profile'),before_create=lambda:rate(self.server.profile_creations))
+   elif op=='save':reply=self.server.profiles.save(data.get('visitor'),data.get('revision'),data.get('profile'))
+   else:raise ValueError('Profile operation is open, create or save')
+   reply.update(ok=True,storage={'persistent':anonymous_profiles.storage_persistent(self.server.profiles.path)})
+   headers={}
+   if op=='open':
+    host=(urlsplit('//'+self.headers.get('Host','')).hostname or '').rstrip('.')
+    secure=(self.server.public and host not in access_gate.LOOPBACK) or self.headers.get('X-Forwarded-Proto','').split(',')[0].strip().lower()=='https'
+    headers['Set-Cookie']=f'{anonymous_profiles.COOKIE_NAME}={reply["visitor"]}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly'+('; Secure' if secure else '')
+   self.send(200,json.dumps(reply,separators=(',',':'),allow_nan=False,ensure_ascii=False).encode(),headers=headers)
+  except anonymous_profiles.ProfileError as error:
+   self.send(error.status,json.dumps(dict(ok=False,error=str(error),**error.data),separators=(',',':'),ensure_ascii=False).encode())
+  except (ValueError,TypeError,KeyError,RecursionError,UnicodeError) as error:
+   self.send(400,json.dumps({'ok':False,'error':'Invalid profile request'}).encode())
+  except (OSError, sqlite3.Error):
+   self.send(503,b'{"ok":false,"error":"Profile storage is unavailable; your local draft was kept"}')
  def machine(self,body):
   # One live machine world per session; every response is the engine's own
   # measured state. A refused declaration answers with its problems in words.
