@@ -493,8 +493,14 @@ body.panel-tabs .control-panel .ghost-bar>.head>.exact-value{width:100px;flex:no
 body.panel-tabs #control-panel:has(.ghost-bar:not([hidden])){display:flex;flex-direction:column;overflow:hidden}
 body.panel-tabs #control-panel:has(.ghost-bar:not([hidden]))>.scene-tray{display:none}
 body.panel-tabs .control-panel .ghost-bar{flex:1;min-height:0;height:100%;gap:0}
-.ghost-fields{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:4px;padding-bottom:6px}
+.ghost-fields{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:4px;padding-bottom:6px;scroll-padding-block:8px}
 .ghost-fields>*{flex-shrink:0}
+.grid-snap-row{display:flex;align-items:center;gap:10px;min-height:44px;font-size:12px}
+.grid-snap-row button{min-width:120px;min-height:44px;padding:6px 10px;font:13px system-ui;color:#e7f2f8;background:#294c60;border:1px solid #63899d;border-radius:6px;cursor:pointer}
+.grid-snap-row button[aria-pressed=true]{border-color:#ffcf59;background:#4c472b}
+.grid-snap-row button:focus-visible{outline:3px solid #9fdcff;outline-offset:-3px}
+.grid-snap-row output{color:#b9cbd6;overflow-wrap:anywhere}
+.grid-snap-row output.aligned{color:#ffcf59}
 body.panel-tabs .ghost-fields>.head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;margin:0;font-size:14px;font-weight:600}
 body.panel-tabs .ghost-fields>.head>.exact-value{width:100px;flex:none}
 body.panel-tabs .ghost-fields>.knob-row{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:6px;width:100%}

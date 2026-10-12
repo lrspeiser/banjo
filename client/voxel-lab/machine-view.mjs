@@ -2,6 +2,24 @@
 // merge the engine's frames and choose colours and camera targets; none of
 // them moves a body or predicts anything.
 
+// Editing assistance changes a proposed placement, never a simulated body.
+export const PLACEMENT_GRID = Object.freeze({size_m:40, fine_size_m:10, step_m:.05, major_step_m:.5, capture_m:.008, release_m:.012});
+export function snapGroundPoint(point, {enabled=true, previous={}}={}) {
+  const result={point:{...point},locks:{x:null,z:null}};
+  if (!enabled) return result;
+  for (const axis of ['x','z']) {
+    const value=point[axis];
+    if (!Number.isFinite(value)) continue;
+    const held=previous[axis];
+    const nearest=Number((Math.round(value/PLACEMENT_GRID.step_m)*PLACEMENT_GRID.step_m).toFixed(6));
+    // Slight hysteresis avoids flickering between free motion and alignment.
+    const snapped=Number.isFinite(held)&&Math.abs(value-held)<=PLACEMENT_GRID.release_m+1e-12 ? held
+      : Math.abs(value-nearest)<=PLACEMENT_GRID.capture_m+1e-12 ? nearest : null;
+    if (snapped!==null) {result.point[axis]=snapped;result.locks[axis]=snapped;}
+  }
+  return result;
+}
+
 // Apply one frame from /api/machine to the page's copy of the world. A full
 // frame replaces everything; otherwise only the named bodies change, and a
 // piece keeps its cells until the engine sends new ones for a new revision.

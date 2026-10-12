@@ -2405,6 +2405,95 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Move'); self.press('Cancel')
                 self.assertTrue(self.js("document.getElementById('scene-mode').hidden"))
 
+    def test_fine_ground_grid_gently_snaps_dragging_but_precision_stays_free(self):
+        for width,height in ((1280,860),(390,844),(844,390),(320,568)):
+            with self.subTest(viewport=(width,height)):
+                self.open('cut',width,height,phone=width!=1280)
+                self.press('Add a knife'); self.ghost()
+                if not self.js('window.machinePlacementGrid().enabled'):
+                    self.click_visible('Snap to grid')
+                # Keep the grabbed knife in view before testing tiny moves;
+                # an off-screen press is not a piece drag on a narrow phone.
+                self.slide('Pivot x of your knife 1',.1)
+                self.slide('Pivot z of your knife 1',.1)
+                self.ghost()
+                self.js('window.machineView({azimuth:0,elevation:.8,distance:1.4,at:[.2,1,.2]})')
+                self.wait('window.machineCamera().settled',20)
+                grid=self.js('window.machinePlacementGrid()')
+                self.assertEqual(grid['step_m'],.05);self.assertEqual(grid['major_step_m'],.5)
+                self.assertEqual(grid['fine_vertices'],804);self.assertEqual(grid['major_vertices'],324)
+                self.assertTrue(grid['visible'] and grid['fine_opacity']>0,grid)
+                before=self.ghost()['p']
+                snapped=self.drag_ghost_to(.307,.207,touch=width!=1280)['p']
+                self.assertAlmostEqual(snapped['x_m'],.3,delta=1e-6)
+                self.assertAlmostEqual(snapped['z_m'],.2,delta=1e-6)
+                for key,value in before.items():
+                    if key not in ('x_m','z_m'):
+                        self.assertEqual(snapped[key],value,'ground snapping cannot change height, angle or dimensions')
+                self.wait("window.machinePlacementGrid().marker",5)
+                self.assertEqual(self.js('window.machinePlacementGrid().aligned'),['x','z'])
+                self.assertIn('aligned',self.js("document.getElementById('grid-snap-status').textContent"))
+                # Outside the short release band the drag is free, not forced
+                # to a crossing. The knife retains its 1cm x / 5mm z steps.
+                released=self.drag_ghost_to(.327,.237,touch=width!=1280)['p']
+                self.assertAlmostEqual(released['x_m'],.33,delta=1e-6)
+                self.assertAlmostEqual(released['z_m'],.235,delta=1e-6)
+                self.assertEqual(self.js('window.machinePlacementGrid().aligned'),[])
+                self.click_visible('Snap to grid')
+                self.assertEqual(self.ghost()['p'],released,'turning snapping off cannot reposition the piece')
+                free=self.drag_ghost_to(.407,.307,touch=width!=1280)['p']
+                self.assertAlmostEqual(free['x_m'],.41,delta=1e-6)
+                self.assertAlmostEqual(free['z_m'],.305,delta=1e-6)
+                self.assertFalse(self.js('window.machinePlacementGrid().enabled'))
+                self.click_visible('Snap to grid')
+                self.assertEqual(self.ghost()['p'],free,'turning snapping on is not a placement command')
+                if width==1280:
+                    bottom=self.js('window.machineGhostScreen().bottom')
+                    self.drag(self.screen_point([free['x_m'],bottom,free['z_m']]),self.screen_point([.507,bottom,.407]),modifiers=1)
+                    bypass=self.ghost()['p']
+                    self.assertAlmostEqual(bypass['x_m'],.51,delta=1e-6)
+                    self.assertAlmostEqual(bypass['z_m'],.405,delta=1e-6)
+                    self.assertEqual(self.js('window.machinePlacementGrid().aligned'),[],'Alt bypasses snapping for this drag')
+                self.slide('Pivot x of your knife 1',.31)
+                self.slide('Pivot z of your knife 1',.23)
+                precise=self.ghost()['p']
+                self.assertEqual((precise['x_m'],precise['z_m']),(.31,.23),'precision controls do not round to the grid')
+                self.assertEqual(self.js('window.machinePlacementGrid().aligned'),[])
+                self.click_visible('Snap to grid')
+                self.press('Set it down');self.wait(READY,60)
+                self.assertEqual(self.js('window.machinePlacements()[0]'),precise)
+                self.press('Pick up your knife 1')
+                self.assertEqual(self.ghost()['p'],precise,'picking up an existing piece must not quantize its position')
+                self.press('Cancel')
+                self.page.send('Page.reload',{})
+                self.wait(f"{READY} && typeof window.machinePlacementGrid==='function'",60)
+                self.assertFalse(self.js('window.machinePlacementGrid().enabled'),'the free-placement preference survives reload')
+
+        # Saved sandbox declarations and version restores stay exact even
+        # when grid assistance is enabled. Ordinary levels reset on reload.
+        self.page.send('Page.navigate',{'url':self.base+'/machine'})
+        self.wait("document.getElementById('sandbox-screen')?.hidden===false",60)
+        self.create_design('Fine placement')
+        self.press('Add a knife');self.ghost()
+        self.click_visible('Snap to grid')
+        self.slide('Position along (m) of your knife 1',.31)
+        self.slide('Position across (m) of your knife 1',.23)
+        kept=self.ghost()['p']
+        self.press('Set it down');self.wait(f"!window.machineGhostState() && {READY}",60)
+        self.press('Save version')
+        self.wait("/Version 1 saved/.test(document.getElementById('design-status').textContent)",10)
+        self.anonymous_cloud_saved()
+        self.page.send('Page.reload',{})
+        self.wait(f"{READY} && window.machinePlacements().length===1",60)
+        self.assertEqual(self.js('window.machinePlacements()[0]'),kept)
+        self.press('Pick up your knife 1');self.ghost()
+        self.slide('Position along (m) of your knife 1',.43)
+        self.ghost()
+        self.press('Set it down');self.wait(f"!window.machineGhostState() && {READY}",60)
+        self.js("document.getElementById('design-versions').open=true;document.getElementById('version-pick').value='1'")
+        self.press('Restore version');self.wait(f"window.machinePlacements()[0]?.x_m===.31 && {READY}",60)
+        self.assertEqual(self.js('window.machinePlacements()[0]'),kept)
+
     def test_scene_clicks_and_subthreshold_drags_do_not_relocate_and_background_drags_rotate(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

@@ -2,6 +2,49 @@
 
 October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-one freely selectable piece lessons. Each level has a fixed machine, a goal and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+## Fine grid and gentle placement assistance
+
+October 12, 2026: the flat ground shows 5 cm subdivisions with stronger 50 cm
+lines. The minor grid is a 10 m patch centered on the current view, moved only
+by whole major squares so its world coordinates do not shift. Its edges fade
+over the outer 2 m; fine lines also fade with camera distance, disappearing in
+overviews at 12 m. The original 40 m ground/major grid remains. The patch uses
+804 line vertices and the major grid 324, in two line batches rather than the
+previous single 324-vertex grid. This bounds visual density and rendering work
+instead of drawing tiny lines across the entire distant ground.
+
+**Snap to grid**, in the selected piece's Controls module, starts enabled and
+remembers the browser's preference. A real drag catches each x/z grid line
+within 8 mm and holds it until the pointer leaves a 12 mm release band. This
+small hysteresis avoids chatter; positions farther from a line move freely.
+**Alt+drag** temporarily bypasses ground snapping on a computer. A small gold
+ground mark and **X / Z aligned** feedback identify the placement point and
+aligned axes. Connector joining still takes precedence; a connector adjustment
+clears grid feedback if it changes x/z. No ground snapping is applied where
+the flat grid is absent, or to wire/power-cable endpoints.
+
+This edits only proposed x/z placement knobs. It does not quantize height,
+angles, dimensions, exact controls, arrow movements, existing placements or
+saved versions, and it never moves a simulated body. A tap, a drag below the
+existing 6 px threshold, camera gestures, and zoom with a stationary held piece
+retain their previous behavior. The precision-fields scroll area reserves
+8 px at its edges so revealed controls clear the Set down footer.
+
+Measured with the unchanged native SHA-256
+`807ae9c34f0516a0d0dbf588400451b865083043d614cd1aab8040140c830f87`:
+seven targeted Chrome regressions pass in 44.92 s, covering gentle drag capture
+and release at 1280×860, 390×844, 844×390 and 320×568; disabled snapping;
+unchanged non-position knobs; precision steps; preference reload; exact saved
+sandbox versions/restoration; taps, camera zoom, connector joins, place-and-run
+and phone tabs/rotation. Final grid/Alt override, precision footer and both
+reading-overlay checks pass 4/4 in 27.80 s after the rendering fade and updated
+help/Recent Changes text. Manual phone portrait/landscape and desktop checks
+verify visible controls and grid contrast; the page reports no shader errors.
+The registered client-view test and all 269 source registrations pass. No native
+source, material, timestep, goal, energy or conservation tolerance changed;
+this is placement/layout assistance, not new physical validation. Previously
+recorded broader-browser/CI failures are not resolved by these checks.
+
 ## Recent Changes in the top navigation
 
 October 12, 2026: **Recent Changes** opens dated, player-friendly notes from

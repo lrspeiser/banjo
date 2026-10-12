@@ -58,6 +58,10 @@ connect the wheel's drum rope to a load to lift it. Pieces snap
 together, can be joined with glue, a pin, a string or a spring, and a build can be shared
 as a link. **Add a piece** opens a full-screen library with large thumbnails,
 search and categories; choosing a piece returns to the scene to place it.
+The ground grid has 5 cm squares and stronger 50 cm lines. **Snap to grid**
+gently aligns a drag near a line; turn it off or hold Alt to bypass the grid.
+Precision controls and movement arrows keep their smaller steps, and saved
+positions are never rounded when reopening a design.
 You can also ask the chat to build something in words. No player name or login
 is needed: a private return URL selects your anonymous save, and a cookie
 remembers it. Progress, designs and saved versions sync to the server so the

@@ -3,7 +3,21 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, wireRoute, contactCircuitDiagram} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint} from '../client/voxel-lab/machine-view.mjs';
+
+const finePlacement={x:.307,y:.613,z:-.207};
+const aligned=snapGroundPoint(finePlacement);
+assert.deepEqual(aligned,{point:{x:.3,y:.613,z:-.2},locks:{x:.3,z:-.2}});
+assert.deepEqual(finePlacement,{x:.307,y:.613,z:-.207},'snapping does not mutate a saved declaration');
+assert.deepEqual(snapGroundPoint(finePlacement,{enabled:false}).point,finePlacement,'free placement keeps the raw drag coordinates');
+assert.deepEqual(snapGroundPoint({x:.312,z:-.212},{previous:aligned.locks}).locks,{x:.3,z:-.2},'alignment holds through the small release band');
+assert.deepEqual(snapGroundPoint({x:.313,z:-.213},{previous:aligned.locks}).locks,{x:null,z:null},'dragging farther lets go without a grid-sized jump');
+assert.deepEqual(snapGroundPoint({x:.008,z:-.008}).locks,{x:0,z:0},'capture is symmetric at the origin and its boundary');
+assert.deepEqual(snapGroundPoint({x:.009,z:-.009}).locks,{x:null,z:null},'nearby but outside capture stays free');
+assert.deepEqual(snapGroundPoint({x:.024,z:-.024}).point,{x:.024,z:-.024},'the middle of a square does not snap');
+assert.deepEqual(snapGroundPoint({z:.051}).point,{z:.05},'pieces with one positional axis retain only that axis');
+assert.equal(PLACEMENT_GRID.major_step_m/PLACEMENT_GRID.step_m,10,'ten small squares per major square');
+assert.deepEqual(snapGroundPoint({x:NaN,z:Infinity}).locks,{x:null,z:null},'invalid coordinates do not create an alignment');
 
 const pinA = [-.68, .18, .07], pinB = [.68, .08, .07];
 for (const [a,b] of [[pinA,pinB], [pinB,pinA], [pinA,[-.68,.18,.07]], [[0,.012,.1],[0,.012,.3]]]) {

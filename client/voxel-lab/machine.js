@@ -1,5 +1,5 @@
 import * as THREE from '/three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, wireRoute, contactCircuitDiagram} from '/machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint} from '/machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from '/anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from '/profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from '/level-library.mjs';
@@ -37,9 +37,23 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshSta
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
-const grid = new THREE.GridHelper(40, 80, 0x46604f, 0x34483c);
-grid.position.y = 0.0005;
+const grid = new THREE.Group();
+const fineGrid = new THREE.GridHelper(PLACEMENT_GRID.fine_size_m,PLACEMENT_GRID.fine_size_m/PLACEMENT_GRID.step_m,0x71957b,0x71957b);
+fineGrid.material.transparent=true; fineGrid.material.opacity=.18; fineGrid.material.depthWrite=false;
+fineGrid.material.onBeforeCompile=shader=>{
+  shader.vertexShader='varying vec2 gridXZ;\n'+shader.vertexShader;
+  shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\ngridXZ=position.xz;');
+  shader.fragmentShader='varying vec2 gridXZ;\n'+shader.fragmentShader;
+  shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
+    'diffuseColor.a*=1.0-smoothstep(3.0,5.0,max(abs(gridXZ.x),abs(gridXZ.y)));\n#include <opaque_fragment>');
+};
+const majorGrid = new THREE.GridHelper(PLACEMENT_GRID.size_m,PLACEMENT_GRID.size_m/PLACEMENT_GRID.major_step_m,0x76947e,0x526e5b);
+majorGrid.material.transparent=true; majorGrid.material.opacity=.65; majorGrid.material.depthWrite=false;
+fineGrid.position.y=.0005; majorGrid.position.y=.001;
+grid.add(fineGrid,majorGrid);
 scene.add(grid);
+let gridSnapEnabled=true;
+try {gridSnapEnabled=localStorage.getItem('banjo-grid-snap')!=='off';} catch { /* private window */ }
 const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 200);
 const target = new THREE.Vector3(1, 0.4, 0), goal = target.clone();
 let azimuth = -0.55, elevation = 0.42, distance = 6.5;
@@ -1415,6 +1429,12 @@ function render() {
   }
   target.lerp(goal, .05);
   aimCamera();
+  // Fade the small squares in distant overviews; major lines remain readable.
+  fineGrid.material.opacity=.18*THREE.MathUtils.clamp((12-distance)/6,0,1);
+  // A local patch avoids thousands of tiny lines at the horizon. Moving its
+  // bounds by whole major squares keeps every line on the same world grid.
+  fineGrid.position.x=Math.round(target.x/PLACEMENT_GRID.major_step_m)*PLACEMENT_GRID.major_step_m;
+  fineGrid.position.z=Math.round(target.z/PLACEMENT_GRID.major_step_m)*PLACEMENT_GRID.major_step_m;
   if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); updateEditGuide(); syncMovePad(); }
   drawPull();
   drawSwitchPull();
@@ -1548,6 +1568,7 @@ function setKnob(p, key, v) {
   const next = Number(Math.min(r.max, Math.max(r.min, r.min + Math.round((v - r.min) / step) * step)).toFixed(4));
   if (next === p[key]) return false;
   p[key] = next;
+  if (ghost?.p===p && (key==='x_m'||key==='z_m')) ghost.gridLocks=null;
   return true;
 }
 
@@ -2107,7 +2128,16 @@ function renderGhostBar() {
   precision.append(Object.assign(document.createElement('summary'),{textContent:'Precision controls'}),$('move-pad'),$('edit-guide-label'),ghostItem(),
     Object.assign(document.createElement('p'),{id:'ghost-cost',className:'legend'}));
   const fields=Object.assign(document.createElement('div'),{className:'ghost-fields'});
-  fields.append(head,chips,row,state,precision,$('instrument-panel'),$('preview-legend'),$('flow-preview'));
+  const gridRow=Object.assign(document.createElement('div'),{className:'grid-snap-row'});
+  const snapButton=button('Snap to grid',()=>{
+    gridSnapEnabled=!gridSnapEnabled;if (ghost) ghost.gridLocks=null;
+    try {localStorage.setItem('banjo-grid-snap',gridSnapEnabled?'on':'off');} catch { /* private window */ }
+    snapButton.setAttribute('aria-pressed',String(gridSnapEnabled));showGridSnap();
+  },{id:'grid-snap',title:'Gently align to nearby 5 cm grid lines while dragging. Exact controls stay free. Pieces still join at their connectors.'});
+  snapButton.setAttribute('aria-pressed',String(gridSnapEnabled));
+  gridRow.hidden=!movableGhost()||!grid.visible;
+  gridRow.append(snapButton,Object.assign(document.createElement('output'),{id:'grid-snap-status',ariaLive:'polite'}));
+  fields.append(head,chips,row,state,gridRow,precision,$('instrument-panel'),$('preview-legend'),$('flow-preview'));
   if($('phone-tools')) fields.append($('phone-tools'));
   card.replaceChildren(fields,actions);
   showGhostKnobs(); showGhostState();
@@ -2147,6 +2177,7 @@ function showGhostState() {
 
 function showGhostKnobs() {
   if (!ghost) return;
+  showGridSnap();
   const knobs = trayItem(ghost.p.piece).knobs;
   const value = document.querySelector('#ghost-bar .knob-value');
   if (value) value.textContent = ` ${ghost.p[ghost.card]}${knobs[ghost.card].turning ? '°' : ''}`;
@@ -2556,6 +2587,19 @@ window.machineBodies = () => Object.fromEntries([...world.bodies].map(([name, b]
 // For tests: where the piece being placed is on the screen, and the view.
 window.machineGhostScreen = () => ghostScreenBox();
 window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible, settled: target.distanceTo(goal) < 1e-3});
+function alignedGridAxes() {
+  return ghost && gridSnapEnabled && grid.visible ? ['x','z'].filter(axis=>Number.isFinite(ghost.gridLocks?.[axis])&&Math.abs(ghost.p[axis+'_m']-ghost.gridLocks[axis])<1e-6) : [];
+}
+function showGridSnap() {
+  const output=$('grid-snap-status');if (!output) return;
+  const axes=alignedGridAxes();
+  output.textContent=!gridSnapEnabled?'Free placement':axes.length?`5 cm · ${axes.map(a=>a.toUpperCase()).join(' + ')} aligned`:'5 cm grid';
+  output.classList.toggle('aligned',axes.length>0);
+}
+window.machinePlacementGrid=()=>({enabled:gridSnapEnabled,step_m:PLACEMENT_GRID.step_m,
+  major_step_m:PLACEMENT_GRID.major_step_m,visible:grid.visible,fine_opacity:fineGrid.material.opacity,
+  fine_vertices:fineGrid.geometry.attributes.position.count,major_vertices:majorGrid.geometry.attributes.position.count,
+  aligned:alignedGridAxes(),marker:gridSnapMarker.visible});
 renderer.domElement.addEventListener('pointerdown', e => {
   if (pointers.size > 1) {
     if (pulling) letGo();
@@ -2592,8 +2636,11 @@ renderer.domElement.addEventListener('pointermove', e => {
     }
     const at = slidePoint(e.clientX, e.clientY, draggingGhost.y);
     if (!at) return;
-    const moved = [setKnob(ghost.p, 'x_m', draggingGhost.x + at.x - draggingGhost.from.x),
-                   setKnob(ghost.p, 'z_m', draggingGhost.z + at.z - draggingGhost.from.z)].some(Boolean);
+    const knobs=trayItem(ghost.p.piece).knobs;
+    const snapped=snapGroundPoint({x:knobs.x_m?draggingGhost.x+at.x-draggingGhost.from.x:undefined,
+      z:knobs.z_m?draggingGhost.z+at.z-draggingGhost.from.z:undefined},{enabled:gridSnapEnabled&&grid.visible&&!e.altKey,previous:ghost.gridLocks||{}});
+    const moved = [setKnob(ghost.p,'x_m',snapped.point.x),setKnob(ghost.p,'z_m',snapped.point.z)].some(Boolean);
+    ghost.gridLocks=snapped.locks; showGridSnap();
     if (moved) { ghost.snapNext = true; followGhost(); showGhostKnobs(); askGhost(); }
   } else if (!e.buttons) view.classList.toggle('grab', movableGhost() && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
 });
@@ -2637,11 +2684,25 @@ function guideBar(colour, opacity) {
 }
 const guideX = guideBar(0xff5c5c, .85), guideZ = guideBar(0x4d9dff, .85), guideY = guideBar(0x6fe08a, .9);
 const guideGroundX = guideBar(0xff5c5c, .4), guideGroundZ = guideBar(0x4d9dff, .4);
+const gridSnapMarker=new THREE.Group();
+for (const axis of ['x','z']) {
+  const points=axis==='x'?[new THREE.Vector3(0,0,-.08),new THREE.Vector3(0,0,.08)]
+    :[new THREE.Vector3(-.08,0,0),new THREE.Vector3(.08,0,0)];
+  const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),new THREE.LineBasicMaterial({color:0xffcf59}));
+  line.userData.axis=axis;gridSnapMarker.add(line);
+}
+gridSnapMarker.visible=false;scene.add(gridSnapMarker);
 const guideFoot = new THREE.Mesh(new THREE.RingGeometry(.035, .05, 28),
   new THREE.MeshBasicMaterial({color: 0x6fe08f, transparent: true, opacity: .9, side: THREE.DoubleSide}));
 guideFoot.rotation.x = -Math.PI / 2;
 guides.add(guideFoot);
 function updateGuides() {
+  const axes=alignedGridAxes();
+  gridSnapMarker.visible=Boolean(ghost&&axes.length&&grid.visible);
+  if (gridSnapMarker.visible) {
+    gridSnapMarker.position.set(ghost.p.x_m??0,.005,ghost.p.z_m??0);
+    for (const line of gridSnapMarker.children) line.visible=axes.includes(line.userData.axis);
+  }
   guides.visible = Boolean(ghost && ghostGroup.children.length);
   if (!guides.visible) return;
   ghostBox.setFromObject(ghostGroup);
@@ -3426,6 +3487,7 @@ function ghostItem() {
   for (const [key, rule] of Object.entries(t.knobs)) {
     if (!pieceKnobVisible(p,key)) continue;
     const c = knobControl(p, key, rule, what, () => {
+      if (key==='x_m'||key==='z_m') ghost.gridLocks=null;
       if ((key==='mount' && p.piece==='battery')||(key==='mode'&&p.piece==='switch')) {renderPlaced();renderGhostBar();}
       if (key !== 'x_m' && key !== 'z_m') ghost.card = key;
       followGhost(); showGhostKnobs(); askGhost();
