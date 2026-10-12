@@ -388,6 +388,7 @@ function syncTerminalLabels() {
       if(!points.length)points.push(device.terminals.out);
       new THREE.Box3().setFromPoints(points.map(p=>new THREE.Vector3(...p))).getCenter(goal);
       target.copy(goal);distance=.85;azimuth=.15;elevation=.22;follow=false;
+      $('instrument-panel').after($('level-done'));
       $('follow').setAttribute('aria-pressed','false');freshView();
     },{ariaLabel:`Inspect ${device.name} contacts`});inspect.className='contact-inspect';card.append(inspect);}
     const overlay = document.createElement('section'); overlay.className='terminal-control-pin';

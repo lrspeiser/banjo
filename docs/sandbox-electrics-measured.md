@@ -483,6 +483,8 @@ Explicit Play preview/scrubbing carries the native paddle/leaf poses with its
 sampled current. Run switches to live readings and Reset restores zero-current
 initial state. Readings and wiring offers a 44 px Inspect contacts control,
 verified to frame both conducting terminal points in all three viewports.
+The completed-run card moves beside the scene on inspection, rather than
+covering the metal connection.
 
 Current v2 recipes test 0.48/0.51/0.58/0.59 m drops. Each passes correct/empty/
 wrong preflight, including three nudges. The previous 0.62 m drop lost sustained
@@ -495,3 +497,7 @@ three browser regressions in 24.000 s cover live current, initial paused
 rehearsal, explicit playback/scrubbing, reset and manual drag. The final
 inspection/current browser regression passes all desktop, phone portrait and
 landscape cases separately in 7.287 s. The current/retained recipe test passes in 6.083 s.
+
+The inspection-card follow-up changes only UI placement. Its same complete
+current/contact/reset/touch test passes in 7.386 s across all three viewports;
+the native measurements above remain unchanged. Source registration is 269/269.

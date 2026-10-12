@@ -1355,6 +1355,8 @@ Out to the pad completes the same terminal graph used in Sandbox. Crossing wires
 still do not form a connection. Glass/oak contact conductors and terminals bound
 to different bodies are rejected. **Readings and wiring → Inspect contacts**
 zooms in on the actual leaf and pad; the reading reports open/closed and amperes.
+The completed-run card moves into Controls during that inspection, clearing
+the contact view.
 
 **Marble turns on a light** uses 5° initial contact placement; changing paddle
 travel moves the physical output pad. Its goal remains at least 2 W for 0.1 s

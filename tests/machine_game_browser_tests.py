@@ -1902,6 +1902,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.click_visible('Inspect your switch 1 contacts')
                 self.wait('window.machineCamera().settled',15)
+                self.assertTrue(self.js("document.getElementById('level-done').parentElement===document.getElementById('control-panel')"),'the result stays beside the scene while inspecting contacts')
                 for terminal in ('your switch 1:in','your switch 1:out'):
                     x,y=self.screen_point(self.js(f'window.machineContactState().liveTerminals[{json.dumps(terminal)}]'))
                     bounds=self.js("(()=>{const r=document.getElementById('view').getBoundingClientRect();return [r.left,r.top,r.right,r.bottom];})()")
