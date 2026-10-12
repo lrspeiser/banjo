@@ -3,7 +3,7 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, wireRoute} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, wireRoute, contactCircuitDiagram} from '../client/voxel-lab/machine-view.mjs';
 
 const pinA = [-.68, .18, .07], pinB = [.68, .08, .07];
 for (const [a,b] of [[pinA,pinB], [pinB,pinA], [pinA,[-.68,.18,.07]], [[0,.012,.1],[0,.012,.3]]]) {
@@ -59,4 +59,21 @@ assert.deepEqual([...beams.positions.slice(0, 6)], [0, 1, 0, 0, .5, 0]);
 assert.ok(beams.colors[0] > beams.colors[6], 'the stronger leg is brighter');
 assert.ok(beams.colors[6] > 0, 'a faint leg still shows');
 assert.equal(beamSegments(undefined).legs, 0);
-console.log('PASS machine page draws engine frames, measured heat colours, light beams and the next unmeasured station');
+const contactCircuit={name:'heat',battery:'store',switch:{touch:['tip','pad']},coil:{heats:'charge'}};
+const contactMachine={batteries:[{name:'store',in:'battery'}],parts:[{name:'pad',fixed:true},{name:'tip',fixed:false}]};
+const circuitBodies=new Map(['battery','tip','pad','charge'].map((name,i)=>[name,{name,position_m:[i,.1,0],dimensions_m:[.1,.1,.1],orientation_wxyz:[1,0,0,0]}]));
+const diagram=contactCircuitDiagram(contactCircuit,contactMachine,circuitBodies);
+assert.deepEqual(diagram.legs.map(l=>l.id),['supply','switched','return']);
+assert.equal(diagram.fixed,'pad');assert.equal(diagram.moving,'tip');
+assert.deepEqual(diagram.legs.map(l=>l.color),[0xf19076,0xf19076,0x83bbff]);
+assert.ok(diagram.legs.every(l=>wireRoute(l.a,l.b).some(p=>p[1]===.012)));
+const before=diagram.legs[1].a;
+circuitBodies.get('tip').position_m=[1,.05,.2];
+circuitBodies.get('tip').orientation_wxyz=[Math.SQRT1_2,0,Math.SQRT1_2,0];
+const moved=contactCircuitDiagram(contactCircuit,contactMachine,circuitBodies);
+assert.ok(Math.abs(moved.legs[1].a[0]-1.053)<1e-12,'the connector rotates with the measured body');
+assert.notDeepEqual(moved.legs[1].a,before);
+assert.deepEqual(moved.legs[0],diagram.legs[0],'moving the tip never relocates the lower pad');
+assert.equal(contactCircuitDiagram({...contactCircuit,switch:{hinge:'hinge'}},contactMachine,circuitBodies),null);
+circuitBodies.delete('tip');assert.equal(contactCircuitDiagram(contactCircuit,contactMachine,circuitBodies),null,'missing contacts never get an invented connection');
+console.log('PASS machine page draws engine frames, measured heat colours, light beams, contact circuits and the next unmeasured station');

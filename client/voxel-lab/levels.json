@@ -882,7 +882,7 @@
    "id": "chain",
    "title": "Chain reaction",
    "teaches": "a chain: rolling, a switch, a powder charge",
-   "brief": "The cannon is wired to fire when the lever tips. Get a ball onto the lever, and the cannon will knock the block into the zone.",
+   "brief": "Land the ball on the left end of the seesaw. It presses the upper metal contact onto the lower pad, closing the prepared battery circuit. Current heats the cannon’s igniter coil and fires the shot. Use Inspect switch to see the contacts and wiring.",
    "time_s": 6,
    "budget": 40,
    "par": 22,
@@ -1124,7 +1124,7 @@
     }
    ],
    "hints": [
-    "The lever is 0.8 m long, its middle at x = 0.6. A ball landing on its left half tips it far enough to close the switch.",
+    "The seesaw is 1 m long, centered at x = 0.6. Land the ball on its left half to press the metal contacts together; the ratchet keeps them closed while the coil heats the charge.",
     "A ball leaving a ramp's foot flies on; the higher the top, the faster and further."
    ],
    "solution": [

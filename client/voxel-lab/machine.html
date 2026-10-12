@@ -9,7 +9,9 @@
 <button id="mode-view" type="button" aria-pressed="false" title="Drag empty space to turn the view; right/middle drag or two fingers also work (Esc)">View</button>
 <button id="mode-move" type="button" aria-pressed="true" title="Drag the selected piece to move it; a click returns to View (Esc)">Move</button>
 </div>
-<div id="power-pins" class="power-labels" aria-label="Power endpoints"></div>
+ <button id="inspect-switch" class="inspect-switch" type="button" hidden>Inspect switch</button>
+ <div id="contact-switch-labels" class="contact-switch-labels" aria-label="Physical pressure switch parts" hidden></div>
+ <div id="power-pins" class="power-labels" aria-label="Power endpoints"></div>
 <div id="terminal-pins" class="power-labels" aria-label="Electrical endpoints"></div>
 <output id="edit-guide-label" class="edit-guide-label" hidden aria-live="polite"></output>
 <div id="scene-actions" class="scene-actions">
@@ -55,7 +57,8 @@
 <button id="wire-mode" type="button" aria-pressed="false">Connect wires</button>
 <output id="power-status" class="power-status" hidden aria-live="polite"></output>
 <div id="power-labels" aria-label="Solar meters and power connections"></div>
-<div id="terminal-labels" aria-label="Electrical readings"></div></details>
+ <div id="terminal-labels" aria-label="Electrical readings"></div>
+ <div id="contact-circuit-readings" aria-label="Pressure switch and coil readings"></div></details>
 <details id="flow-preview" class="flow-preview" hidden><summary id="flow-summary">Flow preview</summary>
 <div class="flow-time-row"><button id="flow-play" type="button" aria-pressed="true">Pause preview</button><label>Preview time<input id="flow-time" type="range" min="0" max="1" step="0.01" value="0" aria-label="Preview time"></label></div>
 <output id="flow-readings"></output></details>

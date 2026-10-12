@@ -520,4 +520,15 @@ body.panel-tabs #edit-guide-label{position:static;max-width:none;padding:0;backg
 body.panel-tabs #precision-controls .move-pad{position:static;grid-template-columns:repeat(6,44px);grid-template-rows:44px;gap:3px}
 body.panel-tabs #precision-controls .move-pad button{grid-area:auto}
 .view-controls #focus-piece{flex-basis:100%;font-size:14px}
+.inspect-switch{position:absolute;right:8px;top:8px;z-index:5;min-height:44px;min-width:44px;font:600 13px system-ui;padding:6px 10px;background:#294c60;color:#e7f2f8;border:1px solid #8bb2c7;border-radius:7px}
+.contact-switch-labels{position:absolute;inset:0;pointer-events:none}
+.contact-switch-labels svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.contact-switch-labels span{position:absolute;white-space:nowrap;font:600 12px system-ui;padding:3px 5px;background:#142836db;border-radius:4px;color:#ffd1a5}
+#view.has-contact-switch #clock{max-width:calc(100% - 145px)}
+#contact-circuit-readings section{margin-top:8px;padding:8px;border:1px solid #496879;border-radius:8px}
+#contact-circuit-readings output{display:block;margin:6px 0;color:#e7f2f8}
+#contact-circuit-readings p{font-size:13px;margin:6px 0}
+#contact-circuit-readings button{min-height:44px;min-width:44px;padding:6px 10px;background:#294c60;color:#e7f2f8;border:1px solid #8bb2c7;border-radius:7px;font:600 13px system-ui}
+#control-panel #level-done{position:static;transform:none;width:100%;max-height:none;margin:8px 0;box-shadow:none}
+#control-panel #level-done button{min-height:44px}
 @media(max-width:359px){body.panel-tabs #precision-controls .move-pad{grid-template-columns:repeat(4,44px);grid-template-rows:repeat(2,44px)}}

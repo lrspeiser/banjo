@@ -2645,6 +2645,7 @@ class MachineSession:
             if pa and pb:
                 frame['wires'].append({'name': cable['name'], 'points_m': [pa, pb], 'unit': 'W',
                                        'value': panels.get(a['solar_panel'], {}).get('power_w', 0)})
+        frame['contact_circuits'] = []
         for c in self.compiled['circuits']:
             battery = next((b for b in self.compiled['batteries'] if b['name'] == c['battery']), {})
             start = self.bodies.get(battery.get('in'), {}).get('position_m')
@@ -2653,6 +2654,25 @@ class MachineSession:
             via = next((j.get('at_m') for j in self.compiled['joints'] if j['name'] == (c.get('switch') or {}).get('hinge')), None)
             if start and end:
                 reading = next((x for x in r.get('circuits', []) if x['name'] == c['name']), {})
+                touch = (c.get('switch') or {}).get('touch', [])
+                if len(touch) == 2 and c.get('coil') and all(p in self.bodies for p in touch):
+                    # Transport measured poses, not an invented trigger motion.
+                    # The client uses these same bodies to draw the prepared
+                    # supply/contact/load/return diagram during a rehearsal.
+                    names = [battery['in'], *touch, c['coil']['heats']]
+                    parents = [j['a'] for j in self.compiled['joints'] if j['kind']=='fix' and j['b'] in touch]
+                    poses = [dict(name=name, **{key:copy.deepcopy(self.bodies[name][key])
+                             for key in ('position_m','orientation_wxyz','dimensions_m') if key in self.bodies[name]})
+                             for name in dict.fromkeys(names+parents) if name in self.bodies]
+                    frame['contact_circuits'].append(dict(name=c['name'],closed=reading.get('closed'),
+                        current_a=reading.get('current_a',0),coil_w=reading.get('coil_w',0),bodies=poses))
+                    fixed = next((name for name in touch if next((p for p in self.compiled['parts'] if p['name']==name),{}).get('fixed')),touch[1])
+                    moving = next(name for name in touch if name!=fixed)
+                    for leg,a,b in [('supply',battery['in'],fixed),('switched',moving,c['coil']['heats']),('return',c['coil']['heats'],battery['in'])]:
+                        frame['wires'].append(dict(name=c['name']+'/'+leg,circuit=c['name'],legacy_leg=leg,
+                            points_m=[self.bodies[a]['position_m'],self.bodies[b]['position_m']],
+                            value=reading.get('current_a',0),unit='A',legacy=True))
+                    continue
                 frame['wires'].append({'name': c['name'], 'points_m': [p for p in (start, via, end) if p],
                                        'value': reading.get('current_a', 0), 'unit': 'A', 'legacy': True})
         if self.parcels is not None:

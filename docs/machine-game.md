@@ -2,6 +2,64 @@
 
 October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-one freely selectable piece lessons. Each level has a fixed machine, a goal and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+## See the seesaw's firing switch
+
+October 12, 2026: **Chain reaction** depicts its prepared firing circuit as
+three visible floor-routed leads: battery supply to the fixed contact pad,
+the moving seesaw contact to the cannon's heating coil, and the blue return
+to the battery. Red is the supply/switched path; leads turn yellow only with
+measured nonzero current. No wire bridges the open contact gap. The earlier
+single thin line skipped contact-operated switches because it only looked
+for a switch hinge.
+
+**Inspect switch**, attached to the scene, zooms under the seesaw and labels
+**Moving contact** and **Fixed pad**. Orange outlines identify open contacts;
+green shows the engine's closed switch. The Controls module reveals measured
+switch state, amps and coil watts, with a short explanation of the power
+loop. Inspection opens collapsed controls, keeps the close-up during Run,
+and returns to the overview with **Whole machine**. It never moves a part or
+operates the switch. Readings remain below/beside the scene, not in floating
+cards. The two small component labels appear only while inspecting.
+While inspecting, the result card stays in the Controls module so a win
+cannot cover the contacts. Returning to Whole machine restores its usual
+scene placement. The final inspection/result-card and energy checks pass
+2/2 in 14.44 s; the final labelled/live-reading inspection check also passes
+on all three viewports in 11.73 s.
+
+Rehearsal frames transport measured contact/lever poses and circuit readings.
+The preview draws the same complete leads, current arrows and an outline of
+the calculated seesaw/contact pose. It is labelled Preview; inspection shows
+the current live setup instead of presenting future closure as a live reading.
+
+This is a diagram of the existing ideal circuit. Connector anchors and floor
+routing are drawing geometry; there are no new cable bodies, mass, resistance,
+elasticity or winding models. The native touch switch, 4° ratchet, coil heating,
+powder/gas model, materials, timestep, goals and 109 MJ par are unchanged.
+No new coupled conservation claim accompanies a rendering/transport change.
+
+Measured on the same native SHA-256
+`807ae9c34f0516a0d0dbf588400451b865083043d614cd1aab8040140c830f87`,
+dt = 1/240 s, four steps per host call: correct ramp placements win 3/3 at
+1.575, 1.550 and 1.521 s. Empty and sideways-misplaced ramps win 0/3 each.
+Rehearsals start with zero current/open contact and later report a closed
+contact and positive coil watts, with all three lead currents matching the
+same native circuit account. Registered game, world and view checks pass
+3/3 in 67.38 s, including all 29 levels' existing solution/par checks. All
+269 C++ sources remain registered; no native source or engine binary changed.
+
+Browser coverage runs all 64 methods in two fresh-browser groups: 31/32 in
+182.28 s and 32/32 in 200.23 s. One portrait battery-drop request receives the
+previously recorded Windows `net::ERR_NO_BUFFER_SPACE`; the broad local run
+is not green. The unchanged battery-drop case, the switch-grip case and the
+final Chain reaction inspection test pass together, 3/3 in 17.11 s. The new
+check covers desktop, phone portrait/landscape, collapsed controls, preserved
+inspection during Run, actual closure/coil power, and unrelated-level cleanup.
+The prior `9e0453e3` Linux CI completes 153/154 CTests; its one failure is a
+10 s wait for an initial manual-switch grip drag to become active, rather than
+the former aggregate timeout. Its cause remains unproven; a Windows isolated
+pass is not a Linux fix. Current Linux verification must complete before a
+new result can be claimed.
+
 ## Clear solar shadows and required delivery cables
 
 Both **Catch the sun** cards now have a concrete wall, 2 m wide, 1.6 m high

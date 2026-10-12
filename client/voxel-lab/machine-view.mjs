@@ -31,6 +31,39 @@ export function wireRoute(a, b, lane = 0) {
   return points.filter((p, i) => !i || p.some((v, k) => Math.abs(v - points[i - 1][k]) > 1e-9)).map(p => [...p]);
 }
 
+// A schematic of an existing ideal contact/coil circuit, not new electrical
+// or mechanical geometry. Body-local connector anchors follow measured poses.
+// The two contact bodies remain separate: no cable bridges their open gap.
+export function contactCircuitDiagram(circuit, machine, bodies) {
+  const touch = circuit.switch?.touch;
+  const battery = machine.batteries?.find(b => b.name === circuit.battery);
+  if (!touch || touch.length !== 2 || !circuit.coil || !battery) return null;
+  const names = [battery.in, ...touch, circuit.coil.heats];
+  if (names.some(name => !bodies.has(name))) return null;
+  const point = (name, offset) => {
+    const b = bodies.get(name), [w,x,y,z] = b.orientation_wxyz || [1,0,0,0];
+    const [vx,vy,vz] = offset, tx=2*(y*vz-z*vy), ty=2*(z*vx-x*vz), tz=2*(x*vy-y*vx);
+    return [vx+w*tx+y*tz-z*ty, vy+w*ty+z*tx-x*tz, vz+w*tz+x*ty-y*tx].map((v,i)=>v+b.position_m[i]);
+  };
+  const size = name => bodies.get(name).dimensions_m || [.04,.04,.04];
+  const fixed = touch.find(name => machine.parts?.find(p=>p.name===name)?.fixed) || touch[1];
+  const moving = touch.find(name=>name!==fixed);
+  const source = size(battery.in), target = size(circuit.coil.heats);
+  const supplyPlus = point(battery.in,[-source[0]*.3,source[1]/2,source[2]/2+.003]);
+  const supplyMinus = point(battery.in,[source[0]*.3,source[1]/2,source[2]/2+.003]);
+  const pad = point(fixed,[0,0,size(fixed)[2]/2+.003]);
+  const tip = point(moving,[0,0,size(moving)[2]/2+.003]);
+  // The coil is represented at its thermal target, outside the body so the
+  // connection can be seen, just as the explicit electrical terminal dots.
+  const coilPlus = point(circuit.coil.heats,[-.018,0,Math.max(.08,target[2]/2+.015)]);
+  const coilMinus = point(circuit.coil.heats,[.018,0,Math.max(.08,target[2]/2+.015)]);
+  return {name:circuit.name, fixed, fixedIsStatic:Boolean(machine.parts?.find(p=>p.name===fixed)?.fixed), moving, coil:circuit.coil.heats,
+    contactCenters:touch.map(name=>[...bodies.get(name).position_m]),
+    legs:[{id:'supply',a:supplyPlus,b:pad,color:0xf19076},
+          {id:'switched',a:tip,b:coilPlus,color:0xf19076},
+          {id:'return',a:coilMinus,b:supplyMinus,color:0x83bbff}]};
+}
+
 // Each material keeps one recognisable colour. Colour is only identification:
 // the engine's laws come from the material's declared properties, never from this.
 export const MATERIAL_COLORS = {oak: 0xb07a45, iron: 0x5d636b, concrete: 0xa9a9a2, glass: 0x9fd8ef, ice: 0xd9f3ff,

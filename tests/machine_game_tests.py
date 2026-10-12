@@ -693,6 +693,28 @@ class FreeBuild(unittest.TestCase):
 
 class Engine(unittest.TestCase):
     @need_engine
+    def test_chain_pressure_switch_preview_uses_measured_contacts_and_complete_power_loop(self):
+        level=mg.level_by_id('chain')
+        with tempfile.TemporaryDirectory() as logs:
+            logs=Path(logs)
+            good=mg.trial(level,level['solution'],ENGINE,logs,runs=3)
+            self.assertEqual(good['worked'],3,good)
+            for label,placed in [('empty',[]),('off the seesaw',[dict(level['solution'][0],z_m=.3)])]:
+                bad=mg.trial(level,placed,ENGINE,logs,runs=3)
+                self.assertEqual(bad['worked'],0,(label,bad))
+            result=mg.preview(level,level['solution'],ENGINE,logs)
+            frames=result['flow_frames'];self.assertIsNotNone(result['goal_at_s'])
+            states=[f['contact_circuits'][0] for f in frames]
+            self.assertFalse(states[0]['closed']);self.assertEqual(states[0]['current_a'],0)
+            self.assertTrue(any(s['closed'] and s['coil_w']>0 for s in states))
+            self.assertNotEqual(states[0]['bodies'],states[-1]['bodies'],'transport follows measured lever motion')
+            for f,s in zip(frames,states):
+                self.assertEqual({w['legacy_leg'] for w in f['wires']},{'supply','switched','return'})
+                self.assertTrue(all(w['value']==s['current_a'] for w in f['wires']))
+                self.assertTrue({'lever','lever contact','contact plate'} <= {b['name'] for b in s['bodies']})
+            print('CHAIN_CONTACT_DIAGRAM',good,'preview goal',result['goal_at_s'])
+
+    @need_engine
     def test_cannon_latch_keeps_heat_on_after_a_short_pull_for_glass_oak_and_iron(self):
         level=mg.level_by_id('fire')
         with tempfile.TemporaryDirectory() as logs:
