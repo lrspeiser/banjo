@@ -2,6 +2,42 @@
 
 October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-two freely selectable piece lessons. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+## Battery voltage and wire thickness
+
+Latest October 12 update: **Give it power** uses a fixed, grounded battery
+with just a voltage control; it needs no contact alignment, height or rotation.
+The waiting lamp is rated 12 V. Add the battery, choose 6 or 12 V, and click
+the labelled terminals to draw a positive lead and a return lead. New lesson
+wires start thin; pick either wire again and choose standard or thick. The
+lamp badge shows its 2 W goal, 12 V rating and measured arriving volts/watts
+in both preview and live runs. Three tasks count voltage, closing the loop
+and selecting wires. Run/Pause/Set up again remain beside the scene.
+
+Copper choices use `R = 0.0172 * length_m / area_mm2` at 20 °C:
+thin 0.01 mm², standard 0.5 mm² and thick 2.5 mm². The lesson has two 5 m
+leads including slack; Sandbox exposes 0.1–100 m. These are illustrative
+resistance choices, not recommended household wiring sizes. Floor routes
+show connections rather than exact cable length, and their enlarged widths
+show the selected thickness. Wires heat through the existing native `I²R`
+model; no ampacity, insulation breakdown or temperature-dependent copper
+resistance is added. Existing saved wires retain their original 0.01 Ω
+model through the **low resistance** setting.
+
+The bulb is a nonpolar resistor: crossing its two leads still lights it.
+Both must form a loop. A motor instead reverses with signed current when
+its leads are exchanged. No piece-name polarity rule decides a win.
+The unchanged lamp goal is ≥2 W for 0.5 s within 4 s. Standard 12 V wiring
+delivers 11.9023 V and 2.95135 W; thin wiring delivers 8.82759 V and 1.62346 W;
+6 V with standard wiring delivers 5.95115 V and 0.737837 W. An absent return
+delivers zero. The solution succeeds in all three native nudges at 0.583 s,
+and its 881,440,001.736 J measured score uses the 882 MJ fixed-case par.
+
+Fresh battery challenges use recipe v3. Existing v1 fixed/prewired and v2
+contact-holder links retain their apparatus, seed policies and one-task counts.
+**Drop a battery into its holder** remains a separate Sandbox example with
+physical cap/pad contacts. See [electrical measurements](sandbox-electrics-measured.md#battery-voltage-and-copper-wire-resistance-october-12)
+for checks and model limits.
+
 ## Cable power and object requirements
 
 Latest October 12 update: compact labels next to cables show measured watts
@@ -420,7 +456,7 @@ and tolerances.
 | Catch the sun; Catch the sun (collector lesson); Charge then lift | Both Catch the sun cards require a player-drawn power cable and an unshaded collector. Charge then lift retains its declared store connection; light still determines power. |
 | Lift with less; Raise the crate; Tip the lever; Spring lifts the load | Material-derived weight, gravitational travel or stored spring energy provides the motion. |
 | Turn the big wheel; Turn the axle; Light the bulb | Prepared drive/leads are stated in the brief. Position does not create a socket connection. Gear drive and motor direction remain player settings. |
-| Give it power; Finish the loop | Actual battery-cap contacts or the explicit missing return wire must complete the circuit. |
+| Give it power; Finish the loop | Select the battery voltage and wire thickness, then complete both leads; or draw the explicit missing return wire. |
 | Pour onto the paddles; Fill the receiver; Water opens a gate; River-powered lift | Water must reach the receiving area/paddles. Valve/pour state is a setup control; gate lessons also require a drum rope. |
 | Gentle first launch | Arm restraint is a setup control; a released raised counterweight turns the cradle and contact launches the marble. |
 
@@ -649,11 +685,13 @@ runs passed 48 and 47 checks with initial request/module failures; the exact
 historical transport cause remains unproven. The client geometry CTest and
 JavaScript/Python syntax checks pass.
 
-**Give it power** now teaches physical electrical contact. Drop the battery pack onto the holder's two metal pads; the prepared floor leads run from those pads to the lamp. The case, two glass spacers and two metal terminals are separate material bodies held together by fix joints. Both terminals must actually touch pads to close the loop. Rotate the pack, change its release height, position or initial charge, and inspect the terminal cards for pad contact, battery joules and lamp watts. A crosswise or misplaced pack stays dark; lifting the pack off the pads breaks the circuit. Reversing the pack still lights the resistive bulb. The target remains at least 2 W for 0.5 s within 4 s.
+The following is the preserved v2 contact-holder checkpoint; the current v3 lesson is described above.
+
+**Give it power** in v2 teaches physical electrical contact. Drop the battery pack onto the holder's two metal pads; the prepared floor leads run from those pads to the lamp. The case, two glass spacers and two metal terminals are separate material bodies held together by fix joints. Both terminals must actually touch pads to close the loop. Rotate the pack, change its release height, position or initial charge, and inspect the terminal cards for pad contact, battery joules and lamp watts. A crosswise or misplaced pack stays dark; lifting the pack off the pads breaks the circuit. Reversing the pack still lights the resistive bulb. The target remains at least 2 W for 0.5 s within 4 s.
 
 The editable **Drop a battery into its holder** sandbox example uses the same apparatus. **Save version** preserves its initial position, rotation, release height, housing material and charge, with the holder and wires in the saved base. Dry sandbox designs retain fixed batteries and their existing explicit wires. The battery's fixed/contact-pack mount selector changes its construction; release height, pack rotation and housing material apply to contact packs. Terminals, contact guides and floor leads follow the actual moving cap bodies; charging sockets and solar leads also follow the moving housing. The contact pack shows a charging input only when a collector or charging cable is present. Starting or continuing a live run clears pending predictions, so an earlier failed rehearsal cannot contradict the live lamp reading. Dashed guides show possible contact paths, orange while open and green while touching; they are not wires. Flow rehearsals are labelled Preview, with measured live readouts after Run.
 
-Fresh seeded Give it power challenges use recipe v2. Existing v1 shared URLs retain the earlier fixed-battery, prepared-wire apparatus and its seed policy; At that contact-holder checkpoint the other families retained v1; the manual-rocker update above also versions switch, bulb and loop. No old saved declaration is rewritten. New canonical construction cost is 374,768,000 J, with 2 J consumed by the measured goal; its 375 MJ par is the three-significant-digit ceiling of that score, replacing the larger fixed case's par.
+At the contact-holder checkpoint, fresh seeded Give it power challenges used recipe v2. Existing v1 shared URLs retain the earlier fixed-battery, prepared-wire apparatus and its seed policy; At that contact-holder checkpoint the other families retained v1; the manual-rocker update above also versions switch, bulb and loop. No old saved declaration is rewritten. New canonical construction cost is 374,768,000 J, with 2 J consumed by the measured goal; its 375 MJ par is the three-significant-digit ceiling of that score, replacing the larger fixed case's par.
 
 Contact-pack measurements and model limits are recorded in [sandbox-electrics-measured.md](sandbox-electrics-measured.md#physical-battery-holder-october-11-2026). This uses the existing native contact and circuit laws; no goal, deadline, conservation tolerance or native binary changed.
 

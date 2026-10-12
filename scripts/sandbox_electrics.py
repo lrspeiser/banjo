@@ -1,7 +1,8 @@
 """Saved terminal graphs and placeable DC devices, solved by native Circuit.
 
 Ideal topology is explicit; geometric crossings never connect. Each wire has a
-fixed 0.01 ohm resistance. One finite supply owns all loads in its component.
+legacy 0.01 ohm resistance, or copper resistance from declared length and area.
+One finite supply owns all loads in its component.
 """
 import copy
 import math
@@ -135,8 +136,13 @@ def bulb(name, k, ctx):
 
 
 def wire(name, k, ctx):
-    return {'electrical': {'wires': [{'name': name, 'a': k.get('a_terminal', ''),
-                                     'b': k.get('b_terminal', '')}]}}
+    row = {'name': name, 'a': k.get('a_terminal', ''), 'b': k.get('b_terminal', '')}
+    # Missing fields retain the original saved-wire model. Length includes
+    # slack; the floor route is a connection drawing, not a cable-length ruler.
+    if k.get('size','low resistance') != 'low resistance':
+        row.update(length_m=k.get('length_m', 5),
+                   area_mm2={'thin': .01, 'standard': .5, 'thick': 2.5}[k.get('size', 'standard')])
+    return {'electrical': {'wires': [row]}}
 
 
 def power_cable(name, k, ctx):
@@ -224,9 +230,11 @@ TRAY = [
      'knobs': {**POS, 'height_m': knob(.24, .16, .6, .02, 'post height (m)'),
                'preset': {'default': 'small', 'choices': ['small', 'bright'], 'label': 'rated bulb'}}},
     {'piece': 'wire', 'label': 'Wire', 'count': 60, 'cost': 0, 'turning': False,
-     'description': 'Connect two labelled electrical terminals; crossing lines never connect.',
+     'description': 'Connect two terminals. Thin or long copper wires lose more voltage and heat up; crossings never connect.',
      'knobs': {**POS, 'a_terminal': {'default': '', 'terminal': True, 'label': 'from terminal'},
-               'b_terminal': {'default': '', 'terminal': True, 'label': 'to terminal'}}},
+               'b_terminal': {'default': '', 'terminal': True, 'label': 'to terminal'},
+               'size': {'default':'low resistance','choices':['low resistance','thin','standard','thick'],'label':'wire thickness'},
+               'length_m': knob(5,.1,100,.1,'cable length including slack (m)')}},
     {'piece': 'power_cable', 'label': 'Power cable', 'count': 20, 'cost': 0, 'turning': False,
      'description': 'An ideal two-conductor lead from a solar output to a battery input. Cable losses and mass are not modeled.',
      'knobs': {**POS, 'a_port': {'default': '', 'power_port': 'output', 'label': 'from solar output'},
@@ -403,7 +411,14 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
         ids.add(w['name'])
         if not isinstance(w.get('a'), str) or not isinstance(w.get('b'), str) or w['a'] not in terminals or w['b'] not in terminals or w['a'] == w['b']:
             problems.append(f'electrical {w["name"]}: choose two different existing terminals'); continue
-        wires.append({key: w[key] for key in ('name', 'a', 'b')})
+        row = {key: w[key] for key in ('name', 'a', 'b')}
+        if 'length_m' in w or 'area_mm2' in w:
+            row['length_m'] = number(w,'length_m',5,.1,100)
+            row['area_mm2'] = number(w,'area_mm2',.5,.001,100)
+            # Copper at 20 C: rho = 0.0172 ohm mm^2 / m. The native
+            # branch books I^2 R heat and the battery supplies every joule.
+            row['resistance_ohm'] = .0172 * row['length_m'] / row['area_mm2']
+        wires.append(row)
     for item in raw.get('contacts', []):
         if not isinstance(item,dict) or not isinstance(item.get('name'),str) or not item['name'] or item['name'] in ids:
             problems.append('electrical contact names must be nonempty and unique'); continue
@@ -487,7 +502,7 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
             branches.append(row)
         for w in n['wires']:
             branches.append({'id': w['name'], 'component': w['name'], 'kind': 'wire', 'a': w['a'], 'b': w['b'],
-                             'resistance_ohm': .01, 'thermal': 'supply'})
+                             'resistance_ohm': w.get('resistance_ohm', .01), 'thermal': 'supply'})
         for c in n.get('contacts',[]):
             branches.append(dict(id=c['name'],component=c['name'],kind='switch',a=c['a'],b=c['b'],
                 resistance_ohm=c['resistance_ohm'],thermal='supply',closed=False,
@@ -502,6 +517,10 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
 
 def readouts(graph, native):
     branches = {b['id']: b for c in native for b in c['branches']}
+    node_volts = {name:value for c in native for name,value in zip(c.get('nodes',[]),c.get('last',{}).get('voltage_v',[]))}
+    def device_voltage(d):
+        keys = list(d['terminals'])
+        return node_volts.get(d['name']+':'+keys[0],0)-node_volts.get(d['name']+':'+keys[1],0)
     wire_power={}
     for network in native:
         volts=dict(zip(network.get('nodes',[]),network.get('last',{}).get('voltage_v',[])))
@@ -514,6 +533,7 @@ def readouts(graph, native):
                 loss_w=branch.get('power_w',0),
                 return_path=network.get('source',{}).get('negative') in (branch.get('a'),branch.get('b')))
     return {'devices': [dict(name=d['name'], kind=d['kind'], closed=branches.get(d['name'], {}).get('closed'),
+                            voltage_v=device_voltage(d),
                             current_a=branches.get(d['name'], {}).get('current_a', 0),
                             power_w=branches.get(d['name'], {}).get('power_w', 0),
                             emitted_w=branches.get(d['name'], {}).get('emitted_w', 0)) for d in graph.get('devices', [])],
@@ -545,7 +565,8 @@ def power_requirements(compiled,bodies,measured,motors,native):
     for name,part,declaration,reading,branch in declarations:
         row=dict(name=name,part=part,input_w=reading.get('power_w',0))
         if declaration.get('kind')=='bulb':
-            row.update(rated_w=declaration['watts'],requirement='rated')
+            row.update(rated_w=declaration['watts'],rated_voltage_v=declaration['rated_voltage_v'],
+                       voltage_v=reading.get('voltage_v',0),requirement='rated')
             for station in compiled.get('stations',[]):
                 goal=(station.get('done_when') or {}).get('load_power_w',{})
                 if goal.get('device')==name:row.update(required_w=goal['at_least_w'],requirement='goal')
@@ -696,6 +717,28 @@ def easy_levels():
                        s, row, {'piece': 'battery', 'x_m': -.5, 'z_m':0, 'mount':'contact pack','height_m':.4},
                        {'load_power_w': {'device': 'lamp', 'at_least_w': 2, 'for_s': .5}},
                        {'piece': 'battery', 'x_m': .6, 'z_m':0, 'mount':'contact pack','height_m':.4}))
+    # Preserve the contact-pack lesson for earlier shares and its Sandbox
+    # example. The current beginner lesson tests voltage and a complete loop.
+    global LEGACY_CONTACT_POWER
+    LEGACY_CONTACT_POWER = copy.deepcopy(levels[-1])
+    LEGACY_CONTACT_POWER['par_energy_j'] = 375000000
+    s = empty('Give it power'); merge(s, bulb('lamp', {'x_m': .6}, {}))
+    row = tray('battery',across=False)
+    row['knobs'] = {'voltage_v':row['knobs']['voltage_v']}
+    row['knobs']['voltage_v'].update(default=6,min=6,max=12)
+    lead = tray('wire',across=False); lead['count']=2
+    lead['knobs'] = {key:lead['knobs'][key] for key in ('a_terminal','b_terminal','size','length_m')}
+    lead['knobs']['size']['default'] = 'thin'
+    lead['knobs']['size']['choices'] = ['thin','standard','thick']
+    lead['knobs']['length_m'].update(default=5,min=5,max=5,hidden=True)
+    solution = [{'piece':'battery','voltage_v':12},
+                {'piece':'wire','a_terminal':'your battery 1:plus','b_terminal':'lamp:plus','size':'standard'},
+                {'piece':'wire','a_terminal':'lamp:minus','b_terminal':'your battery 1:minus','size':'standard'}]
+    levels[-1] = easy('easy-power','Give it power',
+        'Choose 12 V for the lamp. Connect battery + to lamp + and lamp − to battery −. Use thicker wires if voltage loss leaves it dim.',
+        s,row,solution[0],{'load_power_w':{'device':'lamp','at_least_w':2,'for_s':.5}},solution[0])
+    levels[-1].update(tray=[row,lead],solution=solution,
+        wrong=[dict(p,voltage_v=6) if p['piece']=='battery' else copy.deepcopy(p) for p in solution],style_pieces=3)
     s = empty('Close the switch'); merge(s, battery('supply', {'x_m': -.6}, {})); merge(s, bulb('lamp', {'x_m': .6}, {}))
     link(s, 'return wire', 'lamp:minus', 'supply:minus')
     levels.append(easy('easy-switch', 'Close the switch', 'Place the wired switch, then drag its field handle downward to close the lamp circuit. Its initial state sets its starting physical position.',
@@ -752,7 +795,7 @@ def easy_levels():
 
 
 EASY_LEVELS = easy_levels()
-_PARS = {'easy-power': 375000000, 'easy-switch': 18700000, 'easy-bulb': 102000000,
+_PARS = {'easy-power': 882000000, 'easy-switch': 18700000, 'easy-bulb': 102000000,
          'easy-loop': 1.75, 'easy-motor': 1550000000, 'easy-heat': 4690000, 'easy-marble-light': 462000000}
 for _level in EASY_LEVELS:
     _level['par_energy_j'] = _PARS[_level['id']]
@@ -761,6 +804,6 @@ for _template, _pieces in zip(TEMPLATES, [['battery', 'switch', 'bulb', 'wire'],
     _template['pieces'] = _pieces
 TEMPLATES.append({'name':'Drop a battery into its holder',
                   'description':'A loose battery falls onto two metal pads. Lift it away to break the lamp circuit.',
-                  'base':copy.deepcopy(EASY_LEVELS[0]['machine']),
-                  'placements':copy.deepcopy(EASY_LEVELS[0]['solution']),
+                  'base':copy.deepcopy(LEGACY_CONTACT_POWER['machine']),
+                  'placements':copy.deepcopy(LEGACY_CONTACT_POWER['solution']),
                   'pieces':['battery','bulb','wire']})

@@ -8,6 +8,16 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 12 battery update: selected wire length and cross section now compile
+to copper resistance at 20 °C (`R = 0.0172 L/A`, metres and mm²). Native
+circuit voltage drop and `I²R` heating determine brightness. Old saved wires
+keep their 0.01 Ω resistance. The battery lesson uses a grounded source,
+player-drawn positive/return leads, voltage choice and wire thickness.
+Its resistive bulb works with reversed leads; signed motor current reverses
+direction. Cable mass, spatial copper temperature, temperature-dependent
+resistivity, insulation breakdown, ampacity and realistic filament failure
+remain unsupported. See [the wire measurements](sandbox-electrics-measured.md#battery-voltage-and-copper-wire-resistance-october-12).
+
 Latest October 12 update: the new Gear card creates one mounted compound wheel
 with colliding rectangular teeth, rather than a paired ideal ratio constraint.
 Tooth count and size set actual geometry and material-derived mass/inertia;

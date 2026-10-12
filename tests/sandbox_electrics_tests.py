@@ -20,6 +20,24 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_copper_wire_units_validation_and_legacy_saved_resistance(self):
+        spec=e.empty('Wire sizes')
+        e.merge(spec,e.battery('supply',{},{}));e.merge(spec,e.bulb('lamp',{'x_m':.6},{}))
+        for size,area in [('thin',.01),('standard',.5),('thick',2.5)]:
+            saved=copy.deepcopy(spec)
+            e.merge(saved,e.wire('feed',dict(a_terminal='supply:plus',b_terminal='lamp:plus',size=size,length_m=5),{}))
+            before=copy.deepcopy(saved)
+            compiled=mw.compile_spec(saved)['electrical']['wires'][0]
+            self.assertEqual(saved,before)
+            self.assertEqual(compiled['area_mm2'],area)
+            self.assertAlmostEqual(compiled['resistance_ohm'],.0172*5/area)
+            for field,value in [('length_m',-1),('area_mm2',0),('area_mm2',float('nan'))]:
+                bad=copy.deepcopy(saved);bad['electrical']['wires'][0][field]=value
+                with self.assertRaises(mw.MachineRefused):mw.compile_spec(bad)
+        free=mg.requested_level({'level':'free','base':spec})
+        old=mw.compile_spec(mg.compose(free,[dict(piece='wire',a_terminal='supply:plus',b_terminal='lamp:plus')])[0])
+        self.assertNotIn('resistance_ohm',old['electrical']['wires'][0])
+
     def test_wire_watts_use_the_native_voltage_reference_and_are_not_wire_heat(self):
         graph={'wires':[dict(name='feed',a='battery:plus',b='motor:plus')]}
         def sample(offset):
@@ -98,7 +116,7 @@ class Graph(unittest.TestCase):
         self.assertTrue(mg.requested_level({'level':'free','base':empty_graph})['custom_base'])
 
     def test_source_free_socket_has_no_branch_shorting_its_pads(self):
-        level = next(t for t in e.easy_levels() if t['id']=='easy-power')
+        level = copy.deepcopy(e.LEGACY_CONTACT_POWER)
         ready = mw.compile_spec(level['machine'])
         self.assertEqual(ready['electrical']['networks'],[])
         placed = mw.compile_spec(mg.compose(level,level['solution'])[0])
@@ -109,7 +127,7 @@ class Graph(unittest.TestCase):
         self.assertEqual(level['time_s'],4)
 
     def test_contact_graph_rejects_nonconducting_or_unbound_bodies(self):
-        level = next(t for t in e.easy_levels() if t['id']=='easy-power')
+        level = copy.deepcopy(e.LEGACY_CONTACT_POWER)
         valid = mg.compose(level,level['solution'])[0]
         for mutation in ('unhashable','missing','same','insulator','mismatched','bad-resistance','bad-binding'):
             bad = copy.deepcopy(valid)
@@ -213,6 +231,35 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_battery_lesson_voltage_wire_loss_open_return_and_nonpolar_bulb(self):
+        level=mg.level_by_id('easy-power')
+        for mode in ('standard','thin','six volts','missing return','reversed'):
+            placements=copy.deepcopy(level['solution'])
+            if mode=='thin':
+                for p in placements:
+                    if p['piece']=='wire':p['size']='thin'
+            if mode=='six volts':placements[0]['voltage_v']=6
+            if mode=='missing return':placements.pop()
+            if mode=='reversed':
+                placements[1]['b_terminal']='lamp:minus';placements[2]['a_terminal']='lamp:plus'
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as logs:
+                report=mg.trial(level,placements,ENGINE,Path(logs),runs=3)
+                self.assertEqual(report['worked'],3 if mode in ('standard','reversed') else 0,report)
+            result=self.run_spec(mg.compose(level,placements)[0],1)
+            graph=result['readouts']['electrical'];lamp=next(d for d in graph['devices'] if d['name']=='lamp')
+            resistance=48+.05+2*(8.6 if mode=='thin' else .172)
+            voltage=6 if mode=='six volts' else 12
+            current=0 if mode=='missing return' else voltage/resistance
+            self.assertAlmostEqual(abs(lamp['current_a']),current,places=9)
+            self.assertAlmostEqual(abs(lamp['voltage_v']),current*48,places=9)
+            self.assertAlmostEqual(lamp['power_w'],current**2*48,places=9)
+            network=graph['networks'][0];ledger=network['ledger']
+            self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+            self.assertLess(abs(ledger['thermal_residual_j']),1e-7)
+            self.assertLess(abs(ledger['source_j']-ledger['heat_j']-ledger['emitted_j']),1e-8)
+            self.assertLess(network['last']['max_kcl_a'],1e-9)
+            print('BATTERY_WIRE_MEASUREMENT',mode,dict(voltage_v=lamp['voltage_v'],current_a=lamp['current_a'],power_w=lamp['power_w'],ledger=ledger))
+
     def test_both_solar_challenges_need_sunlight_and_a_player_drawn_power_lead(self):
         for identity in ('sun','easy-solar'):
             level=mg.level_by_id(identity)

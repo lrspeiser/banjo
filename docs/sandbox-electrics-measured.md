@@ -6,6 +6,70 @@ heating coils, plus explicit solar power leads. Their terminal graph compiles to
 and names do not substitute for a circuit solve. Existing solar panels charge
 the same declared battery store used by the graph.
 
+## Battery voltage and copper wire resistance (October 12)
+
+The current **Give it power** lesson has a fixed ground-mounted supply and
+the existing 12 V, 3 W resistive bulb. Its goal remains 2 W for 0.5 s within
+4 s. The player chooses voltage and draws both terminal connections; contact
+alignment is retained only in the older v2 lesson and the Sandbox holder.
+Fresh seeded battery recipes use v3; v1/v2 declarations and seeds are preserved.
+
+Selected copper wire resistance is `rho * L / A`, using
+`rho = 0.0172 ohm mm²/m` at 20 °C, declared length including slack, and
+cross sections thin 0.01, standard 0.5, thick 2.5 mm². The two lesson leads
+are each 5 m: thin 8.6 Ω, standard 0.172 Ω, thick 0.0344 Ω. The native
+circuit solves their voltage drops and books `I²R` heat. The source retains
+its 0.05 Ω internal resistance. Old saved and prepared wires retain 0.01 Ω.
+The **low resistance** Sandbox choice exposes that legacy lumped model.
+
+| Supply and leads | Lamp V | Current A | Lamp W | Nudged wins |
+|---|---:|---:|---:|---:|
+| 12 V, standard | 11.9023019 | 0.247964624 | 2.95134982 | 3/3 |
+| 12 V, thin | 8.8275862 | 0.183908046 | 1.62346413 | 0/3 |
+| 6 V, standard | 5.9511510 | 0.123982312 | 0.737837455 | 0/3 |
+| Missing return | 0 | 0 | 0 | 0/3 |
+| 12 V, standard, reversed lamp leads | -11.9023019 | -0.247964624 | 2.95134982 | 3/3 |
+
+These are native, whole-apparatus runs at 1/240 s and 2 cm voxel resolution,
+with nominal plus two genuine 1.5 mm loose-body nudges. The apparatus has no
+loose bodies to align, so those runs coincide. Signed lamp voltage is computed
+from the native node difference; the player meter shows its magnitude. The
+bulb remains nonpolar. Native motor polarity already reverses torque; there
+is no name-based wrong-polarity failure or fake wire animation deciding a win.
+
+Independent one-second native integration at both 1/240 and 1/480 s delivers
+2.95134982 W. At either step, source energy is 2.975575485 J, heat is
+2.385305520 J and emitted light 0.590269964 J. Electrical residual is
+-2.41e-13 J and KCL residual 2.01e-14 A; thermal residuals are -5.50e-9 J
+and -3.53e-8 J respectively. The goal run completes at 0.583 s and draws
+1.735752366 J. Its material-derived construction score is 881,440,000 J;
+the new lesson uses the earlier fixed-case 882 MJ rounded par. The v2 holder
+retains its 375 MJ par. No goal, tolerance or native binary changed.
+
+Limits: cable geometry shows topology and enlarged thickness cues, not exact
+length or real coiled slack. Wires have no mechanical mass or tensile model.
+Joule heat remains lumped into the supply thermal node, not spatially resolved
+copper. Copper resistance is constant with temperature; insulation, ampacity,
+filament temperature/resistance, safe household wire sizing and bulb explosions
+are unsupported. The existing bulb model splits power into heat and light.
+The new-wire analytic oracle is material-neutral. Existing identical-coil
+glass/oak/iron heating comparisons and physical-holder regressions remain in
+the measured regression set; they are not copper calibration.
+
+Verification: 23 electrical tests (33.72 s), nine holder tests (7.40 s),
+and the 51-test game suite pass. The new voltage/thickness browser test and
+the preserved holder test pass at 1280×860, 390×844 and 844×390 (16.75 s).
+The client view CTest, syntax checks and 269 source registrations pass.
+The final meter-layout/battery-control rerun passes the new battery test and
+the existing cable-power test (26.28 s). The recipe sweep checks all 88
+presets: 264/264 solution nudges, zero empty or wrong wins. That 16-test run
+also exposed one presentation assertion: the generic tray adapter added an
+unwanted across-position control. Marking this lesson's battery/wires as
+non-positionable fixes it; the failed version assertion and legacy v1
+cache-loss test then pass together (1.48 s). The entire recipe suite was
+not repeated after that metadata fix. The original lamp goal and deadline
+are unchanged. Focused tests do not imply the entire repository CI passed.
+
 ## Cable power and starting load estimates (October 12)
 
 The new cable/object badges are measurements and static estimates only. They

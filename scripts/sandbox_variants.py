@@ -19,6 +19,7 @@ FAMILY_VERSIONS.update({family:2 for family in ('easy-water-wheel','easy-water-g
 FAMILY_VERSIONS.update({family:2 for family in ('easy-spring','easy-tackle','easy-gears')})
 FAMILY_VERSIONS['easy-water-wheel']=3
 FAMILY_VERSIONS['easy-gears']=3
+FAMILY_VERSIONS['easy-power']=3
 MAX_ATTEMPTS = 3
 
 # Each family changes one physical input. Prepared-piece parameters are
@@ -127,6 +128,10 @@ def _apparatus(family_level, version):
     """
     result = copy.deepcopy(family_level)
     family = family_level['id']
+    if family=='easy-power' and version==2:
+        import sandbox_electrics as electrical
+        import machine_game as game
+        return game._with_free_knobs(copy.deepcopy(electrical.LEGACY_CONTACT_POWER))
     if family in ('easy-spring','easy-tackle','easy-gears') and version==1:
         import sandbox_mechanics as mechanics
         import machine_game as game
@@ -192,7 +197,7 @@ def _apparatus(family_level, version):
     result.update(machine=base, tray=[row], solution=[{'piece': 'battery', 'x_m': -.5}],
                   wrong=[{'piece': 'battery', 'x_m': -.5, 'charge_percent': 0}],
                   brief='Place a charged battery in the prepared two-terminal socket to keep the lamp on.',
-                  par_energy_j=882000000)
+                  par_energy_j=882000000,style_pieces=1)
     result['hints'] = [result['brief'], 'Inspect the measured power, charge and physical positions. An open loop cannot power the load.']
     return result
 

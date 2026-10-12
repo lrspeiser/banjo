@@ -53,7 +53,7 @@ PLAYER_TASK_COUNTS = {
     'laser': 2, 'sun': 2, 'tackle': 1,
     'easy-cut': 1, 'easy-mirror': 1, 'easy-lens': 1, 'easy-solar': 2,
     'easy-tackle': 1, 'easy-water-wheel': 1, 'easy-river-wheel': 1, 'easy-spring': 1,
-    'easy-gears': 2, 'easy-weight': 1, 'easy-motor': 1, 'easy-power': 1,
+    'easy-gears': 2, 'easy-weight': 1, 'easy-motor': 1, 'easy-power': 3,
     'easy-switch': 2, 'easy-bulb': 1, 'easy-loop': 1,
     'easy-water-receiver': 1, 'easy-heat': 1, 'easy-catapult': 1,
     'easy-marble-light': 1, 'easy-water-gate': 3, 'easy-charge-lift': 1,
@@ -1719,6 +1719,7 @@ def public(level):
                                else PLAYER_TASK_COUNTS[family])
         if family=='easy-water-wheel' and level.get('variant',{}).get('version')==2:result['task_count']=2
         if family=='easy-gears' and level.get('variant',{}).get('version')==2:result['task_count']=1
+        if family=='easy-power' and level.get('variant',{}).get('version') in (1,2):result['task_count']=1
     if level.get('variant'):
         result['variant'] = {k: level['variant'][k] for k in ('family', 'seed', 'version', 'attempt',
             'fallback', 'validated', 'parameter', 'parameter_label', 'kind', 'value', 'measured_energy_j') if k in level['variant']}

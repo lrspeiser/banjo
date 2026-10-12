@@ -52,7 +52,8 @@ class Puzzles(unittest.TestCase):
         cls.template_count = len(machine_game.sandbox_templates())
         cls.piece_count = len([row for row in machine_game.free_build()['tray'] if not row.get('attach') and not row.get('legacy')])
         cls.river_solution = dict(machine_game.sandbox_water_launch.RIVER_SOLUTION)
-        cls.power_level = machine_game.level_by_id('easy-power')
+        import sandbox_variants
+        cls.power_level = sandbox_variants.construct(machine_game.level_by_id('easy-power'),42,version=2)
         # An engine still closing as the tests end holds its log open a moment.
         cls.logs = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         # The game site as deployed: open to anyone, nothing else served.
@@ -261,6 +262,32 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_grounded_battery_voltage_and_drawn_wire_thickness_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-power',width,height,phone=width!=1280)
+                self.press('Add a battery');self.ghost()
+                self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"along (m) of your battery 1\"]'))"))
+                self.slide('Its voltage',12);self.ghost()
+                self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                for a,b in [('your battery 1 plus','lamp plus'),('lamp minus','your battery 1 minus')]:
+                    self.click_visible('Connect '+a)
+                    self.wait("window.machineGhostState()?.answered && !window.machineGhostState()?.busy",20)
+                    self.click_visible('Connect '+b)
+                    self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='lamp'&&/8\\.8 V/.test(r.text))",30)
+                self.assertTrue(self.js("window.machinePowerFeedbackState().labels.some(r=>r.device==='lamp'&&/1\\.6 W/.test(r.text))"))
+                for index in (1,2):
+                    self.reveal_control("document.getElementById('piece-edit')")
+                    self.js(f"(()=>{{const s=document.getElementById('piece-edit');s.value='{index}';s.dispatchEvent(new Event('change',{{bubbles:true}}));}})()")
+                    self.ghost();self.press('Change its wire thickness')
+                    self.slide('Its wire thickness','standard');self.ghost()
+                    self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='lamp'&&/11\\.9 V/.test(r.text))",30)
+                self.assertTrue(self.js("window.machinePowerFeedbackState().labels.some(r=>r.device==='lamp'&&/3\\.0 W/.test(r.text))"))
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertGreater(next(d for d in self.js('window.machineContactState()')['liveDevices'] if d['kind']=='bulb')['power_w'],2)
+
     def place_contact_battery(self, placement, charge=None):
         self.press('Add a battery'); self.ghost()
         knobs = next(t['knobs'] for t in self.power_level['tray'] if t['piece'] == 'battery')
@@ -275,7 +302,7 @@ class Puzzles(unittest.TestCase):
     def test_contact_battery_drop_powers_lamp_on_desktop_and_phones(self):
         for width, height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
-                self.open('easy-power',width,height,phone=width!=1280)
+                self.open(self.power_level['id'],width,height,phone=width!=1280)
                 self.place_contact_battery(self.power_level['solution'][0])
                 start = self.js('window.machineContactState()')
                 self.assertEqual(len(start['liveContacts']), 4)
@@ -302,7 +329,7 @@ class Puzzles(unittest.TestCase):
         for width, height in ((1280,860),(390,844),(844,390)):
             for mode in ('misaligned','empty'):
                 with self.subTest(viewport=(width,height),mode=mode):
-                    self.open('easy-power',width,height,phone=width!=1280)
+                    self.open(self.power_level['id'],width,height,phone=width!=1280)
                     placement = self.power_level['wrong'][0] if mode=='misaligned' else self.power_level['solution'][0]
                     self.place_contact_battery(placement,charge=0 if mode=='empty' else None)
                     self.click_visible('Run it')

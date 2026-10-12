@@ -185,6 +185,11 @@ function powerPortAt(port) {
   return port.part?terminalAt({name:'',part:port.part},'',port.at_m)
     :readouts.machines?.solar_panels?.find(p=>p.name===port.solar_panel)?.at_m||port.at_m;
 }
+// Enlarge conductors for visibility; preserve the relative size cue rather
+// than drawing a 50-micrometre wire invisibly at world scale.
+function wireDisplayRadius(wire) {
+  return wire?.area_mm2 == null ? .009 : Math.max(.004,Math.min(.018,.009*Math.sqrt(wire.area_mm2/.5)));
+}
 function syncWires() {
   for (const w of wires) { scene.remove(w.line); w.line.geometry.dispose(); w.line.material.dispose(); }
   wires.length = 0;
@@ -213,10 +218,11 @@ function syncWires() {
   for (const [lane, wire] of (machine.electrical?.wires || []).entries()) {
     const a = terminals.get(wire.a), b = terminals.get(wire.b);
     if (!a || !b) continue;
-    const line = new THREE.Mesh(new THREE.TubeGeometry(routedCurve(a, b, lane), 64, .009, 6, false),
+    const radius=wireDisplayRadius(wire);
+    const line = new THREE.Mesh(new THREE.TubeGeometry(routedCurve(a, b, lane), 64, radius, 6, false),
       new THREE.MeshBasicMaterial({color: wireColor(wire)}));
     scene.add(line); wires.push({line, terminalWire: true, name: wire.name, a:wire.a, b:wire.b, lane,
-      color: wireColor(wire), route: wireRoute(a, b, lane)});
+      color: wireColor(wire), radius, route: wireRoute(a, b, lane)});
   }
   const ports = new Map((machine.electrical?.power_ports || []).map(p => [p.name, p]));
   for (const cable of machine.electrical?.power_cables || []) {
@@ -449,10 +455,11 @@ function positionTerminalLabels() {
       const prefix=snapshot.preview?'Preview · ':'';
       if (device.kind==='battery') {
         const battery=snapshot.batteries.find(b=>b.name===device.battery);
-        feedback.textContent=prefix+(battery?`${battery.charge_j.toFixed(1)} J · ${Math.round(100*battery.charge_j/battery.capacity_j)}% charged`:'Charge measured on Run');
+        const store=machine?.batteries?.find(b=>b.name===device.battery);
+        feedback.textContent=prefix+`${store?.voltage_v||0} V · `+(battery?`${battery.charge_j.toFixed(1)} J · ${Math.round(100*battery.charge_j/battery.capacity_j)}% charged`:'Charge measured on Run');
       } else if (device.kind==='bulb') {
         const bulb=snapshot.devices.find(d=>d.name===device.name);
-        feedback.textContent=prefix+`${(bulb?.power_w||0).toFixed(2)} W lamp`;
+        feedback.textContent=prefix+`${(bulb?.power_w||0).toFixed(2)} W lamp · ${Math.abs(bulb?.voltage_v||0).toFixed(1)} V / ${device.rated_voltage_v} V rated`;
       } else if (device.kind==='coil' || device.kind==='motor') {
         const measured=snapshot.devices.find(d=>d.name===device.name);
         feedback.textContent=prefix+`${Math.abs(measured?.current_a||0).toFixed(3)} A · ${(measured?.power_w||0).toFixed(1)} W`;
@@ -1055,7 +1062,7 @@ function updateWires() {
         const route = wireRoute(a,b,w.lane);
         if (JSON.stringify(route)!==JSON.stringify(w.route)) {
           w.line.geometry.dispose();
-          w.line.geometry = new THREE.TubeGeometry(routedCurve(a,b,w.lane),64,.009,6,false);
+          w.line.geometry = new THREE.TubeGeometry(routedCurve(a,b,w.lane),64,w.radius,6,false);
           w.route = route;
         }
       }
@@ -1978,7 +1985,7 @@ async function checkGhost(g) {
         const a = terminals.get(wire.a), b = terminals.get(wire.b);
         if (!a || !b) continue;
         const mine = wire.name === ghostName() || wire.name.startsWith(ghostName() + ' ');
-        const tube = new THREE.Mesh(new THREE.TubeGeometry(routedCurve(a, b, lane), 64, .009, 6, false),
+        const tube = new THREE.Mesh(new THREE.TubeGeometry(routedCurve(a, b, lane), 64, wireDisplayRadius(wire), 6, false),
           mine ? ghostLook[r.fits ? 'fits' : 'refused'] : material(wireColor(wire), 'wire'));
         terminalGhostWires.add(tube);
       }
@@ -2080,6 +2087,7 @@ function setGhostDown() {
 // with - and + either side of its slider, and Set down.
 function knobName(rule, key) { return (rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
 function pieceKnobVisible(p,key) {
+  if(trayItem(p.piece)?.knobs?.[key]?.hidden)return false;
   if(p.piece==='spring' && p.load && p.load!=='included load' && ['height_m','material','load'].includes(key))return false;
   if(p.piece==='tackle' && p.load && p.load!=='included load' && key==='load_material')return false;
   if(p.piece==='water_wheel' && p.side==='off' && ['side','discharge_l_s'].includes(key))return false;
@@ -2423,7 +2431,9 @@ function updatePowerFeedback() {
       `Needs ${d.required_torque_n_m.toFixed(1)} N·m; stall ${d.rated_torque_n_m.toFixed(1)}`:
       `Start ≈ ${d.required_w.toFixed(1)} W · ${d.required_torque_n_m.toFixed(1)} N·m`;
     else need=`Load varies · ${d.rated_torque_n_m.toFixed(1)} N·m stall`;
+    if(Number.isFinite(d.rated_voltage_v))need+=` · ${d.rated_voltage_v} V`;
     let actual=d.input_w<-.05?`${Math.abs(d.input_w).toFixed(1)} W returned`:`${Math.max(0,d.input_w).toFixed(1)} W in`;
+    if(Number.isFinite(d.voltage_v))actual+=` · ${Math.abs(d.voltage_v).toFixed(1)} V`;
     if(Number.isFinite(d.torque_n_m))actual+=` · ${Math.abs(d.torque_n_m).toFixed(1)} N·m`;
     items.push({id:'device:'+d.name,name:d.name.replace(/^your /,''),kind:'object',at,
       displayName:d.requirement==='start_estimate'?`${d.part.replace(/^your /,'')} · ${d.name.replace(/^your /,'')}`:d.name.replace(/^your /,''),
@@ -2469,7 +2479,8 @@ function updatePowerFeedback() {
     if(Math.abs(p.z)>1||Math.abs(p.x)>1||Math.abs(p.y)>1){row.card.hidden=true;continue;}
     const width=row.card.offsetWidth,height=row.card.offsetHeight;
     const ax=(p.x+1)*rect.width/2,ay=(1-p.y)*rect.height/2;
-    const xs=[ax-width/2,ax+12,ax-width-12],ys=[ay-height-14,ay+14,ay-height-38,ay+38];
+    const xs=[ax-width/2,ax+12,ax-width-12],ys=[ay-height-14,ay+14,ay-height-38,ay+38,
+      top,bottom-height,...occupied.flatMap(r=>[r.y-height-6,r.y+r.h+6])];
     const candidate=xs.flatMap(x=>ys.map(y=>({x:Math.max(6,Math.min(rect.width-width-6,x)),y})))
       .find(c=>c.y>=top&&c.y+height<=bottom&&!occupied.some(r=>c.x<r.x+r.w+4&&c.x+width+4>r.x&&c.y<r.y+r.h+4&&c.y+height+4>r.y));
     if(!candidate){row.card.hidden=true;continue;}
@@ -2548,7 +2559,7 @@ function drawFlowFrame(frame) {
       (pts[0].x+pts[1].x)/2,Math.max(pts[0].y,pts[1].y)+(w.unit==='W'?.18:.1),(pts[0].z+pts[1].z)/2),pts[1])
       : new THREE.CatmullRomCurve3(pts);
     const active = Math.abs(w.value)>1e-4;
-    const line = routed || leg ? new THREE.Mesh(new THREE.TubeGeometry(curve, 64, .010, 6, false),
+    const line = routed || leg ? new THREE.Mesh(new THREE.TubeGeometry(curve, 64, routed?wireDisplayRadius(electrical.wires[lane]):.010, 6, false),
       new THREE.MeshBasicMaterial({color:active?0xffe066:leg?leg.color:wireColor(electrical.wires[lane]),depthWrite:false}))
       : new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(32)),
       new THREE.LineBasicMaterial({color:active?0xffe066:0x788994,transparent:true,opacity:active?.9:.35,depthWrite:false}));

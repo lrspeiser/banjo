@@ -120,7 +120,7 @@ class Recipes(unittest.TestCase):
         for identity in ('easy-cut', 'easy-cut--v2--0000002a--0',
                          'easy-cut--v1--0000002a--9', 'free--v1--0000002a--0',
                          'easy-cut--v1--0000002A--0', 'easy-cut--v1--0000002a--00',
-                         'easy-power--v3--0000002a--0', 'easy-power--v02--0000002a--0'):
+                         'easy-power--v4--0000002a--0', 'easy-power--v02--0000002a--0'):
             with self.assertRaises(ValueError):
                 variants.parse(identity)
 
@@ -128,13 +128,19 @@ class Recipes(unittest.TestCase):
         family = next(row for row in families() if row['id'] == 'easy-power')
         before = copy.deepcopy(family)
         current = variants.construct(family, 42)
-        self.assertEqual(current['id'], 'easy-power--v2--0000002a--0')
-        self.assertEqual(current['variant']['version'], 2)
+        self.assertEqual(current['id'], 'easy-power--v3--0000002a--0')
+        self.assertEqual(current['variant']['version'], 3)
         physical = world.compile_spec(game.compose(current, current['solution'])[0])
-        self.assertEqual(len(physical['electrical']['contacts']), 4)
-        self.assertEqual(current['tray'][0]['knobs']['mount']['default'], 'contact pack')
-        self.assertTrue(any(d['kind'] == 'socket' for d in physical['electrical']['devices']))
-        self.assertTrue(any(not p['fixed'] for p in physical['parts'] if p['name'].startswith('your battery')))
+        self.assertFalse(physical['electrical']['contacts'])
+        self.assertEqual(len(physical['electrical']['wires']),2)
+        self.assertEqual(set(current['tray'][0]['knobs']),{'voltage_v'})
+        self.assertTrue(all(p['fixed'] for p in physical['parts']))
+        self.assertEqual(game.public(current)['task_count'],3)
+        contact = variants.construct(family,42,version=2)
+        old = world.compile_spec(game.compose(contact,contact['solution'])[0])
+        self.assertEqual(len(old['electrical']['contacts']),4)
+        self.assertEqual(game.public(contact)['task_count'],1)
+        self.assertEqual(variants.reconstruct(family,42,0,version=2),contact)
         for seed, original_watts in ((0, 5), (1, 5), (42, 3.5), (0xffffffff, 3.5)):
             for attempt in (0, 1, 2, None):
                 with self.subTest(seed=seed, attempt=attempt):
@@ -160,7 +166,7 @@ class Recipes(unittest.TestCase):
                     self.assertTrue(all(p['fixed'] for p in compiled['parts']))
         self.assertEqual(family, before)
         self.assertEqual(variants.identity('easy-motor', 42), 'easy-motor--v1--0000002a--0')
-        for version in (0, 3, True, '1'):
+        for version in (0, 4, True, '1'):
             with self.assertRaises(ValueError):
                 variants.construct(family, 42, version=version)
 
