@@ -1288,7 +1288,7 @@ async function poll(mine) {
 
 // ---- camera -------------------------------------------------------------------
 let framedFree = false;
-function frameCamera() {
+function frameCamera(includeGhost=false) {
   // A free build's table corners mark where pieces can go; the view is of what is built.
   const pts = [];
   for (const body of world.bodies.values()) {
@@ -1304,6 +1304,10 @@ function frameCamera() {
     });
     if (!bounds.isEmpty()) pts.push(bounds.min.toArray(), bounds.max.toArray());
     else pts.push(body.position_m);
+  }
+  if(includeGhost && ghostGroup.children.length) {
+    const bounds=new THREE.Box3().setFromObject(ghostGroup);
+    if(!bounds.isEmpty())pts.push(bounds.min.toArray(),bounds.max.toArray());
   }
   // A level's goal zone is in the picture too, and the ground under it:
   // where the player is to build, even before anything stands there.
@@ -1443,6 +1447,7 @@ function render() {
   for (const w of wires) if (w.terminalWire) w.line.visible = w.connected!==false && !hiddenPiece(w.name) && !ghost?.electrical;
   updateFlowPreview();
   updateLaserPreview();
+  updateWaterDisplay();
   positionLensGrip();
   updateContactGaps();
   updateContactCircuitReadings();
@@ -1952,6 +1957,7 @@ async function checkGhost(g) {
                       joined: r.snap ? `${r.snap.port} of ${r.snap.to}` : null});
     g.electrical = r.electrical_preview || null;
     g.optical_setup = r.optical_setup || null;
+    g.water_setup = r.water_setup || [];
     drawGhost(r.parts, r.fits);
     drawLensOutlines();
     if (g.electrical) {
@@ -1978,6 +1984,9 @@ async function checkGhost(g) {
     g.editGuide = r.edit_guide || null;
     drawEditGuide(r.parts);
     drawPorts(r.ports || [], r.snap);
+    // Authored tall additions must fit beside the existing apparatus once,
+    // without moving the player's view again as they adjust or drag them.
+    if(g.frameOnAdd){g.frameOnAdd=false;frameCamera(true);freshView();}
     // Selecting a control changes annotations, not the simulated setup.
     if (!g.again && setupStamp !== g.previewStamp) { g.previewStamp = setupStamp; schedulePreview(); }
   } catch (e) {
@@ -2001,7 +2010,8 @@ function startGhost(p, index, keepPlace = false) {
   if(document.body.classList.contains('panel-collapsed')) $('panel-toggle').click();
   selectPhonePanel('controls');
   ghost = {p, index, was: index < placements.length ? placements[index] : null, fits: true, problems: [],
-           drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {}};
+           drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {},card:trayItem(p.piece).focus_knob,
+           frameOnAdd:index>=placements.length && Boolean(trayItem(p.piece).frame_on_add)};
   view.classList.add('placing'); view.classList.remove('pickable', 'looking');
   looking = false;
   renderTray(); renderPlaced(); renderGhostBar();
@@ -2058,6 +2068,11 @@ function setGhostDown() {
 // with - and + either side of its slider, and Set down.
 function knobName(rule, key) { return (rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
 function pieceKnobVisible(p,key) {
+  if(p.piece==='water_wheel' && p.side==='off' && ['side','discharge_l_s'].includes(key))return false;
+  if(p.piece==='water_tank') {
+    if(p.outlet_model==='gravity' && (['outlet_model','discharge_l_s'].includes(key) || (key==='valve' && p.valve!=='closed')))return false;
+    if(p.outlet_model!=='gravity' && key==='opening_percent')return false;
+  }
   if(p.piece==='switch'&&(p.mode==='paddle'?['state','handle_material'].includes(key):key==='threshold_deg'))return false;
   return !(p.piece==='battery' && p.mount!=='contact pack' && ['height_m','yaw_deg','housing_material'].includes(key));
 }
@@ -2233,6 +2248,37 @@ const previewEndLook = new THREE.MeshStandardMaterial({color: 0xcdeeff, transpar
 let previewAsk = 0, previewTimer = null, previewOn = true, previewShown = null;
 const flowGroup = new THREE.Group();
 scene.add(flowGroup);
+const tankWater=new THREE.Group();scene.add(tankWater);
+const tankWaterMeshes=new Map(),tankWaterGeometry=new THREE.BoxGeometry(1,1,1);
+const tankWaterLook=new THREE.MeshStandardMaterial({color:0x56bfff,transparent:true,opacity:.75,roughness:.25,depthWrite:false});
+let waterDisplay=[];
+function updateWaterDisplay() {
+  const active=LEVEL_MODE && level && !document.body.matches('.on-sandbox,.on-levels');
+  tankWater.visible=active;
+  const setup=ghost?.water_setup || machine?.spouts || [];
+  const sources=setup.filter(s=>s.reservoir_area_m2>0),current=readouts.pour?.sources || [];
+  const predicted=setupOpticsVisible() && flowGroup.visible?previewShown?.flow_frames?.[flowIndex]?.water?.sources:null;
+  const readings=predicted || (!ghost?current:(!flowPending?previewShown?.flow_frames?.[0]?.water?.sources:[])) || [];
+  const byName=new Map(readings.map(s=>[s.name,s])),wanted=new Set(sources.map(s=>s.name));
+  for(const [name,mesh] of tankWaterMeshes)if(!wanted.has(name)){tankWater.remove(mesh);tankWaterMeshes.delete(name);}
+  waterDisplay=sources.map(source=>{
+    const reading=byName.get(source.name),litres=reading?.remaining_m3!=null?reading.remaining_m3*1000:source.initial_volume_l;
+    const opening=reading?.opening_fraction??source.opening_fraction??1;
+    let mesh=tankWaterMeshes.get(source.name);
+    if(!mesh){mesh=new THREE.Mesh(tankWaterGeometry,tankWaterLook);tankWaterMeshes.set(source.name,mesh);tankWater.add(mesh);}
+    const floor=source.reservoir_floor_m || [source.at_m[0],source.at_m[1]+(source.head_offset_m||0),source.at_m[2]];
+    const width=Math.sqrt(source.reservoir_area_m2),height=litres/1000/source.reservoir_area_m2;
+    mesh.scale.set(width,height,width);mesh.position.set(floor[0],floor[1]+height/2,floor[2]);mesh.visible=height>0;
+    return {name:source.name,litres,opening,flow_l_s:reading?.flow_l_s??null,preview:Boolean(predicted),height_m:height};
+  });
+  const meter=$('water-status');meter.hidden=!active || !waterDisplay.length;
+  if(!meter.hidden){
+    const selected=waterDisplay.find(s=>s.name===ghostName()+' outlet') || waterDisplay[0];
+    const text=`${waterDisplay.length>1?waterDisplay.length+' tanks · ':''}${selected.preview?'Preview · ':''}${selected.litres.toFixed(2)} L · tap ${Math.round(selected.opening*100)}% · ${selected.flow_l_s==null?'Updating flow…':selected.flow_l_s.toFixed(2)+' L/s'}`;
+    if(meter.textContent!==text)meter.textContent=text;
+  }
+}
+window.machineWaterDisplay=()=>waterDisplay.map(row=>({...row}));
 
 // A small independent native trace keeps light visible during rapid edits.
 // Full machine rehearsals still own the ball/water/current timeline. An old
@@ -2429,7 +2475,7 @@ function drawFlowFrame(frame) {
   if (frame.water) {
     const left=frame.water.sources.filter(s=>s.remaining_m3!=null).reduce((n,s)=>n+s.remaining_m3*1000,0);
     rows.push(`Water: ${frame.water.poured_l.toFixed(2)} L released${frame.water.sources.some(s=>s.remaining_m3!=null)?`, ${left.toFixed(2)} L left`:''}`);
-    if (frame.water.sources.length && frame.water.sources.every(s=>!s.valve_open)) rows.push('Water valves closed');
+    if (frame.water.sources.length && frame.water.sources.every(s=>!s.valve_open || (s.gravity_reservoir && !s.opening_fraction))) rows.push('Water valves closed');
   }
   const currents=(surface?.flow_samples||[]).map(s=>Math.hypot(...s.velocity_m_s)).filter(Number.isFinite);
   if (currents.length) rows.push(`Water current: up to ${Math.max(...currents).toFixed(2)} m/s · arrows show direction (0.05 m/s samples)`);
@@ -3369,7 +3415,7 @@ const PIECE_INFO = {
   power_cable: ['electrics', 'Click a solar output, then a winch or battery input. A two-conductor lead carries collected power.'],
   ignition: ['electrics', 'A wired heating coil attached to a material target.'],
   water_wheel: ['water', 'River current or falling water pushes the paddles. Connect its drum to lift a load.'],
-  water_tank: ['water', 'A fixed finite water supply with a metered outlet and valve. Open its channel example.'],
+  water_tank: ['water', 'A separate finite gravity tank. Open its tap wider for more flow; falling water level slows it.'],
   catapult: ['motion', 'A counterweight turns a cradle that launches through physical contact.']
 };
 function libraryTray() { return level.free || level.tray.filter(t => !t.attach).length > 4; }
@@ -3379,7 +3425,7 @@ function addTrayPiece(t) {
   trayPiece = t.piece;
   const p = {piece: t.piece};
   for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
-  startGhost(p, placements.length);
+  startGhost(p, placements.length,Boolean(t.start_at_defaults));
 }
 function openPiecePicker() {
   if (!level || ghost || $('piece-picker').open) return;
@@ -3558,6 +3604,19 @@ function renderMachineControls() {
   };
   for (const source of machine?.spouts || []) {
     if (source.initial_volume_l == null) continue;
+    if (source.reservoir_area_m2>0) {
+      const label=document.createElement('label');label.textContent='Tap opening';
+      const input=Object.assign(document.createElement('input'),{type:'range',min:0,max:100,step:1,value:100*(source.opening_fraction??1)});
+      input.setAttribute('aria-label',`Live tap opening of ${source.name}`);
+      const output=document.createElement('output');output.textContent=`${input.value}%`;
+      input.addEventListener('input',()=>{output.textContent=`${input.value}%`;});
+      input.addEventListener('change',async()=>{
+        try {liveControlPending=true;liveControlRequest=api({op:'water_opening',session,name:source.name,fraction:Number(input.value)/100});
+          await liveControlRequest;$('machine-control-status').textContent=playing?'Applying tap opening.':'Tap opening queued. Press Run it to continue.';if(wake)wake();}
+        catch(error){liveControlPending=false;$('machine-control-status').textContent=error.message;}
+      });
+      label.append(input,output);rows.append(label);continue;
+    }
     let opened = source.valve_open !== false;
     action(`Toggle ${source.name} valve`, () => ({op: 'water_valve', name: source.name, open: opened = !opened}));
   }
@@ -3740,7 +3799,18 @@ function designStore() {
     }
     persist();
   }
+  for(const d of me().sandbox.items || []) {
+    preserveLegacyWater(d.draft);
+    for(const v of d.versions || [])preserveLegacyWater(v.draft);
+  }
   return me().sandbox;
+}
+function preserveLegacyWater(draft) {
+  for(const p of draft?.placements || []) {
+    if(p.piece==='water_wheel' && p.side==null)p.side='left';
+    if(p.piece==='water_tank' && p.outlet_model==null)p.outlet_model='metered';
+  }
+  return draft;
 }
 function newDesign(name, draft = {base: null, placements: []}) {
   const store = me().sandbox || (me().sandbox = {items: [], last: null});
@@ -4240,6 +4310,7 @@ async function unpackBuild(packed) {
   if (!Array.isArray(list) || list.length > 200 || !list.every(p => p && typeof p === 'object' && typeof p.piece === 'string'))
     throw new Error('not a build');
   if (draft.base != null && (typeof draft.base !== 'object' || draft.base.schema !== 'banjo.machine.v1')) throw new Error('not a machine');
+  preserveLegacyWater(draft);
   return {base: draft.base || null, placements: list, name: typeof draft.name === 'string' ? draft.name.slice(0, 60) : 'Shared design'};
 }
 $('free-share').addEventListener('click', async () => {

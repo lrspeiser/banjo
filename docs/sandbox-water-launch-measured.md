@@ -1,5 +1,9 @@
 # Fixed water sources and counterweight launchers
 
+Updated October 12, 2026. The independent gravity tank measurements below
+supersede the October 11 metered-tank lesson timings and model limits. The
+older measurements remain as receipts for saved metered sources.
+
 11 October 2026. Implemented in `scripts/sandbox_water_launch.py`,
 `scripts/machine_world.py` and the existing falling-water engine. Measurements
 below use the final Windows Release integration engine built in
@@ -109,7 +113,8 @@ velocity during the fluid step; body work uses that surface velocity and is
 not yet independently reconciled with every rigid constraint reaction.
 Pressure/viscous work is an explicit term, not a proved thermodynamic SPH
 internal-energy model. There is no sloshing, arbitrary movable liquid vessel,
-spray, capillary force, porous absorption or pressure-driven outlet.
+spray, capillary force or porous absorption. The October 12 fixed gravity
+outlet below adds a lumped head law; it does not add free vessel containment.
 
 ## Comparative launch measurement
 
@@ -250,3 +255,101 @@ the same) reports:
 All three falling-water momentum residuals are below 5.9×10⁻¹² N s; mass
 residuals are below 10⁻¹² m³. These are the complete falling-parcel balances,
 with the coupled rigid/channel limitations described above.
+
+
+## Independent gravity tanks October 12
+
+New tanks and wheels are separate. The wheel has no source unless a tank
+pours on its paddles or a river supplies current. The new 25th sandbox example,
+**Wheel in the river**, and its lesson use only a 100 L/s boundary current,
+65 cm wheel and empty bank/channel. Moving the wheel from z=1 m to z=0 puts
+the paddles in the water. Three actual whole-apparatus nudges win at
+3.983/4.100/3.883 s; dry supply and bank placement fail 0/3. The earlier
+river-lift and its calibrated limits above remain unchanged.
+
+The independent tank is fixed and quiescent, with constant section A=0.0576 m²
+(24×24 cm), 5 mm glass walls and floor, 50 mm nominal outlet diameter,
+head offset 0.005 m and initial volume 4 L. Its visible surface is V/A above
+its native declared floor; it is not an animated free surface or contained
+SPH fluid. The builder places its grounded frame on the bank and routes
+the ideal connection to the editable outlet. Tipping/sloshing buckets,
+support deformation, actual internal pipe flow, approach-flow velocity,
+viscous pipe losses, leaks and force-operated valve mechanics are unsupported.
+
+The native law is h=offset+V/A, v=sqrt(2gh), and
+Q=Cc*Aout*opening*v, with g=9.81 m/s² and opening in [0,1]. Cc=0.62 models
+nominal area contraction: the flowing jet area contracts, rather than giving
+every emitted parcel an arbitrarily reduced kinetic energy. It is an
+uncalibrated game parameter. The ideal head/velocity relationship and the
+need to calibrate real orifice coefficients follow the
+[USBR Water Measurement Manual](https://www.usbr.gov/tsc/techreferences/mands/wmm/chap02_08.html)
+and its [coefficient discussion](https://www.usbr.gov/tsc/techreferences/mands/wmm/chap02_15.html).
+Closing the tap stops new parcels; widening it increases Q, and declining
+water head slows Q. The isolation valve and runtime fractional opening are
+separate native boundary controls. The drawn handle shows the initial setting;
+the runtime slider changes the ideal outlet, not a mechanical handle solver.
+
+Only accepted Plans debit the fixed store. Each 64 mL / 64 g parcel uses
+mid-volume head, so its source potential plus kinetic energy exactly equals
+the corresponding reservoir potential decrease:
+E(V)=rho*g*((mouth_y+offset)*V + V²/(2A)). A rejected Plan consumes nothing.
+Four litres emits 3.968 L and retains 32 mL. Reservoir support impulse is
+the stored water's integrated gravity impulse minus emitted momentum;
+support moment uses its actual bank floor position and the outlet position.
+These are receipts for an externally fixed support, not solved frame stress
+or an independent total rigid/channel conservation residual. The legacy
+support_reaction field still means minus emitted momentum alone.
+
+The native unit oracle compares 25%/75% openings at 1/240 and 1/480 s,
+using the same 4 L section and a declared 20 mm head offset. It checks the
+continuous drainage solution to one parcel plus Q_initial*dt (the accepted
+64 mL quantization and time integration bound), exact reservoir source-energy
+debit within 1e-8 J, volume within 1e-12 m³, falling energy within 1e-6 J and
+momentum within 1e-8 N s. These are new explicit discretization bounds; no
+existing goal or conservation tolerance was relaxed. Native input rejects
+non-finite/invalid openings, infinite gravity stores, inconsistent floor
+datum, oversized outlets and simultaneously declared metered flow/speed.
+
+For the unimpeded receiver tank at 2 ms after 7 s: 3.968 L emitted and received,
+32 mL retained, source energy 44.3757312 J, volume residual zero, falling
+energy residual 1.42e-14 J, momentum residual 1.88e-12 N s, reservoir support
+impulse [0,-88.94991097,0] N s and moment [48.01388401,0,0] N m s.
+The receiver audit duration is seven seconds because falling head slows the
+last parcel; its unchanged three-litre lesson goal still happens at 3.983 s.
+
+Equal-geometry material comparison: wheel and tank use glass, oak or iron;
+4 L, 75% opening, x=-0.2 m, z=0, mouth y=1.1 m, 4 s duration, 2 cm wheel
+solids, precise thin tank compound, 10 cm channel and 4 cm falling parcels.
+Rigid dt=1/240 and 1/480 s; water retains its existing acoustic CFL substeps.
+Mass comes from the actual volume and material density, with no overrides.
+
+| Material | Final wheel angle, dt=1/240 / 1/480 (degrees) | Water→body work (J) | Falling energy residual (J) | Numerical correction (J) | Wall time (s) |
+|---|---:|---:|---:|---:|---:|
+| Glass | 126.962 / 129.601 | 4.086 / 4.352 | -5.70e-8 / -7.57e-8 | -0.1238 / -0.1226 | 0.299 / 0.525 |
+| Oak | -11.708 / -0.495 | 6.404 / 6.246 | +2.70e-7 / -6.14e-8 | -0.1797 / -0.1910 | 0.277 / 0.485 |
+| Iron | 32.617 / 35.849 | 0.728 / 1.024 | -8.36e-8 / +1.64e-7 | -0.1249 / -0.1094 | 0.312 / 0.511 |
+
+All cases retain 0.736 L and report 36.6982944 J source energy. Volume
+residual is below 1e-12 m³; maximum momentum residual magnitude is 2.66e-11
+N s. Support impulses range -83.089107 to -83.088904 N s vertically, with
+moments [44.7931..44.7932,0,16.6178..16.6179] N m s. These conserve the
+reported falling parcel system with its explicit pressure/viscous work,
+body exchange, contact losses and numerical correction. They do not close
+every rigid constraint, bed reaction and hydraulic boundary-work term.
+The light oak wheel can reverse after passing thirty degrees, and its final
+angle differs by ~11 degrees on halving dt. These contact/parcel dynamics
+are experimental, not a steady turbine efficiency or monotonic rotation claim.
+No velocity assignment or arbitrary torque was added to make it win.
+
+All new lesson solutions reach their original goals in three whole-apparatus
+nudges at the game's dt: pour 1.517/1.867/1.400 s; gate
+3.183/4.417/2.733 s; receiver 3.983 s. Closed and 1% taps, missing tanks and
+pours missing the wheel along/across the channel fail 0/3. A 5% tap can win
+two of three nudges, and the opposite-paddle pour at x=0.3 can rebound and
+win one nudge; they are not asserted to fail universally. Either addition
+order wins. Seeded v2 tank fills 3.5/4.5/5/5.5 L and river flows
+95/105/110/120 L/s pass all three nudges, with no goal/tolerance changes.
+Version-1 recipe identities retain the earlier metered apparatus. New authored
+construction pars are 771,262,154 / 777,190,154 / 460,651,224 / 593,992,292 J
+for pour/gate/receiver/river respectively, each nominal construction plus
+the existing 1 kJ margin. River boundary work remains absent from the score.

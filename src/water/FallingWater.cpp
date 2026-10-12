@@ -59,12 +59,31 @@ void FallingWater::addSpout(const Spout &spout) {
     if (!(d > 0.0) || !std::isfinite(d)) throw std::invalid_argument("spout '" + spout.name + "' needs a direction");
     if (!(spout.speed_m_s >= 0.0) || !(spout.speed_m_s <= kMaxSpeed))
         throw std::invalid_argument("spout '" + spout.name + "' speed must be 0 to 30 m/s");
-    if (!(spout.discharge_m3_s > 0.0) || !(spout.discharge_m3_s <= 0.05))
+    if (!(spout.discharge_m3_s >= 0.0) || !(spout.discharge_m3_s <= 0.05) ||
+        (spout.reservoir_area_m2==0 && spout.discharge_m3_s==0))
         throw std::invalid_argument("spout '" + spout.name + "' discharge must be above 0 and at most 0.05 m^3/s");
     if (!(spout.from_s >= 0.0) || !(spout.until_s > spout.from_s))
         throw std::invalid_argument("spout '" + spout.name + "' must stop after it starts");
     if (!(spout.initial_volume_m3 >= 0.0))
         throw std::invalid_argument("spout '" + spout.name + "' volume must be nonnegative");
+    if (!std::isfinite(spout.opening_fraction) || spout.opening_fraction<0 || spout.opening_fraction>1)
+        throw std::invalid_argument("spout opening must be between zero and one");
+    if (spout.reservoir_area_m2 != 0) {
+        if (spout.speed_m_s!=0 || spout.discharge_m3_s!=0)
+            throw std::invalid_argument("gravity reservoir speed and discharge are derived from its head and opening");
+        if (!std::isfinite(spout.initial_volume_m3) || !std::isfinite(spout.reservoir_area_m2) ||
+            spout.reservoir_area_m2<=0 || !std::isfinite(spout.outlet_area_m2) || spout.outlet_area_m2<=0 ||
+            spout.outlet_area_m2>spout.reservoir_area_m2 || !std::isfinite(spout.head_offset_m) || spout.head_offset_m<0 ||
+            !std::isfinite(spout.contraction_coefficient) || spout.contraction_coefficient<=0 || spout.contraction_coefficient>1 ||
+            std::sqrt(2*9.81*head(spout,spout.initial_volume_m3))>kMaxSpeed ||
+            spout.contraction_coefficient*spout.outlet_area_m2*std::sqrt(2*9.81*head(spout,spout.initial_volume_m3))>.05)
+            throw std::invalid_argument("a gravity reservoir needs finite volume, positive bounded areas and valid head");
+        if (spout.reservoir_floor_m && (!std::isfinite(spout.reservoir_floor_m->x) || !std::isfinite(spout.reservoir_floor_m->y) ||
+            !std::isfinite(spout.reservoir_floor_m->z) || std::abs(spout.reservoir_floor_m->y-spout.at_m.y-spout.head_offset_m)>1e-9))
+            throw std::invalid_argument("reservoir floor must be finite and agree with the outlet head offset");
+    } else if (spout.outlet_area_m2 != 0 || spout.head_offset_m != 0) {
+        throw std::invalid_argument("an outlet area and head offset need a gravity reservoir");
+    }
     if (spout.receiver_bounds_m) {
         const auto &b=*spout.receiver_bounds_m;
         if (!std::all_of(b.begin(),b.end(),[](double x){return std::isfinite(x);}) || !(b[0]<b[1]) || !(b[2]<b[3]))
@@ -82,6 +101,19 @@ void FallingWater::addSpout(const Spout &spout) {
 bool FallingWater::setValve(const std::string &name, bool open) {
     for (Spout &s : spouts_) if (s.name == name) { s.valve_open = open; return true; }
     return false;
+}
+
+bool FallingWater::setOpening(const std::string &name, double fraction) {
+    if (!std::isfinite(fraction) || fraction<0 || fraction>1) return false;
+    for (Spout &s:spouts_) if (s.name==name && s.reservoir_area_m2>0) {s.opening_fraction=fraction;return true;}
+    return false;
+}
+double FallingWater::head(const Spout &s, double volume) {
+    return s.reservoir_area_m2>0?s.head_offset_m+std::max(0.0,volume)/s.reservoir_area_m2:0.0;
+}
+double FallingWater::rate(const Spout &s, double volume) {
+    if (!s.valve_open || volume+1e-15<kVolume) return 0;
+    return s.reservoir_area_m2>0?s.contraction_coefficient*s.outlet_area_m2*s.opening_fraction*std::sqrt(2*9.81*head(s,volume)):s.discharge_m3_s;
 }
 
 double FallingWater::residual() const {
@@ -115,7 +147,8 @@ FallingWater::Plan FallingWater::plan(double time_s, double dt_s, const Surfaces
     // of the kernel's support per sound crossing, as in the wheel experiment.
     double fastest = 0.0;
     for (const Parcel &q : p.parcels) fastest = std::max(fastest, length(q.v_m_s));
-    for (const Spout &s : spouts_) fastest = std::max(fastest, s.speed_m_s);
+    for (const Spout &s : spouts_) fastest = std::max(fastest, s.reservoir_area_m2>0?
+        std::sqrt(2*9.81*head(s,s.initial_volume_m3)):s.speed_m_s);
     fastest += 9.81 * dt_s;
     const int n = std::max(1, static_cast<int>(std::ceil(dt_s / (0.25 * kSupport / (kSoundSpeed + fastest)))));
     const double sub = dt_s / n;
@@ -145,28 +178,44 @@ FallingWater::Plan FallingWater::plan(double time_s, double dt_s, const Surfaces
         // where water that left when it did would be by now.
         for (std::size_t k = 0; k < spouts_.size(); ++k) {
             const Spout &s = spouts_[k];
-            if (!s.valve_open || p.accounts[k].remaining_m3 + 1e-15 < kVolume) continue;
+            const double before=p.accounts[k].remaining_m3;
+            const double discharge=rate(s,before);
+            const Vec3 floor=s.reservoir_floor_m.value_or(s.at_m+Vec3{0,s.head_offset_m,0});
+            if (s.reservoir_area_m2>0) {
+                p.accounts[k].reservoir_gravity_impulse_n_s+=g*(1000*before*sub);
+                p.accounts[k].reservoir_gravity_moment_n_m_s+=cross(floor,g*(1000*before*sub));
+            }
+            if (!(discharge>0)) continue;
             const double open = std::max(t0, s.from_s), shut = std::min(t1, s.until_s);
             if (!(shut > open)) continue;
             p.owed_m3[k] = std::min(p.accounts[k].remaining_m3,
-                                  p.owed_m3[k] + s.discharge_m3_s * (shut - open));
+                                  p.owed_m3[k] + discharge * (shut - open));
             while (p.owed_m3[k] + 1e-15 >= kVolume && p.accounts[k].remaining_m3 + 1e-15 >= kVolume) {
                 p.owed_m3[k] -= kVolume;
                 auto &account = p.accounts[k];
                 if (std::isfinite(account.remaining_m3)) account.remaining_m3 = std::max(0.0, account.remaining_m3 - kVolume);
                 account.emitted_m3 += kVolume;
-                account.emitted_source_energy_j += kMass * (9.81 * s.at_m.y + 0.5 * s.speed_m_s * s.speed_m_s);
-                account.emitted_momentum_n_s += s.direction * (kMass * s.speed_m_s);
-                const double age = std::min(shut - open, p.owed_m3[k] / s.discharge_m3_s);
+                // Mid-volume head pays exactly the decrease in the fixed
+                // reservoir's gravitational energy for this accepted parcel.
+                const double speed=s.reservoir_area_m2>0?
+                    std::sqrt(2*9.81*head(s,account.remaining_m3+kVolume*.5)):s.speed_m_s;
+                account.emitted_source_energy_j += kMass * (9.81 * s.at_m.y + 0.5 * speed * speed);
+                account.emitted_momentum_n_s += s.direction * (kMass * speed);
+                account.emitted_moment_n_m_s += cross(s.at_m,s.direction*(kMass*speed));
+                const double age = std::min(shut - open, p.owed_m3[k] / discharge);
+                if (s.reservoir_area_m2>0) {
+                    account.reservoir_gravity_impulse_n_s-=g*(kMass*age);
+                    account.reservoir_gravity_moment_n_m_s-=cross(floor,g*(kMass*age));
+                }
                 Parcel q;
                 q.spout = static_cast<std::uint32_t>(k);
-                q.v_m_s = s.direction * s.speed_m_s + g * age;
-                q.x_m = s.at_m + s.direction * (s.speed_m_s * age) + g * (0.5 * age * age);
-                p.ledger.source_energy_j += kMass * (9.81*s.at_m.y + 0.5*s.speed_m_s*s.speed_m_s);
-                p.ledger.source_impulse_n_s += s.direction * (kMass*s.speed_m_s);
+                q.v_m_s = s.direction * speed + g * age;
+                q.x_m = s.at_m + s.direction * (speed * age) + g * (0.5 * age * age);
+                p.ledger.source_energy_j += kMass * (9.81*s.at_m.y + 0.5*speed*speed);
+                p.ledger.source_impulse_n_s += s.direction * (kMass*speed);
                 p.ledger.gravity_impulse_n_s += g * (kMass*age);
                 p.parcels.push_back(q);
-                surfaces.push_back(near(q.x_m, kRadius, (s.speed_m_s + 9.81 * dt_s) * dt_s + reach_extra));
+                surfaces.push_back(near(q.x_m, kRadius, (speed + 9.81 * dt_s) * dt_s + reach_extra));
                 p.ledger.poured_m3 += kVolume;
                 ++p.ledger.parcels_poured;
                 if (p.parcels.size() > kMaxParcels)

@@ -2390,6 +2390,7 @@ public:
     // to the world's clock after the step is accepted.
     [[nodiscard]] const terrain::Environment *environment() const;
     bool setWaterValve(const std::string &name, bool open);
+    bool setWaterOpening(const std::string &name, double fraction);
     // The rectangle of ground points an edit or a slump has changed since this
     // was last asked, for a host that sends a picture of the ground: nothing
     // when nothing changed, and nothing in a world without ground.

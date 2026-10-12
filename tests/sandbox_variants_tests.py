@@ -32,6 +32,21 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
+    def test_water_v2_uses_independent_tanks_and_keeps_the_v1_feed_recipe(self):
+        for name in ('easy-water-wheel','easy-water-gate','easy-water-receiver'):
+            family=game.level_by_id(name)
+            current=variants.construct(family,42)
+            self.assertEqual(current['variant']['version'],2)
+            self.assertTrue(any(p.get('outlet_model')=='gravity' for p in current['solution']))
+            old=variants.construct(family,42,version=1)
+            self.assertEqual(old['variant']['version'],1)
+            self.assertEqual(len(old['solution']),1)
+            self.assertNotIn('outlet_model',old['tray'][0]['knobs'])
+            self.assertEqual(variants.reconstruct(family,42,0,version=1),old)
+            c=world.compile_spec(game.compose(old,old['solution'])[0])
+            self.assertTrue(c['spouts'])
+            self.assertFalse(any(s.get('reservoir_area_m2') for s in c['spouts']))
+
     def test_solar_v2_has_a_wall_and_lead_and_preserves_the_original_v1_recipe(self):
         family=next(f for f in families() if f['id']=='easy-solar')
         new=variants.construct(family,42)
@@ -54,7 +69,7 @@ class Recipes(unittest.TestCase):
             world.compile_spec(game.compose(old,old['solution'])[0])
 
     def test_all_twenty_one_are_physical_reproducible_deep_copies(self):
-        self.assertEqual(len(families()), 21)
+        self.assertEqual(len(families()), 22)
         for family in families():
             with self.subTest(family=family['id']):
                 original = copy.deepcopy(family)

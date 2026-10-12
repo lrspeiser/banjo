@@ -1985,6 +1985,13 @@ void addEnvironment(LiveWorld &world, nlohmann::json &reply, bool whole) {
                                {"remaining_m3", std::isfinite(a.remaining_m3) ? nlohmann::json(a.remaining_m3) : nlohmann::json(nullptr)},
                                {"emitted_m3", a.emitted_m3}, {"landed_m3", a.landed_m3}, {"received_m3", a.received_m3}, {"ran_off_m3", a.ran_off_m3},
                                {"source_energy_j", a.emitted_source_energy_j},
+                               {"gravity_reservoir", s.reservoir_area_m2>0}, {"opening_fraction", s.opening_fraction},
+                               {"head_m", banjo::water::FallingWater::head(s,a.remaining_m3)},
+                               {"flow_l_s", 1000*banjo::water::FallingWater::rate(s,a.remaining_m3)},
+                               {"reservoir_support_moment_n_m_s", {a.reservoir_gravity_moment_n_m_s.x-a.emitted_moment_n_m_s.x,
+                                  a.reservoir_gravity_moment_n_m_s.y-a.emitted_moment_n_m_s.y,a.reservoir_gravity_moment_n_m_s.z-a.emitted_moment_n_m_s.z}},
+                               {"reservoir_support_reaction_n_s", {a.reservoir_gravity_impulse_n_s.x-a.emitted_momentum_n_s.x,
+                                  a.reservoir_gravity_impulse_n_s.y-a.emitted_momentum_n_s.y,a.reservoir_gravity_impulse_n_s.z-a.emitted_momentum_n_s.z}},
                                {"support_reaction_n_s", {-a.emitted_momentum_n_s.x, -a.emitted_momentum_n_s.y, -a.emitted_momentum_n_s.z}}});
         }
         reply["parcels"] = {{"r_m", banjo::water::FallingWater::kRadius}, {"xyz_mm", at},
@@ -3345,6 +3352,9 @@ int main(int argc, char **argv) {
                 } else if (op == "water_valve") {
                     if (!world->setWaterValve(command.at("name").get<std::string>(), command.at("open").get<bool>()))
                         throw std::invalid_argument("water valve names an existing spout");
+                } else if (op == "water_opening") {
+                    if (!world->setWaterOpening(command.at("name").get<std::string>(),command.at("fraction").get<double>()))
+                        throw std::invalid_argument("water opening needs a gravity reservoir and a fraction from zero to one");
                 } else if (op == "environment") {
                     std::cout << nlohmann::json{{"ok", true},
                                                 {"environment", nlohmann::json::parse(world->environmentReport(

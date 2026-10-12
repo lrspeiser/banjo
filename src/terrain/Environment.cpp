@@ -585,7 +585,7 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
         };
         for (const Json &s : spouts) {
             if (!s.is_object()) throw std::invalid_argument("a spout is an object");
-            onlyKeys(s, {"name", "at_m", "direction", "speed_m_s", "discharge_m3_s", "from_s", "until_s", "initial_volume_m3", "valve_open", "receiver_bounds_m"}, "a spout");
+            onlyKeys(s, {"name", "at_m", "direction", "speed_m_s", "discharge_m3_s", "from_s", "until_s", "initial_volume_m3", "valve_open", "receiver_bounds_m", "reservoir_area_m2", "outlet_area_m2", "head_offset_m", "contraction_coefficient", "opening_fraction", "reservoir_floor_m"}, "a spout");
             water::Spout spout;
             spout.name = s.value("name", std::string());
             const std::string whose = "spout \"" + spout.name + "\"";
@@ -597,6 +597,12 @@ std::unique_ptr<Environment> Environment::fromScene(const std::string &scene_jso
             spout.initial_volume_m3 = number(s, "initial_volume_m3", std::numeric_limits<double>::infinity(), 0.0,
                                            std::numeric_limits<double>::infinity());
             spout.valve_open = s.value("valve_open", true);
+            spout.reservoir_area_m2=number(s,"reservoir_area_m2",0,0,10);
+            spout.outlet_area_m2=number(s,"outlet_area_m2",0,0,.01);
+            spout.head_offset_m=number(s,"head_offset_m",0,0,2);
+            spout.contraction_coefficient=number(s,"contraction_coefficient",.62,.01,1);
+            spout.opening_fraction=number(s,"opening_fraction",1,0,1);
+            if (s.contains("reservoir_floor_m")) spout.reservoir_floor_m=vec(s,"reservoir_floor_m",whose);
             if (s.contains("receiver_bounds_m")) spout.receiver_bounds_m=s.at("receiver_bounds_m").get<std::array<double,4>>();
             spout.until_s = number(s, "until_s", std::numeric_limits<double>::infinity(), 0.0,
                                    std::numeric_limits<double>::infinity());

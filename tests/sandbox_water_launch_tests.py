@@ -76,7 +76,7 @@ class WaterLaunchTests(unittest.TestCase):
                 axle=next(row for row in e.op(op='joints')['joints'] if row['id']==j['your catapult 1 axle'])
                 self.assertGreater(abs(axle['degrees']),30,'The unloaded physical arm still moves')
             finally:e.close()
-        level=sw.EASY_LEVELS[3];p=copy.deepcopy(level['solution']);p[0]['side']='right'
+        level=sw.EASY_LEVELS[3];p=copy.deepcopy(level['solution']);p[1]['x_m']=.3
         self.assertFalse(self.run_level(level,p)['stations'][0]['done'])
 
     def test_finite_source_receiver_air_runoff_and_energy_close(self):
@@ -84,7 +84,9 @@ class WaterLaunchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             e,_,_=mw.build_engine(ENGINE,c,td)
             try:
-                for _ in range(70):r=e.op(op='step',dt=.002,n=25,moved=False)
+                # The gravity head declines: let the final emitted parcel
+                # finish falling before auditing its receiver receipt.
+                for _ in range(140):r=e.op(op='step',dt=.002,n=25,moved=False)
                 p=r['parcels'];s=p['sources'][0]
                 self.assertAlmostEqual(s['emitted_m3']+s['remaining_m3'],s['initial_m3'],delta=1e-12)
                 self.assertLess(s['remaining_m3'],.000064)
@@ -101,17 +103,17 @@ class WaterLaunchTests(unittest.TestCase):
     def test_runtime_valve_and_joint_release_are_real_queued_engine_actions(self):
         for piece in ('water_tank','catapult'):
             source=sw.EASY_LEVELS[1 if piece=='water_tank' else 2]
-            p=copy.deepcopy(source['solution']);p[0].update(dict(valve='closed') if piece=='water_tank' else dict(release='held'))
+            p=copy.deepcopy(source['solution']);p[0].update(dict(opening_percent=0) if piece=='water_tank' else dict(release='held'))
             c=mw.compile_spec(mg.compose(source,p)[0])
             with tempfile.TemporaryDirectory() as td:
                 session=mw.MachineSession(c,ENGINE,td,paced=False)
                 try:
-                    if piece=='water_tank':session.water_valve('your water_tank 1 outlet',True)
+                    if piece=='water_tank':session.water_opening('your water_tank 1 outlet',.75)
                     else:session.release_joint('your catapult 1 restraint')
                     session.play(True)
                     deadline=time.monotonic()+15
                     with session.lock:
-                        while session.t<3 and not session.error and time.monotonic()<deadline:session.lock.wait(.1)
+                        while session.t<(6 if piece=='water_tank' else 3) and not session.error and time.monotonic()<deadline:session.lock.wait(.1)
                         self.assertIsNone(session.error)
                         self.assertTrue(session.readouts['stations'][0]['done'])
                     with self.assertRaises(ValueError):session.water_valve('not an outlet',True)
@@ -165,10 +167,52 @@ class WaterLaunchTests(unittest.TestCase):
                           'momentum residual',p['momentum_residual_n_s'],'numeric correction',p['numerical_correction_j'])
                 finally:e.close()
 
+    def test_separate_gravity_tank_compares_glass_oak_and_iron_and_two_timesteps(self):
+        level=mg.level_by_id('easy-water-wheel')
+        for material in ('glass','oak','iron'):
+            for dt in (1/240,1/480):
+                raw=mg.compose(level,level['solution'])[0]
+                next(k for k in raw['kits'] if k['kit']=='water_wheel')['material']=material
+                next(p for p in raw['parts'] if p['name']=='your water_tank 2 tank')['material']=material
+                with tempfile.TemporaryDirectory() as td:
+                    e,j,_=mw.build_engine(ENGINE,mw.compile_spec(raw),td)
+                    started=time.perf_counter()
+                    try:
+                        for _ in range(round(4/(dt*24))):r=e.op(op='step',dt=dt,n=24,moved=False)
+                        p=r['parcels'];s=p['sources'][0]
+                        self.assertLess(abs(p['residual_m3']),1e-12)
+                        self.assertLess(abs(p['energy_residual_j']),1e-6)
+                        self.assertLess(math.hypot(*p['momentum_residual_n_s']),1e-8)
+                        self.assertGreater(p['body_work_j'],0)
+                        self.assertAlmostEqual(s['remaining_m3']+s['emitted_m3'],.004,delta=1e-12)
+                        angle=next(x for x in e.op(op='joints')['joints'] if x['id']==j['your water_wheel 1 hinge'])['degrees']
+                        print('\n gravity',material,'dt',dt,'angle',angle,'volume',s['remaining_m3'],
+                            'source J',s['source_energy_j'],'body J',p['body_work_j'],'energy residual',p['energy_residual_j'],
+                            'momentum residual',p['momentum_residual_n_s'],'numerical correction',p['numerical_correction_j'],
+                            'support impulse',s['reservoir_support_reaction_n_s'],'support moment',s['reservoir_support_moment_n_m_s'],
+                            'wall',time.perf_counter()-started)
+                    finally:e.close()
+
+    def test_modular_pour_requires_opening_and_aim_and_accepts_either_piece_order(self):
+        level=mg.level_by_id('easy-water-wheel')
+        with tempfile.TemporaryDirectory() as td:
+            for label,placements in [('closed',level['wrong']),('small opening',[level['solution'][0],dict(level['solution'][1],opening_percent=1)]),
+                    ('misses across channel',[level['solution'][0],dict(level['solution'][1],z_m=1)]),('misses along channel',[level['solution'][0],dict(level['solution'][1],x_m=1)]),
+                    ('wheel only',level['solution'][:1])]:
+                result=mg.trial(level,placements,ENGINE,Path(td),runs=3)
+                self.assertEqual(result['worked'],0,(label,result))
+            self.assertEqual(mg.trial(level,list(reversed(level['solution'])),ENGINE,Path(td),runs=3)['worked'],3)
+            for name in ('easy-water-wheel','easy-water-gate','easy-water-receiver','easy-river-wheel'):
+                row=mg.level_by_id(name);energy=mg.measure_energy(row,row['solution'],ENGINE,Path(td))
+                self.assertLessEqual(energy['j'],row['par_energy_j'])
+                self.assertGreater(energy['j'],.99*row['par_energy_j'])
+            river=mg.level_by_id('easy-river-wheel');dry=copy.deepcopy(river);dry['machine']['ground']['discharge_m3_s']=0
+            self.assertEqual(mg.trial(dry,dry['solution'],ENGINE,Path(td),runs=3)['worked'],0)
+
     def test_every_offered_wheel_radius_clears_bank_and_feed_support(self):
         for radius in (.25,.30,.35,.40,.45,.50,.55,.60,.65):
             level=mg.requested_level(dict(level='free',base=sw.CHANNEL_BASE))
-            c=mw.compile_spec(mg.compose(level,[dict(piece='water_wheel',radius_m=radius)])[0])
+            c=mw.compile_spec(mg.compose(level,[dict(piece='water_wheel',radius_m=radius,side='left')])[0])
             with tempfile.TemporaryDirectory() as td:
                 e,_,_=mw.build_engine(ENGINE,c,td)
                 try:

@@ -401,7 +401,7 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(initial['radius_m'],self.river_solution['radius_m'],'The river base must provide its usable wheel size before editing')
         self.assertEqual(initial['side'],'off','The river wheel must start with its falling pour off')
         for key,label in [('x_m','along channel (m)'),('z_m','across river (m)'),
-                          ('radius_m','wheel radius (m)'),('side','pour onto')]:
+                          ('radius_m','wheel radius (m)')]:
             self.slide(f'{label} of your water_wheel 1',self.river_solution[key])
         self.press('Change its drum load')
         self.slide('drum load (optional) of your water_wheel 1','')
@@ -422,6 +422,73 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(current['samples'])
         self.assertTrue(all(s['depth_m']>0 and len(s['velocity_m_s'])==2 for s in current['samples']))
         self.assertTrue(any(s['velocity_m_s'][0]>0 for s in current['samples']),'Native downstream velocity supplies the visible arrows')
+
+    def test_separate_tank_teaches_opening_and_shows_native_water_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390),(320,568)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-water-wheel',width,height,phone=width!=1280)
+                self.press('Add a water wheel');self.ghost()
+                self.assertEqual(self.ghost()['p']['side'],'off')
+                self.click_visible('Set it down');self.wait(READY,60)
+                self.click_visible('Next piece')
+                self.press('Add a water tank');self.ghost()
+                self.assertEqual(self.ghost()['p']['opening_percent'],0)
+                self.assertEqual(self.ghost()['p']['x_m'],-.2)
+                self.wait('window.machineCamera().settled',30)
+                for point in ((-.2,1.38,.52),(0,.15,0)):
+                    screen=self.screen_point(point)
+                    self.assertTrue(self.js(f"(()=>{{const r=document.getElementById('view').getBoundingClientRect();return {screen[0]}>=r.left && {screen[0]}<=r.right && {screen[1]}>=r.top && {screen[1]}<=r.bottom;}})()"),point)
+                self.wait('window.machineWaterDisplay().length===1',10)
+                self.assertAlmostEqual(self.js('window.machineWaterDisplay()[0].litres'),4)
+                self.assertGreater(self.js('window.machineWaterDisplay()[0].height_m'),0)
+                self.wait('window.machineWaterDisplay()[0].flow_l_s===0',60)
+                self.assertEqual(self.js("document.querySelector('[aria-label=\"Its tap opening\"]').value"),'0')
+                self.slide('Its tap opening',75);self.ghost()
+                self.wait('window.machineWaterDisplay()[0].flow_l_s>0',60)
+                self.assertEqual(self.ghost()['p']['opening_percent'],75)
+                self.assertTrue(self.js(READY))
+                self.click_visible('Run it')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertEqual(len(self.js('window.machinePlacements()')),2)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                self.assertLess(self.js('window.machineWaterDisplay()[0].litres'),4)
+                self.click_visible('Set up again');self.wait(READY,60)
+                self.wait('window.machineWaterDisplay()[0].litres===4',10)
+                self.assertEqual(self.js('window.machinePlacements()[1].opening_percent'),75)
+
+    def test_water_shares_preserve_legacy_feeds_and_new_tap_versions(self):
+        import sandbox_water_launch as water
+        for name,placements in [('Legacy wheel',[dict(piece='water_wheel')]),
+                ('Legacy tank',[dict(piece='water_tank')]),
+                ('Gravity tank',[dict(piece='water_tank',outlet_model='gravity',opening_percent=38)])]:
+            draft=dict(name=name,base=water.CHANNEL_BASE,placements=placements)
+            packed=base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
+            self.page.send('Page.navigate',{'url':f'{self.base}/machine#build=j{packed}'})
+            self.wait(f'window.machineDesign?.()?.name==={json.dumps(name)} && {READY}',60)
+            saved=self.js('window.machinePlacements()[0]')
+            if name=='Legacy wheel':self.assertEqual(saved['side'],'left')
+            elif name=='Legacy tank':self.assertEqual(saved['outlet_model'],'metered')
+            else:
+                self.assertEqual(saved['opening_percent'],38)
+                self.wait('window.machineWaterDisplay().length===1',10)
+            self.press('Save version');self.anonymous_cloud_saved()
+            self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,60)
+            self.assertEqual(self.js('window.machinePlacements()[0]'),saved)
+            self.assertEqual(self.js('window.machineDesign().versions.at(-1).draft.placements[0]'),saved)
+
+    def test_simple_river_wheel_needs_dragging_off_the_bank(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-river-wheel',width,height,phone=width!=1280)
+                self.press('Add a water wheel');self.ghost()
+                self.assertEqual(self.ghost()['p']['z_m'],1)
+                self.assertEqual(self.ghost()['p']['side'],'off')
+                self.assertFalse(self.js('window.machineWaterDisplay().length'))
+                self.drag_ghost_to(0,0,touch=width!=1280)
+                self.assertLess(abs(self.ghost()['p']['z_m']),.025)
+                self.click_visible('Run it');self.assert_measured_river_current()
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
 
     def test_river_workbench_places_a_useful_wheel_and_restores_its_saved_connections(self):
         self.page.send('Emulation.setDeviceMetricsOverride',{'width':1280,'height':860,'deviceScaleFactor':1,'mobile':False})
@@ -470,8 +537,8 @@ class Puzzles(unittest.TestCase):
         self.press('All designs')
         self.press('Start from Water turns a wheel');self.wait(READY,60)
         self.press('Pick up your water_wheel 1');self.ghost()
-        normal=self.js("[Number(document.querySelector('[aria-label=\"wheel radius (m) of your water_wheel 1\"]').value),document.querySelector('[aria-label=\"pour onto of your water_wheel 1\"]').value]")
-        self.assertEqual(normal,[.4,'left'],'The dry pour example must restore its own visible tray defaults')
+        normal=self.js("[Number(document.querySelector('[aria-label=\"wheel radius (m) of your water_wheel 1\"]').value),window.machineGhostState().p.side]")
+        self.assertEqual(normal,[.4,'off'],'The new pour example uses its own separate tank')
         self.press('Cancel')
 
     def test_river_lift_lesson_is_won_by_a_wheel_in_the_measured_current_on_desktop_and_phones(self):
@@ -892,8 +959,8 @@ class Puzzles(unittest.TestCase):
                     else:
                         self.assertTrue(state['sample']['water']['xyz_mm'])
                         self.assertGreater(state['drawn']['waterPoints'],0)
-                        self.slide('Preview time',3)
-                        self.wait('window.machineFlowPreviewState().time===3 && window.machineFlowPreviewState().index>=0',5)
+                        self.slide('Preview time',6)
+                        self.wait('window.machineFlowPreviewState().time===6 && window.machineFlowPreviewState().index>=0',5)
                         self.assertEqual(self.js('window.machineFlowPreviewState().sample.water.xyz_mm'),[])
                         self.assertGreater(self.js('window.machineFlowPreviewState().sample.surface.wet_cells'),0)
                     self.assertEqual(self.js('window.machinePlacements()'),setup)
@@ -907,7 +974,7 @@ class Puzzles(unittest.TestCase):
                     self.wait("/saved/.test(document.getElementById('design-status').textContent)",5)
                     if channel=='water':
                         self.slide('Adjust a piece','0'); self.ghost()
-                        self.slide('valve of your water_tank 1','closed'); self.ghost()
+                        self.slide('tap opening (%) of your water_tank 1',0); self.ghost()
                         self.wait('window.machineFlowPreviewState()?.frames>2',60)
                         self.slide('Preview time',1); self.wait('window.machineFlowPreviewState().time===1 && window.machineFlowPreviewState().index>=0',5)
                         self.assertEqual(self.js('window.machineFlowPreviewState().sample.water.xyz_mm'),[])
@@ -1255,10 +1322,11 @@ class Puzzles(unittest.TestCase):
             self.assertEqual(self.js("document.querySelectorAll('#levels-screen .ls-list li').length"), self.level_count)
             self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"Choose challenge difficulty\"]'))"))
             self.assertFalse(self.js("[...document.querySelectorAll('#levels-screen button')].some(b=>/^(All challenges|Easy: learn a piece|Full chain reactions)$/.test(b.textContent))"))
-            self.assertEqual(self.js("document.querySelector('#levels-screen .ls-list li .task-count').textContent"),'1 thing to do')
-            self.assertEqual(self.js("document.querySelectorAll('#levels-screen .ls-list li .task-count')[5].textContent"),'2 things to do')
-            self.assertEqual(self.js("document.querySelectorAll('#levels-screen .ls-list li .task-count')[6].textContent"),'2 things to do')
-            self.assertEqual(self.js("document.querySelectorAll('#levels-screen .ls-list li .task-count')[19].textContent"),'2 things to do')
+            # Counts belong to level IDs; ordering changes as lessons are added.
+            for ident,count in [('gap',1),('sun',2),('laser',2),('easy-solar',2),
+                    ('easy-water-wheel',2),('easy-river-wheel',1),('easy-water-gate',3)]:
+                text=f'{count} '+('thing' if count==1 else 'things')+' to do'
+                self.assertEqual(self.js(f"document.querySelector('[data-level=\"{ident}\"] .task-count').textContent"),text)
             self.assertTrue(self.js("[...document.querySelectorAll('#levels-screen .ls-list li .task-count')].every(el=>/^[1-9][0-9]* things? to do$/.test(el.textContent))"))
             self.assertFalse(self.js("[...document.querySelectorAll('#levels-screen .teaches')].some(el=>el.textContent.startsWith('Easy ·'))"))
             self.assertLessEqual(self.js('document.documentElement.scrollWidth'),width)

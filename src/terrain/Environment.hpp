@@ -157,6 +157,7 @@ public:
     // when the scene declares no spouts.
     [[nodiscard]] const water::FallingWater *fallingWater() const { return falling_.get(); }
     bool setWaterValve(const std::string &name, bool open) { return falling_ && falling_->setValve(name, open); }
+    bool setWaterOpening(const std::string &name, double fraction) { return falling_ && falling_->setOpening(name, fraction); }
     // How long the world has run, as far as the environment knows.
     [[nodiscard]] double timeS() const { return time_s_; }
 

@@ -8,6 +8,17 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 12 update: independent fixed tanks now have a constant-area gravity
+reservoir and an adjustable outlet. The native engine derives flow from
+remaining head and opening, debits only accepted parcels, and reports source
+energy and the external fixed support's impulse/moment. A visible water level
+uses native remaining volume. Pour onto the paddles requires a separate tank
+and wheel; Wheel in the river teaches moving paddles into the current. There
+are now twenty-two selectable lesson families. Old metered sources remain
+supported for saved designs and version-1 shares. This is a lumped fixed-store
+model, not a tipping bucket, sloshing simulation or calibrated pipe/valve model.
+See [the gravity outlet measurements](sandbox-water-launch-measured.md#independent-gravity-tanks-october-12).
+
 Authored empty scenes can open, step and save without solid bodies, including
 water-only flumes. An explicit empty body array selects an empty scene; an
 undeclared legacy test request retains its original fixture. Missing/malformed

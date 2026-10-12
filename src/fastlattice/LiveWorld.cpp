@@ -15216,6 +15216,9 @@ const terrain::Environment *LiveWorld::environment() const { return impl_->envir
 bool LiveWorld::setWaterValve(const std::string &name, bool open) {
     return impl_->environment && impl_->environment->setWaterValve(name, open);
 }
+bool LiveWorld::setWaterOpening(const std::string &name, double fraction) {
+    return impl_->environment && impl_->environment->setWaterOpening(name, fraction);
+}
 
 terrain::TerrainField::Rect LiveWorld::takeChangedGround() {
     return impl_->environment ? impl_->environment->takeChangedGround() : terrain::TerrainField::Rect{};

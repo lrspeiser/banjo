@@ -142,6 +142,20 @@ class Declaration(unittest.TestCase):
                     mw.compile_spec(dict(base, **extra))
                 self.assertTrue(any(words in q for q in refused.exception.problems), refused.exception.problems)
 
+    def test_gravity_source_derives_flow_and_keeps_its_floor_datum(self):
+        source=dict(name='tank',at_m=[0,1,0],initial_volume_l=4,reservoir_area_m2=.0576,
+                    outlet_area_m2=.001,head_offset_m=.02,opening_fraction=.75,reservoir_floor_m=[0,1.02,.52])
+        spec=dict(schema=mw.SCHEMA,ground=dict(kind='flume'),spouts=[source])
+        compiled=mw.compile_spec(spec);native=mw.scene_of(compiled)['spouts'][0]
+        self.assertEqual(native['speed_m_s'],0)
+        self.assertEqual(native['discharge_m3_s'],0)
+        self.assertEqual(native['opening_fraction'],.75)
+        self.assertEqual(native['reservoir_floor_m'],[0,1.02,.52])
+        for change in (dict(speed_m_s=1),dict(discharge_l_s=1),dict(opening_fraction=1.01),
+                       dict(reservoir_area_m2=.001,outlet_area_m2=.002),dict(reservoir_floor_m=[0,1,.52])):
+            with self.subTest(change=change),self.assertRaises(mw.MachineRefused):
+                mw.compile_spec(dict(spec,spouts=[dict(source,**change)]))
+
     def test_compound_parts_become_exact_bodies_in_the_scene(self):
         c = mw.compile_spec({'schema': mw.SCHEMA, 'ground': {'kind': 'flume'},
                              'kits': [{'kit': 'water_wheel', 'name': 'w', 'at_m': [0, 0, 1], 'paddles': 6}]})

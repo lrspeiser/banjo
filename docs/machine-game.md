@@ -515,7 +515,7 @@ Native verification for this update: nine contact-holder regressions pass throug
 
 Browser verification: the final full Chrome suite passes 47/47 tests in 248.9 s at 1280×860, 390×844 and 844×390. New checks cover native falling terminals, two closed pads and a powered lamp, misplaced/depleted controls, saved charge/base/version restoration, and a charging lead following the moving pack. Live runs clear stale predictions immediately, including after a win. The first 46-test run had a phone save fixture click Set down before its asynchronous fit check finished; the fixture now waits for that existing check, without changing timeouts or assertions. The moving-lead fixture uses an in-view collector so ordinary visible terminal clicks can reach it. The previously intermittent solar click case passes this full run; this is not a claim that its earlier unrecorded cause was diagnosed.
 
-The sandbox catalogue has 31 placeable cards, plus the Attach tool. Its 24 prebuilt designs are editable copies. The full-screen library has routing, motion, supports, power, optics, electricity and water categories; **Try example** opens a saved copy that supplies the required environment or connections. Water cards explicitly require a collection-channel base. The knife, mirror, lens, solar panel and block-and-tackle are now independently available alongside springs, gears, weights, motors, batteries, switches, bulbs, wires, finite water tanks, water wheels, heating coils and the counterweight catapult.
+The sandbox catalogue has 31 placeable cards, plus the Attach tool. Its 25 prebuilt designs are editable copies. The full-screen library has routing, motion, supports, power, optics, electricity and water categories; **Try example** opens a saved copy that supplies the required environment or connections. Water cards explicitly require a collection-channel base. The knife, mirror, lens, solar panel and block-and-tackle are now independently available alongside springs, gears, weights, motors, batteries, switches, bulbs, wires, finite water tanks, water wheels, heating coils and the counterweight catapult.
 
 | Card/tool | Controls and supported behavior |
 |---|---|
@@ -527,7 +527,7 @@ The sandbox catalogue has 31 placeable cards, plus the Attach tool. Its 24 prebu
 | Gears / weight | Tooth ratio, drive, size/material and loose/guided/hanging mounts; explicit motor supply, material-derived mass |
 | Battery / motor | Fixed or falling contact pack, release height, rotation, housing material, voltage, capacity, charge and power limit; direction/throttle and included or selected physical axle |
 | Switch / bulb / wire | Force-dragged manual rocker with glass/oak/iron handle and saved initial pose, or real paddle switch; bulb preset and explicit terminals; crossing wires never connect |
-| Fixed water tank | Starting litres, metered flow, valve and height; finite water remains in the source when exhausted below one parcel |
+| Fixed water tank | Starting litres, tap opening, outlet position and height; gravity head sets the flow, and a subparcel remainder stays in the tank. Legacy saved metered outlets keep their original settings. |
 | Water wheel | Radius 25–65 cm, position along/across the river, optional falling supply and drum load; current forces act on immersed paddles |
 | Ignition coil | Selected material target and heater preset; wired electrical input becomes heat; oak combustion remains experimental |
 | Catapult | Cock angle, aim, material/size of counterweight and marble, loaded/empty cradle and held/released restraint; actual contact launches the marble |
@@ -540,7 +540,7 @@ Cable routes are visual geometry, not simulated physical cables: they do not cha
 
 Wiring UI verification, October 11: all 35 Chrome browser tests passed in 173.2 s, including desktop 1280×860, portrait 390×844 and landscape 844×390. Checks covered terminal clicks, cancelling a pending wire, wrong-wire failure, the correct loop's native win/current, prepared switch leads before Run, and saving/reopening/Undo/version restoration. All 12 electrical tests passed, including nominal/nudged solutions, missing returns and the existing glass/oak/iron heating comparisons. The client geometry CTest and all 269 source registrations passed. The tested native executable remains SHA-256 `569a441595274e13128e1b8f06ff54d392232409b312d2089a77c2451315c976`. A prior Linux browser test read the clock before it existed during reload; the ready wait now handles that DOM gap with the same timeout, and the affected saved-solar test passed again locally.
 
-The chooser includes twenty-one lesson families: cut, reflection, focus, sunlight, tackle, water wheel, spring, gears, weight, motor, battery, switch, bulb, closed loop, receiver fill, ignition, catapult, marble switch, water gate, sunlight-powered lift and river-powered lift. Every family has its own private solution, three nominal/nudged engine checks and physical empty/wrong controls. Goals also include sensor power, sustained electrical power, stored charge and actual water received; a green box is shown for spatial goals.
+The chooser includes twenty-two lesson families: cut, reflection, focus, sunlight, tackle, water wheel, river wheel placement, spring, gears, weight, motor, battery, switch, bulb, closed loop, receiver fill, ignition, catapult, marble switch, water gate, sunlight-powered lift and river-powered lift. Every family has its own private solution, three nominal/nudged engine checks and physical empty/wrong controls. Goals also include sensor power, sustained electrical power, stored charge and actual water received; a green box is shown for spatial goals.
 
 Mechanical and water catalogue bases contain no decorative reference-marker boxes. **Turn the big wheel** starts with an empty field; adding a driven gear pair creates its actual battery housing and supported wheels. Water-channel setups retain their ground and any functional receiver, guide or load. Previously saved designs retain their saved parts. No goal, solution or physical tolerance changes accompany this cleanup.
 
@@ -920,3 +920,72 @@ choice remains and restores the wheel and connections. Five focused Chrome
 checks pass in 21.890 s: river, help across all three viewports, solar cable,
 terminal graph and design-version restoration. The follow-up Linux CI verdict
 is pending. No engine code, physical goal, timeout or tolerance changed.
+
+
+## Separate tanks, adjustable taps and river placement — October 12
+
+**Pour onto the paddles** now supplies two independent cards. Add the wheel,
+add the tank, increase **tap opening** from its closed default and aim the
+outlet at the left paddles. The wheel has no attached feed. Either piece order
+works: the goal resolves the actual wheel's hinge, then native torque decides
+the outcome. **Water opens a gate** uses the same pair plus a drum connection;
+**Fill the receiver** requires opening the separate tank. Task counts are
+2, 3 and 1 respectively. Closed taps, a nearly closed 1% tap, missed pours
+and a wheel alone fail three nudged checks. A 5% pour can turn an unloaded
+wheel in some nudges; opposite-side pours can also rebound and later turn it.
+These are not classified as universal failures or hidden behind scripted goals.
+
+New **Wheel in the river**, directly after the pour lesson, starts its 65 cm
+wheel on the bank. Drag it into the current: it must turn thirty degrees
+within ten seconds. No tank, falling spout, rope or unexplained load box is
+present. Its simple sandbox example allows the same comparison. The later
+river-powered lift still teaches connecting useful work to the axle.
+
+The tank is a fixed thin glass vessel on a grounded frame, with a 24×24 cm
+inner section and a nominal 50 mm outlet. **Initial water**, **fixed outlet
+height**, outlet position and **tap opening** are editable. Tap opening is
+the primary control when added. The camera fits a newly added tall lesson
+tank beside the existing wheel once; subsequent edits preserve the view.
+A transparent water volume and compact meter show native remaining litres,
+opening and flow (or explicitly Updating flow while a preview is pending).
+Preview readings are labelled; Run uses live receipts. The runtime tap control
+queues a fractional native boundary change. It does not apply torque to its
+handle; the setup handle's angle illustrates the declared opening. Set up
+again restores the declared opening and fill. Saved versions store that setup,
+not runtime tap changes. This is a fixed reservoir, not a movable/sloshing bucket.
+
+New water examples use a separate tank and wheel. Browser saves and imported
+shares lacking the new outlet setting retain their old metered tank; old
+wheels lacking a feed setting retain their former Left feed. Version-1 seeded
+water identities reconstruct their original one-piece apparatus, while new
+pour/receiver/gate identities use version 2. There are 25 examples, 31 cards
+plus Attach, and 30 authored levels (22 lesson families plus eight chain levels).
+
+At 1/240 s, the native three-nudge solution times are 1.517/1.867/1.400 s
+for the pour, 3.983 s for receiver fill, 3.183/4.417/2.733 s for the gate,
+and 3.983/4.100/3.883 s for river placement. All goals and deadlines stay
+unchanged. Construction changed with independent geometry: current authored
+pars are measured nominal construction plus the existing 1 kJ margin, not
+adjusted goal tolerances. The 22-family, 88-preset sweep gives 264/264 correct
+nudged wins and zero of 264 empty or wrong wins. Its 15 recipe tests pass
+in 134.8 s. The full 50-test game suite passes in 74.1 s. Detailed gravity
+law, per-material comparisons, residuals and limits are in
+[water measurements](sandbox-water-launch-measured.md#independent-gravity-tanks-october-12).
+
+Final scope checks: twelve water/launch tests pass in 30.4 s; nine declaration
+tests pass in 0.19 s; native water, terrain, LiveWorld and client-view CTests
+pass. Six targeted Chrome regressions pass (34.9 s + 37.1 s): independent
+pieces and tap edits, camera framing, native visible volume/flow/reset, river
+dragging, runtime current, preview timeline, old shares and new saved versions.
+They cover desktop 1280×860, portrait 390×844 and landscape 844×390, plus the
+new tank lesson at 320×568. Ordinary Run/Set down/Reset targets stay visible,
+unobstructed and at least 44 px. The build and all 269 source registrations
+pass. Native SHA-256 is
+`3fac18bff131cf0d819e6186969c4ed64b27210eef04e36f420bd497ce39d24a`.
+Legacy v1 wheel/gate/receiver recipes also pass their native three-nudge
+solution/empty/wrong validation. Local complete preview wall times are
+0.252–0.266 s for the pour and 0.391–0.394 s for river placement (three calls
+each), excluding network/rendering delay. This is targeted water verification;
+the earlier full CI phone-cannon, 320 px precision and laser-status timing
+failures have not been fixed by this update. The task-count browser fixture
+now checks level IDs rather than stale list indices as new lessons are added.

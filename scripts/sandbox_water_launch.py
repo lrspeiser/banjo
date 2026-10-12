@@ -1,4 +1,4 @@
-"""Fixed metered water supplies and a counterweight cradle launcher.
+"""Independent fixed gravity reservoirs, water wheels and a cradle launcher.
 
 Water cards require the explicit channel base. No moving liquid containment
 or scripted launches: the cradle pushes the projectile through rigid contact.
@@ -89,10 +89,11 @@ def water_tank(name, k, ctx):
     g = ctx.get('spec', {}).get('ground') or {}
     if g.get('kind') != 'flume':
         raise ValueError('A fixed water tank needs the collection channel base. Open its example to create one.')
-    x, z, y = k.get('x_m',0), g.get('trench_z_m',0), k.get('height_m',1.1)
+    x, z, y = k.get('x_m',0), g.get('trench_z_m',0)+k.get('z_m',0), k.get('height_m',1.1)
     # The tank is above the bank. Its indicated fixed outlet lies over the
-    # collection channel; the connection is a metered feed, not head pressure.
-    bank = z + .5*g.get('trench_width_m',.6) + .22
+    # collection channel. Saved legacy tanks retain their metered outlet.
+    channel_z=g.get('trench_z_m',0)
+    bank = channel_z + .5*g.get('trench_width_m',.6) + .22
     tank = dict(name=name+' tank',shape='compound',material='iron',at_m=[x,y+.12,bank],fixed=True,
         parts=[dict(shape='box',at_m=[0,-.11,0],size_m=[.28,.02,.28],turn_deg=[0,0,0]),
                dict(shape='box',at_m=[-.13,0,0],size_m=[.02,.24,.28],turn_deg=[0,0,0]),
@@ -102,12 +103,29 @@ def water_tank(name, k, ctx):
     parts = [_box(name+' frame',[x,y*.5,bank],[.08,y,.08],'concrete',True),
              tank,
              _box(name+' outlet',[x,y+.06,z],[.06,.10,.06],'iron',True),
-             _box(name+' feed bridge',[x,y+.13,(z+bank)*.5],[.06,.04,bank-z+.12],'iron',True)]
-    return dict(parts=parts, spouts=[dict(name=name+' outlet', at_m=[x,y,z], direction=[0,-1,0],
+             _box(name+' feed bridge',[x,y+.13,(z+bank)*.5],[.06,.04,abs(bank-z)+.12],'iron',True)]
+    source=dict(name=name+' outlet', at_m=[x,y,z], direction=[0,-1,0],
         speed_m_s=0, discharge_l_s=k.get('discharge_l_s',2), initial_volume_l=k.get('fill_l',4),
         valve_open=k.get('valve','open')=='open',receiver_bounds_m=[
             -.5*(g.get('nx',60)-1)*g.get('cell_m',.1),.5*(g.get('nx',60)-1)*g.get('cell_m',.1),
-            z-.5*g.get('trench_width_m',.6),z+.5*g.get('trench_width_m',.6)])])
+            channel_z-.5*g.get('trench_width_m',.6),channel_z+.5*g.get('trench_width_m',.6)])
+    if k.get('outlet_model','metered')=='gravity':
+        # A thin, transparent fixed vessel lets the native remaining-volume
+        # surface be seen. Precise compound parts keep their actual mass.
+        tank['material']='glass'
+        tank['parts']=[dict(shape='box',at_m=[0,-.1175,0],size_m=[.25,.005,.25],turn_deg=[0,0,0]),
+            dict(shape='box',at_m=[-.1225,0,0],size_m=[.005,.24,.25],turn_deg=[0,0,0]),
+            dict(shape='box',at_m=[.1225,0,0],size_m=[.005,.24,.25],turn_deg=[0,0,0]),
+            dict(shape='box',at_m=[0,0,-.1225],size_m=[.24,.24,.005],turn_deg=[0,0,0]),
+            dict(shape='box',at_m=[0,0,.1225],size_m=[.24,.24,.005],turn_deg=[0,0,0])]
+        source.update(discharge_l_s=0,reservoir_area_m2=.24*.24,outlet_area_m2=math.pi*.025**2,
+            head_offset_m=.005,contraction_coefficient=.62,opening_fraction=k.get('opening_percent',0)/100,
+            reservoir_floor_m=[x,y+.005,bank])
+        parts.append(dict(name=name+' tap',shape='compound',material='iron',fixed=True,at_m=[x,y+.19,z],
+            turn_deg=[0,k.get('opening_percent',0)*.9,0],parts=[
+                dict(shape='cylinder',at_m=[0,0,0],size_m=[.05,.02,.05],turn_deg=[0,0,0]),
+                dict(shape='box',at_m=[0,.02,0],size_m=[.10,.02,.02],turn_deg=[0,0,0])]))
+    return dict(parts=parts,spouts=[source])
 
 
 def catapult(name, k, ctx):
@@ -229,3 +247,77 @@ river_lesson['tray'][0]['knobs']['load_part']['default']='river gate'
 river_lesson['par_energy_j']=593992292  # Measured nominal piece construction plus 1 kJ margin.
 river_lesson['wrong']=[dict(RIVER_SOLUTION,z_m=1)]
 EASY_LEVELS.append(river_lesson)
+
+# Keep the exact earlier recipes available for shared version-1 IDs.
+LEGACY_LEVELS={level['id']:copy.deepcopy(level) for level in EASY_LEVELS}
+LEGACY_TRAY=copy.deepcopy(TRAY)
+TRAY[0]['knobs']['side']['default']='off'
+TRAY[0]['knobs']['side']['label']='legacy attached feed'
+TRAY[1]['across']=True
+TRAY[1]['focus_knob']='opening_percent'
+TRAY[1]['knobs'].update(z_m=knob(-1,1,.02,0,'outlet across channel (m)'),
+    outlet_model=dict(choices=['gravity','metered'],default='gravity',label='outlet model'),
+    opening_percent=knob(0,100,1,0,'tap opening (%)'))
+
+def modular_pour_lesson(base,ident,title,brief,rule,seconds):
+    wheel=copy.deepcopy(TRAY[0]);tank=copy.deepcopy(TRAY[1])
+    for row in (wheel,tank):row.update(count=1,sandbox_builder=True,start_at_defaults=True)
+    wheel['knobs']['side']['choices']=['off']
+    wheel['knobs']['side']['default']='off'
+    wheel['knobs']['z_m']['default']=0
+    tank['knobs']['x_m']['default']=-.2
+    tank['frame_on_add']=True
+    solution=[dict(piece='water_wheel',side='off',load_part='water gate' if ident=='easy-water-gate' else ''),
+              dict(piece='water_tank',x_m=-.2,z_m=0,height_m=1.1,fill_l=4,outlet_model='gravity',opening_percent=75)]
+    return dict(id=ident,title=title,teaches='water flow and paddle contact',brief=brief,machine=copy.deepcopy(base),
+        goal=dict(title=title,needs='Place a water wheel, then aim a separate tank at its paddles.',roles={'wheel':'water_wheel'},station=dict(done_when=rule)),
+        tray=[wheel,tank],solution=solution,wrong=[solution[0],dict(solution[1],opening_percent=0)],
+        time_s=seconds,budget=1000000,par=1000000,par_energy_j=771262154 if ident=='easy-water-wheel' else 777190154,style_pieces=2,difficulty='easy',
+        hints=[brief,'The wheel has no built-in water supply. Water must hit its paddles.'],turning=False)
+
+EASY_LEVELS[0]=modular_pour_lesson(CHANNEL_BASE,'easy-water-wheel','Pour onto the paddles',
+    'Place a wheel and a separate tank. Increase the tap opening and aim its outlet onto the wheel’s left paddles.',
+    {'turned_deg':{'joint':'@wheel hinge','deg':30}},6)
+EASY_LEVELS[3]=modular_pour_lesson(GATE_BASE,'easy-water-gate','Water opens a gate',
+    'Aim a separate tank at the wheel and open its tap. Connect the wheel’s drum load to water gate to lift it eight centimetres.',
+    {'rose_m':{'part':'water gate','m':.08}},8)
+EASY_LEVELS[3]['tray'][0]['knobs']['load_part']['default']=''
+
+river_base=copy.deepcopy(CHANNEL_BASE);river_base['title']='Wheel in a river'
+river_base['ground']['discharge_m3_s']=.1
+river_wheel=easy_level('easy-river-wheel','Wheel in the river',
+    'The wheel starts on the bank. Move its lower paddles into the river current to turn its axle thirty degrees.',
+    river_base,'water_wheel',dict(radius_m=.65,side='off',x_m=0,z_m=0),
+    {'turned_deg':{'joint':'your water_wheel 1 hinge','deg':30}},10)
+river_wheel['tray'][0].update(start_at_defaults=True)
+river_wheel['tray'][0]['knobs']['radius_m']['default']=.65
+river_wheel['tray'][0]['knobs']['z_m']['default']=1
+river_wheel['tray'][0]['knobs']['side'].update(default='off',choices=['off'])
+river_wheel['wrong']=[dict(river_wheel['solution'][0],z_m=1)]
+river_wheel['par_energy_j']=593992292
+EASY_LEVELS.append(river_wheel)
+TEMPLATES.append(dict(id='river-wheel',name='Wheel in the river',
+    description='Only river current drives this wheel. Move it onto the bank to compare; no tank or attached feed.',
+    base=copy.deepcopy(river_base),placements=copy.deepcopy(river_wheel['solution'])))
+
+receiver=easy_level('easy-water-receiver','Fill the receiver',
+    'Place a separate tank over the collection channel and increase its tap opening. Three litres must actually reach the channel.',
+    CHANNEL_BASE,'water_tank',dict(fill_l=4,outlet_model='gravity',opening_percent=75),
+    {'water_received_l':{'spout':'your water_tank 1 outlet','l':3}})
+receiver['tray'][0].update(start_at_defaults=True)
+receiver['tray'][0]['frame_on_add']=True
+receiver['par_energy_j']=460651224
+receiver['wrong']=[dict(receiver['solution'][0],opening_percent=0)]
+EASY_LEVELS[1]=receiver
+
+# New examples use independent components; old explicitly saved feeds remain
+# supported by the same generic wheel/pour builder.
+for example in TEMPLATES:
+    if example['id'] in ('water-wheel','water-opens-gate','finite-tank-wheel'):
+        load='water gate' if example['id']=='water-opens-gate' else ''
+        example['placements']=[dict(piece='water_wheel',side='off',load_part=load),
+            dict(piece='water_tank',x_m=-.2,z_m=0,outlet_model='gravity',opening_percent=75)]
+        example['description']='A separate finite tank feeds the wheel. Change its tap opening or move the outlet; only water hitting paddles turns the axle.'
+    if example['id']=='finite-water':
+        example['placements']=[dict(piece='water_tank',outlet_model='gravity',opening_percent=100)]
+        example['description']='A separate four-litre gravity tank. Widen the tap to pour faster; falling head slows the flow as it drains.'

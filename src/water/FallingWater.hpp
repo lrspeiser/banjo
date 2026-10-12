@@ -59,15 +59,24 @@ struct Spout {
     // demonstration spout. Residual below one parcel remains in the tank.
     double initial_volume_m3{std::numeric_limits<double>::infinity()};
     bool valve_open{true};
+    // Optional fixed gravity reservoir. A constant horizontal section holds
+    // quiescent water above the mouth; opening scales the clear outlet area.
+    // Zero reservoir area keeps the original metered source exactly.
+    double reservoir_area_m2{}, outlet_area_m2{}, head_offset_m{};
+    double contraction_coefficient{0.62}, opening_fraction{1.0};
+    std::optional<Vec3> reservoir_floor_m;
     std::optional<std::array<double,4>> receiver_bounds_m; // xmin,xmax,zmin,zmax
 };
 
 struct SpoutAccount {
     double emitted_m3{}, landed_m3{}, received_m3{}, ran_off_m3{};
     double remaining_m3{};
-    // Chosen fixed-mouth reservoir datum: no hydrostatic head or sloshing.
+    // Metered sources use the fixed mouth datum; gravity sources also debit
+    // their head energy. Neither model implements sloshing.
     double emitted_source_energy_j{};
     Vec3 emitted_momentum_n_s{};
+    Vec3 reservoir_gravity_impulse_n_s{};
+    Vec3 reservoir_gravity_moment_n_m_s{}, emitted_moment_n_m_s{};
 };
 
 // What a parcel finds near it: a body's surface (from the host's own shapes).
@@ -147,6 +156,9 @@ public:
 
     void addSpout(const Spout &spout);
     bool setValve(const std::string &name, bool open);
+    bool setOpening(const std::string &name, double fraction);
+    [[nodiscard]] static double head(const Spout &source, double volume_m3);
+    [[nodiscard]] static double rate(const Spout &source, double volume_m3);
     [[nodiscard]] const std::vector<Spout> &spouts() const { return spouts_; }
     [[nodiscard]] const std::vector<Parcel> &parcels() const { return parcels_; }
     [[nodiscard]] const FallingWaterLedger &ledger() const { return ledger_; }

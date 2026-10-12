@@ -219,6 +219,8 @@ class Handler(BaseHTTPRequestHandler):
    elif op=='electrical_switch':
     if type(data.get('closed')) is not bool:raise ValueError('Switch state must be true or false')
     r={'ok':True,**host.get(data.get('session')).electrical_switch(data.get('name'),data['closed'])}
+   elif op=='water_opening':
+    r={'ok':True,**host.get(data.get('session')).water_opening(data.get('name'),data.get('fraction'))}
    elif op=='water_valve':
     if type(data.get('open')) is not bool:raise ValueError('Valve state must be true or false')
     r={'ok':True,**host.get(data.get('session')).water_valve(data.get('name'),data['open'])}

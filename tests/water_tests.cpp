@@ -43,6 +43,40 @@ void near(double actual, double expected, double tolerance, std::string_view mes
                                  " tolerance=" + std::to_string(tolerance));
 }
 
+void gravityReservoirDrainsByHeadAndOpeningWithConservedSourceEnergy() {
+    const auto surfaces=[](const Vec3 &,double,double){return std::vector<NearSurface>{};};
+    const auto ground=[](double,double)->std::optional<double>{return 0.0;};
+    for (const double dt:{1.0/240.0,1.0/480.0}) for (const double opening:{.25,.75}) {
+        FallingWater water;Spout s;
+        s.name="gravity tank";s.at_m={0,1.1,0};s.direction={0,-1,0};s.initial_volume_m3=.004;
+        s.reservoir_area_m2=.0576;s.outlet_area_m2=.00196349540849;s.head_offset_m=.02;s.opening_fraction=opening;
+        s.reservoir_floor_m=Vec3{0,1.12,.52};water.addSpout(s);
+        const double initialRate=FallingWater::rate(s,s.initial_volume_m3);
+        const double initialHead=FallingWater::head(s,s.initial_volume_m3);
+        near(initialRate,.62*s.outlet_area_m2*opening*std::sqrt(2*9.81*initialHead),1e-15,"orifice rate uses head and open area");
+        auto discarded=water.plan(0,.1,surfaces,ground,-1);
+        near(water.accounts()[0].remaining_m3,.004,0,"discarded gravity plan consumes no stored water");
+        double t=0;while(t<2-1e-12){water.accept(water.plan(t,dt,surfaces,ground,-1));t+=dt;}
+        const auto a=water.accounts()[0];
+        const double expectedHead=std::pow(std::sqrt(initialHead)-.62*s.outlet_area_m2*opening*std::sqrt(2*9.81)*t/(2*s.reservoir_area_m2),2);
+        const double expectedVolume=std::max(0.0,(expectedHead-s.head_offset_m)*s.reservoir_area_m2);
+        // One 64 mL parcel plus the explicit head/rate time-integration bound.
+        near(a.remaining_m3,expectedVolume,FallingWater::kVolume+initialRate*dt,"drainage follows the continuous reservoir oracle to parcel resolution");
+        const auto energy=[&](double v){return 1000*9.81*((s.at_m.y+s.head_offset_m)*v+v*v/(2*s.reservoir_area_m2));};
+        near(a.emitted_source_energy_j,energy(.004)-energy(a.remaining_m3),1e-8,"jet is paid by the actual reservoir potential drop");
+        near(a.remaining_m3+a.emitted_m3,.004,1e-12,"reservoir and emitted volume close");
+        near(water.energyResidual(),0,1e-6,"source/falling/landing energy closes with declared numerical correction");
+        near(banjo::length(water.momentumResidual()),0,1e-8,"falling momentum closes with source and ground impulses");
+        require(FallingWater::rate(s,a.remaining_m3)<initialRate,"flow slows as head falls");
+        require(water.setOpening(s.name,0),"tap closes");
+        const double poured=a.emitted_m3;water.accept(water.plan(t,.1,surfaces,ground,-1));
+        near(water.accounts()[0].emitted_m3,poured,0,"zero opening emits no new water");
+        require(!water.setOpening(s.name,1.01),"invalid opening remains refused");
+        std::cout<<" gravity dt "<<dt<<", opening "<<opening<<": "<<a.remaining_m3*1000<<" L remaining; source energy "
+                 <<a.emitted_source_energy_j<<" J; falling residual "<<water.energyResidual()<<" J\n";
+    }
+}
+
 void finiteSpoutDebitsOnlyAcceptedParcelsAndClosesLedgers() {
     FallingWater water;
     Spout source;
@@ -964,6 +998,7 @@ int main() {
         {"current drives immersed paddles and returns their drag once", currentDrivesImmersedPaddlesAndReturnsTheirDragOnce},
         {"a lake at rest stays exactly at rest", aLakeAtRestStaysExactlyAtRest},
         {"a finite spout debits only accepted parcels and closes ledgers",finiteSpoutDebitsOnlyAcceptedParcelsAndClosesLedgers},
+        {"gravity reservoir drains by head and opening",gravityReservoirDrainsByHeadAndOpeningWithConservedSourceEnergy},
         {"a closed basin conserves water", aClosedBasinConservesWater},
         {"a flood front advances over dry ground", aFloodFrontAdvancesOverDryGround},
         {"a river settles to passing what it is given", aRiverSettlesToPassingWhatItIsGiven},

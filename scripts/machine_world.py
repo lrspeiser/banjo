@@ -1401,9 +1401,11 @@ def compile_spec(spec, lenient=False):
             problems.append(f'spout {i + 1} needs a name')
             continue
         spouts.append({'name': s['name'].strip(), 'at_m': s.get('at_m'), 'direction': s.get('direction', [0, -1, 0]),
-                       'speed_m_s': s.get('speed_m_s', 1.0), 'discharge_l_s': s.get('discharge_l_s', 1.0),
+                       'speed_m_s': s.get('speed_m_s', 0 if 'reservoir_area_m2' in s else 1.0),
+                       'discharge_l_s': s.get('discharge_l_s', 0 if 'reservoir_area_m2' in s else 1.0),
                        'from_s': s.get('from_s', 0.0), 'until_s': s.get('until_s'),
-                       **({key: s[key] for key in ('initial_volume_l', 'valve_open', 'receiver_bounds_m') if key in s})})
+                       **({key: s[key] for key in ('initial_volume_l', 'valve_open', 'receiver_bounds_m','reservoir_area_m2',
+                            'outlet_area_m2','head_offset_m','contraction_coefficient','opening_fraction','reservoir_floor_m') if key in s})})
     # Poured water falls until it reaches the river, so it needs the flume's
     # ground under it to land in.
     checked_spouts = []
@@ -1423,8 +1425,8 @@ def compile_spec(spec, lenient=False):
         elif at[1] <= ground_height(ground, at[0], at[2]) + 0.05:
             problems.append(f'{what}: the mouth is at or below the ground')
         row = {'name': s['name'], 'at_m': at, 'direction': direction,
-               'speed_m_s': _num(s, 'speed_m_s', what, problems, 1.0, 0, 10),
-               'discharge_l_s': _num(s, 'discharge_l_s', what, problems, 1.0, 0.05, 20),
+               'speed_m_s': _num(s, 'speed_m_s', what, problems, 0 if 'reservoir_area_m2' in s else 1.0, 0, 10),
+               'discharge_l_s': _num(s, 'discharge_l_s', what, problems, 0 if 'reservoir_area_m2' in s else 1.0, 0 if 'reservoir_area_m2' in s else .05, 20),
                'from_s': _num(s, 'from_s', what, problems, 0.0, 0, 600)}
         if s.get('until_s') is not None:
             row['until_s'] = _num(s, 'until_s', what, problems, None, row['from_s'] + 0.01, 3600)
@@ -1433,6 +1435,17 @@ def compile_spec(spec, lenient=False):
         if 'valve_open' in s:
             if not isinstance(s['valve_open'], bool): problems.append(what + ': valve_open must be true or false')
             row['valve_open'] = bool(s['valve_open'])
+        if any(key in s for key in ('reservoir_area_m2','outlet_area_m2','head_offset_m','contraction_coefficient','opening_fraction','reservoir_floor_m')):
+            if 'reservoir_area_m2' not in s: problems.append(what+': outlet geometry needs a gravity reservoir area')
+            if 'initial_volume_l' not in s: problems.append(what+': a gravity reservoir needs finite initial water')
+            if row['speed_m_s'] or row['discharge_l_s']: problems.append(what+': gravity outlet speed and flow are derived, not metered')
+            for key,default,lo,hi in [('reservoir_area_m2',.0576,.001,10),('outlet_area_m2',.001,.000001,.01),
+                    ('head_offset_m',0,0,2),('contraction_coefficient',.62,.01,1),('opening_fraction',1,0,1)]:
+                row[key]=_num(s,key,what,problems,default,lo,hi)
+            if 'reservoir_floor_m' in s: row['reservoir_floor_m']=_vec(s['reservoir_floor_m'],3,what+' reservoir floor',problems)
+            if row['outlet_area_m2']>row['reservoir_area_m2']: problems.append(what+': outlet area exceeds reservoir area')
+            if 'reservoir_floor_m' in row and abs(row['reservoir_floor_m'][1]-at[1]-row['head_offset_m'])>1e-9:
+                problems.append(what+': reservoir floor must agree with outlet head offset')
         if 'receiver_bounds_m' in s:
             bounds=_vec(s['receiver_bounds_m'],4,what+' receiver_bounds_m',problems)
             if not bounds[0]<bounds[1] or not bounds[2]<bounds[3]:
@@ -1967,6 +1980,8 @@ def scene_of(compiled):
         for source, target in zip(compiled['spouts'], scene['spouts']):
             if 'initial_volume_l' in source: target['initial_volume_m3'] = source['initial_volume_l'] / 1000.0
             if 'valve_open' in source: target['valve_open'] = source['valve_open']
+            for key in ('reservoir_area_m2','outlet_area_m2','head_offset_m','contraction_coefficient','opening_fraction','reservoir_floor_m'):
+                if key in source: target[key]=source[key]
             if 'receiver_bounds_m' in source: target['receiver_bounds_m'] = source['receiver_bounds_m']
     return scene
 
@@ -2685,7 +2700,7 @@ class MachineSession:
             p = self.parcels
             frame['water'] = {'xyz_mm': subset_xyz(p.get('xyz_mm', [])), 'parcel_count': len(p.get('xyz_mm', []))//3,
                               'poured_l': (p.get('poured_m3') or 0)*1000,
-                              'sources': [{k: s.get(k) for k in ('name', 'valve_open', 'remaining_m3', 'received_m3')}
+                              'sources': [{k: s.get(k) for k in ('name', 'valve_open', 'remaining_m3', 'received_m3','gravity_reservoir','opening_fraction','head_m','flow_l_s')}
                                           for s in p.get('sources', [])]}
         if self.water and self.water.get('surface_mm_b64') and self.ground_view:
             w, g = self.water, self.ground_view['grid']
@@ -2809,6 +2824,16 @@ class MachineSession:
             self.last_action = time.monotonic()
             self.lock.notify_all()
         return dict(name=name, open=opened, queued=True)
+
+    def water_opening(self, name, fraction):
+        if isinstance(fraction,bool) or not isinstance(fraction,(int,float)) or not math.isfinite(fraction) or not 0<=fraction<=1:
+            raise ValueError('Tap opening must be between zero and one')
+        if not any(s['name']==name and s.get('reservoir_area_m2',0)>0 for s in self.compiled.get('spouts',[])):
+            raise ValueError('Choose the outlet of a gravity water tank')
+        with self.lock:
+            self._water_launch_queue.append(dict(op='water_opening',name=name,fraction=fraction))
+            self.last_action=time.monotonic();self.lock.notify_all()
+        return dict(name=name,fraction=fraction,queued=True)
 
     def release_joint(self, name):
         """Withdraw a named restraint, through the run thread's engine queue."""

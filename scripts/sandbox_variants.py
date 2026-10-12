@@ -15,6 +15,7 @@ VERSION = 1
 FAMILY_VERSIONS = {family: 2 for family in ('easy-power', 'easy-switch', 'easy-bulb', 'easy-loop')}
 FAMILY_VERSIONS['easy-switch'] = 3
 FAMILY_VERSIONS['easy-solar'] = 2
+FAMILY_VERSIONS.update({family:2 for family in ('easy-water-wheel','easy-water-gate','easy-water-receiver')})
 MAX_ATTEMPTS = 3
 
 # Each family changes one physical input. Prepared-piece parameters are
@@ -42,7 +43,12 @@ POLICIES = {
     'easy-water-gate': ('piece', 'water_wheel', 'discharge_l_s', (1.5, 2.5, 3)),
     'easy-charge-lift': ('sun', None, 'elevation_deg', (14, 16, 18, 22)),
     'easy-river-lift': ('ground', None, 'discharge_m3_s', (.095, .105, .11, .12)),
+    'easy-river-wheel': ('ground', None, 'discharge_m3_s', (.095, .105, .11, .12)),
 }
+
+LEGACY_POLICIES=copy.deepcopy(POLICIES)
+for family in ('easy-water-wheel','easy-water-gate'):
+    POLICIES[family]=('piece','water_tank','fill_l',(3.5,4.5,5,5.5))
 
 PARAMETER_LABELS = {
     'rope_m': 'Cord length (m)', 'watts': 'Optical or load power (W)',
@@ -115,6 +121,10 @@ def _apparatus(family_level, version):
     """
     result = copy.deepcopy(family_level)
     family = family_level['id']
+    if family in ('easy-water-wheel','easy-water-gate','easy-water-receiver') and version==1:
+        import sandbox_water_launch as water
+        import machine_game as game
+        return game._with_free_knobs(copy.deepcopy(water.LEGACY_LEVELS[family]))
     if family == 'easy-solar' and version == 1:
         import sandbox_mechanics as mechanics
         import machine_game as game
@@ -184,7 +194,7 @@ def construct(family_level, seed, *, attempt=0, version=None):
     version = _version(family, version)
     result = _apparatus(family_level, version)
     result['id'] = identity(family, seed, attempt, version=version)
-    kind, name, parameter, values = POLICIES[family]
+    kind, name, parameter, values = (LEGACY_POLICIES if version==1 else POLICIES)[family]
     digest = hashlib.sha256(f'banjo-easy:{version}:{family}:{seed}'.encode('ascii')).digest()
     value = values[(int.from_bytes(digest[:8], 'big') + attempt) % len(values)]
     if kind == 'piece':

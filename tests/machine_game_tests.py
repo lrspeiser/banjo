@@ -45,7 +45,7 @@ def need_engine(test):
 
 LEVELS = mg.load_levels()
 EMPTY_START_LEVELS = ('easy-tackle', 'easy-spring', 'easy-gears',
-                      'easy-water-wheel', 'easy-water-receiver')
+                      'easy-water-wheel', 'easy-water-receiver','easy-river-wheel')
 
 
 class Tray(unittest.TestCase):
@@ -1255,7 +1255,7 @@ class Engine(unittest.TestCase):
             template = water.TEMPLATES[1]
             level = mg.requested_level(dict(level='free',base=template['base']))
             compiled = mw.compile_spec(mg.compose(level,template['placements'])[0])
-            poured = mw.rehearse(compiled, ENGINE, logs, seconds=3, flows=True)
+            poured = mw.rehearse(compiled, ENGINE, logs, seconds=5, flows=True)
             frames = poured['flow_frames']
             self.assertTrue(any(f.get('water',{}).get('xyz_mm') for f in frames))
             self.assertEqual(frames[-1]['water']['xyz_mm'], [], 'finite source stops pouring')

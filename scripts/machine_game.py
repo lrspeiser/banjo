@@ -39,7 +39,7 @@ import sandbox_combinations
 import sandbox_variants
 
 SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_combinations)
-EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel',
+EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel', 'easy-river-wheel',
               'easy-spring', 'easy-gears', 'easy-weight', 'easy-motor', 'easy-power', 'easy-switch',
               'easy-bulb', 'easy-loop', 'easy-water-receiver', 'easy-heat', 'easy-catapult',
               'easy-marble-light', 'easy-water-gate', 'easy-charge-lift', 'easy-river-lift']
@@ -52,11 +52,11 @@ PLAYER_TASK_COUNTS = {
     'gap': 1, 'cut': 1, 'fire': 4, 'steam': 1, 'chain': 1,
     'laser': 2, 'sun': 2, 'tackle': 1,
     'easy-cut': 1, 'easy-mirror': 1, 'easy-lens': 1, 'easy-solar': 2,
-    'easy-tackle': 1, 'easy-water-wheel': 1, 'easy-spring': 1,
+    'easy-tackle': 1, 'easy-water-wheel': 2, 'easy-river-wheel': 1, 'easy-spring': 1,
     'easy-gears': 1, 'easy-weight': 1, 'easy-motor': 1, 'easy-power': 1,
     'easy-switch': 2, 'easy-bulb': 1, 'easy-loop': 1,
     'easy-water-receiver': 1, 'easy-heat': 1, 'easy-catapult': 1,
-    'easy-marble-light': 1, 'easy-water-gate': 2, 'easy-charge-lift': 1,
+    'easy-marble-light': 1, 'easy-water-gate': 3, 'easy-charge-lift': 1,
     'easy-river-lift': 2,
 }
 
@@ -1298,6 +1298,8 @@ def ghost(level, placements, index, snapping=False, edit_key=None):
                             **({'parts': p['parts']} if p['shape'] == 'compound' else {})) for p in mine]}
     if compiled.get('light'):
         reply['optical_setup'] = compiled['light']
+    if compiled.get('spouts'):
+        reply['water_setup'] = compiled['spouts']
     # Draw the compiled terminals while placing a device, including its
     # prepared socket leads. This does not advance the engine.
     if checked[index]['piece'] in ('battery', 'switch', 'bulb', 'motor', 'ignition', 'wire', 'cannon'):
@@ -1345,7 +1347,16 @@ def compose(level, placements, leave_out_goal=False):
         spec.setdefault('stations', [])
         return spec, checked, cost      # sandbox readings are retained, never scored
     spec['stations'] = []
-    goal = level['goal']['station']['done_when']
+    role_names={role:next((f'your {piece} {i+1}' for i,p in enumerate(checked) if p['piece']==piece),f'@{role}')
+                for role,piece in level['goal'].get('roles',{}).items()}
+    def resolve_roles(value):
+        if isinstance(value,dict): return {k:resolve_roles(v) for k,v in value.items()}
+        if isinstance(value,list): return [resolve_roles(v) for v in value]
+        if isinstance(value,str):
+            for role,name in role_names.items():
+                if value==f'@{role}' or value.startswith(f'@{role} '):return name+value[len(role)+1:]
+        return value
+    goal = resolve_roles(level['goal']['station']['done_when'])
     available = names | {j['name'] for j in compiled['joints']} | {c['name'] for c in compiled['circuits']} \
         | {b['name'] for b in compiled['batteries']} | {s['name'] for s in compiled.get('spouts', [])} \
         | {d['name'] for d in compiled.get('electrical', {}).get('devices', [])} \
@@ -1358,7 +1369,7 @@ def compose(level, placements, leave_out_goal=False):
             raise LevelRefused([needs])
         spec['_needs'] = needs
     else:
-        spec['stations'] = [dict(level['goal']['station'], title=level['goal']['title'],
+        spec['stations'] = [dict(level['goal']['station'], done_when=goal, title=level['goal']['title'],
                                  focus=level['goal'].get('focus', []))]
     # The steps on the way, after the goal: shown on the page as the chain's
     # stations, and what the engine's search steers by. One about a part
@@ -1703,8 +1714,9 @@ def public(level):
                                   'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty') if k in level}
     if not level.get('free'):
         family = level.get('variant', {}).get('family', level['id'])
-        result['task_count'] = (1 if family == 'easy-solar' and level.get('variant', {}).get('version') == 1
-                                else PLAYER_TASK_COUNTS[family])
+        legacy_counts={'easy-solar':1,'easy-water-wheel':1,'easy-water-gate':2,'easy-water-receiver':1}
+        result['task_count'] = (legacy_counts.get(family,PLAYER_TASK_COUNTS[family]) if level.get('variant',{}).get('version')==1
+                               else PLAYER_TASK_COUNTS[family])
     if level.get('variant'):
         result['variant'] = {k: level['variant'][k] for k in ('family', 'seed', 'version', 'attempt',
             'fallback', 'validated', 'parameter', 'parameter_label', 'kind', 'value', 'measured_energy_j') if k in level['variant']}
