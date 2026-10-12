@@ -18,6 +18,7 @@ FAMILY_VERSIONS['easy-solar'] = 2
 FAMILY_VERSIONS.update({family:2 for family in ('easy-water-wheel','easy-water-gate','easy-water-receiver')})
 FAMILY_VERSIONS.update({family:2 for family in ('easy-spring','easy-tackle','easy-gears')})
 FAMILY_VERSIONS['easy-water-wheel']=3
+FAMILY_VERSIONS['easy-gears']=3
 MAX_ATTEMPTS = 3
 
 # Each family changes one physical input. Prepared-piece parameters are
@@ -130,6 +131,10 @@ def _apparatus(family_level, version):
         import sandbox_mechanics as mechanics
         import machine_game as game
         return game._with_free_knobs(copy.deepcopy(mechanics.LEGACY_LEVELS[family]))
+    if family=='easy-gears' and version==2:
+        import sandbox_mechanics as mechanics
+        import machine_game as game
+        return game._with_free_knobs(copy.deepcopy(mechanics.LEGACY_GEARED_STARTER))
     if family=='easy-water-wheel' and version==2:
         import sandbox_water_launch as water
         import machine_game as game

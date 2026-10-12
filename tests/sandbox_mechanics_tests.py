@@ -115,6 +115,54 @@ def spring_audit(material, dt):
             engine.close()
 
 
+def contact_gear_audit(material,dt):
+    level=mg.level_by_id('easy-gears')
+    spec=mg.compose(level,level['solution'])[0]
+    wheels=[p for p in spec['parts'] if p['shape']=='compound']
+    density={'oak':700,'glass':2500,'iron':7870}[material]
+    properties={}
+    for p in wheels:
+        p['material']=material
+        mass=inertia=0
+        for shape in p['parts']:
+            a,b,c=shape['size_m'];x,y,z=shape['at_m']
+            m=density*(math.pi*(a/2)**2*b if shape['shape']=='cylinder' else a*b*c)
+            mass+=m
+            inertia+=m*((a/2)**2/2 if shape['shape']=='cylinder' else (a*a+b*b)/12)+m*(x*x+y*y)
+        properties[p['name']]=(mass,inertia)
+    with tempfile.TemporaryDirectory() as td:
+        engine,_,_=mw.build_engine(ENGINE,mw.compile_spec(spec),td)
+        try:
+            saved=lambda:{b['name']:b['pose'] for b in engine.op(op='snapshot')['snapshot']['bodies'] if b['name'] in properties}
+            initial=saved();last=initial;bearing=0;elapsed=0;started=time.perf_counter()
+            for _ in range(round(1/dt)):
+                engine.op(op='step',dt=dt,n=1,moved=False)
+                last=saved();elapsed+=dt
+                bearing+=.001*sum(abs(p['w_rad_s'][2]) for p in last.values())*dt
+            energy=momentum_z=potential_change=0
+            linear=[0,0,0]
+            for name,p in last.items():
+                mass,inertia=properties[name]
+                # Hinge holds the axle about z. Include COM offset in the axle
+                # inertia; do not count its constrained COM translation twice.
+                energy+=.5*inertia*p['w_rad_s'][2]**2
+                momentum_z+=inertia*p['w_rad_s'][2]
+                potential_change+=mass*9.81*(p['com_m'][1]-initial[name]['com_m'][1])
+                for axis in range(3):linear[axis]+=mass*(p['v_m_s'][axis]-initial[name]['v_m_s'][axis])
+            ledger=engine.op(op='circuits')['circuits'][0]['ledger']
+            angles=engine.op(op='joints')['joints']
+            native={b['name']:b['mass_kg'] for b in engine.first['bodies'] if b['name'] in properties}
+            return dict(material=material,dt=dt,masses_kg=native,expected_masses_kg={n:v[0] for n,v in properties.items()},
+                angles_deg_wrapped={j['id']:j['degrees'] for j in angles},source_j=ledger['source_j'],
+                shaft_j=ledger['shaft_j'],electrical_residual_j=ledger['electrical_residual_j'],
+                coupling_residual_j=ledger['coupling_residual_j'],kinetic_about_axles_j=energy,
+                potential_change_j=potential_change,bearing_quadrature_j=bearing,
+                contact_and_constraint_remainder_j=ledger['shaft_j']-energy-potential_change-bearing,
+                required_fixed_support_impulse_n_s=[linear[0],linear[1]+sum(v[0] for v in properties.values())*9.81*elapsed,linear[2]],
+                angular_momentum_about_axles_n_m_s=momentum_z,wall_s=time.perf_counter()-started)
+        finally:engine.close()
+
+
 class DeclarationChecks(unittest.TestCase):
     def test_each_piece_is_independent_and_saved_examples_compile(self):
         for row in sm.TRAY:
@@ -149,6 +197,72 @@ class DeclarationChecks(unittest.TestCase):
 
 
 class EngineChecks(unittest.TestCase):
+    @engine_test
+    def test_contact_gears_compare_material_mass_and_native_power_receipts_at_two_steps(self):
+        for material in ('glass','oak','iron'):
+            # Oak's low inertia requires <= 0.00356 s in the native circuit
+            # coupling guard. Compare two finer explicit steps for all materials.
+            for dt in (1/480,1/960):
+                with self.subTest(material=material,dt=dt):
+                    audit=contact_gear_audit(material,dt)
+                    for name,mass in audit['masses_kg'].items():
+                        self.assertAlmostEqual(mass,audit['expected_masses_kg'][name],delta=1e-5)
+                    self.assertLess(abs(audit['electrical_residual_j']),1e-6)
+                    self.assertGreater(audit['shaft_j'],0)
+                    self.assertGreater(audit['kinetic_about_axles_j'],0)
+                    print('CONTACT GEAR AUDIT',json.dumps(audit))
+
+    @engine_test
+    def test_individual_gear_teeth_need_contact_size_and_real_power(self):
+        lone=sm.gear('single',{},{} )
+        self.assertEqual(len(lone['joints']),1)
+        self.assertEqual(sum(p['shape']=='compound' for p in lone['parts']),1)
+        self.assertNotIn('batteries',lone)
+        self.assertNotIn('circuits',lone)
+        level=mg.level_by_id('easy-gears')
+        spec=mg.compose(level,level['solution'])[0]
+        self.assertFalse(any(j['kind']=='gear' for j in spec['joints']))
+        driven=measured(spec,2)
+        angles={j['name']:j['turned_deg'] for j in driven['readouts']['joints']}
+        self.assertGreater(angles['target gear axle'],180)
+        # Actual tooth contact has backlash; this is a measured travel check,
+        # not an imposed ideal ratio or an assertion of involute accuracy.
+        self.assertAlmostEqual(angles['drive gear axle'],-angles['your gear 1 axle'],delta=8)
+        self.assertAlmostEqual(angles['your gear 1 axle'],-2*angles['target gear axle'],delta=8)
+        for label,placement in [('off plane',dict(level['solution'][0],z_m=.2)),
+                                ('too small',dict(level['solution'][0],module_m=.016))]:
+            with tempfile.TemporaryDirectory() as td,self.subTest(condition=label):
+                outcome=mg.trial(level,[placement],ENGINE,Path(td),runs=3)
+                self.assertEqual(outcome['worked'],0,outcome)
+        crowded=mg.ghost(level,[dict(level['solution'][0],teeth=18)],0)
+        self.assertFalse(crowded['fits'],'Larger teeth cannot occupy the existing wheels')
+        for label in ('empty battery','broken wire'):
+            off=copy.deepcopy(spec)
+            if label=='empty battery':off['batteries'][0]['charge_j']=0
+            else:off['electrical']['wires'].pop()
+            with self.subTest(condition=label):
+                stopped=measured(off,2)
+                self.assertLess(abs(next(j for j in stopped['readouts']['joints'] if j['name']=='target gear axle')['turned_deg']),1)
+        print('CONTACT GEARS',angles)
+
+    @engine_test
+    def test_free_gears_use_a_separate_motor_battery_and_saved_wires(self):
+        free=mg.free_build()
+        placements=[dict(piece='gear',x_m=0),dict(piece='gear',x_m=.45,teeth=24,phase_deg=7.5),
+            dict(piece='battery',x_m=-.6,z_m=-.4),
+            dict(piece='motor',hinge='your gear 1 axle',x_m=0,z_m=-.3),
+            dict(piece='wire',a_terminal='your battery 3:plus',b_terminal='your motor 4:plus'),
+            dict(piece='wire',a_terminal='your battery 3:minus',b_terminal='your motor 4:minus')]
+        # The ordinary saved JSON contains independent pieces and terminal
+        # links; no paired-piece metadata or generated ratio joint is required.
+        saved=json.loads(json.dumps(placements))
+        spec=mg.compose(free,saved)[0]
+        self.assertFalse(any(j['kind']=='gear' for j in spec['joints']))
+        run=measured(spec,2)
+        hinges={j['name']:j['turned_deg'] for j in run['readouts']['joints']}
+        self.assertGreater(abs(hinges['your gear 2 axle']),180)
+        self.assertGreater(run['readouts']['electrical']['networks'][0]['ledger']['source_j'],0)
+
     @engine_test
     def test_spring_acts_on_the_waiting_load_and_compares_materials_at_two_steps(self):
         for material,density in [('oak',700),('glass',2500),('iron',7870)]:
@@ -281,7 +395,7 @@ class EngineChecks(unittest.TestCase):
 
     @engine_test
     def test_gears_follow_ratio_with_a_finite_battery_and_off_stays_still(self):
-        driven = measured(assembled(template('gears')), 2)
+        driven = measured(assembled(sm.LEGACY_GEAR_TEMPLATE), 2)
         hinges = {j['name']: j for j in driven['readouts']['joints']}
         a = hinges['your gears 1 input axle']['turned_deg']
         b = hinges['your gears 1 output axle']['turned_deg']
@@ -290,7 +404,7 @@ class EngineChecks(unittest.TestCase):
         circuit = driven['readouts']['circuits'][0]
         self.assertGreater(circuit['source_j'], 0)
         self.assertLess(abs(circuit['electrical_residual_j']), 1e-6)
-        stopped = measured(assembled(template('gears'), {'drive': 'off'}), 1)
+        stopped = measured(assembled(sm.LEGACY_GEAR_TEMPLATE, {'drive': 'off'}), 1)
         self.assertLess(abs(next(j for j in stopped['readouts']['joints'] if j['name'].endswith('input axle'))['turned_deg']), 1)
         print('GEARS', a, b, json.dumps(circuit))
 

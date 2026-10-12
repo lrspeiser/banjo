@@ -14,6 +14,81 @@ the extended `build/agent-water/Release/banjo_live_world_run.exe`. The module
 changes declarations, not C++ physics. These are laboratory-model validations,
 not calibrations against manufactured parts.
 
+## Individual contact gears (October 12)
+
+The current **Gear** card creates one compound wheel and one supported hinge.
+There is no gear-ratio joint and no power source in this builder. Native
+rigid-body contacts between its visible rectangular teeth transfer torque.
+The root cylinder radius is `N * module / 2 - 0.7 * module`; each tooth has
+radial depth `1.4 * module`, width `1.1 * module` and thickness 40 mm. A thin
+front marker shows rotation. The cylinder, teeth and marker meet without
+overlapping volume; native mass matches their analytical sum. All dimensions
+are metres. This is a rectangular experimental profile with backlash and
+possible jamming, not a calibrated involute profile, gear stress or wear law.
+
+The lesson/example uses 12-tooth drive and middle wheels, a 24-tooth target,
+24 mm module and 650 mm axle height. Axles are at x = -310 / 0 / 450 mm and
+z = 0; the middle wheel starts at 15° tooth alignment. A separately declared
+finite 12 V battery supplies a 4 N m motor through two explicit 0.01 Ω wires.
+The motor casing sits on the drive axle's grounded mount; the native motor
+supplies torque and its housing reaction, never an assigned angular speed.
+The two-second aluminum run measures drive +496.91°, middle -492.47° and
+target +244.38°. The 12:12:24 travel comparison permits 8° backlash error as
+a new contact-model regression, not a relaxation of an existing goal or
+conservation tolerance. The unchanged target is 180° by 2 s; all three nudged
+solutions reach it at 1.750 / 1.633 / 1.750 s. Empty/default/off-plane and
+undersized controls fail all three nudges. Empty charge and a broken wire
+keep the target within 1°. Oversized placement is refused for actual overlap.
+
+Matched geometry, same battery/motor, all three wheels made of the listed
+material, measured after one second:
+
+| Material | Step (s) | Small / large native mass (kg) | Target angle (°) | Source / shaft (J) | Axial kinetic estimate (J) | Contact/constraint remainder (J) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Glass | 1/480 | 6.18781 / 25.31577 | 85.211 | 19.2222 / 6.5888 | 5.2445 | 1.5548 |
+| Glass | 1/960 | 6.18781 / 25.31577 | 86.002 | 19.1017 / 6.6078 | 5.2971 | 1.5228 |
+| Oak | 1/480 | 1.73259 / 7.08842 | 164.397 | 8.3894 / 4.3506 | 3.2656 | 1.1346 |
+| Oak | 1/960 | 1.73259 / 7.08842 | 163.703 | 8.4525 / 4.3220 | 3.2617 | 1.1101 |
+| Iron | 1/480 | 19.47924 / 79.69405 | 32.527 | 26.3823 / 4.1541 | 3.0894 | 1.2429 |
+| Iron | 1/960 | 19.47924 / 79.69405 | 31.848 | 26.4686 / 4.0877 | 3.0108 | 1.2487 |
+
+Mass is compared at a 1e-5 kg tolerance because native output rounds it to
+five decimals; densities are glass 2500, oak 700 and iron 7870 kg/m³.
+Oak's lower inertia triggers the native circuit step guard at 1/240 s
+(maximum 0.00356349 s), so both comparisons use finer explicit steps. These
+six probes take about 12 s total including per-step snapshot requests; each
+one-second native probe takes roughly 1.0–2.6 s with that instrumentation.
+
+The native electrical residual is at most 1.82e-12 J. Circuit/shaft coupling
+correction refines from 0.03219 to 0.01660 J for glass, 0.04292 to 0.02244 J
+for oak, and 0.01685 to 0.00823 J for iron. The mechanical remainder is shaft
+work minus axial kinetic energy, gravitational potential change and the
+0.001 N m bearing-work quadrature. Gravity potential changes are about
+-0.218/-0.220 J (glass), -0.0641/-0.0642 J (oak), and -0.181/-0.175 J (iron).
+Bearing work is 0.00766/0.00773, 0.01456/0.01450 and 0.00309/0.00303 J.
+The axial kinetic estimate includes the marker's offset in axle inertia;
+small transverse constraint motion is not included. Contacts, impact losses
+and numerical hinge corrections are not separately resolved by this receipt.
+
+The grounded axle supports exchange momentum with the world. Linear momentum
+change minus gravity impulse requires upward support impulses about 369.72,
+103.53 and 1163.92 N s for glass, oak and iron. Measured axial angular momentum
+is 2.717/2.728, 1.127/1.127 and 3.603/3.566 N m s respectively; this sum about
+three different fixed axles is not a closed system's conserved global angular
+momentum. Direct per-contact impulses and the full anchored support torque
+receipt remain unmeasured. These data are an explicit partial transfer audit,
+not proof of full-pipeline mechanical conservation or calibrated efficiency.
+
+Full game: 51 tests pass in 76.8 s. Seed recipes: 16 pass in 147.1 s, including
+all 88 presets (264 correct nudges, zero empty/wrong wins), with native legacy
+v1/v2 gear reconstruction. Mechanics: 15 pass in 22.6 s, including the separate
+free-build gear/motor/battery/wire round-trip test. The machine-view CTest,
+JavaScript syntax and all 269 source registrations also pass. The verified unchanged
+engine SHA-256 is
+`3fac18bff131cf0d819e6186969c4ed64b27210eef04e36f420bd497ce39d24a`.
+Old saved pairs still use the original ideal ratio constraint and their
+historical measurements below; the new library/example never inserts a pair.
+
 ## Controls and reusable examples
 
 | Card | Editable physical settings | Example |
@@ -24,7 +99,7 @@ not calibrations against manufactured parts.
 | Solar panel | Position, post height, square active area, orientation, included or selected battery store | Charge in the sun: a 20° sun and an initially empty 10 kJ battery |
 | Block and tackle | Position, counterweight height, material-and-size mass preset, ratio 1–4, included load material or selected existing moving load | Lift with less: a supported frame raises a load using a falling counterweight |
 | Spring with guided load | Position, initial height, relaxed length, stiffness, internal viscous damping, load material | Bounce and settle: a moving box compresses a spring attached to a grounded base |
-| Gear pair | Position, axle height, 12/18/24 tooth presets, bearing friction, explicit included drive off/forward/reverse | Fast wheel slow wheel: a finite battery motor drives the pair; off supplies no power |
+| Gear | Position, axle height, 12/18/24/36 teeth, 16/24/32 mm tooth size, tooth alignment, material and bearing friction | Fast wheel slow wheel: three independent contact-driven wheels, one supplied by a wired battery/motor. Legacy saved pairs retain their original builder. |
 | Weight | Position, side length, initial height, oak/glass/iron, loose/hanging/guided mounting, whole-piece turns | Tip the lever: a raised loose weight falls onto one end |
 
 Named solar battery stores and tackle loads are real declaration references.

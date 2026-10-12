@@ -52,7 +52,7 @@ class Tray(unittest.TestCase):
         for level in LEVELS:
             initial=mw.compile_spec(mg.compose(level,[],leave_out_goal=True)[0])
             self.assertTrue(initial['parts'] or level['goal'].get('area') or level['goal']['station']['done_when'].get('in_zone'),level['id'])
-        for ident,target in [('easy-spring','spring load'),('easy-tackle','crate'),('easy-gears','target gears output wheel'),('easy-water-wheel','wheel target')]:
+        for ident,target in [('easy-spring','spring load'),('easy-tackle','crate'),('easy-gears','target gear wheel'),('easy-water-wheel','wheel target')]:
             row=mg.level_by_id(ident);initial=mw.compile_spec(mg.compose(row,[],leave_out_goal=True)[0])
             names={p['name'] for p in initial['parts']}
             self.assertIn(target,names)
@@ -70,10 +70,11 @@ class Tray(unittest.TestCase):
             self.assertFalse({'reference marker', 'channel marker'} &
                              {p['name'] for p in (row['base'] or {}).get('parts', [])}, row['name'])
         gears = mg.level_by_id('easy-gears')
-        self.assertIn('target gears output wheel',{p['name'] for p in mw.compile_spec(mg.compose(gears, [], leave_out_goal=True)[0])['parts']})
+        self.assertIn('target gear wheel',{p['name'] for p in mw.compile_spec(mg.compose(gears, [], leave_out_goal=True)[0])['parts']})
         compiled = mw.compile_spec(mg.compose(gears, gears['solution'])[0])
         self.assertIn('supply housing', {p['name'] for p in compiled['parts']})
-        self.assertEqual(compiled['electrical']['devices'][-1]['hinge'],'target gears input axle')
+        self.assertEqual(compiled['electrical']['devices'][-1]['hinge'],'drive gear axle')
+        self.assertFalse(any(j['kind']=='gear' for j in compiled['joints']), 'Teeth contacts must carry the torque')
 
     def test_edit_guides_follow_compiled_geometry_and_do_not_change_the_setup(self):
         free = mg.free_build()

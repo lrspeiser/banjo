@@ -61,6 +61,11 @@ Each design has a table with no goal and every piece in
 the tray: 31 cards including knives, mirrors, lenses, solar panels, tackle,
 springs, gears, weights, motors, batteries, switches, bulbs, wires, water
 wheels, finite water tanks, heating coils and counterweight catapults.
+Gears are individual toothed wheels: choose their size, align their axles and
+mesh their teeth. A separate wired battery/motor supplies power. **Turn the big
+wheel** teaches bridging a gap between a powered gear and a larger target;
+the **Fast wheel slow wheel** example uses the same contact-driven apparatus.
+Older saved gear pairs retain their original ideal coupling.
 There are 25 editable prebuilt designs, including a battery holder, a river workbench and a
 river-powered gate lift. The river's current pushes submerged wheel paddles;
 connect the wheel's drum rope to a load to lift it.

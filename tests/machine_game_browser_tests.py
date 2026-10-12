@@ -50,7 +50,7 @@ class Puzzles(unittest.TestCase):
         import machine_game
         cls.level_count = len(machine_game.load_levels())
         cls.template_count = len(machine_game.sandbox_templates())
-        cls.piece_count = len([row for row in machine_game.free_build()['tray'] if not row.get('attach')])
+        cls.piece_count = len([row for row in machine_game.free_build()['tray'] if not row.get('attach') and not row.get('legacy')])
         cls.river_solution = dict(machine_game.sandbox_water_launch.RIVER_SOLUTION)
         cls.power_level = machine_game.level_by_id('easy-power')
         # An engine still closing as the tests end holds its log open a moment.
@@ -399,17 +399,45 @@ class Puzzles(unittest.TestCase):
                     self.assertGreater(after[1],before[1]+(.049 if ident=='easy-spring' else .249))
                     self.assertFalse(self.js(f"Object.keys(window.machineBodies()).some(n=>/^your (spring|tackle) \\d+ load$/.test(n))"))
 
-    def test_gear_lesson_starts_with_wheels_then_the_added_motor_turns_them(self):
+    def test_gear_lesson_requires_an_individual_sized_and_placed_gear(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.open('easy-gears',width,height,phone=width!=1280)
-                self.assertIn('target gears output wheel',self.js('Object.keys(window.machineBodies())'))
-                self.press('Add a motor');self.ghost()
-                self.slide('throttle of your motor 1',1);self.ghost()
+                self.assertIn('target gear wheel',self.js('Object.keys(window.machineBodies())'))
+                self.press('Add a gear');self.ghost()
+                self.assertEqual(self.ghost()['p']['teeth'],18)
+                self.slide('Its Teeth / size',12);self.ghost()
+                self.wait('window.machineCamera().settled',30)
+                self.drag_ghost_to(0,0,touch=width!=1280)
+                self.assertTrue(self.ghost()['fits'],self.ghost())
                 self.click_visible('Run it')
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
-                self.assertIn('target gears output wheel',self.js('Object.keys(window.machineBodies())'))
+                self.assertIn('target gear wheel',self.js('Object.keys(window.machineBodies())'))
+
+    def test_individual_gear_example_library_and_saved_version_reopen(self):
+        self.anonymous_levels(width=390,height=844)
+        self.press('Sandbox: build anything')
+        self.wait("!document.getElementById('sandbox-screen').hidden",10)
+        self.press('Start from Fast wheel slow wheel');self.wait(READY,60)
+        original=self.js('window.machinePlacements()')
+        self.assertEqual([p['piece'] for p in original],['gear'])
+        self.press('Add a piece');self.slide('Search pieces','gear')
+        self.assertEqual(self.js("[...document.querySelectorAll('#piece-grid strong')].map(e=>e.textContent)"),['gear'])
+        self.press('Back to sandbox')
+        self.slide('Adjust a piece','0');self.ghost()
+        self.slide('Position across (m) of your gear 1',.4);self.ghost()
+        self.press('Set it down');self.wait(READY,60)
+        before=self.js('window.machineDesign().versions.length')
+        self.press('Save version')
+        self.wait(f"window.machineDesign().versions.length==={before+1} && /Version .*saved/.test(document.getElementById('design-status').textContent)",10)
+        self.anonymous_cloud_saved()
+        self.page.send('Page.reload',{});self.wait(READY,60)
+        self.assertEqual(self.js('window.machinePlacements()[0].z_m'),.4)
+        self.reveal_control("document.getElementById('version-pick')")
+        self.js("document.getElementById('version-pick').value='1'")
+        self.press('Restore version');self.wait(READY,60)
+        self.assertEqual(self.js('window.machinePlacements()'),original)
 
     def place_river_wheel(self):
         self.press('Add a water wheel');initial=self.ghost()['p']

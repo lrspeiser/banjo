@@ -37,13 +37,14 @@ class Recipes(unittest.TestCase):
             if os.environ.get('BANJO_MACHINE_ENGINE')=='required':self.fail('Native engine required')
             self.skipTest('Native engine unavailable')
         with tempfile.TemporaryDirectory() as td:
-            for family,version in [('easy-spring',1),('easy-tackle',1),('easy-gears',1),('easy-water-wheel',1),('easy-water-wheel',2)]:
+            for family,version in [('easy-spring',1),('easy-tackle',1),('easy-gears',1),('easy-gears',2),('easy-water-wheel',1),('easy-water-wheel',2)]:
                 with self.subTest(family=family,version=version):
                     old=variants.construct(game.level_by_id(family),42,version=version)
                     self.assertEqual(variants.reconstruct(game.level_by_id(family),42,0,version=version),old)
                     report=variants.validate(old,ENGINE,Path(td))
                     self.assertTrue(report['valid'],report)
                     if family=='easy-water-wheel':self.assertEqual(game.public(old)['task_count'],version)
+                    if family=='easy-gears':self.assertEqual(game.public(old)['task_count'],1)
 
     def test_water_v2_uses_independent_tanks_and_keeps_the_v1_feed_recipe(self):
         for name in ('easy-water-wheel','easy-water-gate','easy-water-receiver'):

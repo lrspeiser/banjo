@@ -155,6 +155,38 @@ def spring(name, k, ctx):
          'upper_m': .4, 'friction_n': 0}]}
 
 
+def gear(name, k, ctx):
+    """One mounted wheel. Boxes form its teeth; native contacts carry torque.
+
+    No ratio joint, motor, battery or partner is created by this builder.
+    The simple rectangular profile is deliberately not an involute gear.
+    """
+    x, z = _position(k)
+    teeth = int(k.get('teeth', 12))
+    module = k.get('module_m', .024)
+    radius = teeth * module / 2
+    height = k.get('height_m', .65)
+    phase = math.radians(k.get('phase_deg', 0))
+    root = radius - .7 * module
+    tooth_depth = 1.4 * module
+    tooth_width = 1.1 * module
+    shapes = [{'shape': 'cylinder', 'size_m': [2 * root, .04, 2 * root],
+               'at_m': [0, 0, 0], 'turn_deg': [90, 0, 0]}]
+    for i in range(teeth):
+        angle = phase + 2 * math.pi * i / teeth
+        shapes.append({'shape':'box','size_m':[tooth_depth,tooth_width,.04],
+                       'at_m':[radius * math.cos(angle),radius * math.sin(angle),0],
+                       'turn_deg':[0,0,math.degrees(angle)]})
+    shapes.append({'shape':'box','size_m':[.014,radius,.008],
+                   'at_m':[0,radius / 2,.024]})
+    return {'parts': [box(name+' post',[.06,height,.06],[x,height / 2,z-.1]),
+        {'name':name+' wheel','shape':'compound','material':k.get('material','aluminum'),
+         'at_m':[x,height,z],'parts':shapes}],
+        'joints':[{'name':name+' axle','kind':'hinge','a':name+' post','b':name+' wheel',
+                   'at_m':[x,height,z],'axis':[0,0,1],
+                   'friction_n_m':k.get('friction_n_m',.001)}]}
+
+
 def gears(name, k, ctx):
     x, z = _position(k)
     height = k.get('height_m', .4)
@@ -188,7 +220,7 @@ def gears(name, k, ctx):
 
 
 PIECES = {'knife': knife, 'mirror': mirror, 'lens': lens, 'solar': solar,
-          'tackle': tackle, 'weight': weight, 'spring': spring, 'gears': gears}
+          'tackle': tackle, 'weight': weight, 'spring': spring, 'gears': gears, 'gear':gear}
 
 
 def tray(piece, title, knobs, **extra):
@@ -226,11 +258,17 @@ TRAY = [
          'damping_n_s_m': number('Internal damping (N s/m)', 0, 30, 6, 1),
          'material': choice('Load material', ['oak', 'glass', 'iron'], 'oak'),
          'load': {'part':True,'default':'included load','label':'Load'}}, turning=False),
-    tray('gears', 'Gear pair', {'height_m': number('Axle height (m)', .35, .8, .4),
+    tray('gear','Gear',{'height_m':number('Axle height (m)',.35,.9,.65),
+         'teeth':choice('Teeth / size',[12,18,24,36],12),
+         'module_m':choice('Tooth size (m)',[.016,.024,.032],.024),
+         'phase_deg':number('Tooth alignment (degrees)',0,360,0,1),
+         'material':choice('Material',['aluminum','oak','glass','iron'],'aluminum'),
+         'friction_n_m':number('Bearing friction (N m)',0,.1,.001,.001)},turning=False),
+    tray('gears', 'Gear pair (saved designs)', {'height_m': number('Axle height (m)', .35, .8, .4),
          'teeth_a': choice('Input teeth', [12, 18, 24], 12),
          'teeth_b': choice('Output teeth', [12, 18, 24], 24),
          'friction_n_m': number('Bearing friction (N m)', 0, .1, .02, .01),
-         'drive': choice('Included battery drive', ['off', 'forward', 'reverse'], 'off')}, turning=False),
+         'drive': choice('Included battery drive', ['off', 'forward', 'reverse'], 'off')}, turning=False, legacy=True),
 ]
 
 
@@ -401,6 +439,51 @@ _gear_lesson['solution']=[dict(piece='motor',hinge='target gears input axle',x_m
 _gear_lesson['wrong']=[dict(_gear_lesson['solution'][0],throttle=0)]
 _gear_lesson['brief']='The gear pair is already here. Add the motor, increase its throttle and turn the big wheel through half a revolution.'
 _gear_lesson['hints'][0]=_gear_lesson['brief']
+
+# Preserve the published v2 apparatus and the old paired sandbox example.
+LEGACY_GEARED_STARTER=copy.deepcopy(_gear_lesson)
+LEGACY_GEAR_TEMPLATE=copy.deepcopy(next(row for row in TEMPLATES if row['name']=='Fast wheel slow wheel'))
+
+
+def gear_workbench():
+    apparatus=base('Bridge the gear gap')
+    for name,knobs in [('drive gear',dict(x_m=-.31)),
+                       ('target gear',dict(x_m=.45,teeth=24))]:
+        _starter_electrics.merge(apparatus,gear(name,knobs,{}))
+    _starter_electrics.merge(apparatus,_starter_electrics.battery('supply',dict(x_m=-.8,z_m=-.4),{}))
+    _starter_electrics.merge(apparatus,_starter_electrics.motor('drive motor',
+        dict(x_m=-.31,z_m=-.3,hinge='drive gear axle'),{}))
+    housing=next(p for p in apparatus['parts'] if p['name']=='drive motor housing')
+    housing.update(at_m=[-.31,.65,-.1],size_m=[.14,.14,.1])
+    apparatus['electrical']['devices'][-1]['terminals']=_starter_electrics.terminal_rows('drive motor',-.31,.73,-.1)
+    # A declared 4 N m actuator is sized for the three aluminum wheels.
+    # Its native finite-power torque/speed law still determines every angle.
+    apparatus['electrical']['devices'][-1]['stall_torque_n_m']=4
+    _starter_electrics.link(apparatus,'motor supply','supply:plus','drive motor:plus')
+    _starter_electrics.link(apparatus,'motor return','drive motor:minus','supply:minus')
+    return apparatus
+
+
+_gear_lesson['machine']=gear_workbench()
+_gear_row=copy.deepcopy(next(row for row in TRAY if row['piece']=='gear'))
+_gear_row.update(count=1,sandbox_builder=True,start_at_defaults=True,focus_knob='teeth',frame_on_add=True)
+_gear_row['knobs']['x_m']['default']=-1
+_gear_row['knobs']['z_m']['default']=.4
+_gear_row['knobs']['teeth'].update(default=18)
+_gear_row['knobs']['phase_deg']['default']=15
+_gear_lesson['tray']=[_gear_row]
+_gear_lesson['goal']['station']['done_when']={'turned_deg':{'joint':'target gear axle','deg':180}}
+_gear_lesson['goal']['focus']=['target gear wheel']
+_gear_lesson['par_energy_j']=1050000000  # 1,041,093,292 J fabrication + 27.117 J native source use.
+_gear_lesson['solution']=[dict(piece='gear',teeth=12,phase_deg=15,x_m=0,z_m=0)]
+_gear_lesson['wrong']=[dict(_gear_lesson['solution'][0],z_m=.2)]
+_gear_lesson['brief']='Bridge the gap between the powered gear and the big wheel. Choose a gear size and place its teeth between theirs to turn the big wheel halfway.'
+_gear_lesson['hints']=[_gear_lesson['brief'],
+    'The battery and its two wires power the motor on the left. Your gear has no built-in drive.',
+    'Try twelve teeth with the axle at the same height. Teeth must reach both neighbours without overlapping; use tooth alignment for a small adjustment.']
+_gear_example=next(row for row in TEMPLATES if row['name']=='Fast wheel slow wheel')
+_gear_example.update(base=gear_workbench(),placements=copy.deepcopy(_gear_lesson['solution']),
+    description='Three independent toothed wheels: a wired finite battery motor drives the small gear; contact with the middle gear turns the big one.')
 
 # The current collector lesson includes the same two player decisions as the
 # winch: get into sunlight and explicitly deliver that energy to a receiver.

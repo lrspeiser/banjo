@@ -2,6 +2,47 @@
 
 October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-two freely selectable piece lessons. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+## Individual gears with contact-driven teeth
+
+Later October 12 update: **Gear** replaces the paired card in the new-piece
+library. One Add creates one mounted wheel, with 12/18/24/36 teeth, tooth size
+16/24/32 mm, axle height, tooth alignment, aluminum/oak/glass/iron material and
+bearing friction. Increasing tooth count or tooth size increases its actual
+diameter and material-derived inertia. It creates no battery, motor, second
+wheel or ideal gear constraint. Connect a separate motor to the gear's named
+axle and wire a finite battery to that motor. The visible rectangular teeth
+are native rigid colliders; their contacts carry torque. Too-close wheels
+are refused as overlaps, while a gap, an axial offset or teeth too small to
+reach leave the next wheel unpowered. This is a simplified rectangular tooth
+profile with backlash, not calibrated involute gearing or tooth stress/failure.
+
+**Turn the big wheel** begins with a wired 12 V battery and 4 N m motor driving
+one 12-tooth wheel, plus the existing 24-tooth target. Choose and place a single
+gear between them; the starting 18-tooth loose gear does not solve the gap.
+The player makes two decisions: size and placement. Correct 12-tooth placement
+wins all three nudges at 1.750/1.633/1.750 s. The target still must turn 180°
+within two seconds. Empty/default/axially misplaced/undersized controls fail;
+an empty battery or interrupted supply wire keeps the target still. No goal
+or deadline was loosened. The measured authored par is 1.05 GJ (fabrication
+1,041,093,292 J plus 27.117 J source draw, rounded upward).
+
+The **Fast wheel slow wheel** sandbox example uses these separate gears.
+Old saved `gears` pieces still compile with their original paired builder,
+but that legacy card is hidden from Add/library browsing. Current gear recipes
+are version 3; v1 paired and v2 paired-with-added-motor recipes retain their
+declarations, seed policies and one-task count. The current seeds still vary
+the supply voltage, without changing contact geometry or imposing a ratio.
+See [contact gear measurements](sandbox-mechanics-measured.md#individual-contact-gears-october-12)
+for the glass/oak/iron comparison, timestep and conservation limits.
+
+Chrome verification passes the gear lesson with ordinary mouse/touch drags at
+1280×860, 390×844 and 844×390, plus the library filtering check on all three
+viewports and a phone saved-example reload/restore check. The newly added gear
+frames once so it remains visible while resizing and dragging. Run/Set up
+again and piece adjustments remain beside the 3D view. Historical broader
+browser-suite limitations below have not been claimed as resolved by this
+focused gear work.
+
 ## Start with an object or visible goal area
 
 October 12 update, superseding the earlier empty learning fields: every one
@@ -16,11 +57,8 @@ area. No unrelated reference boxes were reintroduced.
 * **Raise the crate:** the glass crate waits on a physical pedestal. The added
   tackle connects to that crate instead of creating another load. Its unchanged
   target is a 25 cm rise, with a mark above the crate's original top.
-* **Turn the big wheel:** the gear pair and finite supply start on the field.
-  Add its prewired motor and increase throttle from zero; the actual output
-  hinge must turn 180 degrees within the same two-second deadline. The motor
-  drives the named input hinge through the existing ideal gear constraint.
-  Its location does not engage/disengage a simulated shaft or gear tooth.
+* **Turn the big wheel:** the powered drive gear and target start on the field.
+  Size and place one independent gear to bridge the gap, as described above.
 * **Pour onto the paddles:** the independent wheel is already in the dry
   channel. Add a separate tank, open its initially closed tap and aim the
   pour at the paddles. The unchanged target is 30 degrees within six seconds.
@@ -37,14 +75,14 @@ camera gestures and exact controls keep their behavior. Goal label textures,
 line geometry and materials are disposed when the scene is rebuilt.
 
 Correct spring, tackle, gear and pour solutions win all three native nudges
-at 0.050, 0.733, 1.283 and 1.517/1.867/1.400 s respectively. Empty and authored
+at 0.050, 0.733, 1.750/1.633/1.750 and 1.517/1.867/1.400 s respectively. Empty and authored
 wrong setups win 0/3 each without engine errors. The default 20 cm spring and
 a spring one metre beside the load also fail 0/3. No goal, deadline or
 conservation tolerance was relaxed. Scoring excludes already supplied targets:
-measured construction plus the usual 1 kJ margin gives current authored pars
-21,341,800 / 827,064,040 / 32,833,000 / 460,651,224 J respectively.
+measured construction plus the usual 1 kJ margin for spring/tackle/pour gives authored pars
+21,341,800 / 827,064,040 / 1,050,000,000 / 460,651,224 J respectively; the gear par rounds the measured sum upward to three figures.
 
-Current spring/tackle/gear recipes use version 2; pour uses version 3.
+Current spring/tackle recipes use version 2; gear and pour use version 3.
 Earlier v1 mechanical/pour and v2 modular-pour links retain their apparatus,
 goals and seed policies. Their native solution/empty/wrong checks pass in
 three nudges; v2 pour keeps its former two-player-piece task count. The new
@@ -64,7 +102,7 @@ comparisons and unreconciled support/numerical receipts are recorded in
 
 Five focused Chrome checks pass in 45.6 s: the original waiting loads are
 visible before Add and the added spring/tackle lift those same bodies, the
-supplied gears respond to the added motor, the waiting wheel responds to
+then-supplied gear pair responded to an added motor (superseded by the individual-gear lesson above), the waiting wheel responds to
 the tank, and the river wheel remains draggable after area framing. They
 cover 1280×860 desktop, 390×844 portrait and 844×390 landscape; the tank also
 passes at 320×568. Run/Set down/Reset use visible, unobstructed 44 px targets.
@@ -601,7 +639,7 @@ The sandbox catalogue has 31 placeable cards, plus the Attach tool. Its 25 prebu
 | Solar panel | Size, orientation, chosen battery; finite battery charges from declared sunlight; dark empty designs create no power |
 | Block and tackle | Load, counterweight and pulley ratio; included supported load or existing moving load |
 | Spring | Guided material load, stiffness, relaxed length and internal damping; Attach also joins two picked points with a spring |
-| Gears / weight | Tooth ratio, drive, size/material and loose/guided/hanging mounts; explicit motor supply, material-derived mass |
+| Gear / weight | One toothed wheel: size, tooth alignment, axle height, bearing friction and material; separate wired motor supply. Weights have size/material and loose/guided/hanging mounts. |
 | Battery / motor | Fixed or falling contact pack, release height, rotation, housing material, voltage, capacity, charge and power limit; direction/throttle and included or selected physical axle |
 | Switch / bulb / wire | Force-dragged manual rocker with glass/oak/iron handle and saved initial pose, or real paddle switch; bulb preset and explicit terminals; crossing wires never connect |
 | Fixed water tank | Starting litres, tap opening, outlet position and height; gravity head sets the flow, and a subparcel remainder stays in the tank. Legacy saved metered outlets keep their original settings. |
@@ -619,11 +657,11 @@ Wiring UI verification, October 11: all 35 Chrome browser tests passed in 173.2 
 
 The chooser includes twenty-two lesson families: cut, reflection, focus, sunlight, tackle, water wheel, river wheel placement, spring, gears, weight, motor, battery, switch, bulb, closed loop, receiver fill, ignition, catapult, marble switch, water gate, sunlight-powered lift and river-powered lift. Every family has its own private solution, three nominal/nudged engine checks and physical empty/wrong controls. Goals also include sensor power, sustained electrical power, stored charge and actual water received; a green box is shown for spatial goals.
 
-Mechanical and water catalogue bases contain no decorative reference-marker boxes. **Turn the big wheel** starts with an empty field; adding a driven gear pair creates its actual battery housing and supported wheels. Water-channel setups retain their ground and any functional receiver, guide or load. Previously saved designs retain their saved parts. No goal, solution or physical tolerance changes accompany this cleanup.
+Mechanical and water catalogue bases contain no decorative reference-marker boxes. **Turn the big wheel** now starts with independent powered and target gears; the player sizes and places a single contact gear between them. The historical empty-field measurements below describe the earlier apparatus. Water-channel setups retain their ground and any functional receiver, guide or load. Previously saved designs retain their saved parts. No goal, solution or physical tolerance changes accompany this cleanup.
 
 Empty-field verification: six introductory lessons open and step with zero native solid bodies. Their initial-scene assertions now require an empty field; other lessons still require their necessary starting parts. The loader distinguishes an explicitly authored empty array from the legacy test fixture, and empty worlds save/restore without inventing bodies. Full native LiveWorld verification passes 36 checks, with five selected terrain/water checks. An empty 100 L/s flume at 1/240 s over one second retains 0.1 m³, with volume residual −1.53×10⁻¹⁶ m³; dry flow retains zero. No contact, material or fluid-force law changes accompany this loading behavior. The game suite passes 42/42 in 48.572 s, water/launch 10/10 in 18.434 s, and seeded recipes 8/8 in 98.185 s (246 correct nudged wins, zero empty/wrong wins). The final browser run passes 42/43 in 276.647 s: the previously reported solar cable-click timeout recurs on landscape, while the new empty-field gear test and river checks pass on all three viewports. The unchanged solar test passes two isolated repeats (12.744 s and 12.703 s) without click retries or relaxed assertions; its cause remains unproven and it remains a QA limitation. Manual portrait play wins the gear lesson at 1.40 s, and desktop/phone screenshots show an empty starting field. Source registration passes 269/269. The verified executable is `build/agent-integration/empty-native/banjo_live_world_run.exe`, SHA-256 `807ae9c34f0516a0d0dbf588400451b865083043d614cd1aab8040140c830f87`.
 
-Per-material measurements, conservation receipts, timesteps and limits are in [mechanics and optics](sandbox-mechanics-measured.md), [electrics](sandbox-electrics-measured.md), and [water and launch](sandbox-water-launch-measured.md). These models do not implement free sloshing/tipping buckets, gear-tooth collision, realistic incandescent filaments or calibrated spreading fire. Falling-water ledgers close, but the coupled channel/rigid pipeline is not a complete conservation proof. The counterweight launch is measured experimental behavior; a spring catapult preset remains future work. The combined sunlight challenge uses a direct gravity-loaded motor arm and reports shaft, load, bearing and numerical-correction energy.
+Per-material measurements, conservation receipts, timesteps and limits are in [mechanics and optics](sandbox-mechanics-measured.md), [electrics](sandbox-electrics-measured.md), and [water and launch](sandbox-water-launch-measured.md). These models do not implement free sloshing/tipping buckets, calibrated involute gear profiles or tooth stress/failure, realistic incandescent filaments or calibrated spreading fire. Falling-water ledgers close, but the coupled channel/rigid pipeline is not a complete conservation proof. The counterweight launch is measured experimental behavior; a spring catapult preset remains future work. The combined sunlight challenge uses a direct gravity-loaded motor arm and reports shaft, load, bearing and numerical-correction energy.
 
 Integration verification used `build/agent-integration/Release/banjo_live_world_run.exe`, SHA-256 `b98d68d42734536b6bacc3ca008690d061d7e89fab290ca42bfc1235b0a3161a`. All 147 applicable CTest entries passed across the full run and the corrected browser/water rerun (long/performance labels excluded). The browser suite passed 24 tests, including desktop, 390×844 portrait and 844×390 landscape, explicit wiring, version restoration and queued live controls. The game suite passed 37 tests; the added mechanics/electrics/water/combinations suites passed 11/7/8/2 tests. Source registration accounts for all 269 C++ sources. No complete rigid/fluid/contact energy closure is claimed by these results.
 

@@ -8,6 +8,19 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+Latest October 12 update: the new Gear card creates one mounted compound wheel
+with colliding rectangular teeth, rather than a paired ideal ratio constraint.
+Tooth count and size set actual geometry and material-derived mass/inertia;
+native contact forces transfer torque only when the teeth meet. A separate
+finite battery and wired motor supply energy. The lesson and sandbox example
+use three individual wheels, with a gap the player bridges. Legacy saved pairs
+keep their original ideal joints. Glass/oak/iron comparisons at 1/480 and
+1/960 s are in [contact gear measurements](sandbox-mechanics-measured.md#individual-contact-gears-october-12).
+This is an experimental rectangular profile, not involute tooth calibration,
+tooth stress/fracture, a meshing snap constraint or a full closed mechanical
+energy/momentum audit. Contact/hinge receipts still leave aggregate losses and
+fixed-support reactions unseparated; the document reports those limitations.
+
 Later October 12 update: the spring, tackle and gear lessons now start with
 the loads or wheels they act on, and the pour lesson starts with its wheel.
 The spring builder can connect its existing native linear spring/slide joints

@@ -3418,7 +3418,8 @@ const PIECE_INFO = {
   tackle: ['motion', 'Pulleys and a counterweight to lift a load.'],
   lens: ['optics', 'Focus or spread a beam through a glass lens.'],
   spring: ['motion', 'A guided load compresses a spring; change stiffness and damping.'],
-  gears: ['motion', 'Two geared axles with a chosen tooth ratio and optional finite battery drive.'],
+  gear: ['motion', 'One toothed wheel on an axle. Choose its size, mesh it with another gear and connect a powered motor to an axle.'],
+  gears: ['motion', 'Legacy gear pair from a saved design.'],
   weight: ['motion', 'A real material block, loose, hanging or guided.'],
   motor: ['electrics', 'Wire a battery to a motor that applies torque to an axle.'],
   battery: ['electrics', 'A finite energy store with labelled positive and negative terminals.'],
@@ -3452,7 +3453,7 @@ function openPiecePicker() {
 }
 function renderPiecePicker() {
   const query = $('piece-search').value.trim().toLowerCase(), category = $('piece-category').value;
-  const items = level.tray.filter(t => !t.attach).filter(t => {
+  const items = level.tray.filter(t => !t.attach && !t.legacy).filter(t => {
     const [group, description] = PIECE_INFO[t.piece] || ['structure', 'Add this piece to your machine.'];
     return (category === 'all' || category === group) && `${pieceLabel(t.piece)} ${description}`.toLowerCase().includes(query);
   });
@@ -3505,7 +3506,7 @@ $('piece-picker').addEventListener('keydown', e => {
 let trayLevel = null, trayDesign = null, trayPiece = null;
 function browseTray(direction) {
   if (!level || ghost) return;
-  const items = level.tray.filter(t => !t.attach);
+  const items = level.tray.filter(t => !t.attach && !t.legacy);
   if (items.length < 2) return;
   const index = Math.max(0, items.findIndex(t => t.piece === trayPiece));
   trayPiece = items[(index + direction + items.length) % items.length].piece;
@@ -3518,7 +3519,7 @@ function renderSceneTray() {
   const bar = $('scene-tray');
   bar.hidden = !LEVEL_MODE || !level || Boolean(ghost);
   if (bar.hidden) return;
-  const items = level.tray.filter(t => !t.attach);
+  const items = level.tray.filter(t => !t.attach && !t.legacy);
   if (trayLevel !== level || trayDesign !== activeDesign?.id || !items.some(t => t.piece === trayPiece)) {
     trayLevel = level; trayDesign = activeDesign?.id; trayPiece = items[0]?.piece;
   }
