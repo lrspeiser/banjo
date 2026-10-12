@@ -1,0 +1,17 @@
+{
+  "name": "Banjo",
+  "short_name": "Banjo",
+  "start_url": "/play",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d1720",
+  "theme_color": "#e44317",
+  "icons": [
+    {
+      "src": "/banjo-app-icon.jpg",
+      "sizes": "1280x1280",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}

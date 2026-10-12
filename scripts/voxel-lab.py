@@ -21,6 +21,9 @@ ASSETS={'/play':'client/voxel-lab/machine.html','/machine':'client/voxel-lab/mac
  '/profile-sync.mjs':'client/voxel-lab/profile-sync.mjs',
  '/level-library.mjs':'client/voxel-lab/level-library.mjs',
  '/design-gallery.mjs':'client/voxel-lab/design-gallery.mjs',
+ '/banjo-mark.png':'client/voxel-lab/brand/banjo-mark.png',
+ '/banjo-app-icon.jpg':'client/voxel-lab/brand/banjo-app-icon.jpg',
+ '/manifest.webmanifest':'client/voxel-lab/manifest.webmanifest',
  '/three.module.js':'client/vendor/three.module.js','/three.core.js':'client/vendor/three.core.js'}
 GAME_ROUTES=set(ASSETS)|{'/api/checkpoint'}
 GAME_POSTS={'/login','/api/machine','/api/profile'}
@@ -132,7 +135,7 @@ class Handler(BaseHTTPRequestHandler):
    try:self.send(200,json.dumps(self.server.checkpoint_status()).encode())
    except OSError:self.send(503,b'{"error":"Running native build cannot be inspected"}')
    return
-  kind={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','mjs':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','json':'application/json'}[ASSETS[path].rsplit('.',1)[1]]
+  kind={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','mjs':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','json':'application/json','webmanifest':'application/manifest+json','png':'image/png','jpg':'image/jpeg'}[ASSETS[path].rsplit('.',1)[1]]
   self.send(200,(ROOT/ASSETS[path]).read_bytes(),kind)
  def do_POST(self):
   try:
