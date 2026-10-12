@@ -16,6 +16,8 @@ when the native rope joint reports detached.
 
 **Inspect burn / Inspect heat** looks at the real heated cell from its incoming
 beam's side. On a phone it collapses the controls while retaining Run/Pause/Reset.
+The close-up draws at most six actual sampled ray paths to keep the char and
+gap visible; all native rays and their powers still determine the heating.
 **Whole machine** restores the previous view, follow preference and panel state.
 Thermal wins put their result in the control panel, leaving the cut and fall
 visible. Reset rebuilds the unburned geometry and clears the readout.

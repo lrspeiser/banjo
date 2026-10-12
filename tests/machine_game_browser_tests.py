@@ -287,6 +287,8 @@ class Puzzles(unittest.TestCase):
                 self.assertIn('Charring',early['text']);self.assertIn('300 °C',early['text'])
                 self.click_visible('Inspect burn')
                 self.wait('window.machineThermalState().inspecting',5)
+                self.assertLessEqual(self.js('window.machineThermalState().rayPaths'),6,
+                    'Inspecting uses a few real ray paths so the gap remains visible')
                 self.assertTrue(self.js("document.getElementById('thermal-readout').getBoundingClientRect().right<=innerWidth"))
                 self.assertTrue(self.js("document.getElementById('inspect-heat').getBoundingClientRect().height>=44"))
                 try:self.wait("window.machineThermalState().text.includes('Cut through')",20)

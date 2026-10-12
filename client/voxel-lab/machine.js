@@ -759,6 +759,7 @@ function closeHeatInspection(restore=true) {
   if(restore){azimuth=old.azimuth;elevation=old.elevation;distance=old.distance;goal.copy(old.goal);target.copy(old.target);follow=old.follow;
     $('follow').setAttribute('aria-pressed',String(follow));
     if(document.body.classList.contains('panel-collapsed')!==old.collapsed)$('panel-toggle').click();}
+  if(restore)syncLight();
 }
 $('inspect-heat').addEventListener('click',()=>{
   if(heatInspection){closeHeatInspection();return;}
@@ -779,6 +780,7 @@ $('inspect-heat').addEventListener('click',()=>{
   elevation=.25;distance=.65;goal.set(...heatingTarget.at_m);target.copy(goal);
   if(innerWidth<1000&&!document.body.classList.contains('panel-collapsed'))$('panel-toggle').click();
   freshView();
+  syncLight();
 });
 function syncThermalSpots(light) {
   const rows=thermalCells(light),seen=new Set();
@@ -818,11 +820,16 @@ function syncThermalSpots(light) {
 }
 window.machineThermalState=()=>({cells:[...hotVoxels.values()].map(m=>({...m.userData.row,position_m:m.position.toArray()})),
   text:$('thermal-readout').textContent,visible:!$('thermal-readout').hidden,inspecting:Boolean(heatInspection),target:heatingTarget,
-  taken:readouts.light?.taken||[]});
+  taken:readouts.light?.taken||[],rayPaths:beams?.userData.paths||0});
 function syncLight() {
   const light = readouts.light;
   syncThermalSpots(light);
-  const {positions, colors, legs} = beamSegments(light && light.paths);
+  // The close-up must expose the native char/gap, not bury it beneath dozens
+  // of overlapping sample lines. Keep six actual traced paths; no power,
+  // footprint, thermal state or geometry is changed by this display filter.
+  const paths=light?.paths||[],stride=Math.max(1,Math.ceil(paths.length/6));
+  const shown=heatInspection?paths.filter((_,i)=>i%stride===0).slice(0,6):paths;
+  const {positions, colors, legs} = beamSegments(shown);
   if (!beams) {
     // Opaque, so the glass is drawn over them and they show through it.
     beams = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({vertexColors: true}));
@@ -830,6 +837,7 @@ function syncLight() {
     scene.add(beams);
   }
   beams.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  beams.userData.paths=shown.length;
   beams.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   beams.geometry.setDrawRange(0, legs * 2);
   beams.visible = legs > 0;
@@ -1272,6 +1280,7 @@ function renderClock(frame) {
 async function build(next, start, request) {
   await stopSwitchDrag();
   closeHeatInspection();
+  syncThermalSpots(null);
   const mine = ++polling;
   if (session) api({op: 'close', session}).catch(() => {});
   session = null; playing = false;
