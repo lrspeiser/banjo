@@ -51,10 +51,13 @@ players' feedback remain under `/data/machine-logs`.
 
 **Disk setup was reported complete by the owner on October 11, 2026.**
 The requested setting is 1 GB mounted at `/data` on the existing Banjo service.
-Runtime mount detection and a saved-profile redeploy/recovery check are pending
-the profile-code release. Public saves must not be described as surviving
-redeploys until those checks succeed. Merely creating `/data` inside the image
-does not provide persistence.
+Release `97931d7e` served on October 11, 2026 and its profile API reported
+`storage.persistent: true`. An isolated public profile completed the native
+Turn the big wheel challenge, placed a plank of length 0.66, and saved Version
+1 through the ordinary controls. A cookie-free API read confirmed the design,
+version and progress at profile revision 5. Recovery of that profile after a
+redeploy is still pending; mount detection alone does not establish that.
+Merely creating `/data` inside the image does not provide persistence.
 
 ## Render's settings
 
@@ -72,7 +75,7 @@ does not provide persistence.
 - **Health check path:** none is set, so Render waits for the port to open.
   `/play` would do; `/login` would not, since a public server has no login.
 - **Instance:** one CPU and 2 GB (`1c-2g`); keep one service instance for the
-  SQLite store. Disk setup is owner-reported; runtime durability verification is pending.
+  SQLite store. The runtime detects the mount; redeploy recovery verification is pending.
 
 ## Persistent profiles: required service change
 
