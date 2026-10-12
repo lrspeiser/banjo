@@ -565,6 +565,9 @@ function powerMessage(text) {
 // Explain the graph that actually exists; this UI never connects or powers it
 // without the same two-port player action used in the sandbox.
 function solarLiftGraph(){
+  const family=level?.variant?.family||level?.id;
+  const baseTitle=activeDesign?.draft?.base?.title||machine?.title;
+  if(family!=='easy-charge-lift' && !(level?.free&&['Sun-powered lift','Charge then lift','Sun powers the flag'].includes(baseTitle)))return null;
   if(!(machine?.sun?.irradiance_w_m2>0) || !(machine.solar_panels?.length || level?.tray?.some(t=>t.piece==='solar')))return null;
   const network=machine.electrical?.networks?.find(n=>n.devices.some(d=>d.kind==='motor'));
   if(!network)return null;
@@ -880,7 +883,7 @@ function syncLight() {
   // The close-up must expose the native char/gap, not bury it beneath dozens
   // of overlapping sample lines. Keep six actual traced paths; no power,
   // footprint, thermal state or geometry is changed by this display filter.
-  const paths=light?.paths||[],stride=Math.max(1,Math.ceil(paths.length/6));
+  const paths=solarLiftGraph()&&!opticalSetup()?.lamps?.length?[]:light?.paths||[],stride=Math.max(1,Math.ceil(paths.length/6));
   const shown=heatInspection?paths.filter((_,i)=>i%stride===0).slice(0,6):paths;
   const {positions, colors, legs} = beamSegments(shown);
   if (!beams) {
@@ -2738,7 +2741,9 @@ function flowLabel(text, point) {
 function drawFlowFrame(frame) {
   clearFlowFrame();
   drawFlowMechanisms(frame);
-  const light = beamSegments(frame.light);
+  // The sunlight lesson keeps the real bulb glow without displaying its
+  // radiated rays as if they were a collector source. Native light is intact.
+  const light = beamSegments(solarLiftGraph()&&!opticalSetup()?.lamps?.length?[]:frame.light);
   let arrows=0,bulbs=0;
   if (light.legs && !opticalSetup()?.lamps?.length) {
     const line = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(light.positions,3)),

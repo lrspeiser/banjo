@@ -339,3 +339,11 @@ additional retained-v1 display check. Native executable SHA-256 remains
 `1ebc084656f9b4c0206e6c7ca7f9d0e12546700c60e495781ca781493587c352`.
 No C++ physics changed. Native outcomes and conservation limits above are
 unchanged; no complete physics certification is implied by the UI checks.
+
+A final display adjustment suppresses the bulb's radiated-ray guides in
+this sunlight lesson and its Sandbox example when no explicit optical
+source is declared. Native emitted light, thermal receipts and circuit
+loads are retained, and the measured bulb glow still renders. The browser
+requires nonempty native ray data and positive bulb glow while verifying
+zero displayed ray-guide segments. The diagram is scoped to this lesson
+and its saved template base; unrelated motor examples keep their controls.
