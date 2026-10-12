@@ -815,7 +815,7 @@ class Puzzles(unittest.TestCase):
                 opens=[r for r in requests if r['url'].endswith('/api/machine') and r.get('postData') and json.loads(r['postData']).get('op') in ('open','level_open')]
                 self.assertEqual(opens,[],'Reading details and save tools cannot initialize a machine')
     def test_laser_stays_visible_while_editing_and_lens_focus_keeps_its_context_on_desktop_and_phones(self):
-        for width,height in ((1280,860),(390,844),(844,390)):
+        for width,height in ((1280,860),(390,844),(844,390),(320,568)):
             with self.subTest(viewport=(width,height)):
                 self.open('easy-lens',width,height,phone=width!=1280)
                 self.wait('window.machineLaserPreviewState()?.visible && !window.machineLaserPreviewState().pending',30)

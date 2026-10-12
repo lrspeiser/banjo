@@ -784,6 +784,9 @@ How forgiving they are, measured: in level 2 the knife works with its pivot anyw
 ## Compact game views
 
 Desktop, phone portrait and phone landscape share **Controls / Level (or Design) / Help** tabs. **Run it / Pause**, **Reset** and the collapse/expand button stay beside the 3D view even when a different tab is open or the panel is collapsed. The single-line **Goal** remains visible; **Puzzle details** holds the longer brief, deadline and energy par. **Tools and speed** contains camera buttons and secondary tools; dragging empty space or using View still changes perspective while placing.
+Top navigation wraps onto another row on the smallest phones; the measured
+header height keeps the game inside the viewport. The 320×568 regression checks
+every link, the Recent Changes dialog and the optical editor's focus/Run/Reset.
 
 While a piece is selected, **Focus selected piece** under Tools and speed
 centers and frames its actual geometry. For lenses and mirrors it also includes
