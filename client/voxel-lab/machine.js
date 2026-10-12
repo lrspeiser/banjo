@@ -2088,6 +2088,7 @@ function setGhostDown() {
 function knobName(rule, key) { return (rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
 function pieceKnobVisible(p,key) {
   if(trayItem(p.piece)?.knobs?.[key]?.hidden)return false;
+  if(p.piece==='bulb' && key==='preset' && p.size && p.size!=='preset')return false;
   if(p.piece==='spring' && p.load && p.load!=='included load' && ['height_m','material','load'].includes(key))return false;
   if(p.piece==='tackle' && p.load && p.load!=='included load' && key==='load_material')return false;
   if(p.piece==='water_wheel' && p.side==='off' && ['side','discharge_l_s'].includes(key))return false;
@@ -2150,7 +2151,7 @@ function renderGhostBar() {
     select.setAttribute('aria-label', `Its ${name}`);
     select.addEventListener('change', () => {
       ghost.p[key] = rule.choices.find(c => String(c) === select.value) ?? select.value;
-      if ((key==='mount' && ghost.p.piece==='battery')||(key==='mode'&&ghost.p.piece==='switch')) {renderPlaced();renderGhostBar();}
+      if ((key==='mount' && ghost.p.piece==='battery')||(key==='mode'&&ghost.p.piece==='switch')||(key==='size'&&ghost.p.piece==='bulb')) {renderPlaced();renderGhostBar();}
       showGhostKnobs(); askGhost();
     });
     row.append(select);
@@ -2431,7 +2432,8 @@ function updatePowerFeedback() {
       `Needs ${d.required_torque_n_m.toFixed(1)} N·m; stall ${d.rated_torque_n_m.toFixed(1)}`:
       `Start ≈ ${d.required_w.toFixed(1)} W · ${d.required_torque_n_m.toFixed(1)} N·m`;
     else need=`Load varies · ${d.rated_torque_n_m.toFixed(1)} N·m stall`;
-    if(Number.isFinite(d.rated_voltage_v))need+=` · ${d.rated_voltage_v} V`;
+    if(Number.isFinite(d.rated_voltage_v))need=`Rated ${d.rated_voltage_v} V · ${d.rated_w.toFixed(1)} W`+
+      (d.requirement==='goal'?`\nGoal ≥ ${d.required_w.toFixed(1)} W`:'');
     let actual=d.input_w<-.05?`${Math.abs(d.input_w).toFixed(1)} W returned`:`${Math.max(0,d.input_w).toFixed(1)} W in`;
     if(Number.isFinite(d.voltage_v))actual+=` · ${Math.abs(d.voltage_v).toFixed(1)} V`;
     if(Number.isFinite(d.torque_n_m))actual+=` · ${Math.abs(d.torque_n_m).toFixed(1)} N·m`;
@@ -2451,10 +2453,11 @@ function updatePowerFeedback() {
       const t=((time*(.35+Math.min(1,Math.log1p(watts)/5))*Math.sign(w.value)+offset)%1+1)%1;
       powerFlowDots.setMatrixAt(powerFlowDots.count++,dotMatrix.makeTranslation(...curve.getPoint(t).toArray()));
     }
-    const text=w.unit==='W'?`${watts.toFixed(1)} W`:
+    let text=w.unit==='W'?`${watts.toFixed(1)} W`:
       w.return_path?`Return · ${Math.abs(w.value).toFixed(3)} A`:`${watts.toFixed(1)} W · ${Math.abs(w.value).toFixed(3)} A`;
+    if(w.show_supply_limit&&Number.isFinite(w.supply_max_power_w))text+=`\nShared supply ≤ ${w.supply_max_power_w.toFixed(1)} W · ${w.supply_voltage_v} V`;
     items.push({id:'wire:'+w.name,name:w.name,kind:'wire',at:curve.getPoint(.5).toArray(),
-      text:pending?'Updating…':(sample.preview?'Preview · ':'')+text,title:'Measured cable power/current. Dots show activity and conventional-current direction, not electron speed. Return-wire watts depend on the battery-negative reference.'});
+      text:pending?'Updating…':(sample.preview?'Preview · ':'')+text,title:'Measured flow. The shared supply limit includes all loads and losses; each wire does not get a separate budget. Dots show conventional-current direction. Return-wire watts depend on the battery-negative reference.'});
   }
   powerFlowDots.instanceMatrix.needsUpdate=true;
   const seen=new Set(items.map(i=>i.id));
@@ -3779,7 +3782,7 @@ function ghostItem() {
     if (!pieceKnobVisible(p,key)) continue;
     const c = knobControl(p, key, rule, what, () => {
       if (key==='x_m'||key==='z_m') ghost.gridLocks=null;
-      if ((key==='mount' && p.piece==='battery')||(key==='mode'&&p.piece==='switch')) {renderPlaced();renderGhostBar();}
+      if ((key==='mount' && p.piece==='battery')||(key==='mode'&&p.piece==='switch')||(key==='size'&&p.piece==='bulb')) {renderPlaced();renderGhostBar();}
       if (key !== 'x_m' && key !== 'z_m') ghost.card = key;
       followGhost(); showGhostKnobs(); askGhost();
     });

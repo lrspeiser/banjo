@@ -8,6 +8,14 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 12 bulb update: **Light the bulb** teaches reducing a rated load to
+fit the native supply current limit. Large/medium/small components declare
+12/6/2.5 W at 12 V and 16/13/10 cm glass diameters. These are chosen component
+ratings, not a glass-volume-to-power law. Wire labels distinguish measured
+flow from the one shared source budget. Existing bulb presets are unchanged;
+filament temperature-dependent resistance and realistic failure remain
+unsupported. See [bulb measurements](sandbox-electrics-measured.md#bulb-sizing-and-shared-supply-limits-october-12).
+
 October 12 battery update: selected wire length and cross section now compile
 to copper resistance at 20 °C (`R = 0.0172 L/A`, metres and mm²). Native
 circuit voltage drop and `I²R` heating determine brightness. Old saved wires

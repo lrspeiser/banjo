@@ -2537,7 +2537,7 @@ class MachineSession:
                     self._event('switch', f'{c["id"]}: switch closed, {current:.1f} A into {into}', circuit=c['id'])
                 self._switches[c['id']] = bool(sw and sw.get('closed'))
         out['circuits'] = circuits
-        out['electrical'] = electrics.readouts(self.compiled.get('electrical', {}), native_circuits)
+        out['electrical'] = electrics.readouts(self.compiled.get('electrical', {}), native_circuits,self.compiled['batteries'])
         heat = self.engine.op(op='thermo').get('thermo', {})
         hot = []
         for b in heat.get('bodies', []) or []:
@@ -2662,7 +2662,8 @@ class MachineSession:
             a, b = terminals.get(w['a']), terminals.get(w['b'])
             if a and b:
                 frame['wires'].append({'name': w['name'], 'points_m': [a, b], 'value': w['current_a'], 'unit': 'A',
-                    **{key:w.get(key,0) for key in ('through_w','loss_w','return_path')}})
+                    **{key:w.get(key,0) for key in ('through_w','loss_w','return_path')},
+                    **{key:w[key] for key in ('supply_voltage_v','supply_max_power_w','show_supply_limit') if key in w}})
         ports = {p['name']: p for p in graph.get('power_ports', [])}
         panels = {p['name']: p for p in (r.get('machines') or {}).get('solar_panels', [])}
         for cable in graph.get('power_cables', []):

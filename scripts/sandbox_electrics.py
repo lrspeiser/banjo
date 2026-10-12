@@ -125,13 +125,18 @@ def bulb(name, k, ctx):
     y = k.get('height_m', .24)
     part = name + ' bulb'
     watts = {'small': 3, 'bright': 12}.get(k.get('preset', 'small'), 3)
+    diameter = .1
+    # A declared family of rated bulbs, not a material-law prediction from
+    # glass size. Older presets keep their original geometry and resistance.
+    if k.get('size','preset') != 'preset':
+        watts,diameter = {'small':(2.5,.1),'medium':(6,.13),'large':(12,.16)}[k['size']]
     return {'parts': [box(name + ' base', [x, .04, z], [.2, .08, .16], 'concrete'),
                       box(name + ' stem', [x, y / 2, z], [.04, y, .04]),
-                      {'name': part, 'shape': 'sphere', 'material': 'glass', 'size_m': [.1, .1, .1],
-                       'at_m': [x, y + .05, z], 'fixed': True}],
+                      {'name': part, 'shape': 'sphere', 'material': 'glass',
+                       'at_m': [x, y + diameter/2, z], 'size_m':[diameter]*3, 'fixed': True}],
             'electrical': {'devices': [{'name': name, 'kind': 'bulb', 'part': part,
                                         'terminals': terminal_rows(name, x, .1, z),
-                                        'at_m': [x, y + .11, z], 'axis': [0, 1, 0],
+                                        'at_m': [x, y + diameter + .01, z], 'axis': [0, 1, 0],
                                         'watts': watts, 'rated_voltage_v': 12, 'efficiency': .2}]}}
 
 
@@ -228,7 +233,8 @@ TRAY = [
     {'piece': 'bulb', 'label': 'Bulb', 'count': 12, 'cost': 1, 'turning': False,
      'description': 'Light and brightness come from solved circuit power.',
      'knobs': {**POS, 'height_m': knob(.24, .16, .6, .02, 'post height (m)'),
-               'preset': {'default': 'small', 'choices': ['small', 'bright'], 'label': 'rated bulb'}}},
+               'preset': {'default': 'small', 'choices': ['small', 'bright'], 'label': 'rated bulb'},
+               'size': {'default':'preset','choices':['preset','large','medium','small'],'label':'bulb size'}}},
     {'piece': 'wire', 'label': 'Wire', 'count': 60, 'cost': 0, 'turning': False,
      'description': 'Connect two terminals. Thin or long copper wires lose more voltage and heat up; crossings never connect.',
      'knobs': {**POS, 'a_terminal': {'default': '', 'terminal': True, 'label': 'from terminal'},
@@ -515,13 +521,17 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
     return circuits
 
 
-def readouts(graph, native):
+def readouts(graph, native, batteries=()):
     branches = {b['id']: b for c in native for b in c['branches']}
     node_volts = {name:value for c in native for name,value in zip(c.get('nodes',[]),c.get('last',{}).get('voltage_v',[]))}
     def device_voltage(d):
         keys = list(d['terminals'])
         return node_volts.get(d['name']+':'+keys[0],0)-node_volts.get(d['name']+':'+keys[1],0)
     wire_power={}
+    stores={b['name']:b for b in batteries}
+    wire_supply={w['name']:dict(supply_voltage_v=stores[n['battery']]['voltage_v'],
+                              supply_max_power_w=stores[n['battery']]['max_power_w'],show_supply_limit=index==0)
+                 for n in graph.get('networks',[]) if n['battery'] in stores for index,w in enumerate(n['wires'])}
     for network in native:
         volts=dict(zip(network.get('nodes',[]),network.get('last',{}).get('voltage_v',[])))
         reference=volts.get(network.get('source',{}).get('negative'),0)
@@ -538,6 +548,7 @@ def readouts(graph, native):
                             power_w=branches.get(d['name'], {}).get('power_w', 0),
                             emitted_w=branches.get(d['name'], {}).get('emitted_w', 0)) for d in graph.get('devices', [])],
             'wires': [dict(w, current_a=branches.get(w['name'], {}).get('current_a', 0),
+                           **wire_supply.get(w['name'],{}),
                            **wire_power.get(w['name'],{})) for w in graph.get('wires', [])],
             'contacts':[dict(c,closed=branches.get(c['name'],{}).get('closed',False),
                              current_a=branches.get(c['name'],{}).get('current_a',0),
@@ -762,6 +773,24 @@ def easy_levels():
     # A wrong bulb location is harmless in an ideal explicit wire graph. Its
     # wrong control is an open supply in the copied scenario, tested separately.
     levels[-1]['wrong'] = []
+    global LEGACY_BULB_LEVEL
+    LEGACY_BULB_LEVEL = copy.deepcopy(levels[-1])
+    LEGACY_BULB_LEVEL['tray'][0]['knobs'].pop('size')
+    LEGACY_BULB_LEVEL['par_energy_j'] = 102000000
+    s = empty('Light the bulb')
+    merge(s,battery('supply',{'x_m':-.6,'max_power_w':2.5},{}))
+    merge(s,switch('control',{'state':'closed'},{}))
+    link(s,'supply wire','supply:plus','control:in')
+    row=tray('bulb',connect_to={'plus':'control:out','minus':'supply:minus'},
+             start_at_defaults=True,focus_knob='size')
+    row['knobs']={key:row['knobs'][key] for key in ('x_m','z_m','size')}
+    row['knobs']['x_m']['default']=.6
+    row['knobs']['size'].update(default='large',choices=['large','medium','small'])
+    levels[-1]=easy('easy-bulb','Light the bulb',
+        'Compare the bulb’s 12 V power rating with the wires’ shared supply limit. Shrink the bulb until enough power reaches it.',
+        s,row,{'piece':'bulb','x_m':.6,'size':'small'},
+        {'load_power_w':{'device':'your bulb 1','at_least_w':2,'for_s':.5}},
+        {'piece':'bulb','x_m':.6,'size':'large'})
     s = manual_loop(); s['electrical']['wires'].pop()
     levels.append(easy('easy-loop', 'Finish the loop', 'Click lamp −, then supply − to draw the missing return wire. Run it to light the bulb. Crossing wires do not connect.',
                        s, tray('wire'), {'piece': 'wire', 'a_terminal': 'lamp:minus', 'b_terminal': 'supply:minus'},

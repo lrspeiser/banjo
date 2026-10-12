@@ -262,6 +262,29 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_bulb_shrinks_to_match_visible_supply_limit_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-bulb',width,height,phone=width!=1280)
+                self.press('Add a bulb');self.ghost()
+                self.assertEqual(self.js("document.querySelector('[aria-label=\"Its bulb size\"]').value"),'large')
+                self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='bulb 1'&&/12 V.*12\\.0 W/.test(r.text))",30)
+                self.wait("window.machinePowerFeedbackState().labels.some(r=>r.wire&&/Shared supply ≤ 2\\.5 W/.test(r.text))",30)
+                self.click_visible('Run it');self.wait("/World [12]\\./.test(document.getElementById('clock').textContent)",30)
+                self.click_visible('Pause')
+                self.assertTrue(self.js("document.getElementById('level-done').hidden"))
+                big=next(d for d in self.js('window.machineContactState()')['liveDevices'] if d['kind']=='bulb')
+                self.assertAlmostEqual(big['power_w'],.520833333,places=6)
+                self.reveal_control("document.getElementById('piece-edit')")
+                self.js("(()=>{const s=document.getElementById('piece-edit');s.value='0';s.dispatchEvent(new Event('change',{bubbles:true}));})()")
+                self.ghost();self.press('Change its bulb size');self.slide('Its bulb size','small');self.ghost()
+                self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='bulb 1'&&/12 V.*2\\.5 W/.test(r.text))",30)
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                small=next(d for d in self.js('window.machineContactState()')['liveDevices'] if d['kind']=='bulb')
+                self.assertGreater(small['power_w'],2.4)
+
     def test_grounded_battery_voltage_and_drawn_wire_thickness_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

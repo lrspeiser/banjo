@@ -6,6 +6,66 @@ heating coils, plus explicit solar power leads. Their terminal graph compiles to
 and names do not substitute for a circuit solve. Existing solar panels charge
 the same declared battery store used by the graph.
 
+## Bulb sizing and shared supply limits (October 12)
+
+**Light the bulb** now begins with a large bulb on a prepared closed loop.
+The bulb-size family declares 12 V components: large 12 W / 16 cm diameter,
+medium 6 W / 13 cm, small 2.5 W / 10 cm. The native resistor is still
+`R = rated_voltage² / rated_watts`; geometric size does not derive its rating.
+Glass geometry and mass come from the normal compiled body. Older small/bright
+presets retain 3/12 W ratings and their 10 cm geometry when **bulb size** is
+set to **preset** (also the default for saved designs missing that field).
+
+The prepared finite store is 12 V with nominal maximum power 2.5 W. Native
+regulation caps current at `max_power / nominal_voltage = 0.208333333 A`,
+reducing terminal voltage as needed and booking regulation heat. It is not
+a constant 2.5 W delivered to the lamp. The source has 0.05 Ω internal
+resistance, each of three legacy prepared leads 0.01 Ω, and the closed rocker
+0.001 Ω. The analytic current is `min(12/(R_lamp + 0.081), 2.5/12)`.
+
+| Size | Rated W | Lamp V | Lamp W | Current A | Goal nudges |
+|---|---:|---:|---:|---:|---:|
+| Large | 12 | 2.5 | 0.520833333 | 0.208333333 | 0/3 |
+| Medium | 6 | 5.0 | 1.041666667 | 0.208333333 | 0/3 |
+| Small | 2.5 | 11.983148697 | 2.492983554 | 0.208040776 | 3/3 |
+
+The unchanged goal is ≥2 W for 0.5 s within 4 s. The small bulb wins at
+0.583 s, drawing 1.456285432 J, with a 101,023,754 J embodied construction
+score and retained 102 MJ par. Nominal plus two whole-apparatus nudges use
+the existing 1.5 mm loose-body perturbations. The initial switch is already
+closed; no runtime script changes it or switches to a smaller bulb.
+
+One-second native integrations at both 1/240 and 1/480 s, 2 cm voxels, produce
+the same V/I/W above. Large and medium draw 2.5 J; their heat/light splits are
+2.395833333/0.104166667 J and 2.291666667/0.208333333 J. Small draws
+2.496489312 J, with 1.997892601 J heat and 0.498596711 J emitted light.
+Maximum electrical residual across all six runs is 1.22e-12 J and maximum
+thermal residual 5.27e-8 J. Tests also bound KCL residual below 1e-9 A.
+These are full native circuit receipts, not a mechanical energy audit.
+
+Wire badges carry the connected finite source's declared voltage and maximum
+power through the same flow frames as measured current/power. One lead per
+circuit displays that shared rating to keep phone scenes clear; other leads
+keep their measured-flow labels. **Shared supply**
+means all branches and losses share this rating; it is not independent power
+per wire, guaranteed arriving voltage, a heat-based cable limit or ampacity.
+The bulb badge separately shows actual voltage drop, rated volts/watts and
+the goal. Unsupported filament temperature/resistance, insulation failure,
+wire mass and realistic bulb explosions remain unsupported. The analytic
+circuit oracle is material-neutral; existing glass/oak/iron heater comparisons
+still run in the electrical regression set.
+
+Fresh recipes use v3, with source limits 2.5/2.6/2.7/2.8 W. All four presets
+pass three correct, empty and oversized-bulb checks: 12/12 correct wins and
+zero empty/wrong wins. Legacy v1/v2 seeds keep the earlier circuit, source
+limit, knob choices, solution and par; cache-loss and native validations pass.
+Verification: 25 electrical tests (35.54 s), five focused recipe/compatibility
+tests (11.11 s), and the full 51-test game suite pass. Three browser tests
+pass at 1280×860, 390×844 and 844×390 (36.78 s), exercising the oversized
+failure, actual size edit, successful run, source labels and prior battery/
+power feedback. Native binary SHA-256 is unchanged:
+`3fac18bff131cf0d819e6186969c4ed64b27210eef04e36f420bd497ce39d24a`.
+
 ## Battery voltage and copper wire resistance (October 12)
 
 The current **Give it power** lesson has a fixed ground-mounted supply and

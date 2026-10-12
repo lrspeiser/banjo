@@ -20,6 +20,7 @@ FAMILY_VERSIONS.update({family:2 for family in ('easy-spring','easy-tackle','eas
 FAMILY_VERSIONS['easy-water-wheel']=3
 FAMILY_VERSIONS['easy-gears']=3
 FAMILY_VERSIONS['easy-power']=3
+FAMILY_VERSIONS['easy-bulb']=3
 MAX_ATTEMPTS = 3
 
 # Each family changes one physical input. Prepared-piece parameters are
@@ -55,6 +56,7 @@ for family in ('easy-water-wheel','easy-water-gate'):
     POLICIES[family]=('piece','water_tank','fill_l',(3.5,4.5,5,5.5))
 POLICIES['easy-spring']=('piece','spring','stiffness_n_m',(180,200,220,240))
 POLICIES['easy-gears']=('battery','supply battery','voltage_v',(11,11.5,12.5,13))
+POLICIES['easy-bulb']=('battery','supply battery','max_power_w',(2.5,2.6,2.7,2.8))
 
 PARAMETER_LABELS = {
     'stiffness_n_m':'Spring stiffness (N/m)',
@@ -63,6 +65,7 @@ PARAMETER_LABELS = {
     'height_m': 'Starting height (m)', 'friction_n_m': 'Bearing friction (N m)',
     'length_m': 'Lever length (m)', 'discharge_l_s': 'Water supply (L/s)',
     'voltage_v': 'Supply voltage (V)', 'fill_l': 'Starting water (L)',
+    'max_power_w':'Shared supply limit (W)',
     'cock_deg': 'Cock angle (degrees)',
     'discharge_m3_s': 'River inflow (m³/s)',
 }
@@ -128,6 +131,10 @@ def _apparatus(family_level, version):
     """
     result = copy.deepcopy(family_level)
     family = family_level['id']
+    if family=='easy-bulb' and version<3:
+        import sandbox_electrics as electrical
+        import machine_game as game
+        result=game._with_free_knobs(copy.deepcopy(electrical.LEGACY_BULB_LEVEL))
     if family=='easy-power' and version==2:
         import sandbox_electrics as electrical
         import machine_game as game
@@ -217,7 +224,7 @@ def construct(family_level, seed, *, attempt=0, version=None):
     version = _version(family, version)
     result = _apparatus(family_level, version)
     result['id'] = identity(family, seed, attempt, version=version)
-    kind, name, parameter, values = (LEGACY_POLICIES if version==1 else POLICIES)[family]
+    kind, name, parameter, values = (LEGACY_POLICIES if version==1 or (family=='easy-bulb' and version==2) else POLICIES)[family]
     digest = hashlib.sha256(f'banjo-easy:{version}:{family}:{seed}'.encode('ascii')).digest()
     value = values[(int.from_bytes(digest[:8], 'big') + attempt) % len(values)]
     if kind == 'piece':

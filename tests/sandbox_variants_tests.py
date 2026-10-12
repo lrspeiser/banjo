@@ -32,6 +32,31 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
+    def test_bulb_v3_shrinks_the_load_and_preserves_both_earlier_apparatus_versions(self):
+        family=game.level_by_id('easy-bulb')
+        self.assertEqual(variants.family_version('easy-bulb'),3)
+        seen={}
+        for seed in range(32):
+            candidate=variants.construct(family,seed)
+            seen[candidate['variant']['value']]=candidate
+        self.assertEqual(set(seen),{2.5,2.6,2.7,2.8})
+        with tempfile.TemporaryDirectory() as logs:
+            for value,candidate in seen.items():
+                self.assertEqual(candidate['tray'][0]['knobs']['size']['default'],'large')
+                self.assertEqual(candidate['machine']['batteries'][0]['max_power_w'],value)
+                self.assertEqual(candidate['goal'],family['goal'])
+                if ENGINE.is_file():
+                    report=variants.validate(candidate,ENGINE,Path(logs))
+                    self.assertTrue(report['valid'],report)
+            for version in (1,2):
+                old=variants.construct(family,42,version=version)
+                self.assertEqual(old['machine']['batteries'][0]['max_power_w'],200)
+                self.assertNotIn('size',old['tray'][0]['knobs'])
+                self.assertEqual(old['wrong'],[])
+                self.assertEqual(old['solution'],[dict(piece='bulb',x_m=.6)])
+                self.assertEqual(variants.reconstruct(family,42,0,version=version),old)
+                if ENGINE.is_file():self.assertTrue(variants.validate(old,ENGINE,Path(logs))['valid'])
+
     def test_target_lessons_preserve_the_earlier_native_apparatus(self):
         if not ENGINE.is_file():
             if os.environ.get('BANJO_MACHINE_ENGINE')=='required':self.fail('Native engine required')
@@ -214,8 +239,9 @@ class Recipes(unittest.TestCase):
                     self.assertEqual(legacy['goal'], family['goal'])
                     self.assertEqual(legacy['time_s'], family['time_s'])
                     self.assertEqual(legacy['solution'], [{'piece':'switch','state':'closed'}]
-                                     if family['id']=='easy-switch' else family['solution'])
-                    self.assertEqual(legacy['wrong'], family['wrong'])
+                                     if family['id']=='easy-switch' else
+                                     [{'piece':'bulb','x_m':.6}] if family['id']=='easy-bulb' else family['solution'])
+                    self.assertEqual(legacy['wrong'], [] if family['id']=='easy-bulb' else family['wrong'])
                     if family['id'] == 'easy-switch':
                         self.assertTrue(legacy['tray'][0]['legacy_manual'])
                         self.assertEqual(set(legacy['tray'][0]['knobs']),

@@ -2,6 +2,34 @@
 
 October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-two freely selectable piece lessons. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+## Shrink the bulb to fit the supply
+
+Latest October 12 update: **Light the bulb** starts with a large 12 V, 12 W
+bulb on the prepared, closed circuit. Select **bulb size** and shrink it to
+medium (6 W) or small (2.5 W). Their declared glass diameters are 16, 13 and
+10 cm. These are a family of rated components, not a law deriving electrical
+demand from glass diameter. Placement is free and does not connect the circuit;
+the visible prepared leads already join both bulb terminals.
+
+The bulb badge always shows its rated voltage and watts, the unchanged 2 W
+goal and measured arriving volts/watts. Each ordinary wire shows its measured
+flow, with the connected battery's **Shared supply ≤ W · V** rating beside
+one lead per circuit to avoid repeating the same budget across the scene. This is
+one shared source budget including other loads and losses, not a separate
+budget or ampacity for each wire. It appears in build previews and live runs.
+
+The prepared supply is 12 V, limited to 2.5 W nominal, using the existing
+native current limit of 2.5/12 A. The large bulb receives 2.5 V and 0.520833 W;
+the medium receives 5 V and 1.041667 W. Both miss the target. The small bulb
+receives 11.983149 V and 2.492984 W, reaching the goal in all three genuine
+nudged runs at 0.583 s. No goal, deadline, force or conservation tolerance is
+changed. Its 102 MJ par is retained. Fresh variants use v3 and vary the
+shared supply limit from 2.5 to 2.8 W; earlier v1/v2 shares retain their old
+prepared circuit, 200 W source limit, voltage seeds and original bulb presets.
+Saved Sandbox **small/bright** presets also retain their original 3/12 W
+ratings and 10 cm diameter; the additional **bulb size** choice selects the
+new rated family. See [the measurements](sandbox-electrics-measured.md#bulb-sizing-and-shared-supply-limits-october-12).
+
 ## Battery voltage and wire thickness
 
 Latest October 12 update: **Give it power** uses a fixed, grounded battery
@@ -440,7 +468,7 @@ ordinary preview, save or public level response.
 All 29 canonical levels were inspected and run with correct, empty and
 incorrect configurations, three trials each. Correct configurations won
 87/87; empty configurations won 0/87; incorrect controls won 0/87, with no
-engine errors. For Light the bulb, the negative control kept the bulb and
+engine errors. At that earlier audit checkpoint, Light the bulb's negative control kept the bulb and
 leads but emptied its source battery, since spatial movement cannot break
 an ideal wired circuit. For manual lessons, a correct placement without
 handle input is the negative control. These checks preserve goals, deadlines
@@ -455,7 +483,8 @@ and tolerances.
 | Bounce the beam; Bounce to the target; Find the focus | Native rays must reach the cord/sensor through the player's optical geometry. |
 | Catch the sun; Catch the sun (collector lesson); Charge then lift | Both Catch the sun cards require a player-drawn power cable and an unshaded collector. Charge then lift retains its declared store connection; light still determines power. |
 | Lift with less; Raise the crate; Tip the lever; Spring lifts the load | Material-derived weight, gravitational travel or stored spring energy provides the motion. |
-| Turn the big wheel; Turn the axle; Light the bulb | Prepared drive/leads are stated in the brief. Position does not create a socket connection. Gear drive and motor direction remain player settings. |
+| Turn the big wheel; Turn the axle | Prepared drive/leads are stated in the brief. Position does not create a socket connection. Gear drive and motor direction remain player settings. |
+| Light the bulb | Shrink the rated bulb to match the prepared supply. Voltage/power readings show the real current-limited result. |
 | Give it power; Finish the loop | Select the battery voltage and wire thickness, then complete both leads; or draw the explicit missing return wire. |
 | Pour onto the paddles; Fill the receiver; Water opens a gate; River-powered lift | Water must reach the receiving area/paddles. Valve/pour state is a setup control; gate lessons also require a drum rope. |
 | Gentle first launch | Arm restraint is a setup control; a released raised counterweight turns the cradle and contact launches the marble. |

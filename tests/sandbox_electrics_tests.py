@@ -20,6 +20,17 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_bulb_family_has_declared_ratings_and_preserves_old_presets(self):
+        for size,watts,diameter in [('large',12,.16),('medium',6,.13),('small',2.5,.1)]:
+            fragment=e.bulb('lamp',dict(size=size),{})
+            self.assertEqual(fragment['parts'][-1]['size_m'],[diameter]*3)
+            self.assertEqual(fragment['electrical']['devices'][0]['watts'],watts)
+            self.assertEqual(fragment['electrical']['devices'][0]['rated_voltage_v'],12)
+        for preset,watts in [('small',3),('bright',12)]:
+            fragment=e.bulb('lamp',dict(preset=preset),{})
+            self.assertEqual(fragment['parts'][-1]['size_m'],[.1]*3)
+            self.assertEqual(fragment['electrical']['devices'][0]['watts'],watts)
+
     def test_copper_wire_units_validation_and_legacy_saved_resistance(self):
         spec=e.empty('Wire sizes')
         e.merge(spec,e.battery('supply',{},{}));e.merge(spec,e.bulb('lamp',{'x_m':.6},{}))
@@ -231,6 +242,37 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_shrink_the_bulb_matches_native_current_limit_and_full_electrical_ledger(self):
+        level=mg.level_by_id('easy-bulb')
+        self.assertEqual(level['tray'][0]['knobs']['size']['default'],'large')
+        for size,rating in [('large',12),('medium',6),('small',2.5)]:
+            placed=[dict(piece='bulb',x_m=.6,size=size)]
+            with tempfile.TemporaryDirectory() as logs:
+                report=mg.trial(level,placed,ENGINE,Path(logs),runs=3)
+                self.assertEqual(report['worked'],3 if size=='small' else 0,report)
+            compiled=mw.compile_spec(mg.compose(level,placed)[0])
+            resistance=12**2/rating
+            current=min(12/(resistance+.081),2.5/12)
+            for dt in (1/240,1/480):
+                with self.subTest(size=size,dt=dt),tempfile.TemporaryDirectory() as logs:
+                    engine,_,_=mw.build_engine(ENGINE,compiled,Path(logs))
+                    try:
+                        engine.op(op='step',dt=dt,n=round(1/dt))
+                        nets=engine.op(op='circuits')['circuits']
+                        graph=e.readouts(compiled['electrical'],nets,compiled['batteries'])
+                        lamp=next(d for d in graph['devices'] if d['kind']=='bulb')
+                        self.assertAlmostEqual(lamp['current_a'],current,places=8)
+                        self.assertAlmostEqual(lamp['voltage_v'],current*resistance,places=8)
+                        self.assertAlmostEqual(lamp['power_w'],current**2*resistance,places=8)
+                        self.assertTrue(all(w['supply_voltage_v']==12 and w['supply_max_power_w']==2.5 for w in graph['wires']))
+                        ledger=nets[0]['ledger']
+                        self.assertLess(abs(ledger['source_j']-ledger['heat_j']-ledger['emitted_j']),1e-8)
+                        self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+                        self.assertLess(abs(ledger['thermal_residual_j']),1e-7)
+                        self.assertLess(nets[0]['last']['max_kcl_a'],1e-9)
+                        print('BULB_SIZE_CURRENT_LIMIT',dict(size=size,rating_w=rating,dt_s=dt,current_a=current,voltage_v=lamp['voltage_v'],power_w=lamp['power_w'],ledger=ledger))
+                    finally:engine.close()
+
     def test_battery_lesson_voltage_wire_loss_open_return_and_nonpolar_bulb(self):
         level=mg.level_by_id('easy-power')
         for mode in ('standard','thin','six volts','missing return','reversed'):
