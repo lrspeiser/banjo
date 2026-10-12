@@ -19,8 +19,9 @@ Windows, built and tested on Linux in CI, and not tested on macOS.
 ## What there is
 
 **Eight chain-reaction levels and twenty-one freely selectable piece lessons.**
-Every card shows how many things the player has to do, rather than a difficulty
-rating. The lessons introduce cutting, optics, springs, gearing, wiring, water,
+Every card shows its task count and stars; Level details reveals energy records.
+The game shares Controls / Level (or Design) / Help tabs on desktop and phone,
+with Run/Pause/Reset kept beside the 3D view. The lessons introduce cutting, optics, springs, gearing, wiring, water,
 heating and catapults one step at a time. **New challenge** offers tested
 physical variations with repeatable seed links and a recent-challenges list.
 The original chain-reaction levels are:
@@ -41,7 +42,8 @@ and material) plus what the machine used while it ran. Win on par or less for
 three stars.
 
 **Sandbox** (`/machine`) combines the former Free build and machine sandbox.
-It opens a library of your designs, prebuilt designs, and **Add New Design**.
+It opens **Your designs / Examples** gallery tabs with setup previews and **Add New Design**.
+New designs open immediately; rename them in the editor’s Design tab.
 Each design has a table with no goal and every piece in
 the tray: 31 cards including knives, mirrors, lenses, solar panels, tackle,
 springs, gears, weights, motors, batteries, switches, bulbs, wires, water

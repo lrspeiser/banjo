@@ -109,12 +109,22 @@ class Puzzles(unittest.TestCase):
         self.wait(SETTLED, 20)
         return self.js('window.machineGhostState()')
 
+    def button_expression(self, name):
+        # Duplicate actions may exist on inactive screens or in unopened help.
+        # Select the current screen, then reveal its real tab/disclosure.
+        return f"""(() => {{const buttons=[...document.querySelectorAll('button')].filter(b=>(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(name)});
+          return buttons.find(b=>b.getClientRects().length && !b.disabled) || buttons.find(b=>!b.closest('main[hidden],#levels-screen[hidden],#sandbox-screen[hidden],#piece-picker:not([open]),.save-help-panel:not(:popover-open)'));}})()"""
+
     def press(self, name):
         """A button, by what it says or by its label."""
+        if name == 'Set it down':
+            name = '✓ Set down'
+        if name == 'Cancel' and self.js("Boolean(window.machineGhostState?.()) && ![...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Cancel'&&b.offsetParent!==null)"):
+            name = 'Throw the ghost away'
         # Large trays live in the library; use its ordinary scene entry point.
         if name.startswith('Add a ') and name != 'Add a piece' and self.js("!document.getElementById('tray-library').hidden && !document.getElementById('piece-picker').open"):
             self.press('Add a piece')
-        self.reveal_control(f"[...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(name)})")
+        self.reveal_control(self.button_expression(name))
         found = self.js(f"""(() => {{ const b = [...document.querySelectorAll('button')].find(b =>
             !b.disabled && b.offsetParent !== null && (!document.getElementById('piece-picker').open || b.closest('#piece-picker')) && ((b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(name)}));
             if (b) b.click(); return Boolean(b); }})()""")
@@ -124,7 +134,7 @@ class Puzzles(unittest.TestCase):
         self.reveal_control(f"document.querySelector('[aria-label={json.dumps(label)}]')")
         self.assertTrue(self.js(f"""(() => {{ const el = document.querySelector('[aria-label={json.dumps(label)}]');
             if (!el) return false; el.value = {json.dumps(value)};
-            el.dispatchEvent(new Event(el.tagName === 'SELECT' ? 'change' : 'input', {{bubbles: true}})); return true; }})()"""),
+            el.dispatchEvent(new Event(el.tagName === 'SELECT' || el.type === 'number' ? 'change' : 'input', {{bubbles: true}})); return true; }})()"""),
             f'no control {label!r}')
 
     def screen_point(self, point):
@@ -181,7 +191,9 @@ class Puzzles(unittest.TestCase):
 
     def click_visible(self, label):
         """Hit the actual visible target, rather than invoking its DOM handler."""
-        self.reveal_control(f"[...document.querySelectorAll('button')].find(b => (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(label)})")
+        if label == 'Set it down':
+            label = '✓ Set down'
+        self.reveal_control(self.button_expression(label))
         target = self.js(f"""(() => {{ const el = [...document.querySelectorAll('button')].find(b =>
             !b.disabled && b.offsetParent !== null && (!document.getElementById('piece-picker').open || b.closest('#piece-picker')) && (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(label)});
             if (!el) return null; const r = el.getBoundingClientRect(), x = r.left + r.width/2, y = r.top + r.height/2;
@@ -195,16 +207,37 @@ class Puzzles(unittest.TestCase):
         self.mouse('mouseReleased', target['x'], target['y'])
 
     def reveal_control(self, expression):
-        """Navigate the phone's real tabs before using a section's controls."""
-        panel = self.js(f"(() => {{const el={expression}; const pane=el?.closest('.phone-pane'); return !document.querySelector('main').hidden && document.body.classList.contains('phone-panels') && pane?.hidden ? document.getElementById(pane.getAttribute('aria-labelledby')).textContent : null;}})()")
+        """Use the real shared tabs and disclosures before touching a control."""
+        panel = self.js(f"(() => {{const el={expression}; const pane=el?.closest('[role=tabpanel]'); return pane?.hidden ? document.getElementById(pane.getAttribute('aria-labelledby'))?.textContent : null;}})()")
         if panel:
-            self.click_visible(panel)
-        tools = self.js(f"(() => {{const el={expression}; const d=el?.closest('#phone-tools'); return Boolean(d && !d.hidden && !d.open);}})()")
-        if tools:
-            self.js("document.querySelector('#phone-tools summary').scrollIntoView({block:'nearest',inline:'nearest'})")
-            x,y = self.js("(() => {const r=document.querySelector('#phone-tools summary').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()")
-            self.mouse('mousePressed',x,y); self.mouse('mouseReleased',x,y)
-        self.js(f"(() => {{const el={expression}; if (document.body.classList.contains('phone-panels') && el?.closest('.phone-pane')) el.scrollIntoView({{block:'nearest',inline:'nearest'}});}})()")
+            self.click_visible(panel.strip())
+        # Precision controls, gallery sections and the chooser's More menu
+        # remain collapsed until a player asks for them. Click each ancestor
+        # summary, rather than toggling open directly to bypass the new UI.
+        for _ in range(8):
+            summary = self.js(f"(() => {{const el={expression}; const ds=[]; for(let p=el?.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS'&&!p.open&&!p.hidden&&!(el.tagName==='SUMMARY'&&p===el.parentElement))ds.push(p); const s=ds.at(-1)?.querySelector(':scope > summary'); if(!s)return null;s.scrollIntoView({{block:'nearest',inline:'nearest'}});const r=s.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];}})()")
+            if not summary:
+                break
+            self.mouse('mousePressed',*summary); self.mouse('mouseReleased',*summary)
+        else:
+            self.fail('A closed disclosure could not be opened with its visible summary')
+        self.js(f"(() => {{const el={expression}; if (el?.closest('.phone-pane')) el.scrollIntoView({{block:'nearest',inline:'nearest'}});}})()")
+
+    def create_design(self, name=None):
+        self.press('Add New Design'); self.wait(READY,90)
+        self.assertEqual(self.js('machineDesign().name'),'Untitled design')
+        if name:
+            self.reveal_control("document.getElementById('design-name')")
+            self.js(f"(()=>{{const el=document.getElementById('design-name');el.value={json.dumps(name)};el.dispatchEvent(new Event('change',{{bubbles:true}}));}})()")
+            self.assertEqual(self.js('machineDesign().name'),name)
+
+    def click_summary(self, selector):
+        self.reveal_control(f'document.querySelector({json.dumps(selector)})')
+        target=self.js(f"(()=>{{const el=document.querySelector({json.dumps(selector)});if(!el)return null;el.scrollIntoView({{block:'nearest'}});const r=el.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return {{x,y,w:r.width,h:r.height,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,uncovered:el.contains(document.elementFromPoint(x,y))}};}})()")
+        self.assertIsNotNone(target,selector)
+        self.assertTrue(target['visible'] and target['uncovered'],(selector,target))
+        self.assertGreaterEqual(target['h'],44,(selector,target))
+        self.mouse('mousePressed',target['x'],target['y']);self.mouse('mouseReleased',target['x'],target['y'])
 
     def assert_power_layout(self):
         # A rebuild reframes the camera; the anchors follow it each frame.
@@ -608,6 +641,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Controls'); self.click_visible('Add a piece')
                 self.press('Add a plank'); self.ghost()
                 self.assertEqual(self.js("document.getElementById('phone-controls-tab').getAttribute('aria-selected')"),'true')
+
                 before=self.ghost()['p']
                 self.click_visible('Controls')
                 for key,code in [('ArrowRight',39),('ArrowLeft',37)]:
@@ -623,9 +657,9 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Help')
                 self.page.send('Emulation.setDeviceMetricsOverride',{'width':1280,'height':860,'deviceScaleFactor':1,'mobile':False})
                 self.wait("!document.body.classList.contains('phone-panels')",5)
-                self.assertTrue(self.js("['control-panel','phone-design-panel','phone-help-panel'].every(id=>!document.getElementById(id).hidden)"))
+                self.assertTrue(self.js("document.getElementById('phone-toolbar').hidden===false && document.getElementById('control-panel').hidden && document.getElementById('phone-design-panel').hidden && !document.getElementById('phone-help-panel').hidden"))
                 self.assertEqual(self.js("document.querySelectorAll('#start').length"),1)
-                self.assertEqual(self.js("document.getElementById('start').parentElement.id"),'scene-actions')
+                self.assertEqual(self.js("document.getElementById('start').parentElement.id"),'phone-runbar')
                 self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':True})
                 self.wait("document.body.classList.contains('phone-panels')",5)
                 self.assertEqual(self.js("document.getElementById('phone-help-tab').getAttribute('aria-selected')"),'true')
@@ -637,6 +671,113 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js("document.activeElement.id"),'phone-controls-tab')
                 self.assertEqual(self.js("document.getElementById('phone-controls-tab').getAttribute('aria-selected')"),'true')
 
+
+    def test_shared_tabs_collapse_and_run_toolbar_work_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width!=1280)
+                self.assertFalse(self.js("document.getElementById('phone-toolbar').hidden"))
+                self.assertEqual(self.js("document.getElementById('start').parentElement.id"),'phone-runbar')
+                self.assertEqual(self.js("document.getElementById('reset').parentElement.id"),'phone-runbar')
+                self.assertEqual(self.js("document.getElementById('phone-design-tab').textContent"),'Level')
+                for label,pane in [('Controls','control-panel'),('Level','phone-design-panel'),('Help','phone-help-panel')]:
+                    self.click_visible(label)
+                    self.assertEqual(self.js("['control-panel','phone-design-panel','phone-help-panel'].filter(id=>!document.getElementById(id).hidden)"),[pane])
+                    self.assertTrue(self.js("(()=>{const r=document.getElementById('scene-goal').getBoundingClientRect();return r.height>0&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"))
+                before=self.js('machinePlacements()')
+                self.click_visible('Collapse controls')
+                self.assertTrue(self.js("['control-panel','phone-design-panel','phone-help-panel'].every(id=>document.getElementById(id).hidden)"))
+                self.click_visible('Run it')
+                self.wait("/World (?!0\\.00)[0-9.]+ s/.test(document.getElementById('clock').textContent)",30)
+                self.click_visible('Pause');self.click_visible('Set up again');self.wait(READY,30)
+                self.click_visible('Expand controls')
+                self.assertFalse(self.js("document.getElementById('phone-help-panel').hidden"))
+                self.assertEqual(self.js('machinePlacements()'),before)
+
+    def test_active_piece_slider_exact_value_and_precision_disclosure_agree(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width!=1280)
+                self.press('Add a plank');self.ghost()
+                self.assertFalse(self.js("document.getElementById('precision-controls').open"))
+                self.assertTrue(self.js("Boolean(document.querySelector('#precision-controls [aria-label=\"Cut to length of your plank 1\"]'))"))
+                self.assertTrue(self.js("Boolean(document.getElementById('precision-controls').closest('#control-panel'))"))
+                self.assertFalse(self.js("Boolean(document.querySelector('#phone-design-panel [aria-label=\"Cut to length of your plank 1\"]'))"))
+                self.reveal_control("""document.querySelector('[aria-label="Exact Cut to length"]')""")
+                x,y=self.js("""(()=>{const r=document.querySelector('[aria-label="Exact Cut to length"]').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()""")
+                self.mouse('mousePressed',x,y);self.mouse('mouseReleased',x,y)
+                for kind in ('keyDown','keyUp'):
+                    self.page.send('Input.dispatchKeyEvent',{'type':kind,'key':'a','code':'KeyA','windowsVirtualKeyCode':65,'modifiers':2})
+                self.page.send('Input.insertText',{'text':'0.66'})
+                self.assertEqual(self.ghost()['p']['length_m'],.66)
+                self.assertEqual(self.js("Number(document.querySelector('[aria-label=\"Its Cut to length\"]').value)"),.66)
+                for invalid in ('',99,.661):
+                    self.slide('Exact Cut to length',invalid)
+                    self.assertEqual(self.ghost()['p']['length_m'],.66,'Invalid numeric entry cannot change the physical setup')
+                    self.assertEqual(self.js("Number(document.querySelector('[aria-label=\"Exact Cut to length\"]').value)"),.66)
+                self.slide('Its Cut to length',.7)
+                self.assertEqual(self.ghost()['p']['length_m'],.7)
+                self.assertEqual(self.js("Number(document.querySelector('[aria-label=\"Exact Cut to length\"]').value)"),.7)
+                geometry=self.js("(()=>{const input=document.querySelector('[aria-label=\"Its Cut to length\"]'),row=input.closest('.knob-row'),r=row.getBoundingClientRect(),s=input.getBoundingClientRect(),n=document.querySelector('[aria-label=\"Exact Cut to length\"]').getBoundingClientRect();return {row:r.toJSON(),slider:s.toJSON(),number:n.toJSON(),uncovered:input.contains(document.elementFromPoint(s.x+s.width/2,s.y+s.height/2))};})()")
+                self.assertGreaterEqual(geometry['slider']['width'],geometry['row']['width']*.6,geometry)
+                self.assertGreaterEqual(geometry['number']['height'],44,geometry)
+                self.assertTrue(geometry['uncovered'],geometry)
+                self.slide('Cut to length of your plank 1',.68)
+                self.assertTrue(self.js("document.getElementById('precision-controls').open"))
+                self.assertEqual(self.ghost()['p']['length_m'],.68)
+                self.assertEqual(self.js("Number(document.querySelector('[aria-label=\"Exact Cut to length\"]').value)"),.68)
+                self.press('Throw the ghost away')
+
+    def test_sandbox_gallery_tabs_create_then_rename_without_name_form(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen').hidden===false",10)
+                self.assertIsNone(self.js("document.getElementById('new-design-name')"))
+                self.assertEqual(self.js("document.getElementById('design-tab-owned').getAttribute('aria-selected')"),'true')
+                self.assertFalse(self.js("document.getElementById('design-panel-owned').hidden"))
+                self.assertTrue(self.js("document.getElementById('design-panel-examples').hidden"))
+                self.click_visible('Examples')
+                self.assertTrue(self.js("document.getElementById('design-panel-owned').hidden"))
+                self.assertFalse(self.js("document.getElementById('design-panel-examples').hidden"))
+                self.assertEqual(self.js("document.querySelectorAll('#prebuilt-designs button').length"),self.template_count)
+                self.click_visible('Your designs')
+                before=self.js('machineSave().players[machineSave().current].sandbox.items.length')
+                self.click_visible('Add New Design');self.wait(READY,90)
+                self.assertEqual(self.js('machineDesign().name'),'Untitled design')
+                self.assertEqual(self.js('machinePlacements()'),[])
+                self.assertEqual(self.js("document.getElementById('phone-design-tab').textContent"),'Design')
+                self.reveal_control("document.getElementById('design-name')")
+                name=f'Gallery {width} by {height}'
+                self.js(f"(()=>{{const el=document.getElementById('design-name');el.value={json.dumps(name)};el.dispatchEvent(new Event('change',{{bubbles:true}}));}})()")
+                self.anonymous_cloud_saved()
+                self.press('All designs')
+                self.assertEqual(self.js('machineSave().players[machineSave().current].sandbox.items.length'),before+1)
+                self.assertTrue(self.js(f"Boolean(document.querySelector('#saved-designs button[aria-label={json.dumps('Open design '+name)}]'))"))
+                self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+
+    def test_level_details_and_more_are_opt_in_without_starting_a_world(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.assertFalse(self.js("document.getElementById('level-more').open"))
+                self.assertEqual(self.js("document.querySelectorAll('#levels-screen .level-card-details').length"),self.level_count)
+                self.assertTrue(self.js("[...document.querySelectorAll('#levels-screen .level-card-details')].every(d=>!d.open)"))
+                self.assertFalse(self.js("document.getElementById('levels-screen').innerText.includes('Energy par:')"))
+                self.assertFalse(self.js("document.getElementById('levels-screen').innerText.includes('New challenge')"))
+                before=self.js('location.href')
+                self.page.events.clear()
+                self.click_summary('#levels-screen .level-card-details summary')
+                self.assertTrue(self.js("document.querySelector('#levels-screen .level-card-details').open"))
+                self.assertRegex(self.js("document.querySelector('#levels-screen .level-card-details').innerText"),'Energy par:|Best win:')
+                self.assertEqual(self.js('location.href'),before)
+                self.click_summary('#level-more > summary')
+                self.assertTrue(self.js("document.getElementById('level-more').open"))
+                self.assertTrue(self.js("Boolean(document.getElementById('visitor-return-link').closest('#level-more'))"))
+                self.assertTrue(self.js("Boolean(document.querySelector('#level-more #challenge-family'))"))
+                requests=[e['params']['request'] for e in self.page.events if e['method']=='Network.requestWillBeSent']
+                opens=[r for r in requests if r['url'].endswith('/api/machine') and r.get('postData') and json.loads(r['postData']).get('op') in ('open','level_open')]
+                self.assertEqual(opens,[],'Reading details and save tools cannot initialize a machine')
     def test_flow_preview_can_be_paused_scrubbed_and_edited_without_running_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
@@ -648,8 +789,8 @@ class Puzzles(unittest.TestCase):
                     self.wait("window.machineFlowPreviewState()?.frames>2 && !document.getElementById('flow-preview').hidden",60)
                     setup=self.js('window.machinePlacements()')
                     # Open the actual disclosure and use real pointer clicks.
-                    x,y=self.js("(() => {const r=document.getElementById('flow-summary').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()")
-                    self.mouse('mousePressed',x,y); self.mouse('mouseReleased',x,y)
+                    self.click_summary('#flow-preview > summary')
+                    self.reveal_control("document.getElementById('flow-play')")
                     self.wait("document.getElementById('flow-play').getBoundingClientRect().bottom<=innerHeight",5)
                     self.click_visible('Pause preview')
                     self.slide('Preview time',1)
@@ -713,6 +854,7 @@ class Puzzles(unittest.TestCase):
                     self.assertEqual(self.ghost()['p'], setup[0])
                     self.assertTrue(self.js(READY), 'selecting a device never starts the live simulation')
                     for label in ('Run it','Set up again','Turn the view left','Zoom in','✓ Set down','Throw the ghost away'):
+                        self.reveal_control(f"[...document.querySelectorAll('button')].find(b=>(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(label)})")
                         target = self.js(f"(() => {{const b=[...document.querySelectorAll('#control-panel button,#phone-runbar button')].find(b=>(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(label)}),r=b?.getBoundingClientRect();return r?{{visible:r.x>=0 && r.right<=innerWidth && r.y>=0 && r.bottom<=innerHeight,uncovered:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),h:r.height,w:r.width}}:null;}})()")
                         self.assertIsNotNone(target,label)
                         self.assertTrue(target['visible'] and target['uncovered'],(label,target))
@@ -722,6 +864,8 @@ class Puzzles(unittest.TestCase):
                     self.assertAlmostEqual(self.js('window.machineCamera().azimuth'), camera-.2)
                     self.assertEqual(self.ghost()['p'],setup[0], 'view controls do not move the piece')
                     self.click_visible('Turn the view right')
+                    if self.js("document.getElementById('phone-tools').open"):
+                        self.click_summary('#phone-tools > summary')
                     self.press('Cancel'); self.wait('!window.machineGhostState()',5)
                 self.press('Run it'); self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
@@ -764,8 +908,7 @@ class Puzzles(unittest.TestCase):
         self.page.send('Emulation.setTouchEmulationEnabled', {'enabled':False})
         self.page.send('Page.navigate', {'url':f'{self.base}/machine'})
         self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)
-        self.slide('New design name', 'Saved solar cable')
-        self.press('Add New Design'); self.wait(READY, 60)
+        self.create_design('Saved solar cable')
         for number, piece, x in [(1,'marble',-1.4),(2,'solar',0),(3,'battery',1)]:
             self.press('Add a solar panel' if piece == 'solar' else f'Add a {piece}'); self.ghost()
             label = {'battery':'along (m)', 'solar':'Position along (m)'}.get(piece, 'x')
@@ -845,6 +988,7 @@ class Puzzles(unittest.TestCase):
                 self.assertFalse(self.js("Boolean(document.querySelector('#level-done [aria-label=\"Next level\"]'))"))
                 self.press('All levels')
                 self.assertLessEqual(self.js('document.body.scrollWidth'), width)
+                self.reveal_control("document.getElementById('challenge-family')")
                 self.assertGreaterEqual(self.js("document.getElementById('challenge-family').getBoundingClientRect().height"), 44)
                 self.assertIn(title, self.js("document.querySelector('[aria-label=\"Recent challenges\"]').textContent"))
                 self.press(title); self.wait(READY, 60)
@@ -1060,9 +1204,7 @@ class Puzzles(unittest.TestCase):
     def test_saved_terminal_graph_removal_undo_reload_and_restore(self):
         self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
         self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)
-        self.slide('New design name', 'Saved terminal graph')
-        self.press('Add New Design')
-        self.wait(READY, 60)
+        self.create_design('Saved terminal graph')
         for piece, x in [('battery', -.6), ('bulb', .6)]:
             self.press(f'Add a {piece}')
             self.ghost()
@@ -1370,7 +1512,7 @@ class Puzzles(unittest.TestCase):
             self.click_visible('About your return link');self.click_visible('Copy return link')
             self.assertEqual(self.js("document.querySelectorAll('.save-help-panel:popover-open').length"),0,'Clicking outside dismisses the help')
             self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen').hidden===false",10)
-            self.assertEqual(self.js("document.querySelector('#sandbox-screen .ls-summary').textContent"),'Build freely with every piece.')
+            self.assertFalse(self.js("document.getElementById('sandbox-screen').innerText.includes('Save designs, reopen versions')"))
             self.press('Add New Design');self.wait(READY,60)
             self.anonymous_cloud_saved()
             before=self.js('machineDesign()');url=self.js('location.href')
@@ -1498,7 +1640,7 @@ class Puzzles(unittest.TestCase):
             self.anonymous_fixture_clear()
             visitor,_=self.anonymous_levels()
             self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
-            self.slide('New design name','Cookie return');self.press('Add New Design');self.wait(READY,90)
+            self.create_design('Cookie return')
             self.press('Save version');self.wait('machineDesign().versions.length===1',10)
             self.anonymous_cloud_saved();design=self.js('machineDesign()')
             self.anonymous_fixture_clear(clear_cookies=False)
@@ -1516,7 +1658,7 @@ class Puzzles(unittest.TestCase):
             self.anonymous_fixture_clear()
             visitor,link=self.anonymous_levels()
             self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
-            self.slide('New design name','Unicode declaration');self.press('Add New Design');self.wait(READY,90)
+            self.create_design('Unicode declaration')
             self.js("""window.unicodeSaves=[];const original=window.fetch;
               window.fetch=async (...args)=>{let data;try{data=JSON.parse(args[1]?.body||'null');}catch{}
                 const row=data?.op==='save'&&String(args[0]).endsWith('/api/profile')
@@ -1618,9 +1760,7 @@ class Puzzles(unittest.TestCase):
             self.wait(f"window.machinePlacements().length === 1 && {READY}", 60)
             self.assertEqual(self.js('window.machinePlacements()'), first)
             self.press('All designs')
-            self.slide('New design name', 'Second design')
-            self.press('Add New Design')
-            self.wait(READY, 60)
+            self.create_design('Second design')
             self.assertEqual(self.js('window.machinePlacements()'), [])
             self.press('All designs')
             self.press('Open design My free build')
@@ -1765,7 +1905,7 @@ class Puzzles(unittest.TestCase):
                 self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
                 self.wait("Boolean(document.querySelector('#prebuilt-designs button'))", 60)
                 self.assertLessEqual(self.js('document.body.scrollWidth'), width)
-                self.assertTrue(self.js("[...document.querySelectorAll('#sandbox-screen button')].every(b => b.getBoundingClientRect().height >= 44 && b.getBoundingClientRect().right <= innerWidth)"))
+                self.assertTrue(self.js("[...document.querySelectorAll('#sandbox-screen button')].filter(b=>b.offsetParent!==null).every(b => b.getBoundingClientRect().height >= 44 && b.getBoundingClientRect().right <= innerWidth)"))
                 self.press('Start from Gate and split')
                 self.wait(READY, 60)
                 self.assertLessEqual(self.js('document.body.scrollWidth'), width)
@@ -1806,7 +1946,7 @@ class Puzzles(unittest.TestCase):
         self.ghost()
         self.drag_ghost_to(far[0],far[2])
         self.wait("(() => { const g = window.machineGhostState(); return g && g.answered && !g.busy && "
-                  "/Joined to the far end of your track 1/.test(document.querySelector('#ghost-bar .state').textContent); })()", 20)
+                  "/joined to far end of your track 1/.test(document.querySelector('#ghost-bar .state').textContent); })()", 20)
         p = self.ghost()['p']
         self.assertAlmostEqual(p['x_m'], far[0] + 0.03, delta=0.011)
         self.assertAlmostEqual(p['top_height_m'], far[1] - 0.04, delta=0.011)
@@ -1937,8 +2077,8 @@ class Puzzles(unittest.TestCase):
         self.slide('Set down at x of your plank 1', 0.3)
         self.slide('across (z, m) of your plank 1', 0.0)
         self.ghost()
-        self.wait("/over par \\(30.6 MJ\\)/.test(document.querySelector('#ghost-bar .state').textContent)", 10)
-        self.assertIn('34.1 MJ to make', self.js("document.querySelector('#ghost-bar .state').textContent"))
+        self.wait("/over par \\(30.6 MJ\\)/.test(document.querySelector('#ghost-bar .state').title)", 10)
+        self.assertIn('34.1 MJ to make', self.js("document.querySelector('#ghost-bar .state').title"))
         self.press('Set it down')
         self.wait('!window.machineGhostState()', 5)
         self.wait(READY, 60)
@@ -2140,8 +2280,8 @@ class Puzzles(unittest.TestCase):
         g = self.ghost()
         self.assertFalse(g['fits'])
         self.assertEqual(g['problems'], ['your mirror 1 goes 120 mm into wall; move it'])
-        self.assertTrue(self.js("document.getElementById('ghost-down').disabled"))
-        self.assertIn('120 mm into wall', self.js("document.getElementById('ghost-state').textContent"))
+        self.assertTrue(self.js("document.querySelector('#ghost-bar .down').disabled"))
+        self.assertIn('120 mm into wall', self.js("document.querySelector('#ghost-bar .state').textContent"))
         self.press('Run it')
         self.wait("/120 mm into wall/.test(document.getElementById('verdict').textContent)",5)
         self.assertFalse(self.ghost()['fits'])

@@ -396,8 +396,8 @@ aside{scroll-padding-top:min(var(--control-height,0px),calc(100% - 56px))}
 }
 
 /* Phone tabs own the available panel space; nothing scrolls behind controls. */
-body.phone-panels aside{display:grid;grid-template-rows:auto minmax(0,1fr);gap:6px;min-height:0;overflow:hidden;scroll-padding-top:0;padding:6px 8px}
-body.phone-panels #phone-toolbar{display:flex;align-items:center;gap:4px;min-width:0}
+body.panel-tabs aside{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:6px;min-height:0;overflow:hidden;scroll-padding-top:0;padding:6px 8px}
+body.panel-tabs #phone-toolbar{display:flex;align-items:center;gap:4px;min-width:0}
 #phone-tabs{display:flex;flex:1;gap:2px;min-width:0;flex-wrap:nowrap}
 #phone-toolbar button{min-height:44px;min-width:44px;padding:4px 6px;font:12px system-ui;color:#e7f2f8;border:1px solid #63899d;background:#294c60;border-radius:6px;cursor:pointer;white-space:nowrap}
 #phone-tabs button{flex:1}
@@ -405,10 +405,10 @@ body.phone-panels #phone-toolbar{display:flex;align-items:center;gap:4px;min-wid
 #phone-runbar{display:flex;gap:4px}
 #phone-runbar #start{background:#2f6b4f;border-color:#6fc39a;min-width:68px}
 #phone-toolbar :focus-visible{outline:3px solid #9fdcff;outline-offset:1px}
-body.phone-panels .phone-pane{min-height:0;overflow:auto;overscroll-behavior:contain;scroll-padding-top:0;height:100%;box-sizing:border-box}
-body.phone-panels #phone-design-panel,body.phone-panels #phone-help-panel{display:block;padding:8px 4px}
-body.phone-panels #control-panel{position:static;top:auto;max-height:none;margin:0;padding:4px;align-content:start;border:0;border-radius:0;box-shadow:none;background:none;gap:4px}
-body.phone-panels #phone-tools{margin:0;border-top:1px solid #4e7287}
+body.panel-tabs .phone-pane{min-height:0;overflow:auto;overscroll-behavior:contain;scroll-padding-top:0;height:100%;box-sizing:border-box}
+body.panel-tabs #phone-design-panel,body.panel-tabs #phone-help-panel{display:block;padding:8px 4px}
+body.panel-tabs #control-panel{position:static;top:auto;max-height:none;margin:0;padding:4px;align-content:start;border:0;border-radius:0;box-shadow:none;background:none;gap:4px}
+body.panel-tabs #phone-tools{margin:0;border-top:1px solid #4e7287}
 #phone-tools summary{min-height:44px;display:flex;align-items:center}
 #phone-tools .scene-actions{position:static;padding:4px 0;margin:0;border:0;background:none;gap:4px}
 body.phone-panels #control-panel:has(.ghost-bar:not([hidden]))>.scene-tray{display:none}
@@ -425,3 +425,56 @@ body.phone-panels .control-panel .ghost-bar>.state{grid-column:2;grid-row:4}
   #phone-tabs{flex-basis:100%}
   body.phone-panels .control-panel .ghost-bar>.move-pad{grid-template-columns:repeat(4,44px);grid-template-rows:repeat(2,44px)}
 }
+/* A single inspector, with the active adjustment spanning the panel. */
+body.panel-tabs .control-panel .ghost-bar{display:flex;flex-direction:column;gap:6px}
+body.panel-tabs .control-panel .ghost-bar>.head{display:block;font-size:14px}
+body.panel-tabs .control-panel .ghost-bar>.knob-row{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:6px;width:100%}
+body.panel-tabs .control-panel .ghost-bar .exact-value{grid-column:1/-1;display:block;min-height:44px;width:100%;text-align:center;background:#10202a;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;font:16px system-ui}
+body.panel-tabs .control-panel .ghost-bar>.state{margin:0;font-size:12px}
+body.panel-tabs .control-panel .ghost-bar>.move-pad{display:grid;grid-template-columns:repeat(6,44px);grid-template-rows:44px;position:static;gap:3px}
+body.panel-tabs .control-panel .move-pad button{grid-area:auto}
+#precision-controls{border-top:1px solid #4e7287}
+#precision-controls summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
+#precision-controls .ghost-piece{list-style:none}
+.scene-goal{margin:0;padding:2px 4px;font-size:13px;color:#d9ebf4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+main{position:relative}
+body.panel-collapsed main{grid-template-columns:1fr;grid-template-rows:1fr}
+body.panel-collapsed aside{position:absolute;bottom:0;right:0;width:min(100%,420px);height:auto;z-index:5;grid-template-rows:auto auto;border:1px solid #4e7287;border-radius:8px 0 0 0;box-shadow:0 -3px 16px #0006}
+body.panel-collapsed #view{min-height:0}
+.preview-legend>details>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-size:12px}
+.preview-legend .head{margin:0;font-size:12px}
+@media(max-width:359px){body.panel-tabs .control-panel .ghost-bar>.move-pad{grid-template-columns:repeat(4,44px);grid-template-rows:repeat(2,44px)}}
+body.panel-collapsed #scene-mode{bottom:108px}
+.levels-screen .ls-summary{margin:8px 0;font-size:14px}
+.levels-screen .ls-free{min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:12px}
+.level-library-more{margin:8px 0 12px;border:1px solid #3d5b6d;border-radius:8px;padding:0 10px}
+.level-library-more>summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
+.level-library-more-content{padding-bottom:10px}
+.level-library-more-content .visitor-return{margin-top:0}
+.level-card{display:flex;flex-direction:column;background:#1b2f3c;border:1px solid #3d5b6d;border-radius:12px;overflow:hidden}
+.levels-screen .level-card .ls-card{border:0;border-radius:0;min-height:88px;padding:10px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px}
+.level-card-title{grid-column:1/-1}
+.level-card .stars{font-size:16px;letter-spacing:1px}
+.level-card-details{font-size:13px;padding:0 10px;border-top:1px solid #3d5b6d}
+.level-card-details>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:#9fdcff}
+.level-card-details .teaches,.level-card-details .status{display:block;margin:4px 0 8px}
+.ls-list li.won .level-card{border-color:#5fe08f}
+.ls-list li.next .level-card{outline:2px solid #6cc6ff}
+@media(max-width:500px){.levels-screen .ls-list{grid-template-columns:1fr}.levels-screen .level-card .ls-card{min-height:72px}}
+.preview-legend>details{pointer-events:auto}
+.preview-legend>details[open]{max-height:min(240px,45dvh);overflow:auto}
+.preview-legend>details[open] .chips .chip{display:inline}
+.gallery-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.gallery-tabs button{min-height:44px;min-width:120px}
+.gallery-tabs [aria-selected=true]{background:#32657f;border-color:#9fdcff;font-weight:700}
+.gallery-panel{margin-top:12px}
+.gallery-add{min-height:44px}
+.design-preview{display:block;width:100%;height:96px;background:#11242e;border-radius:8px;overflow:hidden}
+.design-preview text{fill:#b9cbd6;font:14px system-ui}
+.design-card .teaches{line-height:1.4}
+.design-gallery-status{margin:12px 0;color:#ffd5b8}
+.gallery-empty{padding:20px 0;color:#b9cbd6}
+body.panel-tabs .ghost-bar>.actions{position:sticky;bottom:0;z-index:3;background:#18252e;padding:4px 0;border-top:1px solid #4e7287}
+body.panel-tabs .control-panel .ghost-bar{gap:4px}
+body.panel-tabs .control-panel .ghost-bar>.head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px}
+body.panel-tabs .control-panel .ghost-bar>.head>.exact-value{width:100px;flex:none}

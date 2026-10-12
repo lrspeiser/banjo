@@ -2,11 +2,14 @@ import * as THREE from '/three.module.js';
 import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, wireRoute} from '/machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from '/anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from '/profile-sync.mjs';
+import {renderLevelCards,createLevelMoreMenu} from '/level-library.mjs';
+import {renderDesignGallery} from '/design-gallery.mjs';
 
 // The machine page. It asks the server to build a declaration, then shows
 // what the engine measures, frame by frame. It never moves a body itself.
 const $ = id => document.getElementById(id);
 const view = $('view');
+const collapsedPanel = () => document.body.classList.contains('panel-collapsed') ? [document.querySelector('main>aside')] : [];
 const renderer = new THREE.WebGLRenderer({antialias: true});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 view.prepend(renderer.domElement);
@@ -293,7 +296,7 @@ function positionTerminalLabels() {
   const rect = renderer.domElement.getBoundingClientRect();
   const top = Math.max(8, $('clock').getBoundingClientRect().bottom - rect.top + 8);
   const bottom = Math.min(rect.height - 8, innerHeight - rect.top - 8);
-  const occupied = [...view.querySelectorAll('#scene-mode, #scene-tray, #scene-actions, #move-pad, #machine-controls, #preview-legend, #edit-guide-label, #power-status, .power-label')]
+  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #scene-tray, #scene-actions, #move-pad, #machine-controls, #preview-legend, #edit-guide-label, #power-status, .power-label')]
     .filter(el => !el.hidden && el.style.visibility !== 'hidden' && el.offsetWidth && el.offsetHeight).map(el => {
       const r = el.getBoundingClientRect(); return {x:r.left-rect.left, y:r.top-rect.top, w:r.width, h:r.height};
     });
@@ -538,7 +541,7 @@ function positionPowerLabels() {
   const status = $('power-status');
   const bottom = status.hidden ? rect.height - 10 : status.getBoundingClientRect().top - rect.top - 8;
   const occupied = ['scene-mode','scene-tray','scene-actions','move-pad','machine-controls','preview-legend','edit-guide-label']
-    .map(id => $(id)).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
+    .map(id => $(id)).concat(collapsedPanel()).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
     .map(el => { const r = el.getBoundingClientRect(); return {x:r.left - rect.left,y:r.top - rect.top,w:r.width,h:r.height}; });
   // Place the larger meters first, then fit receiver buttons beside them.
   const rows = [...powerLabels.values()].sort((a,b) => (a.port.kind === 'input') - (b.port.kind === 'input'));
@@ -1594,7 +1597,7 @@ function drawEditGuide(parts) {
   const at = guide.marker || guide.arrows[0]?.at;
   editAnchor = at ? new THREE.Vector3(...at) : new THREE.Box3().setFromObject(ghostGroup).getCenter(new THREE.Vector3()).sub(ghostGroup.position);
   const label = knobName(trayItem(ghost.p.piece).knobs[guide.key], guide.key);
-  $('edit-guide-label').textContent = `${label}: ${guide.marker ? 'this end' : guide.arrows.length ? 'arrows show the change' : 'highlighted part'}`;
+  $('edit-guide-label').textContent = `${label}`;
   updateEditGuide();
 }
 function updateEditGuide() {
@@ -1625,7 +1628,7 @@ function updateEditGuide() {
   const x = (screen.x + 1) * view.clientWidth / 2 + 14, y = (1 - screen.y) * view.clientHeight / 2 + 16;
   // A wrapped toolbar can fill a short phone scene. Try spaces beside the
   // piece and the controls, rather than forcing the caption below every row.
-  const obstacles = [...view.querySelectorAll('#clock, #scene-mode, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
+  const obstacles = [...collapsedPanel(), ...view.querySelectorAll('#clock, #scene-mode, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
     .filter(e => e.offsetWidth && e.offsetHeight).map(e => e.getBoundingClientRect());
   let best = null;
   for (const [cx, cy] of [[x, y], [x, y - height - 40], [x - width - 30, y], [8, maxY], [maxX, maxY], [maxX, minY]]) {
@@ -1759,6 +1762,7 @@ function startGhost(p, index, keepPlace = false) {
   for (const [key, rule] of Object.entries(trayItem(p.piece).knobs)) {
     if (p[key] == null) p[key] = knobDefault(rule);
   }
+  if(document.body.classList.contains('panel-collapsed')) $('panel-toggle').click();
   selectPhonePanel('controls');
   ghost = {p, index, was: index < placements.length ? placements[index] : null, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {}};
@@ -1833,11 +1837,11 @@ function selectGhostKnob(key) {
 }
 
 function renderGhostBar() {
+  const precisionOpen = Boolean($('precision-controls')?.open);
   renderMovePad();
   const card = $('ghost-bar');
   card.hidden = !ghost;
-  if (ghost) card.after($('flow-preview'));
-  else $('view-controls').before($('flow-preview'));
+  card.after($('flow-preview'));
   ghost && (ghost.cardInput = null);
   $('piece-edit-row').hidden = Boolean(ghost) || !placements.length;
   if (!ghost) { $('control-panel').append($('move-pad')); card.replaceChildren(); return; }
@@ -1879,15 +1883,32 @@ function renderGhostBar() {
       step: rule.step || 0.01, value: ghost.p[key]});
     input.setAttribute('aria-label', `Its ${name}`);
     input.addEventListener('input', () => { if (setKnob(ghost.p, key, Number(input.value))) { followGhost(); showGhostKnobs(); askGhost(); } });
-    const shown = document.createElement('output');
+    const shown = Object.assign(document.createElement('input'), {type:'number',min:rule.min,max:rule.max,
+      step:rule.step || 0.01,value:ghost.p[key],className:'exact-value'});
+    shown.setAttribute('aria-label',`Exact ${name}`);
+    const applyExact=()=>{
+      if (shown.value !== '' && shown.checkValidity() && setKnob(ghost.p,key,Number(shown.value))) {
+        followGhost(); askGhost(); showGhostKnobs();
+      }
+    };
+    shown.addEventListener('input',applyExact);
+    shown.addEventListener('change',()=>{
+      applyExact();
+      showGhostKnobs();
+    });
     row.append(button('−', () => nudgeKnob(key, -step), {ariaLabel: `Less ${name}`}), input,
-               button('+', () => nudgeKnob(key, step), {ariaLabel: `More ${name}`}), shown);
+               button('+', () => nudgeKnob(key, step), {ariaLabel: `More ${name}`}));
+    head.append(shown);
     ghost.cardInput = [input, shown, key];
   }
   const state = Object.assign(document.createElement('p'), {className: 'state'});
   const actions = Object.assign(document.createElement('div'), {className: 'actions'});
   actions.append(button('✓ Set down', setGhostDown, {className: 'down', disabled: !ghost.fits || ghost.busy}), throwAway);
-  card.replaceChildren(head, chips, $('move-pad'), row, state, actions);
+  const precision = document.createElement('details'); precision.id='precision-controls';
+  precision.open=precisionOpen;
+  precision.append(Object.assign(document.createElement('summary'),{textContent:'Precision controls'}),ghostItem(),
+    Object.assign(document.createElement('p'),{id:'ghost-cost',className:'legend'}));
+  card.replaceChildren(head, chips, row, state, $('move-pad'), actions, precision);
   showGhostKnobs(); showGhostState();
 }
 
@@ -1912,21 +1933,13 @@ function showGhostState() {
   const said = document.querySelector('#ghost-bar .state');
   if (said && ghost) {
     said.className = 'state ' + (choosingTerminal ? '' : ghost.fits ? 'fits' : 'refused');
-    said.textContent = choosingTerminal ? 'Choose the other terminal in the scene.' : (ghost.fits ? (ghost.sun && ghost.sun.length
-      ? `Aim estimate: ${ghost.sun[0].off_sun_deg}° off sun, ${Math.round(ghost.sun[0].sunlight_w)} W before shade. Set down for the measured meter.` : 'It fits here.')
-      : ghost.problems.join('; ')) + (ghost.joined ? ` Joined to the ${ghost.joined}.` : '') +
-      (ghost.fits && ghost.energy ? ' ' + madeAgainstPar() : '');
+    said.textContent = choosingTerminal ? 'Choose the other terminal.' : (ghost.fits ? (ghost.sun && ghost.sun.length
+      ? `Fits · aim ${ghost.sun[0].off_sun_deg}° · ${Math.round(ghost.sun[0].sunlight_w)} W before shade` : 'Fits')
+      : ghost.problems.join('; ')) + (ghost.joined ? ` · joined to ${ghost.joined}` : '');
+    said.title=ghost.fits && ghost.energy ? madeAgainstPar() : said.textContent;
   }
-  const state = $('ghost-state'), down = $('ghost-down');
-  if (!ghost || !state) return;
-  state.className = 'ghost-state ' + (choosingTerminal ? '' : ghost.fits ? 'fits' : 'refused');
-  state.textContent = choosingTerminal ? 'Choose the other terminal in the scene.' : ghost.fits ? 'It fits here.' : ghost.problems.join('; ');
-  // A panel: how squarely it faces the sun (the engine decides shade).
-  for (const s of ghost.sun || []) state.textContent += ` It faces ${s.off_sun_deg}° off the sun: about ` +
-    `${Math.round(s.sunlight_w)} W of sunlight on it, if nothing shades it.`;
-  if (down) down.disabled = !ghost.fits || ghost.busy;
-  const head = $('ghost-cost');
-  if (head && ghost.energy) head.textContent = ` · ${energyText(ghost.energy.j)} to make`;
+  const cost=$('ghost-cost');
+  if(cost && ghost) cost.textContent=ghost.energy ? madeAgainstPar() : '';
 }
 
 function showGhostKnobs() {
@@ -1941,7 +1954,7 @@ function showGhostKnobs() {
   if (ghost.cardInput) {
     const [input, shown, key] = ghost.cardInput;
     if (String(input.value) !== String(ghost.p[key])) input.value = ghost.p[key];
-    if (shown) shown.textContent = String(ghost.p[key]) + (knobs[key].turning ? '°' : '');
+    if (shown) shown.value = ghost.p[key];
   }
 }
 
@@ -2097,7 +2110,7 @@ function updateFlowPreview() {
   $('flow-play').textContent=flowPlaying?'Pause preview':'Play preview';
   $('flow-play').setAttribute('aria-pressed',String(flowPlaying));
   const scale=distance*2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/view.clientHeight;
-  const rect=view.getBoundingClientRect(), occupied=[...view.querySelectorAll('.power-label, .terminal-label, #clock, #preview-legend')]
+  const rect=view.getBoundingClientRect(), occupied=[...collapsedPanel(), ...view.querySelectorAll('.power-label, .terminal-label, #clock, #preview-legend')]
     .filter(e=>!e.hidden).map(e=>{const r=e.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   for (const sprite of flowLabels) {
     sprite.scale.set(scale*76,scale*19,1);
@@ -2203,8 +2216,8 @@ function showPreviewLegend(r, colourOf) {
   if (!r) return;
   box.append(Object.assign(document.createElement('p'), {className: 'head',
     textContent: r.error ? 'Preview stopped: '+r.error : !r.complete ? 'Preview incomplete'
-      : !level.goal ? 'Predicted: where things will go'
-      : r.goal_at_s != null ? `Predicted: the goal at ${describeTime(r.goal_at_s)}` : 'Predicted: the goal does not happen'}));
+      : !level.goal ? 'Preview'
+      : r.goal_at_s != null ? `Preview · goal at ${describeTime(r.goal_at_s)}` : 'Preview · goal not reached'}));
   const chip = (colour, text) => {
     const s = Object.assign(document.createElement('span'), {className: 'chip', textContent: text});
     s.style.setProperty('--c', '#' + new THREE.Color(colour).getHexString());
@@ -2222,7 +2235,13 @@ function showPreviewLegend(r, colourOf) {
   if (frames.some(f=>f.water || f.surface)) keys.push(chip(0x62cfff,'water preview'));
   if (frames.some(f=>f.surface?.flow_samples?.some(s=>Math.hypot(...s.velocity_m_s)>.025))) keys.push(chip(0xb8f4ff,'river current'));
   if (frames.some(f=>f.wires.length)) keys.push(chip(0xffe066,'current preview'));
-  row.prepend(...keys); box.append(row);
+  row.prepend(...keys);
+  const keyDetails = document.createElement('details');
+  const previewHeading=box.querySelector('.head');
+  const summary=Object.assign(document.createElement('summary'),{textContent:previewHeading.textContent+' ▾'});
+  summary.setAttribute('aria-label','Preview key'); summary.title='Preview key';
+  previewHeading.remove(); keyDetails.append(summary,row);
+  box.append(keyDetails);
 }
 
 window.machinePreviewState = () => previewShown && {paths: previewShown.paths.map(p => ({name: p.name, goal: p.goal,
@@ -3175,18 +3194,10 @@ function describeKnobs(p, t) {
   return [...rest, ...turned].join(' · ');
 }
 
-// The ghost, in the list where the piece is (or will be): its knobs, its
-// turning, and Set it down / Cancel.
+// Additional precision controls stay in the same inspector as the active knob.
 function ghostItem() {
   const p = ghost.p, t = trayItem(p.piece), what = ghostName();
-  const li = Object.assign(document.createElement('li'), {className: 'ghost-piece'});
-  const head = Object.assign(document.createElement('div'), {className: 'piece-head'});
-  const title = Object.assign(document.createElement('strong'), {textContent: `${what} — ghost, not set down yet`});
-  title.append(Object.assign(document.createElement('span'), {id: 'ghost-cost'}));
-  head.append(title);
-  const actions = Object.assign(document.createElement('div'), {className: 'ghost-actions'});
-  actions.append(button('Set it down', setGhostDown, {id: 'ghost-down', disabled: true}), button('Cancel', cancelGhost));
-  li.append(head, actions, Object.assign(document.createElement('p'), {id: 'ghost-state', className: 'ghost-state'}));
+  const li = Object.assign(document.createElement('div'), {className: 'ghost-piece'});
   ghost.inputs = {};
   const turning = Object.assign(document.createElement('fieldset'), {className: 'turning'});
   turning.append(Object.assign(document.createElement('legend'), {textContent: 'Turn it (degrees)'}));
@@ -3194,10 +3205,10 @@ function ghostItem() {
     if (!pieceKnobVisible(p,key)) continue;
     const c = knobControl(p, key, rule, what, () => {
       if ((key==='mount' && p.piece==='battery')||(key==='mode'&&p.piece==='switch')) {renderPlaced();renderGhostBar();}
-      if (key !== 'x_m' && key !== 'z_m' && ghost.card !== key) { ghost.card = key; renderGhostBar(); }
+      if (key !== 'x_m' && key !== 'z_m') ghost.card = key;
       followGhost(); showGhostKnobs(); askGhost();
     });
-    if (key !== 'x_m' && key !== 'z_m') c.input.addEventListener('focus', () => selectGhostKnob(key));
+    if (key !== 'x_m' && key !== 'z_m') c.input.addEventListener('change', () => renderGhostBar());
     ghost.inputs[key] = [c.input, c.shown];
     if (!rule.turning) { li.append(c.label); continue; }
     // − and + by 15 degrees either side of the slider; the slider for the rest.
@@ -3211,9 +3222,7 @@ function ghostItem() {
     turning.append(button('Square it up', () => {
       for (const [key, rule] of Object.entries(t.knobs)) if (rule.turning) setKnob(p, key, 0);
       showGhostKnobs(); askGhost();
-    }), Object.assign(document.createElement('p'), {className: 'legend',
-      textContent: 'Keys: Q/E turn · R/F tip · Z/C roll (with Shift, 1°) · arrows move it as you see it, Page Up/Down raise and lower it · Enter sets it down · Esc switches between moving it and looking around. ' +
-                   'Shift+wheel turns it, Alt+wheel tips it. Drag the ghost to move it; click to return to View without moving it. Drag empty space, right/middle drag or Ctrl+drag to turn the view.'}));
+    }));
     li.append(turning);
   }
   return li;
@@ -3225,7 +3234,7 @@ function renderPlaced() {
   $('piece-edit-row').hidden = Boolean(ghost) || !placements.length;
   const ol = $('placed'); ol.replaceChildren();
   placements.forEach((p, i) => {
-    if (ghost && ghost.was && ghost.index === i) { ol.append(ghostItem()); return; }
+    if (ghost && ghost.was && ghost.index === i) return;
     const t = trayItem(p.piece), li = document.createElement('li');
     const head = Object.assign(document.createElement('div'), {className: 'piece-head'});
     const made = placedEnergy[`your ${p.piece} ${i + 1}`];
@@ -3257,7 +3266,6 @@ function renderPlaced() {
     li.append(head, Object.assign(document.createElement('p'), {className: 'knob-summary', textContent: describeKnobs(p, t)}));
     ol.append(li);
   });
-  if (ghost && !ghost.was) ol.append(ghostItem());
   if (ghost) { showGhostKnobs(); showGhostState(); }
   const made = Object.values(placedEnergy).reduce((a, b) => a + (b.j || 0), 0);
   $('cost-line').textContent = !placements.length ? ''
@@ -3393,37 +3401,11 @@ function showSandboxScreen(show = true) {
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Sandbox'});
-  add(box, 'p', {className: 'ls-summary', textContent: 'Build freely with every piece.'});
-  renderReturnLink(box);
-  const form = add(box, 'form', {className: 'ls-player'});
-  const name = add(form, 'input', {id: 'new-design-name', type: 'text', maxLength: 60, placeholder: 'Name your new design'});
-  name.setAttribute('aria-label', 'New design name');
-  const create = add(form, 'button', {type: 'submit', textContent: 'Add New Design'});
-  form.addEventListener('submit', e => {
-    e.preventDefault(); create.disabled = true;
-    chooseLevel('free', newDesign(name.value || 'Untitled design')).catch(e => { $('clock').textContent = e.message; });
-  });
-  add(box, 'h2', {textContent: 'Your designs'});
-  const store = designStore();
-  if (!store.items.length) add(box, 'p', {textContent: 'Start with an empty table or a prebuilt design below.'});
-  const list = add(box, 'div', {className: 'ls-list', id: 'saved-designs'});
-  for (const d of [...store.items].sort((a, b) => b.at.localeCompare(a.at))) {
-    const card = button('', () => chooseLevel('free', d).catch(() => {}), {className: 'ls-card', ariaLabel: `Open design ${d.name}`});
-    add(card, 'strong', {textContent: d.name});
-    add(card, 'span', {className: 'teaches', textContent: `${d.draft.placements.length} tray pieces${d.draft.base ? ' + base machine' : ''} · ${d.versions.length} saved versions`});
-    add(card, 'span', {className: 'status', textContent: `Draft updated ${new Date(d.at).toLocaleString()}`});
-    list.append(card);
-  }
-  add(box, 'h2', {textContent: 'Prebuilt designs'});
-  const examples = add(box, 'div', {className: 'ls-list', id: 'prebuilt-designs'});
-  for (const t of sandboxTemplates) {
-    const card = button('', () => {
-      const d = newDesign(t.name, {base: t.base, placements: t.placements}); checkpointDesign(d); persist();
-      chooseLevel('free', d).catch(() => {});
-    }, {className: 'ls-card', ariaLabel: `Start from ${t.name}`});
-    add(card, 'strong', {textContent: t.name}); add(card, 'span', {className: 'teaches', textContent: t.description});
-    add(card, 'span', {className: 'status', textContent: 'Open your own editable copy'}); examples.append(card);
-  }
+  const more = createLevelMoreMenu(box,{id:'design-more'}).content;
+  renderReturnLink(more);
+  renderDesignGallery({box,head,store:designStore(),templates:sandboxTemplates,
+    openDesign:d=>chooseLevel('free',d),
+    createDesign:(name,draft,template)=>{const d=newDesign(name,draft);if(template){checkpointDesign(d);persist();}return d;}});
 }
 $('sandbox-open').addEventListener('click', e => { e.preventDefault(); if (freeLevel) showSandboxScreen(); });
 $('designs-open').addEventListener('click', () => showSandboxScreen());
@@ -3658,20 +3640,20 @@ function showLevelsScreen(show) {
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Levels'});
   if (level) head.append(button(`Back to ${levelTitle(level)}`, () => showLevelsScreen(false)));
-  renderReturnLink(box);
+  const more = createLevelMoreMenu(box,{id:'level-more'}).content;
+  renderReturnLink(more);
   history_.replaceState(null, '', returnURL(location.origin, save.current));
   const won = levels.filter(l => bestStars(l.id) > 0).length, starsAll = levels.reduce((s, l) => s + bestStars(l.id), 0);
   const nextUp = levels.find(l => !bestStars(l.id));
-  add(box, 'p', {className: 'ls-summary', textContent: `${won} of ${levels.length} levels won, ` +
-    `${starsAll} of ${levels.length * 3} stars.` + (nextUp ? ` Next up: ${levels.indexOf(nextUp) + 1}. ${nextUp.title}.` : ' Every level won!')});
+  add(box, 'p', {className: 'ls-summary', textContent: `${won}/${levels.length} levels · ${starsAll} stars`});
   // The free build: no goal, every piece, kept for this player.
   if (freeLevel) {
     const free = button('', () => showSandboxScreen(), {className: 'ls-card ls-free', ariaLabel: 'Sandbox: build anything'});
     add(free, 'strong', {textContent: 'Sandbox'});
-    add(free, 'span', {className: 'teaches', textContent: 'Build freely with every piece. Save designs, reopen versions, or start from a prebuilt machine.'});
+    add(free, 'span', {className: 'teaches', textContent: 'Your designs and examples'});
     box.append(free);
   }
-  const freshBox = add(box, 'section', {className: 'ls-player', ariaLabel: 'Fresh challenges'});
+  const freshBox = add(more, 'section', {className: 'ls-player', ariaLabel: 'Fresh challenges'});
   add(freshBox, 'label', {textContent: 'Learn a piece', htmlFor: 'challenge-family'});
   const familyPick = add(freshBox, 'select', {id: 'challenge-family', ariaLabel: 'Challenge family'});
   for (const l of levels.filter(l => l.difficulty === 'easy')) familyPick.append(new Option(l.title, l.id));
@@ -3684,25 +3666,14 @@ function showLevelsScreen(show) {
   });
   freshBox.append(newEasy);
   if (me().freshChallenges?.length) {
-    const recent = add(box, 'section', {className: 'chat-actions', ariaLabel: 'Recent challenges'});
+    const recent = add(more, 'section', {className: 'chat-actions', ariaLabel: 'Recent challenges'});
     add(recent, 'h2', {textContent: 'Return to a challenge'});
     for (const saved of me().freshChallenges) recent.append(button(saved.title, () => chooseLevel(saved.id).catch(e => { freshStatus.textContent = e.message; })));
   }
+  box.append(more.parentElement);
   const list = add(box, 'ol', {className: 'ls-list'});
-  levels.forEach((l, i) => {
-    const row = record(l.id), li = add(list, 'li', {});
-    li.classList.toggle('won', Boolean(row.stars)); li.classList.toggle('next', l === nextUp);
-    const card = button('', () => { showLevelsScreen(false); chooseLevel(l.id).catch(() => {}); },
-                        {className: 'ls-card', ariaLabel: `Play level ${i + 1}, ${l.title}`});
-    add(card, 'strong', {textContent: `${i + 1}. ${l.title}`});
-    add(card, 'span', {className: 'stars', textContent: '★'.repeat(row.stars || 0) + '☆'.repeat(3 - (row.stars || 0))});
-    add(card, 'span', {className: 'task-count', textContent: `${l.task_count} ${l.task_count === 1 ? 'thing' : 'things'} to do`});
-    add(card, 'span', {className: 'teaches', textContent: pieceLabel(l.teaches)});
-    add(card, 'span', {className: 'status', textContent: row.energy_j != null
-      ? `Best win: ${energyText(row.energy_j)} (par ${energyText(l.par_energy_j)})`
-      : row.stars ? 'Won' : l === nextUp ? 'Next up' : 'Not won yet'});
-    li.append(card);
-  });
+  renderLevelCards(list,levels,{record,bestStars,energyText,pieceLabel,nextUp,
+    onChoose:l=>{showLevelsScreen(false);chooseLevel(l.id).catch(()=>{});}});
 }
 $('levels-open').addEventListener('click', e => {
   if (!LEVEL_MODE || !levels.length) return;
@@ -3757,6 +3728,8 @@ async function chooseLevel(id, design = null) {
   history_.replaceState(null, '', level.free ? '/machine?design=' + encodeURIComponent(activeDesign.id) : '/play?level=' + level.id);
   $('title').textContent = levelTitle(level);
   $('brief').textContent = level.brief;
+  $('scene-goal').textContent = level.free ? 'Build anything' : 'Goal: '+level.goal.title;
+  $('scene-goal').title = level.free ? 'Build anything' : `Goal within ${level.time_s} s`;
   $('goal-line').textContent = level.free
     ? 'No goal: build anything and run it.'
     : `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s, on as little energy as you can `+
@@ -3964,19 +3937,21 @@ const phoneLayout = matchMedia('(max-width:820px), (max-height:500px) and (min-w
 function selectPhonePanel(name, focus = false) {
   phonePanel = name;
   if (!$('phone-design-panel')) return;
+  if(focus && document.body.classList.contains('panel-collapsed')) $('panel-toggle').click();
   for (const [key,id] of [['controls','control-panel'],['design','phone-design-panel'],['help','phone-help-panel']]) {
     const tab = $('phone-'+key+'-tab'), pane = $(id), selected = key === name;
     tab.setAttribute('aria-selected',String(selected)); tab.tabIndex = selected ? 0 : -1;
-    pane.hidden = phoneLayout.matches && !selected;
+    pane.hidden = !selected || document.body.classList.contains('panel-collapsed');
     if (selected && focus) tab.focus();
   }
 }
 function installPhonePanels() {
+  document.body.classList.add('panel-tabs');
   const controls = $('control-panel'), aside = controls.parentElement;
   const design = Object.assign(document.createElement('section'),{id:'phone-design-panel'});
   const help = Object.assign(document.createElement('section'),{id:'phone-help-panel'});
   for (const node of [...aside.children]) {
-    if (node === controls || node === $('phone-toolbar')) continue;
+    if (node === controls || node === $('phone-toolbar') || node === $('scene-goal')) continue;
     (node.matches('.chat') ? help : design).append(node);
   }
   aside.append(design,help);
@@ -3986,26 +3961,27 @@ function installPhonePanels() {
   const update = () => {
     const mobile = phoneLayout.matches;
     document.body.classList.toggle('phone-panels',mobile);
-    $('phone-toolbar').hidden = !mobile; tools.hidden = !mobile;
-    if (mobile) {
-      tools.append($('scene-actions'));
-      $('phone-runbar').append($('start'),$('reset'));
-      $('reset').textContent = 'Reset';
-    } else {
-      $('scene-actions').prepend($('start'),$('reset'));
-      $('scene-tray').after($('scene-actions'));
-      $('reset').textContent = 'Set up again';
-    }
+    $('phone-toolbar').hidden = false; tools.hidden = false;
+    tools.append($('scene-actions'),$('view-controls'));
+    $('phone-runbar').append($('start'),$('reset'));
+    $('reset').textContent = 'Reset';
     $('reset').setAttribute('aria-label','Set up again');
     $('reset').title = 'Restore the starting setup';
     for (const [key,pane] of [['controls',controls],['design',design],['help',help]]) {
       pane.classList.add('phone-pane');
-      if (mobile) { pane.setAttribute('role','tabpanel'); pane.setAttribute('aria-labelledby','phone-'+key+'-tab'); pane.tabIndex = 0; }
-      else { pane.removeAttribute('role'); pane.removeAttribute('aria-labelledby'); pane.removeAttribute('tabindex'); }
+      pane.setAttribute('role','tabpanel'); pane.setAttribute('aria-labelledby','phone-'+key+'-tab'); pane.tabIndex = 0;
     }
     selectPhonePanel(phonePanel);
   };
-  for (const key of ['controls','design','help']) $('phone-'+key+'-tab').addEventListener('click',()=>selectPhonePanel(key));
+  const expand = expanded => {
+    document.body.classList.toggle('panel-collapsed',!expanded);
+    $('panel-toggle').setAttribute('aria-expanded',String(expanded));
+    $('panel-toggle').setAttribute('aria-label',expanded?'Collapse controls':'Expand controls');
+    $('panel-toggle').textContent=expanded?'⌄':'⌃';
+    selectPhonePanel(phonePanel); resize();
+  };
+  $('panel-toggle').addEventListener('click',()=>expand(document.body.classList.contains('panel-collapsed')));
+  for (const key of ['controls','design','help']) $('phone-'+key+'-tab').addEventListener('click',()=>{expand(true);selectPhonePanel(key);});
   $('phone-tabs').addEventListener('keydown',e=>{
     const names=['controls','design','help'], index=names.indexOf(phonePanel);
     const next=e.key==='Home'?0:e.key==='End'?2:e.key==='ArrowRight'?(index+1)%3:e.key==='ArrowLeft'?(index+2)%3:null;
