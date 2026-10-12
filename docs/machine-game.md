@@ -73,6 +73,12 @@ framing the newly added wheel fixes that case without changing gesture or
 goal tolerances. Manual phone play wins the spring lesson. Broader earlier
 CI failures in other controls remain outside this verified scope.
 
+The legacy water-save browser fixture now waits for the actual saved-version
+count/status before reloading. A previous Linux CI run refreshed during its
+native validation check, before a profile sync had started, and then read a
+missing version. The fixture retains its existing ten-second save timeout;
+no save implementation or assertion was relaxed.
+
 ## Learn one reflection before routing two
 
 October 12, 2026: **Bounce to the target** (`easy-mirror`) is now level 6,

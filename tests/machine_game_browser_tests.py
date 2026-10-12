@@ -483,7 +483,12 @@ class Puzzles(unittest.TestCase):
             else:
                 self.assertEqual(saved['opening_percent'],38)
                 self.wait('window.machineWaterDisplay().length===1',10)
-            self.press('Save version');self.anonymous_cloud_saved()
+            count=self.js('window.machineDesign().versions.length')
+            self.press('Save version')
+            # The initial native check runs before profile sync becomes
+            # pending. Wait for the save itself, not a previous sync receipt.
+            self.wait(f'window.machineDesign().versions.length==={count+1} && /Version .*saved/.test(document.getElementById("design-status").textContent)',10)
+            self.anonymous_cloud_saved()
             self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,60)
             self.assertEqual(self.js('window.machinePlacements()[0]'),saved)
             self.assertEqual(self.js('window.machineDesign().versions.at(-1).draft.placements[0]'),saved)
