@@ -547,3 +547,6 @@ body.panel-tabs #precision-controls .move-pad button{grid-area:auto}
 .lens-grip {position:absolute;width:44px;height:44px;border:2px solid #82e9ff;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 0 2px #11222d99;pointer-events:none;z-index:3;}
 .lens-grip span {position:absolute;top:44px;left:50%;transform:translateX(-50%);color:#b6f4ff;font-size:12px;text-shadow:0 1px 3px #000;}
 .laser-preview-status {display:block;color:#ffdda0;font-size:.85rem;padding:6px 8px;}
+/* Reserve enough inspector space to expose a complete touch target even when
+   the narrow toolbar and header wrap; collapsing controls restores the scene. */
+@media(max-width:599px){body.panel-tabs:not(.panel-collapsed) main{grid-template-rows:min(42dvh,max(140px,calc(100dvh - var(--site-header-height,53px) - 300px))) minmax(0,1fr)}body.panel-tabs #view{min-height:0}}

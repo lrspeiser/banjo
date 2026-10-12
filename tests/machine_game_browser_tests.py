@@ -824,13 +824,16 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js('window.machineLaserPreviewState().visible'))
                 self.assertEqual(self.js('window.machineLaserPreviewState().error'),'','the default lens must mount, not retain a bare-scene beam after an error')
                 self.assertTrue(self.js("(() => {const e=document.getElementById('lens-grip'),r=e.getBoundingClientRect();return !e.hidden && r.width>=44 && r.height>=44 && getComputedStyle(e).pointerEvents==='none';})()"))
-                self.press('Focus selected piece')
+                self.click_visible('Focus selected piece')
+                self.assertTrue(self.js("(() => {const el=document.getElementById('focus-piece'),r=el.getBoundingClientRect(),p=el.closest('.ghost-fields').getBoundingClientRect();return r.top>=p.top && r.bottom<=p.bottom;})()"),'Focus must have its complete touch target inside the scrollable inspector')
+                if width<=599:
+                    self.assertTrue(self.js("document.getElementById('view').getBoundingClientRect().bottom<=document.getElementById('phone-toolbar').getBoundingClientRect().top"),'the smaller scene cannot overflow behind controls')
                 self.wait('window.machineCamera().settled',30)
                 for anchor in ([-.8,.575,0],[.29,.575,0]):
                     point=self.screen_point(anchor)
                     rect=self.js("(() => {const r=document.querySelector('#view canvas').getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom};})()")
                     self.assertTrue(rect['l']<=point[0]<=rect['r'] and rect['t']<=point[1]<=rect['b'],(anchor,point,rect))
-                self.press('Whole machine'); self.wait('window.machineCamera().settled',30)
+                self.click_visible('Whole machine'); self.wait('window.machineCamera().settled',30)
                 # Ordinary exact controls: no scene/test-hook placement shortcut.
                 self.slide('Position along (m) of your lens 1',.1)
                 self.slide('Position across (m) of your lens 1',0)
@@ -853,7 +856,7 @@ class Puzzles(unittest.TestCase):
                     self.open(level,width,height,phone=width!=1280)
                     self.wait('window.machineLaserPreviewState().visible && !window.machineLaserPreviewState().pending',30)
                     self.press('Add a mirror');self.ghost()
-                    self.press('Focus selected piece');self.wait('window.machineCamera().settled',30)
+                    self.click_visible('Focus selected piece');self.wait('window.machineCamera().settled',30)
                     self.assertTrue(self.js('Number.isFinite(window.machineCamera().distance)'))
                     if level=='easy-mirror':
                         for anchor in ([-.8,.575,0],[.5,.575,1]):
