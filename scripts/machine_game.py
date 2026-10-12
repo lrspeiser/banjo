@@ -42,6 +42,22 @@ EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle
               'easy-bulb', 'easy-loop', 'easy-water-receiver', 'easy-heat', 'easy-catapult',
               'easy-marble-light', 'easy-water-gate', 'easy-charge-lift', 'easy-river-lift']
 
+# Menu metadata: high-level actions the player takes, not a difficulty rating
+# or the number of automatic events in the machine. Placing and adjusting one
+# piece is one task; a separate cable, field operation or drum connection adds
+# another. This metadata never participates in simulation or scoring.
+PLAYER_TASK_COUNTS = {
+    'gap': 1, 'cut': 1, 'fire': 1, 'steam': 1, 'chain': 1,
+    'laser': 2, 'sun': 2, 'tackle': 1,
+    'easy-cut': 1, 'easy-mirror': 1, 'easy-lens': 1, 'easy-solar': 1,
+    'easy-tackle': 1, 'easy-water-wheel': 1, 'easy-spring': 1,
+    'easy-gears': 1, 'easy-weight': 1, 'easy-motor': 1, 'easy-power': 1,
+    'easy-switch': 2, 'easy-bulb': 1, 'easy-loop': 1,
+    'easy-water-receiver': 1, 'easy-heat': 1, 'easy-catapult': 1,
+    'easy-marble-light': 1, 'easy-water-gate': 2, 'easy-charge-lift': 1,
+    'easy-river-lift': 2,
+}
+
 ROOT = Path(__file__).resolve().parents[1]
 LEVELS_PATH = ROOT / 'client/voxel-lab/levels.json'
 _variants = OrderedDict()
@@ -1642,6 +1658,9 @@ def public(level):
     """What the page needs to show a level: never its solution."""
     result = {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
                                   'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty') if k in level}
+    if not level.get('free'):
+        family = level.get('variant', {}).get('family', level['id'])
+        result['task_count'] = PLAYER_TASK_COUNTS[family]
     if level.get('variant'):
         result['variant'] = {k: level['variant'][k] for k in ('family', 'seed', 'version', 'attempt',
             'fallback', 'validated', 'parameter', 'parameter_label', 'kind', 'value', 'measured_energy_j') if k in level['variant']}

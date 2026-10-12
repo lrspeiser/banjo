@@ -3569,7 +3569,6 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
 }
 
 // ---- the levels screen: every level, and how far this player has got --------------------
-let levelDifficulty = 'all';
 function renderReturnLink(box) {
   for (const old of document.querySelectorAll('.visitor-return,.previous-saves')) old.remove();
   const line = document.createElement('div'); line.className = 'visitor-return';
@@ -3613,17 +3612,12 @@ function showLevelsScreen(show) {
     add(free, 'span', {className: 'teaches', textContent: 'Build freely with every piece. Save designs, reopen versions, or start from a prebuilt machine.'});
     box.append(free);
   }
-  const filters = add(box, 'div', {className: 'chat-actions', role: 'group', ariaLabel: 'Choose challenge difficulty'});
-  for (const [value, label] of [['all', 'All challenges'], ['easy', 'Easy: learn a piece'], ['normal', 'Full chain reactions']]) {
-    const filter = button(label, () => { levelDifficulty = value; showLevelsScreen(true); });
-    filter.setAttribute('aria-pressed', String(levelDifficulty === value)); filters.append(filter);
-  }
-  const freshBox = add(box, 'section', {className: 'ls-player', ariaLabel: 'Fresh easy challenges'});
+  const freshBox = add(box, 'section', {className: 'ls-player', ariaLabel: 'Fresh challenges'});
   add(freshBox, 'label', {textContent: 'Learn a piece', htmlFor: 'challenge-family'});
-  const familyPick = add(freshBox, 'select', {id: 'challenge-family', ariaLabel: 'Easy challenge family'});
+  const familyPick = add(freshBox, 'select', {id: 'challenge-family', ariaLabel: 'Challenge family'});
   for (const l of levels.filter(l => l.difficulty === 'easy')) familyPick.append(new Option(l.title, l.id));
   const freshStatus = add(freshBox, 'p', {role: 'status'});
-  const newEasy = button('New easy challenge', async () => {
+  const newEasy = button('New challenge', async () => {
     newEasy.disabled = true; freshStatus.textContent = 'Testing a fresh setup in the physics engine…';
     try { await freshChallenge(familyPick.value); }
     catch (e) { freshStatus.textContent = e.message; }
@@ -3631,20 +3625,20 @@ function showLevelsScreen(show) {
   });
   freshBox.append(newEasy);
   if (me().freshChallenges?.length) {
-    const recent = add(box, 'section', {className: 'chat-actions', ariaLabel: 'Recent easy challenges'});
-    add(recent, 'h2', {textContent: 'Return to an easy challenge'});
+    const recent = add(box, 'section', {className: 'chat-actions', ariaLabel: 'Recent challenges'});
+    add(recent, 'h2', {textContent: 'Return to a challenge'});
     for (const saved of me().freshChallenges) recent.append(button(saved.title, () => chooseLevel(saved.id).catch(e => { freshStatus.textContent = e.message; })));
   }
   const list = add(box, 'ol', {className: 'ls-list'});
   levels.forEach((l, i) => {
-    if (levelDifficulty !== 'all' && (l.difficulty || 'normal') !== levelDifficulty) return;
     const row = record(l.id), li = add(list, 'li', {});
     li.classList.toggle('won', Boolean(row.stars)); li.classList.toggle('next', l === nextUp);
     const card = button('', () => { showLevelsScreen(false); chooseLevel(l.id).catch(() => {}); },
                         {className: 'ls-card', ariaLabel: `Play level ${i + 1}, ${l.title}`});
     add(card, 'strong', {textContent: `${i + 1}. ${l.title}`});
     add(card, 'span', {className: 'stars', textContent: '★'.repeat(row.stars || 0) + '☆'.repeat(3 - (row.stars || 0))});
-    add(card, 'span', {className: 'teaches', textContent: `${l.difficulty === 'easy' ? 'Easy · ' : ''}${pieceLabel(l.teaches)}`});
+    add(card, 'span', {className: 'task-count', textContent: `${l.task_count} ${l.task_count === 1 ? 'thing' : 'things'} to do`});
+    add(card, 'span', {className: 'teaches', textContent: pieceLabel(l.teaches)});
     add(card, 'span', {className: 'status', textContent: row.energy_j != null
       ? `Best win: ${energyText(row.energy_j)} (par ${energyText(l.par_energy_j)})`
       : row.stars ? 'Won' : l === nextUp ? 'Next up' : 'Not won yet'});

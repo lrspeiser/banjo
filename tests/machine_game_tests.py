@@ -148,6 +148,25 @@ class Tray(unittest.TestCase):
             self.assertLessEqual(cost, level['par'], f'{level["id"]}: its own solution is over par')
             self.assertNotIn('solution', mg.public(level), 'the page is never sent the answer')
 
+    def test_catalog_task_counts_describe_player_work_without_changing_a_machine(self):
+        self.assertEqual(set(mg.PLAYER_TASK_COUNTS), {l['id'] for l in LEVELS})
+        before = copy.deepcopy(LEVELS)
+        for level in LEVELS:
+            shown = mg.public(level)
+            self.assertIs(type(shown['task_count']), int)
+            self.assertGreater(shown['task_count'], 0)
+            self.assertNotIn('solution', shown)
+        self.assertEqual(mg.public(mg.level_by_id('gap'))['task_count'], 1)
+        self.assertEqual(mg.public(mg.level_by_id('laser'))['task_count'], 2)
+        self.assertEqual(mg.public(mg.level_by_id('sun'))['task_count'], 2)
+        self.assertEqual(mg.public(mg.level_by_id('easy-switch'))['task_count'], 2)
+        variant = copy.deepcopy(mg.level_by_id('easy-switch'))
+        variant['id'] = 'easy-switch--v2--12345678--0'
+        variant['variant'] = {'family':'easy-switch'}
+        self.assertEqual(mg.public(variant)['task_count'], 2)
+        self.assertNotIn('task_count', mg.public(mg.free_build()))
+        self.assertEqual(LEVELS, before, 'menu metadata cannot mutate physical levels')
+
     def test_the_tray_is_enforced(self):
         gap = mg.level_by_id('gap')
         with self.assertRaises(mg.LevelRefused) as caught:

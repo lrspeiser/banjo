@@ -1,6 +1,28 @@
 # Puzzles on the machine (/play)
 
-October 11, 2026. Open `/play` to choose eight chain-reaction levels or twenty-one freely selectable easy challenges. Each level has a fixed machine, a goal and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+October 11, 2026. Open `/play` to choose eight chain-reaction levels or twenty-one freely selectable piece lessons. Each level has a fixed machine, a goal and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+
+The chooser shows every level together, with no difficulty filters or Easy
+labels. Each card says **1 thing to do**, **2 things to do**, and so on.
+This counts the expected player tasks: placing and adjusting one piece is
+one task; a separate wire, field operation or drum connection is another.
+Automatic events and the common Run button are not additional tasks.
+For example, Mind the gap counts one plank, Bounce the beam counts two
+mirrors, Catch the sun counts a collector and a power cable, and Close the
+switch counts placing the switch and operating its field handle. This menu
+metadata does not change the machine, its goal or its scoring.
+
+Checked October 11, 2026: all 43 game tests pass through the registered CMake
+target in 49.04 s with the unchanged `807ae9c3…` engine. Three focused Chrome
+checks pass in 15.726 s, covering all 29 cards, singular/plural task labels,
+removed filters and Easy prefixes, saved wiring, and generating, sharing and
+reopening a challenge at 1280×860, 390×844 and 844×390. An initial run still
+looked for the old **Recent easy challenges** accessible label; its selector
+was updated to **Recent challenges**, without changing waits or goal checks.
+Task counts are authored in `scripts/machine_game.py::PLAYER_TASK_COUNTS`;
+new levels must add an entry, and generated variants inherit their family's
+count. This update changes menu metadata and labels only, with no new physical
+model or conservation claim.
 
 ## Expanded sandbox and easy challenges
 
@@ -165,7 +187,7 @@ Cable routes are visual geometry, not simulated physical cables: they do not cha
 
 Wiring UI verification, October 11: all 35 Chrome browser tests passed in 173.2 s, including desktop 1280×860, portrait 390×844 and landscape 844×390. Checks covered terminal clicks, cancelling a pending wire, wrong-wire failure, the correct loop's native win/current, prepared switch leads before Run, and saving/reopening/Undo/version restoration. All 12 electrical tests passed, including nominal/nudged solutions, missing returns and the existing glass/oak/iron heating comparisons. The client geometry CTest and all 269 source registrations passed. The tested native executable remains SHA-256 `569a441595274e13128e1b8f06ff54d392232409b312d2089a77c2451315c976`. A prior Linux browser test read the clock before it existed during reload; the ready wait now handles that DOM gap with the same timeout, and the affected saved-solar test passed again locally.
 
-The Easy filter lists twenty-one families in order: cut, reflection, focus, sunlight, tackle, water wheel, spring, gears, weight, motor, battery, switch, bulb, closed loop, receiver fill, ignition, catapult, marble switch, water gate, sunlight-powered lift and river-powered lift. Every family has its own private solution, three nominal/nudged engine checks and physical empty/wrong controls. Goals also include sensor power, sustained electrical power, stored charge and actual water received; a green box is shown for spatial goals.
+The chooser includes twenty-one lesson families: cut, reflection, focus, sunlight, tackle, water wheel, spring, gears, weight, motor, battery, switch, bulb, closed loop, receiver fill, ignition, catapult, marble switch, water gate, sunlight-powered lift and river-powered lift. Every family has its own private solution, three nominal/nudged engine checks and physical empty/wrong controls. Goals also include sensor power, sustained electrical power, stored charge and actual water received; a green box is shown for spatial goals.
 
 Mechanical and water catalogue bases contain no decorative reference-marker boxes. **Turn the big wheel** starts with an empty field; adding a driven gear pair creates its actual battery housing and supported wheels. Water-channel setups retain their ground and any functional receiver, guide or load. Previously saved designs retain their saved parts. No goal, solution or physical tolerance changes accompany this cleanup.
 
@@ -300,7 +322,7 @@ pass their four CTest entries (21.28 s). Source registration accounts for all
 
 ## Fresh easy challenges
 
-**New easy challenge** on the level chooser lets the player select any of the twenty families. The same action beside an easy challenge makes another setup in that family. It changes one bounded physical input: source power, sunlight elevation, supply voltage, cord or lever length, load height, bearing friction, starting water, flow or catapult cock angle. Prepared settings are fixed in that challenge's tray; its goal and deadline remain the family's own. There are 78 physical presets across the twenty families; different seeds can select the same preset. This is repeatable authored variation, not unlimited procedural geometry or a language-model-generated level.
+**New challenge** on the level chooser lets the player select any of the twenty families. The same action beside an easy challenge makes another setup in that family. It changes one bounded physical input: source power, sunlight elevation, supply voltage, cord or lever length, load height, bearing friction, starting water, flow or catapult cock angle. Prepared settings are fixed in that challenge's tray; its goal and deadline remain the family's own. There are 78 physical presets across the twenty families; different seeds can select the same preset. This is repeatable authored variation, not unlimited procedural geometry or a language-model-generated level.
 
 Before offering a setup, the server rehearses its private solution, empty machine and wrong setup with three nudges each. All three correct runs must win and every empty/wrong run must fail without engine errors or incomplete rehearsals. It tries at most three seeded candidates, then a checked original setup; the page explicitly identifies that fallback. It refuses the request if even the original fails. Public responses contain no solution, wrong placements or private rehearsal receipts. Native preflight shares the server's two preview slots and reliability-check request allowance.
 

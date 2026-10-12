@@ -281,6 +281,7 @@ body.on-sandbox main{display:none}
 .levels-screen .ls-card{width:100%;height:100%;min-height:110px;display:grid;align-content:start;gap:4px;text-align:left;padding:12px;background:#1b2f3c;border:1px solid #3d5b6d;border-radius:12px;cursor:pointer}
 .ls-card strong{font-size:16px}
 .ls-card .stars{font-size:20px;letter-spacing:3px;color:#ffd34d}
+.ls-card .task-count{font-size:14px;font-weight:600;color:#e1edf6}
 .ls-card .teaches{font-size:13px;color:#b9cbd6}
 .ls-card .status{font-size:13px;color:#9fdcff}
 .ls-list li.won .ls-card{border-color:#5fe08f}

@@ -18,9 +18,10 @@ Windows, built and tested on Linux in CI, and not tested on macOS.
 
 ## What there is
 
-**Eight chain-reaction levels and twenty-one freely selectable easy challenges.**
-The easy challenges introduce cutting, optics, springs, gearing, wiring, water,
-heating and catapults one step at a time. **New easy challenge** offers tested
+**Eight chain-reaction levels and twenty-one freely selectable piece lessons.**
+Every card shows how many things the player has to do, rather than a difficulty
+rating. The lessons introduce cutting, optics, springs, gearing, wiring, water,
+heating and catapults one step at a time. **New challenge** offers tested
 physical variations with repeatable seed links and a recent-challenges list.
 The original chain-reaction levels are:
 
