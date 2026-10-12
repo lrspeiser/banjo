@@ -502,3 +502,9 @@ A level plays at real time. When something breaks or dents, the engine solves th
 ## Prepublication checks after disk setup
 
 October 11, 2026: six registered storage/HTTP/client CTests pass in 4.97 s, with all 269 C++ sources registered. The complete 60-test Chrome run at the branding checkpoint passes 59/60 in 364.518 s: one desktop tackle bootstrap fails while Chrome reports `net::ERR_CONNECTION_TIMED_OUT` loading `three.core.js`, before the game module can initialize. The same unchanged tackle check passes separately across all three viewports in 16.349 s. All save-recovery, CAS, wiring, native-win, gallery and editor assertions in the broad run pass. This is treated as the recorded local browser transport limitation, with its cause still unproven; the broad run is not labelled green. No retries, timeout changes, goal changes or physical tolerance changes were added. Linux CI and public-site durability checks follow publication.
+
+The public recovery check exposed a 17 px Saved versions disclosure. It now
+has a 44 px touch target while retaining its native disclosure marker. The
+gallery browser regression clicks it open and closed at 1280×860, 390×844 and
+844×390, checking visible, unobstructed geometry; it passes in 2.858 s. This is
+a CSS correction; saved data and physics are unchanged.

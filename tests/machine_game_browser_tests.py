@@ -761,6 +761,10 @@ class Puzzles(unittest.TestCase):
                 name=f'Gallery {width} by {height}'
                 self.js(f"(()=>{{const el=document.getElementById('design-name');el.value={json.dumps(name)};el.dispatchEvent(new Event('change',{{bubbles:true}}));}})()")
                 self.anonymous_cloud_saved()
+                self.click_summary('#design-versions > summary')
+                self.assertTrue(self.js("document.getElementById('design-versions').open"))
+                self.click_summary('#design-versions > summary')
+                self.assertFalse(self.js("document.getElementById('design-versions').open"))
                 self.press('All designs')
                 self.assertEqual(self.js('machineSave().players[machineSave().current].sandbox.items.length'),before+1)
                 self.assertTrue(self.js(f"Boolean(document.querySelector('#saved-designs button[aria-label={json.dumps('Open design '+name)}]'))"))
