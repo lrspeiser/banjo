@@ -164,3 +164,32 @@ export function describeTime(seconds) {
   if (!Number.isFinite(seconds)) return '–';
   return seconds < 60 ? seconds.toFixed(2) + ' s' : Math.floor(seconds / 60) + ' min ' + (seconds % 60).toFixed(1) + ' s';
 }
+
+// Outline the two spherical faces used by the native lens model. These are
+// display segments in metres, never a replacement collider or a larger lens.
+export function lensOutline(lens) {
+  const {at_m:at,axis,aperture_m:a,thickness_m:t,front_radius_m:front,back_radius_m:back}=lens;
+  if (!at?.every(Number.isFinite) || !axis?.every(Number.isFinite) ||
+      ![a,t,front,back].every(Number.isFinite) || a<=0 || t<=0) return [];
+  const norm=Math.hypot(...axis); if (!norm) return [];
+  const n=axis.map(v=>v/norm), ref=Math.abs(n[1])<.9?[0,1,0]:[1,0,0];
+  const cross=(u,v)=>[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+  const raw=cross(n,ref), len=Math.hypot(...raw), u=raw.map(v=>v/len), v=cross(n,u);
+  const sag=(R,z,r)=>R===0?z:z+R-Math.sign(R)*Math.sqrt(Math.max(0,R*R-r*r));
+  const point=(x,y,z)=>at.map((p,i)=>p+u[i]*x+v[i]*y+n[i]*z);
+  const out=[], segment=(p,q)=>out.push(...p,...q);
+  for (const [R,z] of [[front,-t/2],[back,t/2]]) {
+    if (R!==0 && Math.abs(R)<=a) return [];
+    const rim=sag(R,z,a);
+    for (let k=0;k<64;k++) {
+      const p=k*2*Math.PI/64,q=(k+1)*2*Math.PI/64;
+      segment(point(a*Math.cos(p),a*Math.sin(p),rim),point(a*Math.cos(q),a*Math.sin(q),rim));
+    }
+    for (const vertical of [false,true]) for (let k=0;k<32;k++) {
+      const p=-a+2*a*k/32,q=-a+2*a*(k+1)/32;
+      segment(point(vertical?0:p,vertical?p:0,sag(R,z,Math.abs(p))),
+        point(vertical?0:q,vertical?q:0,sag(R,z,Math.abs(q))));
+    }
+  }
+  return out;
+}

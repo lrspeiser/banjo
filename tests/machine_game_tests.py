@@ -1171,6 +1171,58 @@ class Engine(unittest.TestCase):
         self.assertTrue(all(abs(end[i] - zone['at_m'][i]) <= zone['size_m'][i] / 2 for i in range(3)), end)
 
     @need_engine
+    def test_short_optical_preview_follows_native_lens_focus_without_mutating_the_design(self):
+        level = mg.level_by_id('easy-lens')
+        before = copy.deepcopy(level)
+        with tempfile.TemporaryDirectory() as work:
+            logs = Path(work)
+            good = mg.optical_preview(level, level['solution'], ENGINE, logs)
+            misplaced = [dict(level['solution'][0], z_m=.3)]
+            miss = mg.optical_preview(level, misplaced, ENGINE, logs)
+            bare = mg.optical_preview(level, [], ENGINE, logs)
+            for result in (good, miss, bare):
+                self.assertTrue(result['paths'])
+                self.assertAlmostEqual(result['world_time_s'], 1/60, places=12)
+                self.assertLess(abs(result['watts']['residual']), 1e-10)
+                self.assertLess(abs(result['joules']['residual']), 1e-10)
+                self.assertTrue(all(math.isfinite(v) for p in result['paths'] for v in p['mm']))
+                self.assertNotIn('goal_at_s', result, 'a setup trace is not a win prediction')
+            self.assertGreater(good['photocells'][0]['power_w'], 2)
+            self.assertLess(miss['photocells'][0]['power_w'], 2)
+            self.assertLess(bare['photocells'][0]['power_w'], 2)
+            self.assertEqual(list(logs.iterdir()), [], 'short previews remove their temporary engine files')
+            dark = mg.optical_preview(mg.level_by_id('gap'), [], ENGINE, logs)
+            self.assertEqual(dark['paths'], [])
+        self.assertEqual(level, before)
+
+    @need_engine
+    def test_editable_lenses_mount_at_all_tray_diameters_shapes_and_orientations(self):
+        import itertools
+        level = mg.level_by_id('easy-lens')
+        with tempfile.TemporaryDirectory() as logs:
+            for diameter, shape, turn in itertools.product((.04,.06,.08,.10,.12), ('convex','concave'),
+                    ((0,0,0),(37,0,0),(90,0,0),(0,45,0),(17,23,-35))):
+                with self.subTest(diameter=diameter, shape=shape, turn=turn):
+                    placement = [dict(level['solution'][0], diameter_m=diameter, shape=shape,
+                        x_m=-.18, z_m=-.58, yaw_deg=turn[0], pitch_deg=turn[1], roll_deg=turn[2])]
+                    r = mg.optical_preview(level, placement, ENGINE, Path(logs))
+                    self.assertTrue(r['paths'])
+                    self.assertLess(abs(r['watts']['residual']),1e-10)
+
+    @need_engine
+    def test_optical_lessons_keep_their_nudged_solutions_and_energy_par(self):
+        with tempfile.TemporaryDirectory() as logs:
+            for name in ('easy-lens','easy-mirror','laser'):
+                level=mg.level_by_id(name)
+                with self.subTest(level=name):
+                    result=mg.trial(level,level['solution'],ENGINE,Path(logs),runs=3)
+                    self.assertEqual(result['worked'],3,result['results'])
+                    energy=mg.measure_energy(level,level['solution'],ENGINE,Path(logs))
+                    self.assertIsNotNone(energy['goal_at_s'])
+                    self.assertLessEqual(energy['j'],level['par_energy_j'])
+                    self.assertGreater(energy['j'],.99*level['par_energy_j'])
+
+    @need_engine
     def test_flow_preview_reports_native_light_water_and_signed_current_without_changing_the_setup(self):
         import sandbox_electrics as electrical
         import sandbox_water_launch as water

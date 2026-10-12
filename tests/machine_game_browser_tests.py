@@ -814,6 +814,55 @@ class Puzzles(unittest.TestCase):
                 requests=[e['params']['request'] for e in self.page.events if e['method']=='Network.requestWillBeSent']
                 opens=[r for r in requests if r['url'].endswith('/api/machine') and r.get('postData') and json.loads(r['postData']).get('op') in ('open','level_open')]
                 self.assertEqual(opens,[],'Reading details and save tools cannot initialize a machine')
+    def test_laser_stays_visible_while_editing_and_lens_focus_keeps_its_context_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-lens',width,height,phone=width!=1280)
+                self.wait('window.machineLaserPreviewState()?.visible && !window.machineLaserPreviewState().pending',30)
+                self.press('Add a lens'); self.ghost()
+                self.wait('!window.machineLaserPreviewState().pending',30)
+                self.assertTrue(self.js('window.machineLaserPreviewState().visible'))
+                self.assertEqual(self.js('window.machineLaserPreviewState().error'),'','the default lens must mount, not retain a bare-scene beam after an error')
+                self.assertTrue(self.js("(() => {const e=document.getElementById('lens-grip'),r=e.getBoundingClientRect();return !e.hidden && r.width>=44 && r.height>=44 && getComputedStyle(e).pointerEvents==='none';})()"))
+                self.press('Focus selected piece')
+                self.wait('window.machineCamera().settled',30)
+                for anchor in ([-.8,.575,0],[.29,.575,0]):
+                    point=self.screen_point(anchor)
+                    rect=self.js("(() => {const r=document.querySelector('#view canvas').getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom};})()")
+                    self.assertTrue(rect['l']<=point[0]<=rect['r'] and rect['t']<=point[1]<=rect['b'],(anchor,point,rect))
+                self.press('Whole machine'); self.wait('window.machineCamera().settled',30)
+                # Ordinary exact controls: no scene/test-hook placement shortcut.
+                self.slide('Position along (m) of your lens 1',.1)
+                self.slide('Position across (m) of your lens 1',0)
+                self.slide('Diameter (m) of your lens 1',.12)
+                self.ghost()
+                self.wait('!window.machineLaserPreviewState().pending && window.machineLaserPreviewState().photocells[0]?.power_w>2',30)
+                self.assertIn('7.31 W',self.js("document.getElementById('laser-preview-status').textContent"))
+                self.slide('Position across (m) of your lens 1',.3)
+                self.assertTrue(self.js('window.machineLaserPreviewState().visible'),'previous trace stays visible while the new one is requested')
+                self.ghost();self.wait('!window.machineLaserPreviewState().pending && window.machineLaserPreviewState().photocells[0]?.power_w<2',30)
+                self.assertEqual(self.js('JSON.parse(window.machineLaserPreviewState().stamp).placements[0].z_m'),.3)
+                self.assertTrue(self.js('Number.isFinite(window.machineCamera().distance)'))
+                self.slide('Position across (m) of your lens 1',0);self.ghost()
+                self.press('Set it down');self.wait(READY,30)
+                self.press('Run it');self.wait("/World (?!0.00)\\d/.test(document.getElementById('clock').textContent) && !window.machineLaserPreviewState().visible",30)
+                self.assertFalse(self.js('window.machineLaserPreviewState().visible'),'Run shows actual native light instead of a setup prediction')
+                self.press('Set up again');self.wait(READY,30)
+                self.wait('window.machineLaserPreviewState().visible',30)
+                for level in ('easy-mirror','laser'):
+                    self.open(level,width,height,phone=width!=1280)
+                    self.wait('window.machineLaserPreviewState().visible && !window.machineLaserPreviewState().pending',30)
+                    self.press('Add a mirror');self.ghost()
+                    self.press('Focus selected piece');self.wait('window.machineCamera().settled',30)
+                    self.assertTrue(self.js('Number.isFinite(window.machineCamera().distance)'))
+                    if level=='easy-mirror':
+                        for anchor in ([-.8,.575,0],[.5,.575,1]):
+                            point=self.screen_point(anchor)
+                            rect=self.js("(() => {const r=document.querySelector('#view canvas').getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom};})()")
+                            self.assertTrue(rect['l']<=point[0]<=rect['r'] and rect['t']<=point[1]<=rect['b'],(level,anchor,point,rect))
+                self.open('gap',width,height,phone=width!=1280)
+                self.assertFalse(self.js('window.machineLaserPreviewState().visible'))
+
     def test_flow_preview_can_be_paused_scrubbed_and_edited_without_running_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

@@ -26,6 +26,8 @@ import math
 import random
 import re
 import threading
+import tempfile
+import time
 from collections import OrderedDict
 from pathlib import Path
 
@@ -1294,6 +1296,8 @@ def ghost(level, placements, index, snapping=False, edit_key=None):
              'energy': pieces_energy(compiled).get(name),
              'parts': [dict({k: p[k] for k in keys if k in p},
                             **({'parts': p['parts']} if p['shape'] == 'compound' else {})) for p in mine]}
+    if compiled.get('light'):
+        reply['optical_setup'] = compiled['light']
     # Draw the compiled terminals while placing a device, including its
     # prepared socket leads. This does not advance the engine.
     if checked[index]['piece'] in ('battery', 'switch', 'bulb', 'motor', 'ignition', 'wire', 'cannon'):
@@ -1519,6 +1523,32 @@ def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None):
                         'closest': (r.get('closest_approach') or [None])[0]})
     worked = sum(1 for x in results if x['goal_at_s'] is not None and x['goal_at_s'] <= level['time_s'])
     return {'runs': runs, 'worked': worked, 'results': results, 'cost': cost}
+
+
+def optical_preview(level, placements, exe, logs):
+    """A short native trace of the proposed setup, independent of its live run.
+
+    Four ordinary 1/240 s steps establish lamp/circuit power before tracing.
+    This reports paths and sensor readings, never a predicted level win.
+    No player intervention is applied and no declaration is mutated.
+    """
+    spec, _, _ = compose(level, placements, leave_out_goal=True)
+    compiled = mw.compile_spec(spec)
+    if not (compiled.get('light') or {}).get('lamps'):
+        return {'paths': [], 'photocells': [], 'world_time_s': 0, 'wall_s': 0}
+    started = time.perf_counter()
+    with tempfile.TemporaryDirectory(prefix='optical-preview-', dir=str(logs)) as workdir:
+        engine, _, _ = mw.build_engine(exe, compiled, workdir)
+        try:
+            frame = engine.op(op='step', dt=mw.DT_S, n=mw.STEPS_PER_CALL, moved=True)
+            engine.op(op='light_trace')
+            optics = engine.op(op='optics').get('optics') or {}
+            return {'paths': optics.get('paths', []), 'photocells': optics.get('photocells', []),
+                    'watts': optics.get('watts'), 'joules': optics.get('joules'),
+                    'world_time_s': frame.get('t', mw.DT_S*mw.STEPS_PER_CALL),
+                    'wall_s': time.perf_counter()-started}
+        finally:
+            engine.close()
 
 
 def preview(level, placements, exe, logs, wall_limit_s=30.0):

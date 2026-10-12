@@ -1,5 +1,5 @@
 import * as THREE from '/three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint} from '/machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint} from '/machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from '/anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from '/profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from '/level-library.mjs';
@@ -1212,7 +1212,8 @@ async function build(next, start, request) {
     // where the player put it, not moved every time a piece is set down.
     if (!(LEVEL_MODE && level && level.free && framedFree)) frameCamera();
     if (LEVEL_MODE && level && level.free) framedFree = true;
-    if (start) await setPlaying(true);
+    drawLensOutlines();
+    if (start) await setPlaying(true); else scheduleLaserPreview(0);
     poll(mine);
     return opened;
   } catch (e) {
@@ -1234,7 +1235,7 @@ async function setPlaying(run) {
     if(previous)await previous;
     if(mine!==polling||session!==requestedSession)return;
     if(!run)await stopSwitchDrag();
-    if(run){clearTimeout(previewTimer);previewAsk++;clearPreview();}
+    if(run){clearTimeout(previewTimer);previewAsk++;clearPreview();resetLaserPreview();}
     let frame;
     try {frame=await api({op:'play',session:requestedSession,running:run,speed:Number($('speed').value)});}
     catch(error){
@@ -1310,6 +1311,7 @@ function frameCamera() {
   if (zone) pts.push(zone.at_m, [zone.at_m[0], 0, zone.at_m[2]]);
   // An empty table: its middle, from a little way off.
   if (!pts.length && LEVEL_MODE && level && level.free) pts.push([-1, 0, -.6], [1, .8, .6]);
+  for (let i=pts.length-1;i>=0;i--) if (!pts[i]?.every(Number.isFinite)) pts.splice(i,1);
   if (!pts.length) return;
   const lo = [0, 1, 2].map(i => Math.min(...pts.map(p => p[i]))), hi = [0, 1, 2].map(i => Math.max(...pts.map(p => p[i])));
   // A level is looked at from half its height (its goal zone is often high), a little further back.
@@ -1440,6 +1442,8 @@ function render() {
   drawSwitchPull();
   for (const w of wires) if (w.terminalWire) w.line.visible = w.connected!==false && !hiddenPiece(w.name) && !ghost?.electrical;
   updateFlowPreview();
+  updateLaserPreview();
+  positionLensGrip();
   updateContactGaps();
   updateContactCircuitReadings();
   renderer.render(scene, camera);
@@ -1728,13 +1732,26 @@ function followGhost() {
 function focusSelectedPiece() {
   if (!ghost?.drawnAt || !ghostGroup.children.length) return;
   const bounds = new THREE.Box3().setFromObject(ghostGroup);
+  // An optical part makes sense in relation to its source and receiver.
+  // Keep both in sight instead of zooming down to a tiny glass holder.
+  const optics=ghost.optical_setup;
+  if (optics && [...(optics.lenses||[]),...(optics.mirrors||[])].some(p=>(typeof p==='string'?p:p.on)===ghostName())) {
+    for (const item of [...(optics.lamps||[]),...(optics.photocells||[])])
+      if (item.at_m?.every(Number.isFinite)) bounds.expandByPoint(new THREE.Vector3(...item.at_m));
+    for (const name of level.goal?.focus || []) {
+      const at=world.bodies.get(name)?.position_m;
+      if (at?.every(Number.isFinite)) bounds.expandByPoint(new THREE.Vector3(...at));
+    }
+  }
   if (bounds.isEmpty()) return;
+  if (![...bounds.min.toArray(),...bounds.max.toArray()].every(Number.isFinite)) return;
   bounds.getCenter(goal); target.copy(goal);
   const half = Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
-  distance = Math.max(.6, bounds.getSize(new THREE.Vector3()).length() * .65 / Math.tan(half));
+  distance = Math.min(40,Math.max(.6, bounds.getSize(new THREE.Vector3()).length() * .65 / Math.tan(half)));
   freshView();
 }
 $('focus-piece').addEventListener('click',focusSelectedPiece);
+$('view-overview').addEventListener('click',()=>{frameCamera();freshView();});
 
 function clearGhostMeshes() {
   for (const c of [...ghostGroup.children]) { ghostGroup.remove(c); c.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
@@ -1912,6 +1929,7 @@ function pictureInto(img, t) {
 // when the answer comes.
 function askGhost() {
   if (!ghost) return;
+  scheduleLaserPreview();
   if (ghost.busy) { ghost.again = true; return ghost.check; }
   const g = ghost;
   g.check = checkGhost(g);
@@ -1933,7 +1951,9 @@ async function checkGhost(g) {
     Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], energy: r.energy, drawnAt: sent, answered: true,
                       joined: r.snap ? `${r.snap.port} of ${r.snap.to}` : null});
     g.electrical = r.electrical_preview || null;
+    g.optical_setup = r.optical_setup || null;
     drawGhost(r.parts, r.fits);
+    drawLensOutlines();
     if (g.electrical) {
       const terminals = terminalMap(g.electrical);
       for (const [lane, wire] of (g.electrical.wires || []).entries()) {
@@ -2012,6 +2032,8 @@ function endGhost() {
   terminalStart = null; powerMessage('');
   clearGhostMeshes(); ghostGroup.position.set(0, 0, 0); drawPorts([]);
   clearEditGuide();
+  drawLensOutlines();
+  $('lens-grip').hidden=true;
   view.classList.remove('placing', 'looking');
   looking = false;
   renderGhostBar();
@@ -2211,6 +2233,81 @@ const previewEndLook = new THREE.MeshStandardMaterial({color: 0xcdeeff, transpar
 let previewAsk = 0, previewTimer = null, previewOn = true, previewShown = null;
 const flowGroup = new THREE.Group();
 scene.add(flowGroup);
+
+// A small independent native trace keeps light visible during rapid edits.
+// Full machine rehearsals still own the ball/water/current timeline. An old
+// beam is retained and labelled while its replacement is being calculated.
+const laserBeam=new THREE.LineSegments(new THREE.BufferGeometry(),
+  new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.9,depthWrite:false}));
+laserBeam.visible=false; scene.add(laserBeam);
+const lensLines=new THREE.LineSegments(new THREE.BufferGeometry(),
+  new THREE.LineBasicMaterial({color:0x82e9ff,transparent:true,opacity:.95,depthWrite:false}));
+scene.add(lensLines);
+let laserResult=null,laserStamp='',laserWanted='',laserVersion=0,laserTimer=null,laserBusy=false,laserPending=false,laserError='';
+const opticalSetup=()=>ghost?.answered?ghost.optical_setup:machine?.light;
+const setupOpticsVisible=()=>LEVEL_MODE && level && !playing && !(world?.t>0) && !document.body.matches('.on-sandbox,.on-levels');
+function resetLaserPreview() {
+  clearTimeout(laserTimer);laserVersion++;laserWanted='';laserStamp='';laserResult=null;laserPending=false;laserError='';
+  laserBeam.visible=false;laserBeam.geometry.dispose();laserBeam.geometry=new THREE.BufferGeometry();
+  $('laser-preview-status').hidden=true;
+}
+function scheduleLaserPreview(ms=140) {
+  if (!setupOpticsVisible() || !opticalSetup()?.lamps?.length) {resetLaserPreview();return;}
+  const request={op:'level_optics',level:level.id,...sandboxRequest(),placements:ghost?ghostPlacements():placements};
+  const stamp=JSON.stringify(request);
+  if (stamp===laserWanted && (laserPending || stamp===laserStamp)) return;
+  clearTimeout(laserTimer);laserWanted=stamp;laserVersion++;laserPending=true;laserError='';
+  laserTimer=setTimeout(()=>askLaserPreview(),ms);
+}
+async function askLaserPreview() {
+  if (laserBusy || !laserWanted || !setupOpticsVisible()) return;
+  const stamp=laserWanted,mine=laserVersion;laserBusy=true;
+  try {
+    const result=await api(JSON.parse(stamp));
+    if (mine!==laserVersion || !setupOpticsVisible()) return;
+    const light=beamSegments(result.paths),geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.BufferAttribute(light.positions,3));
+    geometry.setAttribute('color',new THREE.BufferAttribute(light.colors,3));
+    laserBeam.geometry.dispose();laserBeam.geometry=geometry;
+    laserResult=result;laserStamp=stamp;laserPending=false;
+  } catch (error) {
+    if (mine!==laserVersion) return;
+    if (error.status===503) laserTimer=setTimeout(()=>askLaserPreview(),500);
+    else {laserPending=false;laserError=`Laser preview unavailable: ${error.message}`;}
+  } finally {
+    laserBusy=false;
+    if (laserWanted && mine!==laserVersion && setupOpticsVisible()) {
+      clearTimeout(laserTimer);laserTimer=setTimeout(()=>askLaserPreview(),0);
+    }
+  }
+}
+function updateLaserPreview() {
+  const active=setupOpticsVisible() && Boolean(opticalSetup()?.lamps?.length);
+  laserBeam.visible=active && Boolean(laserResult?.paths?.length);
+  if (laserBeam.visible && beams) beams.visible=false;
+  const status=$('laser-preview-status');status.hidden=!active;
+  if (active) {
+    const readings=(laserResult?.photocells||[]).map(p=>`${p.name}: ${Number(p.power_w||0).toFixed(2)} W`).join(' · ');
+    const text=laserError || (laserPending?'Updating laser preview…':`Laser preview${readings?' · '+readings:''}`);
+    if (status.textContent!==text) status.textContent=text;
+  }
+}
+function drawLensOutlines() {
+  const optics=opticalSetup(),segments=(optics?.lenses||[]).flatMap(lens=>lensOutline(lens));
+  lensLines.geometry.dispose();lensLines.geometry=new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute(segments,3));
+}
+function positionLensGrip() {
+  const grip=$('lens-grip'),lens=ghost?.optical_setup?.lenses?.find(l=>l.on===ghostName());
+  grip.hidden=!lens || !setupOpticsVisible();
+  if (grip.hidden) return;
+  const screen=new THREE.Vector3(...lens.at_m).add(ghostGroup.position).project(camera);
+  const x=(screen.x+1)*view.clientWidth/2,y=(1-screen.y)*view.clientHeight/2;
+  grip.hidden=Math.abs(screen.z)>1 || x<24 || y<24 || x>view.clientWidth-24 || y>view.clientHeight-40;
+  grip.style.left=`${x}px`;grip.style.top=`${y}px`;
+}
+window.machineLaserPreviewState=()=>({visible:laserBeam.visible,pending:laserPending,stamp:laserStamp,wanted:laserWanted,
+  paths:laserResult?.paths||[],photocells:laserResult?.photocells||[],world_time_s:laserResult?.world_time_s,
+  wall_s:laserResult?.wall_s,error:laserError});
 let flowIndex = -1, flowTime = 0, flowPlaying = true, flowTick = 0;
 let flowPending=false;
 const flowLabels = [];
@@ -2243,7 +2340,7 @@ function drawFlowFrame(frame) {
   clearFlowFrame();
   const light = beamSegments(frame.light);
   let arrows=0,bulbs=0;
-  if (light.legs) {
+  if (light.legs && !opticalSetup()?.lamps?.length) {
     const line = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position',new THREE.BufferAttribute(light.positions,3)),
       new THREE.LineDashedMaterial({color:0xff8cdc,dashSize:.035,gapSize:.015,transparent:true,opacity:.85,depthWrite:false}));
     line.computeLineDistances(); flowGroup.add(line);
@@ -2391,6 +2488,7 @@ function clearPreview() {
 }
 
 function schedulePreview(ms = 700) {
+  scheduleLaserPreview();
   clearTimeout(previewTimer);
   previewAsk++; flowPending=true; flowGroup.visible=false; $('flow-preview').hidden=true;
   if (!LEVEL_MODE || !level || !previewOn || document.body.matches('.on-sandbox,.on-levels')) return;
@@ -3675,7 +3773,7 @@ function parkDesign() {
   stopSwitchDrag();
   if ($('piece-picker').open) $('piece-picker').close();
   keepBuild(); clearTimeout(rebuildTimer); clearTimeout(previewTimer); endGhost(); cancelAttach(); closeDone();
-  previewAsk++; clearPreview(); polling++;
+  previewAsk++; clearPreview(); resetLaserPreview(); polling++;
   if (session) api({op: 'close', session}).catch(() => {});
   session = null; playing = false;
 }
@@ -4012,7 +4110,7 @@ async function chooseLevel(id, design = null) {
     activeDesign = design || store.items.find(d => d.id === store.last) || store.items[0] || newDesign('Untitled design');
     store.last = activeDesign.id; persist();
   }
-  endGhost(); closeDone(); previewAsk++; clearPreview();
+  endGhost(); closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
   undone = []; redone = []; showUndo(); cancelAttach();
   $('attach-tool').hidden = !level.free;

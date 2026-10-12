@@ -1527,6 +1527,12 @@ def compile_spec(spec, lenient=False):
             for d in (0.25 * cell, -0.25 * cell, 0.5 * cell, -0.5 * cell):
                 moved = dict(row, at_m=[row['at_m'][i] + d * thin[i] for i in range(3)])
                 if cell_inside(moved, cell):
+                    # Optical glass is attached to its holder. A construction
+                    # shift onto the voxel grid must move both together.
+                    delta = [moved['at_m'][i] - row['at_m'][i] for i in range(3)]
+                    for lens in light_extra.get('lenses', []):
+                        if lens.get('on') == name:
+                            lens['at_m'] = [lens['at_m'][i] + delta[i] for i in range(3)]
                     row['at_m'] = moved['at_m']
                     notes.append(f'{name}: moved {abs(d) * 1000:.0f} mm across its thickness, onto the cells '
                                  'the engine builds it from')

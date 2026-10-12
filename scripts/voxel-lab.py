@@ -83,6 +83,7 @@ class Server(ThreadingHTTPServer):
   self.feedback_allowance=Allowance(10,500,'feedback') if public else None
   self.preview_allowance=Allowance(int(os.environ.get('BANJO_PREVIEWS_PER_HOUR','300')),int(os.environ.get('BANJO_PREVIEWS_PER_DAY','6000')),'path preview') if public else None
   self.preview_busy=threading.BoundedSemaphore(2)
+  self.optical_allowance=Allowance(3000,18000,'laser preview') if public else None
   if site not in ('all','game'):raise ValueError('site is all or game')
   self.site=site
   self.app=SimpleNamespace(password=password,public_host=public_host,
@@ -281,6 +282,11 @@ class Handler(BaseHTTPRequestHandler):
     if self.server.preview_allowance:self.server.preview_allowance.take(self.visitor())
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is working out other previews; trying again in a moment')
     try:r={'ok':True,**machine_game.preview(machine_game.requested_level(data),data.get('placements') or [],host.exe,host.logs)}
+    finally:self.server.preview_busy.release()
+   elif op=='level_optics':
+    if self.server.optical_allowance:self.server.optical_allowance.take(self.visitor())
+    if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is working out other previews; trying again in a moment')
+    try:r={'ok':True,**machine_game.optical_preview(machine_game.requested_level(data),data.get('placements') or [],host.exe,host.logs)}
     finally:self.server.preview_busy.release()
    elif op=='level_ghost':
     # A piece before it is set down: what it would be and where, and why it

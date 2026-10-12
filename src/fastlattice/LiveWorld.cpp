@@ -9862,22 +9862,28 @@ std::string LiveWorld::lens(const std::string &body, const Vec3 &centre_world_m,
     mount.thickness_m = thickness_m;
     mount.aperture_m = aperture_m;
     // It has to be inside the part's matter: what it absorbs warms that, and
-    // the part collides as its own shape. Every corner of the box round the
-    // lens, in the part's frame, within the part's box (a cell's tenth spare).
+    // the part collides as its own shape. Bound the circular aperture in the
+    // holder's reference frame, retaining the same tenth-cell allowance.
     {
-        Vec3 u, v;
-        Impl::across(mount.axis_local, u, v);
         const double half = 0.5 * thickness_m;
         const double z0 = std::min({-half, optics::lensFaceZ(front_radius_m, -half, aperture_m)});
         const double z1 = std::max({half, optics::lensFaceZ(back_radius_m, half, aperture_m)});
         // In the box the part was made as, turned as it was made.
         const Vec3 box = 0.5 * referenceBoxOf(i);
         const double spare = 0.1 * I.request.cell_size_m;
-        for (int k = 0; k < 8; ++k) {
-            const Vec3 q = inReference(i, mount.centre_local_m + ((k & 1) ? aperture_m : -aperture_m) * u +
-                                              ((k & 2) ? aperture_m : -aperture_m) * v +
-                                              ((k & 4) ? z1 : z0) * mount.axis_local);
-            if (std::abs(q.x) > box.x + spare || std::abs(q.y) > box.y + spare || std::abs(q.z) > box.z + spare)
+        const Vec3 centre = inReference(i, mount.centre_local_m);
+        const Vec3 axis = normalized(inReference(i, mount.centre_local_m + mount.axis_local) - centre);
+        const double c[] = {centre.x, centre.y, centre.z};
+        const double n[] = {axis.x, axis.y, axis.z};
+        const double b[] = {box.x, box.y, box.z};
+        // A disc's support on coordinate j is a*sqrt(1-n_j^2). Using the
+        // corners of an arbitrary square around it incorrectly rejects a
+        // valid lens when that square rotates about the optical axis.
+        for (int j = 0; j < 3; ++j) {
+            const double radial = aperture_m * std::sqrt(std::max(0.0, 1.0 - n[j] * n[j]));
+            const double low = c[j] + std::min(z0 * n[j], z1 * n[j]) - radial;
+            const double high = c[j] + std::max(z0 * n[j], z1 * n[j]) + radial;
+            if (low < -b[j] - spare || high > b[j] + spare)
                 return "the lens does not fit inside the " + body + ": make the part bigger, or the lens smaller";
         }
     }

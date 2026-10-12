@@ -3,7 +3,17 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint} from '../client/voxel-lab/machine-view.mjs';
+
+const declaredLens={at_m:[.1,.575,0],axis:[1,0,0],aperture_m:.06,thickness_m:.020424,front_radius_m:.2,back_radius_m:-.2};
+const lensLines=lensOutline(declaredLens);
+assert.ok(lensLines.length>0 && lensLines.every(Number.isFinite));
+const lensPoints=Array.from({length:lensLines.length/3},(_,i)=>lensLines.slice(i*3,i*3+3));
+assert.ok(lensPoints.every(p=>Math.hypot(p[1]-.575,p[2])<=.06+1e-12),'outline uses the native aperture, not the screen handle size');
+assert.ok(lensPoints.some(p=>Math.abs(p[0]-(.1-.020424/2))<1e-12),'convex surface includes its declared front vertex');
+for (const axis of [[0,1,0],[0,0,-1],[1,2,3]]) assert.ok(lensOutline({...declaredLens,axis}).every(Number.isFinite));
+assert.deepEqual(lensOutline({...declaredLens,axis:[0,0,0]}),[]);
+assert.deepEqual(lensOutline({...declaredLens,aperture_m:.2}),[],'impossible curvature cannot poison camera bounds');
 
 const finePlacement={x:.307,y:.613,z:-.207};
 const aligned=snapGroundPoint(finePlacement);

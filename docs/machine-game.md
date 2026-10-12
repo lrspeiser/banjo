@@ -650,6 +650,37 @@ readings and water/rays take over. A stopped or unfinished rehearsal is labelled
 incomplete. Run/Pause remains visible while the expanded panel scrolls on a
 short phone screen.
 
+**Laser preview** stays visible in optical setups without opening Flow preview.
+Moving or adjusting a piece requests a separate short native trace; the last
+path remains labelled **Updating laser preview** until the latest answer arrives.
+The receiver's measured watts appear in Controls. This sample takes four
+ordinary 1/240 s steps (1/60 s total) in an isolated engine, establishing the
+lamp's initial circuit power; it predicts neither a later switch action nor a
+win. It does not consume the live battery, run the level, or alter a save.
+Requests coalesce and stale answers are discarded. Run clears this setup layer
+and shows actual native rays. The full rehearsal still owns water, wire-current
+and moving-object timelines.
+
+October 12 optics checks: the authored Find the focus lens receives 7.31342 W
+at the short sample; moving it 30 cm across misses the 2 W goal. Fifty mounts
+cover all five tray diameters, convex/concave shapes and five representative
+orientations, including combined turn/tip/roll. Their native light-power ledger
+residuals are below 1e-10 W; the focus sample's light-energy residual is below
+1e-10 J. Local trace time was about 20–70 ms, excluding network and debounce.
+All three optical lessons still solve in three nudged runs each and meet their
+unchanged energy pars. Native optics/light-spot tests retain their existing
+refraction, heating and ledger checks. The new circular-holder test compares
+equal geometry at five rolls: glass fits; opaque oak and iron remain refused;
+offset glass outside its holder remains refused. These are optical/containment
+checks, not new contact or full mechanical-conservation validation.
+
+Lens outlines draw the two native spherical faces at their actual aperture.
+The 44 px drag marker enlarges the visible interaction cue, not the glass or
+its collider. Thin-holder grid construction now moves the attached optical
+glass with its holder. Native containment bounds the circular aperture instead
+of an arbitrary square around it; the tenth-cell geometric allowance, holder
+mass, material laws, optical aperture and scoring are unchanged.
+
 Samples use the existing 0.1 s readout cadence, spaced further apart for a
 longer rehearsal (`max(0.1, horizon/180)`), with a final sample. Geometry is
 bounded to 32 representative traced rays, 128 falling parcel positions and
@@ -755,7 +786,9 @@ How forgiving they are, measured: in level 2 the knife works with its pivot anyw
 Desktop, phone portrait and phone landscape share **Controls / Level (or Design) / Help** tabs. **Run it / Pause**, **Reset** and the collapse/expand button stay beside the 3D view even when a different tab is open or the panel is collapsed. The single-line **Goal** remains visible; **Puzzle details** holds the longer brief, deadline and energy par. **Tools and speed** contains camera buttons and secondary tools; dragging empty space or using View still changes perspective while placing.
 
 While a piece is selected, **Focus selected piece** under Tools and speed
-centers and frames its actual geometry. It keeps the viewing angles and all
+centers and frames its actual geometry. For lenses and mirrors it also includes
+the light source and receiver, so focusing cannot isolate a tiny part and hide
+the optical setup. **Whole machine** restores the overview. Focus keeps the viewing angles and all
 piece knobs unchanged; it is a camera action, not an extra placement operation.
 
 A selected piece has one inspector in **Controls**: its name, adjustment chips, a full-width active slider, an editable exact value using the same min/max/step limits, **Set down** and Cancel. Dragging is the primary placement gesture. **Precision controls** holds the movement arrows, full positioning/angle controls, guide caption and construction-energy comparison. The placement action row stays visible when the inspector scrolls. Level/Design no longer repeats the ghost editor.

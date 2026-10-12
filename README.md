@@ -25,6 +25,9 @@ with Run/Pause/Reset kept beside the 3D view. **Recent Changes** in the top
 navigation opens dated player-friendly update notes over the current screen;
 closing it keeps the level or design. Each published checkpoint updates these
 notes in `client/voxel-lab/machine.html`, as required by `AGENTS.md`.
+Optical levels keep an engine-traced light path visible while editing. Lenses
+have a clear rim and a larger drag marker; focusing a lens or mirror keeps
+its source and receiver in view, and **Whole machine** restores the overview.
 The lessons introduce cutting, optics, springs, gearing, wiring, water,
 heating and catapults one step at a time. **New challenge** offers tested
 physical variations with repeatable seed links and a recent-challenges list.

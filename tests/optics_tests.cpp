@@ -748,6 +748,22 @@ void aLensIsRefusedWhenItCannotBeMade() {
     require(world->lens("pane", {0.0, 0.5, 0.0}, down, 0.1, -0.1, 0.012, 0.03).empty(), "and what can is made");
 }
 
+void aCircularLensFitsItsHolderAtEveryRoll() {
+    const Vec3 centre{0.0, 0.5, 0.0}, axis{0.0, 1.0, 0.0};
+    for (const auto material : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+        for (const double roll : {0.0, 17.0, 45.0, 67.0, 90.0}) {
+            auto world = open({box("holder", material, {0.1, 0.04, 0.1}, centre, true, {0.0, roll, 0.0})});
+            const std::string fit = world->lens("holder", centre, axis, 0.2, -0.2, 0.014702, 0.05);
+            require(fit.empty() == (material == MaterialPreset::Glass),
+                    "circular glass fits at roll " + std::to_string(roll) + "; opaque oak/iron remain refused");
+            if (material == MaterialPreset::Glass) {
+                require(!world->lens("holder", centre + Vec3{0.02,0,0}, axis, 0.2, -0.2, 0.014702, 0.05).empty(),
+                        "glass outside the holder remains refused with the same geometric allowance");
+            }
+        }
+    }
+}
+
 // ---- 9. untouched without light --------------------------------------------------
 
 void aWorldWithoutLightIsUntouched() {
@@ -813,6 +829,7 @@ int main() {
     run("a tipped mirror reflects by the law", aTippedMirrorReflectsByTheLaw);
     run("a lens focuses where the lensmaker says", aLensFocusesWhereTheLensmakerSays);
     run("a lens is refused when it cannot be made", aLensIsRefusedWhenItCannotBeMade);
+    run("a circular lens fits its holder at every roll", aCircularLensFitsItsHolderAtEveryRoll);
     if (failures) {
         std::cout << failures << " failure(s)\n";
         return 1;
