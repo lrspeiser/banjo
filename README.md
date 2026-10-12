@@ -18,7 +18,7 @@ Windows, built and tested on Linux in CI, and not tested on macOS.
 
 ## What there is
 
-**Eight chain-reaction levels and twenty-two freely selectable piece lessons.**
+**Eight chain-reaction levels and twenty-three freely selectable piece lessons.**
 Every card shows its task count and stars; Level details reveals energy records.
 The game shares Controls / Level (or Design) / Help tabs on desktop and phone,
 with Run/Pause/Reset kept beside the 3D view. **Recent Changes** in the top
@@ -62,7 +62,7 @@ three stars.
 It opens **Your designs / Examples** gallery tabs with setup previews and **Add New Design**.
 New designs open immediately; rename them in the editor’s Design tab.
 Each design has a table with no goal and every piece in
-the tray: 31 cards including knives, mirrors, lenses, solar panels, tackle,
+the tray: 33 cards including knives, mirrors, lenses, solar panels, tackle,
 springs, gears, weights, motors, batteries, switches, bulbs, wires, water
 wheels, finite water tanks, heating coils and counterweight catapults.
 Gears are individual toothed wheels: choose their size, align their axles and
@@ -70,7 +70,7 @@ mesh their teeth. A separate wired battery/motor supplies power. **Turn the big
 wheel** teaches bridging a gap between a powered gear and a larger target;
 the **Fast wheel slow wheel** example uses the same contact-driven apparatus.
 Older saved gear pairs retain their original ideal coupling.
-There are 25 editable prebuilt designs, including a battery holder, a river workbench and a
+There are 26 editable prebuilt designs, including a battery holder, a river workbench and a
 river-powered gate lift. The river's current pushes submerged wheel paddles;
 connect the wheel's drum rope to a load to lift it.
 **Wheel in the river** teaches moving a wheel into that current. Tanks and

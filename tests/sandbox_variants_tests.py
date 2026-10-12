@@ -129,8 +129,8 @@ class Recipes(unittest.TestCase):
             self.assertEqual(variants.parse(old['id'])['version'],1)
             world.compile_spec(game.compose(old,old['solution'])[0])
 
-    def test_all_twenty_one_are_physical_reproducible_deep_copies(self):
-        self.assertEqual(len(families()), 22)
+    def test_all_authored_families_are_physical_reproducible_deep_copies(self):
+        self.assertEqual(len(families()), 23)
         for family in families():
             with self.subTest(family=family['id']):
                 original = copy.deepcopy(family)

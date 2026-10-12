@@ -350,3 +350,93 @@ for _row in (receiver,river_wheel):
         'at_m':[0,.002,_g.get('trench_z_m',0)],
         'size_m':[(_g['nx']-1)*_g['cell_m'],.02,_g['trench_width_m']],
         'label':'Collect 3 L here' if _row['id']=='easy-water-receiver' else 'Put the paddles in this current'}
+
+
+# Routing uses the ordinary falling-parcel contacts, not a chute-specific law.
+# Precise compound bodies are mounted to grounded stands with real fix joints.
+def _routing_bed(ctx,x,z):
+    ground=ctx.get('spec',{}).get('ground') or {}
+    if abs(z-ground.get('trench_z_m',0))>ground.get('trench_width_m',.6)/2:return 0
+    x0=-(ground.get('nx',60)-1)*ground.get('cell_m',.1)/2
+    bed=-ground.get('trench_depth_m',.35)-ground.get('trench_slope',.005)*(x-x0-.02)
+    return math.ceil(bed/.02)*.02
+
+
+def water_chute(name,k,ctx):
+    if (ctx.get('spec',{}).get('ground') or {}).get('kind')!='flume':
+        raise ValueError('A water chute needs the collection channel base. Open its example to create one.')
+    x,z,h=k.get('x_m',0),k.get('z_m',.7),k.get('height_m',.85)
+    length,width=k.get('length_m',1.5),k.get('width_m',.26)
+    at=[x,h,z]
+    bed=_routing_bed(ctx,x,z)
+    stand=_box(name+' stand',[x,(h-.04+bed)/2,z],[.04,h-.04-bed,.04],'concrete',True)
+    trough=dict(name=name,shape='compound',material=k.get('material','iron'),at_m=at,fixed=False,
+        turn_deg=mw.turn_of(mw.heading(k.get('yaw_deg',0),-k.get('drop_deg',20),0)),parts=[
+            dict(shape='box',at_m=[0,0,0],size_m=[length,.04,width],turn_deg=[0,0,0]),
+            *[dict(shape='box',at_m=[0,.08,side*(width/2+.02)],size_m=[length,.16,.04],turn_deg=[0,0,0]) for side in (-1,1)]])
+    return dict(parts=[stand,trough],joints=[dict(name=name+' mount',kind='fix',a=stand['name'],b=name,
+        at_m=at,axis=[0,1,0])])
+
+
+def water_collector(name,k,ctx):
+    if (ctx.get('spec',{}).get('ground') or {}).get('kind')!='flume':
+        raise ValueError('A water collector needs the collection channel base. Open its example to create one.')
+    x,z,floor=k.get('x_m',1),k.get('z_m',.7),k.get('floor_m',.25)
+    legs=[_box(name+f' leg {i}',[x+dx,(floor-.05+_routing_bed(ctx,x+dx,z+dz))/2,z+dz],
+              [.04,floor-.05-_routing_bed(ctx,x+dx,z+dz),.04],'concrete',True)
+          for i,(dx,dz) in enumerate(((-.34,-.17),(-.34,.17),(.34,-.17),(.34,.17)))]
+    vessel=dict(name=name,shape='compound',material=k.get('material','glass'),at_m=[x,floor+.17,z],fixed=False,parts=[
+        dict(shape='box',at_m=[0,-.17,0],size_m=[.8,.03,.5],turn_deg=[0,0,0]),
+        *[dict(shape='box',at_m=[dx,0,0],size_m=[.03,.35,.5],turn_deg=[0,0,0]) for dx in (-.385,.385)],
+        *[dict(shape='box',at_m=[0,0,dz],size_m=[.8,.35,.03],turn_deg=[0,0,0]) for dz in (-.235,.235)]])
+    return dict(parts=legs+[vessel],joints=[dict(name=name+' mount',kind='fix',a=legs[0]['name'],b=name,
+        at_m=[x-.34,floor-.02,z-.17],axis=[0,1,0])],water_regions=[dict(title=name,
+        at_m=[x,floor+.17,z],size_m=[.72,.32,.42],target_l=3)])
+
+
+TRAY.extend([
+    dict(piece='water_chute',count=99,cost=0,turns=['yaw_deg'],knobs={
+        'x_m':knob(-1.5,1.5,.02,0,'position (m)'), 'z_m':knob(-1,1.5,.02,.7,'across channel (m)'),
+        'height_m':knob(.5,1.3,.05,.85,'mount height (m)'),
+        'length_m':knob(.6,2,.1,1.5,'chute length (m)'), 'width_m':knob(.18,.4,.02,.26,'inside width (m)'),
+        'drop_deg':knob(5,35,5,20,'downhill angle'),
+        'yaw_deg':dict(knob(-180,180,5,0,'aim'),turning=True,free=True),
+        'material':dict(choices=['iron','glass','oak'],default='iron',label='material')}),
+    dict(piece='water_collector',count=99,cost=0,turns=[],knobs={
+        'x_m':knob(-1.5,1.5,.02,1,'position (m)'), 'z_m':knob(-1,1.5,.02,.7,'across channel (m)'),
+        'floor_m':knob(.25,.65,.05,.25,'floor height (m)'),
+        'material':dict(choices=['glass','oak','iron'],default='glass',label='material')})])
+PIECES.update(water_chute=water_chute,water_collector=water_collector)
+
+ROUTING_BASE=copy.deepcopy(CHANNEL_BASE)
+ROUTING_BASE['title']='Divert the water'
+ROUTING_BASE['parts']=[
+    _box('source post',[-.6,.65,1.02],[.08,1.3,.08],'concrete',True),
+    _box('source arm',[-.6,1.31,.84],[.1,.04,.44],'iron',True),
+    _box('source nozzle',[-.6,1.30,.7],[.08,.08,.08],'iron',True)]
+# The outlet is below the nozzle; the source is a declared finite supply.
+ROUTING_BASE['spouts']=[dict(name='water supply',at_m=[-.6,1.25,.7],direction=[0,-1,0],
+    speed_m_s=.2,discharge_l_s=1,initial_volume_l=4)]
+_collector=water_collector('receiving container',{},dict(spec=ROUTING_BASE))
+for _key,_value in _collector.items():ROUTING_BASE.setdefault(_key,[]).extend(_value)
+_region=ROUTING_BASE['water_regions'][0]
+_collector_rule=dict(water_in_zone_l=dict(at_m=_region['at_m'],size_m=_region['size_m'],l=3,for_s=.5))
+_chute_tray=copy.deepcopy(next(t for t in TRAY if t['piece']=='water_chute'))
+_chute_tray.update(count=1,sandbox_builder=True,start_at_defaults=True,frame_on_add=True)
+_chute_tray['knobs']['yaw_deg']['default']=90
+_routing=dict(id='easy-divert-water',title='Divert the water',teaches='gravity and water routing',
+    brief='Aim the chute from the source into the empty container. Tip it downhill to collect three litres.',
+    machine=ROUTING_BASE,goal=dict(title='Three litres stay in the container',focus=['source nozzle','receiving container'],
+        station=dict(done_when=_collector_rule)),tray=[_chute_tray],
+    solution=[dict(piece='water_chute',drop_deg=20,yaw_deg=0)],wrong=[dict(piece='water_chute',drop_deg=20,yaw_deg=180)],
+    time_s=8,budget=1000000,par=1000000,par_energy_j=6849819400,style_pieces=1,difficulty='easy',
+    hints=['Water runs downhill. The raised end belongs under the source.',
+           'Aim the lower end into the container. The meter counts water inside, not water that passes nearby.'],turning=False)
+EASY_LEVELS.append(_routing)
+_routing_sandbox=copy.deepcopy(ROUTING_BASE)
+_routing_sandbox['parts']=[p for p in _routing_sandbox['parts'] if not p['name'].startswith('receiving container')]
+_routing_sandbox['joints']=[]
+_routing_sandbox['water_regions']=[]
+TEMPLATES.append(dict(id='water-routing',name='Divert water into a container',
+    description='A finite source, an adjustable chute and a separate fixed collector. Mis-aim or reverse the slope to miss.',
+    base=_routing_sandbox,placements=[dict(piece='water_collector')]+copy.deepcopy(_routing['solution'])))

@@ -657,6 +657,29 @@ class Puzzles(unittest.TestCase):
                 self.wait('window.machineWaterDisplay()[0].litres===4',10)
                 self.assertEqual(self.js('window.machinePlacements()[0].opening_percent'),75)
 
+    def test_water_diversion_shows_retained_litres_and_resets_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-divert-water',width,height,phone=width!=1280)
+                self.assertIn('receiving container',self.js('Object.keys(window.machineBodies())'))
+                self.wait("!document.getElementById('collector-status').hidden",10)
+                self.assertIn('0.00 / 3 L',self.js("document.getElementById('collector-status').textContent"))
+                self.press('Add a water chute');self.ghost()
+                self.assertEqual(self.ghost()['p']['yaw_deg'],90)
+                self.click_visible('Change its aim');self.slide('Its aim',0);self.ghost()
+                self.click_visible('Run it')
+                self.wait("/Container [1-2]\\./.test(document.getElementById('collector-status').textContent)",15)
+                for point in ((-.6,1.25,.7),(1,.42,.7)):
+                    screen=self.screen_point(point)
+                    self.assertTrue(self.js(f"(()=>{{const r=document.getElementById('view').getBoundingClientRect();return {screen[0]}>=r.left&&{screen[0]}<=r.right&&{screen[1]}>=r.top&&{screen[1]}<=r.bottom;}})()"),point)
+                self.assertTrue(self.js("(()=>{const e=document.getElementById('collector-status'),r=e.getBoundingClientRect(),v=document.getElementById('view').getBoundingClientRect();return !e.hidden&&r.left>=v.left&&r.right<=v.right&&r.top>=v.top&&r.bottom<=v.bottom;})()"))
+                self.wait("!document.getElementById('level-done').hidden",20)
+                self.assertIn('★★★',self.js("document.getElementById('level-done').textContent"))
+                self.assertEqual(self.js("document.getElementById('level-done').parentElement.id"),'control-panel')
+                self.assertGreaterEqual(self.js("Number(document.getElementById('collector-status').textContent.match(/Container ([\\d.]+)/)[1])"),3)
+                self.click_visible('Set up again');self.wait(READY,60)
+                self.wait("/Container 0.00/.test(document.getElementById('collector-status').textContent)",10)
+
     def test_water_shares_preserve_legacy_feeds_and_new_tap_versions(self):
         import sandbox_water_launch as water
         for name,placements in [('Legacy wheel',[dict(piece='water_wheel')]),

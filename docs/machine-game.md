@@ -1,6 +1,23 @@
 # Puzzles on the machine (/play)
 
-October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-two freely selectable piece lessons. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-three freely selectable piece lessons. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+
+**Divert the water** starts with a finite four-litre source and a separate,
+empty fixed container. Add a water chute, turn it from the crosswise starting
+orientation toward the container, then adjust the downhill slope or length.
+The goal is at least three litres currently inside the container for half a
+second; cumulative arrivals outside or water passing through do not count.
+The small scene meter shows retained litres against the target. Preview is
+labelled separately; Reset empties the container and refills the source.
+The camera follows both the source and destination, and the win message
+stays in Controls so it does not cover the collected water.
+The Sandbox has separate Water chute and Water collector cards, plus the
+editable **Divert water into a container** example. Chutes offer location,
+mount height, length, width, aim, 5–35° downhill slope and iron/glass/oak.
+Collectors offer location, floor height and glass/oak/iron material.
+Overlapping or off-ground placements are refused by the ordinary geometry
+checks. The container holds existing native parcels; a smooth liquid surface
+is not invented. See [routing measurements and limits](sandbox-water-launch-measured.md#divert-water-into-a-fixed-container-october-12).
 
 ## Feedback audit and meaningful starting controls
 

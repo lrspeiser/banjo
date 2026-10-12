@@ -21,6 +21,45 @@ if '--engine' in sys.argv:
 
 
 class WaterLaunchTests(unittest.TestCase):
+    def test_diversion_requires_downhill_contact_and_actual_retention(self):
+        level=mg.level_by_id('easy-divert-water')
+        for placements in ([],[dict(piece='water_chute')],
+                           [dict(piece='water_chute',drop_deg=20,yaw_deg=180)],
+                           [dict(piece='water_chute',drop_deg=20,yaw_deg=90)],
+                           [dict(piece='water_chute',drop_deg=20,yaw_deg=0,z_m=1.3)]):
+            with self.subTest(placements=placements):
+                result=self.run_level(level,placements)
+                self.assertIsNone(result['error'])
+                self.assertFalse(result['stations'][0]['done'])
+                self.assertLess(result['readouts']['water_regions'][0]['litres'],3)
+
+    def test_fixed_collector_compares_materials_timesteps_and_water_ledgers(self):
+        level=mg.level_by_id('easy-divert-water')
+        for material in ('glass','oak','iron'):
+            for dt in (1/240,1/480):
+                with self.subTest(material=material,dt=dt),tempfile.TemporaryDirectory() as td:
+                    setup=mg.compose(level,[dict(level['solution'][0],material=material)])[0]
+                    next(p for p in setup['parts'] if p['name']=='receiving container')['material']=material
+                    compiled=mw.compile_spec(setup);region=level['goal']['station']['done_when']['water_in_zone_l']
+                    engine,_,_=mw.build_engine(ENGINE,compiled,td)
+                    try:
+                        for _ in range(80):result=engine.op(op='step',dt=dt,n=round(.1/dt),moved=False)
+                        water=result['parcels'];account=water['sources'][0]
+                        retained=mw.water_in_region_l(water,region)
+                        self.assertGreaterEqual(retained,3)
+                        self.assertAlmostEqual(retained,3.968,delta=1e-8)
+                        self.assertAlmostEqual(account['remaining_m3']+account['emitted_m3'],.004,delta=1e-12)
+                        self.assertLess(abs(water['residual_m3']),1e-12)
+                        self.assertLess(abs(water['energy_residual_j']),1e-6)
+                        self.assertLess(math.hypot(*water['momentum_residual_n_s']),1e-8)
+                        self.assertEqual(mw.water_in_region_l(water,dict(region,at_m=[-1,.42,.7])),0)
+                        # Total output has rounded display precision; the region
+                        # observation must retain the unrounded 64 mL parcel mass.
+                        self.assertNotEqual(retained,water['in_air_m3']*1000)
+                        print('\n diversion:',material,dt,'retained L',retained,'energy residual',water['energy_residual_j'],
+                              'momentum residual',water['momentum_residual_n_s'],'numerical correction',water['numerical_correction_j'])
+                    finally:engine.close()
+
     def setUp(self):
         if not ENGINE.is_file():
             if os.environ.get('BANJO_MACHINE_ENGINE')=='required':self.fail('Native engine required')

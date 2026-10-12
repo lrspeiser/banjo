@@ -1989,7 +1989,7 @@ function trayPicture(t) {
     const p = {piece: t.piece};
     for (const [knob, rule] of Object.entries(t.knobs)) p[knob] = knobDefault(rule);
     const context = sandboxRequest();
-    if (level.free && ['water_wheel', 'water_tank'].includes(t.piece)) {
+    if (level.free && ['water_wheel', 'water_tank', 'water_chute', 'water_collector'].includes(t.piece)) {
       const example = sandboxTemplates.find(example => example.placements?.some(placement => placement.piece === t.piece));
       if (example?.base) context.base = example.base;
     }
@@ -2382,6 +2382,19 @@ function updateWaterDisplay() {
     const selected=waterDisplay.find(s=>s.name===ghostName()+' outlet') || waterDisplay[0];
     const text=`${waterDisplay.length>1?waterDisplay.length+' tanks · ':''}${selected.preview?'Preview · ':''}${selected.litres.toFixed(2)} L · tap ${Math.round(selected.opening*100)}% · ${selected.flow_l_s==null?'Updating flow…':selected.flow_l_s.toFixed(2)+' L/s'}`;
     if(meter.textContent!==text)meter.textContent=text;
+  }
+  const collector=$('collector-status');
+  const preview=world.t===0 && setupOpticsVisible();
+  const regions=preview && flowGroup.visible?(previewShown?.flow_frames?.[flowIndex]?.water?.regions || readouts.water_regions):readouts.water_regions;
+  const region=regions?.[0];
+  collector.hidden=!active || !region || (preview && flowPending);
+  if(!collector.hidden){
+    collector.textContent=`${preview && flowGroup.visible?'Preview · ':''}Container ${region.litres.toFixed(2)} / ${region.target_l.toFixed(0)} L`;
+    collector.title='Water currently inside the marked volume, measured from the engine’s parcels. Water passing outside does not count.';
+    const point=new THREE.Vector3(...region.at_m).project(camera);
+    collector.hidden=Math.abs(point.z)>1 || Math.abs(point.x)>1 || Math.abs(point.y)>1;
+    collector.style.left=`${Math.max(6,Math.min(view.clientWidth-collector.offsetWidth-6,(point.x+1)*view.clientWidth/2+12))}px`;
+    collector.style.top=`${Math.max(58,Math.min(view.clientHeight-collector.offsetHeight-12,(1-point.y)*view.clientHeight/2-36))}px`;
   }
 }
 window.machineWaterDisplay=()=>waterDisplay.map(row=>({...row}));
@@ -3554,7 +3567,7 @@ function bestStars(id) { return record(id).stars || 0; }
 const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
                     mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens', flipflop: 'flip-flop'};
 // A piece's name on its button: as the tray calls it, but a flip-flop has its hyphen.
-function pieceLabel(piece) { return ({flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',solar:'solar panel',tackle:'block and tackle',ignition:'ignition coil',power_cable:'power cable'})[piece] || piece; }
+function pieceLabel(piece) { return ({flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',solar:'solar panel',tackle:'block and tackle',ignition:'ignition coil',power_cable:'power cable'})[piece] || piece; }
 function toolsOf(player) {
   if (!player.tools) {
     player.tools = {};
@@ -3640,6 +3653,8 @@ const PIECE_INFO = {
   ignition: ['electrics', 'A wired heating coil attached to a material target.'],
   water_wheel: ['water', 'River current or falling water pushes the paddles. Connect its drum to lift a load.'],
   water_tank: ['water', 'A separate finite gravity tank. Open its tap wider for more flow; falling water level slows it.'],
+  water_chute: ['water', 'Aim and tip a supported open trough. Gravity and contact divert the falling water.'],
+  water_collector: ['water', 'A separate fixed container. Its meter counts water currently retained inside.'],
   catapult: ['motion', 'A counterweight turns a cradle that launches through physical contact.']
 };
 function libraryTray() { return level.free || level.tray.filter(t => !t.attach).length > 4; }
@@ -4219,8 +4234,8 @@ function closeDone() {
 function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   closeDone();
   const box = $('level-done'), next = level.variant ? null : levels[levels.indexOf(level) + 1];
-  // Leave the actual cut and falling load visible after a thermal win.
-  if(heatingTarget)$('control-panel').append(box);
+  // Leave the cut/fall or collected water visible after the physical goal.
+  if(heatingTarget || readouts.water_regions?.length)$('control-panel').append(box);
   const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
   const allLevels = button('All levels', () => { closeDone(); showLevelsScreen(true); });
   if (r.tested) {

@@ -41,7 +41,7 @@ import sandbox_variants
 SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_combinations)
 EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel', 'easy-river-wheel',
               'easy-spring', 'easy-gears', 'easy-weight', 'easy-motor', 'easy-power', 'easy-switch',
-              'easy-bulb', 'easy-loop', 'easy-water-receiver', 'easy-heat', 'easy-catapult',
+              'easy-bulb', 'easy-loop', 'easy-water-receiver', 'easy-divert-water', 'easy-heat', 'easy-catapult',
               'easy-marble-light', 'easy-water-gate', 'easy-charge-lift', 'easy-river-lift']
 
 # Menu metadata: high-level actions the player takes, not a difficulty rating
@@ -55,7 +55,7 @@ PLAYER_TASK_COUNTS = {
     'easy-tackle': 1, 'easy-water-wheel': 1, 'easy-river-wheel': 1, 'easy-spring': 1,
     'easy-gears': 2, 'easy-weight': 1, 'easy-motor': 1, 'easy-power': 3,
     'easy-switch': 2, 'easy-bulb': 1, 'easy-loop': 1,
-    'easy-water-receiver': 1, 'easy-heat': 1, 'easy-catapult': 1,
+    'easy-water-receiver': 1, 'easy-divert-water': 1, 'easy-heat': 1, 'easy-catapult': 1,
     'easy-marble-light': 1, 'easy-water-gate': 3, 'easy-charge-lift': 2,
     'easy-river-lift': 2,
 }

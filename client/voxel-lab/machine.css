@@ -555,6 +555,8 @@ body.panel-tabs #precision-controls .move-pad button{grid-area:auto}
 .lens-grip span {position:absolute;top:44px;left:50%;transform:translateX(-50%);color:#b6f4ff;font-size:12px;text-shadow:0 1px 3px #000;}
 .laser-preview-status {display:block;color:#ffdda0;font-size:.85rem;padding:6px 8px;}
 .water-status{display:block;color:#9edcff;font-size:.85rem;padding:6px 8px}
+.water-collector-status{position:absolute;z-index:5;max-width:210px;padding:4px 7px;border-radius:5px;background:#102b38dd;color:#b4e8ff;font-size:13px;pointer-events:none}
+.chips button{min-width:44px}
 #machine-control-rows label{display:grid;grid-template-columns:1fr auto;gap:4px;align-items:center;min-width:0}
 #machine-control-rows input{grid-column:1;min-height:44px;width:100%;min-width:0}
 #machine-control-rows output{grid-column:2;grid-row:2}

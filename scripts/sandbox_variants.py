@@ -43,6 +43,7 @@ POLICIES = {
     'easy-loop': ('device', 'lamp', 'watts', (3.5, 4, 4.5, 5)),
     'easy-motor': ('battery', 'supply battery', 'voltage_v', (11, 11.5, 12.5, 13)),
     'easy-water-receiver': ('piece', 'water_tank', 'fill_l', (3.5, 4.5, 5, 5.5)),
+    'easy-divert-water': ('piece', 'water_chute', 'width_m', (.24,.28,.32,.36)),
     'easy-heat': ('battery', 'supply battery', 'voltage_v', (46, 47, 49, 50)),
     'easy-catapult': ('piece', 'catapult', 'cock_deg', (28, 29, 31, 32)),
     'easy-marble-light': ('part', 'trigger marble', 'height_m', (.48, .51, .59, .62)),
@@ -61,6 +62,7 @@ POLICIES['easy-bulb']=('battery','supply battery','max_power_w',(2.5,2.6,2.7,2.8
 
 PARAMETER_LABELS = {
     'stiffness_n_m':'Spring stiffness (N/m)',
+    'width_m':'Chute inside width (m)',
     'rope_m': 'Cord length (m)', 'watts': 'Optical or load power (W)',
     'elevation_deg': 'Sun elevation (degrees)', 'drop_from_m': 'Counterweight height (m)',
     'height_m': 'Starting height (m)', 'friction_n_m': 'Bearing friction (N m)',

@@ -1887,6 +1887,15 @@ def compile_spec(spec, lenient=False):
                 if not isinstance(arg, dict) or arg.get('spout') not in {p['name'] for p in checked_spouts} or \
                         not isinstance(arg.get('l'), (int, float)) or not 0 < arg['l'] <= 1000:
                     problems.append(f'{what}: water_received_l needs a spout name and positive litres')
+            elif kind == 'water_in_zone_l':
+                if not isinstance(arg,dict):
+                    problems.append(f'{what}: water_in_zone_l needs a volume box and litres')
+                else:
+                    _vec(arg.get('at_m'),3,what+' water region center',problems)
+                    size=_vec(arg.get('size_m'),3,what+' water region size',problems)
+                    if any(v<=0 for v in size):problems.append(what+': water region size must be positive')
+                    _num(arg,'l',what,problems,0,.001,1000)
+                    _num(arg,'for_s',what,problems,0,0,60)
             elif kind == 'load_power_w':
                 if not isinstance(arg, dict) or arg.get('device') not in {d['name'] for d in electrical.get('devices', [])} or \
                         not isinstance(arg.get('at_least_w'), (int, float)) or arg['at_least_w'] <= 0 or \
@@ -1935,6 +1944,18 @@ def compile_spec(spec, lenient=False):
             problems.append(f'{what}: done_when is one rule, or null for a station not built yet')
         focus = [f for f in (s.get('focus') or []) if isinstance(f, str) and f in names]
         stations.append({k: s.get(k) for k in ('title', 'shows', 'law', 'maturity', 'done_when')} | {'focus': focus})
+    checked_water_regions=[]
+    region_rows=spec.get('water_regions',[])
+    if not isinstance(region_rows,list):
+        problems.append('water_regions must be an array');region_rows=[]
+    for region in region_rows:
+        if not isinstance(region,dict):
+            problems.append('water region must be an object');continue
+        at=_vec(region.get('at_m'),3,'water region center',problems)
+        size=_vec(region.get('size_m'),3,'water region size',problems)
+        if any(v<=0 for v in size):problems.append('water region size must be positive')
+        target=_num(region,'target_l','water region',problems,3,.001,1000)
+        checked_water_regions.append(dict(title=str(region.get('title','Container'))[:80],at_m=at,size_m=size,target_l=target))
     if problems and not lenient:
         raise MachineRefused(problems)
     return ({'problems': problems} if lenient else {}) | {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
@@ -1942,7 +1963,7 @@ def compile_spec(spec, lenient=False):
             'torches': torches, 'spouts': checked_spouts, 'stations': stations, 'cells': round(cells), 'notes': notes,
             'plasticity': bool(spec.get('plasticity', False)), 'sun': sun, 'solar_panels': solar_panels,
             'thermo': {key: rows for key, rows in thermo.items() if rows}, 'blades': checked_blades, 'ropes': ropes,
-            'light': light}
+            'light': light,'water_regions':checked_water_regions}
 
 
 def scene_of(compiled):
@@ -2193,6 +2214,25 @@ def family(name):
 
 def _round(v, places=4):
     return round(v, places) if isinstance(v, float) else v
+
+
+def water_in_region_l(parcels,region):
+    """Current volume from native parcel positions and unrounded source ledgers.
+
+    The engine uses equal-volume parcels. Its per-source emitted, landed and
+    runoff accounts retain full precision, unlike rounded display totals.
+    Region boundaries use the native export's millimetre position resolution.
+    This observation neither captures nor removes water.
+    """
+    if not parcels:return 0.0
+    xyz=parcels.get('xyz_mm',[]);count=len(xyz)//3
+    if not count:return 0.0
+    volume=sum(s.get('emitted_m3',0)-s.get('landed_m3',0)-s.get('ran_off_m3',0)
+               for s in parcels.get('sources',[]))
+    at,size=region['at_m'],region['size_m']
+    retained=sum(all(abs(xyz[i+j]/1000-at[j])<=size[j]/2 for j in range(3))
+                 for i in range(0,len(xyz),3))
+    return max(0,volume)*1000*retained/count
 
 
 class MachineSession:
@@ -2606,6 +2646,9 @@ class MachineSession:
                            'in_air_l': _round(1000 * p.get('in_air_m3', 0.0), 2),
                            'parcels': len(p.get('xyz_mm', [])) // 3, 'residual_m3': p.get('residual_m3'),
                            'sources': p.get('sources', [])}
+        regions=self.compiled.get('water_regions',[])
+        out['water_regions']=[dict(title=r['title'],at_m=r['at_m'],
+            litres=water_in_region_l(self.parcels,r),target_l=r['target_l']) for r in regions]
         out['power_devices']=electrics.power_requirements(self.compiled,self.bodies,out.get('electrical',{}),
             (self.machines or {}).get('motors',[]),native_circuits)
         self.readouts = out
@@ -2708,6 +2751,7 @@ class MachineSession:
             p = self.parcels
             frame['water'] = {'xyz_mm': subset_xyz(p.get('xyz_mm', [])), 'parcel_count': len(p.get('xyz_mm', []))//3,
                               'poured_l': (p.get('poured_m3') or 0)*1000,
+                              'regions':copy.deepcopy(self.readouts.get('water_regions',[])),
                               'sources': [{k: s.get(k) for k in ('name', 'valve_open', 'remaining_m3', 'received_m3','gravity_reservoir','opening_fraction','head_m','flow_l_s')}
                                           for s in p.get('sources', [])]}
         if self.water and self.water.get('surface_mm_b64') and self.ground_view:
@@ -2766,6 +2810,13 @@ class MachineSession:
                     r = rule['water_received_l']
                     source = next((s for s in out.get('pour', {}).get('sources', []) if s['name'] == r['spout']), None)
                     if source and source['received_m3'] * 1000.0 >= r['l']: hit = self.t
+                elif 'water_in_zone_l' in rule:
+                    r=rule['water_in_zone_l']
+                    # Count currently retained native parcels, never cumulative arrivals.
+                    if water_in_region_l(self.parcels,r)>=r['l']:
+                        self._power_since.setdefault(i,self.t)
+                        if self.t-self._power_since[i]>=r.get('for_s',0):hit=self.t
+                    else:self._power_since.pop(i,None)
                 elif 'load_power_w' in rule:
                     r = rule['load_power_w']
                     d = next((d for d in out.get('electrical', {}).get('devices', []) if d['name'] == r['device']), {})
@@ -3089,7 +3140,7 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                    'closest_approach': [c for i, c in sorted(getattr(session, 'closest', {}).items()) if i not in done],
                    'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]],
                    # What went in, as it stood at the end: heat, chemistry, batteries.
-                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits', 'electrical', 'pour', 'pulls', 'test_pulled')
+                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits', 'electrical', 'pour', 'water_regions', 'pulls', 'test_pulled')
                                 if (session.readouts or {}).get(k) is not None}}
             if track:
                 out['paths'] = {name: {'points': points, 'turn_wxyz': session.trail_turn.get(name)}

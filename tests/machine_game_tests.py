@@ -115,7 +115,7 @@ class Tray(unittest.TestCase):
                         continue
                     with self.subTest(piece=item['piece'], key=key, value=value):
                         context = copy.deepcopy(free)
-                        if item['piece'] in ('water_wheel', 'water_tank'):
+                        if item['piece'] in ('water_wheel', 'water_tank', 'water_chute', 'water_collector'):
                             context['machine'] = copy.deepcopy(mg.sandbox_water_launch.CHANNEL_BASE)
                             context['custom_base'] = True
                         p = [{'piece': item['piece'], **{k: 0 for k in ('x_m', 'z_m') if k in item['knobs']}, key: value}]
@@ -537,7 +537,7 @@ class FreeBuild(unittest.TestCase):
                 continue      # a link is made by joining two parts, not from the tray
             placed = dict({k: knob_default(r) for k, r in t['knobs'].items()}, piece=t['piece'])
             context = copy.deepcopy(self.FREE)
-            if t['piece'] in ('water_wheel', 'water_tank'):
+            if t['piece'] in ('water_wheel', 'water_tank', 'water_chute', 'water_collector'):
                 context['machine'] = copy.deepcopy(mg.sandbox_water_launch.CHANNEL_BASE)
                 context['custom_base'] = True
             g = mg.ghost(context, [placed], 0)

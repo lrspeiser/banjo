@@ -17,7 +17,79 @@ every 1/12 s, which limits precision of the reported win times.
 These are game demonstrations, not calibrated
 water-turbine or real-world catapult predictions.
 
-## What a player can build
+## Divert water into a fixed container (October 12)
+
+**Divert the water** adds one routing lesson without changing earlier water
+lessons or their goals. Its fixed, finite source supplies 1 L/s downward from
+1.25 m, with 4 L available. The separate empty collector has an 80×50 cm
+outer footprint. A supported, three-sided chute defaults crosswise; aiming
+it along +x with a 20° downhill slope routes the water into the collector.
+The current 3 L must remain within its interior measurement box for 0.5 s.
+The authored solution wins at 4.567 s in all three nudged runs. Construction
+plus source work is 6,849,818,448.737 J; par is that measured answer rounded
+up by less than 1 kJ. No existing goal, deadline or tolerance changed.
+
+The Sandbox adds independent **Water chute** and **Water collector** cards
+and an example with both editable placements. Their mounts use ordinary fix
+joints to visible grounded stands. Stand feet follow the channel bed, with
+cell-aligned clearance. Placement overlap and bounds checks remain active.
+Collector `water_regions` declarations are read-only meters, not sandbox
+win stations. A lesson's `water_in_zone_l` station uses the same observation.
+The meter counts the current native parcel positions inside the box. Volume
+per parcel is recovered from full-precision source emitted-minus-landed-
+minus-runoff ledgers and the complete native parcel count, rather than from
+rounded display totals. Boundaries inherit the exported 1 mm position
+resolution. Water outside, lost downstream, or previously passing through
+does not count. The preview is labelled; Reset restores an empty collector.
+
+At 8 s, equal-geometry glass/oak/iron chute and collector runs all retain
+3.968 L, with 32 mL left in the supply. Source and parcel mass residuals are
+below 1e-12 m³. Engine: Windows Release SHA-256
+`1ebc084656f9b4c0206e6c7ca7f9d0e12546700c60e495781ca781493587c352`.
+
+| Material | dt (s) | Falling-water energy residual (J) | Momentum residual magnitude (N s) | Explicit numerical correction (J) |
+|---|---|---|---|---|
+| Glass | 1/240 | −1.92049e−8 | 8.06e−10 | +0.774295 |
+| Glass | 1/480 | +5.71149e−8 | 8.12e−10 | +0.754917 |
+| Oak | 1/240 | −1.87342e−8 | 6.51e−10 | +0.774360 |
+| Oak | 1/480 | +5.71045e−8 | 9.08e−10 | +0.766375 |
+| Iron | 1/240 | −1.92111e−8 | 8.20e−10 | +0.774285 |
+| Iron | 1/480 | +5.71285e−8 | 9.12e−10 | +0.766371 |
+
+Empty, crosswise, reversed and sideways-misplaced setups fail for lack of
+retained water. After the source stops, the observed region remains filled;
+moving only the observation box to the source yields zero. Retained volume
+is 3.968 L, distinct from the native rounded display total of 3.97 L.
+
+**Validity and limits:** no new native fluid law was added. This uses existing
+64 mL, 4 cm weakly-compressible parcels resting against fixed surfaces, with
+frictionless non-bouncing contacts and pressure/viscous pair forces. It does
+not establish a smooth hydrostatic free surface, sloshing, moving buckets,
+surface tension, arbitrary closed-vessel containment, calibrated pipe flow,
+or full rigid/joint/support energy and momentum closure. The visual shows
+native parcels; it does not invent a flat water surface. A perfectly flat
+chute initially exposed an admitted-speed refusal in the existing parcel
+model. The offered chute therefore admits positive 5–35° drainage slopes;
+flat pooling is explicitly unsupported. At this apparatus's default position,
+5–20° routes successfully; steeper slopes overlap other apparatus and must
+be moved before placement. The original failing flat run is not counted as
+green, and no native admission threshold was increased.
+
+Verification: the 14-test water/launch suite passes in 37.249 s, including
+the new retention and six material/timestep receipts. The complete game
+suite passes 53 tests, including all 31 own solutions in three nudged runs.
+That complete run took 86.280 s.
+All four new width variants pass solution/empty/wrong preflight (three runs
+each). Three focused Chrome tests pass in 45.043 s, covering the new lesson
+and native win/reset at 1280×860, 390×844 and 844×390, the prior finite-tank
+lesson, and the complete Sandbox library/save flow. The shared toolbar check
+also passes; short adjustment chips now retain a 44 px minimum width.
+Source registration remains 269/269. C++ and its laws are unchanged.
+The final diversion browser check also passes in 21.695 s after keeping both
+source and destination visible during follow mode and moving its win result
+outside the 3D view. It verifies those view constraints in all three sizes.
+
+## What a player can build (earlier pieces)
 
 **Water wheel:** a real supported eight-paddle wheel in an explicitly chosen
 flume. Radius 25–65 cm, location along/across the channel, left/right/off external

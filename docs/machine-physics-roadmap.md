@@ -8,6 +8,18 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 12 routing update: **Divert the water** and a Sandbox example use a
+separate mounted chute and fixed collector. Native falling-parcel contact
+and gravity route the flow; the goal observes current parcel volume inside
+a declared container region, retained for half a second. Millimetre-exported
+positions and unrounded per-source volume ledgers supply the observation.
+No native water law changed. These are fixed vessels with parcels resting
+on the floor, not calibrated free-surface bucket containment, sloshing or
+movable liquid vessels. Chutes admit positive 5–35° slopes; perfectly flat
+pooled chutes are outside the offered domain after an instability in the
+existing weakly-compressible parcel model. Invalid colliding placements are
+refused. See [routing measurements](sandbox-water-launch-measured.md#divert-water-into-a-fixed-container-october-12).
+
 October 12 bulb update: **Light the bulb** teaches reducing a rated load to
 fit the native supply current limit. Large/medium/small components declare
 12/6/2.5 W at 12 V and 16/13/10 cm glass diameters. These are chosen component
