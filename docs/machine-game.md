@@ -54,10 +54,19 @@ choose **Connect rope to gate**. Both actions are physically necessary. The
 preview shows native wheel rotation, rope endpoints and gate movement while
 the live setup stays ready at time zero; the readout labels this as Preview.
 
-**Charge then lift** starts the receiving motor battery empty. Place and aim
-the panel, open **Readings and wiring → Connect wires**, then click panel
-**Out** and supply **In**. The matching **Sun powers the flag** sandbox example
-includes this same lead. Without it, sunlight can charge the panel's isolated
+**Sun-powered lift** (formerly **Charge then lift**, stable ID
+`easy-charge-lift`) starts the receiving motor battery empty. Its panel
+collects the declared sun at 20° elevation; the bulb is a parallel load on
+the battery, not the light source. Controls show **Sun → Panel → Battery →
+Motor → Arm**, with **Panel Out** and **Battery In** buttons that use the
+same explicit cable interaction as Sandbox. Set down the aimed panel, then
+click those two buttons; successful compact wiring keeps detailed readings
+folded. A camera-relative sun-direction marker also indicates when the sun
+is behind the view. **Why the bulb?** opens the optional load explanation.
+The guide shows native panel watts, stored battery joules and motor watts;
+flow previews use the same sampled native values and are labelled Preview.
+The matching **Sun powers the flag** sandbox example includes this same lead
+and power-path guide. Without it, sunlight can charge the panel's isolated
 local store but cannot power the motor. These three Easy families use version-2
 recipes; shared version-1 recipes keep their original apparatus and defaults.
 The solar lesson now indicates two tasks. Goals, deadlines and pars are unchanged.
@@ -549,7 +558,7 @@ and tolerances.
 | Chain reaction; Marble turns on a light | A real ball tips the lever/paddle. The first level includes its fixed firing circuit; the second includes visible prepared leads. |
 | Up she goes; Heat to release | Declared firebox or wired coil supplies heat; native pressure or cord weakening reaches the goal. |
 | Bounce the beam; Bounce to the target; Find the focus | Native rays must reach the cord/sensor through the player's optical geometry. |
-| Catch the sun; Catch the sun (collector lesson); Charge then lift | Both Catch the sun cards require a player-drawn power cable and an unshaded collector. Charge then lift retains its declared store connection; light still determines power. |
+| Catch the sun; Catch the sun (collector lesson); Sun-powered lift | All require a player-drawn charging cable and sunlight. The lift starts with an empty battery; its prepared motor and parallel bulb share the received energy. |
 | Lift with less; Raise the crate; Tip the lever; Spring lifts the load | Material-derived weight, gravitational travel or stored spring energy provides the motion. |
 | Turn the big wheel; Turn the axle | Prepared drive/leads are stated in the brief. Position does not create a socket connection. Gear drive and motor direction remain player settings. |
 | Light the bulb | Shrink the rated bulb to match the prepared supply. Voltage/power readings show the real current-limited result. |

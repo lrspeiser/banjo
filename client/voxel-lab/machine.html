@@ -19,6 +19,7 @@
 <div id="power-feedback-labels" class="power-feedback-labels" aria-label="Cable power and object requirements"></div>
 <output id="edit-guide-label" class="edit-guide-label" hidden aria-live="polite"></output>
 <div id="lens-grip" class="lens-grip" hidden aria-hidden="true"><span>Lens</span></div>
+<output id="sun-bearing" class="sun-bearing" hidden aria-label="Direction to the sun"><span aria-hidden="true">☀ Sun</span><span id="sun-arrow" aria-hidden="true">↑</span><span id="sun-side"></span></output>
 <div id="scene-actions" class="scene-actions">
 <button id="start">Start</button><button id="reset">Set up again</button>
 <button id="pull-tool" aria-pressed="false" title="Pull a part to test it: press on it and drag">🖐 Pull</button>
@@ -60,6 +61,12 @@
 <output id="laser-preview-status" class="laser-preview-status" hidden></output>
 <output id="water-status" class="water-status" hidden></output>
 <output id="river-wheel-status" class="water-status" hidden></output>
+<section id="solar-lift-guide" class="solar-lift-guide" hidden aria-label="Sun-powered lift connections">
+<p>Sun → Panel → Battery → Motor → Arm</p>
+<div class="solar-connect-row"><button id="solar-out-connect" type="button" aria-pressed="false">Panel Out</button><span aria-hidden="true">→</span><button id="solar-in-connect" type="button">Battery In</button></div>
+<output id="solar-lift-reading"></output><output id="solar-lift-connection"></output>
+<details id="solar-load-help"><summary>Why the bulb?</summary><p>The bulb uses the same battery as the motor. It is a shared load. Aim the panel at the sun to collect enough power for both.</p></details>
+</section>
 <label id="piece-edit-row" class="piece-edit-row" hidden>Adjust a piece<select id="piece-edit" aria-label="Adjust a piece"></select></label>
 <div id="ghost-bar" class="ghost-bar" hidden aria-label="The ghost: change it, turn it and set it down"></div>
 <details id="instrument-panel" hidden><summary>Readings and wiring</summary>
@@ -135,6 +142,7 @@
 <div class="guide-head"><h2 id="recent-changes-title">Recent Changes</h2><button id="recent-changes-done" type="button">Close</button></div>
 <div class="guide-body changes-body" tabindex="0" aria-label="Game updates, newest first">
 <section aria-labelledby="changes-oct12"><h3 id="changes-oct12"><time datetime="2026-10-12">October 12, 2026</time></h3>
+<article><h4>See how sunlight powers the lift</h4><p><b>Charge then lift</b> is now called <b>Sun-powered lift</b>. A small sun-direction marker helps you aim the panel, and the controls show <b>Sun → Panel → Battery → Motor → Arm</b>. Set down the panel, click <b>Panel Out</b>, then <b>Battery In</b> to draw its charging cable. Panel watts, battery energy and motor watts show measured power, with previews labelled separately. The bulb is labelled as a shared load; <b>Why the bulb?</b> explains it when you want to read more. The same guide appears in the matching Sandbox example.</p></article>
 <article><h4>A clearer river-powered lift</h4><p>Move the wheel into the marked river, then choose <b>Connect rope to gate</b>. The gate’s fixed guide and foot are no longer confusing connection choices in this lesson. The preview shows the wheel turning, the rope and gate moving, and measured wheel turn and lift. <b>Run it</b> starts the real machine; the result stays beside the scene.</p></article>
 <article><h4>Divert water into a container</h4><p><b>Divert the water</b> starts with a source and an empty container. Add a <b>water chute</b>, aim its lower end into the container and tip it downhill. Watch the water travel and the litres collected increase. Three litres must stay inside to finish. The win message stays beside the scene so you can see the water. Water chutes and separate collectors are also available in the Sandbox, with a ready-to-edit example.</p></article>
 <article><h4>A simpler Banjo header and cleaner icon</h4><p>The header and browser tab now say <b>Banjo</b>. The red-and-white tab icon has transparent outer corners and no white border.</p></article>

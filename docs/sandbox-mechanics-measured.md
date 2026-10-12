@@ -295,3 +295,47 @@ tackle regressions still pass. Twelve mechanics tests complete in 7.8 s;
 the new six-fixture plus misplaced/default control check takes 0.58 s alone.
 The native engine remains SHA-256
 3fac18bff131cf0d819e6186969c4ed64b27210eef04e36f420bd497ce39d24a.
+
+
+### October 12 sun-powered lift display and connection update
+
+The current lesson is renamed **Sun-powered lift**; ID `easy-charge-lift`,
+its 5 cm rise goal, four-second run, energy par, sun, empty store, motor and
+30 W parallel bulb remain unchanged. The panel collects sunlight, while
+the bulb consumes power from the battery. No staged charge threshold is
+introduced: the motor can work as sunlight supplies the bus. Earlier v1
+shared recipes retain their original title and declaration.
+
+A compact Controls guide shows Sun → Panel → Battery → Motor → Arm and
+two explicit connection buttons, Panel Out and Battery In. These reuse
+existing validated cable topology; they do not auto-wire the level.
+Successful compact wiring leaves secondary readings folded. The same
+network-derived guide appears in **Sun powers the flag** in Sandbox.
+The optional Why the bulb? disclosure explains the shared load.
+
+The sun marker's screen bearing comes from the declared sun vector and
+camera axes, with a behind-view indicator; it does not change panel aim
+or irradiance. Native solar readouts are now included in rehearsal frames
+(up to 32 panels), beside existing battery and circuit readings. The guide
+uses panel watts, battery joules and motor watts from the same sampled
+frame, labels it Preview, and leaves the live setup ready at time zero.
+It is an observation update, not a bulb-light harvesting model, new solar
+conversion law, realistic battery electronics or new conservation claim.
+
+Verification reruns the unchanged comparative oak/glass/iron shaft and
+store audits at 1/240, 1/480, .001 and .0005 s. The existing mechanical
+residual limit remains 0.01 J, electrical 1e-8 J and thermal 1e-6 J;
+numerical coupling corrections remain separate. A zero-sun regression
+keeps panel output and the receiving store at zero and cannot lift.
+The browser checks actual two-button cable drawing, sampled power/store
+readings, ordinary Run success on desktop and both phone orientations,
+and the connected Sandbox example.
+
+The new zero-sun and unchanged material/ledger suite passes 4/4 in 9.758 s.
+The full game suite passes 53/53 in 86.603 s. Existing clear-scene/wiring and
+new source/connection browser checks pass together in 25.819 s; the final
+compact-wiring/source-receipt/Sandbox check passes in 7.795 s before the
+additional retained-v1 display check. Native executable SHA-256 remains
+`1ebc084656f9b4c0206e6c7ca7f9d0e12546700c60e495781ca781493587c352`.
+No C++ physics changed. Native outcomes and conservation limits above are
+unchanged; no complete physics certification is implied by the UI checks.

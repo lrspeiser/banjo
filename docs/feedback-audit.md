@@ -63,7 +63,7 @@ not mean every possible misplaced design was exhaustively searched.
 | Gentle first launch | Receiving bin; aim counterweight cradle launcher | Verified. Default cradle is already released; remaining priority: held start and a player-operated live latch. Current restraint selector chooses the starting setup. |
 | Marble turns on a light | Falling marble and wired bulb; place paddle switch below it | Verified. Centered native defaults win; acceptable as placement introduction, but start off-axis for a more explicit alignment lesson in a future version. |
 | Water opens a gate | Guided gate; separate tank, wheel and drum connection | Verified. Open/aim tap and connect the wheel to the existing gate. |
-| Charge then lift | Empty battery, motor and offset flag; aim panel and draw charging lead | Fixed in audit; verified. Prepared motor/bulb terminal wiring is visible. |
+| Sun-powered lift (formerly Charge then lift) | Empty battery, motor and offset arm; aim at sun and draw Panel Out → Battery In lead | Verified. Compact power-path guide, native source/store/motor readings and sun bearing. Bulb is labelled as a shared load; prepared motor/bulb wiring is visible. |
 | River-powered lift | River and guided gate; move off bank and connect drum | Fixed in audit; verified. A connected wheel on the bank and an immersed unconnected wheel both fail. |
 
 ## Sandbox examples

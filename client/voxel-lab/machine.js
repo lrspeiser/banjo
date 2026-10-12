@@ -562,6 +562,59 @@ function powerMessage(text) {
   $('power-status').hidden = !text;
   if (text) $('instrument-panel').open = true;
 }
+// Explain the graph that actually exists; this UI never connects or powers it
+// without the same two-port player action used in the sandbox.
+function solarLiftGraph(){
+  if(!(machine?.sun?.irradiance_w_m2>0) || !(machine.solar_panels?.length || level?.tray?.some(t=>t.piece==='solar')))return null;
+  const network=machine.electrical?.networks?.find(n=>n.devices.some(d=>d.kind==='motor'));
+  if(!network)return null;
+  const motor=network.devices.find(d=>d.kind==='motor');
+  const input=machine.electrical.power_ports.find(p=>p.kind==='input'&&p.battery===network.battery);
+  const cable=machine.electrical.power_cables.find(c=>c.b===input?.name);
+  const output=machine.electrical.power_ports.find(p=>p.kind==='output'&&(!cable||p.name===cable.a));
+  const direct=!cable&&machine.solar_panels.some(p=>p.name===output?.solar_panel&&p.battery===network.battery);
+  return {network,motor,input,output,cable,direct};
+}
+function updateSolarLiftGuide(){
+  const box=$('solar-lift-guide'),bearing=$('sun-bearing'),g=solarLiftGraph();
+  box.hidden=!g || document.body.matches('.on-levels,.on-sandbox');bearing.hidden=box.hidden;
+  view.classList.toggle('has-sun-guide',!bearing.hidden);
+  if(box.hidden)return;
+  box.classList.toggle('has-ghost',Boolean(ghost));
+  const pending=!playing&&(flowPending||ghost&&!ghost.answered);
+  const sample=flowGroup.visible?previewShown?.flow_frames?.[flowIndex]:null;
+  const battery=(sample?.batteries||readouts.machines?.batteries||[]).find(b=>b.name===g.network.battery);
+  const panel=(sample?.solar_panels||readouts.machines?.solar_panels||[]).find(p=>p.name===g.output?.solar_panel);
+  const motor=(sample?.devices||readouts.electrical?.devices||[]).find(d=>d.name===g.motor.name);
+  const setText=(id,text)=>{if($(id).textContent!==text)$(id).textContent=text;};
+  setText('solar-lift-reading',pending?'Updating power readings…':
+    `${sample?'Preview':'Now'} · Panel ${(panel?.power_w||0).toFixed(1)} W · Battery ${(battery?.charge_j||0).toFixed(1)} J · Motor ${(motor?.power_w||0).toFixed(1)} W`);
+  setText('solar-lift-connection',ghost?'Set the panel down to connect.':!g.output?'Add a solar panel; aim at the sun.':
+    g.direct?'Panel already connected · earlier design.':pickedPowerPort===g.output.name?'Now click Battery In.':g.cable?'Cable connected · motor and bulb are already wired.':'Click Panel Out, then Battery In.');
+  $('solar-out-connect').disabled=playing||powerBusy||Boolean(ghost)||!g.output||g.direct;
+  $('solar-out-connect').setAttribute('aria-pressed',String(Boolean(g.output&&pickedPowerPort===g.output.name)));
+  $('solar-in-connect').disabled=playing||powerBusy||Boolean(ghost)||!g.input||!g.output||g.direct||pickedPowerPort!==g.output.name;
+  // Screen bearing from the declared sunlight vector and camera axes, even
+  // when the distant sun disc is outside the view. It does not aim the panel.
+  const el=machine.sun.elevation_deg*Math.PI/180,az=machine.sun.azimuth_deg*Math.PI/180;
+  const direction=new THREE.Vector3(Math.cos(el)*Math.sin(az),Math.sin(el),Math.cos(el)*Math.cos(az));
+  const right=direction.dot(new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0));
+  const up=direction.dot(new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,1));
+  const behind=direction.dot(new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,2))>0;
+  $('sun-arrow').style.transform=`rotate(${Math.atan2(right,up)*180/Math.PI}deg)`;
+  setText('sun-side',behind?'behind view':'');
+  bearing.setAttribute('aria-label',`Sun direction${behind?', behind view':''}; elevation ${machine.sun.elevation_deg} degrees`);
+}
+async function connectFromSolarGuide(kind){
+  const g=solarLiftGraph(),sourceLevel=level,wasOpen=$('instrument-panel').open;
+  if(!g?.[kind])return;
+  await pickPowerPort(g[kind]);
+  // Keep secondary readings folded after a successful compact action.
+  // A rejected connection retains the original visible error disclosure.
+  if(level===sourceLevel&&(kind==='output'||solarLiftGraph()?.cable?.a===g.output?.name))$('instrument-panel').open=wasOpen;
+}
+$('solar-out-connect').addEventListener('click',()=>connectFromSolarGuide('output'));
+$('solar-in-connect').addEventListener('click',()=>connectFromSolarGuide('input'));
 function syncPowerLabels() {
   const host = $('power-labels'); host.replaceChildren(); powerLabels.clear();
   const pins = $('power-pins'); pins.replaceChildren();
@@ -705,7 +758,7 @@ function positionPowerLabels() {
   const clock = $('clock').getBoundingClientRect();
   const top = Math.max(8, clock.bottom - rect.top + 8);
   const bottom = rect.height - 10;
-  const occupied = ['scene-mode']
+  const occupied = ['scene-mode','sun-bearing']
     .map(id => $(id)).concat(collapsedPanel()).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
     .map(el => { const r = el.getBoundingClientRect(); return {x:r.left - rect.left,y:r.top - rect.top,w:r.width,h:r.height}; });
   // Place the larger meters first, then fit receiver buttons beside them.
@@ -2536,6 +2589,7 @@ function feedbackCurve(w) {
 }
 
 function updatePowerFeedback() {
+  updateSolarLiftGuide();
   const host=$('power-feedback-labels'),sample=powerFeedbackSnapshot(),items=[];
   const pending=!playing&&Boolean(flowPending||ghost&&!ghost.answered);
   powerFlowDots.count=0;
@@ -2556,7 +2610,8 @@ function updatePowerFeedback() {
     if(Number.isFinite(d.voltage_v))actual+=` · ${Math.abs(d.voltage_v).toFixed(1)} V`;
     if(Number.isFinite(d.torque_n_m))actual+=` · ${Math.abs(d.torque_n_m).toFixed(1)} N·m`;
     items.push({id:'device:'+d.name,name:d.name.replace(/^your /,''),kind:'object',at,
-      displayName:d.requirement==='start_estimate'?`${d.part.replace(/^your /,'')} · ${d.name.replace(/^your /,'')}`:d.name.replace(/^your /,''),
+      displayName:solarLiftGraph()?.network.devices.some(n=>n.name===d.name&&n.kind==='bulb')?'Bulb · shared load':
+        d.requirement==='start_estimate'?`${d.part.replace(/^your /,'')} · ${d.name.replace(/^your /,'')}`:d.name.replace(/^your /,''),
       text:`${need}\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${actual}`}`,
       low:d.exceeds_motor||((d.requirement==='goal'||d.requirement==='start_estimate')&&d.input_w<d.required_w),
       title:d.requirement==='start_estimate'?'Estimated electrical power to overcome gravity and bearing friction at rest. Acceleration, contacts, other loads and supply losses need more power.':
@@ -4799,7 +4854,7 @@ async function startGame() {
   $('scene-note').textContent = 'Drag a ghost to move · Drag empty space to turn · Wheel or two fingers to zoom';
   $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;
-  for (const d of document.querySelectorAll('aside details:not(#feedback):not(#phone-tools)')) d.hidden = true;
+  for (const d of document.querySelectorAll('aside details:not(#feedback):not(#phone-tools):not(#solar-load-help)')) d.hidden = true;
   // The levels have their own screen, and the engine's readings are the
   // sandbox's: a player sees the scene, the goal and the result.
   $('levels').hidden = true;

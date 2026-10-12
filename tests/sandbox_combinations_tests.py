@@ -95,6 +95,19 @@ class SolarLift(unittest.TestCase):
                 self.assertTrue(all(r['error'] is None for r in result['results']))
                 print('CHARGE LIFT', label, result)
 
+    def test_solar_lift_needs_sunlight_and_preview_reports_native_source(self):
+        level=mg.level_by_id('easy-charge-lift')
+        spec=mg.compose(level,level['solution'])[0]
+        spec['sun']['irradiance_w_m2']=0
+        with tempfile.TemporaryDirectory() as logs:
+            result=mw.rehearse(mw.compile_spec(spec),ENGINE,Path(logs),seconds=level['time_s'],flows=True)
+            self.assertIsNone(result['error'])
+            self.assertFalse(result['stations'][0]['done'],'The bulb is a load, not the solar light source')
+            self.assertTrue(result['flow_frames'])
+            for frame in result['flow_frames']:
+                self.assertEqual(frame['solar_panels'][0]['power_w'],0)
+                self.assertEqual(next(b for b in frame['batteries'] if b['name']=='supply battery')['charge_j'],0)
+
     def test_supply_light_motor_and_mechanics_ledger_closes_with_recorded_correction(self):
         level = mg.level_by_id('easy-charge-lift')
         spec, _, _ = mg.compose(level, level['solution'])

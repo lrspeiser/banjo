@@ -2715,6 +2715,7 @@ class MachineSession:
                      for key, point in d.get('terminals', {}).items()}
         frame['terminals']=[dict(name=name,at_m=point) for name,point in terminals.items() if point]
         frame['batteries']=copy.deepcopy((r.get('machines') or {}).get('batteries',[]))
+        frame['solar_panels']=copy.deepcopy((r.get('machines') or {}).get('solar_panels',[])[:32])
         frame['contacts']=[]
         for c in (r.get('electrical') or {}).get('contacts',[]):
             a,b=terminals.get(c['a']),terminals.get(c['b'])
