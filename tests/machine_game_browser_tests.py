@@ -1352,6 +1352,41 @@ class Puzzles(unittest.TestCase):
     def anonymous_cloud_saved(self):
         self.wait("(()=>{const s=window.machineProfileState?.();return s?.ready&&!s.pending&&!s.error;})()",30)
 
+    def test_save_help_is_on_demand_and_keeps_the_design_and_focus(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            self.anonymous_levels(width=width,height=height)
+            self.assertEqual(self.js("document.querySelectorAll('.save-help-panel:popover-open').length"),0)
+            self.assertNotIn('Keep this link private',self.js("document.getElementById('levels-screen').innerText"))
+            self.assertNotIn('restores progress',self.js("document.getElementById('levels-screen').innerText"))
+            self.click_visible('About your return link')
+            self.wait("Boolean(document.querySelector('.save-help-panel:popover-open'))",5)
+            self.assertIn('Keep this link private',self.js("document.querySelector('.save-help-panel:popover-open').innerText"))
+            self.assertTrue(self.js("(()=>{const r=document.querySelector('.save-help-panel:popover-open').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"))
+            self.click_visible('Close save help')
+            self.assertEqual(self.js("document.activeElement.getAttribute('aria-label')"),'About your return link')
+            self.click_visible('About your return link');self.key('Escape')
+            self.assertEqual(self.js("document.querySelectorAll('.save-help-panel:popover-open').length"),0)
+            self.assertEqual(self.js("document.activeElement.getAttribute('aria-label')"),'About your return link')
+            self.click_visible('About your return link');self.click_visible('Copy return link')
+            self.assertEqual(self.js("document.querySelectorAll('.save-help-panel:popover-open').length"),0,'Clicking outside dismisses the help')
+            self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen').hidden===false",10)
+            self.assertEqual(self.js("document.querySelector('#sandbox-screen .ls-summary').textContent"),'Build freely with every piece.')
+            self.press('Add New Design');self.wait(READY,60)
+            self.anonymous_cloud_saved()
+            before=self.js('machineDesign()');url=self.js('location.href')
+            self.assertFalse(self.js("document.getElementById('design-status').textContent.includes('checkpoint')"))
+            self.click_visible('About saving versions')
+            self.assertIn('latest 30 checkpoints',self.js("document.querySelector('.save-help-panel:popover-open').innerText"))
+            self.assertTrue(self.js("(()=>{const r=document.querySelector('.save-help-panel:popover-open').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"))
+            self.click_visible('Close save help')
+            self.assertEqual(self.js('machineDesign()'),before)
+            self.assertEqual(self.js('location.href'),url)
+            self.assertEqual(self.js("document.activeElement.getAttribute('aria-label')"),'About saving versions')
+            self.press('Save version')
+            self.wait("document.getElementById('design-status').textContent==='Version 1 saved.'",10)
+            self.anonymous_cloud_saved()
+            self.assertEqual(len(self.js('machineDesign().versions')),1)
+
     def test_first_visit_has_anonymous_return_link_and_cookie_without_name_controls(self):
         backup=self.anonymous_fixture_backup()
         try:

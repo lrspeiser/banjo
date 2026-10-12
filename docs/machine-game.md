@@ -28,6 +28,27 @@ model or conservation claim.
 
 **Anonymous saves (October 11, 2026).** The Levels and Sandbox screens offer
 **Your return link** and **Copy return link**, with no player-name entry.
+The **?** buttons beside the return link and **Save version** open save help
+only when requested. Cookie/return-link guidance, privacy and version-history
+explanations live in these popovers. The screens use short status labels such
+as **Saved**, **Saving…**, **Not synced** or **Temporary storage**; actual save
+errors remain visible. Version confirmations are **Version N saved** or
+**Restored version N**. The sandbox introduction and free-build goal no longer
+repeat save instructions.
+
+Save help supports Close, Escape with focus returned to its button, and outside
+click dismissal. It fits above or below its 44 px button, scrolls in limited
+space and stays outside the phone panel's clipping area. Navigation hides the
+old screen's popover. Three focused Chrome checks pass in 9.501 s at desktop
+1280×860, portrait 390×844 and landscape 844×390, including real unobstructed
+clicks, bounded popovers, unchanged design/URL, acknowledged versions and
+cross-browser recovery. Initial runs caught a startup error and a copy button
+covered before the asynchronous popup positioning; both were corrected,
+keeping the visibility assertions and timeouts. The registered sync and client
+geometry CTests pass in 1.53 s. The suite now registers 56 browser checks; it
+has not been rerun in full for this UI change. The engine and storage model
+are unchanged.
+
 The URL is `/play?visitor=<random UUIDv4>`; a one-year HttpOnly, SameSite=Lax
 cookie remembers the selected save (Secure on the public site). Keep the link
 private: possession grants access to its progress and designs. Shared challenge

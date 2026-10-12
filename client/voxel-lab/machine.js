@@ -2754,17 +2754,75 @@ async function profileRequest(body) {
 }
 function profileStatus() {
   const state = profileSync.state();
-  if (state.error) return 'Not synced: ' + state.error + ' Keep this tab open; saving again retries.';
-  if (!state.ready) return 'Opening your save…';
-  if (state.pending) return 'Saving your changes…';
-  return profileStoragePersistent ? 'Saved. Your return link restores progress and designs on any device.'
-    : 'Temporary server storage: saves may be lost on deployment. Keep a design export until persistent storage is connected.';
+  if (state.error) return 'Not synced';
+  if (!state.ready) return 'Opening…';
+  if (state.pending) return 'Saving…';
+  return profileStoragePersistent ? 'Saved' : 'Temporary storage';
 }
+function profileDetails() {
+  const state = profileSync.state();
+  if (state.error) return state.error + ' Keep this tab open. Save again to retry syncing, or use Share this design to export a copy.';
+  if (!state.ready) return 'Opening your save.';
+  if (state.pending) return 'Changes are waiting for the server to confirm the save.';
+  return profileStoragePersistent ? 'Your changes are saved on the server.'
+    : 'Server storage is temporary: saves may be lost when the website is updated. Use Share this design to export a copy.';
+}
+function designStatus(text, sync = false) {
+  const node = $('design-status'); node.dataset.sync = String(sync); node.textContent = text;
+}
+let saveHelpSerial = 0;
+function addSaveHelp(parent, label) {
+  const panel = document.createElement('div'); panel.id = `save-help-${++saveHelpSerial}`;
+  panel.className = 'save-help-panel'; panel.setAttribute('popover','auto');
+  panel.setAttribute('role','dialog'); panel.setAttribute('aria-label',label);
+  const trigger = button('?',e=>{
+    e.preventDefault();
+    if (panel.matches(':popover-open')) panel.hidePopover();
+    else { panel.showPopover(); position(); }
+    trigger.setAttribute('aria-expanded',String(panel.matches(':popover-open')));
+  }, {className:'save-help-toggle',ariaLabel:label});
+  trigger.setAttribute('popovertarget',panel.id); trigger.setAttribute('aria-haspopup','dialog'); trigger.setAttribute('aria-expanded','false');
+  const head = document.createElement('div'); head.className = 'save-help-head';
+  const title = document.createElement('strong'); title.textContent = label;
+  const close = button('Close',()=>{panel.hidePopover();trigger.focus();},{ariaLabel:'Close save help'});
+  head.append(title,close); panel.append(head);
+  const notes = label === 'About your return link' ? [
+    'This browser remembers your save with a cookie. Copy the return link to open your progress, designs and versions on another device.',
+    'Keep this link private. Anyone with it can open and edit your saves.'
+  ] : [
+    'Drafts save automatically as you build. Save version keeps a checkpoint of the starting setup, not the running simulation.',
+    'Saved versions reopens one of the latest 30 checkpoints. Restoring a different version also keeps the previous draft.'
+  ];
+  for (const text of notes) { const p = document.createElement('p'); p.textContent = text; panel.append(p); }
+  const status = document.createElement('p'); status.className = 'save-help-current'; panel.append(status);
+  const position = () => {
+    if (!panel.matches(':popover-open')) return;
+    if (!trigger.getClientRects().length) { panel.hidePopover(); return; }
+    const r = trigger.getBoundingClientRect();
+    const below = innerHeight-r.bottom-20, above = r.top-20, useBelow = below>=180 || below>=above;
+    panel.style.maxHeight = `${Math.max(100,Math.min(innerHeight-24,useBelow?below:above))}px`;
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    panel.style.left = `${Math.max(12,Math.min(innerWidth-w-12,r.right-w))}px`;
+    panel.style.top = `${Math.max(12,Math.min(innerHeight-h-12,useBelow?r.bottom+8:r.top-h-8))}px`;
+  };
+  panel.addEventListener('beforetoggle',e=>{if(e.newState==='open')status.textContent=profileDetails();});
+  panel.addEventListener('toggle',()=>{trigger.setAttribute('aria-expanded',String(panel.matches(':popover-open')));position();});
+  panel.positionSaveHelp = position;
+  parent.append(trigger,panel);
+}
+addEventListener('resize',()=>{for(const panel of document.querySelectorAll('.save-help-panel:popover-open'))panel.positionSaveHelp();});
+document.addEventListener('keydown',e=>{
+  const panel = document.querySelector('.save-help-panel:popover-open');
+  if (e.key!=='Escape'||!panel) return;
+  e.preventDefault(); e.stopImmediatePropagation(); panel.hidePopover();
+  document.querySelector(`[popovertarget="${panel.id}"]`)?.focus();
+},true);
+addSaveHelp($('save-design').parentElement,'About saving versions');
 function updateProfileStatus() {
   for (const node of document.querySelectorAll('.profile-sync-status')) node.textContent = profileStatus();
   const node = $('design-status');
-  if (node && /^(Draft|Saving your changes|Not synced|Saved\. Your return|Temporary server)/.test(node.textContent))
-    node.textContent = profileStatus() + ' Save version to keep a checkpoint.';
+  if (node?.dataset.sync === 'true') node.textContent = profileStatus();
+  for (const panel of document.querySelectorAll('.save-help-panel:popover-open')) panel.querySelector('.save-help-current').textContent = profileDetails();
 }
 const profileSync = new ProfileSync({request:profileRequest, read:() => me(),
   onChange:() => { cacheSave(); updateProfileStatus(); },
@@ -3277,7 +3335,7 @@ function keepBuild() {
   if (!level?.free || !activeDesign) return;
   activeDesign.draft.placements = clone(placements);
   activeDesign.at = new Date().toISOString();
-  persist(); $('design-status').textContent = 'Draft: ' + profileStatus() + ' Save version to keep a checkpoint.';
+  persist(); designStatus(profileStatus(),true);
 }
 
 // Named designs and immutable checkpoints, alongside this player's progress.
@@ -3326,6 +3384,7 @@ function parkDesign() {
 }
 function showSandboxScreen(show = true) {
   const box = $('sandbox-screen'); box.hidden = !show;
+  if (!show) for (const panel of box.querySelectorAll('.save-help-panel:popover-open')) panel.hidePopover();
   document.body.classList.toggle('on-sandbox', show);
   if (!show) { resize(); return; }
   parkDesign(); showLevelsScreen(false);
@@ -3334,7 +3393,7 @@ function showSandboxScreen(show = true) {
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Sandbox'});
-  add(box, 'p', {className: 'ls-summary', textContent: 'Build freely with every piece and the live physics engine. Your drafts save automatically; your private return link opens them on any device. Save version keeps a checkpoint (the latest 30).'});
+  add(box, 'p', {className: 'ls-summary', textContent: 'Build freely with every piece.'});
   renderReturnLink(box);
   const form = add(box, 'form', {className: 'ls-player'});
   const name = add(form, 'input', {id: 'new-design-name', type: 'text', maxLength: 60, placeholder: 'Name your new design'});
@@ -3387,9 +3446,9 @@ $('save-design').addEventListener('click', async () => {
     await profileSync.flush();
     if (!activeDesign?.versions.some(v => v.number === savedVersion.number && v.at === savedVersion.at)) return;
     renderDesignControls(); $('title').textContent = activeDesign.name;
-    $('design-status').textContent = `Version ${savedVersion.number} saved${profileStoragePersistent ? '' : ' in temporary server storage'}. You can reopen it under Saved versions.`;
+    designStatus(`Version ${savedVersion.number} saved${profileStoragePersistent ? '' : ' (temporary)'}.`);
   } catch (e) { if (activeDesign === d || activeDesign?.versions.some(v => v.number === savedVersion?.number && v.at === savedVersion?.at)) {
-    renderDesignControls(); $('design-status').textContent = 'Version not synced: ' + (e.data?.problems?.join('; ') || e.message) + '. Keep this tab open and save again to retry.';
+    renderDesignControls(); designStatus('Version not synced: ' + (e.data?.problems?.join('; ') || e.message));
   } }
   finally { $('save-design').disabled = false; }
 });
@@ -3407,8 +3466,8 @@ $('restore-version').addEventListener('click', async () => {
   try {
     await rebuildLevel(false); await profileSync.flush();
     if (activeDesign?.id !== restoredDesign) return;
-    $('design-status').textContent = `Restored version ${v.number}. The previous draft is kept in Saved versions.`;
-  } catch (error) { if (activeDesign?.id === restoredDesign) $('design-status').textContent = 'Restored locally, but not synced: ' + error.message + '. Keep this tab open and save again.'; }
+    designStatus(`Restored version ${v.number}.`);
+  } catch (error) { if (activeDesign?.id === restoredDesign) designStatus('Restored locally, not synced: ' + error.message); }
 });
 window.machineDesign = () => activeDesign ? clone(activeDesign) : null;
 
@@ -3575,12 +3634,11 @@ function renderReturnLink(box) {
   const link = document.createElement('a'); link.id = 'visitor-return-link'; link.href = returnURL(location.origin, save.current); link.textContent = 'Your return link';
   const copy = button('Copy return link', async () => {
     try { await navigator.clipboard.writeText(link.href); status.textContent = 'Return link copied.'; }
-    catch { status.textContent = 'Open Your return link and copy its address.'; }
+    catch { status.textContent = 'Open the return link to copy its address.'; }
   }, {id:'copy-return-link'});
   const status = document.createElement('span'); status.className = 'visitor-return-status'; status.setAttribute('role','status');
-  status.textContent = 'No name needed. Keep this link private: anyone with it can open and edit your saves.';
   const sync = document.createElement('span'); sync.className = 'visitor-return-status profile-sync-status'; sync.setAttribute('role','status'); sync.textContent = profileStatus();
-  line.append(link, copy, status, sync); box.append(line);
+  line.append(link, copy); addSaveHelp(line,'About your return link'); line.append(status,sync); box.append(line);
   const others = Object.keys(save.players).filter(id => id !== save.current);
   if (others.length) {
     const previous = document.createElement('details'), summary = document.createElement('summary'); previous.className = 'previous-saves'; summary.textContent = 'Previous saves'; previous.append(summary);
@@ -3591,6 +3649,7 @@ function renderReturnLink(box) {
 function showLevelsScreen(show) {
   const box = $('levels-screen');
   box.hidden = !show;
+  if (!show) for (const panel of box.querySelectorAll('.save-help-panel:popover-open')) panel.hidePopover();
   document.body.classList.toggle('on-levels', show);
   if (!show) { resize(); return; }
   stopSwitchDrag();
@@ -3699,7 +3758,7 @@ async function chooseLevel(id, design = null) {
   $('title').textContent = levelTitle(level);
   $('brief').textContent = level.brief;
   $('goal-line').textContent = level.free
-    ? 'No goal: build whatever you like and press Run it. Save a version whenever you want to return to this setup.'
+    ? 'No goal: build anything and run it.'
     : `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s, on as little energy as you can `+
       `(par ${energyText(level.par_energy_j)}, pieces and run). It teaches ${pieceLabel(level.teaches)}.`;
   if (level.variant) $('goal-line').textContent += level.variant.fallback
