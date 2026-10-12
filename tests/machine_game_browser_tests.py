@@ -208,6 +208,8 @@ class Puzzles(unittest.TestCase):
 
     def reveal_control(self, expression):
         """Use the real shared tabs and disclosures before touching a control."""
+        if self.js(f"(()=>{{const el={expression};return Boolean(el?.closest('#power-pins,#terminal-pins')&&!el.getClientRects().length&&!document.getElementById('wire-mode').matches('[aria-pressed=true]'));}})()"):
+            self.click_visible('Connect wires')
         panel = self.js(f"(() => {{const el={expression}; const pane=el?.closest('[role=tabpanel]'); return pane?.hidden ? document.getElementById(pane.getAttribute('aria-labelledby'))?.textContent : null;}})()")
         if panel:
             self.click_visible(panel.strip())
@@ -242,7 +244,7 @@ class Puzzles(unittest.TestCase):
     def assert_power_layout(self):
         # A rebuild reframes the camera; the anchors follow it each frame.
         self.wait('window.machineCamera().settled', 30)
-        geometry = """(() => {const cards=[...document.querySelectorAll('.power-label')].filter(e=>!e.hidden),
+        geometry = """(() => {const cards=[...document.querySelectorAll('.power-pin')].filter(e=>!e.hidden),
             run=document.getElementById('start').getBoundingClientRect(), view=document.getElementById('view').getBoundingClientRect();
             const overlaps=(a,b)=>a.left<b.right && a.right>b.left && a.top<b.bottom && a.bottom>b.top;
             return cards.map((e,i)=>{const r=e.getBoundingClientRect();return {name:e.dataset.port,
@@ -251,6 +253,8 @@ class Puzzles(unittest.TestCase):
                 coversRun:overlaps(r,run),overlapsOther:cards.some((b,j)=>j!==i && overlaps(r,b.getBoundingClientRect()))};});})()"""
         # Readouts change card heights; allow the next render frame to lay
         # them out before trying to press the real on-screen targets.
+        if not self.js("document.getElementById('wire-mode').getAttribute('aria-pressed')==='true'"):
+            self.click_visible('Connect wires')
         self.wait(f"(() => {{const rows={geometry};return rows.length>=2 && rows.every(r=>r.visible && r.inView && !r.coversRun && !r.overlapsOther);}})()", 10)
         layout = self.js(geometry)
         self.assertGreaterEqual(len(layout), 2, layout)
@@ -278,7 +282,7 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(all(c['closed'] is False for c in start['liveContacts']))
                 cap = next(name for name in start['liveTerminals'] if name.startswith('your battery 1:plus'))
                 self.assertEqual(self.js("document.querySelectorAll('#power-labels .power-label').length"),0)
-                self.assertTrue(self.js("[...document.querySelectorAll('#terminal-labels button')].every(b=>b.disabled)"))
+                self.assertTrue(self.js("[...document.querySelectorAll('#terminal-pins .terminal-buttons button')].every(b=>b.disabled)"))
                 self.click_visible('Run it')
                 self.assertTrue(self.js("document.getElementById('preview-legend').hidden"))
                 self.wait("!document.getElementById('level-done').hidden",30)
@@ -933,6 +937,38 @@ class Puzzles(unittest.TestCase):
                 self.wait("!document.getElementById('level-done').hidden", 30)
                 self.assertIn('Goal', self.js("document.getElementById('level-done').textContent"))
 
+    def test_scene_stays_clear_until_wiring_is_requested_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('sun',width,height,phone=width!=1280)
+                self.assertFalse(self.js("document.getElementById('instrument-panel').open"))
+                self.press('Add a solar panel');self.ghost()
+                self.assertFalse(self.js("document.getElementById('precision-controls').open"))
+                self.assertEqual(self.js("document.querySelector('#move-pad').getClientRects().length"),0,'Dragging is primary; nudge buttons are on demand')
+                self.assertEqual(self.js("document.querySelectorAll('#view .power-label,#view .terminal-label,#view #preview-legend,#view #edit-guide-label').length"),0,'Reading cards and captions must not obscure the machine')
+                for label,value in [('x',1),('z',.4),('height',.6),('turn',-45),('tip',75)]:
+                    self.slide(f'{label} of your solar 1',value)
+                placed=self.ghost()['p'];angle=self.js('machineCamera()')
+                self.click_visible('Focus selected piece')
+                self.assertEqual(self.ghost()['p'],placed,'Focusing changes only the camera')
+                focused=self.js('machineCamera()')
+                self.assertEqual((focused['azimuth'],focused['elevation']),(angle['azimuth'],angle['elevation']))
+                self.assertTrue(self.js("(()=>{const b=machineGhostScreen(),r=document.querySelector('#view canvas').getBoundingClientRect();return b&&b.x0>=r.left&&b.x1<=r.right&&b.y0>=r.top&&b.y1<=r.bottom;})()"),'The selected piece fits the scene')
+                self.click_visible('✓ Set down');self.wait(f'!machineGhostState() && {READY}',60)
+                self.wait("[...document.querySelectorAll('.power-badge')].some(e=>e.getClientRects().length&&e.textContent==='50.0 W')",20)
+                self.assertTrue(self.js("[...document.querySelectorAll('#power-pins button,#terminal-pins .terminal-buttons button')].every(e=>!e.getClientRects().length)"))
+                area=self.js("(()=>{const view=document.getElementById('view').getBoundingClientRect();return [...document.querySelectorAll('.power-pin')].filter(e=>e.getClientRects().length&&!e.hidden).reduce((sum,e)=>{const r=e.getBoundingClientRect();return sum+r.width*r.height;},0)/(view.width*view.height);})()")
+                self.assertLess(area,.03,'The always-visible solar meter uses less than 3% of the scene')
+                self.wait('machineFlowPreviewState()?.frames>2',30)
+                self.assertEqual(self.js('machineFlowPreviewState().labels'),0,'Current numbers appear on demand; the flow arrows remain')
+                self.click_visible('Connect wires');self.assert_power_layout()
+                self.click_visible('Power output of your solar 1');self.click_visible('Power input of winch')
+                self.wait(f'machinePlacements().length===2 && {READY}',60)
+                self.assertFalse(self.js("document.getElementById('wire-mode').matches('[aria-pressed=true]')"))
+                self.assertTrue(self.js("[...document.querySelectorAll('#power-pins button')].every(e=>!e.getClientRects().length)"))
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal',self.js("document.getElementById('level-done').textContent"))
+
     def test_saved_solar_cable_survives_motion_renaming_reload_undo_and_version_restore(self):
         self.page.send('Emulation.setDeviceMetricsOverride', {'width':1280,'height':860,'deviceScaleFactor':1,'mobile':False})
         self.page.send('Emulation.setTouchEmulationEnabled', {'enabled':False})
@@ -1035,6 +1071,8 @@ class Puzzles(unittest.TestCase):
                 self.key('Escape')
                 self.assertIsNone(self.js('window.machineGhostState()'))
                 self.assertEqual(self.js('window.machinePlacements()'), [])
+                self.assertFalse(self.js("document.getElementById('wire-mode').matches('[aria-pressed=true]')"),'Escape leaves wiring mode')
+                self.click_visible('Connect wires')
                 self.wait("(() => { const b=document.querySelector('[data-terminal=\"lamp:minus\"]'); return b && !b.disabled && b.offsetParent!==null; })()", 10)
                 self.click_visible('Connect supply plus'); self.ghost()
                 self.click_visible('Connect control in')
@@ -1044,6 +1082,7 @@ class Puzzles(unittest.TestCase):
                 self.assertIn('Not this time', self.js("document.getElementById('level-done').textContent"),
                               'another supply lead cannot replace the missing return path')
                 self.press('Start over'); self.wait(READY, 60)
+                self.reveal_control(self.button_expression('Connect lamp minus'))
                 self.wait("(() => { const b=document.querySelector('[data-terminal=\"lamp:minus\"]'); return b && !b.disabled && b.offsetParent!==null; })()", 10)
                 self.click_visible('Connect lamp minus'); self.ghost()
                 self.click_visible('Connect supply minus')
@@ -1246,7 +1285,8 @@ class Puzzles(unittest.TestCase):
             self.wait(f'!window.machineGhostState() && {READY}', 60)
         for terminal in ('plus', 'minus'):
             self.wait('window.machineCamera().settled', 30)
-            self.wait("!window.machineWiringState().busy && [...document.querySelectorAll('#terminal-labels button')].some(b=>!b.disabled && b.offsetParent!==null)", 10)
+            self.reveal_control(self.button_expression(f'Connect your battery 1 {terminal}'))
+            self.wait("!window.machineWiringState().busy && [...document.querySelectorAll('#terminal-pins .terminal-buttons button')].some(b=>!b.disabled && b.offsetParent!==null)", 10)
             self.click_visible(f'Connect your battery 1 {terminal}'); self.ghost()
             self.click_visible(f'Connect your bulb 2 {terminal}')
             self.wait(f'!window.machineGhostState() && {READY}', 60)
@@ -1313,8 +1353,9 @@ class Puzzles(unittest.TestCase):
                 self.slide('Its far end', 'gate')
                 self.assertTrue(self.ghost()['editGuide']['focus'])
                 self.wait("!document.getElementById('edit-guide-label').hidden", 5)
-                self.assertTrue(self.js("(() => {const a=document.getElementById('edit-guide-label').getBoundingClientRect(),b=document.getElementById('view').getBoundingClientRect();return a.left>=b.left && a.right<=b.right && a.top>=b.top && a.bottom<=b.bottom;})()"))
-                self.assertTrue(self.js("(() => {const a=document.getElementById('edit-guide-label').getBoundingClientRect();return a.top>=0 && a.bottom<=innerHeight;})()"), 'the caption stays visible even when the toolbar wraps')
+                self.reveal_control("document.getElementById('edit-guide-label')")
+                self.assertTrue(self.js("document.getElementById('precision-controls').contains(document.getElementById('edit-guide-label'))"))
+                self.assertFalse(self.js("document.getElementById('view').contains(document.getElementById('edit-guide-label'))"),'The guide remains on the object, with its caption in the inspector')
                 self.press('Throw the ghost away')
                 self.wait("document.getElementById('edit-guide-label').hidden", 5)
 

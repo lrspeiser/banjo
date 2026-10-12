@@ -232,8 +232,10 @@ River UI verification: both new browser tests pass, including the lesson's nativ
 
 ## Solar feedback and explicit power leads
 
-The collector has a scene-attached meter in challenges and the sandbox:
-incident sunlight in watts, power accepted by its battery in watts, current
+The collector has a small, non-interactive watts marker in the scene, which
+does not block object dragging. **Readings and wiring** in Controls contains
+the full meter in challenges and the sandbox: incident sunlight in watts,
+power accepted by its battery in watts, current
 stored energy in joules, and angle off the sun. It updates while running and
 also measures the ready setup without advancing time or adding charge. A full
 store accepts no charging power even if sunlight still reaches the panel.
@@ -249,12 +251,15 @@ measured obstruction, and an orange dashed ray ends at its actual hit point.
 A clear collector draws a short yellow ray toward the sun. The unrecoverable
 earlier player placement did not establish a specific false pillar hit.
 
-In **Catch the sun**, place and aim a collector, then click **Output** on its
-meter and **Input** on the winch. This saves a visible **power cable**. Its
+In **Catch the sun**, place and aim a collector, then open **Readings and
+wiring** and press **Connect wires**. Tap **Out** on the collector and **In**
+on the winch. These small scene endpoints appear only while wiring; connecting
+a solar lead hides them again. This saves a visible **power cable**. Its
 absence leaves the winch's battery empty: collection goes into the panel's
 own finite store and cannot lift the weight. Click an output and a different
 input to replace its connection. Remove its cable to disconnect it. Esc
-cancels an unfinished connection. Wiring rebuilds the setup at time zero.
+cancels an unfinished connection and hides the endpoints; **Finish wiring**
+does the same. Wiring rebuilds the setup at time zero.
 The same ports support charging a placeable battery in a saved sandbox design;
 the battery's plus/minus terminal graph powers bulbs, motors and switches.
 Existing prepared sandbox declarations retain their declared charging store.
@@ -296,7 +301,9 @@ and saved sandbox designs, including a fitting ghost as if it were set down.
 Dashed pink lines follow native reflected/refracted rays. Blue dots show the
 native falling parcels and translucent blue tiles show measured wet surfaces.
 Yellow wire arrows show **conventional current**, with the direction taken
-from the signed native branch current and a label in amperes. An open circuit
+from the signed native branch current. Number labels appear while wiring or
+when **Flow preview** is open, rather than covering objects during ordinary
+placement. An open circuit
 has no arrows. A solar charging lead reports watts instead; this ideal lead
 does not have a modeled voltage/current conversion. Bulb preview glow follows
 measured emitted optical power.
@@ -415,9 +422,32 @@ How forgiving they are, measured: in level 2 the knife works with its pivot anyw
 
 Desktop, phone portrait and phone landscape share **Controls / Level (or Design) / Help** tabs. **Run it / Pause**, **Reset** and the collapse/expand button stay beside the 3D view even when a different tab is open or the panel is collapsed. The single-line **Goal** remains visible; **Puzzle details** holds the longer brief, deadline and energy par. **Tools and speed** contains camera buttons and secondary tools; dragging empty space or using View still changes perspective while placing.
 
-A selected piece has one inspector in **Controls**: its name, adjustment chips, a full-width active slider, an editable exact value using the same min/max/step limits, movement arrows, **Set down** and Cancel. **Precision controls** holds the full positioning/angle controls and construction-energy comparison. The placement action row stays visible when the inspector scrolls. Level/Design no longer repeats the ghost editor.
+While a piece is selected, **Focus selected piece** under Tools and speed
+centers and frames its actual geometry. It keeps the viewing angles and all
+piece knobs unchanged; it is a camera action, not an extra placement operation.
 
-Level cards show title, task count and stars. **Level details** reveals learning and energy records without opening a live machine. The chooser’s **More** menu contains return-link controls, fresh challenge selection and recent challenges. The sandbox uses **Your designs / Examples** tabs with setup previews, and names new designs after creation. Short fit/rejection badges and a one-row preview disclosure reduce scene overlap; opening **Preview key** reveals the original path/flow colour key. Live solar watts, electrical contact/current and water readouts remain measured and visible.
+A selected piece has one inspector in **Controls**: its name, adjustment chips, a full-width active slider, an editable exact value using the same min/max/step limits, **Set down** and Cancel. Dragging is the primary placement gesture. **Precision controls** holds the movement arrows, full positioning/angle controls, guide caption and construction-energy comparison. The placement action row stays visible when the inspector scrolls. Level/Design no longer repeats the ghost editor.
+
+Level cards show title, task count and stars. **Level details** reveals learning and energy records without opening a live machine. The chooser’s **More** menu contains return-link controls, fresh challenge selection and recent challenges. The sandbox uses **Your designs / Examples** tabs with setup previews, and names new designs after creation. **Preview key**, guide captions, full solar meters and electrical readings sit in Controls rather than over the objects. **Readings and wiring** reveals the measured details and **Connect wires** enables compact endpoint buttons on the pieces. Outside wiring, only a small collector watts marker and the physical switch drag handle remain. Endpoints hide during a run; the switch's handle stays usable. The clock and View/Move switch use smaller backgrounds, while their buttons retain 44 px touch targets. Laser/water/current flow geometry and the arrows showing an adjustment remain in 3D; their detailed keys and number labels are on demand.
+
+Clear-scene checks, October 11: the new desktop/portrait/landscape regression
+measures the default solar watts marker below 3% of the scene area, requires
+endpoint buttons hidden until Connect wires is pressed, connects the native
+collector and winch, and reaches the unchanged goal. The camera focus keeps
+piece knobs and viewing angles unchanged and frames the selected geometry.
+The broad browser run passes 60/61 cases in 303.04 s; its sole failure is an
+obsolete saved-wire test selector looking for buttons in the readings host.
+That test now opens wiring through the normal controls and checks the scene
+endpoint host. The corrected saved-graph check, camera/clear-scene regression,
+exact-value inspector and zoom/drag regression pass together in 21.619 s.
+Earlier solar wiring, electrical terminal wiring and clear-scene checks pass
+in 45.421 s; aiming guides and physical handle operation also pass. Six
+registered storage/HTTP/client CTests pass in 4.30 s; all 269 C++ sources are
+registered. Phone placement and camera focus were played and visually reviewed.
+The follow-up broad run and Linux CI follow the checkpoint. This changes the
+client layout and camera only: the verified native engine remains SHA-256
+`807ae9c34f0516a0d0dbf588400451b865083043d614cd1aab8040140c830f87`.
+No physical model, level goal, timestep or tolerance changed.
 
 Compact-view verification, October 11: the broad registered Chrome suite, before the final scroll-footer correction, passes 59/60 tests in 367.875 s at 1280×860, 390×844 and 844×390. All new UI checks pass, including actual typed numeric input, invalid-value refusal, single-editor placement, collapse/expand with Run/Pause/Reset, gallery creation/rename/reopening, and opt-in details that do not create a live machine. An existing malformed-return-link check failed because Chrome reported `net::ERR_NO_BUFFER_SPACE` fetching `machine-view.mjs`; the unchanged exact check then passed separately in 1.982 s. Its cause remains unproven and the complete suite is not reported as green. The isolated gallery run earlier hit the same transport error; its subsequent desktop/portrait/landscape run passed. The initial full run had five UI-test failures (seven subcases): stale snap wording, inactive duplicate-button selectors, preview scrolling, and inspector height. Those were corrected without changing physical goals, waits or tolerances. The six affected editor/flow/save checks pass in 34.644 s. Four registered client CTests pass in 1.68 s (including four declared-geometry preview cases), profile storage passes, and all 269 C++ sources remain registered. Manual phone play checks numeric editing, placement on Run, Pause and Reset; desktop and both phone orientations were visually reviewed. No native physics or conservation model changed; the engine remains SHA-256 `807ae9c34f0516a0d0dbf588400451b865083043d614cd1aab8040140c830f87`.
 

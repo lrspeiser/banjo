@@ -497,3 +497,27 @@ body.panel-tabs .ghost-fields>.move-pad{display:grid;grid-template-columns:repea
 body.panel-tabs .ghost-fields .move-pad button{grid-area:auto}
 body.panel-tabs .ghost-bar>.actions{position:static;flex:none;padding:4px 0 0;margin:0}
 @media(max-width:359px){body.panel-tabs .ghost-fields>.move-pad{grid-template-columns:repeat(4,44px);grid-template-rows:repeat(2,44px)}}
+/* Instruments belong beside the scene. Only small meters and deliberate
+   wiring endpoints overlay the objects; their backgrounds do not catch drags. */
+body.panel-tabs #clock{right:auto;max-width:calc(100% - 20px);padding:2px 6px;border:0;font-size:12px;line-height:16px;background:#142836b0}
+body.panel-tabs .scene-mode button{min-width:44px;padding:4px 6px;font-size:12px}
+#instrument-panel>summary{min-height:44px;display:flex;align-items:center}
+#instrument-panel:not([open])>:not(summary),#precision-controls:not([open])>:not(summary){display:none!important}
+#instrument-panel #wire-mode{min-height:44px;padding:8px 14px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;font:14px system-ui;cursor:pointer}
+#instrument-panel #wire-mode[aria-pressed=true]{background:#356178;border-color:#9ed6ef}
+#instrument-panel .power-label,#instrument-panel .terminal-label{position:static;width:100%;margin-top:8px;padding:8px;box-shadow:none;pointer-events:auto}
+#instrument-panel .power-status{position:static;display:block;margin-top:8px}
+.power-pin,.terminal-control-pin{position:absolute;display:flex;gap:4px;align-items:center;pointer-events:none}
+.power-badge{font:600 12px system-ui;color:#ffe29b;background:#142836bf;border-radius:4px;padding:2px 5px;pointer-events:none}
+.power-pin button,.terminal-control-pin button{pointer-events:auto;min-width:44px;min-height:44px;padding:4px;border:1px solid #e2bc63;border-radius:50%;background:#5d481df2;color:#fff;font:600 12px system-ui;cursor:pointer}
+.power-pin button[aria-pressed=true],.terminal-control-pin button[aria-pressed=true]{outline:3px solid #ffe29b;outline-offset:1px}
+.terminal-control-pin .terminal-buttons{gap:4px}
+.terminal-control-pin button{background:#294c60f2}
+.terminal-control-pin .terminal-buttons button{margin:0;width:44px;flex:none;border-radius:50%}
+body.panel-tabs #preview-legend{position:static;max-width:none;width:100%;margin:0;padding:0;border:0;border-radius:0;background:none;pointer-events:auto}
+body.panel-tabs #preview-legend details{margin:0}
+body.panel-tabs #edit-guide-label{position:static;max-width:none;padding:0;background:none;border:0;border-radius:0;font-size:12px;color:#b9cbd6}
+body.panel-tabs #precision-controls .move-pad{position:static;grid-template-columns:repeat(6,44px);grid-template-rows:44px;gap:3px}
+body.panel-tabs #precision-controls .move-pad button{grid-area:auto}
+.view-controls #focus-piece{flex-basis:100%;font-size:14px}
+@media(max-width:359px){body.panel-tabs #precision-controls .move-pad{grid-template-columns:repeat(4,44px);grid-template-rows:repeat(2,44px)}}

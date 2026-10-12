@@ -9,9 +9,8 @@
 <button id="mode-view" type="button" aria-pressed="false" title="Drag empty space to turn the view; right/middle drag or two fingers also work (Esc)">View</button>
 <button id="mode-move" type="button" aria-pressed="true" title="Drag the selected piece to move it; a click returns to View (Esc)">Move</button>
 </div>
-<div id="power-labels" class="power-labels" aria-label="Solar meters and power connections"></div>
-<div id="terminal-labels" class="power-labels" aria-label="Electrical terminals"></div>
-<output id="power-status" class="power-status" hidden aria-live="polite"></output>
+<div id="power-pins" class="power-labels" aria-label="Power endpoints"></div>
+<div id="terminal-pins" class="power-labels" aria-label="Electrical endpoints"></div>
 <output id="edit-guide-label" class="edit-guide-label" hidden aria-live="polite"></output>
 <div id="scene-actions" class="scene-actions">
 <button id="start">Start</button><button id="reset">Set up again</button>
@@ -48,9 +47,15 @@
 <div id="view-controls" class="view-controls" aria-label="View controls">
 <button id="view-left" type="button" aria-label="Turn the view left" title="Turn the view left">◀</button><button id="view-right" type="button" aria-label="Turn the view right" title="Turn the view right">▶</button>
 <button id="view-in" type="button" aria-label="Zoom in" title="Zoom in">＋</button><button id="view-out" type="button" aria-label="Zoom out" title="Zoom out">−</button>
+<button id="focus-piece" type="button" hidden>Focus selected piece</button>
 </div>
 <label id="piece-edit-row" class="piece-edit-row" hidden>Adjust a piece<select id="piece-edit" aria-label="Adjust a piece"></select></label>
 <div id="ghost-bar" class="ghost-bar" hidden aria-label="The ghost: change it, turn it and set it down"></div>
+<details id="instrument-panel" hidden><summary>Readings and wiring</summary>
+<button id="wire-mode" type="button" aria-pressed="false">Connect wires</button>
+<output id="power-status" class="power-status" hidden aria-live="polite"></output>
+<div id="power-labels" aria-label="Solar meters and power connections"></div>
+<div id="terminal-labels" aria-label="Electrical readings"></div></details>
 <details id="flow-preview" class="flow-preview" hidden><summary id="flow-summary">Flow preview</summary>
 <div class="flow-time-row"><button id="flow-play" type="button" aria-pressed="true">Pause preview</button><label>Preview time<input id="flow-time" type="range" min="0" max="1" step="0.01" value="0" aria-label="Preview time"></label></div>
 <output id="flow-readings"></output></details>
@@ -107,7 +112,7 @@
 <li><b>Move and tweak it.</b> Drag the blue ghost or use the arrows. A click or tap leaves it where it is and returns to <b>View</b>; dragging the ghost resumes <b>Move</b>. Drag empty space to turn the view, or use a right/middle mouse drag or Ctrl+drag even over the piece. On a phone, drag near the piece to move it and use two fingers to turn and zoom the view. Change its size and angle with the piece controls. A red ghost tells you why it cannot fit. <b>Set down</b> confirms your placement.</li>
 <li><b>Try your machine.</b> Press <b>Run it</b> to place the piece you are adjusting and start the machine. A piece that does not fit stays red so you can move it. <b>Pause</b> stops the run; <b>Set up again</b> restores your setup. Tap a piece to move or change it. Solar collectors connect by clicking <b>Output</b>, then the receiving <b>Input</b>.</li>
 <li><b>Keep building.</b> Beat a challenge's energy par for three stars. In the Sandbox, choose a prebuilt design or <b>Add New Design</b>, name your build and use <b>Save version</b> to keep a setup you can reopen.</li>
-<li><b>Draw wires.</b> Where a wire is available, click or tap one labelled terminal, then another to connect them. Use <b>+</b> and <b>−</b> on batteries and bulbs, and <b>In</b> and <b>Out</b> on switches. Esc cancels a wire in progress. Prepared wires and your wires follow the same floor routes; crossings do not connect. Yellow wires show measured current, including in the flow preview.</li>
+<li><b>Draw wires.</b> Open <b>Readings and wiring</b> in Controls, then <b>Connect wires</b> to show the endpoints on the pieces. Tap one endpoint, then another. Use <b>+</b> and <b>−</b> on batteries and bulbs, and <b>In</b> and <b>Out</b> on switches. A solar <b>Out</b> connects to a winch or battery <b>In</b>. <b>Finish wiring</b> or Esc hides the endpoints. Prepared wires and your wires follow the same floor routes; crossings do not connect. Yellow arrows show measured current. Open <b>Flow preview</b> for current numbers.</li>
 <li><b>Need a hand?</b> Use <b>Ask for help</b> beside the game. <b>Place it for me</b> attempts a solution, worth one star at most.</li>
 </ol>
 <p><b>Keyboard:</b> arrows move a piece; Page Up/Down change its height; Q/E turn, R/F tip and Z/C roll. Enter sets it down. Esc switches between moving and looking around. Ctrl+Z undoes a change.</p>

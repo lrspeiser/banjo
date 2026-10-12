@@ -212,16 +212,31 @@ function syncWires() {
 // Validation, current and available pieces belong to the server/engine.
 const terminalLabels = new Map(), terminalPins = new THREE.Group(), terminalGhostWires = new THREE.Group();
 scene.add(terminalPins, terminalGhostWires);
-let terminalStart = null, terminalBusy = false, terminalStamp = '';
+let terminalStart = null, terminalBusy = false, terminalStamp = '', wiringMode = false;
+function setWiringMode(value) {
+  wiringMode = value; $('wire-mode').setAttribute('aria-pressed', String(value));
+  $('wire-mode').textContent = value ? 'Finish wiring' : 'Connect wires';
+  if (!value) {
+    pickedPowerPort = null;
+    if (terminalStart) cancelGhost();
+    powerMessage('');
+  }
+  positionPowerLabels(); positionTerminalLabels();
+}
+$('wire-mode').addEventListener('click', () => setWiringMode(!wiringMode));
+function showInstrumentPanel() {
+  $('instrument-panel').hidden = !powerLabels.size && !terminalLabels.size;
+}
 function shownElectrical() { return ghost?.electrical || machine?.electrical || {}; }
 function syncTerminalLabels() {
   const electrical = shownElectrical(), stamp = JSON.stringify(electrical.devices || []);
   if (stamp === terminalStamp) return;
   terminalStamp = stamp;
   const host = $('terminal-labels'); host.replaceChildren(); terminalLabels.clear();
+  const pins = $('terminal-pins'); pins.replaceChildren();
   for (const c of [...terminalPins.children]) { terminalPins.remove(c); c.geometry.dispose(); c.material.dispose(); }
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.classList.add('power-leaders'); svg.setAttribute('aria-hidden', 'true'); host.append(svg);
+  svg.classList.add('power-leaders'); svg.setAttribute('aria-hidden', 'true'); pins.append(svg);
   for (const device of electrical.devices || []) {
     const card = document.createElement('section'); card.className = 'terminal-label';
     card.dataset.device=device.name;card.dataset.kind=device.kind;
@@ -242,10 +257,12 @@ function syncTerminalLabels() {
     }
     if (!rows.length) continue;
     const feedback=document.createElement('output'); feedback.className='contact-feedback'; feedback.style.display='block';
-    card.append(title, controls, feedback);
+    card.append(title, feedback);
+    const overlay = document.createElement('section'); overlay.className='terminal-control-pin';
+    overlay.append(controls); pins.append(overlay);
     let handle;
     if (device.handle) {
-      handle=button('Drag handle',()=>{}, {ariaLabel:`Drag ${device.name} handle`});
+      handle=button('↕',()=>{}, {ariaLabel:`Drag ${device.name} handle`});
       handle.style.cssText='min-height:44px;min-width:44px;touch-action:none;cursor:ns-resize';
       handle.title='Drag down to close, up to open. The engine moves the rocker.';
       handle.addEventListener('pointerdown',e=>{
@@ -256,10 +273,11 @@ function syncTerminalLabels() {
       for (const type of ['pointerup','pointercancel','lostpointercapture']) handle.addEventListener(type,e=>{
         endSwitchPointer(e);pointers.delete(e.pointerId);pinch=0;if(!pointers.size)cameraGesture=false;
       });
-      card.append(handle);
+      overlay.append(handle);
     }
-    host.append(card); terminalLabels.set(device.name, {card, rows, device, feedback,handle});
+    host.append(card); terminalLabels.set(device.name, {card, overlay, controls, rows, device, feedback,handle});
   }
+  showInstrumentPanel();
 }
 async function pickTerminal(name) {
   if (!level || playing || terminalBusy || (ghost && ghost.p.piece !== 'wire')) return;
@@ -296,7 +314,7 @@ function positionTerminalLabels() {
   const rect = renderer.domElement.getBoundingClientRect();
   const top = Math.max(8, $('clock').getBoundingClientRect().bottom - rect.top + 8);
   const bottom = Math.min(rect.height - 8, innerHeight - rect.top - 8);
-  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #scene-tray, #scene-actions, #move-pad, #machine-controls, #preview-legend, #edit-guide-label, #power-status, .power-label')]
+  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #clock, .power-pin')]
     .filter(el => !el.hidden && el.style.visibility !== 'hidden' && el.offsetWidth && el.offsetHeight).map(el => {
       const r = el.getBoundingClientRect(); return {x:r.left-rect.left, y:r.top-rect.top, w:r.width, h:r.height};
     });
@@ -304,9 +322,11 @@ function positionTerminalLabels() {
   const editable = !playing && !terminalBusy && Boolean(tray && (ghost?.p.piece === 'wire' || (!ghost && piecesLeft(tray) > 0)));
   const snapshot=contactSnapshot(), previewTerminals=snapshot.preview?new Map((snapshot.terminals||[]).map(t=>[t.name,t.at_m])):null;
   const physical=shownElectrical().devices?.some(d=>d.kind==='socket');
-  for (const {card, rows, device, feedback,handle} of terminalLabels.values()) {
-    feedback.hidden=!physical;
-    if (physical) {
+  for (const {card: reading, overlay: card, controls, rows, device, feedback,handle} of terminalLabels.values()) {
+    reading.hidden = false;
+    controls.hidden = playing || (!wiringMode && !terminalStart);
+    feedback.hidden=false;
+    {
       const prefix=snapshot.preview?'Preview · ':'';
       if (device.kind==='battery') {
         const battery=snapshot.batteries.find(b=>b.name===device.battery);
@@ -336,7 +356,7 @@ function positionTerminalLabels() {
     if (!first) {card.hidden=true; for (const row of rows) row.leader.style.display='none'; continue;}
     const grip=device.handle&&terminalAt({name:device.name,part:device.handle.part},'',device.handle.at_m);
     const p = new THREE.Vector3(...(grip||first.at)).project(camera);
-    card.hidden = Math.abs(p.z) > 1 || Math.abs(p.x) > 1.4 || Math.abs(p.y) > 1.4;
+    card.hidden = ((playing || (!wiringMode && !terminalStart)) && !handle) || Math.abs(p.z) > 1 || Math.abs(p.x) > 1.4 || Math.abs(p.y) > 1.4;
     for (const row of rows) { row.leader.style.display = card.hidden ? 'none' : ''; row.control.disabled = !editable; row.control.setAttribute('aria-pressed', String(row.name === terminalStart)); }
     if (card.hidden) continue;
     const w = card.offsetWidth, h = card.offsetHeight, ax = (p.x+1)*rect.width/2, ay = (1-p.y)*rect.height/2;
@@ -355,6 +375,7 @@ function positionTerminalLabels() {
     if (!pos) { card.hidden = true; for (const row of rows) row.leader.style.display = 'none'; continue; }
     card.style.left = `${pos.x}px`; card.style.top = `${pos.y}px`; occupied.push({...pos,w,h});
     for (const row of rows) {
+      if (controls.hidden) {row.leader.style.display='none';continue;}
       if (!row.at) {row.leader.style.display='none'; continue;}
       const pin = new THREE.Vector3(...row.at).project(camera), b = row.control.getBoundingClientRect();
       row.leader.setAttribute('x1', String((pin.x+1)*rect.width/2)); row.leader.setAttribute('y1', String((1-pin.y)*rect.height/2));
@@ -406,11 +427,13 @@ const powerLabels = new Map(), solarRays = new Map();
 function powerMessage(text) {
   $('power-status').textContent = text;
   $('power-status').hidden = !text;
+  if (text) $('instrument-panel').open = true;
 }
 function syncPowerLabels() {
   const host = $('power-labels'); host.replaceChildren(); powerLabels.clear();
+  const pins = $('power-pins'); pins.replaceChildren();
   const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.classList.add('power-leaders'); svg.setAttribute('aria-hidden','true'); host.append(svg);
+  svg.classList.add('power-leaders'); svg.setAttribute('aria-hidden','true'); pins.append(svg);
   pickedPowerPort = null; powerBusy = false; powerMessage('');
   for (const port of machine.electrical?.power_ports || []) {
     const pack=machine.electrical.devices?.find(d=>d.kind==='battery'&&d.battery===port.battery&&d.terminal_parts);
@@ -426,12 +449,15 @@ function syncPowerLabels() {
     const watts = document.createElement('output'); watts.className = 'solar-watts';
     const detail = document.createElement('output'); detail.className = 'solar-detail';
     const state = document.createElement('output'); state.className = 'solar-state';
-    const control = button(port.kind === 'output' ? '● Output' : '● Input', () => pickPowerPort(port),
+    const control = button(port.kind === 'output' ? 'Out' : 'In', () => pickPowerPort(port),
       {ariaLabel: `${port.kind === 'output' ? 'Power output of' : 'Power input of'} ${title.textContent}`});
     control.setAttribute('aria-pressed', 'false');
-    if (port.kind === 'output') card.append(title, watts, detail, state, control);
-    else card.append(title, state, control);
-    host.append(card); powerLabels.set(port.name, {port, card, watts, detail, state, control});
+    if (port.kind === 'output') card.append(title, watts, detail, state);
+    else card.append(title, state);
+    const pin = document.createElement('section'); pin.className='power-pin';pin.dataset.port=port.name;
+    const badge = document.createElement('output'); badge.className='power-badge';
+    pin.append(badge,control);pins.append(pin);
+    host.append(card); powerLabels.set(port.name, {port, card, pin, badge, watts, detail, state, control});
   }
   // Older saved declarations also get a visible meter even without ports.
   for (const panel of machine.solar_panels || []) {
@@ -442,8 +468,10 @@ function syncPowerLabels() {
     const detail = document.createElement('output'); detail.className = 'solar-detail';
     const state = document.createElement('output');
     card.append(title, watts, detail, state); host.append(card);
+    const pin = document.createElement('section'); pin.className='power-pin';
+    const badge = document.createElement('output'); badge.className='power-badge';pin.append(badge);pins.append(pin);
     powerLabels.set(panel.name, {port:{name:panel.name,kind:'output',solar_panel:panel.name,at_m:panel.at_m},
-      card, watts, detail, state});
+      card, pin, badge, watts, detail, state});
   }
   for (const row of powerLabels.values()) {
     row.leader = document.createElementNS(svg.namespaceURI,'line');
@@ -451,15 +479,17 @@ function syncPowerLabels() {
     svg.append(row.leader,row.dot);
   }
   updatePowerLabels();
+  showInstrumentPanel();
 }
 function updatePowerLabels() {
-  for (const {port, watts, detail, state, control} of powerLabels.values()) {
+  for (const {port, badge, watts, detail, state, control} of powerLabels.values()) {
     const cable = machine.electrical?.power_cables?.find(c => c.a === port.name || c.b === port.name);
     if (port.kind === 'output') {
       const measured = readouts.machines?.solar_panels?.find(p => p.name === port.solar_panel);
       const panel = machine.solar_panels?.find(p => p.name === port.solar_panel);
       const battery = readouts.machines?.batteries?.find(b => b.name === (measured?.battery || panel?.battery));
       watts.textContent = measured ? `${(measured.power_w || 0).toFixed(1)} W charging` : 'Measuring sunlight…';
+      badge.textContent = measured ? `${(measured.power_w || 0).toFixed(1)} W` : '… W';
       detail.textContent = measured ? `${(measured.sunlight_w || 0).toFixed(0)} W sunlight · ${(battery?.charge_j || 0).toFixed(1)} J stored` : '';
       const aim = Number.isFinite(measured?.off_sun_deg) ? `${measured.off_sun_deg.toFixed(0)}° off sun` : '';
       state.textContent = measured?.shaded ? `Center blocked by ${measured.shaded_by || 'a part'}`
@@ -467,8 +497,10 @@ function updatePowerLabels() {
           cable ? 'Cable connected' : 'Output not wired'].filter(Boolean).join(' · ');
       if (measured?.shaded && aim) state.textContent += ` · ${aim}`;
     } else state.textContent = cable ? 'Cable connected' : 'Waiting for a cable';
+    badge.hidden = port.kind !== 'output' || (wiringMode && !playing);
     if (control) {
-      control.disabled = powerBusy || Boolean(ghost);
+      control.hidden = playing || (!wiringMode && !pickedPowerPort);
+      control.disabled = playing || powerBusy || Boolean(ghost);
       control.setAttribute('aria-pressed', String(port.name === pickedPowerPort));
     }
   }
@@ -500,7 +532,7 @@ function updateSolarRays() {
   }
 }
 async function pickPowerPort(port) {
-  if (powerBusy || ghost || !level) return;
+  if (playing || powerBusy || ghost || !level) return;
   if (port.kind === 'output') {
     pickedPowerPort = pickedPowerPort === port.name ? null : port.name;
     powerMessage(pickedPowerPort ? 'Now click the winch or battery input to connect the power cable. Esc cancels.' : '');
@@ -521,6 +553,7 @@ async function pickPowerPort(port) {
     if (level !== sourceLevel || activeDesign?.id !== designId || JSON.stringify(placements) !== before) return;
     remember(); placements = next; pickedPowerPort = null; renderTray(); renderPlaced();
     await rebuildLevel(false);
+    setWiringMode(false);
     if (level === sourceLevel && activeDesign?.id === designId) powerMessage('Power cable connected. Run it to try the machine.');
   } catch (e) { powerMessage(e.message); }
   finally { powerBusy = false; updatePowerLabels(); }
@@ -528,6 +561,7 @@ async function pickPowerPort(port) {
 document.addEventListener('keydown', e => {
   if ($('guide').open) return;
   if (e.key === 'Escape' && pickedPowerPort) { pickedPowerPort = null; powerMessage(''); updatePowerLabels(); }
+  if (e.key === 'Escape' && wiringMode) setWiringMode(false);
 });
 
 function positionPowerLabels() {
@@ -538,18 +572,21 @@ function positionPowerLabels() {
   const rect = renderer.domElement.getBoundingClientRect();
   const clock = $('clock').getBoundingClientRect();
   const top = Math.max(8, clock.bottom - rect.top + 8);
-  const status = $('power-status');
-  const bottom = status.hidden ? rect.height - 10 : status.getBoundingClientRect().top - rect.top - 8;
-  const occupied = ['scene-mode','scene-tray','scene-actions','move-pad','machine-controls','preview-legend','edit-guide-label']
+  const bottom = rect.height - 10;
+  const occupied = ['scene-mode']
     .map(id => $(id)).concat(collapsedPanel()).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
     .map(el => { const r = el.getBoundingClientRect(); return {x:r.left - rect.left,y:r.top - rect.top,w:r.width,h:r.height}; });
   // Place the larger meters first, then fit receiver buttons beside them.
   const rows = [...powerLabels.values()].sort((a,b) => (a.port.kind === 'input') - (b.port.kind === 'input'));
-  for (const {port, card, leader, dot} of rows) {
+  for (const {port, card: reading, pin: card, badge, control, leader, dot} of rows) {
+    badge.hidden = port.kind !== 'output' || (wiringMode && !playing);
+    if (control) control.hidden = playing || (!wiringMode && !pickedPowerPort);
     const at = powerPortAt(port);
     if (!at) { card.hidden = true; continue; }
     const p = new THREE.Vector3(...at).project(camera);
-    card.hidden = p.z > 1 || p.z < -1 || Math.abs(p.x) > 1.4 || Math.abs(p.y) > 1.4;
+    reading.hidden = false;
+    const editingThisPanel = ghost?.p.piece === 'solar' && port.solar_panel === `your solar ${ghost.index + 1}`;
+    card.hidden = editingThisPanel || (port.kind === 'input' && (playing || (!wiringMode && !pickedPowerPort))) || p.z > 1 || p.z < -1 || Math.abs(p.x) > 1.4 || Math.abs(p.y) > 1.4;
     if (leader) { leader.style.display = dot.style.display = card.hidden ? 'none' : ''; }
     if (card.hidden) continue;
     const width = card.offsetWidth, height = card.offsetHeight;
@@ -1519,6 +1556,16 @@ function followGhost() {
   if (!ghost || !ghost.drawnAt) return;
   ghostGroup.position.set((ghost.p.x_m ?? 0) - ghost.drawnAt.x, 0, (ghost.p.z_m ?? 0) - ghost.drawnAt.z);
 }
+function focusSelectedPiece() {
+  if (!ghost?.drawnAt || !ghostGroup.children.length) return;
+  const bounds = new THREE.Box3().setFromObject(ghostGroup);
+  if (bounds.isEmpty()) return;
+  bounds.getCenter(goal); target.copy(goal);
+  const half = Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
+  distance = Math.max(.6, bounds.getSize(new THREE.Vector3()).length() * .65 / Math.tan(half));
+  freshView();
+}
+$('focus-piece').addEventListener('click',focusSelectedPiece);
 
 function clearGhostMeshes() {
   for (const c of [...ghostGroup.children]) { ghostGroup.remove(c); c.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
@@ -1841,10 +1888,11 @@ function renderGhostBar() {
   renderMovePad();
   const card = $('ghost-bar');
   card.hidden = !ghost;
+  $('focus-piece').hidden = !ghost;
   ghost && (ghost.cardInput = null);
   $('piece-edit-row').hidden = Boolean(ghost) || !placements.length;
   if (!ghost) {
-    for(const id of ['flow-preview','phone-tools','move-pad']) if($(id)) $('control-panel').append($(id));
+    for(const id of ['flow-preview','phone-tools','move-pad','preview-legend','instrument-panel','edit-guide-label']) if($(id)) $('control-panel').append($(id));
     card.replaceChildren(); return;
   }
   const throwAway = button('✕', cancelGhost, {ariaLabel: 'Throw the ghost away', title: 'Throw the ghost away'});
@@ -1908,10 +1956,10 @@ function renderGhostBar() {
   actions.append(button('✓ Set down', setGhostDown, {className: 'down', disabled: !ghost.fits || ghost.busy}), throwAway);
   const precision = document.createElement('details'); precision.id='precision-controls';
   precision.open=precisionOpen;
-  precision.append(Object.assign(document.createElement('summary'),{textContent:'Precision controls'}),ghostItem(),
+  precision.append(Object.assign(document.createElement('summary'),{textContent:'Precision controls'}),$('move-pad'),$('edit-guide-label'),ghostItem(),
     Object.assign(document.createElement('p'),{id:'ghost-cost',className:'legend'}));
   const fields=Object.assign(document.createElement('div'),{className:'ghost-fields'});
-  fields.append(head,chips,row,state,$('move-pad'),precision,$('flow-preview'));
+  fields.append(head,chips,row,state,precision,$('instrument-panel'),$('preview-legend'),$('flow-preview'));
   if($('phone-tools')) fields.append($('phone-tools'));
   card.replaceChildren(fields,actions);
   showGhostKnobs(); showGhostState();
@@ -1932,6 +1980,8 @@ function madeAgainstPar() {
 }
 
 function showGhostState() {
+  $('focus-piece').hidden = !ghost || !ghostGroup.children.length;
+  $('focus-piece').disabled = !ghost?.drawnAt || Boolean(ghost.busy);
   const choosingTerminal = Boolean(terminalStart && ghost?.p.piece === 'wire' && !ghost.p.b_terminal);
   const bar = document.querySelector('#ghost-bar .down');
   if (bar && ghost) bar.disabled = !ghost.fits || ghost.busy || !ghost.answered;
@@ -2006,6 +2056,7 @@ function flowLabel(text, point) {
   ctx.font = 'bold 24px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffe066'; ctx.fillText(text,80,20);
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(canvas),depthTest:false,depthWrite:false}));
+  sprite.visible = false;
   sprite.position.copy(point); flowGroup.add(sprite); flowLabels.push(sprite);
 }
 
@@ -2120,7 +2171,7 @@ function updateFlowPreview() {
   for (const sprite of flowLabels) {
     sprite.scale.set(scale*76,scale*19,1);
     const p=sprite.position.clone().project(camera), x=(p.x+1)*view.clientWidth/2-38, y=(1-p.y)*view.clientHeight/2-9.5;
-    sprite.visible=p.z<1 && x>=0 && y>=0 && x+76<=view.clientWidth && y+19<=view.clientHeight &&
+    sprite.visible=(wiringMode || $('flow-preview').open) && p.z<1 && x>=0 && y>=0 && x+76<=view.clientWidth && y+19<=view.clientHeight &&
       !occupied.some(r=>x<r.x+r.w && x+76>r.x && y<r.y+r.h && y+19>r.y);
     if (sprite.visible) occupied.push({x,y,w:76,h:19});
   }
@@ -2253,7 +2304,7 @@ window.machinePreviewState = () => previewShown && {paths: previewShown.paths.ma
   points: p.points.length})), hits: previewShown.hits.length, goal_at_s: previewShown.goal_at_s,
   legend: $('preview-legend').textContent};
 window.machineFlowPreviewState=()=>!flowPending && previewShown && {frames:previewShown.flow_frames?.length||0,time:flowTime,
-  playing:flowPlaying,visible:flowGroup.visible,index:flowIndex,drawn:flowGroup.userData.drawn,sample:previewShown.flow_frames?.[flowIndex]};
+  playing:flowPlaying,visible:flowGroup.visible,labels:flowLabels.filter(s=>s.visible).length,index:flowIndex,drawn:flowGroup.userData.drawn,sample:previewShown.flow_frames?.[flowIndex]};
 
 $('path-toggle').addEventListener('click', () => {
   previewOn = !previewOn;
@@ -4009,11 +4060,8 @@ async function startGame() {
   document.querySelector('#scene-actions .speed').hidden = true;
   // What the player works with, together at the top of the scene: the
   // Running, viewing and piece editing share the adjacent control panel.
-  // Only the prediction key overlays the scene.
-  const top = Object.assign(document.createElement('div'), {className: 'scene-top'});
-  top.append($('preview-legend'));
-  view.append(top);
   const controls = $('control-panel');
+  controls.append($('preview-legend'));
   controls.prepend($('scene-tray'), $('scene-actions'));
   $('view-controls').before($('flow-preview'));
   $('view-controls').prepend($('undo-pieces'), $('redo-pieces'));
