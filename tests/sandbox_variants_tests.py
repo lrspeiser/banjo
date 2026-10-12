@@ -109,7 +109,7 @@ class Recipes(unittest.TestCase):
                     self.assertEqual(len(compiled['electrical']['wires']), 2)
                     self.assertTrue(all(p['fixed'] for p in compiled['parts']))
         self.assertEqual(family, before)
-        self.assertEqual(variants.identity('easy-loop', 42), 'easy-loop--v1--0000002a--0')
+        self.assertEqual(variants.identity('easy-motor', 42), 'easy-motor--v1--0000002a--0')
         for version in (0, 3, True, '1'):
             with self.assertRaises(ValueError):
                 variants.construct(family, 42, version=version)
@@ -137,6 +137,84 @@ class Recipes(unittest.TestCase):
             self.assertNotIn('contact_holder', level['tray'][0])
         print('LEGACY_POWER_SHARE_MEASUREMENTS ' + json.dumps([
             level['variant']['validation'] for level in (first, reopened)], sort_keys=True))
+
+    def test_switch_family_versions_preserve_raw_v1_graphs_and_migrate_handles(self):
+        oracles = {'easy-switch': (11, 11.5, 12.5, 13),
+                   'easy-bulb': (13, 12.5, 13, 11), 'easy-loop': (4, 5, 3.5, 4)}
+        for family in [f for f in families() if f['id'] in oracles]:
+            original = copy.deepcopy(family)
+            current = variants.construct(family, 42)
+            self.assertEqual(current['id'], f'{family["id"]}--v2--0000002a--0')
+            raw = game.compose(current, current['solution'])[0]
+            compiled = world.compile_spec(raw)
+            switch = next(d for d in compiled['electrical']['devices'] if d['kind'] == 'switch')
+            self.assertIn('handle', switch)
+            self.assertFalse(next(p for p in compiled['parts'] if p['name'] == switch['handle']['part'])['fixed'])
+            for (seed, attempt), expected in zip(((0, 0), (42, 0), (42, 1), (42, 2)), oracles[family['id']]):
+                with self.subTest(family=family['id'], seed=seed, attempt=attempt):
+                    legacy = variants.construct(family, seed, attempt=attempt, version=1)
+                    self.assertEqual(variants.parse(legacy['id'])['version'], 1)
+                    self.assertEqual(legacy['variant']['value'], expected)
+                    self.assertEqual(legacy['goal'], family['goal'])
+                    self.assertEqual(legacy['time_s'], family['time_s'])
+                    self.assertEqual(legacy['solution'], family['solution'])
+                    self.assertEqual(legacy['wrong'], family['wrong'])
+                    if family['id'] == 'easy-switch':
+                        self.assertTrue(legacy['tray'][0]['legacy_manual'])
+                        self.assertEqual(set(legacy['tray'][0]['knobs']),
+                            {'x_m', 'z_m', 'mode', 'state', 'threshold_deg'})
+                        self.assertEqual(legacy['machine']['electrical']['wires'],
+                            [{'name': 'return wire', 'a': 'lamp:minus', 'b': 'supply:minus'}])
+                    else:
+                        device = next(d for d in legacy['machine']['electrical']['devices'] if d['name'] == 'control')
+                        self.assertTrue(device['closed'])
+                        self.assertNotIn('hinge', device)
+                        old_handle = next(p for p in legacy['machine']['parts'] if p['name'] == 'control handle')
+                        self.assertTrue(old_handle['fixed'])
+                        self.assertEqual(old_handle['size_m'], [.04, .1, .04])
+                        self.assertEqual(old_handle['at_m'], [.04, .15, 0])
+                        names = [w['name'] for w in legacy['machine']['electrical']['wires']]
+                        self.assertEqual(names, ['supply wire'] + (['switched wire'] if family['id'] == 'easy-loop' else []))
+                    before = copy.deepcopy(legacy)
+                    migrated = world.compile_spec(game.compose(legacy, legacy['solution'])[0])
+                    switched = next(d for d in migrated['electrical']['devices'] if d['kind'] == 'switch')
+                    self.assertIn('handle', switched)
+                    self.assertFalse(next(p for p in migrated['parts'] if p['name'] == switched['handle']['part'])['fixed'])
+                    self.assertEqual(legacy, before, 'migration leaves the saved v1 declaration intact')
+            fallback = variants.reconstruct(family, 42, None, version=1)
+            self.assertEqual(fallback['id'], f'{family["id"]}--v1--0000002a--c')
+            self.assertTrue(fallback['variant']['fallback'])
+            if family['id'] == 'easy-switch':
+                paddle = world.compile_spec(game.compose(fallback, [{'piece': 'switch', 'mode': 'paddle'}])[0])
+                device = next(d for d in paddle['electrical']['devices'] if d['kind'] == 'switch')
+                self.assertNotIn('handle', device, 'the old manual/paddle choice must retain actual paddle geometry')
+                self.assertEqual(device['hinge'], 'your switch 1 paddle axle')
+                self.assertEqual(device['closed_at_or_below_deg'], -8)
+                body = next(p for p in paddle['parts'] if p['name'] == 'your switch 1 paddle')
+                self.assertEqual(body['size_m'], [.36, .04, .16])
+                self.assertFalse(body['fixed'])
+            self.assertEqual(family, original)
+
+    def test_native_legacy_switch_family_shares_reopen_with_physical_handles(self):
+        if not ENGINE.is_file():
+            if os.environ.get('BANJO_MACHINE_ENGINE') == 'required':
+                self.fail('A verified native engine is required.')
+            self.skipTest('Native engine unavailable.')
+        measured = []
+        with tempfile.TemporaryDirectory() as logs, patch.dict(game._variants, clear=True), \
+                patch.dict(game._variant_requests, clear=True):
+            for family in ('easy-switch', 'easy-bulb', 'easy-loop'):
+                identifier = f'{family}--v1--0000002a--0'
+                level = game.fresh_easy(family, 42, ENGINE, logs, recipe_id=identifier)
+                self.assertEqual(level['id'], identifier)
+                self.assertEqual(level['variant']['version'], 1)
+                report = level['variant']['validation']
+                self.assertTrue(report['valid'])
+                self.assertEqual(report['scenarios']['solution']['worked'], 3)
+                self.assertEqual(report['scenarios']['empty']['worked'], 0)
+                self.assertEqual(report['scenarios']['wrong']['worked'], 0)
+                measured.append(dict(family=family, **report))
+        print('LEGACY_SWITCH_SHARE_MEASUREMENTS ' + json.dumps(measured, sort_keys=True))
 
     def test_retry_identity_and_three_run_energy_par(self):
         family = families()[0]

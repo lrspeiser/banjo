@@ -1,5 +1,6 @@
 """HTTP host aliases and same-origin API requests for the deployed game."""
 import argparse
+import concurrent.futures
 import http.client
 import importlib.util
 import json
@@ -73,6 +74,28 @@ class Requests(unittest.TestCase):
         status, _, headers = self.request(['banjo.is'], path='/')
         self.assertEqual(status, 303)
         self.assertEqual(dict(headers)['Location'], '/play')
+
+    def test_simultaneous_bootstrap_scripts_return_every_complete_body(self):
+        # Each browser's bootstrap needs the entire module before setup can
+        # start. Exercise the real listener and handler, with no connection
+        # retries: a refused/reset script cannot become a ready game.
+        expected = (ROOT / 'client/voxel-lab/machine.js').read_bytes()
+        for burst in range(3):
+            barrier = threading.Barrier(65)
+            def client():
+                barrier.wait(timeout=10)
+                return self.request(['127.0.0.1'], path='/machine.js')
+            with concurrent.futures.ThreadPoolExecutor(max_workers=64) as pool:
+                requests = [pool.submit(client) for _ in range(64)]
+                barrier.wait(timeout=10)
+                results = [request.result(timeout=10) for request in requests]
+            for index, (status, body, headers) in enumerate(results):
+                with self.subTest(burst=burst, request=index):
+                    self.assertEqual(status, 200)
+                    self.assertEqual(body, expected)
+                    self.assertEqual(int(dict(headers)['Content-Length']), len(expected))
+            # The same listener must remain usable after all three bursts.
+            self.assertEqual(self.request(['127.0.0.1'], path='/play')[0], 200)
 
     def test_unknown_spoofed_and_malformed_hosts_are_refused(self):
         for hosts in ([], ['evil.example'], ['banjo.is.evil.example'], ['evil@banjo.is'],

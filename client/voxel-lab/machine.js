@@ -40,6 +40,7 @@ let azimuth = -0.55, elevation = 0.42, distance = 6.5;
 
 let spec = null, machine = null, session = null, world = {seq: 0, t: 0, bodies: new Map()};
 let playing = false, follow = true, readouts = {}, polling = 0, history = [], undo = [], lastFrame = null;
+let switchDragging = null, switchPullQueue = Promise.resolve(), switchTouchGesture=false, playPending=null;
 const meshes = new Map(), wires = [];
 const materials = new Map();
 
@@ -233,7 +234,23 @@ function syncTerminalLabels() {
     }
     if (!rows.length) continue;
     const feedback=document.createElement('output'); feedback.className='contact-feedback'; feedback.style.display='block';
-    card.append(title, controls, feedback); host.append(card); terminalLabels.set(device.name, {card, rows, device, feedback});
+    card.append(title, controls, feedback);
+    let handle;
+    if (device.handle) {
+      handle=button('Drag handle',()=>{}, {ariaLabel:`Drag ${device.name} handle`});
+      handle.style.cssText='min-height:44px;min-width:44px;touch-action:none;cursor:ns-resize';
+      handle.title='Drag down to close, up to open. The engine moves the rocker.';
+      handle.addEventListener('pointerdown',e=>{
+        if (!startSwitchDrag(device,e)) return;
+        e.preventDefault();e.stopPropagation();pointers.set(e.pointerId,[e.clientX,e.clientY]);handle.setPointerCapture(e.pointerId);
+      });
+      handle.addEventListener('pointermove',e=>{moveCameraPointer(e);moveSwitchDrag(e);});
+      for (const type of ['pointerup','pointercancel','lostpointercapture']) handle.addEventListener(type,e=>{
+        endSwitchPointer(e);pointers.delete(e.pointerId);pinch=0;if(!pointers.size)cameraGesture=false;
+      });
+      card.append(handle);
+    }
+    host.append(card); terminalLabels.set(device.name, {card, rows, device, feedback,handle});
   }
 }
 async function pickTerminal(name) {
@@ -279,7 +296,7 @@ function positionTerminalLabels() {
   const editable = !playing && !terminalBusy && Boolean(tray && (ghost?.p.piece === 'wire' || (!ghost && piecesLeft(tray) > 0)));
   const snapshot=contactSnapshot(), previewTerminals=snapshot.preview?new Map((snapshot.terminals||[]).map(t=>[t.name,t.at_m])):null;
   const physical=shownElectrical().devices?.some(d=>d.kind==='socket');
-  for (const {card, rows, device, feedback} of terminalLabels.values()) {
+  for (const {card, rows, device, feedback,handle} of terminalLabels.values()) {
     feedback.hidden=!physical;
     if (physical) {
       const prefix=snapshot.preview?'Preview · ':'';
@@ -296,6 +313,11 @@ function positionTerminalLabels() {
         }).join(' · ');
       } else feedback.hidden=true;
     }
+    if (handle) {
+      handle.disabled=Boolean(ghost||pullMode||attachMode||!session);
+      const measured=snapshot.devices.find(d=>d.name===device.name);
+      feedback.hidden=false;feedback.textContent=(snapshot.preview?'Preview · ':'')+(measured?`${measured.closed?'Closed':'Open'} · ${Math.abs(measured.current_a||0).toFixed(3)} A`:'Drag to operate');
+    }
     for (const row of rows) {
       row.at = previewTerminals?.get(row.name)||terminalAt(row.device,row.key,row.declaredAt);
       row.pin.visible = Boolean(row.at);
@@ -304,7 +326,8 @@ function positionTerminalLabels() {
     }
     const first = rows.find(row=>row.at);
     if (!first) {card.hidden=true; for (const row of rows) row.leader.style.display='none'; continue;}
-    const p = new THREE.Vector3(...first.at).project(camera);
+    const grip=device.handle&&terminalAt({name:device.name,part:device.handle.part},'',device.handle.at_m);
+    const p = new THREE.Vector3(...(grip||first.at)).project(camera);
     card.hidden = Math.abs(p.z) > 1 || Math.abs(p.x) > 1.4 || Math.abs(p.y) > 1.4;
     for (const row of rows) { row.leader.style.display = card.hidden ? 'none' : ''; row.control.disabled = !editable; row.control.setAttribute('aria-pressed', String(row.name === terminalStart)); }
     if (card.hidden) continue;
@@ -971,6 +994,7 @@ function renderClock(frame) {
 
 // ---- building and running --------------------------------------------------------
 async function build(next, start, request) {
+  await stopSwitchDrag();
   const mine = ++polling;
   if (session) api({op: 'close', session}).catch(() => {});
   session = null; playing = false;
@@ -1010,21 +1034,28 @@ async function build(next, start, request) {
 }
 
 async function setPlaying(run) {
-  // A level whose world the server closed while it sat idle is built again
-  // and started, as Run it would: the pieces are kept here, in the page.
+  // An idle session is rebuilt before starting the command queue.
   if (!session) { if (LEVEL_MODE && run && level) await rebuildLevel(true); return; }
-  if (run) {clearTimeout(previewTimer);previewAsk++;clearPreview();}
-  const mine = polling, requestedSession = session;
-  let frame;
-  try { frame = await api({op: 'play', session: requestedSession, running: run, speed: Number($('speed').value)}); }
-  catch (e) {
-    if (mine !== polling || session !== requestedSession) return;
-    if (e.status === 410 && LEVEL_MODE && run && level) { session = null; await rebuildLevel(true); return; }
-    throw e;
-  }
-  if (mine !== polling || session !== requestedSession) return;
-  playing = frame.playing; renderClock(frame);
-  if (wake) wake();
+  const mine=polling,requestedSession=session;
+  const previous=playPending;
+  let finish;
+  const command=new Promise(resolve=>{finish=()=>{resolve();if(playPending===command)playPending=null;};});
+  playPending=command;
+  try {
+    if(previous)await previous;
+    if(mine!==polling||session!==requestedSession)return;
+    if(!run)await stopSwitchDrag();
+    if(run){clearTimeout(previewTimer);previewAsk++;clearPreview();}
+    let frame;
+    try {frame=await api({op:'play',session:requestedSession,running:run,speed:Number($('speed').value)});}
+    catch(error){
+      if(mine!==polling||session!==requestedSession)return;
+      if(error.status===410&&LEVEL_MODE&&run&&level){session=null;finish();await rebuildLevel(true);return;}
+      throw error;
+    }
+    if(mine!==polling||session!==requestedSession)return;
+    playing=frame.playing;renderClock(frame);if(wake)wake();
+  } finally {finish();}
 }
 
 // At most 20 frame requests a second while running and one a second while
@@ -1120,15 +1151,18 @@ let pinch = 0;
 // every finger lifts. The remaining finger must not pick up or move a piece.
 let cameraGesture = false;
 let sceneDragged = false;
-renderer.domElement.addEventListener('pointerdown', e => { pointers.set(e.pointerId, [e.clientX, e.clientY]); renderer.domElement.setPointerCapture(e.pointerId); });
+renderer.domElement.addEventListener('pointerdown', e => {
+  pointers.set(e.pointerId,[e.clientX,e.clientY]);renderer.domElement.setPointerCapture(e.pointerId);
+  if(pointers.size===2){const [a,b]=[...pointers.values()];pinch=Math.hypot(a[0]-b[0],a[1]-b[1]);}
+});
 renderer.domElement.addEventListener('pointerup', e => { pointers.delete(e.pointerId); pinch = 0; });
 renderer.domElement.addEventListener('pointercancel', e => { pointers.delete(e.pointerId); pinch = 0; });
-renderer.domElement.addEventListener('pointermove', e => {
+function moveCameraPointer(e) {
   const last = pointers.get(e.pointerId); if (!last) return;
   const before = [...pointers.values()];
   pointers.set(e.pointerId, [e.clientX, e.clientY]);
   if (pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) >= 6) sceneDragged = true;
-  if (draggingGhost || pulling) return;
+  if (draggingGhost || pulling || switchDragging) return;
   if (pressedAt && !cameraGesture && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6) return;
   if (pointers.size === 2) {
     // Two fingers: apart and together zoom, moved together turn the view
@@ -1142,9 +1176,11 @@ renderer.domElement.addEventListener('pointermove', e => {
   }
   azimuth -= (e.clientX - last[0]) * .006;
   elevation = Math.min(1.45, Math.max(.05, elevation + (e.clientY - last[1]) * .006));
-});
+}
+renderer.domElement.addEventListener('pointermove',moveCameraPointer);
 renderer.domElement.addEventListener('wheel', e => {
   e.preventDefault();
+  if (switchDragging) return;
   if (ghost && (e.shiftKey || e.altKey)) return;
   const previous = distance;
   distance = Math.min(40, Math.max(.4, distance * Math.exp(e.deltaY * .001)));
@@ -1186,6 +1222,7 @@ function render() {
   aimCamera();
   if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); updateEditGuide(); syncMovePad(); }
   drawPull();
+  drawSwitchPull();
   for (const w of wires) if (w.terminalWire) w.line.visible = w.connected!==false && !hiddenPiece(w.name) && !ghost?.electrical;
   updateFlowPreview();
   updateContactGaps();
@@ -1771,6 +1808,7 @@ function setGhostDown() {
 // with - and + either side of its slider, and Set down.
 function knobName(rule, key) { return (rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
 function pieceKnobVisible(p,key) {
+  if(p.piece==='switch'&&(p.mode==='paddle'?['state','handle_material'].includes(key):key==='threshold_deg'))return false;
   return !(p.piece==='battery' && p.mount!=='contact pack' && ['height_m','yaw_deg','housing_material'].includes(key));
 }
 
@@ -1822,7 +1860,7 @@ function renderGhostBar() {
     select.setAttribute('aria-label', `Its ${name}`);
     select.addEventListener('change', () => {
       ghost.p[key] = rule.choices.find(c => String(c) === select.value) ?? select.value;
-      if (key==='mount' && ghost.p.piece==='battery') {renderPlaced();renderGhostBar();}
+      if ((key==='mount' && ghost.p.piece==='battery')||(key==='mode'&&ghost.p.piece==='switch')) {renderPlaced();renderGhostBar();}
       showGhostKnobs(); askGhost();
     });
     row.append(select);
@@ -2276,6 +2314,10 @@ renderer.domElement.addEventListener('pointerdown', e => {
     view.classList.remove('grabbing'); return;
   }
   if (cameraGesture) return;
+  if (!ghost&&!pullMode&&!attachMode&&e.button===0&&!e.ctrlKey) {
+    const device=switchHandleAt(e.clientX,e.clientY,e.pointerType==='touch');
+    if (device&&startSwitchDrag(device,e)) return;
+  }
   pressedAt = [e.clientX, e.clientY];
   sceneDragged = false;
   draggingGhost = null;
@@ -2307,6 +2349,7 @@ renderer.domElement.addEventListener('pointermove', e => {
   } else if (!e.buttons) view.classList.toggle('grab', movableGhost() && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
 });
 renderer.domElement.addEventListener('pointerup', e => {
+  if(switchDragging?.pointerId===e.pointerId){endSwitchPointer(e);pressedAt=null;if(!pointers.size)cameraGesture=false;return;}
   const click = e.button === 0 && !cameraGesture && !sceneDragged && pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6;
   if (ghost && click) setLooking(true);
   else if (!ghost && click && !pullMode && !attachMode) {
@@ -2451,6 +2494,123 @@ function drawPull() {
   $('clock').title = `Pulling ${pulling.name} with ${Math.round(force.length())} N`;
 }
 window.machinePullState = () => pulling && {body: pulling.name, force_n: Math.round(pullForce(pulling.clientX, pulling.clientY).force.length())};
+
+// A manual switch is operated by force on its real rocker. The label offers
+// a full touch target; its pointer offset prevents the label from moving the
+// grip before the player deliberately drags. It does not set an angle/state.
+const SWITCH_MAX_N=20;
+const switchPullLine=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0xffd34d}));
+switchPullLine.visible=false;switchPullLine.frustumCulled=false;scene.add(switchPullLine);
+function switchHandleAt(x,y,touch=false) {
+  const devices=(machine?.electrical?.devices||[]).filter(d=>d.handle&&meshes.get(d.handle.part)?.visible);
+  pointerRay(x,y);
+  const names=new Map([...meshes].map(([name,mesh])=>[mesh,name]));
+  const hit=raycaster.intersectObjects([...names.keys()].filter(m=>m.visible),true)[0];
+  let object=hit?.object;while(object&&!names.has(object))object=object.parent;
+  const direct=devices.find(d=>d.handle.part===names.get(object));
+  if(direct)return direct;
+  if(!touch)return null;
+  return devices.find(d=>{
+    const at=terminalAt({name:d.name,part:d.handle.part},'',d.handle.at_m);
+    if(!at)return false;
+    const [sx,sy]=window.machineScreenPoint(at);
+    return Math.hypot(sx-x,sy-y)<=22&&(!hit||names.get(object)===d.part);
+  })||null;
+}
+function startSwitchDrag(device,e) {
+  if(switchDragging||ghost||pullMode||attachMode||!session||cameraGesture||pointers.size>1||e.button!==0||e.ctrlKey)return false;
+  const mesh=meshes.get(device.handle.part),grip=terminalAt({name:device.name,part:device.handle.part},'',device.handle.at_m);
+  if(!mesh||!grip)return false;
+  pointerRay(e.clientX,e.clientY);
+  const initial=new THREE.Vector3(...grip),plane=new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()).negate(),initial);
+  const from=raycaster.ray.intersectPlane(plane,new THREE.Vector3());
+  if(!from)return false;
+  switchDragging={device,mesh,local:mesh.worldToLocal(initial.clone()),initial,from,plane,
+    pointerId:e.pointerId,start:[e.clientX,e.clientY],clientX:e.clientX,clientY:e.clientY,
+    session,active:false,ready:false,sent:0};
+  switchTouchGesture=e.pointerType==='touch';
+  pressedAt=null;sceneDragged=true;draggingGhost=null;
+  return true;
+}
+function switchForce(drag) {
+  pointerRay(drag.clientX,drag.clientY);
+  const pointer=raycaster.ray.intersectPlane(drag.plane,new THREE.Vector3()),at=drag.mesh.localToWorld(drag.local.clone());
+  const to=pointer?drag.initial.clone().add(pointer.sub(drag.from)):at.clone();
+  const force=to.clone().sub(at).multiplyScalar(PULL_N_PER_M);
+  if(force.length()>SWITCH_MAX_N)force.setLength(SWITCH_MAX_N);
+  return {at,to,force};
+}
+function switchInputError(error,drag) {
+  if(session!==drag.session)return;
+  powerMessage(`Switch handle: ${error.message}`);
+  if(switchDragging===drag)stopSwitchDrag();
+}
+function sendSwitchPull(drag,force,at,release=false) {
+  const stamp=performance.now();
+  if(!release&&stamp-drag.sent<100)return switchPullQueue;
+  drag.sent=stamp;
+  const payload={op:'mechanical_switch_pull',session:drag.session,name:drag.device.name,body:drag.device.handle.part,
+    at:at.toArray(),force:force.toArray()};
+  switchPullQueue=switchPullQueue.then(()=>{
+    if(!release&&(switchDragging!==drag||!drag.ready))return;
+    return api(payload);
+  }).catch(error=>switchInputError(error,drag));
+  return switchPullQueue;
+}
+function moveSwitchDrag(e) {
+  const drag=switchDragging;if(!drag||drag.pointerId!==e.pointerId)return;
+  drag.clientX=e.clientX;drag.clientY=e.clientY;
+  if(!drag.active) {
+    if(Math.hypot(e.clientX-drag.start[0],e.clientY-drag.start[1])<6)return;
+    drag.active=true;clearTimeout(previewTimer);previewAsk++;clearPreview();
+    const ready=Promise.resolve(playPending).then(()=>{
+      if(switchDragging!==drag||session!==drag.session)return;
+      return setPlaying(true);
+    });
+    ready.then(()=>{
+      if(switchDragging!==drag||session!==drag.session)return;
+      drag.ready=true;const {at,force}=switchForce(drag);sendSwitchPull(drag,force,at);
+    }).catch(error=>switchInputError(error,drag));
+  }
+  if(drag.ready){const {at,force}=switchForce(drag);sendSwitchPull(drag,force,at);}
+}
+function stopSwitchDrag() {
+  const drag=switchDragging;if(!drag)return switchPullQueue;
+  switchDragging=null;switchPullLine.visible=false;
+  if(drag.active){const {at}=switchForce(drag);sendSwitchPull(drag,new THREE.Vector3(),at,true);}
+  $('clock').title='';return switchPullQueue;
+}
+function endSwitchPointer(e) {if(switchDragging?.pointerId===e.pointerId)stopSwitchDrag();}
+function drawSwitchPull() {
+  const drag=switchDragging;if(!drag?.active||!drag.ready){switchPullLine.visible=false;return;}
+  const {at,to,force}=switchForce(drag);
+  switchPullLine.visible=true;switchPullLine.geometry.setFromPoints([at,to]);sendSwitchPull(drag,force,at);
+  $('clock').title=`Operating ${drag.device.name} with ${force.length().toFixed(1)} N`;
+}
+renderer.domElement.addEventListener('pointermove',moveSwitchDrag);
+for(const type of ['pointerup','pointercancel','lostpointercapture'])document.addEventListener(type,endSwitchPointer,true);
+document.addEventListener('pointerdown',e=>{
+  if(!switchTouchGesture||pointers.has(e.pointerId)||e.pointerType!=='touch')return;
+  stopSwitchDrag();cameraGesture=true;sceneDragged=true;pressedAt=null;draggingGhost=null;
+  pointers.set(e.pointerId,[e.clientX,e.clientY]);renderer.domElement.setPointerCapture(e.pointerId);
+  if(pointers.size===2){const [a,b]=[...pointers.values()];pinch=Math.hypot(a[0]-b[0],a[1]-b[1]);}
+  e.preventDefault();e.stopPropagation();
+},true);
+for(const type of ['pointerup','pointercancel','lostpointercapture'])document.addEventListener(type,e=>{
+  if(!switchTouchGesture)return;
+  pointers.delete(e.pointerId);pinch=0;
+  if(!pointers.size){switchTouchGesture=false;cameraGesture=false;}
+},true);
+$('pull-tool').addEventListener('click',()=>stopSwitchDrag());
+$('attach-tool').addEventListener('click',()=>stopSwitchDrag());
+addEventListener('blur',()=>stopSwitchDrag());
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopSwitchDrag();});
+window.machineSwitchState=()=>({drag:switchDragging&&{name:switchDragging.device.name,active:switchDragging.active,
+  force_n:switchDragging.ready?switchForce(switchDragging).force.length():0},
+  pointers:[...pointers.keys()],cameraGesture,switchTouchGesture,
+  handles:(machine?.electrical?.devices||[]).filter(d=>d.handle).map(d=>({name:d.name,part:d.handle.part,
+    at_m:terminalAt({name:d.name,part:d.handle.part},'',d.handle.at_m),
+    closed:readouts.electrical?.devices?.find(row=>row.name===d.name)?.closed}))});
 
 // ---- joining two parts: 🔗 Attach ------------------------------------------------
 // With Attach on, press one part, then another: a card asks how to join them
@@ -2660,7 +2820,7 @@ const PIECE_INFO = {
   weight: ['motion', 'A real material block, loose, hanging or guided.'],
   motor: ['electrics', 'Wire a battery to a motor that applies torque to an axle.'],
   battery: ['electrics', 'A finite energy store with labelled positive and negative terminals.'],
-  switch: ['electrics', 'Open or close a wired circuit manually or with a physical paddle.'],
+  switch: ['electrics', 'Drag a hinged rocker to open or close a wired circuit, or let a marble tip the paddle.'],
   bulb: ['electrics', 'A wired lamp with measured electrical, light and heat power.'],
   wire: ['electrics', 'Connect two terminals. Crossed wires stay separate.'],
   power_cable: ['electrics', 'Click a solar output, then a winch or battery input. A two-conductor lead carries collected power.'],
@@ -2853,11 +3013,6 @@ function renderMachineControls() {
     });
     rows.append(b);
   };
-  for (const device of machine?.electrical?.devices || []) {
-    if (device.kind !== 'switch' || device.hinge) continue;
-    let closed = Boolean(device.closed);
-    action(`Toggle ${device.name}`, () => ({op: 'electrical_switch', name: device.name, closed: closed = !closed}));
-  }
   for (const source of machine?.spouts || []) {
     if (source.initial_volume_l == null) continue;
     let opened = source.valve_open !== false;
@@ -2895,7 +3050,7 @@ function ghostItem() {
   for (const [key, rule] of Object.entries(t.knobs)) {
     if (!pieceKnobVisible(p,key)) continue;
     const c = knobControl(p, key, rule, what, () => {
-      if (key==='mount' && p.piece==='battery') {renderPlaced();renderGhostBar();}
+      if ((key==='mount' && p.piece==='battery')||(key==='mode'&&p.piece==='switch')) {renderPlaced();renderGhostBar();}
       if (key !== 'x_m' && key !== 'z_m' && ghost.card !== key) { ghost.card = key; renderGhostBar(); }
       followGhost(); showGhostKnobs(); askGhost();
     });
@@ -3078,6 +3233,7 @@ function renderDesignControls() {
   $('restore-version').disabled = !activeDesign.versions.length;
 }
 function parkDesign() {
+  stopSwitchDrag();
   if ($('piece-picker').open) $('piece-picker').close();
   keepBuild(); clearTimeout(rebuildTimer); clearTimeout(previewTimer); endGhost(); cancelAttach(); closeDone();
   previewAsk++; clearPreview(); polling++;
@@ -3326,6 +3482,7 @@ function showLevelsScreen(show) {
   box.hidden = !show;
   document.body.classList.toggle('on-levels', show);
   if (!show) { resize(); return; }
+  stopSwitchDrag();
   box.replaceChildren();
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});

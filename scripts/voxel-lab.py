@@ -59,6 +59,7 @@ def repository_state():
   try:return json.loads(receipt.read_text()).get('revision'),False
   except (OSError,ValueError):return None,None
 class Server(ThreadingHTTPServer):
+ request_queue_size=128
  daemon_threads=True
  def __init__(self,address,native,logs,password=None,public_host=None,site='all',public=False,public_hosts=None):
   # Public: deliberately open to anyone, with no password -- only for the
@@ -162,6 +163,7 @@ class Handler(BaseHTTPRequestHandler):
     c=compile_spec(declaration);r={'ok':True,'parts':len(c['parts']),'cells':c['cells'],'notes':c['notes']}
    elif op=='play':r=host.get(data.get('session')).play(bool(data.get('running')),data.get('speed'))
    elif op=='pull':r={'ok':True,**host.get(data.get('session')).pull(data.get('body'),data.get('at'),data.get('force'))}
+   elif op=='mechanical_switch_pull':r={'ok':True,**host.get(data.get('session')).mechanical_switch_pull(data.get('name'),data.get('body'),data.get('at'),data.get('force'))}
    elif op=='electrical_switch':
     if type(data.get('closed')) is not bool:raise ValueError('Switch state must be true or false')
     r={'ok':True,**host.get(data.get('session')).electrical_switch(data.get('name'),data['closed'])}
@@ -242,9 +244,9 @@ class Handler(BaseHTTPRequestHandler):
     # And what the win took: making the pieces, and what the run put in so far.
     energy=machine_game.energy_of(s.compiled,s.readouts,s.t)
     r={'ok':True,**machine_game.stars(level,game['checked'],game['cost'],rows[0].get('at_s') if rows[0].get('done') else None,game['helped'],energy_j=energy['j']),'energy':energy}
-    # A run someone pulled by hand is a test of the parts, not the machine
-    # doing it: it earns nothing.
-    if (s.readouts or {}).get('pulls'):r.update(tested=True,stars=0)
+    # General Pull is a test intervention. Validated manual switch handles are
+    # ordinary field controls; their native pull work still enters energy.
+    if s._test_pulled:r.update(tested=True,stars=0)
    elif op=='trial':
     if self.server.trial_allowance:self.server.trial_allowance.take(self.visitor())
     if not self.server.chat_busy.acquire(blocking=False):raise ValueError('The engine is busy with another trial; try again shortly')

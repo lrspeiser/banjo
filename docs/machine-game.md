@@ -4,11 +4,76 @@ October 11, 2026. Open `/play` to choose eight chain-reaction levels or twenty-o
 
 ## Expanded sandbox and easy challenges
 
+**Manual switches are operated on the field.** Drag the rocker itself or its
+44 px **Drag handle** label; a six-pixel movement starts or resumes the whole
+simulation and applies force to the native loose body. Its actual hinge angle
+opens or closes the circuit, with Open/Closed and current feedback beside it.
+A click or small jitter applies no force. Release, cancellation, Pause,
+navigation and a second touch release the handle; two fingers then control the
+camera. The initial-state setting chooses the physical starting pose, retained
+by Save version and restored by Set up again. There is no queued Toggle action.
+
+This field operation earns normal goal scores, and its measured work enters
+run energy once. General Pull is still a test intervention earning zero stars.
+Receipts now retain millijoules, so a small handle operation is visible. An
+existing native Pull receipt gap can omit the last preceding step's work when
+force changes or is released; the [material comparison and independent
+audit](sandbox-electrics-measured.md#physical-manual-rocker-october-11-2026)
+records that limitation rather than claiming full conservation.
+
+Fresh switch, bulb and loop challenges use recipe v2. Older saved manual
+declarations compile to physical handles without rewriting their stored input,
+wires, identities, initial state or material. Version-1 recipes retain their
+seed policy and raw declarations, then use that compiler migration. Paddles
+remain automatically operated by physical hinge travel. The switch par is
+18.7 MJ for its larger physical construction; the loop par is 1.75 J after
+retaining its measured 1.747 J rather than rounding to 2 J. Goals, deadlines
+and test tolerances are unchanged.
+
+Manual-rocker verification uses native SHA-256
+`807ae9c34f0516a0d0dbf588400451b865083043d614cd1aab8040140c830f87`.
+Five mechanical regressions pass through their registered CMake target in
+7.26 s; 19 electrical tests pass in 13.61 s; 42 game tests pass in 47.69 s;
+12 recipe tests pass in 104.82 s. The 82-preset sweep gives 246/246 correct
+nudged wins and zero of 246 empty or wrong wins; migrated version-1 switch,
+bulb and loop shares win all nine checked nudges with no empty/wrong win.
+Three old game receipt assertions now expect millijoule precision, retaining
+their exactness; no tolerance was loosened. The source-registration guard
+accounts for all 269 C++ sources. No native C++ law changed for this update. An abandoned-drag regression sends no release or refresh: the native force becomes zero after 1.18 s of wall time, retains 0.541 J booked input, keeps the world running and does not mark the run as a general Pull test.
+
+The browser checks also exposed intermittent initial request/module failures.
+An independent Windows transport comparison uses the actual server and full
+`/machine.js` responses, without opening an engine: with the inherited five
+pending-connection queue, three synchronized 64-client bursts return 54, 60
+and 34 complete responses. The remaining requests reset, abort or time out.
+With a queue of 128, all 192 responses are complete, with maximum burst
+latencies of 0.031–0.034 s. Six/eight-client bursts pass both configurations,
+though two old-queue eight-client bursts delay about 0.525 s. Seven host tests
+pass in 1.49 s, and their existing CMake target passes in 1.82 s under its
+unchanged 30-second timeout. The queue is enlarged without request retries.
+These measurements establish a burst-handling defect and its fix; they do
+not prove that the earlier Chrome `ERR_CONNECTION_REFUSED` had exactly that
+cause. Browser navigation checks now require the new document and exact URL
+before accepting Ready, with the same 90-second timeout. Delayed Run/Pause
+commands are also bound to their original scene; a held-response regression
+reproduces an unwanted second command before the guard correction.
+
+The final focused browser run passes nine checks in 32.20 s with the larger
+queue: field handle motion/current/scoring, saved pose/reset, force release,
+old-scene command rejection, holder setup, tray carousel, View/Move, Run
+cancellation and preview. Desktop 1280×860, portrait 390×844 and landscape
+844×390 retain visible 44 px handle targets and reachable scene actions.
+The full browser suite now contains 50 checks. Earlier failed runs are not
+counted as green: one obsolete v1-link fixture was stopped, then the 49-check
+runs passed 48 and 47 checks with initial request/module failures; the exact
+historical transport cause remains unproven. The client geometry CTest and
+JavaScript/Python syntax checks pass.
+
 **Give it power** now teaches physical electrical contact. Drop the battery pack onto the holder's two metal pads; the prepared floor leads run from those pads to the lamp. The case, two glass spacers and two metal terminals are separate material bodies held together by fix joints. Both terminals must actually touch pads to close the loop. Rotate the pack, change its release height, position or initial charge, and inspect the terminal cards for pad contact, battery joules and lamp watts. A crosswise or misplaced pack stays dark; lifting the pack off the pads breaks the circuit. Reversing the pack still lights the resistive bulb. The target remains at least 2 W for 0.5 s within 4 s.
 
 The editable **Drop a battery into its holder** sandbox example uses the same apparatus. **Save version** preserves its initial position, rotation, release height, housing material and charge, with the holder and wires in the saved base. Dry sandbox designs retain fixed batteries and their existing explicit wires. The battery's fixed/contact-pack mount selector changes its construction; release height, pack rotation and housing material apply to contact packs. Terminals, contact guides and floor leads follow the actual moving cap bodies; charging sockets and solar leads also follow the moving housing. The contact pack shows a charging input only when a collector or charging cable is present. Starting or continuing a live run clears pending predictions, so an earlier failed rehearsal cannot contradict the live lamp reading. Dashed guides show possible contact paths, orange while open and green while touching; they are not wires. Flow rehearsals are labelled Preview, with measured live readouts after Run.
 
-Fresh seeded Give it power challenges use recipe v2. Existing v1 shared URLs retain the earlier fixed-battery, prepared-wire apparatus and its seed policy; all other families retain v1. No old saved declaration is rewritten. New canonical construction cost is 374,768,000 J, with 2 J consumed by the measured goal; its 375 MJ par is the three-significant-digit ceiling of that score, replacing the larger fixed case's par.
+Fresh seeded Give it power challenges use recipe v2. Existing v1 shared URLs retain the earlier fixed-battery, prepared-wire apparatus and its seed policy; At that contact-holder checkpoint the other families retained v1; the manual-rocker update above also versions switch, bulb and loop. No old saved declaration is rewritten. New canonical construction cost is 374,768,000 J, with 2 J consumed by the measured goal; its 375 MJ par is the three-significant-digit ceiling of that score, replacing the larger fixed case's par.
 
 Contact-pack measurements and model limits are recorded in [sandbox-electrics-measured.md](sandbox-electrics-measured.md#physical-battery-holder-october-11-2026). This uses the existing native contact and circuit laws; no goal, deadline, conservation tolerance or native binary changed.
 
@@ -27,13 +92,13 @@ The sandbox catalogue has 31 placeable cards, plus the Attach tool. Its 24 prebu
 | Spring | Guided material load, stiffness, relaxed length and internal damping; Attach also joins two picked points with a spring |
 | Gears / weight | Tooth ratio, drive, size/material and loose/guided/hanging mounts; explicit motor supply, material-derived mass |
 | Battery / motor | Fixed or falling contact pack, release height, rotation, housing material, voltage, capacity, charge and power limit; direction/throttle and included or selected physical axle |
-| Switch / bulb / wire | Manual or real paddle switch, initial state, bulb preset, explicit terminal selections; crossing wires never connect |
+| Switch / bulb / wire | Force-dragged manual rocker with glass/oak/iron handle and saved initial pose, or real paddle switch; bulb preset and explicit terminals; crossing wires never connect |
 | Fixed water tank | Starting litres, metered flow, valve and height; finite water remains in the source when exhausted below one parcel |
 | Water wheel | Radius 25–65 cm, position along/across the river, optional falling supply and drum load; current forces act on immersed paddles |
 | Ignition coil | Selected material target and heater preset; wired electrical input becomes heat; oak combustion remains experimental |
 | Catapult | Cock angle, aim, material/size of counterweight and marble, loaded/empty cradle and held/released restraint; actual contact launches the marble |
 
-**Switches, valves and release**, beside the 3D scene, queues live operations between engine steps. **Run it** continues that same session after a queued operation; **Set up again** restores the saved initial state. These live operations do not change a saved version. Labelled **+/−** and **In/Out** terminal buttons show the electrical connections. Where a wire is available, click or tap its first terminal, then its other terminal to place it; Escape or tapping the first terminal again cancels. The terminal selectors remain available for editing. Prepared, player-placed and flow-preview wires use the same thick floor routes, with short leads up to the actual terminals. Wires brighten yellow from measured current, and bulbs glow from measured emitted optical power. Removing a device removes its attached wires and renames surviving references; Undo restores the graph. Saved versions and shared links retain the initial parts, connections, charge, water, preload and restraints.
+**Valves and release**, beside the 3D scene, queues water-valve and catapult-restraint operations between engine steps. **Run it** continues that same session; **Set up again** restores the saved initial state. These live operations do not change a saved version. Manual switches instead use their physical field handles. Labelled **+/−** and **In/Out** terminal buttons show the electrical connections. Where a wire is available, click or tap its first terminal, then its other terminal to place it; Escape or tapping the first terminal again cancels. The terminal selectors remain available for editing. Prepared, player-placed and flow-preview wires use the same thick floor routes, with short leads up to the actual terminals. Wires brighten yellow from measured current, and bulbs glow from measured emitted optical power. Removing a device removes its attached wires and renames surviving references; Undo restores the graph. Saved versions and shared links retain the initial parts, connections, charge, water, preload and restraints.
 
 **Finish the loop** teaches drawing a wire: connect **lamp −** to **supply −**, then run the circuit. An additional supply lead cannot replace its missing return path. **Marble turns on a light** keeps its prepared circuit and teaches placing the paddle; its socket leads are visible while adjusting the switch, before setting it down. Those prepared leads use the same drawing as wires a player places in advanced builds. Solar charging sockets are hidden in circuit lessons that have no collector or charging cable. Terminal buttons are read-only where the tray has no wires; a crowded sandbox can hide labels that do not fit without covering the scene actions, so pan or zoom to inspect another device.
 
@@ -186,7 +251,7 @@ The native sweep passed all 78 presets: 234/234 correct nudges won, 0/234 empty 
 
 ## Playing a level
 
-**One control panel.** The tray, Run/Pause, Set up again, Pull/Attach, Undo/Redo, camera turn/zoom buttons and the selected piece's movement and adjustment controls share one module. It stays on the right on desktop and phone landscape, and below the visible scene on phone portrait. Scrolling the phone panel leaves the scene visible. Camera buttons turn or zoom the view without moving the ghost. The live switches/valves disclosure is in this panel too.
+**One control panel.** The tray, Run/Pause, Set up again, Pull/Attach, Undo/Redo, camera turn/zoom buttons and the selected piece's movement and adjustment controls share one module. It stays on the right on desktop and phone landscape, and below the visible scene on phone portrait. Scrolling the phone panel leaves the scene visible. Camera buttons turn or zoom the view without moving the ghost. The live valves/release disclosure is in this panel too; manual rocker handles stay on the scene.
 
 Tray carousel verification, October 11: all 37 Chrome browser tests passed in 186.1 s, including desktop 1280×860, portrait 390×844 and landscape 844×390. Checks cover single-card trays, wraparound browsing without a new engine setup, clicking the selected card, cancellation, the full library, saved versions, eight placed batteries exhausting their sandbox card, and unobstructed 44 px arrows/actions. An independent four-test agent run passed in 29.0 s. Phone checks now scroll the real pane and open the Tools disclosure before inspecting its controls; each phone-tab case creates an independent design. Terminal buttons also refresh when a wire connection finishes, addressing a timing failure in the previous Linux CI run; the saved-wiring check passed three repeated runs. The client geometry CTest and all 269 source registrations passed. This changes the page controls, not physics, energy accounting or the save schema; the native executable remains SHA-256 `569a441595274e13128e1b8f06ff54d392232409b312d2089a77c2451315c976`.
 
@@ -206,7 +271,7 @@ Checked on October 11, 2026: all 29 Chrome browser tests passed in 112.5 seconds
 - **Turn it any way.** Every piece can be turned about the vertical (turn), tipped end up or down (tip), and rolled about its length (roll), by any angle: with the −15° and +15° buttons, with the sliders, or with keys (Q/E turn, R/F tip, Z/C roll; with Shift, one degree at a time). Shift and the mouse wheel turn it; Alt and the wheel tip it. Square it up puts it back level. Turning costs nothing. Everything the piece is made of turns with it: a cannon turned 20° fires 20° off to the side, and tipped up it fires upward. A piece tipped so far that part of it would go into the ground is lifted to stand on the ground.
 - **Blue fits, red does not.** While you move, change and turn the ghost, the server works out where the piece would really be (a plank is lowered onto the highest thing under it) and whether it can go there. This takes a few milliseconds and runs nothing in the engine. A red ghost says why, for example "your mirror 1 goes 120 mm into wall; move it", and cannot be set down. Nothing of yours may go into anything solid, the level's or another of your pieces.
 - **A cannon is fired by a pull cord** (level 3). Beside the level stands a trigger: an aluminium arm on a pin, with an iron weight hanging from one end on a cord with 2 cm of slack. As the run starts the weight drops, the cord pulls that end of the arm down onto an aluminium contact, and the weight keeps it there. The contact closes the firing circuit -- a switch closed while the two metal parts touch, measured from their shapes every step -- and the battery's current heats a coil on the cannon's powder until it burns (about 3 kJ, 0.4 s). Your cannon is wired to the trigger wherever you put it (the tray's `fired_by`); there is no timer. Level 5 closes its circuit the same way: an aluminium contact under the lever's left end, where the ball lands, and an aluminium plate under it. The ball comes off the ramp hard enough to knock the lever down and fly on -- a contact alone would touch for a moment, too short to heat the powder -- so the lever has a **ratchet**: past 4 degrees a pawl catches and it can go on down but not come back up, and the contact stays pressed on the plate while the coil lights the powder (the lever is a metre long so the ball lands on it rather than clipping its end).
-- **Test a part: 🖐 Pull.** Beside Run it is a Pull switch. With it on, press on any loose part in the scene and drag: the engine pulls that point of the part that way, harder the further you drag (400 N a metre, at most 200 N), a line showing the string, and letting go lets go. It is a force on the part, not a hand in the world. Pulling starts the world if it was not running. The work your pulls do counts in the run's energy, and a run you pulled is **a test run**: it says whether the goal happened, earns no stars and is not kept -- to win, the machine has to do it. (On level 5 with no ramp, pulling the lever's end down closes the firing circuit and the cannon fires.) While Pull is on, clicking one of your pieces pulls it rather than picking it up. Right/middle or Ctrl+drag turns the camera without starting a pull. A second touch releases the force to zero before turning the camera; cancelling or losing pointer capture also releases it.
+- **Test a part: 🖐 Pull.** Beside Run it is a Pull switch. With it on, press on any loose part in the scene and drag: the engine pulls that point of the part that way, harder the further you drag (400 N a metre, at most 200 N), a line showing the string, and letting go lets go. It is a force on the part, not a hand in the world. Pulling starts the world if it was not running. The work your pulls do counts in the run's energy, and a run using this general Pull tool is **a test run**: it says whether the goal happened, earns no stars and is not kept -- to win, the machine has to do it. (On level 5 with no ramp, pulling the lever's end down closes the firing circuit and the cannon fires.) While Pull is on, clicking one of your pieces pulls it rather than picking it up. Right/middle or Ctrl+drag turns the camera without starting a pull. A second touch releases the force to zero before turning the camera; cancelling or losing pointer capture also releases it.
 - **A rope cut part way** (level 2) is weaker by what was cut: it holds the weight if what is left can carry it, and tears at the cut if not -- the piece above the cut staying on its arm, the piece below falling with the weight. A knife whose swing runs out part way through, or a blade that only clips the rope, leaves it hanging by what is left (docs/cutting-model.md, "A rope cut part way through").
 - **A cord that sways** (level 6): the weight hangs on a chain of small oak segments that swings and is knocked about, with a cord through it carrying the weight exactly; the laser chars one segment away and the cord parts there, the chain with it, and the weight falls. Level 2's rope is still the stiff one, because a knife swung into a slack chain knocks it aside (docs/cutting-model.md, "A cord that bends and sways").
 - **Nothing floats.** Everything in the world is held up by something: a fixed part stands on the ground, or is bolted to a fixed part that does, by a chain of them down to the ground. A piece that would hang in the air gets a stand, a concrete post from the top of whatever is under it (the ground, a table) up to its underside: a mirror stands on a post, a cannon's barrel on one, a ramp on two legs. A leg goes where it is clear, moved along the piece off whatever is in the way (level 5's lever), and a piece held by one leg needs no second; when no leg finds anywhere clear, the piece is red and says what its stand goes into. The stand is part of the piece: it shows with the ghost and in the tray's picture, and its concrete counts in the energy to make the piece. The levels' own parts keep to it too: level 6's laser sits on its post, and level 8's rope turns over two iron pulley blocks hung under the gantry's beam, the beam over the rope and the counterweight in line under it (it has no across knob). Loose things need no stand: gravity and contact hold them, or they fall. `scripts/machine_game.py` `hold_up` adds the stands as a level is built; tests/machine_game_tests.py checks every level, with its solution and with every knob at either end of its range.

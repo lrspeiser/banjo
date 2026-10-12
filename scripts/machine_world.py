@@ -1339,6 +1339,7 @@ def compile_spec(spec, lenient=False):
     problems = []
     if not isinstance(spec, dict):
         raise MachineRefused(['a machine is a JSON object'])
+    spec = electrics.physical_manual_switches(spec)
     if spec.get('schema', SCHEMA) != SCHEMA:
         problems.append('schema must be ' + SCHEMA)
     cell = spec.get('cell_m', 0.02)
@@ -2214,12 +2215,13 @@ class MachineSession:
         self._parted = set()
         self._switches = {}
         self._power_since = {}
-        self._electrical_queue = {}
         # Pulls a person asked for, not yet given to the engine (the run's
         # own thread does that, between steps), and whether any ever was.
         self._pull_queue = {}
         self._water_launch_queue = []
         self._pulled = False
+        self._test_pulled = False
+        self._switch_force_until = {}
         self._latched = set()
         self._hot = set()
         self._turned = {}
@@ -2485,6 +2487,7 @@ class MachineSession:
         if self._pulled:
             out['pulls'] = [{'body': p['body'], 'force_n': p['force_n'], 'work_j': _round(p['work_j'], 3)}
                             for p in self.engine.op(op='pulls').get('pulls', [])]
+        out['test_pulled'] = self._test_pulled
         circuits = []
         native_circuits = []
         if self.circuit_ids:
@@ -2767,23 +2770,8 @@ class MachineSession:
         return rows
 
     def electrical_switch(self, name, closed):
-        """Queue a hand-operated switch at the next accepted engine boundary.
-
-        The saved setup retains its declared initial state. Runtime operations
-        are reported separately and resetting replays that initial state.
-        """
-        if not isinstance(closed, bool): raise ValueError('Switch state is open or closed')
-        graph = self.compiled.get('electrical', {})
-        device = next((d for d in graph.get('devices', []) if d['name'] == name), None)
-        if not device or device['kind'] != 'switch' or device.get('hinge'):
-            raise ValueError('Choose a manual switch; a paddle follows its physical hinge')
-        if not any(any(d['name'] == name for d in n['devices']) for n in graph.get('networks', [])):
-            raise ValueError('This switch is not wired to a battery')
-        with self.lock:
-            self._electrical_queue[name] = closed
-            self.last_action = time.monotonic()
-            self.lock.notify_all()
-        return {'name': name, 'closed': closed, 'queued': True}
+        """Older clients must use the field handle instead of a Boolean toggle."""
+        raise ValueError('Operate the physical switch handle on the field')
 
     def water_valve(self, name, opened):
         """A live fixed-source valve; saved initial water and state stay intact."""
@@ -2831,14 +2819,14 @@ class MachineSession:
                 started = time.perf_counter()
                 with self.lock:
                     queued, self._pull_queue = self._pull_queue, {}
-                    switch_queue, self._electrical_queue = self._electrical_queue, {}
+                    for body,deadline in list(self._switch_force_until.items()):
+                        if time.monotonic()>deadline:
+                            b=self.bodies.get(body)
+                            if b: queued[body]=(b['position_m'],[0.,0.,0.])
+                            self._switch_force_until.pop(body,None)
                     water_launch, self._water_launch_queue = self._water_launch_queue, []
                 for command in water_launch:
                     self.engine.op(**command)
-                for name, closed in switch_queue.items():
-                    network = next(n for n in self.compiled['electrical']['networks']
-                                   if any(d['name'] == name for d in n['devices']))
-                    self.engine.op(op='circuit_switch', circuit=self.circuit_ids[network['name']], branch=name, closed=closed)
                 for body, (at, force) in queued.items():
                     self.engine.op(op='pull', body=body, at=at, force=force)
                     self._pulled = True
@@ -2915,9 +2903,36 @@ class MachineSession:
             if b is None or b.get('anchored'):
                 raise ValueError(f'{body} is not something that moves')
             self._pull_queue[body] = (at, force)
+            if any(force): self._test_pulled = True
+            self._switch_force_until.pop(body,None)
             self.last_used = self.last_action = time.monotonic()
             self.lock.notify_all()
         return {'body': body, 'force_n': [round(v, 3) for v in force]}
+
+    def mechanical_switch_pull(self, name, body, at, force):
+        """A bounded force on a declared manual rocker, never a state toggle."""
+        if not _is_vec3(at) or not _is_vec3(force) or not all(math.isfinite(v) for v in list(at)+list(force)):
+            raise ValueError('A handle drag is a point and force, three finite numbers each')
+        if math.hypot(*force)>20+1e-9: raise ValueError('A handle drag is at most 20 N')
+        device=next((d for d in self.compiled.get('electrical',{}).get('devices',[])
+                     if d['name']==name and d['kind']=='switch' and d.get('handle')),None)
+        if not device or device['handle']['part']!=body:
+            raise ValueError('Drag the declared physical switch handle')
+        with self.lock:
+            if self.error: raise ValueError(self.error)
+            b=self.bodies.get(body)
+            if not b or b.get('anchored'): raise ValueError('This handle no longer moves')
+            radius=.5*math.hypot(*b['dimensions_m'])+.01
+            if math.dist(at,b['position_m'])>radius:
+                raise ValueError('The grip must be on the switch handle')
+            hinge=next((j for j in self.readouts.get('joints',[]) if j['name']==device['hinge']),None)
+            if hinge and hinge.get('attached') is False: raise ValueError('The handle has come off its hinge')
+            self._pull_queue[body]=(list(at),list(force))
+            if any(force): self._switch_force_until[body]=time.monotonic()+1.
+            else: self._switch_force_until.pop(body,None)
+            self.last_used=self.last_action=time.monotonic()
+            self.lock.notify_all()
+        return dict(name=name,body=body,force_n=list(force))
 
     def play(self, running, speed=None):
         with self.lock:

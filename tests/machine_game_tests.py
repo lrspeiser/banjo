@@ -364,10 +364,11 @@ class Tray(unittest.TestCase):
         fire = mg.level_by_id('fire')
         compiled = mw.compile_spec(mg.compose(fire, fire['solution'])[0])
         run = mg.run_energy(compiled, {'heat_ledger': {'heater_in_j': 2000.0}}, 1.0)
-        self.assertEqual((run['heat_j'], run['powder_j'], run['electric_j']), (0, 2800, 0))
+        # Millijoule receipts retain the compiled charge geometry's precision.
+        self.assertEqual((run['heat_j'], run['powder_j'], run['electric_j']), (0, 2799.993, 0))
         # A person's test pull: the work it did counts; what pulled back does not.
         pulled = mg.run_energy(compiled, {'pulls': [{'body': 'x', 'work_j': 15.0}, {'body': 'y', 'work_j': -4.0}]}, 1.0)
-        self.assertEqual((pulled['pull_j'], pulled['j']), (15, 2815))
+        self.assertEqual((pulled['pull_j'], pulled['j']), (15, 2814.993))
         battery = {'batteries': [{'name': 'b', 'capacity_j': 1000.0, 'charge_j': 600.0}]}
         self.assertEqual(mg.run_energy(battery | {'parts': []},
                                        {'machines': {'batteries': [{'name': 'b', 'charge_j': 450.0}]}})['electric_j'], 150)
@@ -699,8 +700,8 @@ class Engine(unittest.TestCase):
         energy = mg.energy_of(compiled, result['readouts'], result['world_time_s'])
         self.assertGreater(energy['run']['water_j'], 1)
         supplied = sum(source['source_energy_j'] for source in result['readouts']['pour']['sources'])
-        # energy_of publishes whole joules; the native ledger retains floats.
-        self.assertEqual(energy['run']['water_j'], round(supplied))
+        # Preserve millijoules so small mechanical input is not rounded away.
+        self.assertEqual(energy['run']['water_j'], round(supplied,3))
 
     @need_engine
     def test_sandbox_chain_runs_the_same_declaration_with_live_readings(self):

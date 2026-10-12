@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 VERSION = 1
-FAMILY_VERSIONS = {'easy-power': 2}
+FAMILY_VERSIONS = {family: 2 for family in ('easy-power', 'easy-switch', 'easy-bulb', 'easy-loop')}
 MAX_ATTEMPTS = 3
 
 # Each family changes one physical input. Prepared-piece parameters are
@@ -68,7 +68,7 @@ def family_version(family_id):
 def _version(family_id, version):
     current = family_version(family_id)
     version = current if version is None else version
-    supported = (1, 2) if family_id == 'easy-power' else (VERSION,)
+    supported = (1, current) if current != VERSION else (VERSION,)
     if isinstance(version, bool) or not isinstance(version, int) or version not in supported:
         raise ValueError('Unsupported challenge recipe version.')
     return version
@@ -105,11 +105,40 @@ def _metadata(family, seed, attempt, fallback=False, *, version=None):
 
 
 def _apparatus(family_level, version):
-    """Keep v1 power shares as the original fixed, automatically wired supply."""
+    """Preserve v1 declarations; compilation may migrate old manual handles.
+
+    Their identifiers, initial states, terminal graph and seeded parameter
+    choices stay intact. The current compiler upgrades fixed manual handles
+    to movable rockers without changing the saved declaration itself.
+    """
     result = copy.deepcopy(family_level)
-    if family_level['id'] != 'easy-power' or version != 1:
+    family = family_level['id']
+    if family not in FAMILY_VERSIONS or version != 1:
         return result
     import sandbox_electrics as electrical
+    if family != 'easy-power':
+        if family == 'easy-switch':
+            base = electrical.empty('Close the switch')
+            electrical.merge(base, electrical.battery('supply', {'x_m': -.6}, {}))
+            electrical.merge(base, electrical.bulb('lamp', {'x_m': .6}, {}))
+            electrical.link(base, 'return wire', 'lamp:minus', 'supply:minus')
+            row = electrical.tray('switch', legacy_manual=True,
+                connect_to={'in': 'supply:plus', 'out': 'lamp:plus'})
+            row['knobs'] = {key: row['knobs'][key] for key in ('x_m', 'z_m', 'mode', 'state', 'threshold_deg')}
+            result.update(machine=base, tray=[row], solution=[{'piece': 'switch', 'state': 'closed'}],
+                wrong=[{'piece': 'switch', 'state': 'open'}], par_energy_j=9200000,
+                brief='Set the manual switch to closed, then place it into the prepared circuit socket.')
+        else:
+            base = electrical.empty('Light the bulb' if family == 'easy-bulb' else 'Build your first circuit')
+            electrical.merge(base, electrical.battery('supply', {'x_m': -.6}, {}))
+            electrical.merge(base, electrical.legacy_manual_switch('control', {'state': 'closed'}, {}))
+            electrical.link(base, 'supply wire', 'supply:plus', 'control:in')
+            if family == 'easy-loop':
+                electrical.merge(base, electrical.bulb('lamp', {'x_m': .6}, {}))
+                electrical.link(base, 'switched wire', 'control:out', 'lamp:plus')
+            result['machine'] = base
+        result['hints'] = [result['brief'], 'Inspect the measured power, charge and physical positions. An open loop cannot power the load.']
+        return result
     base = electrical.empty('Give it power')
     electrical.merge(base, electrical.bulb('lamp', {'x_m': .6}, {}))
     row = electrical.tray('battery', connect_to={'plus': 'lamp:plus', 'minus': 'lamp:minus'})

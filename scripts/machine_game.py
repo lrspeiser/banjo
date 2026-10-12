@@ -1421,8 +1421,8 @@ def run_energy(compiled, readouts, t_s=0.0):
     pulled = sum(max(0.0, p.get('work_j') or 0.0) for p in (readouts or {}).get('pulls') or [])
     water = sum(max(0.0, source.get('source_energy_j') or 0.0)
                 for source in ((readouts or {}).get('pour') or {}).get('sources', []))
-    return {'heat_j': round(heat), 'powder_j': round(powder), 'electric_j': round(drawn),
-            'pull_j': round(pulled), 'water_j': round(water), 'j': round(heat + powder + drawn + pulled + water)}
+    return {'heat_j': round(heat,3), 'powder_j': round(powder,3), 'electric_j': round(drawn,3),
+            'pull_j': round(pulled,3), 'water_j': round(water,3), 'j': round(heat + powder + drawn + pulled + water,3)}
 
 
 def energy_of(compiled, readouts, t_s=0.0):

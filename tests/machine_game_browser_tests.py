@@ -59,6 +59,7 @@ class Puzzles(unittest.TestCase):
         cls.base = f'http://127.0.0.1:{cls.server.server_address[1]}'
         cls.chrome = chrome_driver.Chrome(1280, 860)
         cls.page = cls.chrome.page
+        cls.page.send('Network.enable')
 
     @classmethod
     def tearDownClass(cls):
@@ -79,14 +80,24 @@ class Puzzles(unittest.TestCase):
                 return
             time.sleep(0.1)
         said = self.js("document.getElementById('verdict').textContent + ' · ' + document.getElementById('clock').textContent")
+        urls={e['params']['requestId']:e['params']['request']['url'] for e in self.page.events if e['method']=='Network.requestWillBeSent'}
+        failed=[dict(url=urls.get(e['params']['requestId'],'untracked'),**e['params']) for e in self.page.events if e['method']=='Network.loadingFailed']
+        if failed: print('BROWSER_NETWORK_FAILURES',json.dumps(failed),flush=True)
         self.fail(f'waited {seconds:.0f} s for {expression}; the page says {said!r}')
 
     def open(self, level, width=1280, height=860, phone=False):
         self.page.send('Emulation.setDeviceMetricsOverride',
                        {'width': width, 'height': height, 'deviceScaleFactor': 2 if phone else 1, 'mobile': phone})
         self.page.send('Emulation.setTouchEmulationEnabled', {'enabled': phone, 'maxTouchPoints': 5})
-        self.page.send('Page.navigate', {'url': f'{self.base}/play?level={level}'})
-        self.wait(f"document.getElementById('clock') && {READY}", 90)
+        destination=f'{self.base}/play?level={level}'
+        previous=self.js('performance.timeOrigin')
+        navigated=self.page.send('Page.navigate', {'url':destination})
+        self.assertFalse(navigated.get('errorText'),navigated)
+        expected=f'location.href==={json.dumps(destination)}'
+        if level=='free':
+            # The former Free URL opens its saved design in the one sandbox.
+            expected=f"location.origin==={json.dumps(self.base)} && location.pathname==='/machine' && new URLSearchParams(location.search).get('design')===window.machineDesign?.()?.id"
+        self.wait(f"performance.timeOrigin!=={previous} && ({expected}) && document.getElementById('clock') && {READY}",90)
         # The view eases to its place as a level opens; a piece added before
         # it gets there lands where a slow page's view happened to be.
         self.wait('window.machineCamera().settled', 30)
@@ -808,7 +819,7 @@ class Puzzles(unittest.TestCase):
                 self.assertLessEqual(self.js('document.body.scrollWidth'), width)
                 self.slide('Easy challenge family', 'easy-loop')
                 self.press('New easy challenge')
-                self.wait(f"/easy-loop--v1--/.test(location.search) && {READY}", 60)
+                self.wait(f"/easy-loop--v2--/.test(location.search) && {READY}", 60)
                 link = self.js('location.href')
                 title = self.js("document.getElementById('title').textContent")
                 goal = self.js("document.getElementById('goal-line').textContent")
@@ -899,29 +910,143 @@ class Puzzles(unittest.TestCase):
         self.wait("!document.getElementById('level-done').hidden", 30)
         self.assertIn('Goal', self.js("document.getElementById('level-done').textContent"))
 
-    def test_manual_switch_is_queued_before_running_and_reset_restores_saved_state(self):
+    def switch_handle_target(self,name='control'):
+        label=f'Drag {name} handle'
+        self.wait(f"[...document.querySelectorAll('button')].some(b=>b.getAttribute('aria-label')==={json.dumps(label)}&&!b.disabled&&b.offsetParent!==null)",15)
+        self.wait('window.machineCamera().settled',30)
+        target=self.js(f"(() => {{const b=[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')==={json.dumps(label)}),r=b.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return {{x,y,w:r.width,h:r.height,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,uncovered:b.contains(document.elementFromPoint(x,y))}};}})()")
+        self.assertTrue(target['visible'] and target['uncovered'],target)
+        self.assertGreaterEqual(target['w'],44);self.assertGreaterEqual(target['h'],44)
+        return target['x'],target['y']
+
+    def open_manual_circuit(self,width=1280,height=860):
+        self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
+        self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':width!=1280,'maxTouchPoints':5})
+        self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+        self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",60)
+        self.press('Start from Build your first circuit');self.wait(READY,60)
+        self.wait("window.machineSwitchState().handles.some(h=>h.name==='control')",15)
+
+    def test_manual_switch_handle_drag_moves_real_rocker_and_reset_restores_saved_state(self):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
-                self.page.send('Emulation.setDeviceMetricsOverride', {'width':width,'height':height,'deviceScaleFactor':1,'mobile':width != 1280})
-                self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
-                self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)
-                self.press('Start from Build your first circuit')
-                self.wait(READY, 60)
+                self.open_manual_circuit(width,height)
                 self.press('Save version')
                 self.wait("window.machineDesign().versions.length > 0", 10)
                 saved = self.js('window.machineDesign().versions.slice(-1)[0].draft')
-                self.reveal_control("document.getElementById('machine-controls')")
-                self.js("document.getElementById('machine-controls').open = true")
-                targets = self.js("[...document.querySelectorAll('#machine-control-rows button')].map(b=>{const r=b.getBoundingClientRect();return {w:r.width,h:r.height,right:r.right};})")
-                self.assertTrue(targets)
-                self.assertTrue(all(row['h'] >= 44 and row['right'] <= width for row in targets), targets)
-                self.press('Toggle control')
-                self.press('Run it')
-                self.wait("/controlopen/.test(document.getElementById('readings').textContent)", 15)
+                self.assertFalse(self.js("[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Toggle control')"))
+                before=self.js("window.machineSwitchState().handles.find(h=>h.name==='control').at_m")
+                self.click_visible('Drag control handle')
+                self.assertTrue(self.js(READY),'a simple tap does not start the machine')
+                self.assertIsNone(self.js('window.machineSwitchState().drag'))
+                x,y=self.switch_handle_target()
+                self.drag([x,y],[x,y-85],touch=width!=1280,steps=12)
+                self.wait("window.machineSwitchState().handles.find(h=>h.name==='control').closed===false",15)
+                self.wait("/controlopen/.test(document.getElementById('readings').textContent)",15)
+                opened=self.js("window.machineSwitchState().handles.find(h=>h.name==='control').at_m")
+                self.assertGreater(opened[1],before[1]+.04,'the native grip rises as the rocker opens')
+                self.assertIsNone(self.js('window.machineSwitchState().drag'))
+                self.press('Pause')
+                x,y=self.switch_handle_target()
+                self.drag([x,y],[x,y+85],touch=width!=1280,steps=12)
+                self.wait("window.machineSwitchState().handles.find(h=>h.name==='control').closed===true",15)
+                self.wait("window.machineContactState().liveDevices.some(d=>d.kind==='bulb'&&d.power_w>2)",15)
                 self.assertEqual(self.js('window.machineDesign().versions.slice(-1)[0].draft'), saved)
                 self.press('Set up again')
                 self.wait(READY, 60)
                 self.wait("/controlclosed/.test(document.getElementById('readings').textContent)", 15)
+                self.assertEqual(self.js('window.machineDesign().versions.slice(-1)[0].draft'),saved)
+
+    def test_switch_handle_force_releases_on_second_touch_cancel_pause_and_zoom(self):
+        self.open_manual_circuit()
+        x,y=self.switch_handle_target()
+        self.mouse('mousePressed',x,y)
+        self.page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':x,'y':y-35,'button':'left','buttons':1})
+        self.wait('window.machineSwitchState().drag?.active&&window.machineSwitchState().drag.force_n>0',10)
+        distance=self.js('window.machineCamera().distance')
+        self.page.send('Input.dispatchMouseEvent',{'type':'mouseWheel','x':x,'y':y-35,'deltaX':0,'deltaY':-120,'button':'left','buttons':1})
+        self.assertEqual(self.js('window.machineCamera().distance'),distance,'zoom is quarantined while holding the real grip')
+        self.mouse('mouseReleased',x,y-35)
+        self.open_manual_circuit(390,844)
+        self.page.send('Network.enable');self.page.events.clear()
+        x,y=self.switch_handle_target()
+        touch=lambda kind,points:self.page.send('Input.dispatchTouchEvent',{'type':kind,'touchPoints':points})
+        touch('touchStart',[{'x':x,'y':y,'id':1}])
+        touch('touchMove',[{'x':x,'y':y-35,'id':1}])
+        self.wait('window.machineSwitchState().drag?.active&&window.machineSwitchState().drag.force_n>0',10)
+        turned=self.js('window.machineCamera().azimuth');distance=self.js('window.machineCamera().distance')
+        touch('touchStart',[{'x':x,'y':y-35,'id':1},{'x':x-80,'y':y-35,'id':2}])
+        self.assertIsNone(self.js('window.machineSwitchState().drag'))
+        touch('touchMove',[{'x':x+20,'y':y-35,'id':1},{'x':x-60,'y':y-35,'id':2}])
+        self.wait(f'window.machineCamera().azimuth!=={turned}',5)
+        self.assertAlmostEqual(self.js('window.machineCamera().distance'),distance,places=10,msg='moving both fingers together turns without changing zoom')
+        touch('touchEnd',[])
+        self.press('Pause')
+        x,y=self.switch_handle_target()
+        touch('touchStart',[{'x':x,'y':y,'id':1}]);touch('touchMove',[{'x':x,'y':y+30,'id':1}])
+        self.wait('window.machineSwitchState().drag?.active',10)
+        touch('touchCancel',[])
+        self.assertIsNone(self.js('window.machineSwitchState().drag'))
+        self.wait("document.getElementById('start').textContent==='Pause'",10)
+        self.press('Pause')
+        x,y=self.switch_handle_target()
+        touch('touchStart',[{'x':x,'y':y,'id':1}]);touch('touchMove',[{'x':x,'y':y-30,'id':1}])
+        self.wait('window.machineSwitchState().drag?.active',10)
+        self.press('Pause')
+        self.assertIsNone(self.js('window.machineSwitchState().drag'))
+        touch('touchEnd',[])
+        self.wait("document.getElementById('start').textContent!=='Pause'",10)
+        self.js('true')
+        requests=[json.loads(e['params']['request']['postData']) for e in self.page.events if e['method']=='Network.requestWillBeSent'
+                  and e['params']['request']['url'].endswith('/api/machine') and e['params']['request'].get('postData')]
+        forces=[p for p in requests if p.get('op')=='mechanical_switch_pull']
+        self.assertTrue(any(p['force']!=[0,0,0] for p in forces))
+        self.assertEqual(forces[-1]['force'],[0,0,0])
+        self.assertFalse(any(p.get('op') in ('pull','electrical_switch') for p in requests),'dedicated handle operation uses actual force without general test Pull or Boolean toggles')
+
+    def test_queued_pause_cannot_operate_a_new_design_after_navigation(self):
+        self.open_manual_circuit()
+        self.js("""window.realPlayFetch=window.fetch;window.playCommands=[];window.holdFirstPlay=true;
+            window.playResponseGate=new Promise(resolve=>window.releasePlayResponse=resolve);
+            window.fetch=async (...args)=>{const body=args[1]?.body && JSON.parse(args[1].body);
+              if(body?.op==='play')window.playCommands.push({session:body.session,running:body.running});
+              const hold=body?.op==='play'&&body.running&&window.holdFirstPlay;
+              if(hold)window.holdFirstPlay=false;
+              const response=await window.realPlayFetch(...args);
+              if(hold){window.playResponseHeld=true;await window.playResponseGate;window.playResponseReleased=true;}
+              return response;};""")
+        x,y=self.switch_handle_target()
+        self.mouse('mousePressed',x,y)
+        self.page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':x,'y':y-35,'button':'left','buttons':1})
+        self.wait("window.playResponseHeld&&document.getElementById('start').textContent==='Pause'",10)
+        self.mouse('mouseReleased',x,y-35)
+        self.press('Pause')
+        self.assertEqual(len(self.js('window.playCommands')),1,'the pause waits behind the held play reply')
+        self.press('All designs');self.press('Add New Design');self.wait(READY,30)
+        self.assertEqual(self.js('window.machinePlacements()'),[])
+        self.js('window.releasePlayResponse()')
+        self.wait('window.playResponseReleased',10)
+        self.page.evaluate('new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))',await_promise=True)
+        self.assertEqual(len(self.js('window.playCommands')),1,'the queued command from the previous scene cannot operate the new design')
+        self.assertTrue(self.js(READY))
+        self.js('window.fetch=window.realPlayFetch')
+
+    def test_legitimate_switch_handle_operation_can_win_with_actual_work(self):
+        self.open('easy-switch')
+        self.press('Add a switch');self.ghost()
+        self.slide('initial state of your switch 1','open')
+        self.assertTrue(self.ghost()['fits'])
+        self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+        self.switch_handle_target('your switch 1')
+        grip=self.js("window.machineSwitchState().handles.find(h=>h.name==='your switch 1').at_m")
+        x,y=self.screen_point(grip)
+        self.assertTrue(self.js(f'document.elementFromPoint({x},{y})?.tagName==="CANVAS"'),'the actual handle can be grabbed in the field')
+        self.drag([x,y],[x,y+85],steps=12)
+        self.wait("!document.getElementById('level-done').hidden",30)
+        result=self.js("document.getElementById('level-done').textContent")
+        self.assertNotIn('A test run',result)
+        self.assertIn('easy-switch',self.js('Object.keys(window.machineSave().players[window.machineSave().current].levels)'))
+        self.assertIn('your pulls',result,'actual external work remains in the scored energy receipt')
 
     def test_saved_terminal_graph_removal_undo_reload_and_restore(self):
         self.page.send('Page.navigate', {'url': f'{self.base}/machine'})

@@ -38,6 +38,14 @@ catapult preset. See [mechanical measurements](sandbox-mechanics-measured.md),
 [water/launch measurements](sandbox-water-launch-measured.md) for per-material
 comparisons, full receipts where available and remaining coupled-pipeline limits.
 
+Manual switches now expose a force-dragged physical rocker with hinge limits
+and friction; measured angle controls the circuit. Saved starting poses reset
+normally, and the former Toggle command is refused. The glass/oak/iron,
+two-timestep comparison and the remaining native Pull receipt gap are recorded
+in [manual rocker measurements](sandbox-electrics-measured.md#physical-manual-rocker-october-11-2026).
+The ideal electrical contact still lacks internal metal-contact geometry,
+pressure-dependent resistance, elastic bounce and a snap detent.
+
 Solar collectors now expose their native center-ray obstruction, incidence
 angle, instantaneous charging power and energy account before and during a
 run. The original solar winch requires a saved output-to-input power lead.

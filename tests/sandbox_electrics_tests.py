@@ -20,6 +20,52 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_legacy_manual_saved_graph_migrates_without_rewriting_state_or_material(self):
+        import json
+        for material in ('glass', 'oak', 'iron'):
+            for initial in (False, True, None):
+                with self.subTest(material=material, initial=initial):
+                    spec = e.manual_loop(initial is True)
+                    legacy = e.legacy_manual_switch('control', {'state': 'closed' if initial else 'open'}, {})
+                    next(p for p in legacy['parts'] if p['name'] == 'control handle')['material'] = material
+                    if initial is None: legacy['electrical']['devices'][0].pop('closed')
+                    spec['parts'] = [p for p in spec['parts'] if not p['name'].startswith('control ')] + legacy['parts']
+                    spec['joints'] = [j for j in spec['joints'] if not j['name'].startswith('control ')]
+                    spec['electrical']['devices'] = [d for d in spec['electrical']['devices'] if d['name'] != 'control'] + legacy['electrical']['devices']
+                    saved_json = json.dumps(spec, sort_keys=True)
+                    names = [d['name'] for d in spec['electrical']['devices']]
+                    wires = copy.deepcopy(spec['electrical']['wires'])
+                    compiled = mw.compile_spec(spec)
+                    self.assertEqual(json.dumps(spec, sort_keys=True), saved_json)
+                    self.assertEqual([d['name'] for d in compiled['electrical']['devices']], names)
+                    self.assertEqual(compiled['electrical']['wires'], wires)
+                    control = next(d for d in compiled['electrical']['devices'] if d['name'] == 'control')
+                    self.assertEqual(control.get('closed', False), initial is True)
+                    self.assertEqual(control['terminals'], legacy['electrical']['devices'][0]['terminals'])
+                    handle = next(p for p in compiled['parts'] if p['name'] == control['handle']['part'])
+                    self.assertEqual(handle['name'], 'control handle')
+                    self.assertEqual(handle['material'], material)
+                    self.assertFalse(handle['fixed'])
+                    hinge = next(j for j in compiled['joints'] if j['name'] == control['hinge'])
+                    self.assertEqual(hinge['kind'], 'hinge')
+                    self.assertEqual(hinge['b'], handle['name'])
+
+    def test_subjoule_external_input_and_store_draw_are_counted_once(self):
+        compiled = mw.compile_spec(e.manual_loop(False))
+        readouts = {'machines': {'batteries': [{'name': 'supply battery', 'given_j': .004}]},
+                    'pulls': [{'body': 'control handle', 'work_j': .125},
+                              {'body': 'other body', 'work_j': -.045}],
+                    'pour': {'sources': [{'source_energy_j': .003}]}}
+        receipt = mg.run_energy(compiled, readouts, 1)
+        self.assertEqual(receipt['electric_j'], .004)
+        self.assertEqual(receipt['pull_j'], .125)
+        self.assertEqual(receipt['water_j'], .003)
+        self.assertEqual(receipt['j'], .132)
+        self.assertAlmostEqual(receipt['j'], sum(receipt[key] for key in
+            ('heat_j', 'powder_j', 'electric_j', 'pull_j', 'water_j')), places=9)
+        whole = mg.energy_of(compiled, readouts, 1)
+        self.assertAlmostEqual(whole['j'] - whole['pieces_j'], .132, delta=1e-6)
+
     def test_contact_holder_template_preserves_editable_physical_pack(self):
         template = next(t for t in e.TEMPLATES if t['name']=='Drop a battery into its holder')
         before = copy.deepcopy(template)
@@ -338,24 +384,142 @@ class Native(unittest.TestCase):
         self.assertAlmostEqual(*bulbs, places=9)
         self.assertLess(max(bulbs), .8)
         spec = e.manual_loop(False)
+        saved = copy.deepcopy(spec)
         compiled = mw.compile_spec(spec)
         with tempfile.TemporaryDirectory(prefix='banjo-live-switch-') as logs:
             session = mw.MachineSession(compiled, ENGINE, Path(logs), paced=True)
+            def grip():
+                body = session.frame(0, 0)['bodies']
+                body = next(b for b in body if b['name'] == 'control handle')
+                w, x, y, z = body['orientation_wxyz']
+                return [body['position_m'][i] + .08 * v for i, v in enumerate(
+                    (1 - 2 * (y*y + z*z), 2 * (x*y + w*z), 2 * (x*z - w*y)))]
+            def wait_lamp(on):
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    lamp = next(d for d in session.frame(0, 10)['readouts']['electrical']['devices'] if d['name'] == 'lamp')
+                    if (lamp['power_w'] > 2) if on else (lamp['power_w'] < 1e-10):
+                        return lamp
+                self.fail(f'The physical rocker did not turn the lamp {"on" if on else "off"}: {lamp}')
             try:
-                session.electrical_switch('control', True); session.play(True)
+                with self.assertRaises(ValueError): session.electrical_switch('control', True)
+                session.mechanical_switch_pull('control', 'control handle', grip(), [0, -8, 0])
+                self.assertFalse(session.playing, 'queued physical input cannot move a paused world')
+                session.play(True)
+                self.assertGreater(wait_lamp(True)['power_w'], 2)
+                session.mechanical_switch_pull('control', 'control handle', grip(), [0, 0, 0])
+                session.mechanical_switch_pull('control', 'control handle', grip(), [0, 8, 0])
+                self.assertLess(wait_lamp(False)['power_w'], 1e-10)
+                session.mechanical_switch_pull('control', 'control handle', grip(), [0, 0, 0])
                 deadline = time.monotonic() + 3
                 while time.monotonic() < deadline:
-                    lamp = next(d for d in session.frame(0, 10)['readouts']['electrical']['devices'] if d['name'] == 'lamp')
-                    if lamp['power_w'] > 2: break
-                self.assertGreater(lamp['power_w'], 2)
-                session.electrical_switch('control', False)
-                deadline = time.monotonic() + 3
-                while time.monotonic() < deadline:
-                    lamp = next(d for d in session.frame(0, 10)['readouts']['electrical']['devices'] if d['name'] == 'lamp')
-                    if lamp['power_w'] < 1e-10: break
-                self.assertLess(lamp['power_w'], 1e-10)
+                    frame = session.frame(0, 20)
+                    pulls = frame['readouts'].get('pulls', [])
+                    if pulls and all(p['force_n'] == [0, 0, 0] for p in pulls): break
+                self.assertTrue(pulls)
+                self.assertTrue(all(p['force_n'] == [0, 0, 0] for p in pulls))
+                self.assertGreater(sum(p['work_j'] for p in pulls), 0)
+                self.assertGreater(mg.run_energy(compiled, frame['readouts'], frame['t'])['pull_j'], 0)
+                self.assertFalse(frame['readouts']['test_pulled'], 'operating a declared handle is legitimate input')
+                self.assertFalse(session._test_pulled)
                 self.assertFalse(compiled['electrical']['devices'][1]['closed'])
-                with self.assertRaises(ValueError): session.electrical_switch('lamp', True)
+                self.assertEqual(spec, saved, 'runtime movement must not change the saved initial pose')
+            finally: session.close()
+            reset = mw.MachineSession(mw.compile_spec(saved), ENGINE, Path(logs), paced=True)
+            try:
+                self.assertFalse(reset._test_pulled)
+                reset.play(True)
+                deadline = time.monotonic() + 3
+                while reset.t < .2 and not reset.error and time.monotonic() < deadline:
+                    reset.frame(0, 20)
+                self.assertIsNone(reset.error)
+                lamp = next(d for d in reset.readouts['electrical']['devices'] if d['name'] == 'lamp')
+                self.assertLess(lamp['power_w'], 1e-10, 'reset restores the originally open switch')
+                self.assertFalse(reset.readouts.get('pulls'))
+            finally: reset.close()
+
+    def test_handle_host_refuses_spoofing_and_general_test_pull_stays_sticky(self):
+        with tempfile.TemporaryDirectory(prefix='banjo-handle-boundaries-') as logs:
+            host = mw.MachineHost(ENGINE, logs)
+            try:
+                session = host.get(host.open(e.manual_loop(False))['session'])
+                body = session.bodies['control handle']
+                point = list(body['position_m'])
+                for name, handle, at, force in (
+                    ('lamp', 'control handle', point, [0, -8, 0]),
+                    ('control', 'control housing', point, [0, -8, 0]),
+                    ('control', 'control handle', point, [0, -21, 0]),
+                    ('control', 'control handle', [10, 10, 10], [0, -8, 0]),
+                    ('control', 'control handle', [float('nan'), .22, 0], [0, -8, 0]),
+                    ('control', 'control handle', point, [0, float('nan'), 0]),
+                    ('control', 'control handle', point, [0, float('inf'), 0]),
+                    ('control', 'control handle', point, [0, True, 0]),
+                    ('control', 'control handle', point, [0, -8])):
+                    with self.subTest(name=name, body=handle, at=at, force=force):
+                        with self.assertRaises(ValueError):
+                            session.mechanical_switch_pull(name, handle, at, force)
+                self.assertFalse(session._pull_queue)
+                self.assertFalse(session._test_pulled)
+                session.pull('control handle', point, [0, -1, 0])
+                self.assertTrue(session._test_pulled, 'generic Pull is a test even before it is applied')
+                session.mechanical_switch_pull('control', 'control handle', point, [0, 0, 0])
+                self.assertTrue(session._test_pulled, 'a legitimate release cannot erase a generic test')
+                session.play(True)
+                deadline = time.monotonic() + 3
+                while time.monotonic() < deadline:
+                    frame = session.frame(0, 20)
+                    if frame['readouts'].get('test_pulled'): break
+                self.assertTrue(frame['readouts']['test_pulled'])
+            finally: host.close_all()
+
+    def test_abandoned_mechanical_handle_force_expires_without_becoming_a_test_pull(self):
+        with tempfile.TemporaryDirectory(prefix='banjo-abandoned-handle-') as logs:
+            session = mw.MachineSession(mw.compile_spec(e.manual_loop(False)), ENGINE, Path(logs), paced=True)
+            try:
+                session.play(True)
+                body = session.bodies['control handle']
+                w, x, y, z = body['orientation_wxyz']
+                grip = [body['position_m'][i] + .08 * v for i, v in enumerate(
+                    (1 - 2 * (y*y + z*z), 2 * (x*y + w*z), 2 * (x*z - w*y)))]
+                started = time.monotonic()
+                session.mechanical_switch_pull('control', 'control handle', grip, [0, -8, 0])
+                # No refresh or zero-force request follows. Both observations
+                # below come from the native pull ledger sampled by the host.
+                active = None
+                while time.monotonic() - started < .75:
+                    frame = session.frame(0, 20)
+                    self.assertIsNone(frame['error'])
+                    self.assertFalse(frame['readouts']['test_pulled'])
+                    active = next((p for p in frame['readouts'].get('pulls', [])
+                                   if p['body'] == 'control handle'), None)
+                    if active and active['force_n'] == [0, -8, 0]: break
+                self.assertIsNotNone(active, 'the engine must receive the force before its lease expires')
+                self.assertEqual(active['force_n'], [0, -8, 0])
+                active_at_s = frame['t']
+                released = None
+                while time.monotonic() - started < 2:
+                    frame = session.frame(0, 20)
+                    self.assertIsNone(frame['error'])
+                    self.assertFalse(frame['readouts']['test_pulled'])
+                    released = next((p for p in frame['readouts'].get('pulls', [])
+                                     if p['body'] == 'control handle'), None)
+                    if released and released['force_n'] == [0, 0, 0]: break
+                elapsed_s = time.monotonic() - started
+                self.assertIsNotNone(released)
+                self.assertEqual(released['force_n'], [0, 0, 0], 'abandoning the pointer must release native force')
+                self.assertGreaterEqual(elapsed_s, 1, 'the one-second lease must not expire prematurely')
+                self.assertLess(elapsed_s, 2)
+                self.assertGreater(frame['t'], active_at_s)
+                self.assertTrue(frame['playing'], 'lease expiry releases the force without stopping the world')
+                self.assertGreater(released['work_j'], 0, 'input work remains in the receipt after automatic release')
+                self.assertFalse(session._test_pulled)
+                with session.lock:
+                    self.assertNotIn('control handle', session._switch_force_until)
+                lamp = next(d for d in frame['readouts']['electrical']['devices'] if d['name'] == 'lamp')
+                self.assertGreater(lamp['power_w'], 2, 'the abandoned drag must actually operate the physical rocker')
+                print('ABANDONED_HANDLE_LEASE', dict(elapsed_s=round(elapsed_s, 4),
+                    world_s=frame['t'], force_n=released['force_n'], input_work_j=released['work_j'],
+                    test_pulled=frame['readouts']['test_pulled']))
             finally: session.close()
 
 

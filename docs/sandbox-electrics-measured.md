@@ -10,10 +10,11 @@ the same declared battery store used by the graph.
 
 - Battery: 6–24 V, 100–10,000 J capacity, initial charge 0–100%, and a
   10–2,000 W discharge ceiling. Its positive and negative terminals are labelled.
-- Switch: manual initial open/closed state, or a paddle on a real hinge with
-  a 2–25 degree travel threshold. A paddle cannot also be thrown manually.
-  Runtime manual operations enter the simulation's queue between accepted
-  steps. Reset and saved versions replay the declared initial state.
+- Switch: a loose manual rocker on a frictional hinge, or a paddle on a real
+  hinge with a 2–25 degree travel threshold. Drag the rocker or its labelled
+  scene handle to apply force. Its measured angle determines the contact state;
+  there is no Toggle command. A paddle cannot also be thrown manually.
+  Reset and saved versions restore the declared physical starting pose.
 - Bulb: 3 W or 12 W rated at 12 V. Fixed resistance is V²/P; actual voltage
   determines actual I²R consumption. 20% becomes light and 80% becomes lumped
   heat. Brightness and ray emission follow the solved power, including dimming.
@@ -55,9 +56,68 @@ conversion efficiency are refused. A battery already owned by a legacy circuit
 cannot also be assigned to a graph. Detached graph islands are unpowered.
 Unsupported models include AC, capacitors, inductors, diodes, arbitrary battery
 series/parallel combinations, filament temperature-dependent resistance,
-electrical arcs and selectable conductor thickness. A manual switch is an ideal
-contact with 0.001 ohm closed resistance; its decorative handle is not a force
-sensor. The paddle follows measured hinge travel rather than an invented load.
+electrical arcs and selectable conductor thickness. Both switch types use an
+ideal contact with 0.001 ohm closed resistance, controlled by measured hinge
+travel. Internal conductive contact geometry and pressure-dependent resistance
+are not modeled.
+
+## Physical manual rocker, October 11, 2026
+
+The manual handle is a loose 0.20 × 0.04 × 0.06 m body, default oak, with a
+fixed rear support and iron axle. The hinge axis is z, the world travel limits
+are ±25 degrees, and hinge friction is 0.08 N m. Open starts at +25 degrees,
+closed at −25; the circuit closes at horizontal. Native hinge readings are
+relative to the initial pose, so declared limits and the contact threshold
+include that offset. No runtime angle or velocity is assigned.
+
+A drag of at least six pixels starts or resumes the whole simulation and
+applies a camera-plane force at the grip: 400 N/m of pointer displacement,
+capped at 20 N. Releasing, cancelling, pausing or changing scenes requests zero
+force; a one-second server lease also expires abandoned input. The server
+accepts only the declared loose handle and a nearby grip point. The scene
+label reports Open/Closed and measured current. General Pull remains a test
+intervention earning zero stars; this validated field control earns ordinary
+goal scores, with native external work included once. Run receipts now retain
+millijoules instead of rounding subjoule input away.
+
+Old saved manual declarations compile to physical rockers without changing
+their saved input, device identities, wires, starting state or handle material.
+Fresh switch, bulb and loop recipes use version 2. Version 1 retains its seed
+policy and raw declarations, then migrates the manual mechanism at compilation;
+its compiled geometry is consequently not frozen. Paddle declarations remain
+paddles. Private preflight solutions start closed, while a player can save an
+open starting pose and operate it on the field. The switch construction par is
+18.7 MJ. The loop par is recalibrated from the former whole-joule receipt of
+2 J to 1.75 J, rounding its measured 1.747 J up to three figures. Goals,
+deadlines and physics tolerances are unchanged.
+
+`tests/mechanical_switch_tests.py` compares equal geometry in glass, oak and
+iron at 1/240 and 1/480 s. At 20 mm resolution the tilted handle voxelizes to
+72 cells: masses are 1.44, 0.4032 and 4.53312 kg respectively, rather than the
+ideal box-volume mass. An 8 N downward force for 0.25 s closes each; it holds
+unforced for two seconds, and 8 N upward for 0.25 s opens each. Native Boolean
+switch commands cannot override the hinge controller.
+
+The following independent short, pre-stop 0.025 s audit integrates F·dx at
+the grip. Energy units are joules. Hinge friction is estimated from travel;
+the residual is full work minus ΔKE, ΔPE and that friction estimate.
+
+| Material | Step s | Full F·dx | Native booked work | Missing release step | ΔKE | ΔPE | Hinge friction | Residual |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Glass | 1/240 | 0.02088152 | 0.01487 | 0.00601153 | 0.01541251 | −0.00000534 | 0.00285644 | 0.00261792 |
+| Glass | 1/480 | 0.01937498 | 0.01637 | 0.00300632 | 0.01541671 | −0.00000034 | 0.00265220 | 0.00130641 |
+| Oak | 1/240 | 0.07653737 | 0.05413 | 0.02241014 | 0.05643218 | −0.00000292 | 0.01027628 | 0.00983182 |
+| Oak | 1/480 | 0.07092189 | 0.05971 | 0.01121032 | 0.05647650 | −0.00000057 | 0.00953925 | 0.00490672 |
+| Iron | 1/240 | 0.00658503 | 0.00470 | 0.00188525 | 0.00486134 | −0.00001290 | 0.00090553 | 0.00083106 |
+| Iron | 1/480 | 0.00611149 | 0.00517 | 0.00094277 | 0.00486191 | −0.00000079 | 0.00084085 | 0.00040953 |
+
+An existing native Pull bookkeeping gap can omit the final preceding step's
+work on a force update or release. Adding that independently measured step
+reconciles booked work with integrated F·dx within 5.1×10⁻⁶ J; this does not fix
+the runtime receipt. Remaining damping/integration residuals decrease with
+timestep, but stop losses and support reaction work have not been closed
+independently. These tests are not a full coupled conservation proof. The
+mechanism has no snap detent, elastic contact bounce, arcing or filament model.
 
 ## Physical battery holder, October 11, 2026
 

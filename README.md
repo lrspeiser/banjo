@@ -56,6 +56,10 @@ save in this browser for the current player; **Save version** keeps a checkpoint
 you can restore. The engine readings and base declaration are available beside
 the scene. Old `/play?level=free` links and previously kept builds still work.
 
+Manual switches have physical hinged rockers. Drag their scene handle to open
+or close the circuit; the measured hinge angle determines the contact state.
+The saved starting pose returns with **Set up again**.
+
 **The chat** gives a hint on a level, places the tray's pieces for you (for one
 star at most), or builds what you describe in the Sandbox. It uses OpenAI's
 `gpt-5-mini`. It never sees a level's solution.

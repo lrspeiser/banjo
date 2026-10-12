@@ -34,6 +34,8 @@ def battery(name, k, ctx):
 
 
 def switch(name, k, ctx):
+    if (ctx or {}).get('tray', {}).get('legacy_manual') and k.get('mode','manual')!='paddle':
+        return legacy_manual_switch(name, k, ctx)
     x, z = k.get('x_m', 0), k.get('z_m', 0)
     part = name + ' housing'
     device = {'name': name, 'kind': 'switch', 'part': part,
@@ -51,9 +53,70 @@ def switch(name, k, ctx):
         device['hinge'] = hinge
         device['closed_at_or_below_deg'] = -k.get('threshold_deg', 8)
     else:
-        parts.append(box(name + ' handle', [x + (.04 if device['closed'] else -.04), .15, z],
-                         [.04, .1, .04], 'oak'))
+        # The rocker is an ordinary body, held by its own frictional hinge.
+        # Its centre of mass is on the axle: gravity does not choose a state.
+        # The hinge is made in the initial facing, so its readings are relative
+        # to that facing; the electrical threshold is the physical horizontal.
+        initial_deg = -25 if device['closed'] else 25
+        angle = math.radians(initial_deg)
+        handle, axle, hinge = name + ' handle', name + ' axle', name + ' rocker hinge'
+        material = k.get('handle_material', 'oak')
+        if material not in ('glass', 'oak', 'iron'):
+            raise ValueError('Rocker material must be glass, oak or iron.')
+        parts += [box(name + ' post', [x, .12, z - .12], [.04, .24, .04], 'concrete'),
+                  box(axle, [x, .22, z - .07], [.02, .02, .08]),
+                  dict(box(handle, [x, .22, z], [.20, .04, .06], material, False),
+                       turn_deg=[0, 0, initial_deg])]
+        joints.append(dict(name=hinge, kind='hinge', a=axle, b=handle,
+            at_m=[x, .22, z - .03], axis=[0, 0, 1], lower_deg=-25-initial_deg,
+            upper_deg=25-initial_deg, friction_n_m=.08))
+        device['hinge'] = hinge
+        device['closed_at_or_below_deg'] = -initial_deg
+        device['handle'] = dict(part=handle,
+            at_m=[x + .08 * math.cos(angle), .22 + .08 * math.sin(angle), z])
     return {'parts': parts, 'joints': joints, 'electrical': {'devices': [device]}}
+
+
+def legacy_manual_switch(name, k, ctx):
+    """Original raw declaration for v1 recipes; compilation adds a real rocker."""
+    x,z=k.get('x_m',0),k.get('z_m',0)
+    closed=k.get('state','open')=='closed'
+    return {'parts':[box(name+' housing',[x,.05,z],[.22,.1,.16],'concrete'),
+                     box(name+' handle',[x+(.04 if closed else -.04),.15,z],[.04,.1,.04],'oak')],
+            'joints':[], 'electrical':{'devices':[dict(name=name,kind='switch',part=name+' housing',
+                       closed=closed,terminals=terminal_rows(name,x,.13,z,True))]}}
+
+
+def physical_manual_switches(spec):
+    """Upgrade old fixed manual declarations without rewriting saved designs.
+
+    The initial state and terminal identities remain; physical bodies replace
+    the decorative handle, and native hinge travel subsequently controls it.
+    """
+    raw=spec.get('electrical') or {}
+    if not isinstance(raw,dict) or not isinstance(raw.get('devices',[]),list): return spec
+    devices=[d for d in raw.get('devices',[]) if isinstance(d,dict) and d.get('kind')=='switch'
+             and not d.get('hinge') and isinstance(d.get('name'),str) and isinstance(d.get('closed',False),bool)]
+    if not devices or not isinstance(spec.get('parts',[]),list): return spec
+    result=copy.deepcopy(spec)
+    for original in devices:
+        housing=next((p for p in result.get('parts',[]) if isinstance(p,dict) and p.get('name')==original.get('part')),None)
+        at=housing.get('at_m') if housing else None
+        if not isinstance(at,list) or len(at)!=3 or not all(isinstance(v,(int,float)) and math.isfinite(v) for v in at): continue
+        fragment=switch(original['name'],dict(x_m=at[0],z_m=at[2],state='closed' if original.get('closed') else 'open'),{})
+        handle=original['name']+' handle'
+        old_handle=next((p for p in result.get('parts',[]) if isinstance(p,dict) and p.get('name')==handle),None)
+        if old_handle and 'material' in old_handle:
+            next(p for p in fragment['parts'] if p['name']==handle)['material']=old_handle['material']
+        result['parts']=[p for p in result.get('parts',[]) if not(isinstance(p,dict) and p.get('name')==handle)]
+        result['parts'].extend(p for p in fragment['parts'] if p['name']!=original['name']+' housing')
+        if result.get('joints') is None: result['joints']=[]
+        if not isinstance(result['joints'],list): continue
+        result['joints'].extend(fragment['joints'])
+        device=next(d for d in result['electrical']['devices'] if isinstance(d,dict) and d.get('name')==original['name'])
+        generated=fragment['electrical']['devices'][0]
+        for key in ('hinge','handle','closed_at_or_below_deg'): device[key]=generated[key]
+    return result
 
 
 def bulb(name, k, ctx):
@@ -151,9 +214,10 @@ TRAY = [
                'charge_percent': knob(100, 0, 100, 10, 'initial charge (%)'),
                'max_power_w': knob(200, 10, 2000, 10, 'maximum power (W)')}},
     {'piece': 'switch', 'label': 'Switch', 'count': 12, 'cost': 1, 'turning': False,
-     'description': 'Open or close a loop manually, or with a marble-operated paddle.',
+     'description': 'Drag the physical rocker on the field, or let a marble tip the paddle; hinge travel opens or closes the loop.',
      'knobs': {**POS, 'mode': {'default': 'manual', 'choices': ['manual', 'paddle'], 'label': 'operated by'},
                'state': {'default': 'open', 'choices': ['open', 'closed'], 'label': 'initial state'},
+               'handle_material': {'default':'oak','choices':['glass','oak','iron'],'label':'handle material'},
                'threshold_deg': knob(8, 2, 25, 1, 'paddle travel (degrees)')}},
     {'piece': 'bulb', 'label': 'Bulb', 'count': 12, 'cost': 1, 'turning': False,
      'description': 'Light and brightness come from solved circuit power.',
@@ -319,6 +383,14 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
             if d.get('hinge'):
                 if d['hinge'] not in hinges: problems.append(f'electrical {name}: paddle hinge is missing')
                 d['closed_at_or_below_deg'] = number(d, 'closed_at_or_below_deg', -8, -179, 179)
+            if 'handle' in d:
+                h=d['handle']
+                joint=next((j for j in joints if j['name']==d.get('hinge')),None)
+                if (not isinstance(h,dict) or not isinstance(h.get('part'),str) or h['part'] not in names or
+                    not isinstance(h.get('at_m'),list) or len(h['at_m'])!=3 or
+                    not all(isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v) for v in h['at_m']) or
+                    not joint or joint.get('b')!=h['part'] or (bodies and bodies[h['part']]['fixed'])):
+                    problems.append(f'electrical {name}: handle must belong to its loose hinged body')
         if kind == 'motor':
             if not isinstance(d.get('hinge'), str) or d['hinge'] not in hinges: problems.append(f'electrical {name}: driven hinge is missing')
             for key, default, low, high in [('stall_torque_n_m', 1, .01, 1e5), ('no_load_rad_s', 8, .01, 1e4),
@@ -477,6 +549,7 @@ def marble_light():
     d = next(d for d in s['electrical']['devices'] if d['name'] == 'control')
     # Replace the manual housing with the general mechanically operated switch.
     s['parts'] = [p for p in s['parts'] if not p['name'].startswith('control ')]
+    s['joints'] = [j for j in s.get('joints',[]) if not j['name'].startswith('control ')]
     s['electrical']['devices'].remove(d)
     merge(s, switch('control', {'mode': 'paddle', 'x_m': 0, 'threshold_deg': 5}, {}))
     s['parts'].append({'name': 'trigger marble', 'shape': 'sphere', 'material': 'iron',
@@ -551,7 +624,7 @@ def easy_levels():
                        {'piece': 'battery', 'x_m': .6, 'z_m':0, 'mount':'contact pack','height_m':.4}))
     s = empty('Close the switch'); merge(s, battery('supply', {'x_m': -.6}, {})); merge(s, bulb('lamp', {'x_m': .6}, {}))
     link(s, 'return wire', 'lamp:minus', 'supply:minus')
-    levels.append(easy('easy-switch', 'Close the switch', 'Set the manual switch to closed, then place it into the prepared circuit socket.',
+    levels.append(easy('easy-switch', 'Close the switch', 'Place the wired switch, then drag its field handle downward to close the lamp circuit. Its initial state sets its starting physical position.',
                        s, tray('switch', connect_to={'in': 'supply:plus', 'out': 'lamp:plus'}),
                        {'piece': 'switch', 'state': 'closed'}, {'load_power_w': {'device': 'lamp', 'at_least_w': 2, 'for_s': .5}},
                        {'piece': 'switch', 'state': 'open'}))
@@ -597,8 +670,8 @@ def easy_levels():
 
 
 EASY_LEVELS = easy_levels()
-_PARS = {'easy-power': 375000000, 'easy-switch': 9200000, 'easy-bulb': 102000000,
-         'easy-loop': 2, 'easy-motor': 1550000000, 'easy-heat': 4690000, 'easy-marble-light': 462000000}
+_PARS = {'easy-power': 375000000, 'easy-switch': 18700000, 'easy-bulb': 102000000,
+         'easy-loop': 1.75, 'easy-motor': 1550000000, 'easy-heat': 4690000, 'easy-marble-light': 462000000}
 for _level in EASY_LEVELS:
     _level['par_energy_j'] = _PARS[_level['id']]
 for _template, _pieces in zip(TEMPLATES, [['battery', 'switch', 'bulb', 'wire'], ['battery', 'bulb', 'wire'],
