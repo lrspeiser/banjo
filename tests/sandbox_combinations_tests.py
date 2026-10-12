@@ -54,6 +54,32 @@ def audit(spec, dt, material='oak', seconds=.75):
 
 
 class SolarLift(unittest.TestCase):
+    def test_display_requirements_use_native_mass_and_do_not_change_the_power_or_goals(self):
+        import sandbox_electrics as electrics
+        level=mg.level_by_id('easy-charge-lift')
+        original=mg.compose(level,level['solution'])[0]
+        for material,density in [('glass',2500),('oak',700),('iron',7870)]:
+            for dt in (1/240,1/480):
+                spec=copy.deepcopy(original)
+                next(p for p in spec['parts'] if p['name']=='flag')['material']=material
+                compiled=mw.compile_spec(spec)
+                with tempfile.TemporaryDirectory() as td:
+                    engine,_,_=mw.build_engine(ENGINE,compiled,Path(td))
+                    try:
+                        bodies={b['name']:b for b in engine.first['bodies']}
+                        unchanged=copy.deepcopy(compiled)
+                        rows=electrics.power_requirements(compiled,bodies,{},[],[])
+                        row=next(r for r in rows if r['name']=='drive')
+                        torque=.5*.06*.12*density*9.81*.15+.001
+                        self.assertAlmostEqual(row['required_torque_n_m'],torque,delta=1e-5)
+                        self.assertAlmostEqual(row['required_w'],torque**2*6/5,delta=1e-4)
+                        self.assertEqual(row['exceeds_motor'],torque>5)
+                        self.assertEqual(compiled,unchanged,'Display calculations cannot alter the physical declaration')
+                        reply=engine.op(op='step',dt=dt,n=1,moved=False)
+                        self.assertIsNone(reply.get('error'))
+                        print('POWER REQUIREMENT',material,dt,row['required_w'],row['required_torque_n_m'])
+                    finally:engine.close()
+
     def setUp(self):
         if not ENGINE.is_file():
             if os.environ.get('BANJO_MACHINE_ENGINE') == 'required': self.fail('native engine required')

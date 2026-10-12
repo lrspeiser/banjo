@@ -1077,6 +1077,43 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('window.machinePlacements()[0].ratio'),2)
                 self.assertTrue(self.js(READY))
 
+    def test_cable_power_and_load_estimates_update_while_editing_and_running(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('sun',width,height,phone=width!=1280)
+                self.press('Add a solar panel');self.ghost()
+                for key,value in [('x',1),('z',.4),('height',.6),('turn',-45),('tip',75)]:
+                    self.slide(f'{key} of your solar 1',value)
+                self.assertTrue(self.ghost()['fits'])
+                self.press('Set it down');self.wait(READY,60)
+                try:self.wait("/50\\.0 W charging/.test(document.getElementById('power-labels').textContent)",20)
+                except AssertionError:
+                    print('POWER_SETUP',self.js("({placements:machinePlacements(),power:document.getElementById('power-labels').textContent,clock:document.getElementById('clock').textContent,ghost:machineGhostState()})"),flush=True)
+                    raise
+                if not self.js("document.getElementById('wire-mode').getAttribute('aria-pressed')==='true'"):
+                    self.click_visible('Connect wires')
+                self.click_visible('Power output of your solar 1');self.click_visible('Power input of winch')
+                self.wait(f'window.machinePlacements().length===2 && {READY}',60)
+                self.wait('window.machineFlowPreviewState()?.sample?.wires?.some(w=>w.unit===\'W\'&&w.value>40)',60)
+                self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='winch motor'&&r.text.includes('14.3 W')&&r.text.includes('3.1 N·m'))",10)
+                def peak():return self.js("Math.max(...window.machineFlowPreviewState().sample.wires.filter(w=>w.unit==='W').map(w=>Math.abs(w.value)))")
+                self.assertGreater(peak(),40)
+                self.assertGreater(self.js('window.machinePowerFeedbackState().dots'),0)
+                self.slide('Adjust a piece','0');self.ghost()
+                self.slide('tip of your solar 1',0);self.ghost()
+                self.wait('window.machineFlowPreviewState()?.sample?.wires?.some(w=>w.unit===\'W\'&&w.value>0&&w.value<15)',60)
+                self.assertLess(peak(),15)
+                self.press('Set it down');self.wait(READY,60)
+                self.slide('Speed of world time',.25)
+                self.click_visible('Run it')
+                self.wait("window.machinePowerFeedbackState().labels.some(r=>r.wire&&/ W/.test(r.text)&&!r.text.includes('Preview')&&!r.text.includes('Updating')) && window.machinePowerFeedbackState().dots>0",20)
+                geometry=self.js("""(() => {const view=document.getElementById('view').getBoundingClientRect(),run=document.getElementById('start').getBoundingClientRect();
+                    const rows=[...document.querySelectorAll('#power-feedback-labels section')].filter(e=>!e.hidden).map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,w:r.width,h:r.height}});
+                    return {rows,inside:rows.every(r=>r.x>=view.x&&r.y>=view.y&&r.right<=view.right&&r.bottom<=view.bottom),
+                      clear:rows.every(r=>!(r.x<run.right&&r.right>run.x&&r.y<run.bottom&&r.bottom>run.y))};})()""")
+                self.assertTrue(geometry['rows']);self.assertTrue(geometry['inside'],geometry);self.assertTrue(geometry['clear'],geometry)
+                self.click_visible('Pause')
+
     def test_solar_meters_and_explicit_winch_cable_work_on_desktop_and_phones(self):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
@@ -1215,7 +1252,7 @@ class Puzzles(unittest.TestCase):
                 area=self.js("(()=>{const view=document.getElementById('view').getBoundingClientRect();return [...document.querySelectorAll('.power-pin')].filter(e=>e.getClientRects().length&&!e.hidden).reduce((sum,e)=>{const r=e.getBoundingClientRect();return sum+r.width*r.height;},0)/(view.width*view.height);})()")
                 self.assertLess(area,.03,'The always-visible solar meter uses less than 3% of the scene')
                 self.wait('machineFlowPreviewState()?.frames>2',30)
-                self.assertEqual(self.js('machineFlowPreviewState().labels'),0,'Current numbers appear on demand; the flow arrows remain')
+                self.assertGreater(self.js('machinePowerFeedbackState().labels.length'),0,'Compact power and load readings remain visible while building')
                 self.click_visible('Connect wires');self.assert_power_layout()
                 self.click_visible('Power output of your solar 1');self.click_visible('Power input of winch')
                 self.wait(f'machinePlacements().length===2 && {READY}',60)

@@ -1465,6 +1465,7 @@ function render() {
   renderer.render(scene, camera);
   positionPowerLabels();
   positionTerminalLabels();
+  updatePowerFeedback();
 }
 
 // ---- controls -----------------------------------------------------------------
@@ -2370,6 +2371,113 @@ window.machineLaserPreviewState=()=>({visible:laserBeam.visible,pending:laserPen
 let flowIndex = -1, flowTime = 0, flowPlaying = true, flowTick = 0;
 let flowPending=false;
 const flowLabels = [];
+const powerFeedbackRows = new Map();
+const powerFlowDots = new THREE.InstancedMesh(new THREE.SphereGeometry(.014,8,6),
+  new THREE.MeshBasicMaterial({color:0xfff1a6,depthTest:false}),24);
+powerFlowDots.count=0;powerFlowDots.frustumCulled=false;scene.add(powerFlowDots);
+
+function powerFeedbackSnapshot() {
+  const preview=flowGroup.visible&&flowIndex>=0?previewShown?.flow_frames?.[flowIndex]:null;
+  if(preview) return {preview:true,wires:preview.wires||[],devices:preview.power_devices||[]};
+  const samples=[];
+  for(const w of wires) {
+    if(w.powerCable) {
+      samples.push({name:w.name,points_m:w.points_m,unit:'W',
+        value:readouts.machines?.solar_panels?.find(p=>p.name===w.panel)?.power_w||0});
+    } else if(w.terminalWire) {
+      const live=readouts.electrical?.wires?.find(r=>r.name===w.name);
+      if(w.route) samples.push({...live,name:w.name,points_m:w.route,unit:'A',value:live?.current_a||0,routed:true});
+    } else {
+      const live=readouts.circuits?.find(c=>c.name===w.name);
+      const points=w.route||[world.bodies.get(w.from)?.position_m,w.via,
+        w.to?world.bodies.get(w.to)?.position_m:w.toPoint].filter(Boolean);
+      if(points.length>1) samples.push({name:w.name+(w.leg?'/'+w.leg:''),points_m:points,
+        unit:'A',value:live?.current_a||0,through_w:live?.power_w||0,return_path:w.leg==='return',routed:Boolean(w.route)});
+    }
+  }
+  return {preview:false,wires:samples,devices:readouts.power_devices||[]};
+}
+
+function feedbackCurve(w) {
+  const pts=w.points_m.map(p=>new THREE.Vector3(...p));
+  const lane=(shownElectrical().wires||[]).findIndex(row=>row.name===w.name);
+  if(w.routed) return new THREE.CatmullRomCurve3(pts);
+  if(w.unit==='A'&&lane>=0&&pts.length===2) return routedCurve(w.points_m[0],w.points_m[1],lane);
+  if(pts.length===2) return new THREE.QuadraticBezierCurve3(pts[0],new THREE.Vector3(
+    (pts[0].x+pts[1].x)/2,Math.max(pts[0].y,pts[1].y)+(w.unit==='W'?.18:.1),(pts[0].z+pts[1].z)/2),pts[1]);
+  return new THREE.CatmullRomCurve3(pts);
+}
+
+function updatePowerFeedback() {
+  const host=$('power-feedback-labels'),sample=powerFeedbackSnapshot(),items=[];
+  const pending=!playing&&Boolean(flowPending||ghost&&!ghost.answered);
+  powerFlowDots.count=0;
+  if(!machine||document.body.matches('.on-levels,.on-sandbox')) {host.hidden=true;return;}
+  host.hidden=false;
+  for(const d of sample.devices) {
+    const at=world.bodies.get(d.part)?.position_m||d.at_m;if(!at)continue;
+    let need;
+    if(d.requirement==='goal')need=`Goal ≥ ${d.required_w.toFixed(1)} W`;
+    else if(d.requirement==='rated')need=`Rated ${d.rated_w.toFixed(1)} W`;
+    else if(d.requirement==='start_estimate')need=d.exceeds_motor?
+      `Needs ${d.required_torque_n_m.toFixed(1)} N·m; stall ${d.rated_torque_n_m.toFixed(1)}`:
+      `Start ≈ ${d.required_w.toFixed(1)} W · ${d.required_torque_n_m.toFixed(1)} N·m`;
+    else need=`Load varies · ${d.rated_torque_n_m.toFixed(1)} N·m stall`;
+    let actual=d.input_w<-.05?`${Math.abs(d.input_w).toFixed(1)} W returned`:`${Math.max(0,d.input_w).toFixed(1)} W in`;
+    if(Number.isFinite(d.torque_n_m))actual+=` · ${Math.abs(d.torque_n_m).toFixed(1)} N·m`;
+    items.push({id:'device:'+d.name,name:d.name.replace(/^your /,''),kind:'object',at,
+      displayName:d.requirement==='start_estimate'?`${d.part.replace(/^your /,'')} · ${d.name.replace(/^your /,'')}`:d.name.replace(/^your /,''),
+      text:`${need}\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${actual}`}`,
+      low:d.exceeds_motor||((d.requirement==='goal'||d.requirement==='start_estimate')&&d.input_w<d.required_w),
+      title:d.requirement==='start_estimate'?'Estimated electrical power to overcome gravity and bearing friction at rest. Acceleration, contacts, other loads and supply losses need more power.':
+        d.requirement==='rated'?'Full-brightness power rating, not an on/off threshold.':
+        d.requirement==='variable'?'Contacts or connected mechanisms change the torque needed. Stall torque is its full-command rating at rest, not a guaranteed movement threshold.':'The existing level measures power arriving at this object.'});
+  }
+  const dotMatrix=new THREE.Matrix4(),time=performance.now()/1000;
+  for(const w of sample.wires.filter(w=>w.points_m?.length>1).slice(0,12)) {
+    const curve=feedbackCurve(w),active=Math.abs(w.value)>1e-4;
+    const watts=w.unit==='W'?Math.abs(w.value):Math.abs(w.through_w||0);
+    if(active&&!pending)for(const offset of [0,.5]) {
+      const t=((time*(.35+Math.min(1,Math.log1p(watts)/5))*Math.sign(w.value)+offset)%1+1)%1;
+      powerFlowDots.setMatrixAt(powerFlowDots.count++,dotMatrix.makeTranslation(...curve.getPoint(t).toArray()));
+    }
+    const text=w.unit==='W'?`${watts.toFixed(1)} W`:
+      w.return_path?`Return · ${Math.abs(w.value).toFixed(3)} A`:`${watts.toFixed(1)} W · ${Math.abs(w.value).toFixed(3)} A`;
+    items.push({id:'wire:'+w.name,name:w.name,kind:'wire',at:curve.getPoint(.5).toArray(),
+      text:pending?'Updating…':(sample.preview?'Preview · ':'')+text,title:'Measured cable power/current. Dots show activity and conventional-current direction, not electron speed. Return-wire watts depend on the battery-negative reference.'});
+  }
+  powerFlowDots.instanceMatrix.needsUpdate=true;
+  const seen=new Set(items.map(i=>i.id));
+  for(const [id,row] of powerFeedbackRows)if(!seen.has(id)){row.card.remove();powerFeedbackRows.delete(id);}
+  const rect=renderer.domElement.getBoundingClientRect();
+  const occupied=[...view.querySelectorAll('#clock,#scene-mode,.power-pin,.terminal-control-pin,.inspect-switch,#scene-actions,#machine-controls,#attach-card,#level-done')]
+    .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
+  const top=Math.max(8,$('clock').getBoundingClientRect().bottom-rect.top+6),bottom=rect.height-26;
+  for(const item of items) {
+    let row=powerFeedbackRows.get(item.id);
+    if(!row) {
+      const card=document.createElement('section');card.className='power-feedback-label '+item.kind;
+      card.dataset[item.kind==='object'?'device':'wire']=item.name;
+      const name=document.createElement('strong'),output=document.createElement('output');card.append(name,output);host.append(card);
+      row={card,name,output};powerFeedbackRows.set(item.id,row);
+    }
+    const title=item.displayName||item.name;
+    row.name.hidden=item.kind==='wire';if(row.name.textContent!==title)row.name.textContent=title;
+    if(row.output.textContent!==item.text)row.output.textContent=item.text;row.card.title=item.title;
+    row.card.classList.toggle('low',Boolean(item.low));row.card.hidden=false;
+    const p=new THREE.Vector3(...item.at).project(camera);
+    if(Math.abs(p.z)>1||Math.abs(p.x)>1||Math.abs(p.y)>1){row.card.hidden=true;continue;}
+    const width=row.card.offsetWidth,height=row.card.offsetHeight;
+    const ax=(p.x+1)*rect.width/2,ay=(1-p.y)*rect.height/2;
+    const xs=[ax-width/2,ax+12,ax-width-12],ys=[ay-height-14,ay+14,ay-height-38,ay+38];
+    const candidate=xs.flatMap(x=>ys.map(y=>({x:Math.max(6,Math.min(rect.width-width-6,x)),y})))
+      .find(c=>c.y>=top&&c.y+height<=bottom&&!occupied.some(r=>c.x<r.x+r.w+4&&c.x+width+4>r.x&&c.y<r.y+r.h+4&&c.y+height+4>r.y));
+    if(!candidate){row.card.hidden=true;continue;}
+    row.card.style.left=`${candidate.x}px`;row.card.style.top=`${candidate.y}px`;occupied.push({...candidate,w:width,h:height});
+  }
+}
+window.machinePowerFeedbackState=()=>({dots:powerFlowDots.count,
+  labels:[...powerFeedbackRows.values()].filter(r=>!r.card.hidden).map(r=>({device:r.card.dataset.device,wire:r.card.dataset.wire,text:r.output.textContent}))});
 
 function clearFlowFrame() {
   for (const child of [...flowGroup.children]) {
@@ -2452,7 +2560,8 @@ function drawFlowFrame(frame) {
         arrows++;
       }
     }
-    if (i<8) flowLabel(`${Math.abs(w.value).toFixed(w.unit==='W'?1:3)} ${w.unit}`,curve.getPoint(.5).add(new THREE.Vector3(0,.055,0)));
+    // Compact DOM cable meters are shared with live mode, rather than a
+    // second set of preview-only sprites covering the scene.
   }
   for(const c of frame.contact_circuits||[]) {
     const circuit=machine.circuits.find(row=>row.name===c.name);if(!circuit)continue;

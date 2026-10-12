@@ -2524,6 +2524,7 @@ class MachineSession:
                 current = coil_a + (motor.get('current_a', 0.0) or 0.0)
                 row = {'name': c['id'], 'closed': None if sw is None else sw.get('closed'),
                        'current_a': _round(current), 'coil_w': _round(coil_a * coil_a * coil.get('resistance_ohm', 0)),
+                       'power_w':motor.get('power_w',0)+coil.get('power_w',0),
                        'heats': coil.get('heats_body'), 'drives': self.motor_hinges.get(c['id']),
                        'source_j': _round(c['ledger']['source_j'], 2),
                        'into_body_j': _round(c['ledger'].get('exported_j', 0.0), 2),
@@ -2605,6 +2606,8 @@ class MachineSession:
                            'in_air_l': _round(1000 * p.get('in_air_m3', 0.0), 2),
                            'parcels': len(p.get('xyz_mm', [])) // 3, 'residual_m3': p.get('residual_m3'),
                            'sources': p.get('sources', [])}
+        out['power_devices']=electrics.power_requirements(self.compiled,self.bodies,out.get('electrical',{}),
+            (self.machines or {}).get('motors',[]),native_circuits)
         self.readouts = out
         out['stations'] = self._stations(out)
         self._capture_flows()
@@ -2640,7 +2643,8 @@ class MachineSession:
 
         r, graph = self.readouts, self.compiled.get('electrical', {})
         frame = {'t': round(self.t, 4), 'light': copy.deepcopy((r.get('light') or {}).get('paths', [])[:32]),
-                 'wires': [], 'devices': copy.deepcopy((r.get('electrical') or {}).get('devices', []))}
+                 'wires': [], 'devices': copy.deepcopy((r.get('electrical') or {}).get('devices', [])),
+                 'power_devices':copy.deepcopy(r.get('power_devices',[]))}
         for device in frame['devices']:
             declaration = next(d for d in graph['devices'] if d['name'] == device['name'])
             body = self.bodies.get(declaration['part'])
@@ -2657,7 +2661,8 @@ class MachineSession:
         for w in (r.get('electrical') or {}).get('wires', []):
             a, b = terminals.get(w['a']), terminals.get(w['b'])
             if a and b:
-                frame['wires'].append({'name': w['name'], 'points_m': [a, b], 'value': w['current_a'], 'unit': 'A'})
+                frame['wires'].append({'name': w['name'], 'points_m': [a, b], 'value': w['current_a'], 'unit': 'A',
+                    **{key:w.get(key,0) for key in ('through_w','loss_w','return_path')}})
         ports = {p['name']: p for p in graph.get('power_ports', [])}
         panels = {p['name']: p for p in (r.get('machines') or {}).get('solar_panels', [])}
         for cable in graph.get('power_cables', []):
@@ -2693,9 +2698,11 @@ class MachineSession:
                         frame['wires'].append(dict(name=c['name']+'/'+leg,circuit=c['name'],legacy_leg=leg,
                             points_m=[self.bodies[a]['position_m'],self.bodies[b]['position_m']],
                             value=reading.get('current_a',0),unit='A',legacy=True))
+                        frame['wires'][-1].update(through_w=reading.get('power_w',0),return_path=leg=='return')
                     continue
                 frame['wires'].append({'name': c['name'], 'points_m': [p for p in (start, via, end) if p],
-                                       'value': reading.get('current_a', 0), 'unit': 'A', 'legacy': True})
+                                       'value': reading.get('current_a', 0), 'unit': 'A', 'legacy': True,
+                                       'through_w':reading.get('power_w',0)})
         if self.parcels is not None:
             p = self.parcels
             frame['water'] = {'xyz_mm': subset_xyz(p.get('xyz_mm', [])), 'parcel_count': len(p.get('xyz_mm', []))//3,

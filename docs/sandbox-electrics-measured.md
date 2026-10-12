@@ -6,6 +6,83 @@ heating coils, plus explicit solar power leads. Their terminal graph compiles to
 and names do not substitute for a circuit solve. Existing solar panels charge
 the same declared battery store used by the graph.
 
+## Cable power and starting load estimates (October 12)
+
+The new cable/object badges are measurements and static estimates only. They
+do not command forces, modify circuits, change goals or add native physics.
+Cable pulses indicate activity and conventional-current direction; their
+animation speed is not a model of electron motion. They stop for zero current
+and while a changed design is awaiting its measured preview.
+
+Ordinary wire watts use the native signed current and upstream node voltage,
+explicitly relative to the supply's negative terminal. The native solver may
+choose a different voltage gauge, so its reference value is subtracted first.
+This is power at a point on the circuit, not the wire's much smaller `I²R`
+heat. Return lead labels show current; its near-zero referenced watt value
+does not mean that the appliance receives no power. A unit regression compares
+identical networks at voltage offsets 0, -12 and +100 V; a 1 A, 12 V feed reads
+12 W at each gauge while its heating remains 0.01 W. Native device input power
+includes the engine's step/coupling accounting and can differ slightly from an
+instantaneous wire `V*I` reading during acceleration.
+
+For a simple grounded motor arm the display calculates gravity torque from
+native mass and centre of mass relative to the declared hinge. For a vertical
+drum lift it adds `mass * 9.81 * radius`, plus declared bearing friction. At
+rest the native DC model's winding power is `torque² * no_load / stall`, using
+the declared gear ratio. The label calls this **Start ≈**, not the power for
+a timed goal, sustained speed or acceleration. Other shared loads and supply
+losses still consume power. Full-command stall torque is a rating at rest,
+not a hard torque cap under all speeds or commands. Actual input watts and
+actual native motor torque appear on the same object badge.
+
+Complex contacts, compound gear bodies without a drum, coupled ideal gears,
+springs, fixed links and constrained drum payloads do not receive an invented
+minimum. They display variable demand and the motor's stall rating. Bulbs
+display their rated brightness power or the existing level's measured watt
+goal; the rating is not an on/off threshold. The measurements travel in the
+same bounded preview frames as the wiring and appear during ordinary live
+runs, without another simulation or search for a minimum supply.
+
+Same 0.5×0.06×0.12 m offset arm, 0.15 m gravity lever, 0.001 N m bearing
+friction, 5 N m stall motor and 6 rad/s no-load speed, at native initial rest:
+
+| Material | Native mass (kg) | Estimated starting torque (N m) | Estimated winding power (W) | Can the 5 N m motor overcome this static load? |
+| --- | --- | --- | --- | --- |
+| Glass | 9.00000 | 13.244500 | 210.500136 | No; exceeds its stall rating |
+| Oak | 2.52000 | 3.709180 | 16.509620 | Yes, if the circuit supplies it |
+| Iron | 28.33200 | 41.691538 | 2085.821209 | No; exceeds its stall rating |
+
+All three materials are compared at 1/240 and 1/480 s; estimates are identical
+at initial rest, native first-step declarations remain valid, and the display
+helper leaves the compiled declaration unchanged. Torque/power comparisons
+use 1e-5 N m / 1e-4 W tolerances for native mass/pose serialization. The existing
+combined solar/lamp/motor/arm audit remains passing at its four steps: electrical
+residual <1e-8 J, thermal residual <1e-6 J, booked electrical/shaft coupling
+balance <1e-7 J and whole-arm mechanical remainder <0.01 J. These are the
+specific fixture's receipts, not a new conservation claim for arbitrary loads.
+
+Catch the sun's 7.87 kg load and 40 mm drum estimate 3.088188 N m and 14.305358 W
+at rest. In a 0.15 s native probe its motor takes 28.780 W and supplies 4.167
+N m while accelerating; a correct panel cable carries 50 W. A flat panel
+carries roughly 13 W in its preview. The current timed goal still needs the
+full native run rather than this starting estimate.
+
+Verification: electrical suite 21 tests in 31.2 s; combined power/mechanics
+suite 3 in 9.1 s; full game 51 in 77.2 s. Three focused Chrome checks pass in
+46.2 s across 1280×860, 390×844 and 844×390: changing panel orientation updates
+the cable watts, live runs animate flow, requirement labels remain visible
+inside the scene without covering Run, and the existing solar wiring and
+preview scrubbing work. The verified engine is unchanged, SHA-256
+`3fac18bff131cf0d819e6186969c4ed64b27210eef04e36f420bd497ce39d24a`.
+After the torque line and wiring-control collision bounds were refined, the
+new power-feedback test passes all three viewports again. A combined run's
+Chain reaction landscape case timed out after Chrome reported
+`ERR_NO_BUFFER_SPACE`; its isolated desktop/portrait/landscape rerun passes
+in 17.1 s. The resource error is recorded rather than counted as a passing
+combined run. Full browser-suite/CI results are not implied by these focused
+checks. Source registration (269 sources), JavaScript syntax and the native
+machine-view CTest also pass.
+
 ## Controls and supported connections
 
 - Battery: 6–24 V, 100–10,000 J capacity, initial charge 0–100%, and a

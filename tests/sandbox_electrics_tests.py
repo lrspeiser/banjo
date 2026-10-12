@@ -20,6 +20,19 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_wire_watts_use_the_native_voltage_reference_and_are_not_wire_heat(self):
+        graph={'wires':[dict(name='feed',a='battery:plus',b='motor:plus')]}
+        def sample(offset):
+            network=dict(id='electrical probe',nodes=['battery:plus','battery:minus','motor:plus'],
+                source={'negative':'battery:minus'},last={'voltage_v':[12+offset,offset,11.99+offset]},
+                branches=[dict(id='feed',kind='wire',a='battery:plus',b='motor:plus',current_a=1,power_w=.01)])
+            return e.readouts(graph,[network])['wires'][0]
+        for offset in (0,-12,100):
+            row=sample(offset)
+            self.assertAlmostEqual(row['through_w'],12)
+            self.assertAlmostEqual(row['loss_w'],.01)
+            self.assertFalse(row['return_path'])
+
     def test_legacy_manual_saved_graph_migrates_without_rewriting_state_or_material(self):
         import json
         for material in ('glass', 'oak', 'iron'):

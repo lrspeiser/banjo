@@ -502,15 +502,89 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
 
 def readouts(graph, native):
     branches = {b['id']: b for c in native for b in c['branches']}
+    wire_power={}
+    for network in native:
+        volts=dict(zip(network.get('nodes',[]),network.get('last',{}).get('voltage_v',[])))
+        reference=volts.get(network.get('source',{}).get('negative'),0)
+        for branch in network.get('branches',[]):
+            if branch.get('kind')!='wire':continue
+            current=branch.get('current_a',0)
+            upstream=branch.get('a') if current>=0 else branch.get('b')
+            wire_power[branch['id']]=dict(through_w=current*(volts.get(upstream,reference)-reference),
+                loss_w=branch.get('power_w',0),
+                return_path=network.get('source',{}).get('negative') in (branch.get('a'),branch.get('b')))
     return {'devices': [dict(name=d['name'], kind=d['kind'], closed=branches.get(d['name'], {}).get('closed'),
                             current_a=branches.get(d['name'], {}).get('current_a', 0),
                             power_w=branches.get(d['name'], {}).get('power_w', 0),
                             emitted_w=branches.get(d['name'], {}).get('emitted_w', 0)) for d in graph.get('devices', [])],
-            'wires': [dict(w, current_a=branches.get(w['name'], {}).get('current_a', 0)) for w in graph.get('wires', [])],
+            'wires': [dict(w, current_a=branches.get(w['name'], {}).get('current_a', 0),
+                           **wire_power.get(w['name'],{})) for w in graph.get('wires', [])],
             'contacts':[dict(c,closed=branches.get(c['name'],{}).get('closed',False),
                              current_a=branches.get(c['name'],{}).get('current_a',0),
                              power_w=branches.get(c['name'],{}).get('power_w',0)) for c in graph.get('contacts',[])],
             'networks': [c for c in native if c['id'].startswith('electrical ')]}
+
+
+def power_requirements(compiled,bodies,measured,motors,native):
+    """Display-only static estimates; never a motor command or win rule.
+
+    Use native mass/COM and declared geometry. Only simple grounded hinges
+    and vertical drum lifts get a starting-watts estimate. Contacts, springs,
+    geared loads, acceleration and supply/wire losses are not inferred.
+    """
+    result=[];joints={j['name']:j for j in compiled['joints']}
+    devices={d['name']:d for d in measured.get('devices',[])}
+    branches={b['id']:b for c in native for b in c['branches']}
+    declarations=[(d['name'],d['part'],d,devices.get(d['name'],{}),branches.get(d['name'],{}))
+                  for d in compiled.get('electrical',{}).get('devices',[]) if d['kind'] in ('motor','bulb')]
+    for c in compiled.get('circuits',[]):
+        if c.get('motor'):
+            branch=next((b for n in native if n['id']==c['name'] for b in n['branches'] if b['id']=='motor'),{})
+            declarations.append((c['name'],None,c['motor'],branch,branch))
+    motor_states={m['id']:m for m in motors}
+    for name,part,declaration,reading,branch in declarations:
+        row=dict(name=name,part=part,input_w=reading.get('power_w',0))
+        if declaration.get('kind')=='bulb':
+            row.update(rated_w=declaration['watts'],requirement='rated')
+            for station in compiled.get('stations',[]):
+                goal=(station.get('done_when') or {}).get('load_power_w',{})
+                if goal.get('device')==name:row.update(required_w=goal['at_least_w'],requirement='goal')
+        else:
+            hinge=joints.get(declaration.get('hinge'),{})
+            body=bodies.get(hinge.get('b'),{})
+            row.update(part=hinge.get('b'),requirement='variable',
+                       rated_torque_n_m=declaration['stall_torque_n_m']*declaration.get('gear_ratio',1))
+            state=motor_states.get(branch.get('motor'),{})
+            row.update(torque_n_m=state.get('torque_n_m',0),speed_rad_s=state.get('speed_rad_s',0))
+            other=[j for j in compiled['joints'] if j['name']!=hinge.get('name') and
+                   (body.get('name') in (j.get('a'),j.get('b'),j.get('drum')) or
+                    j['kind']=='gear' and hinge.get('name') in (j.get('a'),j.get('b')))]
+            drums=[j for j in other if j['kind']=='drum']
+            simple=bool(body and bodies.get(hinge.get('a'),{}).get('anchored') and
+                        all(j['kind']=='drum' for j in other) and
+                        (body.get('shape')!='compound' or drums))
+            if simple:
+                axis=hinge['axis'];length=math.sqrt(sum(v*v for v in axis));axis=[v/length for v in axis]
+                lever=[body['position_m'][i]-hinge['at_m'][i] for i in range(3)]
+                force=[0,-9.81*body['mass_kg'],0]
+                cross=[lever[1]*force[2]-lever[2]*force[1],lever[2]*force[0]-lever[0]*force[2],lever[0]*force[1]-lever[1]*force[0]]
+                sign=1 if declaration.get('command',1)>=0 else -1
+                resistance=max(0,-sign*sum(axis[i]*cross[i] for i in range(3)))+hinge.get('friction_n_m',0)
+                for drum in drums:
+                    load=bodies.get(drum['load'],{})
+                    extra=[j for j in compiled['joints'] if j['name']!=drum['name'] and
+                           drum['load'] in (j.get('a'),j.get('b'),j.get('load'))]
+                    if not load or load.get('anchored') or extra or sign*drum['winds']<=0:simple=False;break
+                    resistance+=load['mass_kg']*9.81*drum['radius_m']
+                    row['part']=drum['load']
+                if simple and resistance>.01:
+                    ratio=declaration.get('gear_ratio',1)
+                    row.update(requirement='start_estimate',required_torque_n_m=resistance,
+                        required_w=(resistance/ratio)**2*declaration['no_load_rad_s']/declaration['stall_torque_n_m'],
+                        exceeds_motor=resistance>row['rated_torque_n_m'])
+        body=bodies.get(row['part'],{})
+        if body:row['at_m']=list(body['position_m']);result.append(row)
+    return result
 
 
 def merge(spec, fragment):

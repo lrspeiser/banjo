@@ -2,6 +2,37 @@
 
 October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-two freely selectable piece lessons. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+## Cable power and object requirements
+
+Latest October 12 update: compact labels next to cables show measured watts
+and amps in both build preview and live runs. Moving dots indicate activity
+and conventional-current direction, not electron speed. Solar charging leads
+show native collected watts; ordinary supply wires show instantaneous `V * I`
+relative to battery negative, distinct from their native `I²R` heating. Return
+leads show current to avoid implying that their low reference-dependent watt
+reading is the appliance's available supply. Native voltage arrays can use
+another gauge; the display explicitly subtracts the source-negative voltage.
+
+Bulb labels show the existing level's power target, or the full-brightness
+rating in a sandbox. Simple grounded motor arms and unencumbered vertical drum
+lifts show **Start ≈ W · N·m**, plus actual input watts. This is a static
+gravity/bearing estimate from native body mass and centre of mass; moving
+faster, accelerating, wire losses and other shared loads need more power.
+Catch the sun's 7.87 kg load on a 40 mm drum estimates 3.088 N·m and 14.305 W
+at rest, not a promise of its timed goal. A motor whose torque rating is too
+small is labelled accordingly; adding watts cannot exceed its stall rating at rest.
+Complex contacts, springs, coupled gears and other linked loads show variable
+demand and the motor's full-command stall torque rather than a fabricated minimum.
+
+Badges use the same measured preview frame as the flow and switch indicators.
+They show Updating while a changed setup is being measured; inactive cables
+have no moving dots. These are display calculations, never force commands or
+new win conditions. Badges do not intercept dragging, avoid the scene controls
+and hide overflow rather than stack over other labels. The old preview-only
+wire-number sprites are replaced by these shared compact meters.
+See [the electrical measurements](sandbox-electrics-measured.md#cable-power-and-starting-load-estimates-october-12)
+for calibration limits and verification.
+
 ## Individual gears with contact-driven teeth
 
 Later October 12 update: **Gear** replaces the paired card in the new-piece
