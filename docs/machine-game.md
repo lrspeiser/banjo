@@ -508,3 +508,17 @@ has a 44 px touch target while retaining its native disclosure marker. The
 gallery browser regression clicks it open and closed at 1280×860, 390×844 and
 844×390, checking visible, unobstructed geometry; it passes in 2.858 s. This is
 a CSS correction; saved data and physics are unchanged.
+
+Linux CI for `97931d7e` completed with 153/154 CTests passing in 1119.44 s.
+The browser suite passed 58/60 cases in 582.529 s: the help overlay compared
+cache bytes before an existing cloud save acknowledged, and a save
+acknowledgement refreshed the version picker back to its newest option while
+an older version was being selected. The help fixture now waits for that
+existing save to settle before its unchanged no-mutation assertions. The
+client preserves the selected version when refreshing the same design, and
+resets it when opening a different design. The river regression holds a real
+save acknowledgement, selects the older version, releases it, checks the
+choice remains and restores the wheel and connections. Five focused Chrome
+checks pass in 21.890 s: river, help across all three viewports, solar cable,
+terminal graph and design-version restoration. The follow-up Linux CI verdict
+is pending. No engine code, physical goal, timeout or tolerance changed.

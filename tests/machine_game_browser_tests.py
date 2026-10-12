@@ -441,8 +441,24 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(self.js('window.machinePlacements()'),setup)
         self.assertEqual(self.js('window.machineDesign().draft.base'),base)
         self.press('Remove your water_wheel 1');self.wait(f'window.machinePlacements().length===0 && {READY}',60)
-        self.press('Save version');self.wait(f'window.machineDesign().versions.length==={count+2}',10)
-        self.js(f"document.getElementById('design-versions').open=true;document.getElementById('version-pick').value='{count+1}'")
+        self.anonymous_cloud_saved()
+        # Hold the real save acknowledgement while the player chooses the
+        # older version. Refreshing the options must preserve that choice.
+        self.js("""window.riverSaveFetch=window.fetch;window.riverSaveHeld=true;
+          window.fetch=async(...args)=>{const response=await riverSaveFetch(...args);
+            if(window.riverSaveHeld&&String(args[0]).endsWith('/api/profile')&&JSON.parse(args[1]?.body||'null')?.op==='save')
+              await new Promise(resolve=>{window.releaseRiverSave=resolve;});
+            return response;};""")
+        try:
+            self.press('Save version');self.wait(f'window.machineDesign().versions.length==={count+2}',10)
+            self.wait('typeof window.releaseRiverSave === "function"',10)
+            self.reveal_control("document.getElementById('version-pick')")
+            self.js(f"document.getElementById('version-pick').value='{count+1}';document.getElementById('version-pick').dispatchEvent(new Event('change',{{bubbles:true}}))")
+        finally:
+            self.js('window.riverSaveHeld=false;window.fetch=riverSaveFetch;window.releaseRiverSave?.()')
+        self.anonymous_cloud_saved()
+        self.wait('!document.getElementById("save-design").disabled',10)
+        self.assertEqual(self.js("document.getElementById('version-pick').value"),str(count+1))
         self.press('Restore version');self.wait(f'window.machinePlacements().length===1 && {READY}',60)
         self.assertEqual(self.js('window.machinePlacements()'),setup)
         self.assertEqual(self.js('window.machineDesign().draft.base'),base)
@@ -1356,6 +1372,9 @@ class Puzzles(unittest.TestCase):
 
     def test_help_is_only_an_overlay_and_keeps_each_screen_and_setup_on_desktop_and_phones(self):
         def open_help():
+            # A cloud acknowledgement updates cache metadata independently
+            # of help. Settle the existing save before asserting no changes.
+            self.anonymous_cloud_saved()
             self.assertFalse(self.js("document.getElementById('guide').open"), 'help does not appear automatically')
             before = self.js("({url:location.href,setup:window.machinePlacements(),save:localStorage.getItem('banjo-play-save'),screen:document.body.className,scroll:scrollY})")
             target = self.js("(() => {const e=document.getElementById('guide-open'),r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height,visible:r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})()")

@@ -3382,9 +3382,14 @@ function renderDesignControls() {
   $('machine-data').hidden = !level?.free;
   if (!level?.free || !activeDesign) return;
   $('design-name').value = activeDesign.name;
-  const pick = $('version-pick'); pick.replaceChildren();
+  const pick = $('version-pick');
+  // A save acknowledgement or conflict merge can refresh this list while
+  // the player is choosing a version. Keep that choice within this design.
+  const selected = pick.dataset.designId === activeDesign.id ? pick.value : '';
+  pick.dataset.designId = activeDesign.id; pick.replaceChildren();
   for (const v of [...activeDesign.versions].reverse())
     pick.append(new Option(`Version ${v.number} · ${new Date(v.at).toLocaleString()}${v.label ? ' · ' + v.label : ''}`, v.number));
+  if ([...pick.options].some(option => option.value === selected)) pick.value = selected;
   $('restore-version').disabled = !activeDesign.versions.length;
 }
 function parkDesign() {
