@@ -498,3 +498,7 @@ The deployed site is the game and nothing else, open to anyone with no login: `s
 ## Real time
 
 A level plays at real time. When something breaks or dents, the engine solves the impact in its lattice of cells. Played live, that solve runs on the engine's worker while everything else carries on and the pair that met is held still, for at most 50 ms of world time. If the answer is not back by then, the machine waits for it, because a body held longer misses what it should have been doing. Rehearsals, tests and reliability runs always wait, so their answers are exactly the physics'. How long a solve takes is being worked on (see docs/machine-physics-roadmap.md).
+
+## Prepublication checks after disk setup
+
+October 11, 2026: six registered storage/HTTP/client CTests pass in 4.97 s, with all 269 C++ sources registered. The complete 60-test Chrome run at the branding checkpoint passes 59/60 in 364.518 s: one desktop tackle bootstrap fails while Chrome reports `net::ERR_CONNECTION_TIMED_OUT` loading `three.core.js`, before the game module can initialize. The same unchanged tackle check passes separately across all three viewports in 16.349 s. All save-recovery, CAS, wiring, native-win, gallery and editor assertions in the broad run pass. This is treated as the recorded local browser transport limitation, with its cause still unproven; the broad run is not labelled green. No retries, timeout changes, goal changes or physical tolerance changes were added. Linux CI and public-site durability checks follow publication.

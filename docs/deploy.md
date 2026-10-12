@@ -49,11 +49,12 @@ prevent a stale device from overwriting a newer save. This stores starting
 designs and results, rather than running engine processes. Machine logs and
 players' feedback remain under `/data/machine-logs`.
 
-**Provisioning is pending as of October 11, 2026.** The last recorded service
-configuration has no persistent disk. The local profile store and HTTP tests
-pass, but public saves must not be described as surviving redeploys until the
-disk is attached and the restart check below succeeds. Merely creating `/data`
-inside the image does not provide persistence.
+**Disk setup was reported complete by the owner on October 11, 2026.**
+The requested setting is 1 GB mounted at `/data` on the existing Banjo service.
+Runtime mount detection and a saved-profile redeploy/recovery check are pending
+the profile-code release. Public saves must not be described as surviving
+redeploys until those checks succeed. Merely creating `/data` inside the image
+does not provide persistence.
 
 ## Render's settings
 
@@ -71,7 +72,7 @@ inside the image does not provide persistence.
 - **Health check path:** none is set, so Render waits for the port to open.
   `/play` would do; `/login` would not, since a public server has no login.
 - **Instance:** one CPU and 2 GB (`1c-2g`); keep one service instance for the
-  SQLite store. Persistent disk provisioning is pending.
+  SQLite store. Disk setup is owner-reported; runtime durability verification is pending.
 
 ## Persistent profiles: required service change
 
@@ -87,7 +88,7 @@ documents these requirements.
 Render's published disk price, checked October 11, 2026, is **$0.25 per GB per
 month**: this proposed 1 GB disk adds **$0.25/month** to the existing compute
 bill. Recheck [Render pricing](https://render.com/pricing) before provisioning.
-This guide does not record a completed disk purchase or configuration change.
+The owner reported completing this configuration; the runtime and recovery checks below still need to confirm it.
 
 The server defaults to `--logs`' parent plus `profiles.sqlite3` when
 `BANJO_PROFILE_DB` is absent, so the explicit setting above is required for the
