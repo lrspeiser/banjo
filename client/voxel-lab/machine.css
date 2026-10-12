@@ -12,7 +12,7 @@ header .brand span{margin-left:0}
 nav{display:flex;gap:14px;flex-wrap:wrap}a{color:#9ed6ef}
 header nav a{display:inline-flex;align-items:center;min-height:44px;min-width:44px}
 #build{margin-left:auto;font-size:12px;color:#a9c1ce}
-main{display:grid;grid-template-columns:minmax(0,1fr) 380px;height:calc(100dvh - 53px)}
+main{display:grid;grid-template-columns:minmax(0,1fr) 380px;height:calc(100dvh - var(--site-header-height,53px))}
 #view{position:relative;min-height:320px;overflow:hidden;background:#11222d}
 #view canvas{display:block;width:100%;height:100%;touch-action:none}
 #clock{position:absolute;top:10px;left:10px;right:10px;background:#142836e6;border:1px solid #3d5b6d;border-radius:6px;padding:7px 10px;font-size:13px;pointer-events:none;line-height:1.4}
@@ -78,7 +78,7 @@ h1{font-size:22px;margin:0 0 6px}h2{font-size:15px;margin:18px 0 8px;color:#cfe2
 details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 #notes{font-size:12px;color:#b8cbd7}
 @media(max-width:820px){main{grid-template-columns:1fr;height:auto}#view{height:60dvh}aside{border-left:0;border-top:1px solid #314451}#build{width:100%;margin:0}#scene-note{display:none}.scene-actions{gap:4px;padding:4px}.scene-actions button,.scene-actions select{padding:8px 9px;font-size:13px}#start{min-width:72px}.speed{font-size:0;gap:0}}
-@media(max-height:500px) and (min-width:600px){header{min-height:0;padding:4px 12px;flex-wrap:nowrap;font-size:13px}header strong{font-size:16px}nav{gap:12px;font-size:13px;flex-wrap:nowrap}main{height:calc(100dvh - 53px);grid-template-columns:minmax(0,1fr) 300px}#scene-note{display:none}.scene-actions{bottom:6px;left:6px;right:6px;padding:4px;gap:4px}#clock{top:6px;left:6px;right:6px;padding:4px 8px;font-size:12px}}
+@media(max-height:500px) and (min-width:600px){header{min-height:0;padding:4px 12px;flex-wrap:nowrap;font-size:13px}header strong{font-size:16px}nav{gap:12px;font-size:13px;flex-wrap:nowrap}main{height:calc(100dvh - var(--site-header-height,53px));grid-template-columns:minmax(0,1fr) 300px}#scene-note{display:none}.scene-actions{bottom:6px;left:6px;right:6px;padding:4px;gap:4px}#clock{top:6px;left:6px;right:6px;padding:4px 8px;font-size:12px}}
 /* The puzzles (/play): a level, its tray, the pieces placed, the verdict. */
 #levels{display:flex;flex-wrap:wrap;gap:.3rem;margin:.2rem 0 .6rem}
 #levels button{padding:.25rem .55rem}
@@ -147,17 +147,22 @@ details{margin-top:14px;font-size:13px}summary{cursor:pointer;color:#cfe2ec}
 
 /* Help is an on-demand layer over whichever screen the player is using. */
 body.reading-guide{overflow:hidden}
-#guide{width:min(680px,calc(100% - 24px));max-width:none;max-height:calc(100dvh - 24px);padding:0;border:1px solid #6cc6ff;border-radius:12px;background:#142836;color:#e4edf4;overflow:hidden;box-shadow:0 16px 60px #0009}
-#guide:not([open]){display:none}
-#guide[open]{display:flex;flex-direction:column}
-#guide::backdrop{background:#071018b8}
+.reading-dialog{width:min(680px,calc(100% - 24px));max-width:none;max-height:calc(100dvh - 24px);padding:0;border:1px solid #6cc6ff;border-radius:12px;background:#142836;color:#e4edf4;overflow:hidden;box-shadow:0 16px 60px #0009}
+.reading-dialog:not([open]){display:none}
+.reading-dialog[open]{display:flex;flex-direction:column}
+.reading-dialog::backdrop{background:#071018b8}
 .guide-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid #344c5b;flex:none}
 .guide-head h2{margin:0;font-size:22px}
 .guide-head button{min-width:64px;min-height:44px;padding:8px 12px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:8px;cursor:pointer;font:15px system-ui}
 .guide-body{overflow:auto;min-height:0;padding:16px 20px;line-height:1.55;overscroll-behavior:contain}
 .guide-body ol{margin:0;padding-left:20px;display:grid;gap:14px}
 .guide-body p{margin:18px 0 0;color:#b9cbd6}
-#guide :focus-visible{outline:3px solid #9fdcff;outline-offset:-3px}
+.reading-dialog :focus-visible{outline:3px solid #9fdcff;outline-offset:-3px}
+.changes-body h3{margin:0 0 16px;font-size:14px;color:#9ed6ef}
+.changes-body section+section{margin-top:26px;padding-top:20px;border-top:1px solid #344c5b}
+.changes-body article+article{margin-top:20px}
+.changes-body h4{margin:0;font-size:17px;color:#e4edf4}
+.changes-body p{margin:6px 0 0}
 .feedback button{padding:.35rem .8rem;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer;font:14px system-ui}
 .feedback{margin:.6rem 0}
 .feedback summary{cursor:pointer;color:#9fdcff}
@@ -241,9 +246,10 @@ body.choosing-piece{overflow:hidden}
 .ghost-bar .state.refused{color:#ff9d9d}
 .ghost-bar .actions{display:grid;grid-template-columns:1fr auto;gap:8px}
 .ghost-bar .actions button{min-height:46px}
-/* A phone: the header is one short row, so the scene and the ghost's
-   controls under it fit on the screen together. */
+/* Compact navigation; narrow phones use a second row for all four links. */
 @media(max-width:820px){header{min-height:0;padding:4px 12px;gap:10px;flex-wrap:nowrap}header strong{font-size:16px;white-space:nowrap}header strong span{display:none}nav{gap:10px;font-size:14px;flex-wrap:nowrap;overflow-x:auto}#build{display:none}.ghost-bar .head{font-size:12px}}
+/* Keep every top link visible, including on a 320px phone. */
+@media(max-width:600px){header{flex-wrap:wrap;gap:2px 10px}header nav{flex-basis:100%;gap:10px;font-size:13px;overflow:visible}header nav a{white-space:nowrap}}
 /* Where things will go: the engine's rehearsal, as a key over the scene. */
 .preview-legend{position:absolute;top:52px;right:10px;z-index:2;max-width:min(60%,420px);padding:5px 9px;background:#142836d9;border:1px solid #3d5b6d;border-radius:8px;font-size:12px;pointer-events:none}
 .preview-legend[hidden]{display:none}
@@ -377,7 +383,7 @@ aside{scroll-padding-top:min(var(--control-height,0px),calc(100% - 56px))}
 .flow-time-row input{min-height:44px;width:100%;margin:0}
 #flow-readings{display:block;line-height:1.4;padding:4px 0}
 @media(max-width:820px) and (min-height:501px){
-  main{height:calc(100dvh - 53px);grid-template-rows:42dvh minmax(0,1fr)}
+  main{height:calc(100dvh - var(--site-header-height,53px));grid-template-rows:42dvh minmax(0,1fr)}
   #view{height:auto;min-height:240px}
   aside{padding:8px 10px;min-height:0}
   .control-panel{padding:8px;gap:6px;margin-bottom:12px}

@@ -1608,6 +1608,69 @@ class Puzzles(unittest.TestCase):
                 self.press('Add New Design'); self.wait(READY, 60)
                 before = open_help(); self.click_visible('Close'); assert_closed(before)
 
+    def test_recent_changes_preserves_builds_and_fits_every_screen(self):
+        def open_updates():
+            self.anonymous_cloud_saved()
+            self.assertFalse(self.js("document.getElementById('recent-changes').open"))
+            before = self.js("({url:location.href,setup:window.machinePlacements(),ghost:window.machineGhostState(),save:localStorage.getItem('banjo-play-save'),scroll:scrollY})")
+            navigation = self.js("[...document.querySelectorAll('header nav a')].map(e=>{const r=e.getBoundingClientRect();return {label:e.textContent,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})")
+            self.assertEqual([r['label'] for r in navigation], ['Levels','Sandbox','How to play','Recent Changes'])
+            for target in navigation:
+                self.assertTrue(target['visible'] and target['hit'], target)
+                self.assertGreaterEqual(target['w'], 44); self.assertGreaterEqual(target['h'], 44)
+            self.page.events.clear()
+            target=navigation[-1]
+            self.mouse('mousePressed',target['x'],target['y']); self.mouse('mouseReleased',target['x'],target['y'])
+            self.wait("document.getElementById('recent-changes').open", 5)
+            self.assertEqual(self.js('document.activeElement.id'), 'recent-changes-done')
+            layout = self.js("(() => {const d=document.getElementById('recent-changes'),r=d.getBoundingClientRect(),b=d.querySelector('.guide-body');return {inView:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,overflow:b.scrollWidth>b.clientWidth,scrollable:getComputedStyle(b).overflowY==='auto',dates:[...d.querySelectorAll('time')].map(t=>t.dateTime)};})()")
+            self.assertTrue(layout['inView'] and layout['scrollable'] and not layout['overflow'], layout)
+            self.assertEqual(layout['dates'], sorted(layout['dates'], reverse=True))
+            # Keys cannot tweak a piece or undo the setup behind the notes.
+            for key, code, vk, modifiers in (('q','KeyQ',81,0),('ArrowRight','ArrowRight',39,0),('z','KeyZ',90,2)):
+                for kind in ('keyDown','keyUp'):
+                    self.page.send('Input.dispatchKeyEvent', {'type':kind,'key':key,'code':code,'windowsVirtualKeyCode':vk,'modifiers':modifiers})
+            self.assertEqual(self.js('window.machineGhostState()'), before['ghost'])
+            self.page.send('Input.dispatchKeyEvent', {'type':'keyDown','key':'Tab','code':'Tab','windowsVirtualKeyCode':9})
+            self.page.send('Input.dispatchKeyEvent', {'type':'keyUp','key':'Tab','code':'Tab','windowsVirtualKeyCode':9})
+            self.assertTrue(self.js("Boolean(document.activeElement.closest('#recent-changes'))"))
+            # Older notes are reachable inside the dialog, not under the game.
+            self.js("document.querySelector('.changes-body').scrollTop=10000")
+            self.assertTrue(self.js("(() => {const p=document.querySelector('.changes-body'),e=[...p.querySelectorAll('article')].at(-1),r=e.getBoundingClientRect(),b=p.getBoundingClientRect();return r.top>=b.top&&r.bottom<=b.bottom+1;})()"))
+            ops = [json.loads(e['params']['request']['postData'])['op'] for e in self.page.events
+                   if e['method']=='Network.requestWillBeSent' and e['params']['request']['url'].endswith('/api/machine') and 'postData' in e['params']['request']]
+            self.assertFalse(any(op in ('open','level_open','check','play') for op in ops), ops)
+            return before
+
+        def closed(before):
+            self.wait("!document.getElementById('recent-changes').open&&!document.body.classList.contains('reading-guide')", 5)
+            self.assertEqual(self.js('location.href'), before['url'])
+            self.assertEqual(self.js('window.machinePlacements()'), before['setup'])
+            self.assertEqual(self.js("localStorage.getItem('banjo-play-save')"), before['save'])
+            self.assertEqual(self.js('scrollY'), before['scroll'])
+            self.assertEqual(self.js('document.activeElement.id'), 'recent-changes-open')
+
+        for width, height in ((1280,860),(390,844),(844,390),(320,568)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap', width, height, phone=width!=1280)
+                self.press('Add a plank'); self.ghost(); self.js('scrollTo(0,0)')
+                before=open_updates(); self.key('Escape'); closed(before)
+                bounds=self.js("(() => {const m=document.querySelector('main').getBoundingClientRect(),h=document.querySelector('header').getBoundingClientRect();return {bottom:m.bottom,top:m.top,header:h.bottom,height:innerHeight};})()")
+                self.assertLessEqual(bounds['bottom'], bounds['height']+1, bounds)
+                self.assertAlmostEqual(bounds['top'], bounds['header'], delta=1)
+                self.click_visible('Run it'); self.wait("/Pause/.test(document.getElementById('start').textContent)", 10)
+                # Reading updates does not stop or reopen a running machine.
+                before=open_updates(); self.click_visible('Close'); closed(before)
+                self.assertRegex(self.js("document.getElementById('start').textContent"), 'Pause')
+                self.click_visible('Pause')
+                for path, screen in (('/play','levels-screen'),('/machine','sandbox-screen')):
+                    self.page.send('Page.navigate', {'url':self.base+path})
+                    self.wait(f"document.getElementById('{screen}')?.hidden===false",60)
+                    before=open_updates()
+                    self.mouse('mousePressed',2,2); self.mouse('mouseReleased',2,2); closed(before)
+                self.press('Add New Design'); self.wait(READY,60)
+                before=open_updates(); self.click_visible('Close'); closed(before)
+
     def test_a_player_can_tell_us_what_happened(self):
         self.open('gap')
         # Telling us: the words, with the level and its pieces, reach the log.

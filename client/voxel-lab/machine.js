@@ -670,7 +670,7 @@ async function pickPowerPort(port) {
   finally { powerBusy = false; updatePowerLabels(); }
 }
 document.addEventListener('keydown', e => {
-  if ($('guide').open) return;
+  if (document.querySelector('dialog[open]')) return;
   if (e.key === 'Escape' && pickedPowerPort) { pickedPowerPort = null; powerMessage(''); updatePowerLabels(); }
   if (e.key === 'Escape' && wiringMode) setWiringMode(false);
 });
@@ -2947,7 +2947,7 @@ renderer.domElement.addEventListener('wheel', e => {
   turnGhost(e.altKey ? 'pitch_deg' : 'yaw_deg', Math.sign(e.deltaY || e.deltaX) * -15);
 }, {passive: false});
 document.addEventListener('keydown', e => {
-  if ($('guide').open || $('piece-picker').open || !ghost || e.ctrlKey || e.metaKey || e.target.closest('input, textarea, select')) return;
+  if (document.querySelector('dialog[open]') || !ghost || e.ctrlKey || e.metaKey || e.target.closest('input, textarea, select')) return;
   const key = e.key.toLowerCase(), step = e.shiftKey ? 1 : 15;
   const nudge = {arrowleft: 'left', arrowright: 'right', arrowup: 'forward', arrowdown: 'back', pageup: 'up', pagedown: 'down'}[key];
   if (TURN_KEYS[key]) turnGhost(TURN_KEYS[key][0], TURN_KEYS[key][1] * step);
@@ -3552,7 +3552,7 @@ $('piece-edit').addEventListener('change', () => {
   if ($('piece-edit').value !== '') pickUp(Number($('piece-edit').value));
 });
 document.addEventListener('keydown', e => {
-  if ($('guide').open || $('piece-picker').open || !LEVEL_MODE || !(e.ctrlKey || e.metaKey) || e.target.closest('input, textarea, select')) return;
+  if (document.querySelector('dialog[open]') || !LEVEL_MODE || !(e.ctrlKey || e.metaKey) || e.target.closest('input, textarea, select')) return;
   const key = e.key.toLowerCase();
   if (key === 'z' && !e.shiftKey) travel(undone, redone);
   else if (key === 'y' || (key === 'z' && e.shiftKey)) travel(redone, undone);
@@ -4122,29 +4122,27 @@ async function askLevel(mode) {
   finally { $('send').disabled = $('solve').disabled = false; $('chat-status').textContent = ''; }
 }
 
-// Help never navigates, rebuilds a design or appears automatically.
-function showGuide(show) {
-  const guide = $('guide');
-  if (show && !guide.open) {
+// Reading overlays never navigate, rebuild a design or appear automatically.
+for (const id of ['guide', 'recent-changes']) {
+  const dialog = $(id), opener = $(id + '-open'), close = $(id + '-done');
+  opener.addEventListener('click', e => {
+    e.preventDefault();
+    if (dialog.open) return;
     document.body.classList.add('reading-guide');
-    guide.showModal();
-    $('guide-done').focus({preventScroll: true});
-  } else if (!show && guide.open) guide.close();
+    dialog.showModal();
+    close.focus({preventScroll: true});
+  });
+  close.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('close', () => {
+    document.body.classList.remove('reading-guide');
+    opener.focus({preventScroll: true});
+  });
+  dialog.addEventListener('click', e => {
+    if (e.target !== dialog) return;
+    const r = dialog.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close();
+  });
 }
-$('guide-done').addEventListener('click', () => showGuide(false));
-$('guide-open').addEventListener('click', e => {
-  e.preventDefault();
-  showGuide(true);
-});
-$('guide').addEventListener('close', () => {
-  document.body.classList.remove('reading-guide');
-  $('guide-open').focus({preventScroll: true});
-});
-$('guide').addEventListener('click', e => {
-  if (e.target !== $('guide')) return;
-  const r = $('guide').getBoundingClientRect();
-  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) showGuide(false);
-});
 
 // What a player tells us: with the level and pieces it is about, to the
 // server's log. Nothing that names them is sent.
@@ -4333,6 +4331,12 @@ addEventListener('pagehide', () => {
 });
 
 const history_ = window.history;
+// Navigation can wrap on small screens. Subtract its measured height so the
+// scene and control pane still fit the viewport, including after rotation.
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty('--site-header-height', `${document.querySelector('header').offsetHeight}px`);
+  resize();
+}).observe(document.querySelector('header'));
 resize(); render();
 if (LEVEL_MODE) startGame().catch(e => {
   $('page-loading').hidden = false;

@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#e44317"><meta name="apple-mobile-web-app-title" content="Banjo"><title>Banjo Machine</title><link rel="icon" type="image/jpeg" sizes="1280x1280" href="/banjo-app-icon.jpg"><link rel="apple-touch-icon" sizes="1280x1280" href="/banjo-app-icon.jpg"><link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/machine.css"></head><body>
-<header><strong class="brand"><img class="brand-mark" src="/banjo-mark.png" width="32" height="32" alt="">Banjo <span>Machine</span></strong><nav><a href="/play" id="levels-open">Levels</a><a href="/machine" id="sandbox-open">Sandbox</a><a href="#guide" id="guide-open" aria-haspopup="dialog">How to play</a></nav><output id="build">Checking…</output></header>
+<header><strong class="brand"><img class="brand-mark" src="/banjo-mark.png" width="32" height="32" alt="">Banjo <span>Machine</span></strong><nav aria-label="Main navigation"><a href="/play" id="levels-open">Levels</a><a href="/machine" id="sandbox-open">Sandbox</a><a href="#guide" id="guide-open" aria-haspopup="dialog">How to play</a><a href="#recent-changes" id="recent-changes-open" aria-haspopup="dialog">Recent Changes</a></nav><output id="build">Checking…</output></header>
 <section id="page-loading" class="levels-screen" role="status">Loading Banjo…</section>
 <noscript><p class="levels-screen">Enable JavaScript to choose and play a level.</p></noscript>
 <main hidden>
@@ -106,7 +106,7 @@
 </main>
 <section id="levels-screen" class="levels-screen" hidden aria-label="Levels and how far you have got"></section>
 <section id="sandbox-screen" class="levels-screen" hidden aria-label="Sandbox designs"></section>
-<dialog id="guide" aria-labelledby="guide-title">
+<dialog id="guide" class="reading-dialog" aria-labelledby="guide-title">
 <div class="guide-head"><h2 id="guide-title">How to play</h2><button id="guide-done" type="button">Close</button></div>
 <div class="guide-body" tabindex="0" aria-label="Playing instructions">
 <ol>
@@ -119,6 +119,22 @@
 <li><b>Need a hand?</b> Use <b>Ask for help</b> beside the game. <b>Place it for me</b> attempts a solution, worth one star at most.</li>
 </ol>
 <p><b>Keyboard:</b> arrows move a piece; Page Up/Down change its height; Q/E turn, R/F tip and Z/C roll. Enter sets it down. Esc switches between moving and looking around. Ctrl+Z undoes a change.</p>
+</div>
+</dialog>
+<!-- Keep these player-facing notes current for every published checkpoint; see AGENTS.md. -->
+<dialog id="recent-changes" class="reading-dialog" aria-labelledby="recent-changes-title">
+<div class="guide-head"><h2 id="recent-changes-title">Recent Changes</h2><button id="recent-changes-done" type="button">Close</button></div>
+<div class="guide-body changes-body" tabindex="0" aria-label="Game updates, newest first">
+<section aria-labelledby="changes-oct12"><h3 id="changes-oct12"><time datetime="2026-10-12">October 12, 2026</time></h3>
+<article><h4>Updates right here</h4><p>Open <b>Recent Changes</b> from any game screen to see what’s new. Close it to return to your level or design. All the top links now fit on small phones.</p></article>
+<article><h4>See what sets off Chain reaction</h4><p><b>Inspect switch</b> takes you under the seesaw to see its two metal contacts. Watch the ball push them together, then follow the red and blue wires from the battery to the cannon’s igniter. Readings show whether the switch is open or closed and how much power reaches the igniter. Your result stays beside the game while you inspect.</p></article>
+<article><h4>Clearer sunlight and power connections</h4><p><b>Catch the sun</b> has a bigger wall and clearer shadows. Move the solar panel into sunlight, aim it, then connect its <b>Out</b> to the battery or winch’s <b>In</b>. The power meter tells you when the panel is shaded or its output is unwired.</p></article>
+</section>
+<section aria-labelledby="changes-oct11"><h3 id="changes-oct11"><time datetime="2026-10-11">October 11, 2026</time></h3>
+<article><h4>You fire the cannon</h4><p>In <b>Knock it off</b>, aim the cannon, connect both firing wires and drag its trigger to fire. Pressing <b>Run it</b> alone no longer sets it off. Switch lessons also let you operate the handle on the machine.</p></article>
+<article><h4>More room to build</h4><p><b>Controls</b>, <b>Level</b> or <b>Design</b>, and <b>Help</b> tabs keep the tools together. Readings and detailed adjustments sit beside or below the scene. <b>Run it</b> and <b>Set up again</b> stay close to the game. Drag a piece to move it; tap to return to <b>View</b>.</p></article>
+<article><h4>Come back to your designs</h4><p>You can save sandbox versions and reopen them from <b>Your designs</b>. Your browser remembers your save without a name or login. Keep your private <b>return link</b> to open your designs and progress on another device.</p></article>
+</section>
 </div>
 </dialog>
 <dialog id="piece-picker" aria-labelledby="piece-picker-title" aria-describedby="piece-picker-help">

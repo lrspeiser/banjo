@@ -23,6 +23,13 @@ Render deploys `main` automatically, so a push to main is a deploy of the game.
 After one, check that the site serves the new commit (the page's header shows
 it) and still plays.
 
+For every published checkpoint, update the **Recent Changes** dialog in
+`client/voxel-lab/machine.html` with a dated, user-friendly description of what
+changed. Put the newest date first, use the names players see on screen, and
+explain the benefit or how to try it. Include fixes and relevant stability
+improvements; do not claim planned or unverified work is available. Keep build
+logs, test counts and physics limitations in the technical documentation.
+
 ## Physics requirements
 
 What happens in a level is decided by the engine from materials, geometry, state and laws, never by a piece's name or a level's script. A declared property is not an implemented model.

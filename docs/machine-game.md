@@ -2,6 +2,31 @@
 
 October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-one freely selectable piece lessons. Each level has a fixed machine, a goal and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+## Recent Changes in the top navigation
+
+October 12, 2026: **Recent Changes** opens dated, player-friendly notes from
+the levels chooser, sandbox gallery, design editor or any level. Newest dates
+come first. The notes live in `client/voxel-lab/machine.html`; `AGENTS.md`
+requires updating them for every published checkpoint. Current entries cover
+the seesaw contacts/wires, solar shadows/cables, player-operated cannon,
+clearer controls and anonymous saved designs.
+
+Like How to play, this is an on-demand modal. Close, Escape or a backdrop tap
+returns focus to its top link without navigating, rebuilding, discarding a
+ghost or changing saves. A running machine continues while reading. Notes
+scroll inside the layer with its Close button always available. On narrow
+phones navigation occupies two rows so every link remains visible; scene and
+panel height subtract the measured header height after resize/rotation.
+
+Chrome checks pass 3/3 in 14.41 s: the new overlay regression, existing How to
+play and existing View/Move regressions. The new check covers 1280×860,
+390×844, 844×390 and 320×568: visible 44 px navigation targets, keyboard/focus,
+older notes, drafts, running machines and all four page contexts. The client
+view CTest and all 269 source registrations pass. This changes client layout
+and reading overlays only; the native binary, laws and goals are unchanged.
+It adds no new physics or conservation validation. Previously documented
+broad-browser/CI failures remain outside this UI scope.
+
 ## See the seesaw's firing switch
 
 October 12, 2026: **Chain reaction** depicts its prepared firing circuit as
