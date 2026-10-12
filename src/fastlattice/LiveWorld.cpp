@@ -10011,7 +10011,46 @@ void LiveWorld::traceLight() {
     placeLitSpots();
 }
 
-LiveOptics LiveWorld::optics() const { return impl_->light_report; }
+LiveOptics LiveWorld::optics() const {
+    const Impl &I = *impl_;
+    LiveOptics out = I.light_report;
+    if (!I.thermo) return out;
+    std::map<std::pair<std::string, std::uint32_t>, thermo::SpotReady> held;
+    for (const auto &cell : I.thermo->spotsHeld()) held[{cell.body, cell.cell}] = cell;
+    for (const auto &spot : I.thermo->spotStates()) {
+        const auto found = I.index_of.find(spot.body);
+        if (found == I.index_of.end() || !I.inWorld(found->second)) continue;
+        const std::size_t i = found->second;
+        const auto pose = I.world->snapshot(I.body_of[i]);
+        double shares = 0.0;
+        for (const auto &cell : spot.cells) shares += cell.share;
+        if (!(shares > 0.0)) continue;
+        for (const auto &cell : spot.cells) {
+            // A removed cell belongs only in the taken receipt. Never draw
+            // a hot voxel across the gap the engine has already opened.
+            if (cell.cell >= I.cell_offset_m.size() ||
+                std::find(I.nodes_of[i].begin(), I.nodes_of[i].end(), cell.cell) == I.nodes_of[i].end()) continue;
+            LiveOptics::HotCell row;
+            row.body = spot.body; row.cell = cell.cell; row.how = spot.how;
+            row.local_m = I.cell_offset_m[cell.cell];
+            row.at_m = pose.center_of_mass_world_m + pose.orientation_world.rotate(row.local_m);
+            row.cell_m = I.request.cell_size_m;
+            row.temperature_k = spot.temperature_k;
+            row.absorbed_w = spot.power_w * cell.share / shares;
+            row.cut_w = spot.cut_w * cell.share / shares;
+            row.beyond_model = spot.beyond_model;
+            if (const auto value = held.find({spot.body, cell.cell}); value != held.end()) {
+                row.held_j = value->second.energy_j; row.needed_j = value->second.needed_j;
+            }
+            out.hot_cells.push_back(std::move(row));
+        }
+    }
+    std::stable_sort(out.hot_cells.begin(), out.hot_cells.end(), [](const auto &a, const auto &b) {
+        return a.cut_w != b.cut_w ? a.cut_w > b.cut_w : a.absorbed_w > b.absorbed_w;
+    });
+    if (out.hot_cells.size() > 256) out.hot_cells.resize(256);
+    return out;
+}
 
 unsigned LiveWorld::breaker(const std::string &name, const std::string &body, unsigned store,
                             const Vec3 &point_world_m, const Vec3 &along_world, double watts, double reach_m) {

@@ -3,7 +3,14 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, thermalCells} from '../client/voxel-lab/machine-view.mjs';
+
+const heated={body:'cord',at_m:[0,.5,1],local_m:[0,.02,0],cell_m:.02,temperature_k:573.15,how:'chars',cut_w:100,held_j:400,needed_j:1000};
+assert.equal(thermalCells({hot_cells:[heated]})[0].progress,.4);
+assert.ok(thermalCells({hot_cells:[heated]})[0].charring);
+assert.equal(thermalCells({hot_cells:[{...heated,how:'',cut_w:0,held_j:0,needed_j:0}]})[0].progress,null,'non-removable materials have no fictitious progress');
+assert.equal(thermalCells({hot_cells:[{...heated,beyond_model:true}]})[0].charring,false);
+assert.deepEqual(thermalCells({hot_cells:[{...heated,at_m:[NaN,0,0]}]}),[]);
 
 const declaredLens={at_m:[.1,.575,0],axis:[1,0,0],aperture_m:.06,thickness_m:.020424,front_radius_m:.2,back_radius_m:-.2};
 const lensLines=lensOutline(declaredLens);

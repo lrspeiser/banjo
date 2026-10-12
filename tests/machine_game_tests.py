@@ -707,6 +707,39 @@ class FreeBuild(unittest.TestCase):
 
 class Engine(unittest.TestCase):
     @need_engine
+    def test_laser_exposes_real_hot_cell_energy_then_removes_the_cell_and_releases_the_load(self):
+        level=mg.level_by_id('laser')
+        with tempfile.TemporaryDirectory() as logs:
+            compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+            engine,_,_=mw.build_engine(ENGINE,compiled,Path(logs))
+            try:
+                samples=[]
+                for _ in range(20):
+                    frame=engine.op(op='step',dt=1/240,n=48,moved=False)
+                    optics=engine.op(op='optics')['optics']
+                    for cell in optics.get('hot_cells',[]):
+                        if cell['cut_w']>0:
+                            samples.append(cell)
+                            self.assertEqual(cell['how'],'chars')
+                            self.assertGreater(cell['needed_j'],0)
+                            self.assertGreaterEqual(cell['held_j'],0)
+                            body=next(b for b in frame['bodies'] if b['name']==cell['body'])
+                            if body.get('cells_local_m'):
+                                self.assertIn(cell['local_m'],body['cells_local_m'])
+                            else:
+                                self.assertTrue(all(abs(v)<=d/2+1e-6 for v,d in zip(cell['local_m'],body['dimensions_m'])),
+                                    'A boxed body omits redundant voxel geometry; its reported cell must be inside it')
+                    if optics['taken_count']:
+                        taken=optics['taken'][-1]
+                        self.assertGreater(taken['j'],0);self.assertEqual(taken['how'],'chars')
+                        self.assertFalse(any(c['body']==taken['body'] for c in optics['hot_cells']),
+                            'A consumed one-cell rope segment must stop drawing as heated material')
+                        break
+                self.assertGreater(len(samples),2,'A sustained burn must be visible before the cell disappears')
+                self.assertGreater(max(c['held_j']/c['needed_j'] for c in samples),.5)
+            finally:engine.close()
+
+    @need_engine
     def test_audit_lessons_require_direction_current_connection_and_solar_lead(self):
         with tempfile.TemporaryDirectory() as logs:
             motor=mg.level_by_id('easy-motor')

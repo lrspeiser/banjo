@@ -743,6 +743,16 @@ struct LiveOptics {
         double taken_j{}, taken_m3{}, taken_kg{};
     };
     std::vector<Lit> bodies;            // everything light has reached
+    // Measured occupied cells under light, for a localized thermal display.
+    // Progress is energy held / current removal cost, never elapsed time.
+    struct HotCell {
+        std::string body, how;
+        std::uint32_t cell{};
+        Vec3 at_m{}, local_m{};
+        double cell_m{}, temperature_k{}, absorbed_w{}, cut_w{}, held_j{}, needed_j{};
+        bool beyond_model{};
+    };
+    std::vector<HotCell> hot_cells;      // bounded observational snapshot
     // A cell light has taken away (docs/light-spots.md): which body, when,
     // where, how much matter, and what light spent taking it from where it
     // was to gone -- against the cell's volume, the energy per volume.

@@ -366,6 +366,7 @@ struct ThermoWorld::Impl {
             const Removal r = removalOf(l.material);
             SpotState state;
             state.body = d.body;
+            state.cells = d.cells;
             state.power_w = d.power_w;
             state.area_m2 = d.area_m2;
             state.volume_m3 = d.volume_m3;

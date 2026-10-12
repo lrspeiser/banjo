@@ -1,5 +1,5 @@
 import * as THREE from '/three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint} from '/machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, thermalCells} from '/machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from '/anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from '/profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from '/level-library.mjs';
@@ -750,8 +750,78 @@ function positionPowerLabels() {
 // machine's sun is.
 let beams = null;
 const sensors = new Map();
+const hotVoxels=new Map(),hotVoxelShape=new THREE.BoxGeometry(1,1,1);
+let heatingTarget=null,heatInspection=null;
+function closeHeatInspection(restore=true) {
+  if(!heatInspection)return;
+  const old=heatInspection;heatInspection=null;
+  $('inspect-heat').textContent=heatingTarget?.how==='chars'?'Inspect burn':'Inspect heat';
+  if(restore){azimuth=old.azimuth;elevation=old.elevation;distance=old.distance;goal.copy(old.goal);target.copy(old.target);follow=old.follow;
+    $('follow').setAttribute('aria-pressed',String(follow));
+    if(document.body.classList.contains('panel-collapsed')!==old.collapsed)$('panel-toggle').click();}
+}
+$('inspect-heat').addEventListener('click',()=>{
+  if(heatInspection){closeHeatInspection();return;}
+  if(!heatingTarget)return;
+  heatInspection={azimuth,elevation,distance,goal:goal.clone(),target:target.clone(),follow,
+    collapsed:document.body.classList.contains('panel-collapsed')};
+  $('inspect-heat').textContent='Whole machine';
+  follow=false;$('follow').setAttribute('aria-pressed','false');
+  // Look from the incoming beam's side of the actual heated cell; a wall
+  // should not obscure the face being inspected. This changes only camera.
+  let nearest=null;
+  for(const p of readouts.light?.paths||[])for(let i=3;i<p.mm.length;i+=3){
+    const a=p.mm.slice(i-3,i).map(v=>v/1000),b=p.mm.slice(i,i+3).map(v=>v/1000);
+    const d=Math.hypot(...b.map((v,k)=>v-heatingTarget.at_m[k]));
+    if(!nearest||d<nearest.d)nearest={d,a,b};
+  }
+  if(nearest){const dx=nearest.a[0]-nearest.b[0],dz=nearest.a[2]-nearest.b[2];if(Math.hypot(dx,dz)>.01)azimuth=Math.atan2(dx,dz)+.3;}
+  elevation=.25;distance=.65;goal.set(...heatingTarget.at_m);target.copy(goal);
+  if(innerWidth<1000&&!document.body.classList.contains('panel-collapsed'))$('panel-toggle').click();
+  freshView();
+});
+function syncThermalSpots(light) {
+  const rows=thermalCells(light),seen=new Set();
+  for(const row of rows){
+    const body=world.bodies.get(row.body);if(!body)continue;
+    const key=row.body+':'+row.cell;seen.add(key);
+    let mesh=hotVoxels.get(key);
+    if(!mesh){mesh=new THREE.Mesh(hotVoxelShape,new THREE.MeshStandardMaterial({roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}));scene.add(mesh);hotVoxels.set(key,mesh);}
+    mesh.scale.setScalar(row.cell_m);
+    mesh.quaternion.set(body.orientation_wxyz[1],body.orientation_wxyz[2],body.orientation_wxyz[3],body.orientation_wxyz[0]);
+    mesh.position.set(...row.local_m).applyQuaternion(mesh.quaternion).add(new THREE.Vector3(...body.position_m));
+    mesh.material.color.setHex(row.charring?0x241a12:heatTint(materialColor(body.material),row.temperature_k));
+    mesh.userData.row=row;
+  }
+  for(const [key,mesh] of hotVoxels)if(!seen.has(key)){scene.remove(mesh);mesh.material.dispose();hotVoxels.delete(key);}
+  const row=rows.find(c=>c.cut_w>0)||rows[0],taken=(light?.taken||[]).at(-1);
+  const ropeFor=name=>(machine?.ropes||[]).find(r=>r.segments.some(n=>family(n)===family(name)));
+  const takenRope=taken&&ropeFor(taken.body),cutRope=takenRope&&
+    (readouts.joints||[]).some(j=>j.name===takenRope.cord&&j.attached===false)?takenRope:null;
+  heatingTarget=cutRope?{...taken,cutThrough:true}:row||(taken?{...taken,at_m:taken.at_m}:null);
+  const output=$('thermal-readout'),inspect=$('inspect-heat');
+  output.hidden=inspect.hidden=!heatingTarget;
+  view.classList.toggle('has-thermal-spot',Boolean(heatingTarget));
+  if(!heatingTarget){closeHeatInspection(false);return;}
+  inspect.textContent=heatInspection?'Whole machine':row?.charring||taken?.how==='chars'?'Inspect burn':'Inspect heat';
+  const bodyName=cutRope?.cord||(row&&ropeFor(row.body)?.cord)||family(row?.body||taken.body),celsius=row?row.temperature_k-273.15:null;
+  if(row){
+    output.textContent=`${bodyName} · ${cutRope?'Cut through · nearby heat':row.charring?'Charring':row.how==='melts'&&row.cut_w>0?'Melting':'Heating'} · ${celsius.toFixed(0)} °C\n`+
+      `${row.absorbed_w.toFixed(0)} W absorbed`+(row.progress!==null?` · ${(100*row.progress).toFixed(0)}% cell energy`:'');
+    output.title=`Engine steady-spot temperature at the lit ${1000*row.cell_m} mm lattice cell; warm-up delay is not modeled. ${row.held_j.toFixed(0)} / ${row.needed_j.toFixed(0)} J toward cell removal. This is an energy indicator, not char depth. `+
+      (row.beyond_model?'Temperature is beyond the thermal model’s declared range.':'Geometry changes only when the native engine takes matter away.');
+  }else{
+    const pieces=[...world.bodies.keys()].filter(n=>family(n)===bodyName).length;
+    output.textContent=`${bodyName} · ${cutRope||pieces>1||pieces===0?'Cut through':'Material removed'}\n${taken.cm3.toFixed(1)} cm³ · ${taken.j.toFixed(0)} J`;
+    output.title='The native engine removed this cell and rebuilt the remaining geometry. No flames or fragment motions are invented.';
+  }
+}
+window.machineThermalState=()=>({cells:[...hotVoxels.values()].map(m=>({...m.userData.row,position_m:m.position.toArray()})),
+  text:$('thermal-readout').textContent,visible:!$('thermal-readout').hidden,inspecting:Boolean(heatInspection),target:heatingTarget,
+  taken:readouts.light?.taken||[]});
 function syncLight() {
   const light = readouts.light;
+  syncThermalSpots(light);
   const {positions, colors, legs} = beamSegments(light && light.paths);
   if (!beams) {
     // Opaque, so the glass is drawn over them and they show through it.
@@ -1201,6 +1271,7 @@ function renderClock(frame) {
 // ---- building and running --------------------------------------------------------
 async function build(next, start, request) {
   await stopSwitchDrag();
+  closeHeatInspection();
   const mine = ++polling;
   if (session) api({op: 'close', session}).catch(() => {});
   session = null; playing = false;
@@ -2466,7 +2537,7 @@ function updatePowerFeedback() {
   const seen=new Set(items.map(i=>i.id));
   for(const [id,row] of powerFeedbackRows)if(!seen.has(id)){row.card.remove();powerFeedbackRows.delete(id);}
   const rect=renderer.domElement.getBoundingClientRect();
-  const occupied=[...view.querySelectorAll('#clock,#scene-mode,.power-pin,.terminal-control-pin,.inspect-switch,#scene-actions,#machine-controls,#attach-card,#level-done')]
+  const occupied=[...view.querySelectorAll('#clock,#scene-mode,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   const top=Math.max(8,$('clock').getBoundingClientRect().bottom-rect.top+6),bottom=rect.height-26;
   for(const item of items) {
@@ -4139,6 +4210,8 @@ function closeDone() {
 function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   closeDone();
   const box = $('level-done'), next = level.variant ? null : levels[levels.indexOf(level) + 1];
+  // Leave the actual cut and falling load visible after a thermal win.
+  if(heatingTarget)$('control-panel').append(box);
   const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
   const allLevels = button('All levels', () => { closeDone(); showLevelsScreen(true); });
   if (r.tested) {

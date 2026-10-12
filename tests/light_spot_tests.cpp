@@ -523,6 +523,43 @@ void aBurningGlass() {
 
 } // namespace
 
+void localizedCellReadingsAreObservational() {
+    for (const auto material : {MaterialPreset::Oak, MaterialPreset::Glass, MaterialPreset::Iron})
+        for (const double dt : {1.0 / 240.0, 1.0 / 480.0}) {
+            auto world = hang(rig(material));
+            laser(*world, {-0.81, 0.575, 0.0}, {1.0, 0.0, 0.0}, 5000.0);
+            for (int i = 0; i < static_cast<int>(1.0 / dt); ++i) {
+                world->step(dt);
+                if (world->steppedBack()) for (const auto &name : world->breakable()) world->declineBreak(name);
+            }
+            std::string why;
+            const auto before = world->snapshot(why);
+            require(!before.empty(), "comparison snapshot is available: " + why);
+            const auto report = world->optics();
+            const auto again = world->optics();
+            require(world->snapshot(why) == before, "thermal display observation must not change world state");
+            require(report.hot_cells.size() == again.hot_cells.size(), "repeated observations are stable");
+            unsigned cord_cells = 0;
+            double held = 0.0, needed = 0.0;
+            for (const auto &cell : report.hot_cells) {
+                if (cell.body != "cord") continue;
+                ++cord_cells; held += cell.held_j; needed += cell.needed_j;
+                require(std::isfinite(cell.temperature_k) && cell.temperature_k > 293.0, "localized temperature is measured");
+                require(cell.cell_m == 0.02 && std::abs(cell.at_m.y - 0.575) < 0.03,
+                        "heated cells are on the real cord at the beam height");
+                if (material == MaterialPreset::Oak) {
+                    require(cell.how == "chars" && cell.cut_w > 0.0, "oak has native charring power");
+                    require(cell.held_j > 0.0 && cell.needed_j > cell.held_j, "oak progress uses held energy and removal price");
+                } else require(cell.cut_w == 0.0 && cell.held_j == 0.0 && cell.needed_j == 0.0,
+                               "glass and iron must never display fictitious burn progress");
+            }
+            require(cord_cells > 0, "localized cells on the cord are reported for every material");
+            std::cout << "HOT CELL DISPLAY material " << static_cast<int>(material) << " dt " << dt
+                      << " cells " << cord_cells << " held J " << held << " needed J " << needed
+                      << " optical residual J " << report.joules.residual() << "\n";
+        }
+}
+
 int main() {
     const auto run = [](const char *name, void (*test)()) {
         std::cout << name << "\n";
@@ -541,6 +578,7 @@ int main() {
     run("ice melts by depth", iceMeltsByDepth);
     run("a lens focuses the beam on the cord", aLensFocusesTheBeamOnTheCord);
     run("a burning glass", aBurningGlass);
+    run("localized cell readings are observational", localizedCellReadingsAreObservational);
     if (failures) {
         std::cout << failures << " failure(s)\n";
         return 1;

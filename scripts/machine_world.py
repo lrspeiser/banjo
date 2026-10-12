@@ -3476,7 +3476,8 @@ def probe_light(session):
     return {'sent_w': _round(w.get('sent', 0.0), 3), 'heated_w': _round(w.get('heated', 0.0), 3),
             'spots_w': _round(w.get('spots', 0.0), 3),
             'residual_w': w.get('residual'), 'joules': o.get('joules'), 'photocells': cells,
-            'lit': [row(b) for b in lit], 'taken': o.get('taken', []), 'lenses': o.get('lenses', []),
+            'lit': [row(b) for b in lit], 'hot_cells': o.get('hot_cells', []),
+            'taken': o.get('taken', []), 'lenses': o.get('lenses', []),
             'lights': o.get('lights', []), 'paths': o.get('paths', []), 'cost': o.get('cost')}
 
 

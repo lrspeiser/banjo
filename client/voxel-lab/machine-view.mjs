@@ -4,6 +4,14 @@
 
 // Editing assistance changes a proposed placement, never a simulated body.
 export const PLACEMENT_GRID = Object.freeze({size_m:40, fine_size_m:10, step_m:.05, major_step_m:.5, capture_m:.008, release_m:.012});
+// Only measured occupied cells. The fill is an energy budget indicator,
+// not a fabricated sub-cell hole, char depth or time-to-win estimate.
+export function thermalCells(light) {
+  return (light?.hot_cells||[]).filter(c=>c.at_m?.length===3&&c.at_m.every(Number.isFinite)&&
+    c.local_m?.length===3&&c.local_m.every(Number.isFinite)&&Number.isFinite(c.temperature_k)&&c.cell_m>0)
+    .slice(0,64).map(c=>({...c,progress:c.needed_j>0?Math.max(0,Math.min(1,c.held_j/c.needed_j)):null,
+      charring:c.how==='chars'&&c.cut_w>0&&!c.beyond_model}));
+}
 export function snapGroundPoint(point, {enabled=true, previous={}}={}) {
   const result={point:{...point},locks:{x:null,z:null}};
   if (!enabled) return result;

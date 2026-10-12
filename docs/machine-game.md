@@ -4,6 +4,28 @@ October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-t
 
 ## Feedback audit and meaningful starting controls
 
+October 12 laser display update: **Bounce the beam** exposes native occupied
+cells under the beam, each cell's steady spot temperature, absorbed power,
+stored ablation energy and current removal cost. The charred cell is drawn
+dark while the native `chars` law supplies removal power. **% cell energy**
+means held joules divided by the cell's current removal price; it is not
+percentage rope section removed or a timed animation. Only native geometry
+updates open the gap and move the released load. Other nearby cells may remain
+heated after the load-bearing cord parts; the label retains **Cut through**
+when the native rope joint reports detached.
+
+**Inspect burn / Inspect heat** looks at the real heated cell from its incoming
+beam's side. On a phone it collapses the controls while retaining Run/Pause/Reset.
+**Whole machine** restores the previous view, follow preference and panel state.
+Thermal wins put their result in the control panel, leaving the cut and fall
+visible. Reset rebuilds the unburned geometry and clears the readout.
+
+This adds read-only observations and display, not heat, material loss, forces
+or a new combustion law. The existing 20 mm cell model removes whole cells;
+steady spot warm-up, fiber-resolved rope, sub-cell kerfs, glass/metal melting,
+flame shape and smoke are not simulated. No flame or invented fragment motion
+is drawn. See [localized light model and limits](light-spots.md).
+
 The [complete feedback audit](feedback-audit.md) reviews every level, sandbox
 example, library piece, phone controls and saved-version workflow, including
 remaining teaching and physics gaps. **Turn the axle** now starts in reverse;

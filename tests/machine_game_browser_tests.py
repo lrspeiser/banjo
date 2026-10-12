@@ -271,6 +271,40 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_laser_burn_has_native_cell_progress_inspection_and_a_visible_gap_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('laser',width,height,phone=width!=1280)
+                for index,x,z,angle in [(1,.614,0,45),(2,.614,1.015,-45)]:
+                    self.press('Add a mirror');self.ghost()
+                    for label,value in [('x',x),('z',z),('turn',angle)]:
+                        self.slide(f'{label} of your mirror {index}',value)
+                    self.assertTrue(self.ghost()['fits'])
+                    self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.click_visible('Run it')
+                self.wait("window.machineThermalState().cells.some(c=>c.charring&&c.progress>0&&c.progress<1)",20)
+                early=self.js('window.machineThermalState()')
+                self.assertIn('Charring',early['text']);self.assertIn('300 °C',early['text'])
+                self.click_visible('Inspect burn')
+                self.wait('window.machineThermalState().inspecting',5)
+                self.assertTrue(self.js("document.getElementById('thermal-readout').getBoundingClientRect().right<=innerWidth"))
+                self.assertTrue(self.js("document.getElementById('inspect-heat').getBoundingClientRect().height>=44"))
+                try:self.wait("window.machineThermalState().text.includes('Cut through')",20)
+                except AssertionError:
+                    print('THERMAL_DISPLAY',self.js('window.machineThermalState()'),flush=True)
+                    raise
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertFalse(self.js("Boolean(document.getElementById('level-done').closest('#view'))"),
+                    'The win message must not cover the cut or falling load')
+                after=self.js('window.machineThermalState()')
+                self.assertTrue(after['taken'])
+                self.assertFalse(any(c['body']==after['taken'][-1]['body'] for c in after['cells']),
+                    'A removed segment cannot remain a char overlay; its neighbors may still be heated')
+                self.click_visible('Whole machine')
+                self.wait('!window.machineThermalState().inspecting',5)
+                self.click_visible('Set up again');self.wait(READY,60)
+                self.assertFalse(self.js('window.machineThermalState().visible'))
+
     def test_catalogue_audit_opens_every_level_with_attached_touch_controls(self):
         import machine_game as game
         for width,height in ((1280,860),(390,844),(844,390)):

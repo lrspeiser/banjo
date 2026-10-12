@@ -6,6 +6,50 @@ small lit spot heats faster than the rest of the body".
 
 ## What changed, in a sentence
 
+### Visible cell observations — October 12, 2026
+
+`LiveWorld::optics()` now returns up to 256 currently occupied illuminated
+cells. They carry their body/node identity, body-local and world centers,
+20 mm cell size, steady spot temperature, absorbed and removal watts, and
+held/current-price joules. Removed cells are excluded. This is a const
+observational snapshot: it neither applies heat nor prices/removes matter.
+The page shows at most 64, darkening cells actually charring and displaying
+the native energy fraction. The gap and fall use the native geometry/poses.
+Nearby cells can continue heating after the cord breaks; native rope joint
+detachment identifies that the supporting cord is cut through.
+
+Same 5 kW source, mirror, 20×20×300 mm cord and suspended load, sampled at 1 s:
+
+| Material | dt (s) | Lit cells | Held energy (J) | Total current cell prices (J) | Optical residual (J) |
+|---|---:|---:|---:|---:|---:|
+| Oak | 1/240 | 3 | 1894.27 | 10637.7 | 0 |
+| Oak | 1/480 | 3 | 1898.24 | 10637.7 | 0 |
+| Glass | 1/240 | 3 | 0 | 0 | −1.45519e−11 |
+| Glass | 1/480 | 3 | 0 | 0 | −3.00133e−11 |
+| Iron | 1/240 | 3 | 0 | 0 | −1.00044e−11 |
+| Iron | 1/480 | 3 | 0 | 0 | +2.54659e−11 |
+
+Glass/iron heat but have no removal law or fictional progress. For all six
+conditions, repeated observations leave the complete saved world identical.
+The existing optical/thermal/mass ledger checks, saved-halfway restart,
+half/quarter-power delay and weak-beam failure checks remain in the compiled
+`banjo_light_spot_tests` target. These are the existing model's receipts,
+not evidence for real fiber combustion, metal melting or a fully closed
+mechanical momentum audit. No physical tolerance changes accompany the display.
+
+Verification used Windows Release engine SHA-256
+`1ebc084656f9b4c0206e6c7ca7f9d0e12546700c60e495781ca781493587c352`.
+The rebuilt native spot target passed. The full 52-check game regression passed
+in 83.918 s, including every authored solution's three nudges; the added native
+API/cell-removal check passed separately. Two laser/lens engine integration
+checks passed in 1.481 s. Five browser checks passed in 54.792 s across desktop
+1280×860 and phone 390×844 / 844×390: live burn progress, native gap/continued
+neighbor heat, inspection/restore/reset, preserved editing laser traces and
+flow controls, Recent Changes and scene toolbars. The client view test and
+all 269 source registrations passed. Manual inspection paused the real run
+at 4.27 s: a rope cell held 2868 / 3523 J (81%), at the modeled 300 °C char
+line, with 684 W absorbed. No progress came from wall time or win state.
+
 Light used to warm the whole of whatever it landed on, so a 4.5 kW beam on a 20 mm oak rope
 warmed all of the rope and took more than 30 seconds to burn it. Now light heats the spot it
 lands on, and a beam strong enough takes the matter there away, the way a real laser does: the

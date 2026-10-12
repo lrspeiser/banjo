@@ -199,6 +199,9 @@ struct Removal {
 // One spot as the last step left it.
 struct SpotState {
     std::string body;
+    // Read-only provenance for drawing the actually illuminated lattice cells.
+    // These are the declaration's cells, not extra heat or removal commands.
+    std::vector<SpotCell> cells;
     double power_w{};
     double area_m2{};
     double volume_m3{};

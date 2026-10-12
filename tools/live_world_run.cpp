@@ -711,6 +711,13 @@ nlohmann::json opticsOf(const LiveWorld &world, bool paths) {
                          {"how", t.how},
                          {"gone_k", tidy(t.gone_k)}});
     }
+    nlohmann::json hot_cells = nlohmann::json::array();
+    for (const auto &cell : o.hot_cells)
+        hot_cells.push_back({{"body", cell.body}, {"cell", cell.cell}, {"at_m", vec(cell.at_m)},
+                            {"local_m", vec(cell.local_m)}, {"cell_m", cell.cell_m},
+                            {"temperature_k", cell.temperature_k}, {"absorbed_w", cell.absorbed_w},
+                            {"cut_w", cell.cut_w}, {"held_j", cell.held_j}, {"needed_j", cell.needed_j},
+                            {"how", cell.how}, {"beyond_model", cell.beyond_model}});
     nlohmann::json out = {
         {"t_s", tidy(o.t_s)},
         {"watts", ledger(o.watts)},
@@ -720,6 +727,7 @@ nlohmann::json opticsOf(const LiveWorld &world, bool paths) {
         {"lit", std::move(lit)},
         {"taken", std::move(taken)},
         {"taken_count", o.taken.size()},
+        {"hot_cells", std::move(hot_cells)},
         {"lenses", lensesOf(world)},
         {"cost", {{"trace_every_steps", o.trace_every_steps},
                   {"bounce_limit", o.bounce_limit},
