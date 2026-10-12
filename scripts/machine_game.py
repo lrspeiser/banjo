@@ -1604,6 +1604,7 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0):
     return {'paths': paths, 'hits': hits, 'goal_at_s': goal_at, 'world_time_s': r['world_time_s'],
             'manual_input_required': bool(level.get('solution_inputs')),
             'flow_frames': r.get('flow_frames', []), 'complete': r.get('complete', not r['error']),
+            'mechanism_shapes':r.get('mechanism_shapes',[]),
             'wall_s': r['wall_s'], 'error': r['error'], 'zone': rule if 'at_m' in (rule if isinstance(rule, dict) else {}) else None}
 
 

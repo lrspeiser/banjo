@@ -49,8 +49,10 @@ The [complete feedback audit](feedback-audit.md) reviews every level, sandbox
 example, library piece, phone controls and saved-version workflow, including
 remaining teaching and physics gaps. **Turn the axle** now starts in reverse;
 choose forward to reach its positive-angle goal. **River-powered lift** starts
-its wheel on the bank with no drum load: move it into the current and select
-`river gate` as its drum load. Both actions are physically necessary.
+its wheel on the bank with no drum load: move it into the marked current and
+choose **Connect rope to gate**. Both actions are physically necessary. The
+preview shows native wheel rotation, rope endpoints and gate movement while
+the live setup stays ready at time zero; the readout labels this as Preview.
 
 **Charge then lift** starts the receiving motor battery empty. Place and aim
 the panel, open **Readings and wiring → Connect wires**, then click panel
@@ -837,7 +839,15 @@ In Sandbox, **Build beside a river** starts a channel with an upstream supply an
 
 The straight river fills from its west boundary when Run starts, flows along x and leaves at the east boundary; it starts dry, with no hidden reservoir. The setup preview shows its predicted water/current before Run. Static arrows represent native sampled velocity, quantized at 0.05 m/s per axis (clipped at ±6.35 m/s). They do not animate an invented current. Ready/live water, the flow preview and Engine readings expose direction, sampled speed/depth and measured inflow/outflow. Preview packets retain at most 96 velocity samples and 512 surface tiles per frame. Pause/scrub selects an engine-rehearsed snapshot. Saved versions retain the river declaration, wheel position and named drum connection, not elapsed runtime.
 
-**Easy 21: River-powered lift** teaches placing the wheel in the current to raise the gate eight centimetres within ten seconds. Its 65 cm oak wheel puts the drum's lower rope departure above the gate's target position. The default flow is 100 L/s; seeded versions vary the actual upstream supply to 95, 105, 110 or 120 L/s. At the game's 1/240 s step the nominal solution and all three nudged runs reach the unchanged target at about 4.10 s. The generated settings reach it at 4.383, 3.85, 3.65 and 3.35 s; bank placement, dry/no-flow, no wheel and no drum connection fail physically. The existing twenty seed families and their version-1 identities keep their meaning. River scoring currently accounts for construction and the game's existing energy inputs; complete hydraulic boundary work is not available in that score. See the [river measurements and limits](sandbox-water-launch-measured.md#river-current-wheel).
+In this lesson the wheel has a fixed 65 cm radius; its connection control is a
+**Connect rope to gate** button instead of a load dropdown. Sandbox keeps the
+adjustable wheel sizes and general drum-load picker, which excludes fixed
+objects from new choices while preserving an existing saved connection. The
+marked channel and **Wheel on bank** cue identify the placement task. Preview
+readings show measured wheel turn and gate rise; the win result appears beside
+the scene in Controls.
+
+**River-powered lift** teaches placing the wheel in the current to raise the gate eight centimetres within ten seconds. Its 65 cm oak wheel puts the drum's lower rope departure above the gate's target position. The default flow is 100 L/s; seeded versions vary the actual upstream supply to 95, 105, 110 or 120 L/s. At the game's 1/240 s step the nominal solution and all three nudged runs reach the unchanged target at about 4.10 s. The generated settings reach it at 4.383, 3.85, 3.65 and 3.35 s; bank placement, dry/no-flow, no wheel and no drum connection fail physically. The existing twenty seed families and their version-1 identities keep their meaning. River scoring currently accounts for construction and the game's existing energy inputs; complete hydraulic boundary work is not available in that score. See the [river measurements and limits](sandbox-water-launch-measured.md#river-current-wheel).
 
 River UI verification: both new browser tests pass, including the lesson's native win at 1280×860, 390×844 and 844×390, saving/reloading/restoring the river base and rope connection, and restoring the dry example's 40 cm/Left defaults. Sparse saved placements now display their compiled defaults when edited; full and compact connection selectors stay synchronized. The selected tray card survives Set down and rebuild. Manual portrait/landscape review kept Run/Pause/Reset and the river scene visible. The final broad browser run passed 41/42 in 271.367 s: one existing portrait solar input click did not append its cable. The unchanged solar test then passed six repetitions (18 viewport flows), including four preceding-state checks; no clicks were retried or tolerances relaxed. Its cause remains unproven and intermittent click behavior remains a QA limitation. The earlier pre-editor-fix broad run passed 42/42 in 213.186 s; it is not substituted for the final result.
 

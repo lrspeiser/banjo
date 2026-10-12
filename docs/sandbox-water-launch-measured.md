@@ -221,7 +221,7 @@ falling-parcel ledger closure with a fixed source and receiver.
 ## River-current wheel
 
 The two new sandbox designs are **Build beside a river** (no wheel placed)
-and **River powers a lift** (connected example). Easy 21 asks the player to
+and **River powers a lift** (connected example). River-powered lift asks the player to
 place a wheel in the current and raise the guided gate 8 cm within 10 s.
 The base is a 6 m by 4 m grid: 10 cm fluid columns, a 60 cm-wide trench,
 35 cm depth, 0.005 bed slope, 100 L/s west-boundary inflow and east outflow.
@@ -425,3 +425,37 @@ Version-1 recipe identities retain the earlier metered apparatus. New authored
 construction pars are 771,262,154 / 777,190,154 / 460,651,224 / 593,992,292 J
 for pour/gate/receiver/river respectively, each nominal construction plus
 the existing 1 kJ margin. River boundary work remains absent from the score.
+
+
+### October 12 river-lift controls and mechanism preview
+
+The lesson now marks the current and uses **Connect rope to gate** instead of
+a list that also offered the fixed guide and foot. The lesson's 65 cm radius
+is unchanged; Sandbox still offers wheel sizing and movable drum-load choices.
+Goal rise (8 cm), deadline (10 s), native laws and solution remain unchanged.
+
+River rehearsals expose up to 32 existing rotor/load bodies: shape records
+travel once, and sampled native poses, unwrapped hinge turn and rope endpoints
+travel with flow frames. The renderer moves copies using those measured poses;
+it does not assign physical velocity or alter the editable/live setup. The
+wheel, rope and gate therefore move alongside water in the explicitly labelled
+preview while the real world clock remains ready at zero. This is a pose
+preview, not a replay of later fracture geometry. Turn and gate-rise readings
+are observations, not new hydraulic power or conservation claims. The fluid
+calibration and unsupported conservation laws above still apply.
+
+Browser regression checks the actual rendered poses against native snapshots,
+requires gate rise of at least 8 cm and positive rope tension, verifies live
+state remains unchanged before Run, and wins through the ordinary controls
+on desktop, phone portrait and landscape. Connection toggling and Sandbox
+save/reload/restore are also exercised.
+
+Measured verification on the unchanged native executable
+`1ebc084656f9b4c0206e6c7ca7f9d0e12546700c60e495781ca781493587c352`:
+53/53 game tests in 86.354 s, 14/14 water/launch tests in 37.779 s,
+and the final moving-preview/touch-layout test in all three viewports in
+50.223 s. The Sandbox save/restore check passes separately in 7.566 s.
+The river fixture still measures 0.10870 m peak gate rise, 34.51437° turn,
+0.04275 m wound rope and 926.26119 N peak constraint tension at 2 ms. These
+are the same calibrated native behaviors; this checkpoint adds observation
+and controls. Source registration passes 269/269.

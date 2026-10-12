@@ -604,9 +604,19 @@ class Puzzles(unittest.TestCase):
         self.press('Add a water wheel');initial=self.ghost()['p']
         self.assertEqual(initial['radius_m'],self.river_solution['radius_m'],'The river base must provide its usable wheel size before editing')
         self.assertEqual(initial['side'],'off','The river wheel must start with its falling pour off')
-        for key,label in [('x_m','along channel (m)'),('z_m','across river (m)'),
-                          ('radius_m','wheel radius (m)')]:
+        lesson_button=self.js("Boolean([...document.querySelectorAll('button')].find(b=>b.textContent==='Connect rope to gate'))")
+        fields=[('x_m','along channel (m)'),('z_m','across river (m)')]
+        if not lesson_button:fields.append(('radius_m','wheel radius (m)'))
+        for key,label in fields:
             self.slide(f'{label} of your water_wheel 1',self.river_solution[key])
+        if lesson_button:
+            self.click_visible('Connect rope to gate');self.ghost()
+            self.assertEqual(self.ghost()['p']['load_part'],'river gate')
+            self.click_visible('Disconnect rope from gate');self.ghost()
+            self.assertEqual(self.ghost()['p']['load_part'],'')
+            self.click_visible('Connect rope to gate');self.ghost()
+            self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+            return
         self.press('Change its drum load')
         self.slide('drum load (optional) of your water_wheel 1','')
         self.ghost()
@@ -779,6 +789,32 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run it');self.assert_measured_river_current()
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                self.assertGreaterEqual(self.js("window.machineBodies()['river gate'][1]")-initial,.08)
+
+    def test_river_lift_has_a_clear_connection_and_native_moving_preview(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-river-lift',width,height,phone=width!=1280)
+                initial=self.js("window.machineBodies()['river gate'][1]")
+                self.press('Add a water wheel');self.ghost()
+                self.wait("/on bank/.test(document.getElementById('river-wheel-status').textContent)",10)
+                self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"Its drum load\"]'))"))
+                self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"Its wheel radius\"]'))"))
+                self.assertTrue(self.js("(()=>{const b=document.querySelector('.connection-action'),r=b.getBoundingClientRect();return r.width>=200&&r.height>=44&&b.scrollWidth<=b.clientWidth})()"),'The connection label must fit a full-width touch target')
+                self.drag_ghost_to(0,0,touch=width!=1280)
+                self.wait("window.machineFlowPreviewState()?.sample?.mechanism_joints?.some(j=>j.kind==='hinge'&&Math.abs(j.turned_deg)>30)",20)
+                self.assertEqual(self.js("window.machineGhostState().p.load_part"),'')
+                self.click_visible('Connect rope to gate');self.ghost()
+                self.wait("window.machineFlowPreviewState()?.sample?.mechanisms?.some(b=>b.name==='river gate'&&b.position_m[1]-b.initial_position_m[1]>=.08)",20)
+                drawn=self.js('window.machineFlowPreviewState()')
+                self.assertEqual(drawn['drawn']['mechanisms'],[{k:b[k] for k in ('name','position_m','orientation_wxyz')} for b in drawn['sample']['mechanisms']])
+                self.assertTrue(any(j['kind']=='drum' and j.get('tension_n',0)>0 for j in drawn['sample']['mechanism_joints']))
+                self.assertIn('Preview',self.js("document.getElementById('river-wheel-status').textContent"))
+                self.assertAlmostEqual(self.js("window.machineBodies()['river gate'][1]"),initial)
+                self.assertTrue(self.js(READY),'Preview must leave the real setup at time zero')
+                self.click_visible('Run it')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertEqual(self.js("document.getElementById('level-done').parentElement.id"),'control-panel')
                 self.assertGreaterEqual(self.js("window.machineBodies()['river gate'][1]")-initial,.08)
 
     def test_tray_cards_live_at_the_add_controls_and_arrows_only_browse(self):

@@ -239,6 +239,7 @@ body.choosing-piece{overflow:hidden}
 .ghost-bar .knob-row button{min-height:48px;font-size:22px;padding:0}
 .ghost-bar .knob-row input[type=range]{width:100%;min-width:0;margin:0;height:32px}
 .ghost-bar .knob-row select{grid-column:1/-1;min-height:44px;font:16px system-ui}
+.ghost-bar .knob-row button.connection-action{grid-column:1/-1;width:100%;font:16px system-ui;padding:10px 12px}
 .ghost-bar .knob-row output{text-align:right;font-variant-numeric:tabular-nums;font-size:14px}
 .ghost-bar .state{margin:0;font-size:13px}
 .ghost-bar .state.fits{color:#9fdcff}

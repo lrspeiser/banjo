@@ -2688,6 +2688,24 @@ class MachineSession:
         frame = {'t': round(self.t, 4), 'light': copy.deepcopy((r.get('light') or {}).get('paths', [])[:32]),
                  'wires': [], 'devices': copy.deepcopy((r.get('electrical') or {}).get('devices', [])),
                  'power_devices':copy.deepcopy(r.get('power_devices',[]))}
+        # Observe existing native mechanisms for a river rehearsal. Shape
+        # records travel once; frames carry only their measured poses/joints.
+        # This never drives a body or changes the live setup.
+        if (self.compiled.get('ground') or {}).get('kind')=='flume':
+            parts={p['name']:p for p in self.compiled['parts']}
+            rotors={j['b'] for j in self.compiled['joints'] if j['kind']=='hinge'
+                    and parts[j['b']].get('kit')==j['b'] and parts[j['b']]['shape']=='compound'}
+            loads={j['load'] for j in self.compiled['joints'] if j['kind']=='drum' and j['drum'] in rotors}
+            loads.update(s['done_when']['rose_m']['part'] for s in self.compiled['stations']
+                         if isinstance(s.get('done_when'),dict) and 'rose_m' in s['done_when'])
+            names=set(sorted(rotors|loads)[:32]) if rotors else set()
+            frame['mechanisms']=[dict(name=name,position_m=self.bodies[name]['position_m'],
+                orientation_wxyz=self.bodies[name]['orientation_wxyz'],
+                initial_position_m=self.flow_starts[name]['position_m']) for name in sorted(names)
+                if name in self.bodies and name in self.flow_starts]
+            frame['mechanism_joints']=[copy.deepcopy(j) for j in r.get('joints',[])
+                                      if j.get('a') in names or j.get('b') in names]
+            self.flow_mechanism_names=names
         for device in frame['devices']:
             declaration = next(d for d in graph['devices'] if d['name'] == device['name'])
             body = self.bodies.get(declaration['part'])
@@ -3149,6 +3167,8 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
             if flows:
                 session._capture_flows(final=True)
                 out['flow_frames'] = session.flow_trail
+                out['mechanism_shapes']=[copy.deepcopy(session.flow_starts[name])
+                    for name in sorted(getattr(session,'flow_mechanism_names',set())) if name in session.flow_starts]
                 out['complete'] = not session.error and (session.t >= seconds or
                     (all_done_at is not None and session.t >= all_done_at+after_s))
             return out

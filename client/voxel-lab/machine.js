@@ -1883,6 +1883,7 @@ function buildParts(into, parts, lookOf, edge) {
     } else if (part.shape === 'sphere') into.add(solid(new THREE.SphereGeometry(part.size_m[0] / 2, 24, 16), part.at_m, part.turn_deg, part.material));
     else if (part.shape === 'cone') into.add(solid(new THREE.ConeGeometry(part.size_m[0] / 2, part.size_m[1], 24), part.at_m, part.turn_deg, part.material));
     else into.add(solid(new THREE.BoxGeometry(...part.size_m), part.at_m, part.turn_deg, part.material));
+    into.children.at(-1).userData.partName=part.name;
   }
 }
 
@@ -2221,6 +2222,7 @@ function renderGhostBar() {
     if (key === ghost.card) chip.append(Object.assign(document.createElement('span'), {className:'knob-value'}));
     chips.append(chip);
   }
+  chips.hidden=keys.length===1&&Boolean(knobs[keys[0]].connection_target);
   const key = ghost.card, rule = knobs[key], name = knobName(rule, key);
   const row = Object.assign(document.createElement('div'), {className: 'knob-row'});
   if (rule.part || rule.hinge || rule.terminal || rule.power_port) {
@@ -2396,6 +2398,26 @@ function updateWaterDisplay() {
     collector.style.left=`${Math.max(6,Math.min(view.clientWidth-collector.offsetWidth-6,(point.x+1)*view.clientWidth/2+12))}px`;
     collector.style.top=`${Math.max(58,Math.min(view.clientHeight-collector.offsetHeight-12,(1-point.y)*view.clientHeight/2-36))}px`;
   }
+  updateRiverWheelStatus();
+}
+function updateRiverWheelStatus(){
+  const output=$('river-wheel-status');
+  const index=ghost?.p?.piece==='water_wheel'?ghost.index:placements.findIndex(p=>p.piece==='water_wheel');
+  const p=ghost?.p?.piece==='water_wheel'?ghost.p:placements[index];
+  output.hidden=!(machine?.ground?.discharge_m3_s>0 && p);
+  if(output.hidden)return;
+  const name=`your water_wheel ${index+1}`,preview=world.t===0;
+  const frame=flowGroup.visible?previewShown?.flow_frames?.[flowIndex]:null;
+  const joints=preview?(frame?.mechanism_joints||[]):readouts.joints||[];
+  const axle=joints.find(j=>j.kind==='hinge'&&j.b===name);
+  const rule=level.goal?.station?.done_when?.rose_m;
+  const body=rule && (preview?frame?.mechanisms?.find(b=>b.name===rule.part):world.bodies.get(rule.part));
+  const initial=preview?body?.initial_position_m:machine.parts.find(b=>b.name===rule?.part)?.at_m;
+  const rise=body&&initial?Math.max(0,(body.position_m[1]-initial[1])*100):0;
+  const outside=Math.abs(p.z_m||0)>machine.ground.trench_width_m/2+.18;
+  const rope=rule?(p.load_part===rule.part?'Rope connected to gate':'Rope not connected'):'';
+  output.textContent=outside?'Wheel on bank · drag into the marked river':flowPending&&preview?'Updating wheel preview…':
+    `${preview?'Preview · ':''}Wheel ${Math.abs(axle?.turned_deg||0).toFixed(0)}°${rule?` · Gate up ${rise.toFixed(1)} cm`:''}${rope?` · ${rope}`:''}`;
 }
 window.machineWaterDisplay=()=>waterDisplay.map(row=>({...row}));
 
@@ -2591,6 +2613,7 @@ window.machinePowerFeedbackState=()=>({dots:powerFlowDots.count,
 
 function clearFlowFrame() {
   for (const child of [...flowGroup.children]) {
+    if(child===flowMechanismGroup)continue;
     flowGroup.remove(child);
     child.traverse(o => {
       o.geometry?.dispose();
@@ -2600,6 +2623,50 @@ function clearFlowFrame() {
     });
   }
   flowLabels.length = 0;
+}
+
+const flowMechanismGroup=new THREE.Group();flowGroup.add(flowMechanismGroup);
+const flowMechanismMeshes=new Map();
+function clearFlowMechanisms(){
+  for(const mesh of flowMechanismMeshes.values()){
+    flowMechanismGroup.remove(mesh);
+    const disposed=new Set();mesh.traverse(o=>{
+      if(o.isMesh)o.geometry?.dispose();
+      if(o.isMesh && o.material && !disposed.has(o.material)){o.material.dispose();disposed.add(o.material);}
+    });
+  }
+  flowMechanismMeshes.clear();
+  for(const child of ghostGroup.children)child.visible=true;
+}
+function drawFlowMechanisms(frame){
+  const shapes=new Map((previewShown?.mechanism_shapes||[]).map(b=>[b.name,b]));
+  for(const pose of frame.mechanisms||[]){
+    const shape=shapes.get(pose.name);if(!shape)continue;
+    let mesh=flowMechanismMeshes.get(pose.name);
+    if(!mesh){
+      mesh=makeMesh(shape);flowMechanismGroup.add(mesh);flowMechanismMeshes.set(pose.name,mesh);
+      mesh.traverse(o=>{if(o.isMesh){
+        if(o.material===stripeLook)o.material=stripeLook.clone();
+        o.material.transparent=true;o.material.opacity=.8;o.material.depthWrite=false;
+        o.material.color.lerp(new THREE.Color(0x6bd1ef),.25);
+      }});
+    }
+    place(mesh,pose);mesh.visible=true;
+  }
+  const names=new Set((frame.mechanisms||[]).map(p=>p.name));
+  for(const [name,mesh] of flowMechanismMeshes)mesh.visible=names.has(name);
+  for(const j of frame.mechanism_joints||[]){
+    if(j.kind!=='drum'||!j.leaves||!j.meets)continue;
+    const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...j.leaves),new THREE.Vector3(...j.meets)]),
+      new THREE.LineBasicMaterial({color:0xead4a0,depthWrite:false}));
+    flowGroup.add(line);
+  }
+}
+function syncFlowMechanismVisibility(){
+  for(const [name,mesh] of flowMechanismMeshes){
+    if(flowGroup.visible&&mesh.visible){const original=meshes.get(name);if(original)original.visible=false;}
+  }
+  for(const child of ghostGroup.children)child.visible=!(flowGroup.visible&&flowMechanismMeshes.get(child.userData.partName)?.visible);
 }
 
 function flowLabel(text, point) {
@@ -2615,6 +2682,7 @@ function flowLabel(text, point) {
 
 function drawFlowFrame(frame) {
   clearFlowFrame();
+  drawFlowMechanisms(frame);
   const light = beamSegments(frame.light);
   let arrows=0,bulbs=0;
   if (light.legs && !opticalSetup()?.lamps?.length) {
@@ -2691,6 +2759,8 @@ function drawFlowFrame(frame) {
     glow.position.set(...d.at_m); flowGroup.add(glow); bulbs++;
   }
   flowGroup.userData.drawn={lightSegments:light.legs,waterPoints:water.length/3,
+    mechanisms:[...flowMechanismMeshes].filter(([,mesh])=>mesh.visible).map(([name,mesh])=>({name,
+      position_m:mesh.position.toArray(),orientation_wxyz:[mesh.quaternion.w,mesh.quaternion.x,mesh.quaternion.y,mesh.quaternion.z]})),
     wetCells:surface?.xyz_mm?.length/3||0,wires:frame.wires.length,arrows,bulbs,
     riverArrows:riverArrows?.userData.samples.length||0,
     contacts:(frame.contacts||[]).map(c=>({name:c.name,closed:c.closed,current_a:c.current_a}))};
@@ -2718,6 +2788,8 @@ function updateFlowPreview() {
   const frames=previewShown?.flow_frames || [];
   const visible=Boolean(frames.length) && !flowPending && !playing && !(world?.t>0) && previewOn && !inspectedCircuit && !document.body.matches('.on-sandbox,.on-levels');
   flowGroup.visible=visible; $('flow-preview').hidden=!visible;
+  syncFlowMechanismVisibility();
+  for(const [name,line] of drumLines)line.visible=!visible && (readouts.joints||[]).some(j=>j.name===name&&j.attached!==false);
   if (beams) beams.visible=visible?false:Boolean(readouts.light?.paths?.length);
   if (parcels) parcels.visible=!visible;
   if (water) water.visible=!visible;
@@ -2730,7 +2802,7 @@ function updateFlowPreview() {
   if (flowTime>end) flowTime=0;
   let index=0;
   while (index+1<frames.length && frames[index+1].t<=flowTime) index++;
-  if (index!==flowIndex) {flowIndex=index;drawFlowFrame(frames[index]);}
+  if (index!==flowIndex) {flowIndex=index;drawFlowFrame(frames[index]);syncFlowMechanismVisibility();}
   const currents=(frames[index].surface?.flow_samples||[]).map(s=>Math.hypot(...s.velocity_m_s)).filter(Number.isFinite);
   $('flow-summary').textContent=`Flow preview · ${describeTime(frames[index].t)}${currents.length?` · Current up to ${Math.max(...currents).toFixed(2)} m/s`:''}${previewShown.complete?'':' · incomplete'}`;
   $('flow-time').max=String(end); $('flow-time').value=String(flowTime);
@@ -2755,7 +2827,7 @@ $('flow-preview').addEventListener('toggle',()=>{
 });
 
 function clearPreview() {
-  clearFlowFrame(); flowIndex=-1; flowTime=0; flowTick=0;
+  clearFlowFrame();clearFlowMechanisms(); flowIndex=-1; flowTime=0; flowTick=0;
   $('flow-preview').hidden=true;
   for (const c of [...previewGroup.children]) {
     previewGroup.remove(c);
@@ -3802,6 +3874,17 @@ function knobControl(p, key, rule, what, changed) {
 }
 
 function referenceControl(p, key, rule, changed) {
+  if(rule.connection_target){
+    const connected=p[key]===rule.connection_target;
+    const control=button(connected?`Disconnect rope from ${rule.connection_label}`:`Connect rope to ${rule.connection_label}`,()=>{
+      p[key]=p[key]===rule.connection_target?'':rule.connection_target;
+      control.value=p[key];control.textContent=p[key]?`Disconnect rope from ${rule.connection_label}`:`Connect rope to ${rule.connection_label}`;
+      control.setAttribute('aria-pressed',String(Boolean(p[key])));changed();
+    });
+    control.classList.add('connection-action');
+    control.value=p[key]||'';control.setAttribute('aria-pressed',String(connected));
+    return control;
+  }
   const input = document.createElement('select');
   const values = new Set([rule.default || '', p[key] || '']);
   if (rule.power_port) {
@@ -3815,7 +3898,7 @@ function referenceControl(p, key, rule, changed) {
   } else if (key === 'battery') {
     for (const b of machine?.batteries || []) values.add(b.name);
   } else {
-    for (const part of machine?.parts || []) values.add(part.name);
+    for (const part of machine?.parts || []) if(key!=='load_part'||!part.fixed)values.add(part.name);
   }
   for (const value of values) input.append(new Option(value || 'Choose a connection', value));
   input.value = p[key] || ''; input.setAttribute('aria-label', `Its ${knobName(rule, key)}`);
@@ -3881,7 +3964,7 @@ function ghostItem() {
   const turning = Object.assign(document.createElement('fieldset'), {className: 'turning'});
   turning.append(Object.assign(document.createElement('legend'), {textContent: 'Turn it (degrees)'}));
   for (const [key, rule] of Object.entries(t.knobs)) {
-    if (!pieceKnobVisible(p,key)) continue;
+    if (!pieceKnobVisible(p,key) || rule.connection_target) continue;
     const c = knobControl(p, key, rule, what, () => {
       if (key==='x_m'||key==='z_m') ghost.gridLocks=null;
       if ((key==='mount' && p.piece==='battery')||(key==='mode'&&p.piece==='switch')||(key==='size'&&p.piece==='bulb')) {renderPlaced();renderGhostBar();}
@@ -4235,7 +4318,7 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   closeDone();
   const box = $('level-done'), next = level.variant ? null : levels[levels.indexOf(level) + 1];
   // Leave the cut/fall or collected water visible after the physical goal.
-  if(heatingTarget || readouts.water_regions?.length)$('control-panel').append(box);
+  if(heatingTarget || readouts.water_regions?.length || machine?.ground?.kind==='flume')$('control-panel').append(box);
   const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
   const allLevels = button('All levels', () => { closeDone(); showLevelsScreen(true); });
   if (r.tested) {

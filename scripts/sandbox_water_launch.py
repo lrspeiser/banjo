@@ -256,6 +256,11 @@ _river_lift['tray'][0]['knobs']['z_m']['default']=1
 _river_lift['tray'][0]['knobs']['load_part']['default']=''
 _river_lift['brief']='Move the wheel off the bank into the current, then connect its drum load to river gate. The current must raise the gate eight centimetres.'
 _river_lift['hints'][0]=_river_lift['brief']
+_river_lift['tray'][0]['knobs']['radius_m']['hidden']=True
+_river_lift['tray'][0]['knobs']['load_part'].update(label='rope to gate',connection_target='river gate',connection_label='gate')
+_river_lift['tray'][0]['focus_knob']='load_part'
+_river_lift['goal']['title']='Lift the gate 8 cm'
+_river_lift['goal']['area']=dict(at_m=[0,.002,0],size_m=[1.4,.02,.6],label='Put the lower paddles in this current')
 LEGACY_TRAY=copy.deepcopy(TRAY)
 TRAY[0]['knobs']['side']['default']='off'
 TRAY[0]['knobs']['side']['label']='legacy attached feed'
