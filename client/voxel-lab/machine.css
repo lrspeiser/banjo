@@ -529,6 +529,6 @@ body.panel-tabs #precision-controls .move-pad button{grid-area:auto}
 #contact-circuit-readings output{display:block;margin:6px 0;color:#e7f2f8}
 #contact-circuit-readings p{font-size:13px;margin:6px 0}
 #contact-circuit-readings button{min-height:44px;min-width:44px;padding:6px 10px;background:#294c60;color:#e7f2f8;border:1px solid #8bb2c7;border-radius:7px;font:600 13px system-ui}
-#control-panel #level-done{position:static;transform:none;width:100%;max-height:none;margin:8px 0;box-shadow:none}
+#control-panel #level-done{position:static;transform:none;align-self:start;width:100%;height:max-content;min-height:max-content;max-height:none;overflow:visible;margin:8px 0;box-shadow:none}
 #control-panel #level-done button{min-height:44px}
 @media(max-width:359px){body.panel-tabs #precision-controls .move-pad{grid-template-columns:repeat(4,44px);grid-template-rows:repeat(2,44px)}}

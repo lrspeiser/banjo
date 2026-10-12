@@ -25,6 +25,13 @@ cannot cover the contacts. Returning to Whole machine restores its usual
 scene placement. The final inspection/result-card and energy checks pass
 2/2 in 14.44 s; the final labelled/live-reading inspection check also passes
 on all three viewports in 11.73 s.
+Public phone play on `e84d9799` wins with three stars and measured closed
+contacts/coil power, but exposes a grid-layout issue: the result card shrinks
+inside the Controls pane. Its scoped layout now preserves natural content
+height and lets the outer pane scroll. The strengthened three-viewport check
+requires a full-height card and presses Play again through its visible touch
+target, then wins again; it passes in 17.08 s. This follow-up changes layout,
+not native behavior or game state.
 
 Rehearsal frames transport measured contact/lever poses and circuit readings.
 The preview draws the same complete leads, current arrows and an outline of
