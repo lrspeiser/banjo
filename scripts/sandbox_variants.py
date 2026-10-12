@@ -18,6 +18,7 @@ FAMILY_VERSIONS['easy-solar'] = 2
 FAMILY_VERSIONS.update({family:2 for family in ('easy-water-wheel','easy-water-gate','easy-water-receiver')})
 FAMILY_VERSIONS.update({family:2 for family in ('easy-spring','easy-tackle','easy-gears')})
 FAMILY_VERSIONS['easy-water-wheel']=3
+FAMILY_VERSIONS['easy-water-receiver']=3
 FAMILY_VERSIONS['easy-gears']=3
 FAMILY_VERSIONS['easy-power']=3
 FAMILY_VERSIONS['easy-bulb']=3
@@ -166,6 +167,10 @@ def _apparatus(family_level, version):
         import sandbox_water_launch as water
         import machine_game as game
         return game._with_free_knobs(copy.deepcopy(water.LEGACY_MODULAR_LEVELS[family]))
+    if family=='easy-water-receiver' and version==2:
+        import sandbox_water_launch as water
+        import machine_game as game
+        return game._with_free_knobs(copy.deepcopy(water.LEGACY_RECEIVER_LEVEL))
     if family in ('easy-water-wheel','easy-water-gate','easy-water-receiver') and version==1:
         import sandbox_water_launch as water
         import machine_game as game

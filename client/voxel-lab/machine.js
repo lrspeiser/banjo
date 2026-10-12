@@ -2447,8 +2447,13 @@ function updateWaterDisplay() {
   const region=regions?.[0];
   collector.hidden=!active || !region || (preview && flowPending);
   if(!collector.hidden){
-    collector.textContent=`${preview && flowGroup.visible?'Preview · ':''}Container ${region.litres.toFixed(2)} / ${region.target_l.toFixed(0)} L`;
-    collector.title='Water currently inside the marked volume, measured from the engine’s parcels. Water passing outside does not count.';
+    const timed=Boolean(level.goal?.station?.done_when?.water_in_zone_l);
+    const time=preview && flowGroup.visible?previewShown.flow_frames[flowIndex]?.t||0:world.t;
+    const left=Math.max(0,(level.time_s||0)-time);
+    const goal=readouts.stations?.[0],filled=goal?.done&&goal.at_s<=level.time_s;
+    collector.textContent=`${preview && flowGroup.visible?'Preview · ':''}Container ${region.litres.toFixed(2)} / ${region.target_l.toFixed(0)} L${timed && !preview?` · ${filled?'Filled in '+goal.at_s.toFixed(1)+' s':left>0&&!scored?left.toFixed(1)+' s left':'Time up'}`:''}`;
+    collector.title='Water currently inside the marked volume, measured from the engine’s parcels. Water passing outside does not count.'+
+      (timed?` At least ${region.target_l} L must stay inside for ${level.goal.station.done_when.water_in_zone_l.for_s||0} s before the ${level.time_s} s deadline.`:'');
     const point=new THREE.Vector3(...region.at_m).project(camera);
     collector.hidden=Math.abs(point.z)>1 || Math.abs(point.x)>1 || Math.abs(point.y)>1;
     collector.style.left=`${Math.max(6,Math.min(view.clientWidth-collector.offsetWidth-6,(point.x+1)*view.clientWidth/2+12))}px`;
@@ -4328,13 +4333,17 @@ async function rebuildLevel(start) {
 function watchGoal(frame) {
   if (!LEVEL_MODE || !level || level.free || scored || !frame || !session || !(world.t > 0)) return;
   const row = (readouts.stations || [])[0];
-  if ((row && row.done) || world.t > level.time_s + 0.3) { scored = true; score(row).catch(() => {}); }
+  const timedFill=Boolean(level.goal?.station?.done_when?.water_in_zone_l);
+  const deadlineReached=timedFill?world.t>=level.time_s:world.t>level.time_s+.3;
+  if ((row && row.done) || deadlineReached) { scored = true; score(row).catch(() => {}); }
 }
 
 async function score(row) {
+  const ran=session,sourceLevel=level;
   lastRun = {goal_at_s: row && row.done ? row.at_s : null, world_t: world.t,
              events: [...$('events').children].slice(0, 20).map(li => li.textContent)};
-  const r = await api({op: 'level_score', session});
+  const r = await api({op: 'level_score', session:ran});
+  if(session!==ran || level!==sourceLevel)return;
   const v = $('verdict'); v.replaceChildren();
   v.append(Object.assign(document.createElement('span'), {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)}));
   const said = [r.earned.goal ? `Goal at ${describeTime(r.goal_at_s)}, on ${energyText(r.energy_j)} (par ${energyText(r.par_energy_j)}).`
@@ -4346,8 +4355,8 @@ async function score(row) {
   renderLevels();
   showDone(r, kept);
   // The goal happened: let what follows settle for a moment, then stop.
-  const ran = session;
   if (r.earned.goal) setTimeout(() => { if (session === ran && playing) setPlaying(false).catch(() => {}); }, 1500);
+  else if(level.goal?.station?.done_when?.water_in_zone_l && session===ran && playing)await setPlaying(false);
 }
 
 // How the run went, over the scene: on the goal, congratulations and on to

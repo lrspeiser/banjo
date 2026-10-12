@@ -39,6 +39,9 @@ Every authored level opens with a visible object or goal area. The spring
 and tackle act on waiting loads, the gear lesson starts with wheels to power,
 and the pour lesson starts with a wheel waiting for a separate tank. Water-only
 lessons mark their collection channel or river current before a piece is added.
+**Fill the receiver** has a waiting box: collect 3 L within 5 seconds by
+increasing the source's initially slow tap. The meter counts retained water
+and shows the live time remaining.
 The one-mirror lesson **Bounce to the target** comes immediately before
 **Bounce the beam**. The eight original chain-reaction challenges, with their
 current menu numbers, are:

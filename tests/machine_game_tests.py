@@ -44,7 +44,7 @@ def need_engine(test):
 
 
 LEVELS = mg.load_levels()
-EMPTY_START_LEVELS = ('easy-water-receiver','easy-river-wheel')
+EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):

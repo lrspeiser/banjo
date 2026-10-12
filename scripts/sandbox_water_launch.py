@@ -445,3 +445,29 @@ _routing_sandbox['water_regions']=[]
 TEMPLATES.append(dict(id='water-routing',name='Divert water into a container',
     description='A finite source, an adjustable chute and a separate fixed collector. Mis-aim or reverse the slope to miss.',
     base=_routing_sandbox,placements=[dict(piece='water_collector')]+copy.deepcopy(_routing['solution'])))
+
+# The receiver lesson teaches flow rate against a deadline, with the same
+# native parcel containment observation as the routing lesson. Earlier shares
+# retain their cumulative channel-receipt goal and original apparatus.
+LEGACY_RECEIVER_LEVEL=copy.deepcopy(receiver)
+receiver['machine']=copy.deepcopy(CHANNEL_BASE)
+receiver['machine']['title']='Fill the receiver'
+_receiver_box=water_collector('receiving box',dict(x_m=0,z_m=0),dict(spec=receiver['machine']))
+for _key,_value in _receiver_box.items():receiver['machine'].setdefault(_key,[]).extend(_value)
+_receiver_region=receiver['machine']['water_regions'][0]
+receiver['time_s']=5
+receiver['teaches']='water flow and timing'
+receiver['goal']=dict(title='Collect 3 L in 5 seconds',focus=['receiving box'],
+    station=dict(title='Fill the box before time runs out',done_when=dict(water_in_zone_l=dict(
+        at_m=_receiver_region['at_m'],size_m=_receiver_region['size_m'],l=3,for_s=.5))))
+receiver['tray'][0]['focus_knob']='opening_percent'
+receiver['tray'][0]['knobs']['opening_percent']['default']=10
+for _key,_rule in receiver['tray'][0]['knobs'].items():
+    if _key in ('x_m','z_m','opening_percent'):continue
+    if 'choices' in _rule:_rule['choices']=[_rule['default']]
+    else:_rule['min']=_rule['max']=_rule['default']
+    _rule['hidden']=True
+receiver['solution']=[dict(piece='water_tank',fill_l=4,outlet_model='gravity',opening_percent=100)]
+receiver['wrong']=[dict(receiver['solution'][0],opening_percent=10)]
+receiver['brief']='Fill the waiting box with 3 litres in 5 seconds. The source starts at a trickle: increase its tap opening to collect enough in time.'
+receiver['hints']=[receiver['brief'],'Three litres must stay inside the box for half a second before the deadline. Water outside does not count.']

@@ -58,7 +58,7 @@ not mean every possible misplaced design was exhaustively searched.
 | Close the switch | Battery and bulb; add open switch and drag its field rocker | Verified. Mechanical force/angle closes the circuit; no queued Boolean toggle. |
 | Light the bulb | 2.5 W supply; shrink the default 12 W bulb to match | Verified. Ratings and actual volts/watts distinguish demand from delivery. Overvoltage explosions are not modeled. |
 | Finish the loop | Prepared battery, switch and bulb; draw missing return | Verified. Same terminal interaction as advanced sandbox wiring. Crossing wires do not create junctions. |
-| Fill the receiver | Collection channel and 3 L target; aim separate tank and increase opening | Verified. Actual receiver landings count, not poured volume alone. |
+| Fill the receiver | Waiting box; increase source tap to retain 3 L before 5 s | Verified. 10% and 50% are too slow; 75%/100% win nudged runs. Meter shows actual retained litres and live time; failed timed runs pause. Earlier v1/v2 shares retain channel receipts. |
 | Heat to release | Waiting oak cord and weight; choose hot coil | Verified. Local heat/weakening/combustion model; not spreading environmental fire. |
 | Gentle first launch | Receiving bin; aim counterweight cradle launcher | Verified. Default cradle is already released; remaining priority: held start and a player-operated live latch. Current restraint selector chooses the starting setup. |
 | Marble turns on a light | Falling marble and wired bulb; place paddle switch below it | Verified. Centered native defaults win; acceptable as placement introduction, but start off-axis for a more explicit alignment lesson in a future version. |

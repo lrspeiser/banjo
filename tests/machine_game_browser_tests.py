@@ -667,6 +667,39 @@ class Puzzles(unittest.TestCase):
                 self.wait('window.machineWaterDisplay()[0].litres===4',10)
                 self.assertEqual(self.js('window.machinePlacements()[0].opening_percent'),75)
 
+    def test_fill_receiver_requires_a_faster_tap_before_the_deadline(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-water-receiver',width,height,phone=width!=1280)
+                self.assertIn('receiving box',self.js('Object.keys(machineBodies())'))
+                self.assertIn('3 L in 5 seconds',self.js("document.getElementById('scene-goal').textContent"))
+                self.press('Add a water tank');self.ghost()
+                self.assertEqual(self.ghost()['p']['opening_percent'],10)
+                self.assertTrue(self.ghost()['fits'])
+                self.click_visible('Run it')
+                self.wait("!document.getElementById('level-done').hidden",20)
+                self.assertIn('Not this time',self.js("document.getElementById('level-done').textContent"))
+                self.wait("/run over/.test(document.getElementById('clock').textContent)",10)
+                self.wait("document.getElementById('collector-status').textContent.includes('Time up')",5)
+                self.assertLess(self.js("Number(document.getElementById('collector-status').textContent.match(/Container ([\\d.]+)/)[1])"),3)
+                self.press('Keep my pieces');self.wait(READY,60)
+                self.slide('Adjust a piece','0');self.ghost()
+                self.click_visible('Change its tap opening');self.slide('Its tap opening',100);self.assertTrue(self.ghost()['fits'])
+                self.click_visible('Run it')
+                self.wait("/Container [1-2]\\./.test(document.getElementById('collector-status').textContent)",15)
+                self.assertIn('s left',self.js("document.getElementById('collector-status').textContent"))
+                self.assertNotIn('Preview',self.js("document.getElementById('collector-status').textContent"))
+                for point in ((0,1.1,0),(0,.42,0)):
+                    screen=self.screen_point(point)
+                    self.assertTrue(self.js(f"(()=>{{const r=document.getElementById('view').getBoundingClientRect();return {screen[0]}>=r.left&&{screen[0]}<=r.right&&{screen[1]}>=r.top&&{screen[1]}<=r.bottom}})()"))
+                self.wait("!document.getElementById('level-done').hidden",20)
+                self.assertIn('★★★',self.js("document.getElementById('level-done').textContent"))
+                self.wait("document.getElementById('collector-status').textContent.includes('Filled in')",5)
+                self.assertEqual(self.js("document.getElementById('level-done').parentElement.id"),'control-panel')
+                self.assertGreaterEqual(self.js("Number(document.getElementById('collector-status').textContent.match(/Container ([\\d.]+)/)[1])"),3)
+                self.click_visible('Set up again');self.wait(READY,60)
+                self.wait("/Container 0.00/.test(document.getElementById('collector-status').textContent)",10)
+
     def test_water_diversion_shows_retained_litres_and_resets_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

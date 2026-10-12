@@ -459,3 +459,66 @@ The river fixture still measures 0.10870 m peak gate rise, 34.51437° turn,
 0.04275 m wound rope and 926.26119 N peak constraint tension at 2 ms. These
 are the same calibrated native behaviors; this checkpoint adds observation
 and controls. Source registration passes 269/269.
+
+
+## Timed receiver fill — October 12
+
+The new receiver uses the existing fixed collector geometry centered at
+x=0,z=0: 0.8×0.5 m outer plan, 35 cm walls and floor at 25 cm, supported by
+real legs/fix joints. Its observation region is 0.72×0.32×0.42 m. A finite
+4 L source above it uses the existing 24×24 cm reservoir, nominal 50 mm outlet,
+Cd=0.62 and gravity head law. Opening changes flow; falling head reduces it.
+The default opening is 10%, with a 100% private solution. No velocities,
+volume, goal events or particle contacts are fabricated by the lesson.
+
+The native parcel-center region must retain at least 3 L continuously for
+0.5 s, completed by 5 s of simulation time. The earlier cumulative-channel
+receipt and six-second goal are retained for v1/v2 shares; current variants
+use v3 and the existing initial-fill presets 3.5, 4.5, 5 and 5.5 L. Native
+preflight checks all presets without changing the target, deadline or par.
+
+At the 1/240 s game step, 10% retains 0.640 L after 5 s, and 50% retains
+2.752 L; neither wins. Three 75% nudges complete at 4.567/4.450/4.333 s;
+three 100% nudges complete at 3.483 s. Misplaced full-flow outlets fail.
+The UI countdown uses simulation time, and successful fills use the native
+goal timestamp. Failed timed runs pause on deadline observation; the legacy
+0.3 s UI scoring grace is removed for region-fill goals, without changing
+the native goal rule or its acceptance deadline. Successful runs retain their
+existing settling interval. Score responses are scoped to their original
+session so they cannot pause a newly opened level.
+
+Comparison uses the same box, 4 L source, full opening, five-second run,
+20 mm solids and existing 40 mm parcel discretization. Only the collector
+material changes. Positions are exported in millimetres; unrounded source
+parcel volumes determine the count.
+
+| Box material | Retained L, 1/240 / 1/480 s | Falling energy residual J, 1/240 / 1/480 s | Numerical correction J, 1/240 / 1/480 s |
+| --- | ---: | ---: | ---: |
+| Glass | 3.968 / 3.968 | −2.607e−8 / −1.360e−8 | +0.32960 / +0.31991 |
+| Oak | 3.840 / 3.968 | −6.144e−8 / −3.287e−8 | +0.20170 / +0.31804 |
+| Iron | 3.968 / 3.840 | −1.897e−8 / −7.019e−9 | +0.31891 / +0.28027 |
+
+Maximum volume residual magnitude is 5.21e−18 m³; maximum momentum residual
+magnitude is 4.25e−10 N s. Initial volume equals emitted plus remaining volume
+within the unchanged 1e−12 m³ check. The existing falling-energy limit is
+1e−6 J and momentum limit 1e−8 N s; none is loosened. The numerical correction
+is separately booked, not relabelled as physical heat or exact conservation.
+These are falling-parcel ledger checks, not proof of closed coupled rigid/fluid
+conservation or material-specific bucket calibration.
+
+Water resting on the raised box remains a supported falling parcel in the
+native ledger; it has not landed in the lower channel, so its channel received
+receipt stays zero. The old source/channel ledger test uses the retained v2
+fixture and keeps its original assertions. This model does not add movable
+liquid vessels, sloshing, a resolved free surface, porous wood absorption or
+complete support/contact-work reconciliation. The scene shows native parcels,
+not an invented smooth fill surface.
+
+Verification: 16/16 water/launch checks in 47.595 s, 53/53 game checks in
+86.638 s, the 18-test seeded suite in 201.128 s, and the additional v3/retained
+v1-v2 preset check in 10.589 s. Browser verification covers slow failure,
+faster success, countdown/result, reset and both source/box framing on desktop
+and phone portrait/landscape, with the diversion lesson in the same run:
+2/2 browser checks in 52.085 s.
+Native engine SHA-256 is unchanged:
+`1ebc084656f9b4c0206e6c7ca7f9d0e12546700c60e495781ca781493587c352`.

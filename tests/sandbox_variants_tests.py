@@ -32,6 +32,24 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
+    def test_timed_receiver_v3_preserves_old_receipts_and_validates_all_fills(self):
+        import sandbox_water_launch as water
+        family=game.level_by_id('easy-water-receiver')
+        self.assertEqual(variants.family_version(family['id']),3)
+        for version,legacy in ((1,water.LEGACY_LEVELS[family['id']]),(2,water.LEGACY_RECEIVER_LEVEL)):
+            old=variants.construct(family,42,version=version)
+            self.assertEqual(old['goal'],legacy['goal'])
+            self.assertEqual(old['time_s'],legacy['time_s'])
+            self.assertIn('water_received_l',old['goal']['station']['done_when'])
+            self.assertEqual(old,variants.reconstruct(family,42,0,version=version))
+        seen={variants.construct(family,seed)['variant']['value']:variants.construct(family,seed) for seed in range(32)}
+        self.assertEqual(set(seen),set(variants.POLICIES[family['id']][-1]))
+        for candidate in seen.values():
+            self.assertEqual(candidate['goal'],family['goal'])
+            self.assertEqual(candidate['time_s'],5)
+            with tempfile.TemporaryDirectory() as logs:
+                if ENGINE.is_file():self.assertTrue(variants.validate(candidate,ENGINE,Path(logs))['valid'],candidate)
+
     def test_audit_lessons_preserve_their_v1_recipes_and_validate_v2_presets(self):
         with tempfile.TemporaryDirectory() as logs:
             for family in ('easy-motor','easy-river-lift','easy-charge-lift'):

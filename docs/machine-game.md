@@ -234,10 +234,12 @@ area. No unrelated reference boxes were reintroduced.
 * **Pour onto the paddles:** the independent wheel is already in the dry
   channel. Add a separate tank, open its initially closed tap and aim the
   pour at the paddles. The unchanged target is 30 degrees within six seconds.
-* **Fill the receiver / Wheel in the river:** the existing collection channel
-  or river has a green area and a short field label before any piece is added.
-  The receiver marking agrees with the actual source's collection bounds;
-  the river marking identifies the current, not an additional scoring zone.
+* **Fill the receiver:** a raised, empty fixed box waits for the source.
+  Increase the source tap from its 10% starting opening to retain 3 L for
+  half a second within 5 s. The current boxed goal counts native parcels
+  inside the receiver, rather than cumulative channel arrivals.
+* **Wheel in the river:** the river has a green current marker before a
+  piece is added. It identifies the working area, not another scoring zone.
 
 The green guides are visual descriptions, not colliders or scripted win
 conditions. Existing apparatus, native movement and the original goal rules
@@ -1235,7 +1237,8 @@ add the tank, increase **tap opening** from its closed default and aim the
 outlet at the left paddles. The wheel has no attached feed. Either piece order
 works: the goal resolves the actual wheel's hinge, then native torque decides
 the outcome. **Water opens a gate** uses the same pair plus a drum connection;
-**Fill the receiver** requires opening the separate tank. Task counts are
+**Fill the receiver** now requires increasing a trickle to fill its waiting
+box before a five-second deadline, as described below. Task counts are
 2, 3 and 1 respectively. Closed taps, a nearly closed 1% tap, missed pours
 and a wheel alone fail three nudged checks. A 5% pour can turn an unloaded
 wheel in some nudges; opposite-side pours can also rebound and later turn it.
@@ -1295,3 +1298,36 @@ each), excluding network/rendering delay. This is targeted water verification;
 the earlier full CI phone-cannon, 320 px precision and laser-status timing
 failures have not been fixed by this update. The task-count browser fixture
 now checks level IDs rather than stale list indices as new lessons are added.
+
+
+## Timed receiver fill — October 12
+
+**Fill the receiver** begins with a glass box mounted on four grounded legs.
+Add the four-litre gravity source over it; its 10% tap opening is too slow.
+The primary **tap opening** control changes the existing native head-driven
+flow. Initial fill, outlet height, valve state and outlet model are prepared
+for this lesson; location remains editable, and a missed pour fails physically.
+Native source flow decreases as head falls. No new water law is introduced.
+
+The goal is at least 3 L currently inside the receiver's interior region,
+retained continuously for 0.5 s before 5 s of simulation time. The 3 L amount
+is retained from the earlier goal; the deadline is tightened from 6 to 5 s
+and the goal changes from cumulative channel arrival to actual box retention,
+as requested by the owner. It is a new v3 recipe, not a changed v1/v2 share.
+Old versions keep their original source, cumulative receipt, knobs and deadline.
+The original 460,651,224 J energy par is unchanged.
+
+The scene meter shows **Container L / 3 L**. While running, it also shows
+remaining simulation time; a successful native goal reports **Filled in … s**.
+Preview volume is labelled separately, with its timeline in Flow preview;
+the live countdown begins with Run. A failed timed-fill run pauses after its
+deadline is observed, rather than continuing to pour until it eventually fills.
+Scoring still rejects any native goal reached after the deadline. The result
+stays beside the scene. Reset empties the box and refills the source.
+
+Measured nominal runs: 10% delivers only 0.640 L by 5 s; 50% retains 2.752 L
+and fails. At 75%, three nudges complete at 4.567, 4.450 and 4.333 s; 100%
+completes at 3.483 s in all three. Full flow placed outside the box also fails.
+All four seeded initial-fill presets keep the same 3 L/5 s goal and pass
+native correct/empty/wrong preflight. See
+[timed-receiver measurements](sandbox-water-launch-measured.md#timed-receiver-fill-october-12).

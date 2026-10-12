@@ -21,6 +21,45 @@ if '--engine' in sys.argv:
 
 
 class WaterLaunchTests(unittest.TestCase):
+    def test_timed_receiver_requires_enough_flow_into_the_actual_box(self):
+        level=mg.level_by_id('easy-water-receiver')
+        self.assertEqual(level['time_s'],5)
+        rule=level['goal']['station']['done_when']['water_in_zone_l']
+        self.assertEqual((rule['l'],rule['for_s']),(3,.5))
+        row=level['tray'][0];self.assertEqual(row['knobs']['opening_percent']['default'],10)
+        for opening,expected in ((0,0),(10,0),(50,0),(75,3),(100,3)):
+            with self.subTest(opening=opening),tempfile.TemporaryDirectory() as logs:
+                result=mg.trial(level,[dict(level['solution'][0],opening_percent=opening)],ENGINE,Path(logs),runs=3)
+                self.assertEqual(result['worked'],expected,result)
+                self.assertTrue(all(r['error'] is None for r in result['results']))
+                print('TIMED RECEIVER',opening,'wins',result['worked'],'goal times',[r['goal_at_s'] for r in result['results']])
+        for changes in (dict(z_m=.8),dict(x_m=1.2)):
+            result=self.run_level(level,[dict(level['solution'][0],**changes)])
+            self.assertFalse(result['stations'][0]['done'])
+            self.assertLess(result['readouts']['water_regions'][0]['litres'],3)
+
+    def test_timed_receiver_materials_and_steps_preserve_volume_and_falling_ledgers(self):
+        level=mg.level_by_id('easy-water-receiver')
+        for material in ('glass','oak','iron'):
+            for dt in (1/240,1/480):
+                with self.subTest(material=material,dt=dt),tempfile.TemporaryDirectory() as logs:
+                    spec=mg.compose(level,level['solution'])[0]
+                    next(p for p in spec['parts'] if p['name']=='receiving box')['material']=material
+                    compiled=mw.compile_spec(spec);engine,_,_=mw.build_engine(ENGINE,compiled,logs)
+                    try:
+                        for _ in range(50):reply=engine.op(op='step',dt=dt,n=round(.1/dt),moved=False)
+                        water=reply['parcels'];retained=mw.water_in_region_l(water,level['goal']['station']['done_when']['water_in_zone_l'])
+                        self.assertGreaterEqual(retained,3)
+                        self.assertLess(abs(water['residual_m3']),1e-12)
+                        self.assertLess(abs(water['energy_residual_j']),1e-6)
+                        self.assertLess(math.hypot(*water['momentum_residual_n_s']),1e-8)
+                        source=water['sources'][0]
+                        self.assertAlmostEqual(source['remaining_m3']+source['emitted_m3'],.004,delta=1e-12)
+                        print('TIMED RECEIVER MATERIAL',material,dt,'litres',retained,'volume residual',water['residual_m3'],
+                              'energy residual',water['energy_residual_j'],'momentum residual',water['momentum_residual_n_s'],
+                              'numerical correction',water['numerical_correction_j'])
+                    finally:engine.close()
+
     def test_diversion_requires_downhill_contact_and_actual_retention(self):
         level=mg.level_by_id('easy-divert-water')
         for placements in ([],[dict(piece='water_chute')],
@@ -98,7 +137,9 @@ class WaterLaunchTests(unittest.TestCase):
             self.assertIsNone(r['error'])
             self.assertFalse(r['stations'][0]['done'],level['id'])
         for changes in (dict(fill_l=0),dict(fill_l=2),dict(valve='closed')):
-            level=sw.EASY_LEVELS[1];p=copy.deepcopy(level['solution']);p[0].update(changes)
+            # The retained v2 fixture still permits source-volume/valve edits.
+            # The new flow-only lesson fixes its four-litre supply.
+            level=sw.LEGACY_RECEIVER_LEVEL;p=copy.deepcopy(level['solution']);p[0].update(changes)
             self.assertFalse(self.run_level(level,p)['stations'][0]['done'])
         level=sw.EASY_LEVELS[2];p=copy.deepcopy(level['solution']);p[0]['release']='held'
         self.assertFalse(self.run_level(level,p)['stations'][0]['done'])
@@ -119,7 +160,10 @@ class WaterLaunchTests(unittest.TestCase):
         self.assertFalse(self.run_level(level,p)['stations'][0]['done'])
 
     def test_finite_source_receiver_air_runoff_and_energy_close(self):
-        level=sw.EASY_LEVELS[1];c=mw.compile_spec(mg.compose(level,level['solution'])[0])
+        # Preserve the original channel-arrival ledger test. Water held in
+        # the new raised box remains a supported falling parcel, not landed
+        # channel volume; the new retention/material test covers that case.
+        level=sw.LEGACY_RECEIVER_LEVEL;c=mw.compile_spec(mg.compose(level,level['solution'])[0])
         with tempfile.TemporaryDirectory() as td:
             e,_,_=mw.build_engine(ENGINE,c,td)
             try:
