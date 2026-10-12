@@ -1953,6 +1953,9 @@ function pictureInto(img, t) {
 // when the answer comes.
 function askGhost() {
   if (!ghost) return;
+  // Invalidate old water/current readings as soon as the player edits,
+  // including edits queued behind an in-flight placement check.
+  if (JSON.stringify(ghostPlacements()) !== ghost.previewStamp) markFlowPending();
   scheduleLaserPreview();
   if (ghost.busy) { ghost.again = true; return ghost.check; }
   const g = ghost;
@@ -2669,10 +2672,14 @@ function clearPreview() {
   showPreviewLegend(null);
 }
 
-function schedulePreview(ms = 700) {
-  scheduleLaserPreview();
+function markFlowPending() {
   clearTimeout(previewTimer);
   previewAsk++; flowPending=true; flowGroup.visible=false; $('flow-preview').hidden=true;
+}
+
+function schedulePreview(ms = 700) {
+  scheduleLaserPreview();
+  markFlowPending();
   if (!LEVEL_MODE || !level || !previewOn || document.body.matches('.on-sandbox,.on-levels')) return;
   previewTimer = setTimeout(() => askPreview().catch(() => {}), ms);
 }

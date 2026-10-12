@@ -95,7 +95,9 @@ documents these requirements.
 Render's published disk price, checked October 11, 2026, is **$0.25 per GB per
 month**: this proposed 1 GB disk adds **$0.25/month** to the existing compute
 bill. Recheck [Render pricing](https://render.com/pricing) before provisioning.
-The owner reported completing this configuration; the runtime and recovery checks below still need to confirm it.
+The owner completed this configuration. Runtime mount detection and an isolated
+profile's redeploy recovery were verified on October 11 as recorded above.
+Independent backups and disk-loss recovery remain unconfigured.
 
 The server defaults to `--logs`' parent plus `profiles.sqlite3` when
 `BANJO_PROFILE_DB` is absent, so the explicit setting above is required for the

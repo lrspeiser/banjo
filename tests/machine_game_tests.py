@@ -707,6 +707,29 @@ class FreeBuild(unittest.TestCase):
 
 class Engine(unittest.TestCase):
     @need_engine
+    def test_audit_lessons_require_direction_current_connection_and_solar_lead(self):
+        with tempfile.TemporaryDirectory() as logs:
+            motor=mg.level_by_id('easy-motor')
+            row=motor['tray'][0]
+            defaults=dict(piece='motor',**{k:v['default'] for k,v in row['knobs'].items()})
+            self.assertEqual(defaults['direction'],'reverse')
+            river=mg.level_by_id('easy-river-lift')
+            row=river['tray'][0]
+            bank=dict(piece='water_wheel',**{k:v['default'] for k,v in row['knobs'].items()})
+            self.assertEqual(bank['z_m'],1)
+            self.assertEqual(bank['load_part'],'')
+            solar=mg.level_by_id('easy-charge-lift')
+            controls=[('motor defaults',motor,[defaults]),('river defaults',river,[bank]),
+                      ('river connected on bank',river,[dict(river['solution'][0],z_m=1)]),
+                      ('river immersed unconnected',river,[dict(river['solution'][0],load_part='')]),
+                      ('solar no lead',solar,solar['solution'][:1])]
+            for label,level,placements in controls:
+                with self.subTest(control=label):
+                    result=mg.trial(level,placements,ENGINE,Path(logs),runs=3)
+                    self.assertEqual(result['worked'],0,result)
+                    self.assertTrue(all(r['error'] is None for r in result['results']),result)
+
+    @need_engine
     def test_chain_pressure_switch_preview_uses_measured_contacts_and_complete_power_loop(self):
         level=mg.level_by_id('chain')
         with tempfile.TemporaryDirectory() as logs:

@@ -145,15 +145,16 @@ class Puzzles(unittest.TestCase):
         extra = {'button': 'left', 'clickCount': 1} if kind != 'mouseMoved' else {}
         self.page.send('Input.dispatchMouseEvent', {'type': kind, 'x': x, 'y': y, **extra})
 
-    def drag(self, start, end, touch=False, button='left', steps=8, modifiers=0):
+    def drag(self, start, end, touch=False, button='left', steps=8, modifiers=0, via=None):
         if touch:
             self.page.send('Input.dispatchTouchEvent', {'type':'touchStart', 'touchPoints':[{'x':start[0],'y':start[1],'id':1}]})
         else:
             self.page.send('Input.dispatchMouseEvent', {'type':'mousePressed','x':start[0],'y':start[1],
                                                        'button':button,'buttons':{'left':1,'right':2,'middle':4}[button],'clickCount':1,'modifiers':modifiers})
-        for k in range(1,steps+1):
-            x=start[0]+(end[0]-start[0])*k/steps
-            y=start[1]+(end[1]-start[1])*k/steps
+        waypoints=[start]+([via] if via else [])+[end]
+        moves=[(a[0]+(b[0]-a[0])*k/steps,a[1]+(b[1]-a[1])*k/steps)
+               for a,b in zip(waypoints,waypoints[1:]) for k in range(1,steps+1)]
+        for x,y in moves:
             if touch:
                 self.page.send('Input.dispatchTouchEvent', {'type':'touchMove','touchPoints':[{'x':x,'y':y,'id':1}]})
             else:
@@ -169,7 +170,15 @@ class Puzzles(unittest.TestCase):
     def drag_ghost_to(self, x, z, touch=False):
         p=self.ghost()['p']
         bottom=self.js('window.machineGhostScreen().bottom')
-        self.drag(self.screen_point([p['x_m'],bottom,p.get('z_m',0)]),self.screen_point([x,bottom,z]),touch=touch)
+        start=self.screen_point([p['x_m'],bottom,p.get('z_m',0)])
+        end=self.screen_point([x,bottom,z])
+        length=((end[0]-start[0])**2+(end[1]-start[1])**2)**.5
+        # Intentional precision drags must first exceed the click guard.
+        # At 320px a 3cm move projects to <7px; reach 12px, then come back
+        # while still holding. Separate tests retain straight <7px gestures
+        # and require them to leave the piece untouched.
+        via=[start[i]+(end[i]-start[i])*12/length for i in range(2)] if 0<length<8 else None
+        self.drag(start,end,touch=touch,via=via)
         return self.ghost()
 
     def empty_scene_point(self):
@@ -262,6 +271,72 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_catalogue_audit_opens_every_level_with_attached_touch_controls(self):
+        import machine_game as game
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for level in game.load_levels():
+                with self.subTest(level=level['id'],viewport=(width,height)):
+                    self.open(level['id'],width,height,phone=width!=1280)
+                    geometry=self.js("""(() => {const view=document.getElementById('view').getBoundingClientRect(),bar=document.getElementById('phone-toolbar').getBoundingClientRect();
+                      const attached=(bar.left>=view.left&&bar.right<=view.right&&bar.top>=view.top&&bar.top<=view.bottom+12)||
+                        (bar.left>=view.right&&bar.left<=view.right+12&&bar.top>=view.top&&bar.top<=view.top+12);
+                      return ['start','reset'].map(id=>{const el=document.getElementById(id),r=el.getBoundingClientRect();
+                        return {id,w:r.width,h:r.height,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,
+                          attached,
+                          uncovered:el.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};});})()""")
+                    self.assertTrue(all(r['w']>=44 and r['h']>=44 and r['visible'] and r['attached'] and r['uncovered'] for r in geometry),geometry)
+                    self.assertFalse(self.js("document.getElementById('guide').open"))
+                # This fixture owns these engines; close previous pages so
+                # a catalogue sweep never consumes the live-session budget.
+                self.server.machines.close_all()
+
+    def test_edit_invalidates_power_feedback_before_a_delayed_placement_reply(self):
+        self.open('easy-bulb')
+        self.press('Add a bulb');self.ghost()
+        self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+        self.slide('Adjust a piece','0');self.ghost()
+        self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device)&&!document.getElementById('flow-preview').hidden",30)
+        self.js("""window.auditOriginalFetch=window.fetch;
+          window.auditGate=new Promise(resolve=>window.releaseAuditCheck=resolve);
+          window.fetch=async (...args)=>{const hold=args[1]?.body&&JSON.parse(args[1].body).op==='level_ghost';
+            const response=await window.auditOriginalFetch(...args);if(hold)await window.auditGate;return response;};""")
+        try:
+            self.slide('bulb size of your bulb 1','small')
+            self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device&&r.text.includes('Updating'))",5)
+            self.assertEqual(self.js('window.machinePowerFeedbackState().dots'),0)
+            self.assertTrue(self.js("document.getElementById('flow-preview').hidden"))
+        finally:self.js('window.releaseAuditCheck();window.fetch=window.auditOriginalFetch')
+        self.ghost()
+        self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device&&/12 V.*2\\.5 W/.test(r.text)&&!r.text.includes('Updating'))",30)
+
+    def test_charge_lift_requires_a_drawn_panel_to_supply_lead_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-charge-lift',width,height,phone=width!=1280)
+                self.press('Add a solar panel');self.ghost()
+                for label,value in [('Position along (m)',.8),('Position across (m)',0),('turn',-90),('tip',70)]:
+                    self.slide(f'{label} of your solar 1',value)
+                self.assertTrue(self.ghost()['fits'])
+                self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.assertIn('Output not wired',self.js("document.getElementById('power-labels').textContent"))
+                self.click_visible('Run it');self.wait("/World [12]\\./.test(document.getElementById('clock').textContent)",30)
+                self.click_visible('Pause')
+                self.assertTrue(self.js("document.getElementById('level-done').hidden"))
+                self.click_visible('Set up again');self.wait(READY,60)
+                self.assert_power_layout()
+                self.click_visible('Power output of your solar 1');self.click_visible('Power input of supply')
+                self.wait(f'window.machinePlacements().length===2 && {READY}',60)
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+
+    def test_motor_lesson_requires_choosing_forward_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-motor',width,height,phone=width!=1280)
+                self.press('Add a motor');state=self.ghost()
+                self.assertEqual(state['p']['direction'],'reverse')
+                self.slide('direction of your motor 1','forward');self.ghost()
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+
     def test_bulb_shrinks_to_match_visible_supply_limit_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

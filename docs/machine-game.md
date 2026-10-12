@@ -2,6 +2,31 @@
 
 October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-two freely selectable piece lessons. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+## Feedback audit and meaningful starting controls
+
+The [complete feedback audit](feedback-audit.md) reviews every level, sandbox
+example, library piece, phone controls and saved-version workflow, including
+remaining teaching and physics gaps. **Turn the axle** now starts in reverse;
+choose forward to reach its positive-angle goal. **River-powered lift** starts
+its wheel on the bank with no drum load: move it into the current and select
+`river gate` as its drum load. Both actions are physically necessary.
+
+**Charge then lift** starts the receiving motor battery empty. Place and aim
+the panel, open **Readings and wiring → Connect wires**, then click panel
+**Out** and supply **In**. The matching **Sun powers the flag** sandbox example
+includes this same lead. Without it, sunlight can charge the panel's isolated
+local store but cannot power the motor. These three Easy families use version-2
+recipes; shared version-1 recipes keep their original apparatus and defaults.
+The solar lesson now indicates two tasks. Goals, deadlines and pars are unchanged.
+
+Water/current rehearsal feedback changes to **Updating…** immediately after a
+setup edit, before its placement-check response arrives. Old current dots stop
+and the stale flow frame is hidden; the separate laser preview keeps its last
+trace with its existing updating indication. Native tests measure three nudges
+of disconnected solar, bank-only/connection-only river and default reverse
+motor failures, plus the unchanged successful solutions. The audit records
+browser, comparative-material and residual checks separately.
+
 ## Shrink the bulb to fit the supply
 
 Latest October 12 update: **Light the bulb** starts with a large 12 V, 12 W

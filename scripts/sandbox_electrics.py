@@ -824,6 +824,10 @@ def easy_levels():
 
 
 EASY_LEVELS = easy_levels()
+LEGACY_MOTOR_LEVEL = copy.deepcopy(next(row for row in EASY_LEVELS if row['id']=='easy-motor'))
+_motor_lesson = next(row for row in EASY_LEVELS if row['id']=='easy-motor')
+_motor_lesson['tray'][0].update(start_at_defaults=True, focus_knob='direction')
+_motor_lesson['tray'][0]['knobs']['direction']['default'] = 'reverse'
 _PARS = {'easy-power': 882000000, 'easy-switch': 18700000, 'easy-bulb': 102000000,
          'easy-loop': 1.75, 'easy-motor': 1550000000, 'easy-heat': 4690000, 'easy-marble-light': 462000000}
 for _level in EASY_LEVELS:

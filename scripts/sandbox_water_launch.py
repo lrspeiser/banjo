@@ -250,6 +250,12 @@ EASY_LEVELS.append(river_lesson)
 
 # Keep the exact earlier recipes available for shared version-1 IDs.
 LEGACY_LEVELS={level['id']:copy.deepcopy(level) for level in EASY_LEVELS}
+_river_lift = next(row for row in EASY_LEVELS if row['id']=='easy-river-lift')
+_river_lift['tray'][0].update(start_at_defaults=True, frame_on_add=True)
+_river_lift['tray'][0]['knobs']['z_m']['default']=1
+_river_lift['tray'][0]['knobs']['load_part']['default']=''
+_river_lift['brief']='Move the wheel off the bank into the current, then connect its drum load to river gate. The current must raise the gate eight centimetres.'
+_river_lift['hints'][0]=_river_lift['brief']
 LEGACY_TRAY=copy.deepcopy(TRAY)
 TRAY[0]['knobs']['side']['default']='off'
 TRAY[0]['knobs']['side']['label']='legacy attached feed'

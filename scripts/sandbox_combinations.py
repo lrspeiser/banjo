@@ -47,7 +47,19 @@ def charge_and_lift():
     return level
 
 
-EASY_LEVELS = [charge_and_lift()]
-TEMPLATES = [dict(name='Sun powers the flag', description='An empty battery supplies a motor that raises an offset oak arm. A parallel bulb shares the available solar power.',
+LEGACY_LEVEL = charge_and_lift()
+EASY_LEVELS = [copy.deepcopy(LEGACY_LEVEL)]
+_lesson=EASY_LEVELS[0]
+_lesson['tray'][0].update(explicit_power=True, battery='supply battery')
+_lesson['tray'][0]['knobs'].pop('battery')
+_lesson['tray'].append(electrics.tray('power_cable'))
+_lesson['solution'][0].pop('battery')
+_lesson['solution'].append(dict(piece='power_cable',a_port='your solar 1:power',b_port='supply:power'))
+_lesson['wrong']=copy.deepcopy(_lesson['solution'])
+_lesson['wrong'][0]['pitch_deg']=0
+_lesson['style_pieces']=2
+_lesson['brief']='The motor battery starts empty. Aim the panel at the low sun, then connect its Out to the supply In to power the axle and lift the flag.'
+_lesson['hints'][0]=_lesson['brief']
+TEMPLATES = [dict(name='Sun powers the flag', description='The collector’s cable charges an empty battery. Its motor lifts the flag while a bulb shares the available power.',
                   base=copy.deepcopy(EASY_LEVELS[0]['machine']), placements=copy.deepcopy(EASY_LEVELS[0]['solution']),
-                  pieces=['solar', 'motor', 'battery', 'wire'])]
+                  pieces=['solar', 'power_cable', 'motor', 'battery', 'wire'])]

@@ -84,7 +84,7 @@ supplies, manual/paddle switches, bulbs, coils and motors. Fixed metered water
 supplies debit actual remaining volume and count receiver landings; source
 valves and arm restraints are queued at engine boundaries. A counterweight
 cradle launches through contact. These additions do not establish calibrated
-fluid turbines, free liquid containment, spreading fire, gear teeth or a spring
+fluid turbines, free liquid containment, spreading fire or a spring
 catapult preset. See [mechanical measurements](sandbox-mechanics-measured.md),
 [electrical measurements](sandbox-electrics-measured.md) and
 [water/launch measurements](sandbox-water-launch-measured.md) for per-material
@@ -112,7 +112,7 @@ See [solar controls and limitations](machine-game.md#solar-feedback-and-explicit
 | Rigid bodies: rolling, sliding, falling, toppling, friction, rolling resistance | parts, kits | Marble run, dominoes, falling weight in the default machine |
 | Turning a whole kit any way | `"turned": {"yaw_deg", "pitch_deg", "roll_deg", "about_m", "clear_ground"}` on any kit: its parts, joints, gas, edges and lamps all turn about `about_m`; with `clear_ground` it is lifted to stand on the ground | A cannon turned 20 degrees fires 20 degrees off its line; a knife pendulum turned 30 degrees still cuts its rope (tests/machine_game_tests.py) |
 | Hinges, fixings, ropes (ties), springs, slides, a rope wound on a drum | `joints` | Lever, rope and gate |
-| Gears | a `gear` joint between two hinges, teeth on each | A motor turns a 12-tooth wheel 1189 degrees; the 24-tooth wheel turns back 594 |
+| Gears | New pieces use separate toothed bodies and contact torque; saved paired gears retain their ideal `gear` joint | Contact-gear measurements at 1/240 through 1/960 s are in [sandbox-mechanics-measured.md](sandbox-mechanics-measured.md#individual-contact-gears-october-12); the historical ideal pair turns 1189 / −594 degrees |
 | Pulleys (block and tackle) | a `pulley` joint with a ratio | 2:1: the counterweight falls 0.538 m, the load rises 0.269 m |
 | Motors | a circuit's `motor` on a hinge: stall torque, no-load speed, throttle | Draws its battery down as it turns |
 | The sun and solar panels | `sun`, `solar_panels` on a part, charging a battery | 0.25 m2 under a 50 degree sun: 191.5 W of sunlight, 38.3 W into the battery |
@@ -143,7 +143,6 @@ October 11 contact-holder update: **Give it power** and the new saved sandbox ex
 | Physics | What the engine does | Planned use |
 |---|---|---|
 | Rocket thrust | A region with a nozzle pushes its vessel (thrust 2·Cd·A·Δp) | A rocket cart along a rail |
-| Lamps | A lamp on a battery gives so many lumens; its light is traced (a machine's lamp is in `light`, or the `light_gate` kit) | A lamp that comes on when a switch closes |
 | Fuses | A fuse branch that melts at its I²t | A fuse that blows and opens a circuit |
 
 ## New physics
@@ -151,7 +150,7 @@ October 11 contact-holder update: **Give it power** and the new saved sandbox ex
 | Physics | What it needs | Planned use |
 |---|---|---|
 | Light: what is still missing | Light scattered off rough surfaces and the sky's light; a spot heated more than the rest of its body (so focused sunlight could set wood alight); light pushing on what it reaches | A burning glass that lights the rope itself |
-| Sensors for heat and touch | A thermostat (closes above a temperature) and a pressure plate (closes under a load), each a circuit switch, measured by the engine | A pan of water that boils trips a switch; a ball landing on a plate rings a bell |
+| Additional sensor pieces | The sandbox already has manual/paddle switches and the cannon's geometric contact trigger. A selectable thermostat and general pressure-plate piece still need controls and coupled verification | A pan of water that boils trips a switch; a ball landing on a plate rings a bell |
 | Magnetism | Force between magnets and iron; an electromagnet driven by the circuit's current | An electromagnet that lets go of an iron ball when its circuit opens |
 | Air drag and wind | A drag force on each surface from the air's relative velocity | A sail cart; a feather that falls slowly |
 | Thermal expansion | Size changing with temperature | A bimetal strip that bends as it heats |

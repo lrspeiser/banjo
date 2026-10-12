@@ -32,6 +32,28 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
+    def test_audit_lessons_preserve_their_v1_recipes_and_validate_v2_presets(self):
+        with tempfile.TemporaryDirectory() as logs:
+            for family in ('easy-motor','easy-river-lift','easy-charge-lift'):
+                level=game.level_by_id(family)
+                seen={}
+                for seed in range(32):
+                    candidate=variants.construct(level,seed)
+                    seen[candidate['variant']['value']]=candidate
+                self.assertEqual(set(seen),set(variants.POLICIES[family][-1]))
+                for candidate in seen.values():
+                    self.assertEqual(candidate['variant']['version'],2)
+                    self.assertEqual(candidate['goal'],level['goal'])
+                    if ENGINE.is_file():self.assertTrue(variants.validate(candidate,ENGINE,Path(logs))['valid'],candidate['id'])
+                old=variants.construct(level,42,version=1)
+                self.assertEqual(variants.reconstruct(level,42,0,version=1),old)
+                if family=='easy-motor':self.assertEqual(old['tray'][0]['knobs']['direction']['default'],'forward')
+                elif family=='easy-river-lift':self.assertEqual(old['tray'][0]['knobs']['load_part']['default'],'river gate')
+                else:
+                    self.assertEqual(len(old['solution']),1)
+                    self.assertEqual(game.public(old)['task_count'],1)
+                if ENGINE.is_file():self.assertTrue(variants.validate(old,ENGINE,Path(logs))['valid'])
+
     def test_bulb_v3_shrinks_the_load_and_preserves_both_earlier_apparatus_versions(self):
         family=game.level_by_id('easy-bulb')
         self.assertEqual(variants.family_version('easy-bulb'),3)
@@ -190,7 +212,8 @@ class Recipes(unittest.TestCase):
                     self.assertEqual(len(compiled['electrical']['wires']), 2)
                     self.assertTrue(all(p['fixed'] for p in compiled['parts']))
         self.assertEqual(family, before)
-        self.assertEqual(variants.identity('easy-motor', 42), 'easy-motor--v1--0000002a--0')
+        self.assertEqual(variants.identity('easy-motor', 42,version=1), 'easy-motor--v1--0000002a--0')
+        self.assertEqual(variants.identity('easy-motor', 42), 'easy-motor--v2--0000002a--0')
         for version in (0, 4, True, '1'):
             with self.assertRaises(ValueError):
                 variants.construct(family, 42, version=version)
