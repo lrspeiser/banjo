@@ -98,8 +98,12 @@ def _with_free_knobs(level):
 
 def load_levels():
     levels = json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['levels']
-    order = {level['id']: i for i, level in enumerate(levels)}
-    order.update({ident: len(order) + i for i, ident in enumerate(EASY_ORDER)})
+    menu = [level['id'] for level in levels] + EASY_ORDER
+    # Learn one reflection before routing a beam through two mirrors.
+    # Menu order changes no level declaration, ID, saved score or simulation.
+    menu.remove('easy-mirror')
+    menu.insert(menu.index('laser'), 'easy-mirror')
+    order = {ident: i for i, ident in enumerate(menu)}
     for module in SANDBOX_MODULES:
         levels.extend(copy.deepcopy(getattr(module, 'EASY_LEVELS', [])))
     for level in levels:

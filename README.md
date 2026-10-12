@@ -28,7 +28,9 @@ notes in `client/voxel-lab/machine.html`, as required by `AGENTS.md`.
 The lessons introduce cutting, optics, springs, gearing, wiring, water,
 heating and catapults one step at a time. **New challenge** offers tested
 physical variations with repeatable seed links and a recent-challenges list.
-The original chain-reaction levels are:
+The one-mirror lesson **Bounce to the target** comes immediately before
+**Bounce the beam**. The eight original chain-reaction challenges, with their
+current menu numbers, are:
 
 | Level | What makes it work |
 |---|---|
@@ -37,9 +39,9 @@ The original chain-reaction levels are:
 | 3. Knock it off | aim a cannon, draw both firing leads, then drag its physical trigger |
 | 4. Up she goes | a steam engine whose piston rises |
 | 5. Chain reaction | a ball presses the seesaw's visible contact switch; the wired battery heats the cannon's igniter (Inspect switch shows the contacts) |
-| 6. Bounce the beam | two mirrors that bounce a laser round a wall onto a cord |
-| 7. Catch the sun | move a solar panel out of a broad wall's shadow, aim at the low sun and draw its power cable to the winch |
-| 8. Lift with less | a counterweight on a block and tackle |
+| 7. Bounce the beam | two mirrors that bounce a laser round a wall onto a cord |
+| 8. Catch the sun | move a solar panel out of a broad wall's shadow, aim at the low sun and draw its power cable to the winch |
+| 9. Lift with less | a counterweight on a block and tackle |
 
 A win is scored by energy: what it takes to make your pieces (from their mass
 and material) plus what the machine used while it ran. Win on par or less for

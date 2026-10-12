@@ -794,6 +794,8 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
+                self.assertEqual(self.js("[...document.querySelectorAll('#levels-screen .level-card-title')].slice(5,7).map(e=>e.textContent)"),
+                                 ['6. Bounce to the target','7. Bounce the beam'])
                 self.assertFalse(self.js("document.getElementById('level-more').open"))
                 self.assertEqual(self.js("document.querySelectorAll('#levels-screen .level-card-details').length"),self.level_count)
                 self.assertTrue(self.js("[...document.querySelectorAll('#levels-screen .level-card-details')].every(d=>!d.open)"))

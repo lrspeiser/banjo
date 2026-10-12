@@ -140,7 +140,7 @@ class Tray(unittest.TestCase):
             mg.requested_level({'level': 'free', 'base': bad})
 
     def test_every_level_is_well_formed_and_its_solution_fits_its_tray(self):
-        self.assertEqual([l['id'] for l in LEVELS[:8]], ['gap', 'cut', 'fire', 'steam', 'chain', 'laser', 'sun', 'tackle'])
+        self.assertEqual([l['id'] for l in LEVELS[:10]], ['gap', 'cut', 'fire', 'steam', 'chain', 'easy-mirror', 'laser', 'sun', 'tackle', 'easy-cut'])
         self.assertEqual(len({l['id'] for l in LEVELS}), len(LEVELS))
         for level in LEVELS:
             spec, checked, cost = mg.compose(level, level['solution'])
