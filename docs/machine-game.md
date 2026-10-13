@@ -2,6 +2,22 @@
 
 October 12, 2026. Open `/play` to choose eight chain-reaction levels, twenty-three piece lessons and three advanced electronics activities. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+October 13 onboarding audit: all 34 authored levels use an audited teaching
+sequence from simpler visible tasks toward combined mechanisms. Cards show
+estimated newcomer minutes, distinct from their simulation deadline. Three
+solution-blind LLM probes covered the catalogue with no reference answers;
+25 initial proposals and 32 eventual proposals won. These are expert,
+geometry-assisted probes and uncalibrated human-time estimates, not measured
+human completion times. See [the complete per-level table and methodology](level-onboarding-audit.md).
+The main Adjustment menu prioritizes task-relevant controls; opening Precision
+controls restores the complete menu. Sandbox retains its full menu. Every solar
+lesson shows the existing Sun direction marker. The charging lesson is named
+**Charge in the sun**; **Catch the sun** remains the full winch puzzle.
+IDs, saved progress, goals, reference solutions and physics are unchanged.
+Older dated measurement notes below retain their original level numbers;
+use the audit table for current numbering and the level names/IDs to compare
+those historical measurements.
+
 ## More contact and spring mechanisms
 
 October 13: the Sandbox library has **Hinged door**, **Trapdoor**,

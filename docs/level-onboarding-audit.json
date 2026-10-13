@@ -1,0 +1,1617 @@
+{
+  "date": "2026-10-13",
+  "baseline_revision": "fd9ed9ca1343f073eb3856be6e64ebd3859f2db0",
+  "method": "Three isolated LLM assessors, no parent history, one disjoint packet per assessor. Public brief/tray/goal and precise starting geometry; no hints, reference placements or reference handle inputs. Up to two feedback-based retries. Fresh UI defaults filled by runner. This is an expert geometry-assisted solver proxy, not a timed human or visual-perception study.",
+  "human_times_measured": false,
+  "engine_sha256": "4bde8f581098a877616ac5647923de8a2b0aada2d5db39911f85b8bef1e783a8",
+  "packet_sha256": {
+    "blind-1.json": "93d74fd0af021f9b6c3cb2fa66fdaa5f7f144143b2ce449810104b39980c13c2",
+    "blind-2.json": "642bb3d23eb41aa1c75a14c66d293555d759d55ce83ea8acbe2a03c467cce16e",
+    "blind-3.json": "b77cab5e083b9aa697024ee456c2c41a4a33e984bbfc5147f180264abc95b4b0"
+  },
+  "levels": [
+    {
+      "id": "easy-weight",
+      "title": "Tip the lever",
+      "rank": 1,
+      "estimated_minutes": [
+        2,
+        4
+      ],
+      "confidence": 0.85,
+      "observations": "Which turn direction counts may matter; supplied goal says magnitude so likely either.",
+      "suggested_simplification": [
+        "Shade useful lever ends"
+      ],
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.35,
+          "native_wall_s": 0.038,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-motor",
+      "title": "Turn the axle",
+      "rank": 2,
+      "estimated_minutes": [
+        1,
+        3
+      ],
+      "confidence": "high",
+      "observations": "Forward/reverse has no visible positive-angle reference in the packet.",
+      "suggested_simplification": "Draw the desired rotation arrow beside the flag.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.7,
+          "native_wall_s": 0.077,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-bulb",
+      "title": "Light the bulb",
+      "rank": 3,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "confidence": "high",
+      "observations": "The wattage for each size is missing from tray choices; newcomer must infer or inspect ratings.",
+      "suggested_simplification": "Show wattage beside each size and the 2.5 W supply limit beside the choices.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.583,
+          "native_wall_s": 0.076,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-loop",
+      "title": "Finish the loop",
+      "rank": 4,
+      "estimated_minutes": [
+        1,
+        3
+      ],
+      "confidence": "high",
+      "observations": "Wire thickness/length offered even though low resistance default is sufficient.",
+      "suggested_simplification": "Expose terminal clicks only until success.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.583,
+          "native_wall_s": 0.072,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-water-receiver",
+      "title": "Fill the receiver",
+      "rank": 5,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "confidence": 0.85,
+      "observations": "Gravity flow actual discharge not calculable from brief; max opening could splash/spill.",
+      "suggested_simplification": [
+        "Show litres/seconds readout",
+        "Limit initial controls to tap"
+      ],
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 3.483,
+          "native_wall_s": 0.31,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-river-wheel",
+      "title": "Wheel in the river",
+      "rank": 6,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "confidence": 0.85,
+      "observations": "Paddle submergence and default axle height not shown as knobs.",
+      "suggested_simplification": [
+        "Highlight lower paddle contact with water"
+      ],
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 3.983,
+          "native_wall_s": 0.284,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-spring",
+      "title": "Spring lifts the load",
+      "rank": 7,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "confidence": "high",
+      "observations": "Changing load material may affect the included load rather than the waiting oak load; the load attachment could confuse.",
+      "suggested_simplification": "Keep stiffness/damping in an advanced disclosure and explain compressed versus stretched.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.067,
+          "native_wall_s": 0.036,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "gap",
+      "title": "Mind the gap",
+      "rank": 8,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "confidence": "high",
+      "observations": "Plank height and which rotation changes incline are not shown before adding it.",
+      "suggested_simplification": "Hide irrelevant 3D rotation controls until requested; show supported ends.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 1.9,
+          "native_wall_s": 0.226,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "advanced-resistor",
+      "title": "Limit the voltage drop",
+      "rank": 9,
+      "estimated_minutes": [
+        1,
+        4
+      ],
+      "confidence": "high",
+      "observations": "Formula/model not needed because brief explicitly says reduce; minimum resistance is obvious first trial.",
+      "suggested_simplification": "Reorder after loop/power; provide voltage-drop readout rather than label advanced.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.583,
+          "native_wall_s": 0.052,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-switch",
+      "title": "Close the switch",
+      "rank": 10,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "confidence": 0.8,
+      "observations": "Handle force-to-travel behavior unknown in audit, human drag may be easier; prewire correctness not inspectable until run.",
+      "suggested_simplification": [
+        "Keep handle obvious",
+        "Show open/closed circuit state"
+      ],
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.7,
+          "native_wall_s": 0.092,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-water-wheel",
+      "title": "Pour onto the paddles",
+      "rank": 11,
+      "estimated_minutes": [
+        2,
+        6
+      ],
+      "confidence": "high",
+      "observations": "Tank defaults match declared target but valve is open while opening_percent is zero; duplicate discharge controls.",
+      "suggested_simplification": "Rename tap clearly; hide metered/gravity distinction and unused metered discharge in intro.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 1.4,
+          "native_wall_s": 0.178,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-marble-light",
+      "title": "Marble turns on a light",
+      "rank": 12,
+      "estimated_minutes": [
+        2,
+        6
+      ],
+      "confidence": "medium",
+      "observations": "Deck extent and pivot placement are not in the tray; state=closed offers an apparent shortcut although physical contact is described.",
+      "suggested_simplification": "Highlight the pressable deck and suppress initial closed state in this lesson.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.467,
+          "native_wall_s": 0.09,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-tackle",
+      "title": "Raise the crate",
+      "rank": 13,
+      "estimated_minutes": [
+        3,
+        7
+      ],
+      "confidence": "medium",
+      "observations": "Crate mass is not directly listed; the ratio label does not explain which side has mechanical advantage.",
+      "suggested_simplification": "Show crate mass and counterweight force balance; lock unused included-load material when an external crate is attached.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.733,
+          "native_wall_s": 0.103,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "steam",
+      "title": "Up she goes",
+      "rank": 14,
+      "estimated_minutes": [
+        3,
+        7
+      ],
+      "confidence": "medium",
+      "observations": "Piston travel, initial height and required heat are unspecified; more heat may not monotonically help final position.",
+      "suggested_simplification": "Show predicted piston starting position and live pressure/height near the goal.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 2.067,
+          "native_wall_s": 0.13,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-lens",
+      "title": "Find the focus",
+      "rank": 15,
+      "estimated_minutes": [
+        3,
+        9
+      ],
+      "confidence": "medium",
+      "observations": "Focal length and optical face convention not described; radius is not directly focal distance.",
+      "suggested_simplification": "Show rays and focal marker; lock beam height/across/rotations for introductory level.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.017,
+          "native_wall_s": 0.028,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-cut",
+      "title": "Cut the cord",
+      "rank": 16,
+      "estimated_minutes": [
+        3,
+        8
+      ],
+      "confidence": "medium",
+      "observations": "Blade initial swing angle and swept edge are not supplied; default pivot may be positioned too close to the post.",
+      "suggested_simplification": "Preview the edge swept path and highlight the cord intersection.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.683,
+          "native_wall_s": 0.09,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-mirror",
+      "title": "Bounce to the target",
+      "rank": 17,
+      "estimated_minutes": [
+        3,
+        8
+      ],
+      "confidence": 0.45,
+      "observations": "Angle may denote plane or normal; positive yaw sign and 3D reference not given; unnecessarily many knobs.",
+      "suggested_simplification": [
+        "Show incident/reflected beam preview",
+        "Lock height/tip/roll for first mirror"
+      ],
+      "trials": [
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.074,
+          "error": null
+        },
+        {
+          "won": true,
+          "goal_at_s": 0.017,
+          "native_wall_s": 0.033,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-power",
+      "title": "Give it power",
+      "rank": 18,
+      "estimated_minutes": [
+        3,
+        8
+      ],
+      "confidence": "high",
+      "observations": "Many operations for first wiring task; battery terminal name only inferred, thickness could distract before circuit closure.",
+      "suggested_simplification": "Start with 12V selected or one preconnected lead; indicate empty return connection.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.583,
+          "native_wall_s": 0.052,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-catapult",
+      "title": "Gentle first launch",
+      "rank": 19,
+      "estimated_minutes": [
+        3,
+        8
+      ],
+      "confidence": 0.5,
+      "observations": "Default aim orientation and launch speed unknown; many simultaneous material/geometry knobs.",
+      "suggested_simplification": [
+        "Preview launch direction",
+        "Start held with clear release affordance",
+        "Hide material/diameter until later"
+      ],
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 1.083,
+          "native_wall_s": 0.217,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-river-lift",
+      "title": "River-powered lift",
+      "rank": 20,
+      "estimated_minutes": [
+        3,
+        7
+      ],
+      "confidence": "high",
+      "observations": "Drum winding direction and load rope geometry are unspecified, and external-supply controls distract from river power.",
+      "suggested_simplification": "Hide external pouring and show drum winding arrow plus valid gate connector.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 4.083,
+          "native_wall_s": 0.344,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "advanced-parallel",
+      "title": "Series or parallel?",
+      "rank": 21,
+      "estimated_minutes": [
+        4,
+        9
+      ],
+      "confidence": 0.9,
+      "observations": "Wire length/thickness controls add distracting choices although low resistance default should suffice.",
+      "suggested_simplification": [
+        "Require simple lamp/switch first",
+        "Keep wire resistance as optional advanced disclosure"
+      ],
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 0.583,
+          "native_wall_s": 0.054,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "advanced-capacitor",
+      "title": "Store the charge",
+      "rank": 22,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "confidence": "medium",
+      "observations": "The brief implies increasing capacitance always helps although very large capacitance slows voltage rise; ESR/leakage/material controls add unrelated complexity.",
+      "suggested_simplification": "Put the relevant capacitance control first and show a voltage-energy graph; disclose ESR/leakage separately.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 1.867,
+          "native_wall_s": 0.082,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-heat",
+      "title": "Heat to release",
+      "rank": 23,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "confidence": "medium-high",
+      "observations": "Target attachment plus two wire endpoint pairs is interface-heavy; hot preset effect is opaque.",
+      "suggested_simplification": "Highlight cord attach target and heater leads; show temperature versus release threshold.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 8.333,
+          "native_wall_s": 0.773,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-water-gate",
+      "title": "Water opens a gate",
+      "rank": 24,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "confidence": "medium",
+      "observations": "Drum load is optional label despite being required; default wheel height unseen in tray.",
+      "suggested_simplification": "Make gate load automatic in introductory version; teach aiming tank as sole adjustment.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 2.683,
+          "native_wall_s": 0.366,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-solar",
+      "title": "Charge in the sun",
+      "rank": 25,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "confidence": 0.5,
+      "observations": "Pitch sign and sun azimuth origin unspecified; cable output label generated name inferred.",
+      "suggested_simplification": [
+        "Draw sun direction and panel normal",
+        "Expose charge/live watts",
+        "Hide size and roll initially"
+      ],
+      "trials": [
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.31,
+          "error": null
+        },
+        {
+          "won": true,
+          "goal_at_s": 0.467,
+          "native_wall_s": 0.284,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "cut",
+      "title": "Cut it down",
+      "rank": 26,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "confidence": "medium",
+      "observations": "Knife initial orientation and sweep arc are not exposed; many rotations obscure three useful position controls.",
+      "suggested_simplification": "Preview knife arc; offer a flat side view.",
+      "trials": [
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.264,
+          "error": null
+        },
+        {
+          "won": true,
+          "goal_at_s": 0.95,
+          "native_wall_s": 0.115,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "chain",
+      "title": "Chain reaction",
+      "rank": 27,
+      "estimated_minutes": [
+        5,
+        12
+      ],
+      "confidence": "medium-low",
+      "observations": "Ramp supplied ball and launch speed unknown; electrical circuit is described but absent from packet electrical rows.",
+      "suggested_simplification": "Highlight impact target and show trajectory preview; make first stage only editable.",
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 2.042,
+          "native_wall_s": 0.33,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-charge-lift",
+      "title": "Sun-powered lift",
+      "rank": 28,
+      "estimated_minutes": [
+        5,
+        12
+      ],
+      "confidence": 0.55,
+      "observations": "Panel available power versus motor+bulb needs unknown; angle convention unclear; hidden multiple loads.",
+      "suggested_simplification": [
+        "Complete Catch the sun first",
+        "Display input power and motor versus bulb draws"
+      ],
+      "trials": [
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.41,
+          "error": null
+        },
+        {
+          "won": true,
+          "goal_at_s": 0.533,
+          "native_wall_s": 0.118,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-divert-water",
+      "title": "Divert the water",
+      "rank": 29,
+      "estimated_minutes": [
+        5,
+        12
+      ],
+      "confidence": "medium",
+      "observations": "Mount position might denote center or upstream end; angle convention and fluid capture tolerance are unspecified.",
+      "suggested_simplification": "Show inlet/outlet handles with water route preview; start with chute pointed toward the container.",
+      "trials": [
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.01,
+          "error": "source arm and your water_chute 1 overlap by about 18 mm; move one apart"
+        },
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.452,
+          "error": null
+        },
+        {
+          "won": true,
+          "goal_at_s": 4.8,
+          "native_wall_s": 0.452,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "tackle",
+      "title": "Lift with less",
+      "rank": 30,
+      "estimated_minutes": [
+        6,
+        15
+      ],
+      "confidence": 0.55,
+      "observations": "Load mass not directly stated in brief; light excess may lift too slowly; pulley travel and loss unknown.",
+      "suggested_simplification": [
+        "Display load mass",
+        "Display estimated available lift distance"
+      ],
+      "trials": [
+        {
+          "won": true,
+          "goal_at_s": 3.75,
+          "native_wall_s": 0.213,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "fire",
+      "title": "Knock it off",
+      "rank": 31,
+      "estimated_minutes": [
+        6,
+        15
+      ],
+      "confidence": 0.4,
+      "observations": "Cannon speed and powder coupling unknown; bore height exact relation to sphere center unknown; multiple linked mechanisms.",
+      "suggested_simplification": [
+        "Make aiming preview explicit",
+        "Teach wiring and cannon separately before combining"
+      ],
+      "trials": [
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.042,
+          "error": "A handle drag is at most 20 N"
+        },
+        {
+          "won": true,
+          "goal_at_s": 0.846,
+          "native_wall_s": 0.214,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "laser",
+      "title": "Bounce the beam",
+      "rank": 32,
+      "estimated_minutes": [
+        8,
+        18
+      ],
+      "confidence": "medium",
+      "observations": "Mirror angle convention and beam height are not displayed in the tray; cord is a narrow target and aiming may be exacting.",
+      "suggested_simplification": "Live reflected ray preview, snapping to 45 degrees, and a large cord target would reduce aiming friction.",
+      "trials": [
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.616,
+          "error": null
+        },
+        {
+          "won": true,
+          "goal_at_s": 5.433,
+          "native_wall_s": 0.563,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "sun",
+      "title": "Catch the sun",
+      "rank": 33,
+      "estimated_minutes": [
+        8,
+        20
+      ],
+      "confidence": "low",
+      "observations": "Orientation axis/sign and output port naming unspecified; 3D shadow avoidance plus wiring compound uncertainty.",
+      "suggested_simplification": "Show live sunlight/power before running; snap face toward sun; label actual ports.",
+      "trials": [
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.003,
+          "error": "piece 1: yaw_deg is -180 to 180"
+        },
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.889,
+          "error": null
+        },
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.939,
+          "error": null
+        }
+      ]
+    },
+    {
+      "id": "easy-gears",
+      "title": "Turn the big wheel",
+      "rank": 34,
+      "estimated_minutes": [
+        8,
+        20
+      ],
+      "confidence": "low",
+      "observations": "No existing tooth count/module stated; outer sizes allow inference but newcomer cannot derive required triangular axle geometry or phase.",
+      "suggested_simplification": "Give same fixed tooth size, constrain gear to plane and show valid mesh distance/teeth contact.",
+      "trials": [
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.067,
+          "error": "drive gear wheel and your gear 1 wheel overlap by about 40 mm; move one apart; target gear wheel and your gear 1 wheel overlap by about 40 mm; move one apart"
+        },
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.071,
+          "error": "drive gear wheel and your gear 1 wheel overlap by about 30 mm; move one apart; target gear wheel and your gear 1 wheel overlap by about 16 mm; move one apart"
+        },
+        {
+          "won": false,
+          "goal_at_s": null,
+          "native_wall_s": 0.053,
+          "error": "target gear wheel and your gear 1 wheel overlap by about 36 mm; move one apart"
+        }
+      ]
+    }
+  ],
+  "ui_observations": [
+    {
+      "id": "easy-weight",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.517
+    },
+    {
+      "id": "easy-motor",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.118
+    },
+    {
+      "id": "easy-bulb",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.241
+    },
+    {
+      "id": "easy-loop",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.22
+    },
+    {
+      "id": "easy-water-receiver",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.227
+    },
+    {
+      "id": "easy-river-wheel",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.119
+    },
+    {
+      "id": "easy-spring",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.14
+    },
+    {
+      "id": "gap",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.329
+    },
+    {
+      "id": "advanced-resistor",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.218
+    },
+    {
+      "id": "easy-switch",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.129
+    },
+    {
+      "id": "easy-water-wheel",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.234
+    },
+    {
+      "id": "easy-marble-light",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.224
+    },
+    {
+      "id": "easy-tackle",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.117
+    },
+    {
+      "id": "steam",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.119
+    },
+    {
+      "id": "easy-lens",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.125
+    },
+    {
+      "id": "easy-cut",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.224
+    },
+    {
+      "id": "easy-mirror",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.118
+    },
+    {
+      "id": "easy-power",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.131
+    },
+    {
+      "id": "easy-catapult",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.323
+    },
+    {
+      "id": "easy-river-lift",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.121
+    },
+    {
+      "id": "advanced-parallel",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.221
+    },
+    {
+      "id": "advanced-capacitor",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.122
+    },
+    {
+      "id": "easy-heat",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.223
+    },
+    {
+      "id": "easy-water-gate",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.219
+    },
+    {
+      "id": "easy-solar",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.422
+    },
+    {
+      "id": "cut",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.223
+    },
+    {
+      "id": "chain",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.219
+    },
+    {
+      "id": "easy-charge-lift",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.22
+    },
+    {
+      "id": "easy-divert-water",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.222
+    },
+    {
+      "id": "tackle",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.218
+    },
+    {
+      "id": "fire",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.218
+    },
+    {
+      "id": "laser",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.219
+    },
+    {
+      "id": "sun",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.526
+    },
+    {
+      "id": "easy-gears",
+      "viewport": [
+        1280,
+        860
+      ],
+      "load_wall_s": 0.279
+    },
+    {
+      "id": "easy-weight",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.519
+    },
+    {
+      "id": "easy-motor",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.224
+    },
+    {
+      "id": "easy-bulb",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.239
+    },
+    {
+      "id": "easy-loop",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.224
+    },
+    {
+      "id": "easy-water-receiver",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.229
+    },
+    {
+      "id": "easy-river-wheel",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.121
+    },
+    {
+      "id": "easy-spring",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.135
+    },
+    {
+      "id": "gap",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.325
+    },
+    {
+      "id": "advanced-resistor",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.231
+    },
+    {
+      "id": "easy-switch",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.223
+    },
+    {
+      "id": "easy-water-wheel",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.235
+    },
+    {
+      "id": "easy-marble-light",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.224
+    },
+    {
+      "id": "easy-tackle",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.119
+    },
+    {
+      "id": "steam",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.227
+    },
+    {
+      "id": "easy-lens",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.119
+    },
+    {
+      "id": "easy-cut",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.225
+    },
+    {
+      "id": "easy-mirror",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.119
+    },
+    {
+      "id": "easy-power",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.121
+    },
+    {
+      "id": "easy-catapult",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.342
+    },
+    {
+      "id": "easy-river-lift",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.219
+    },
+    {
+      "id": "advanced-parallel",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.218
+    },
+    {
+      "id": "advanced-capacitor",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.118
+    },
+    {
+      "id": "easy-heat",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.219
+    },
+    {
+      "id": "easy-water-gate",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.221
+    },
+    {
+      "id": "easy-solar",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.422
+    },
+    {
+      "id": "cut",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.226
+    },
+    {
+      "id": "chain",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.227
+    },
+    {
+      "id": "easy-charge-lift",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.231
+    },
+    {
+      "id": "easy-divert-water",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.222
+    },
+    {
+      "id": "tackle",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.22
+    },
+    {
+      "id": "fire",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.219
+    },
+    {
+      "id": "laser",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.231
+    },
+    {
+      "id": "sun",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.534
+    },
+    {
+      "id": "easy-gears",
+      "viewport": [
+        390,
+        844
+      ],
+      "load_wall_s": 0.361
+    },
+    {
+      "id": "easy-weight",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.472
+    },
+    {
+      "id": "easy-motor",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.221
+    },
+    {
+      "id": "easy-bulb",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.23
+    },
+    {
+      "id": "easy-loop",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.222
+    },
+    {
+      "id": "easy-water-receiver",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.235
+    },
+    {
+      "id": "easy-river-wheel",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.219
+    },
+    {
+      "id": "easy-spring",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.124
+    },
+    {
+      "id": "gap",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.318
+    },
+    {
+      "id": "advanced-resistor",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.219
+    },
+    {
+      "id": "easy-switch",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.22
+    },
+    {
+      "id": "easy-water-wheel",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.24
+    },
+    {
+      "id": "easy-marble-light",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.227
+    },
+    {
+      "id": "easy-tackle",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.227
+    },
+    {
+      "id": "steam",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.219
+    },
+    {
+      "id": "easy-lens",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.219
+    },
+    {
+      "id": "easy-cut",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.22
+    },
+    {
+      "id": "easy-mirror",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.118
+    },
+    {
+      "id": "easy-power",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.131
+    },
+    {
+      "id": "easy-catapult",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.322
+    },
+    {
+      "id": "easy-river-lift",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.219
+    },
+    {
+      "id": "advanced-parallel",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.222
+    },
+    {
+      "id": "advanced-capacitor",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.229
+    },
+    {
+      "id": "easy-heat",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.22
+    },
+    {
+      "id": "easy-water-gate",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.218
+    },
+    {
+      "id": "easy-solar",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.423
+    },
+    {
+      "id": "cut",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.22
+    },
+    {
+      "id": "chain",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.22
+    },
+    {
+      "id": "easy-charge-lift",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.221
+    },
+    {
+      "id": "easy-divert-water",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.226
+    },
+    {
+      "id": "tackle",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.23
+    },
+    {
+      "id": "fire",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.218
+    },
+    {
+      "id": "laser",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.218
+    },
+    {
+      "id": "sun",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.523
+    },
+    {
+      "id": "easy-gears",
+      "viewport": [
+        844,
+        390
+      ],
+      "load_wall_s": 0.263
+    }
+  ]
+}

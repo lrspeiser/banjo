@@ -1,0 +1,425 @@
+{
+  "date": "2026-10-13",
+  "estimate_basis": "Expert interface review and one solution-blind LLM probe per level; not measured human completion times.",
+  "levels": [
+    {
+      "id": "easy-weight",
+      "rank": 1,
+      "estimated_minutes": [
+        2,
+        4
+      ],
+      "primary_controls": {
+        "weight": [
+          "x_m",
+          "z_m",
+          "height_m"
+        ]
+      }
+    },
+    {
+      "id": "easy-motor",
+      "rank": 2,
+      "estimated_minutes": [
+        1,
+        3
+      ],
+      "primary_controls": {
+        "motor": [
+          "direction",
+          "throttle"
+        ]
+      }
+    },
+    {
+      "id": "easy-bulb",
+      "rank": 3,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "easy-loop",
+      "rank": 4,
+      "estimated_minutes": [
+        1,
+        3
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "easy-water-receiver",
+      "rank": 5,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "primary_controls": {
+        "water_tank": [
+          "opening_percent",
+          "x_m",
+          "height_m"
+        ]
+      }
+    },
+    {
+      "id": "easy-river-wheel",
+      "rank": 6,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "primary_controls": {
+        "water_wheel": [
+          "z_m",
+          "load_part"
+        ]
+      }
+    },
+    {
+      "id": "easy-spring",
+      "rank": 7,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "gap",
+      "rank": 8,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "primary_controls": {
+        "plank": [
+          "length_m"
+        ]
+      }
+    },
+    {
+      "id": "advanced-resistor",
+      "rank": 9,
+      "estimated_minutes": [
+        1,
+        4
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "easy-switch",
+      "rank": 10,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "easy-water-wheel",
+      "rank": 11,
+      "estimated_minutes": [
+        2,
+        6
+      ],
+      "primary_controls": {
+        "water_tank": [
+          "opening_percent",
+          "x_m",
+          "height_m"
+        ]
+      }
+    },
+    {
+      "id": "easy-marble-light",
+      "rank": 12,
+      "estimated_minutes": [
+        2,
+        6
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "easy-tackle",
+      "rank": 13,
+      "estimated_minutes": [
+        3,
+        7
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "steam",
+      "rank": 14,
+      "estimated_minutes": [
+        3,
+        7
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "easy-lens",
+      "rank": 15,
+      "estimated_minutes": [
+        3,
+        9
+      ],
+      "primary_controls": {
+        "lens": [
+          "x_m",
+          "shape",
+          "radius_m",
+          "diameter_m"
+        ]
+      }
+    },
+    {
+      "id": "easy-cut",
+      "rank": 16,
+      "estimated_minutes": [
+        3,
+        8
+      ],
+      "primary_controls": {
+        "knife": [
+          "pivot_height_m",
+          "arm_m"
+        ]
+      }
+    },
+    {
+      "id": "easy-mirror",
+      "rank": 17,
+      "estimated_minutes": [
+        3,
+        8
+      ],
+      "primary_controls": {
+        "mirror": [
+          "angle_deg",
+          "height_m",
+          "size_m"
+        ]
+      }
+    },
+    {
+      "id": "easy-power",
+      "rank": 18,
+      "estimated_minutes": [
+        3,
+        8
+      ],
+      "primary_controls": {
+        "battery": [
+          "voltage_v"
+        ]
+      }
+    },
+    {
+      "id": "easy-catapult",
+      "rank": 19,
+      "estimated_minutes": [
+        3,
+        8
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "easy-river-lift",
+      "rank": 20,
+      "estimated_minutes": [
+        3,
+        7
+      ],
+      "primary_controls": {
+        "water_wheel": [
+          "z_m",
+          "load_part"
+        ]
+      }
+    },
+    {
+      "id": "advanced-parallel",
+      "rank": 21,
+      "estimated_minutes": [
+        4,
+        9
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "advanced-capacitor",
+      "rank": 22,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "easy-heat",
+      "rank": 23,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "primary_controls": {
+        "ignition": [
+          "preset"
+        ]
+      }
+    },
+    {
+      "id": "easy-water-gate",
+      "rank": 24,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "primary_controls": {
+        "water_wheel": [
+          "z_m",
+          "load_part"
+        ],
+        "water_tank": [
+          "opening_percent",
+          "x_m",
+          "height_m"
+        ]
+      }
+    },
+    {
+      "id": "easy-solar",
+      "rank": 25,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "title": "Charge in the sun",
+      "primary_controls": {
+        "solar": [
+          "pitch_deg",
+          "yaw_deg",
+          "height_m"
+        ]
+      }
+    },
+    {
+      "id": "cut",
+      "rank": 26,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "primary_controls": {
+        "knife": [
+          "pivot_height_m",
+          "arm_m"
+        ]
+      }
+    },
+    {
+      "id": "chain",
+      "rank": 27,
+      "estimated_minutes": [
+        5,
+        12
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "easy-charge-lift",
+      "rank": 28,
+      "estimated_minutes": [
+        5,
+        12
+      ],
+      "primary_controls": {
+        "solar": [
+          "pitch_deg",
+          "yaw_deg",
+          "height_m"
+        ]
+      }
+    },
+    {
+      "id": "easy-divert-water",
+      "rank": 29,
+      "estimated_minutes": [
+        5,
+        12
+      ],
+      "primary_controls": {
+        "water_chute": [
+          "x_m",
+          "yaw_deg"
+        ]
+      }
+    },
+    {
+      "id": "tackle",
+      "rank": 30,
+      "estimated_minutes": [
+        6,
+        15
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "fire",
+      "rank": 31,
+      "estimated_minutes": [
+        6,
+        15
+      ],
+      "primary_controls": {}
+    },
+    {
+      "id": "laser",
+      "rank": 32,
+      "estimated_minutes": [
+        8,
+        18
+      ],
+      "primary_controls": {
+        "mirror": [
+          "angle_deg"
+        ]
+      }
+    },
+    {
+      "id": "sun",
+      "rank": 33,
+      "estimated_minutes": [
+        8,
+        20
+      ],
+      "primary_controls": {
+        "solar": [
+          "pitch_deg",
+          "yaw_deg",
+          "height_m"
+        ]
+      }
+    },
+    {
+      "id": "easy-gears",
+      "rank": 34,
+      "estimated_minutes": [
+        8,
+        20
+      ],
+      "primary_controls": {
+        "gear": [
+          "teeth",
+          "x_m",
+          "height_m",
+          "phase_deg"
+        ]
+      }
+    }
+  ]
+}

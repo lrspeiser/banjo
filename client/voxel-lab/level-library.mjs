@@ -39,6 +39,11 @@ export function renderLevelCards(list, levels, {
     card.addEventListener('click', () => onChoose(level));
     append(card, 'strong', 'level-card-title', `${index + 1}. ${level.title}`);
     append(card, 'span', 'task-count', `${level.task_count} ${level.task_count === 1 ? 'thing' : 'things'} to do`);
+    if(level.onboarding?.estimated_minutes?.length===2){
+      const [lo,hi]=level.onboarding.estimated_minutes;
+      const estimate=append(card,'span','level-time-estimate',`Est. ${lo}–${hi} min`);
+      estimate.title=level.onboarding.estimate_basis;
+    }
     const starText = append(card, 'span', 'stars', '★'.repeat(stars) + '☆'.repeat(3 - stars));
     starText.setAttribute('aria-label', `${stars} of 3 stars`);
     const {content} = disclosure(item, 'Level details', 'level-card-details',

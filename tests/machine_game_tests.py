@@ -273,7 +273,14 @@ class Tray(unittest.TestCase):
             mg.requested_level({'level': 'free', 'base': bad})
 
     def test_every_level_is_well_formed_and_its_solution_fits_its_tray(self):
-        self.assertEqual([l['id'] for l in LEVELS[:10]], ['gap', 'cut', 'fire', 'steam', 'chain', 'easy-mirror', 'laser', 'sun', 'tackle', 'easy-cut'])
+        ids=[l['id'] for l in LEVELS]
+        self.assertEqual(ids[0],'easy-weight','start with a visible lever and one placement task')
+        self.assertLess(ids.index('easy-loop'),ids.index('easy-power'))
+        self.assertLess(ids.index('easy-power'),ids.index('advanced-parallel'))
+        self.assertLess(ids.index('easy-mirror'),ids.index('laser'))
+        self.assertLess(ids.index('easy-river-wheel'),ids.index('easy-river-lift'))
+        self.assertEqual(ids[-1],'easy-gears','unresolved mesh-fitting probe belongs at the end')
+        self.assertEqual([l['onboarding']['rank'] for l in LEVELS],list(range(1,len(LEVELS)+1)))
         self.assertEqual(len({l['id'] for l in LEVELS}), len(LEVELS))
         for level in LEVELS:
             spec, checked, cost = mg.compose(level, level['solution'])
@@ -301,6 +308,21 @@ class Tray(unittest.TestCase):
         self.assertEqual(mg.public(variant)['task_count'], 2)
         self.assertNotIn('task_count', mg.public(mg.free_build()))
         self.assertEqual(LEVELS, before, 'menu metadata cannot mutate physical levels')
+
+    def test_onboarding_assessments_are_complete_and_blind_packets_hide_answers(self):
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('onboarding_audit',ROOT/'scripts/audit-level-onboarding.py')
+        audit=importlib.util.module_from_spec(spec);spec.loader.exec_module(audit)
+        receipt=json.loads((ROOT/'docs/level-onboarding-audit.json').read_text(encoding='utf-8'))
+        self.assertFalse(receipt['human_times_measured'])
+        self.assertEqual({r['id'] for r in receipt['levels']},{l['id'] for l in LEVELS})
+        for level in LEVELS:
+            exported=audit.packet(level)
+            self.assertFalse({'solution','wrong','hints','solution_inputs'} & set(exported['player']))
+            self.assertNotIn('solution',exported['scene'])
+            lo,hi=mg.public(level)['onboarding']['estimated_minutes']
+            self.assertTrue(0<lo<=hi)
+            self.assertIn('not measured human',mg.public(level)['onboarding']['estimate_basis'])
 
     def test_the_tray_is_enforced(self):
         gap = mg.level_by_id('gap')

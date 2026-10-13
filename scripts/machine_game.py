@@ -103,19 +103,31 @@ def _with_free_knobs(level):
 
 def load_levels():
     levels = json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['levels']
-    menu = [level['id'] for level in levels] + EASY_ORDER + ['advanced-resistor','advanced-parallel','advanced-capacitor'] + [l['id'] for l in sandbox_motion.EASY_LEVELS]
-    # Learn one reflection before routing a beam through two mirrors.
-    # Menu order changes no level declaration, ID, saved score or simulation.
-    menu.remove('easy-mirror')
-    menu.insert(menu.index('laser'), 'easy-mirror')
-    order = {ident: i for i, ident in enumerate(menu)}
     for module in SANDBOX_MODULES:
         levels.extend(copy.deepcopy(getattr(module, 'EASY_LEVELS', [])))
     for level in levels:
         if level.get('difficulty') == 'easy':
             level['title'] = re.sub(r'^\d+\.\s*', '', level['title'])
-    levels.sort(key=lambda level: order[level['id']])
-    return [_with_free_knobs(level) for level in levels]
+    # An audited teaching sequence, independent of IDs and physics recipes.
+    catalogue=json.loads((ROOT/'client/voxel-lab/level-onboarding.json').read_text(encoding='utf-8'))
+    onboarding={row['id']:row for row in catalogue['levels']}
+    if len(onboarding)!=len(catalogue['levels']) or set(onboarding)!={l['id'] for l in levels}:
+        raise ValueError('Every authored level needs an onboarding assessment')
+    if sorted(row['rank'] for row in onboarding.values())!=list(range(1,len(levels)+1)):
+        raise ValueError('Onboarding ranks must be a complete unique sequence')
+    for level in levels:
+        _with_free_knobs(level)
+        row=onboarding[level['id']]
+        level['onboarding']={'rank':row['rank'],'estimated_minutes':row['estimated_minutes'],
+                             'estimate_basis':catalogue['estimate_basis']}
+        if row.get('title'):level['title']=row['title']
+        for tray in level['tray']:
+            controls=[k for k in row.get('primary_controls',{}).get(tray['piece'],[]) if k in tray['knobs']]
+            if controls:
+                tray['primary_knobs']=controls
+                tray['focus_knob']=controls[0]
+    levels.sort(key=lambda level:level['onboarding']['rank'])
+    return levels
 
 
 def free_build():
@@ -1835,7 +1847,7 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
 def public(level):
     """What the page needs to show a level: never its solution."""
     result = {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
-                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty') if k in level}
+                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding') if k in level}
     if not level.get('free'):
         family = level.get('variant', {}).get('family', level['id'])
         legacy_counts={'easy-solar':1,'easy-water-wheel':1,'easy-water-gate':2,'easy-water-receiver':1,'easy-gears':1,'easy-charge-lift':1,'easy-heat':1}

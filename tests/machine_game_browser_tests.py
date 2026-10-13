@@ -177,6 +177,9 @@ class Puzzles(unittest.TestCase):
 
     def choose_adjustment(self,name):
         key=self.js(f"(()=>{{const s=document.getElementById('adjustment-choice');return [...s.options].find(o=>o.textContent.replace(/\\s*\\(.*\\)\\s*$/,'')==={json.dumps(name)})?.value;}})()")
+        if key is None:
+            self.click_summary('#precision-controls > summary')
+            key=self.js(f"(()=>{{const s=document.getElementById('adjustment-choice');return [...s.options].find(o=>o.textContent.replace(/\\s*\\(.*\\)\\s*$/,'')==={json.dumps(name)})?.value;}})()")
         self.assertIsNotNone(key,f'No adjustment {name}')
         self.slide('Adjustment',key);self.ghost()
 
@@ -417,10 +420,20 @@ class Puzzles(unittest.TestCase):
 
     def test_catalogue_audit_opens_every_level_with_attached_touch_controls(self):
         import machine_game as game
+        timings=[]
         for width,height in ((1280,860),(390,844),(844,390)):
+            # A long browser sweep reported ERR_NO_BUFFER_SPACE while fetching
+            # a module. Bound fixture accumulation with a fresh owned profile
+            # per viewport, retaining the same waits and assertions. Keep the
+            # class-owned handles current for subsequent methods and cleanup.
+            type(self).chrome.close()
+            type(self).chrome=chrome_driver.Chrome(width,height)
+            type(self).page=type(self).chrome.page;self.page.send('Network.enable')
             for level in game.load_levels():
                 with self.subTest(level=level['id'],viewport=(width,height)):
+                    opened_at=time.perf_counter()
                     self.open(level['id'],width,height,phone=width!=1280)
+                    timings.append(dict(id=level['id'],viewport=[width,height],load_wall_s=round(time.perf_counter()-opened_at,3)))
                     geometry=self.js("""(() => {const view=document.getElementById('view').getBoundingClientRect(),bar=document.getElementById('phone-toolbar').getBoundingClientRect();
                       const attached=(bar.left>=view.left&&bar.right<=view.right&&bar.top>=view.top&&bar.top<=view.bottom+12)||
                         (bar.left>=view.right&&bar.left<=view.right+12&&bar.top>=view.top&&bar.top<=view.top+12);
@@ -433,6 +446,36 @@ class Puzzles(unittest.TestCase):
                 # This fixture owns these engines; close previous pages so
                 # a catalogue sweep never consumes the live-session budget.
                 self.server.machines.close_all()
+        if os.environ.get('BANJO_ONBOARDING_UI_REPORT'):
+            Path(os.environ['BANJO_ONBOARDING_UI_REPORT']).write_text(json.dumps(timings,indent=2),encoding='utf-8')
+
+    def test_audited_level_order_estimates_and_primary_controls(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            self.anonymous_levels(width=width,height=height)
+            ids=self.js("[...document.querySelectorAll('#levels-screen .level-card')].map(n=>n.dataset.level)")
+            self.assertEqual(len(ids),34);self.assertEqual(ids[0],'easy-weight');self.assertEqual(ids[-1],'easy-gears')
+            self.assertLess(ids.index('easy-mirror'),ids.index('laser'))
+            self.assertLess(ids.index('easy-loop'),ids.index('advanced-parallel'))
+            self.assertEqual(self.js("document.querySelectorAll('.level-time-estimate').length"),34)
+            self.assertTrue(self.js(r"[...document.querySelectorAll('.level-time-estimate')].every(n=>/^Est\. [0-9]+–[0-9]+ min$/.test(n.textContent)&&n.title.includes('not measured human'))"))
+            self.assertLessEqual(self.js('document.documentElement.scrollWidth'),width)
+            self.open('easy-weight',width,height,phone=width!=1280)
+            self.press('Add a weight');self.ghost()
+            self.assertEqual(self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"),['x_m','z_m','height_m'])
+            self.press('Cancel')
+            self.open('easy-river-lift',width,height,phone=width!=1280)
+            self.press('Add a water wheel');self.ghost()
+            self.assertEqual(self.js("document.getElementById('adjustment-choice').value"),'z_m')
+            self.assertFalse(self.js("[...document.getElementById('adjustment-choice').options].some(o=>o.value==='discharge_l_s')"))
+            self.press('Cancel')
+            self.open('sun',width,height,phone=width!=1280)
+            self.assertFalse(self.js("document.getElementById('sun-bearing').hidden"))
+            self.press('Add a solar panel');self.ghost()
+            self.assertEqual(self.js("document.getElementById('adjustment-choice').value"),'pitch_deg')
+            self.assertFalse(self.js("[...document.getElementById('adjustment-choice').options].some(o=>o.value==='roll_deg')"))
+            self.click_summary('#precision-controls > summary')
+            self.wait("[...document.getElementById('adjustment-choice').options].some(o=>o.value==='roll_deg')",5)
+            self.press('Cancel')
 
     def test_edit_invalidates_power_feedback_before_a_delayed_placement_reply(self):
         self.open('easy-bulb')

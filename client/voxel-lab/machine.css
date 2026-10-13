@@ -299,6 +299,7 @@ body.on-sandbox main{display:none}
 .ls-card strong{font-size:16px}
 .ls-card .stars{font-size:20px;letter-spacing:3px;color:#ffd34d}
 .ls-card .task-count{font-size:14px;font-weight:600;color:#e1edf6}
+.ls-card .level-time-estimate{font-size:12px;color:#b9cbd6}
 .ls-card .teaches{font-size:13px;color:#b9cbd6}
 .ls-card .status{font-size:13px;color:#9fdcff}
 .ls-list li.won .ls-card{border-color:#5fe08f}

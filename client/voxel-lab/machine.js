@@ -786,8 +786,11 @@ function solarLiftGraph(){
 }
 function updateSolarLiftGuide(){
   const box=$('solar-lift-guide'),bearing=$('sun-bearing'),g=solarLiftGraph();
-  box.hidden=!g || document.body.matches('.on-levels,.on-sandbox');bearing.hidden=box.hidden;
+  box.hidden=!g || document.body.matches('.on-levels,.on-sandbox');
+  bearing.hidden=document.body.matches('.on-levels,.on-sandbox')||!(machine?.sun?.irradiance_w_m2>0)||
+    !(machine.solar_panels?.length||level?.tray?.some(t=>t.piece==='solar'));
   view.classList.toggle('has-sun-guide',!bearing.hidden);
+  if(!bearing.hidden)updateSunBearing();
   if(box.hidden)return;
   box.classList.toggle('has-ghost',Boolean(ghost));
   const pending=!playing&&(flowPending||ghost&&!ghost.answered);
@@ -803,6 +806,9 @@ function updateSolarLiftGuide(){
   $('solar-out-connect').disabled=playing||powerBusy||Boolean(ghost)||!g.output||g.direct;
   $('solar-out-connect').setAttribute('aria-pressed',String(Boolean(g.output&&pickedPowerPort===g.output.name)));
   $('solar-in-connect').disabled=playing||powerBusy||Boolean(ghost)||!g.input||!g.output||g.direct||pickedPowerPort!==g.output.name;
+}
+function updateSunBearing(){
+  const bearing=$('sun-bearing');
   // Screen bearing from the declared sunlight vector and camera axes, even
   // when the distant sun disc is outside the view. It does not aim the panel.
   const el=machine.sun.elevation_deg*Math.PI/180,az=machine.sun.azimuth_deg*Math.PI/180;
@@ -811,7 +817,7 @@ function updateSolarLiftGuide(){
   const up=direction.dot(new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,1));
   const behind=direction.dot(new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,2))>0;
   $('sun-arrow').style.transform=`rotate(${Math.atan2(right,up)*180/Math.PI}deg)`;
-  setText('sun-side',behind?'behind view':'');
+  $('sun-side').textContent=behind?'behind view':'';
   bearing.setAttribute('aria-label',`Sun direction${behind?', behind view':''}; elevation ${machine.sun.elevation_deg} degrees`);
 }
 async function connectFromSolarGuide(kind){
@@ -2593,11 +2599,14 @@ function renderGhostBar() {
   const head = Object.assign(document.createElement('p'), {className: 'head',
     textContent: ghost.rewireKey?`Rewire ${selectedName}`:looking ? `View mode · ${selectedName}` : `Adjust ${selectedName}`});
   // Where it stands is the arrows' and the drag's; the menu changes the rest.
-  const knobs = trayItem(ghost.p.piece).knobs, allKeys = Object.keys(knobs).filter(k => k !== 'x_m' && k !== 'z_m' && !(ghost.p.attachment_version===2&&knobs[k].scene_attach) && pieceKnobVisible(ghost.p,k));
+  const primary=trayItem(ghost.p.piece).primary_knobs;
+  const knobs = trayItem(ghost.p.piece).knobs, allKeys = Object.keys(knobs).filter(k =>
+    ((!['x_m','z_m'].includes(k))||primary?.includes(k)) && !(ghost.p.attachment_version===2&&knobs[k].scene_attach) && pieceKnobVisible(ghost.p,k));
   // Endpoints are chosen on the objects. Their selectors stay in Precision
   // controls; ordinary cable editing exposes thickness/length instead.
   const connecting=['wire','power_cable'].includes(ghost.p.piece);
-  const keys=connecting?allKeys.filter(k=>!knobs[k].terminal&&!knobs[k].power_port):allKeys;
+  const available=connecting?allKeys.filter(k=>!knobs[k].terminal&&!knobs[k].power_port):allKeys;
+  const keys=primary&&!precisionOpen?primary.filter(k=>available.includes(k)):available;
   if(!keys.length)keys.push(allKeys[0]);
   if (!keys.includes(ghost.card)) ghost.card = keys[0];
   const chips = Object.assign(document.createElement('div'), {className: 'adjustment-picker'});
@@ -2681,6 +2690,8 @@ function renderGhostBar() {
   },{disabled:terminalBusy||powerBusy}),throwAway);
   const precision = document.createElement('details'); precision.id='precision-controls';
   precision.open=precisionOpen;
+  ghost.advancedOpen=precisionOpen;
+  precision.addEventListener('toggle',()=>{if(ghost&&primary&&precision.isConnected&&ghost.advancedOpen!==precision.open){ghost.advancedOpen=precision.open;renderGhostBar();}});
   precision.append(Object.assign(document.createElement('summary'),{textContent:'Precision controls'}),$('move-pad'),$('edit-guide-label'),ghostItem(),
     Object.assign(document.createElement('p'),{id:'ghost-cost',className:'legend'}));
   const fields=Object.assign(document.createElement('div'),{className:'ghost-fields'});

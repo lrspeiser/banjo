@@ -20,6 +20,10 @@ Windows, built and tested on Linux in CI, and not tested on macOS.
 
 **Eight chain-reaction levels, twenty-three piece lessons and three advanced electronics activities.**
 Every card shows its task count and stars; Level details reveals energy records.
+The 34 levels follow the [audited onboarding order](docs/level-onboarding-audit.md),
+with estimated player-time ranges on each card. These ranges are based on blind
+LLM probes and interface review, not a timed human study. Lesson controls put
+the relevant adjustments first; Precision controls restores the full menu.
 The game shares Controls / Level (or Design) / Help tabs on desktop and phone,
 with Run/Pause/Reset kept beside the 3D view, even when the controls are
 collapsed. Each level shows its name and a one-line task. **Undo / Redo**
@@ -60,20 +64,20 @@ lessons mark their collection channel or river current before a piece is added.
 **Fill the receiver** has a waiting box: collect 3 L within 5 seconds by
 increasing the source's initially slow tap. The meter counts retained water
 and shows the live time remaining.
-The one-mirror lesson **Bounce to the target** comes immediately before
+The one-mirror lesson **Bounce to the target** comes before
 **Bounce the beam**. The eight original chain-reaction challenges, with their
 current menu numbers, are:
 
 | Level | What makes it work |
 |---|---|
-| 1. Mind the gap | a plank, cut to length, for a ball to roll across |
-| 2. Cut it down | a knife on a pendulum that cuts a rope |
-| 3. Knock it off | aim a cannon, draw both firing leads, then drag its physical trigger |
-| 4. Up she goes | a steam engine whose piston rises |
-| 5. Chain reaction | a ball presses the seesaw's visible contact switch; the wired battery heats the cannon's igniter (Inspect switch shows the contacts) |
-| 7. Bounce the beam | two mirrors that bounce a laser round a wall onto a cord |
-| 8. Catch the sun | move a solar panel out of a broad wall's shadow, aim at the low sun and draw its power cable to the winch |
-| 9. Lift with less | a counterweight on a block and tackle |
+| 8. Mind the gap | a plank, cut to length, for a ball to roll across |
+| 26. Cut it down | a knife on a pendulum that cuts a rope |
+| 31. Knock it off | aim a cannon, draw both firing leads, then drag its physical trigger |
+| 14. Up she goes | a steam engine whose piston rises |
+| 27. Chain reaction | a ball presses the seesaw's visible contact switch; the wired battery heats the cannon's igniter (Inspect switch shows the contacts) |
+| 32. Bounce the beam | two mirrors that bounce a laser round a wall onto a cord |
+| 33. Catch the sun | move a solar panel out of a broad wall's shadow, aim at the low sun and draw its power cable to the winch |
+| 30. Lift with less | a counterweight on a block and tackle |
 
 A win is scored by energy: what it takes to make your pieces (from their mass
 and material) plus what the machine used while it ran. Win on par or less for
