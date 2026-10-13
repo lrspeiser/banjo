@@ -8,6 +8,7 @@ import sqlite3
 import threading
 import time
 import urllib.request
+import urllib.error
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -34,6 +35,8 @@ class Reports:
         with self.connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, payload TEXT NOT NULL, '
                        'created REAL NOT NULL, sent_url TEXT, attempts INTEGER NOT NULL DEFAULT 0, retry_at REAL NOT NULL DEFAULT 0)')
+            if 'last_error' not in [row[1] for row in db.execute('PRAGMA table_info(reports)')]:
+                db.execute('ALTER TABLE reports ADD COLUMN last_error TEXT')
 
     @contextmanager
     def connect(self):
@@ -53,7 +56,8 @@ class Reports:
     def summary(self):
         with self.connect() as db:
             pending = db.execute('SELECT COUNT(*) FROM reports WHERE sent_url IS NULL').fetchone()[0]
-        return dict(configured=bool(self.key), pending=pending)
+            error = db.execute('SELECT last_error FROM reports WHERE sent_url IS NULL AND last_error IS NOT NULL ORDER BY created DESC LIMIT 1').fetchone()
+        return dict(configured=bool(self.key), pending=pending, last_error=error[0] if error else None)
 
     def submit(self, report_id, note):
         report_id = str(uuid.UUID(report_id))
@@ -80,9 +84,17 @@ class Reports:
         try:
             with urllib.request.urlopen(request, timeout=8) as response:
                 result = json.loads(response.read(1024*1024))
-            if not isinstance(result, dict) or result.get('errors') or not isinstance(result.get('data'), dict):
+            if isinstance(result, dict) and result.get('errors'):
+                # Classify failures without exposing provider messages, variables
+                # or credentials in the public operational checkpoint.
+                codes = {(error.get('extensions') or {}).get('code') for error in result['errors'] if isinstance(error, dict)}
+                known = sorted(codes & {'AUTHENTICATION_ERROR', 'FORBIDDEN', 'UNAUTHENTICATED', 'RATELIMITED', 'GRAPHQL_VALIDATION_FAILED', 'INPUT_ERROR'})
+                raise LinearUnavailable('Linear rejected the request' + (' (' + ', '.join(known) + ')' if known else ''))
+            if not isinstance(result, dict) or not isinstance(result.get('data'), dict):
                 raise LinearUnavailable('Linear rejected the request')
             return result['data']
+        except urllib.error.HTTPError as error:
+            raise LinearUnavailable('Linear HTTP ' + str(error.code)) from error
         except (OSError, ValueError, TypeError) as error:
             raise LinearUnavailable('Linear delivery is unavailable') from error
 
@@ -156,11 +168,12 @@ class Reports:
                 try:
                     url = self.deliver(identifier, json.loads(payload), attempts)
                     with self.connect() as db:
-                        db.execute('UPDATE reports SET sent_url=? WHERE id=?', (url, identifier))
-                except (LinearUnavailable, ValueError, TypeError, KeyError):
+                        db.execute('UPDATE reports SET sent_url=?,last_error=NULL WHERE id=?', (url, identifier))
+                except (LinearUnavailable, ValueError, TypeError, KeyError) as error:
+                    reason = str(error) if isinstance(error, LinearUnavailable) else 'Linear response could not be validated'
                     with self.connect() as db:
-                        db.execute('UPDATE reports SET attempts=attempts+1,retry_at=? WHERE id=?',
-                                   (time.time()+min(3600, 60*2**min(attempts, 6)), identifier))
+                        db.execute('UPDATE reports SET attempts=attempts+1,retry_at=?,last_error=? WHERE id=?',
+                                   (time.time()+min(3600, 60*2**min(attempts, 6)), reason, identifier))
         finally:
             self.delivery_lock.release()
 

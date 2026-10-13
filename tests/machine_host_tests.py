@@ -34,6 +34,23 @@ class Configuration(unittest.TestCase):
 
 
 class BugReports(unittest.TestCase):
+    def test_delivery_diagnostics_preserve_old_outbox_and_exclude_provider_secrets(self):
+        import bug_reports
+        import sqlite3
+        import urllib.error
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'reports.sqlite3'
+            with sqlite3.connect(path) as db:
+                db.execute('CREATE TABLE reports (id TEXT PRIMARY KEY,payload TEXT NOT NULL,created REAL NOT NULL,sent_url TEXT,attempts INTEGER NOT NULL DEFAULT 0,retry_at REAL NOT NULL DEFAULT 0)')
+            db.close()
+            store=bug_reports.Reports(path,'test-only-key')
+            with patch('bug_reports.urllib.request.urlopen',side_effect=urllib.error.HTTPError(bug_reports.API_URL,401,'secret-provider-message',None,None)):
+                result=store.submit(str(uuid.uuid4()),dict(text='A test report',level='easy-cut'))
+            self.assertEqual(result['delivery'],'pending')
+            self.assertEqual(store.summary()['last_error'],'Linear HTTP 401')
+            self.assertEqual(store.summary()['pending'],1)
+            self.assertNotIn('secret',json.dumps(store.summary()))
+
     def test_pending_reports_survive_restart_and_timeout_recovery_does_not_duplicate_linear_issue(self):
         import bug_reports
         with tempfile.TemporaryDirectory() as folder:

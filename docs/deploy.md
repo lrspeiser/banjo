@@ -228,7 +228,9 @@ limits allow 10 submissions per visitor per hour and 500 globally per day;
 the outbox accepts at most 5,000 records and 60 KB per record. It does not
 add independent backups or automatically prune reports.
 
-`/api/checkpoint` includes `bug_reporting.configured` and the pending count.
+`/api/checkpoint` includes `bug_reporting.configured`, the pending count and a sanitized
+`last_error` for pending delivery. It never exposes the provider's raw error
+messages or credentials. Existing outboxes migrate without clearing reports.
 Configured means a credential exists, not that Linear accepted it. Verify
 one report's confirmed issue URL and project after configuring the key.
 Automated tests use a simulated Linear service; real delivery still requires

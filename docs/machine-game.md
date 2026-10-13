@@ -8,8 +8,12 @@ by the native engine. New challenge and general Pull are removed from player
 controls; older seeded links, native physical switches and internal force tests
 remain supported. Level and exported Sandbox share links use https://banjo.is.
 
-Reports are durably saved before Linear delivery. A server credential is still
+Reports are durably saved before Linear delivery. A server credential is
 required for real delivery; without it, players see an explicit pending status.
+The first deployed verification report was saved but remained pending with a
+configured credential. Operational checkpoints now retain a sanitized failure
+category; outbox migration and HTTP-authentication failures have regressions.
+Confirmed delivery still requires resolving that live failure.
 The 17 host tests passed, including restart retention and simulated recovery of
 an issue created before its response was lost. Eight focused browser tests passed
 in 30.4 s across desktop, portrait and landscape: merged Help, canonical sharing,
