@@ -1395,6 +1395,40 @@ struct LiveWorld::Impl {
         double work_j{};
     };
     std::vector<Pull> pulls;
+    struct Airflow { std::string name; Vec3 center, size, velocity; };
+    std::vector<Airflow> airflows;
+    std::vector<Pull> air_loads;
+    void prepareAirflow() {
+        for (std::size_t i=0; i<described.size(); ++i) {
+            const auto &body=described[i];
+            if(body.anchored || !inWorld(i) || (body.shape!="box" && body.shape!="sphere")) continue;
+            const auto pose=world->snapshot(body_of[i]);
+            Vec3 force{};
+            for(const auto &air:airflows) {
+                const Vec3 offset=pose.center_of_mass_world_m-air.center;
+                if(std::abs(offset.x)>air.size.x*.5 || std::abs(offset.y)>air.size.y*.5 ||
+                   std::abs(offset.z)>air.size.z*.5) continue;
+                const Vec3 relative=air.velocity-pose.linear_velocity_m_s;
+                const double speed=length(relative);
+                if(speed<1e-9) continue;
+                const Quat initial=shapeTurn(i);
+                const Vec3 unit=(1.0/speed)*relative;
+                const Vec3 local{dot(unit,pose.orientation_world.rotate(initial.rotate({1,0,0}))),
+                                 dot(unit,pose.orientation_world.rotate(initial.rotate({0,1,0}))),
+                                 dot(unit,pose.orientation_world.rotate(initial.rotate({0,0,1})))};
+                const auto &d=body.dimensions_m;
+                const double area=body.shape=="sphere" ? 3.14159265358979323846*d.x*d.x*.25 :
+                    std::abs(local.x)*d.y*d.z+std::abs(local.y)*d.x*d.z+std::abs(local.z)*d.x*d.y;
+                const double cd=body.shape=="sphere" ? .47 : 1.05;
+                force=force+(.5*1.225*cd*area*speed)*relative;
+            }
+            auto found=std::find_if(air_loads.begin(),air_loads.end(),[&](const Pull &p){return p.body==body.name;});
+            if(found==air_loads.end()) { air_loads.push_back({body.name,{},{},{},pose.center_of_mass_world_m,0}); found=air_loads.end()-1; }
+            found->work_j+=dot(found->applied,pose.center_of_mass_world_m-found->last_world);
+            found->last_world=pose.center_of_mass_world_m; found->force=found->applied=force;
+            if(length(force)>0) { world->addForce(body_of[i],force,pose.center_of_mass_world_m); world->wake(body_of[i]); }
+        }
+    }
     void preparePulls() {
         for (Pull &p : pulls) {
             const auto found = index_of.find(p.body);
@@ -6479,6 +6513,10 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
 
     // ---- the rest of a saved world -------------------------------------------
     const nlohmann::json &doc = saved->doc;
+    for(const auto &a:doc.value("airflows",nlohmann::json::array()))
+        live->airflow(a.at("name").get<std::string>(),vecFrom(a.at("center")),vecFrom(a.at("size")),vecFrom(a.at("velocity")));
+    for(const auto &p:doc.value("air_loads",nlohmann::json::array()))
+        impl.air_loads.push_back({p.at("body").get<std::string>(),{},vecFrom(p.at("force")),vecFrom(p.at("applied")),vecFrom(p.at("last_world")),numberFrom(p.at("work_j"))});
     LiveRestore said;
     said.tier = carrying ? "carried" : "whole";
     said.saved_t_s = numberFrom(doc.at("t_s"));
@@ -8018,6 +8056,7 @@ void LiveWorld::step(double dt_s) {
     if (impl_->light_report.declared) impl_->heatFromLight(dt_s);
     if (!impl_->circuits.empty()) impl_->prepareCircuits(dt_s);
     impl_->prepareRatchets();
+    if (!impl_->airflows.empty()) impl_->prepareAirflow();
     if (!impl_->pulls.empty()) impl_->preparePulls();
     if (impl_->body_of.size() + impl_->native_players.size() + 8 <= 2000) {
         bool committed = false;
@@ -10178,6 +10217,32 @@ std::vector<LivePull> LiveWorld::pulls() const {
         out.push_back(said);
     }
     return out;
+}
+
+void LiveWorld::airflow(const std::string &name,const Vec3 &center,const Vec3 &size,const Vec3 &velocity) {
+    if(name.empty() || !finiteVec(center) || !finiteVec(size) || !finiteVec(velocity) ||
+       size.x<=0 || size.y<=0 || size.z<=0 || length(velocity)>30)
+        throw std::invalid_argument("airflow needs a name, finite box and velocity at most 30 m/s");
+    for(const auto &a:impl_->airflows) if(a.name!=name &&
+        std::abs(a.center.x-center.x)<(a.size.x+size.x)*.5 &&
+        std::abs(a.center.y-center.y)<(a.size.y+size.y)*.5 &&
+        std::abs(a.center.z-center.z)<(a.size.z+size.z)*.5)
+        throw std::invalid_argument("open-air fields cannot overlap");
+    for(auto &a:impl_->airflows) if(a.name==name) { a={name,center,size,velocity}; return; }
+    if(impl_->airflows.size()>=8) throw std::invalid_argument("at most eight open-air fields");
+    impl_->airflows.push_back({name,center,size,velocity});
+}
+
+std::vector<LivePull> LiveWorld::airflowLoads() const {
+    std::vector<LivePull> result;
+    for(const auto &p:impl_->air_loads) {
+        double work=p.work_j;
+        const auto found=impl_->index_of.find(p.body);
+        if(found!=impl_->index_of.end() && impl_->inWorld(found->second))
+            work+=dot(p.applied,impl_->world->snapshot(impl_->body_of[found->second]).center_of_mass_world_m-p.last_world);
+        result.push_back({p.body,p.force,p.last_world,work});
+    }
+    return result;
 }
 
 bool LiveWorld::rope(unsigned cord, const std::vector<std::string> &segments, const std::vector<unsigned> &links) {
@@ -19303,6 +19368,10 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
     }
 
     nlohmann::json doc;
+    doc["airflows"]=nlohmann::json::array();
+    for(const auto &a:I.airflows) doc["airflows"].push_back({{"name",a.name},{"center",savedVec(a.center)},{"size",savedVec(a.size)},{"velocity",savedVec(a.velocity)}});
+    doc["air_loads"]=nlohmann::json::array();
+    for(const auto &p:I.air_loads) doc["air_loads"].push_back({{"body",p.body},{"force",savedVec(p.force)},{"applied",savedVec(p.applied)},{"last_world",savedVec(p.last_world)},{"work_j",savedNumber(p.work_j)}});
     doc["format"] = std::any_of(I.joints.begin(),I.joints.end(),[](const auto &j) {
         return j.section_u_m > 0.0;
     }) ? kSectionWorldFormat : kWorldFormat;

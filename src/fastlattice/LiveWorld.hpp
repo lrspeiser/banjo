@@ -2045,6 +2045,12 @@ public:
     // segments are in the world.
     bool rope(unsigned cord, const std::vector<std::string> &segments, const std::vector<unsigned> &links);
     [[nodiscard]] std::vector<LivePull> pulls() const;
+    // Prescribed open-air field in an axis-aligned box. Cuboid projected area
+    // and sphere area determine drag; the external atmosphere takes the
+    // reaction. No pressure solve, shielding, lift or powered fan is implied.
+    void airflow(const std::string &name, const Vec3 &center_m, const Vec3 &size_m,
+                 const Vec3 &velocity_m_s);
+    [[nodiscard]] std::vector<LivePull> airflowLoads() const;
     // Take the pin out. What hung on it falls.
     void unhinge(unsigned joint);
 

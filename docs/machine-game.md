@@ -2,6 +2,32 @@
 
 October 12, 2026. Open `/play` to choose eight chain-reaction levels, twenty-three piece lessons and three advanced electronics activities. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+## More contact and spring mechanisms
+
+October 13: the Sandbox library has **Hinged door**, **Trapdoor**,
+**Pendulum**, **Spring trampoline**, **Flywheel**, **Loose block** and
+**Open airflow**. **Domino row** additionally offers oak/glass/iron and a
+first-domino lean. Lean is an initial orientation: gravity starts it; actual
+contacts pass the chain. Wide spacing breaks the chain. Existing challenge
+recipes and their goals are unchanged.
+
+| Piece | Controls and physical behavior |
+| --- | --- |
+| Hinged door | Width, height, initial opening, material and bearing resistance. Its leaf is a colliding body on a vertical pin. Contact, an ordinary test pull or airflow can turn it. |
+| Trapdoor | Flap length, mount height, material and bearing resistance. Gravity acts at its offset center of mass. More bearing resistance can hold it; there is no automatic latch release. |
+| Pendulum | Arm length, pivot height, initial swing angle, material and bearing resistance. One rigid weighted arm swings on a native hinge. |
+| Spring trampoline | Deck width, material, total spring stiffness and damping. Four visible native springs support a guided rigid deck, initially near unloaded static equilibrium. A falling ball compresses it and can rebound through contact. This is a spring platform, not a flexible cloth membrane. |
+| Flywheel | Radius, material and bearing resistance. A passive wheel on an axle stores kinetic energy. The example explicitly wires a finite battery and motor to that axle. |
+| Loose block | Three dimensions, material and center height. Independent blocks fall, collide, slide and stack; they are not anchored scenery. |
+| Open airflow | Speed, direction and field width. A pale boundary and six arrows show the prescribed field while editing and running. Native drag acts on boxes and spheres inside it. Readings lists air speed, force and signed external work. Overlapping fields are refused. |
+
+Try **Domino chain**, **Wind opens a door**, **Spring trampoline**,
+**Pendulum and blocks**, **Gravity trapdoor**, **Flywheel workbench** and
+**Stack loose blocks** in the ordinary Sandbox gallery. Each opens an editable
+design, with the same Undo, Reset and saved-version controls. No additional
+challenge levels are published in this pack. See [the mechanism catalogue,
+measurements and remaining work](mechanism-expansion.md).
+
 ## Pipes and scaffolding
 
 Sandbox has **straight pipe**, **pipe elbow**, **pipe reducer** and

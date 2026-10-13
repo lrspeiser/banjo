@@ -38,8 +38,9 @@ import sandbox_water_launch
 import sandbox_plumbing
 import sandbox_combinations
 import sandbox_variants
+import sandbox_motion
 
-SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations)
+SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations, sandbox_motion)
 EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel', 'easy-river-wheel',
               'easy-spring', 'easy-gears', 'easy-weight', 'easy-motor', 'easy-power', 'easy-switch',
               'easy-bulb', 'easy-loop', 'easy-water-receiver', 'easy-divert-water', 'easy-heat', 'easy-catapult',
@@ -101,7 +102,7 @@ def _with_free_knobs(level):
 
 def load_levels():
     levels = json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['levels']
-    menu = [level['id'] for level in levels] + EASY_ORDER + ['advanced-resistor','advanced-parallel','advanced-capacitor']
+    menu = [level['id'] for level in levels] + EASY_ORDER + ['advanced-resistor','advanced-parallel','advanced-capacitor'] + [l['id'] for l in sandbox_motion.EASY_LEVELS]
     # Learn one reflection before routing a beam through two mirrors.
     # Menu order changes no level declaration, ID, saved score or simulation.
     menu.remove('easy-mirror')
@@ -1345,6 +1346,7 @@ def ghost(level, placements, index, snapping=False, edit_key=None):
     if compiled.get('light'):
         reply['optical_setup'] = compiled['light']
     reply['solar_setup'] = compiled.get('solar_panels', [])
+    reply['airflows'] = compiled.get('airflows', [])
     if compiled.get('spouts'):
         reply['water_setup'] = compiled['spouts']
     # Draw the compiled terminals while placing a device, including its
@@ -1509,6 +1511,7 @@ def run_energy(compiled, readouts, t_s=0.0):
     # And a person's test pulls: the work they did on it (what pulled back on
     # them is theirs, not the machine's).
     pulled = sum(max(0.0, p.get('work_j') or 0.0) for p in (readouts or {}).get('pulls') or [])
+    pulled += sum(max(0.0,p.get('work_j') or 0.0) for p in (readouts or {}).get('airflow') or [])
     water = sum(max(0.0, source.get('source_energy_j') or 0.0)
                 for source in ((readouts or {}).get('pour') or {}).get('sources', []))
     return {'heat_j': round(heat,3), 'powder_j': round(powder,3), 'electric_j': round(drawn,3),

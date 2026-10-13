@@ -238,3 +238,12 @@ python scripts/film_machine.py --spec my-machine.json --seconds 3 --speed 0.25 -
 ```
 
 `--view` fixes the camera (azimuth and elevation in radians, distance in metres, and optionally the point looked at); `--focus` looks at one station.
+## October 13 mechanism expansion
+
+The [new contact/spring pack and mechanism catalogue](mechanism-expansion.md)
+adds doors, trapdoors, pendulums, a guided spring trampoline, flywheels,
+independent blocks and prescribed open-air drag. It does not close the
+remaining cable/contact, flexible membrane, fluid pressure, magnetic or
+phase-change gaps. Air drag uses explicit external work and atmosphere
+reaction; shielding, lift and powered fans are still unsupported.
+

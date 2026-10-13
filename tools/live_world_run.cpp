@@ -3138,6 +3138,15 @@ int main(int argc, char **argv) {
                     if (!world->rope(command.at("cord").get<unsigned>(),
                                      command.at("segments").get<std::vector<std::string>>(), links))
                         throw std::invalid_argument("a rope is a cord with a breaking tension, ties, and its segments");
+                } else if (op == "airflow") {
+                    world->airflow(command.at("name").get<std::string>(),readVec(command,"center_m"),
+                                   readVec(command,"size_m"),readVec(command,"velocity_m_s"));
+                } else if (op == "airflow_loads") {
+                    nlohmann::json list=nlohmann::json::array();
+                    for(const LivePull &p:world->airflowLoads())
+                        list.push_back({{"body",p.body},{"force_n",vec(p.force_n)},{"external_reaction_n",vec(-1.0*p.force_n)},{"work_j",p.work_j}});
+                    std::cout<<nlohmann::json{{"ok",true},{"loads",list}}.dump()<<std::endl;
+                    continue;
                 } else if (op == "pull") {
                     // A person testing a part: a force at a point of it, on
                     // until changed; a zero force lets go.

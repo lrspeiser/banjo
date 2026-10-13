@@ -138,7 +138,7 @@ def heading(yaw_deg, pitch_deg, roll_deg):
 # directions turn with it, a part's own turn comes after it. A gas region
 # that gives no axis grows up and vents down (ThermoWorld's defaults), so a
 # turned one is given them, turned.
-TURN_POINTS = ('at_m', 'at_b_m', 'over_a_m', 'over_b_m', 'centre_m', 'load_point_m', 'heel_m', 'tip_m')
+TURN_POINTS = ('at_m', 'at_b_m', 'over_a_m', 'over_b_m', 'centre_m', 'center_m', 'load_point_m', 'heel_m', 'tip_m')
 TURN_DIRECTIONS = ('axis', 'vent_axis', 'facing', 'direction', 'normal', 'velocity_m_s')
 GAS_DEFAULTS = {'axis': [0.0, 1.0, 0.0], 'vent_axis': [0.0, -1.0, 0.0]}
 
@@ -1974,6 +1974,22 @@ def compile_spec(spec, lenient=False):
         if any(v<=0 for v in size):problems.append('water region size must be positive')
         target=_num(region,'target_l','water region',problems,3,.001,1000)
         checked_water_regions.append(dict(title=str(region.get('title','Container'))[:80],at_m=at,size_m=size,target_l=target))
+    airflows=[]
+    for a in spec.get('airflows',[]) or []:
+        if not isinstance(a,dict): problems.append('airflow must be an object'); continue
+        row={'name':str(a.get('name',''))[:60],'in':a.get('in'),
+             'center_m':_vec(a.get('center_m'),3,'airflow center',problems),
+             'size_m':_vec(a.get('size_m'),3,'airflow size',problems),
+             'velocity_m_s':_vec(a.get('velocity_m_s'),3,'airflow velocity',problems)}
+        if not row['name'] or row['in'] not in names: problems.append('airflow needs a named source body')
+        if min(row['size_m'])<=0 or max(row['size_m'])>8: problems.append('airflow box sides must be positive and at most 8 m')
+        if math.hypot(*row['velocity_m_s'])>30: problems.append('air speed is at most 30 m/s')
+        airflows.append(row)
+    if len(airflows)>8 or len({a['name'] for a in airflows})!=len(airflows): problems.append('at most eight uniquely named airflows')
+    for i,a in enumerate(airflows):
+        for b in airflows[i+1:]:
+            if all(abs(a['center_m'][j]-b['center_m'][j])<(a['size_m'][j]+b['size_m'][j])/2 for j in range(3)):
+                problems.append(f'{a["name"]} and {b["name"]}: open-air fields cannot overlap')
     if problems and not lenient:
         raise MachineRefused(problems)
     return ({'problems': problems} if lenient else {}) | {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
@@ -1981,7 +1997,7 @@ def compile_spec(spec, lenient=False):
             'torches': torches, 'spouts': checked_spouts, 'stations': stations, 'cells': round(cells), 'notes': notes,
             'plasticity': bool(spec.get('plasticity', False)), 'sun': sun, 'solar_panels': solar_panels,
             'thermo': {key: rows for key, rows in thermo.items() if rows}, 'blades': checked_blades, 'ropes': ropes,
-            'light': light,'water_regions':checked_water_regions}
+            'light': light,'water_regions':checked_water_regions,'airflows':airflows}
 
 
 def scene_of(compiled):
@@ -2118,6 +2134,8 @@ def build_engine(exe, compiled, workdir):
     engine = Engine(exe, scene_of(compiled), compiled['cell_m'], workdir)
     joint_ids = {}
     try:
+        for a in compiled.get('airflows',[]):
+            engine.op(op='airflow',**{k:a[k] for k in ('name','center_m','size_m','velocity_m_s')})
         # Gears couple hinges, so they go after every hinge is made.
         for j in sorted(compiled['joints'], key=lambda j: j['kind'] == 'gear'):
             if j['kind'] == 'gear':
@@ -2567,6 +2585,8 @@ class MachineSession:
             out['pulls'] = [{'body': p['body'], 'force_n': p['force_n'], 'work_j': _round(p['work_j'], 3)}
                             for p in self.engine.op(op='pulls').get('pulls', [])]
         out['test_pulled'] = self._test_pulled
+        if self.compiled.get('airflows'):
+            out['airflow']=self.engine.op(op='airflow_loads').get('loads',[])
         circuits = []
         native_circuits = []
         if self.circuit_ids:
@@ -3199,7 +3219,7 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                    'closest_approach': [c for i, c in sorted(getattr(session, 'closest', {}).items()) if i not in done],
                    'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]],
                    # What went in, as it stood at the end: heat, chemistry, batteries.
-                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits', 'electrical', 'pour', 'water_regions', 'pulls', 'test_pulled')
+                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits', 'electrical', 'pour', 'water_regions', 'pulls', 'airflow', 'test_pulled')
                                 if (session.readouts or {}).get(k) is not None}}
             if track:
                 out['paths'] = {name: {'points': points, 'turn_wxyz': session.trail_turn.get(name)}

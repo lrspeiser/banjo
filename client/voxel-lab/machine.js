@@ -59,6 +59,21 @@ const target = new THREE.Vector3(1, 0.4, 0), goal = target.clone();
 let azimuth = -0.55, elevation = 0.42, distance = 6.5;
 
 let spec = null, machine = null, session = null, world = {seq: 0, t: 0, bodies: new Map()};
+const airflowGroup=new THREE.Group(); scene.add(airflowGroup);
+function drawAirflows(fields=machine?.airflows||[]){
+  for(const child of [...airflowGroup.children]){airflowGroup.remove(child);child.traverse(o=>{o.geometry?.dispose();if(o.material)o.material.dispose();});}
+  for(const air of fields){
+    const center=new THREE.Vector3(...air.center_m),size=new THREE.Vector3(...air.size_m);
+    const box=new THREE.Box3(center.clone().sub(size.clone().multiplyScalar(.5)),center.clone().add(size.clone().multiplyScalar(.5)));
+    const outline=new THREE.Box3Helper(box,0x75cddd);outline.material.transparent=true;outline.material.opacity=.25;airflowGroup.add(outline);
+    const velocity=new THREE.Vector3(...air.velocity_m_s);if(velocity.length()<.001)continue;
+    for(const y of [.3,.8,1.3]) for(const side of [-.25,.25]){
+      const at=center.clone();at.y=box.min.y+y;at.z+=side*size.z;
+      airflowGroup.add(new THREE.ArrowHelper(velocity.clone().normalize(),at,Math.min(.5,size.x*.3),0x75cddd,.1,.05));
+    }
+  }
+}
+window.machineAirflowState=()=>({fields:machine?.airflows||[],arrows:airflowGroup.children.filter(c=>c.type==='ArrowHelper').length,loads:readouts.airflow||[]});
 let playing = false, follow = true, readouts = {}, polling = 0, history = [], undo = [], lastFrame = null;
 let switchDragging = null, switchPullQueue = Promise.resolve(), switchTouchGesture=false, playPending=null;
 const meshes = new Map(), wires = [];
@@ -1487,6 +1502,9 @@ function renderReadings(frame) {
     pair(dl, j.name, `${(j.degrees || 0).toFixed(1)}°`);
   for (const j of (readouts.joints || []).filter(j => j.kind === 'spring'))
     pair(dl, j.name, `${(j.force_n || 0).toFixed(2)} N · ${(j.stored_j || 0).toFixed(3)} J stored · ${(j.rest_m || 0).toFixed(3)} m relaxed`);
+  for(const air of machine?.airflows||[])pair(dl,air.name,`${Math.hypot(...air.velocity_m_s).toFixed(1)} m/s · open-air field`);
+  for(const load of readouts.airflow||[])if(Math.hypot(...load.force_n)>.001)
+    pair(dl,`${load.body} · air drag`,`${Math.hypot(...load.force_n).toFixed(2)} N · ${load.work_j.toFixed(3)} J external work`);
   const pieces = [...world.bodies.keys()].filter(n => n.includes(' piece ')).length;
   if (pieces) pair(dl, 'Broken pieces', String(pieces));
   pair(dl, 'Calculation', `${frame.pace.compute_s.toFixed(1)} s of engine time, ${frame.pace.fracture_s.toFixed(1)} s of it breaking`);
@@ -1530,6 +1548,7 @@ async function build(next, start, request) {
     const opened = await api(request || {op: 'open', spec: next});
     if (mine !== polling) { api({op: 'close', session: opened.session}).catch(() => {}); return opened; }
     spec = request ? opened.machine : next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
+    drawAirflows();
     world = mergeFrame({seq: 0, t: 0, bodies: new Map()}, opened);
     electricalStartPoses.clear();
     for (const [name,body] of world.bodies) electricalStartPoses.set(name,
@@ -2328,6 +2347,7 @@ async function checkGhost(g) {
     g.optical_setup = r.optical_setup || null;
     g.water_setup = r.water_setup || [];
     g.solar_setup = r.solar_setup || [];
+    g.airflows=r.airflows||[];drawAirflows(g.airflows);
     syncPowerLabels();
     drawGhost(r.parts, r.fits);
     drawLensOutlines();
@@ -2417,7 +2437,7 @@ function pickUp(i) {
 function endGhost() {
   $('socket-choices').hidden=true;
   clearTimeout(solarTimer);solarTimer=null;solarWanted='';solarStamp='';solarResult=null;solarVersion++;solarPending=false;solarError='';
-  ghost = null; draggingGhost = null; pressedAt = null;
+  ghost = null; draggingGhost = null; pressedAt = null;drawAirflows();
   view.classList.remove('grabbing', 'grab');
   terminalStart = null; powerMessage('');
   clearGhostMeshes(); ghostGroup.position.set(0, 0, 0); drawPorts([]);
@@ -4146,7 +4166,7 @@ function bestStars(id) { return record(id).stars || 0; }
 const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
                     mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens', flipflop: 'flip-flop'};
 // A piece's name on its button: as the tray calls it, but a flip-flop has its hyphen.
-function pieceLabel(piece) { return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'ignition coil',power_cable:'power cable'})[piece] || piece; }
+function pieceLabel(piece) { return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({door:'hinged door',trampoline:'spring trampoline',wind:'open airflow',loose_block:'loose block',flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'ignition coil',power_cable:'power cable'})[piece] || piece; }
 function toolsOf(player) {
   if (!player.tools) {
     player.tools = {};
@@ -4213,6 +4233,13 @@ const PIECE_INFO = {
   funnel: ['routes', 'Gather marbles into one outlet.'],
   block: ['structure', 'A post, wall, step, or stop to support your build.'],
   dominoes: ['motion', 'A row of dominoes to topple in a chain.'],
+  door: ['motion', 'A real door on a vertical hinge. Push it with contact or open airflow; adjust hinge resistance.'],
+  trapdoor: ['motion', 'A horizontal hinged flap that can fall under its own weight or carry a load.'],
+  pendulum: ['motion', 'Raise a weighted arm, then let gravity swing it into another piece.'],
+  trampoline: ['motion', 'A guided deck on four springs. A falling object compresses it and can rebound.'],
+  flywheel: ['motion', 'A passive wheel stores rotation. Add a motor or drive it through contact.'],
+  wind: ['power', 'A prescribed open-air field. Choose air speed and direction to push boxes or spheres.'],
+  loose_block: ['structure', 'An independent material block that can fall, slide, collide or support a stack.'],
   lever: ['motion', 'A seesaw on a pin to transfer a push.'],
   plank: ['structure', 'A loose board to bridge a gap or join to another part.'],
   ramp: ['routes', 'A slope with a ball to start a rolling chain reaction.'],

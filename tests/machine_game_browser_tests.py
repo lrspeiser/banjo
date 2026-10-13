@@ -2797,7 +2797,7 @@ class Puzzles(unittest.TestCase):
             self.page.send('Input.dispatchKeyEvent', {'type':'keyUp','key':'Tab','code':'Tab','windowsVirtualKeyCode':9})
             self.assertTrue(self.js("Boolean(document.activeElement.closest('#recent-changes'))"))
             # Older notes are reachable inside the dialog, not under the game.
-            self.js("document.querySelector('.changes-body').scrollTop=10000")
+            self.js("(()=>{const notes=document.querySelector('.changes-body');notes.scrollTop=notes.scrollHeight;})()")
             self.assertTrue(self.js("(() => {const p=document.querySelector('.changes-body'),e=[...p.querySelectorAll('article')].at(-1),r=e.getBoundingClientRect(),b=p.getBoundingClientRect();return r.top>=b.top&&r.bottom<=b.bottom+1;})()"))
             ops = [json.loads(e['params']['request']['postData'])['op'] for e in self.page.events
                    if e['method']=='Network.requestWillBeSent' and e['params']['request']['url'].endswith('/api/machine') and 'postData' in e['params']['request']]
@@ -4024,6 +4024,42 @@ class Puzzles(unittest.TestCase):
         g = self.ghost()
         self.assertEqual(g['index'], 0, 'the plank set down is a ghost again')
         self.wait(READY, 60)
+
+
+    def test_new_motion_examples_and_airflow_controls_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('free',width,height,phone=width!=1280)
+                self.js("document.getElementById('sandbox-open').click()")
+                self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
+                self.press('Start from Wind opens a door');self.wait(READY,30)
+                self.assertEqual(len(self.js('machineAirflowState().fields')),1)
+                self.assertEqual(self.js('machineAirflowState().arrows'),6)
+                self.press('Add a pendulum');self.assertTrue(self.ghost()['fits']);self.press('Cancel')
+                self.slide('Adjust a piece','1')
+                self.ghost();self.slide('Air direction of your wind 2',0)
+                self.assertTrue(self.ghost()['fits'])
+                self.press('Set it down');self.wait(READY,30)
+                self.assertAlmostEqual(self.js('machineAirflowState().fields[0].velocity_m_s[0]'),12)
+                self.click_visible('Undo');self.wait(READY,30)
+                self.assertAlmostEqual(self.js('machineAirflowState().fields[0].velocity_m_s[2]'),-12)
+                before=self.js("machineBodies()['your door 1 leaf']")
+                self.click_visible('Run it')
+                self.wait("machineAirflowState().loads.some(l=>l.work_j>0.01)",30)
+                self.wait(f"Math.abs(machineBodies()['your door 1 leaf'][2]-{before[2]})>.1",30)
+                self.click_visible('Pause')
+                after=self.js("machineBodies()['your door 1 leaf']")
+                self.assertGreater(abs(after[2]-before[2]),.01)
+                self.click_visible('Reset');self.wait(READY,30)
+                self.assertAlmostEqual(self.js("machineBodies()['your door 1 leaf'][2]"),before[2],places=3)
+                self.press('Save version');self.wait('machineDesign().versions.length>0',10)
+                self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,30)
+                self.assertEqual(len(self.js('machineAirflowState().fields')),1)
+                self.js("document.getElementById('sandbox-open').click()");self.press('Start from Spring trampoline');self.wait(READY,30)
+                self.assertIn('your trampoline 1 deck',self.js('Object.keys(machineBodies())'))
+                self.click_visible('Run it')
+                self.wait("machineBodies()['your marble 2'][1]<.8",30)
+                self.click_visible('Pause')
 
 
 if __name__ == '__main__':

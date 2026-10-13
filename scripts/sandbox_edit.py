@@ -122,4 +122,4 @@ def ghost(base, object_id, delta):
             allowed=max(.001,depth(initial[a['name']],initial[b['name']]))
             if current>allowed+1e-6:problems.append(f'{a["name"]} goes {current*1000:.0f} mm into {b["name"]}; move it')
     return dict(base=next_base, parts=[p for p in compiled['parts'] if p['name'] in selected['parts']],
-                fits=not problems, problems=problems, cost=0, sun=[], selected=selected)
+                fits=not problems, problems=problems, cost=0, sun=[], selected=selected,airflows=compiled.get('airflows',[]))
