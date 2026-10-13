@@ -62,6 +62,7 @@ let spec = null, machine = null, session = null, world = {seq: 0, t: 0, bodies: 
 let playing = false, follow = true, readouts = {}, polling = 0, history = [], undo = [], lastFrame = null;
 let switchDragging = null, switchPullQueue = Promise.resolve(), switchTouchGesture=false, playPending=null;
 const meshes = new Map(), wires = [];
+function disposeBodyGeometry(body){body.traverse(object=>object.geometry?.dispose());}
 const materials = new Map();
 
 function material(hex, kind) {
@@ -113,7 +114,6 @@ function makeMesh(b) {
       mesh.add(piece);
     }
     mesh.material = mesh.children[0].material;
-    mesh.geometry = {dispose() { mesh.traverse(c => { if (c !== mesh && c.geometry) c.geometry.dispose(); }); }};
   }
   else if (b.shape === 'hull' && b.cells_local_m && b.cells_local_m.length) {
     const cell = machine ? machine.cell_m : .02;
@@ -134,12 +134,12 @@ function place(mesh, b) {
 }
 
 function syncMeshes(changed) {
-  for (const [name, mesh] of meshes) if (!world.bodies.has(name)) { scene.remove(mesh); mesh.geometry.dispose(); meshes.delete(name); }
+  for (const [name, mesh] of meshes) if (!world.bodies.has(name)) { scene.remove(mesh); disposeBodyGeometry(mesh); meshes.delete(name); }
   for (const b of changed) {
     let mesh = meshes.get(b.name);
     const cells = b.cells_local_m ? b.cells_local_m.length : 0;
     if (mesh && (mesh.userData.revision !== b.revision || mesh.userData.cells !== cells)) {
-      scene.remove(mesh); mesh.geometry.dispose(); meshes.delete(b.name); mesh = null;
+      scene.remove(mesh); disposeBodyGeometry(mesh); meshes.delete(b.name); mesh = null;
     }
     if (!mesh) { mesh = makeMesh(b); meshes.set(b.name, mesh); }
     place(mesh, b);
@@ -1524,7 +1524,7 @@ async function build(next, start, request) {
   session = null; playing = false;
   $('power-labels').replaceChildren(); powerLabels.clear(); powerMessage('');
   $('clock').textContent = 'Building in the engine…';
-  for (const [, mesh] of meshes) { scene.remove(mesh); mesh.geometry.dispose(); }
+  for (const [, mesh] of meshes) { scene.remove(mesh); disposeBodyGeometry(mesh); }
   meshes.clear(); $('events').replaceChildren();
   try {
     const opened = await api(request || {op: 'open', spec: next});
@@ -2484,6 +2484,7 @@ function renderGhostBar() {
   $('focus-piece').hidden = !ghost;
   ghost && (ghost.cardInput = null);
   ghost && (ghost.gaugeButtons = null);
+  ghost && (ghost.choiceButtons = null);
   $('piece-edit-row').hidden = Boolean(ghost) || (!placements.length && !(level?.free && sandboxObjects.length));
   if (!ghost) {
     for(const id of ['flow-preview','phone-tools','move-pad','preview-legend','instrument-panel','edit-guide-label']) if($(id)) $('control-panel').append($(id));
@@ -2532,6 +2533,16 @@ function renderGhostBar() {
         const choice=button(label,()=>{ghost.p.size=value;showGhostKnobs();askGhost();},{ariaLabel:`${label} wire`});
         choice.dataset.gauge=value;choice.setAttribute('aria-pressed',String(ghost.p.size===value));
         row.append(choice);return choice;
+      });
+    }
+    if(ghost.p.piece==='gear'){
+      row.classList.add('gear-choices');select.hidden=true;
+      ghost.choiceButtons=rule.choices.map(value=>{
+        const label=key==='teeth'?`${value} teeth · ≈${Math.round((value+1.4)*ghost.p.module_m*100)} cm`:
+          key==='module_m'?`${Math.round(value*1000)} mm teeth`:String(value);
+        const choice=button(label,()=>{ghost.p[key]=value;renderGhostBar();askGhost();},{ariaLabel:label});
+        choice.dataset.value=String(value);choice.dataset.key=key;
+        choice.setAttribute('aria-pressed',String(ghost.p[key]===value));row.append(choice);return choice;
       });
     }
     row.append(select);
@@ -2639,6 +2650,7 @@ function showGhostState() {
 function showGhostKnobs() {
   if (!ghost) return;
   for(const b of ghost.gaugeButtons||[])b.setAttribute('aria-pressed',String(b.dataset.gauge===ghost.p.size));
+  for(const b of ghost.choiceButtons||[])b.setAttribute('aria-pressed',String(b.dataset.value===String(ghost.p[b.dataset.key])));
   showGridSnap();
   const knobs = trayItem(ghost.p.piece).knobs;
   const value = document.querySelector('#ghost-bar .knob-value');

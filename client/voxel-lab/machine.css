@@ -488,6 +488,9 @@ body.panel-collapsed #scene-mode{bottom:108px}
 #sandbox-environment output{display:block;margin-top:8px}
 #sandbox-environment button{min-width:44px;min-height:44px;background:#28556a;border:1px solid #7199ae;border-radius:8px;color:#edf7ff;padding:8px 12px}
 #control-panel:has(.ghost-bar:not([hidden]))>#sandbox-environment{display:none}
+.gear-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.gear-choices button{min-height:44px;white-space:normal}
+.gear-choices button[aria-pressed=true]{border-color:#9fdcff;background:#32657f}
 .gallery-add{min-height:44px}
 .design-preview{display:block;width:100%;height:96px;background:#11242e;border-radius:8px;overflow:hidden}
 .design-preview text{fill:#b9cbd6;font:14px system-ui}

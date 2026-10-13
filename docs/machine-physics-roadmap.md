@@ -8,6 +8,18 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 12 editor/routing update: prepared Sandbox kits and hinged assemblies
+can be moved or removed, with their dependent declarations updated. Gear
+controls show radial size and tangential tooth-alignment guides. The motor's
+terminals now sit on the fixed housing's rear face, so the axle lesson's drawn
+floor leads clear its rotor. Cables still have an electrical graph/resistance
+model and a drawing route, not mass, collision, tension, flexible insulation,
+connector retention or mechanical tear/disconnection. Native contact turns
+gears during a run. A fitting ghost does not apply forces to its neighbours:
+contact-driven seating while dragging still needs a hand/kinematic placement
+model and external-work/reaction accounting. Neither behaviour is represented
+by a decorative animation. These remain explicit engineering work.
+
 October 12 plumbing update: straight hollow pipes, elbows, reducers and
 grounded scaffolding are placeable. Native rigid contact moves marbles; native
 falling-water contact routes finite gravity-fed parcels through the same

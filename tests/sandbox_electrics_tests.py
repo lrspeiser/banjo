@@ -270,6 +270,21 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_motor_rear_terminals_keep_the_nudged_direction_lesson(self):
+        level=mg.level_by_id('easy-motor')
+        compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+        motor=next(d for d in compiled['electrical']['devices'] if d['kind']=='motor')
+        mount=next(p for p in compiled['parts'] if p['name']==motor['part'])
+        rotor=next(p for p in compiled['parts'] if p['name']=='your motor 1 rotor')
+        for at in motor['terminals'].values():
+            self.assertAlmostEqual(at[2],mount['at_m'][2]-mount['size_m'][2]/2-.005)
+            self.assertGreater(rotor['at_m'][2]-rotor['size_m'][2]/2-at[2],.25)
+        with tempfile.TemporaryDirectory() as logs:
+            report=mg.trial(level,level['solution'],ENGINE,Path(logs),runs=3)
+            self.assertEqual(report['worked'],3,report)
+            wrong=mg.trial(level,level['wrong'],ENGINE,Path(logs),runs=3)
+            self.assertEqual(wrong['worked'],0,wrong)
+
     def test_sunlight_placement_sample_uses_native_geometry_without_advancing_or_charging(self):
         with tempfile.TemporaryDirectory() as logs:
             for identity in ('sun','easy-solar'):

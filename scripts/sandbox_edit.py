@@ -108,5 +108,18 @@ def edit(base, object_id, delta=None, remove=False):
 
 def ghost(base, object_id, delta):
     next_base, selected, compiled = edit(base, object_id, delta)
+    initial = {p['name']:p for p in mw.compile_spec(base)['parts']}
+    selected_names=set(selected['parts']);problems=[]
+    def depth(a,b):
+        return max(mw.overlap_depth(sa,sb) for sa in mw.solids_of(a) for sb in mw.solids_of(b))
+    for a in compiled['parts']:
+        if a['name'] not in selected_names:continue
+        for b in compiled['parts']:
+            if b['name'] in selected_names:continue
+            current=depth(a,b)
+            # Preserve an authored bolted overlap; moving farther into an
+            # unrelated body is refused rather than creating penetration.
+            allowed=max(.001,depth(initial[a['name']],initial[b['name']]))
+            if current>allowed+1e-6:problems.append(f'{a["name"]} goes {current*1000:.0f} mm into {b["name"]}; move it')
     return dict(base=next_base, parts=[p for p in compiled['parts'] if p['name'] in selected['parts']],
-                fits=True, problems=[], cost=0, sun=[], selected=selected)
+                fits=not problems, problems=problems, cost=0, sun=[], selected=selected)

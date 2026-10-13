@@ -243,7 +243,9 @@ def motor(name, k, ctx):
         # torque reacts on that hinge's real mount, never a prescribed speed.
         pass
     return {'parts': parts, 'joints': joints, 'electrical': {'devices': [{
-        'name': name, 'kind': 'motor', 'part': part, 'terminals': terminal_rows(name, x, .2, z),
+        # Fixed rear housing connections, clear of the rotor's swept volume.
+        # The cable model is electrical; it does not supply mechanical snagging.
+        'name': name, 'kind': 'motor', 'part': part, 'terminals': terminal_rows(name, x, .2, z-.395),
         'hinge': hinge, 'stall_torque_n_m': 2, 'no_load_rad_s': 8,
         'command': k.get('throttle', 1) * (1 if k.get('direction', 'forward') == 'forward' else -1),
         'brake_torque_n_m': 0, 'gear_ratio': 1}]}}

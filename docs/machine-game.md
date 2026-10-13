@@ -1483,6 +1483,34 @@ See [contact measurements](sandbox-electrics-measured.md#current-driven-display-
 
 ## Editing prepared Sandbox objects and adding a river — October 12
 
+Follow-up verification: the motor lesson's terminals are on the rear face of
+its fixed housing, 5 mm beyond that face and over 25 cm behind the rotor's
+rear face. Rendered floor routes clear the rotor's full swept bounds on
+desktop and both phone layouts. The unchanged forward goal succeeds in all
+three nudged native runs; reverse fails all three. This fixes geometry of the
+connections, not mechanical cable collision or connector tear-out.
+
+Gear size and tooth-size controls use labelled buttons rather than a dropdown.
+Size buttons show tooth count and approximate outside diameter, including
+tooth depth. Four radial arrows identify the changed radius; tooth alignment
+shows two tangential arrows, and axle height marks its pivot. The outlines
+use the compiled wheel's centre and declared dimensions. They do not move
+neighbouring gears. Contact still rotates gears during native runs; force-based
+seating while placing a ghost is unfinished. Prepared-object ghosts now reject
+increased penetration into unrelated base bodies while preserving authored
+bolted overlaps.
+
+The follow-up also repairs compound-body bounds: renderer groups no longer
+pretend to have a BufferGeometry just to expose a disposal method. Bounds,
+picking and edge-label protection can measure gears and other compound parts;
+removal/rebuild disposes each child geometry. The initial motor/gear browser
+batch failed opening the gear scene with `geometry.getAttribute`; after this
+fix the four affected cases pass in 28.139 s. Four additional checks pass in
+61.793 s, covering prepared-object edits, compound pipe layouts, wire labels
+and selected-control guides. Native gear contact/free-wiring checks pass in
+2.766 s, and three declaration/guide regressions in 13.265 s. No goal, physics
+law, conservation tolerance or native binary changed.
+
 The gallery has one list: your recently edited designs first, then every
 example. The headings do not filter or hide cards. **Add New Design** stays
 in the header.

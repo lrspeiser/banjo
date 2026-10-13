@@ -427,6 +427,15 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(state['p']['direction'],'reverse')
                 self.slide('direction of your motor 1','forward');self.ghost()
                 self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                cables=self.js('machineWiringState().wires')
+                self.assertEqual(len(cables),2)
+                # The swept rotor box is y=.1246..5554, z=±.06.
+                # Read the actual rendered polylines: no segment may enter it.
+                for cable in cables:
+                    for a,b in zip(cable['route'],cable['route'][1:]):
+                        for i in range(101):
+                            p=[a[k]+(b[k]-a[k])*i/100 for k in range(3)]
+                            self.assertTrue(p[1]<.12 or abs(p[2])>.08 or abs(p[0])>.24,(cable,p))
 
     def test_bulb_shrinks_to_match_visible_supply_limit_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
@@ -705,7 +714,13 @@ class Puzzles(unittest.TestCase):
                 self.assertIn('target gear wheel',self.js('Object.keys(window.machineBodies())'))
                 self.press('Add a gear');self.ghost()
                 self.assertEqual(self.ghost()['p']['teeth'],18)
-                self.slide('Its Teeth / size',12);self.ghost()
+                self.assertTrue(self.js("document.querySelector('[aria-label=\"Its Teeth / size\"]').hidden"))
+                self.click_visible('12 teeth · ≈32 cm');self.ghost()
+                self.assertEqual(len(self.ghost()['editGuide']['arrows']),4)
+                self.assertEqual(self.ghost()['editGuide']['focus'],['your gear 1 wheel'])
+                self.click_visible('Change its Tooth alignment');self.ghost()
+                self.assertEqual(len(self.ghost()['editGuide']['arrows']),2)
+                self.click_visible('Change its Teeth / size');self.ghost()
                 self.wait('window.machineCamera().settled',30)
                 self.drag_ghost_to(0,0,touch=width!=1280)
                 self.assertTrue(self.ghost()['fits'],self.ghost())

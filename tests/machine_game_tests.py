@@ -48,6 +48,15 @@ EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):
+    def test_sandbox_ghost_refuses_moving_a_prepared_body_into_another(self):
+        import sandbox_edit
+        base={'schema':mw.SCHEMA,'parts':[{'name':name,'shape':'box','material':'oak',
+            'at_m':[x,.1,0],'size_m':[.2,.2,.2],'fixed':True} for name,x in [('one',0),('two',.3)]]}
+        self.assertTrue(sandbox_edit.ghost(base,'part:one',[0,0,0])['fits'])
+        bad=sandbox_edit.ghost(base,'part:one',[.2,0,0])
+        self.assertFalse(bad['fits']);self.assertIn('into two',bad['problems'][0])
+        self.assertEqual(base['parts'][0]['at_m'],[0,.1,0])
+
     def test_sandbox_apparatus_moves_and_removes_without_dangling_base_references(self):
         import sandbox_edit
         count=0

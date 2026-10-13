@@ -222,6 +222,7 @@ def requested_level(data):
             if wheel:
                 wheel['knobs']['radius_m']['default']=.65
                 wheel['knobs']['side']['default']='off'
+                wheel['start_at_defaults']=True
     return level
 
 
@@ -1219,6 +1220,21 @@ def editing_guide(level, checked, index, compiled, key):
     if not mine:
         return None
     guide = {'key': key, 'label': rule.get('label', key), 'arrows': [], 'focus': [], 'marker': None}
+    if p['piece']=='gear' and key in ('teeth','module_m','phase_deg','height_m'):
+        wheel=next(q for q in mine if q['name']==name+' wheel')
+        centre=wheel['at_m'];radius=p['teeth']*p['module_m']/2+.7*p['module_m']
+        guide['focus']=[wheel['name']]
+        if key in ('teeth','module_m'):
+            for dx,dy in ((1,0),(-1,0),(0,1),(0,-1)):
+                guide['arrows'].append({'at':[centre[0]+dx*radius,centre[1]+dy*radius,centre[2]],'direction':[dx,dy,0]})
+        elif key=='phase_deg':
+            guide['marker']=list(centre)
+            guide['arrows']=[{'at':[centre[0]+radius,centre[1],centre[2]],'direction':[0,1,0]},
+                             {'at':[centre[0]-radius,centre[1],centre[2]],'direction':[0,-1,0]}]
+        else:
+            guide['marker']=list(centre);guide['arrows']=[{'at':list(centre),'direction':[0,1,0]}]
+            guide['focus'] += [q['name'] for q in mine if q['name'].endswith(' post')]
+        return guide
     if key == 'end':
         # A track's physical board, including its compiled turn and elevation.
         board = next((q for q in mine if q['name'] == name), mine[0])
