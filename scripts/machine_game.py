@@ -32,6 +32,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 import machine_world as mw
+import machine_alignment
 import sandbox_mechanics
 import sandbox_electrics
 import sandbox_water_launch
@@ -1312,7 +1313,7 @@ def editing_guide(level, checked, index, compiled, key):
     return guide
 
 
-def ghost(level, placements, index, snapping=False, edit_key=None):
+def ghost(level, placements, index, snapping=False, edit_key=None, nearby=False, snap_hold=None):
     """Piece `index` of `placements` as it would be built -- its parts where
     they would be, set down on what is there, turned as it is turned -- and
     why it could not be built there, for the see-through piece the page shows
@@ -1367,6 +1368,55 @@ def ghost(level, placements, index, snapping=False, edit_key=None):
             reply['wire_preview'] = [power_ports[cable['a']], power_ports[cable['b']]]
     if isinstance(edit_key, str):
         reply['edit_guide'] = editing_guide(level, checked, index, compiled, edit_key)
+    all_ports = ports(checked, compiled)
+    if nearby:
+        reply['alignment'] = machine_alignment.guide(compiled, {p['name'] for p in mine},
+            [q for q in all_ports if q['piece']==index], prefer_exit=edit_key in ('drop_m','run_m','length_m'))
+        # The current UI uses a local 3D capture band. The older broad port
+        # joining API remains available for saved workflows and explicit joins.
+        choices = []
+        p = checked[index]
+        if p['piece']=='marble' and mine:
+            choices.extend(machine_alignment.seat_candidates(p, mine[0], compiled))
+            for q in all_ports:
+                if q['piece']==index or not (q['port']=='top end' or q.get('bore_radius_m') is not None and q['kind']=='in'):
+                    continue
+                knobs = _seat(p,q)
+                if knobs:
+                    target = [knobs['x_m'],knobs.get('height_m',mine[0]['at_m'][1]),knobs['z_m']]
+                    choices.append(dict(distance=math.dist(mine[0]['at_m'],target),knobs=knobs,to=q['name'],port=q['port']))
+        old = snap(level, checked, index, compiled) if level.get('free') else None
+        if old and p['piece'] != 'marble':
+            # Measure the suggested *translation*, including height. Being
+            # aligned in a screenshot alone cannot attract a distant object.
+            delta = [old['knobs'].get(k,p.get(k,0))-p.get(k,0) for k in ('x_m','z_m')]
+            heights = ('height_m','top_height_m','pivot_height_m','bore_height_m')
+            delta += [old['knobs'][k]-p.get(k,0) for k in heights if k in old['knobs']]
+            choices.append(dict(old, distance=math.hypot(*delta)))
+        eligible = [q for q in choices if q['distance'] <= (machine_alignment.RELEASE_M
+                    if snap_hold==q['to']+'|'+q['port'] else machine_alignment.CAPTURE_M)]
+        if eligible:
+            found = min(eligible, key=lambda q:q['distance'])
+            tray = next(t for t in level['tray'] if t['piece']==p['piece'])
+            knobs = {k:v for k,v in found['knobs'].items() if k in tray['knobs']}
+            # Refuse a candidate that collides, goes out of range or ignores
+            # a rail/obstruction above the proposed support surface.
+            proposed = list(placements); proposed[index] = dict(proposed[index], **knobs)
+            try:
+                _, _, _, fitted = _assemble(level, proposed, lenient=True)
+                bad = fitted['problems']+clashes_of(fitted)
+                ball = next((q for q in fitted['parts'] if q['name']==name), None)
+                unsupported = p['piece']=='marble' and ball and found.get('at') and abs(ball['at_m'][1]-found['at'][1])>.015
+                if not unsupported and not any(about_it(problem) for problem in bad):
+                    moved = any(abs(v-p.get(k,0))>.006 if isinstance(v,(int,float)) else v!=p.get(k) for k,v in knobs.items())
+                    if snapping or not moved:
+                        reply['snap'] = dict(found, knobs=knobs, moved=moved, nearby=True)
+                        if found.get('at'):
+                            reply['alignment']['targets'].append(machine_alignment.feature(found['to'],'landing center',found['at']))
+            except (ValueError, LevelRefused, mw.MachineRefused):
+                pass
+        reply['ports'] = [q for q in all_ports if q['piece']!=index]
+        return reply
     if level.get('free'):
         # Where the other pieces connect, and where this one would.
         reply['ports'] = [q for q in ports(checked, compiled) if q['piece'] != index]

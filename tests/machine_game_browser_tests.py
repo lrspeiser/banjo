@@ -3461,6 +3461,9 @@ class Puzzles(unittest.TestCase):
         self.ghost()
         # Start out of the way, then drag the actual ghost to the far end.
         self.slide('top end x of your track 2', -0.5)
+        # Nearby-object capture requires proximity in height as well as the
+        # ground plane; set the inlet at the outlet height before dragging.
+        self.slide('top end height of your track 2',far[1])
         self.ghost()
         self.drag_ghost_to(far[0],far[2])
         self.wait("(() => { const g = window.machineGhostState(); return g && g.answered && !g.busy && "
@@ -3642,6 +3645,63 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js("document.getElementById('mode-view').getAttribute('aria-pressed')"),'true')
                 self.click_visible('Move'); self.press('Cancel')
                 self.assertTrue(self.js("document.getElementById('scene-mode').hidden"))
+
+    def test_marble_object_snap_and_working_guides_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('free',width,height,phone=width!=1280)
+                self.js('window.confirm=()=>true');self.press('Clear the table');self.wait(READY,60)
+                self.press('Add a track');self.ghost()
+                for label,value in [('top end x',0),('across (z, m)',0),('top end height',.6),('length',.6),('drop',.1)]:
+                    self.slide(label+' of your track 1',value)
+                self.ghost();self.press('Set it down');self.wait(READY,60)
+                self.press('Add a marble');self.ghost()
+                if not self.js('machineWorkingGuide().objects_enabled'):self.click_visible('Snap to objects')
+                self.slide('x of your marble 2',.3);self.slide('across (z, m) of your marble 2',.16);self.ghost()
+                self.js('machineView({azimuth:0,elevation:1.1,distance:2.5,at:[.3,.4,0]})');self.wait('machineCamera().settled',20)
+                snapped=self.drag_ghost_to(.3,.045,touch=width!=1280)['p']
+                self.assertAlmostEqual(snapped['z_m'],0,delta=.006)
+                self.assertIn('your track 1',self.js('machineWorkingGuide().joined'))
+                self.wait("machineWorkingGuide().match.axes.length>0",5)
+                self.assertTrue(self.js("document.getElementById('grid-snap-status').textContent.includes('Snapped')"))
+                released=self.drag_ghost_to(.3,.17,touch=width!=1280)['p']
+                self.assertGreater(released['z_m'],.15);self.assertIsNone(self.js('machineWorkingGuide().joined'))
+                self.click_visible('Snap to objects')
+                before=self.ghost()['p'];self.assertEqual(before,released,'toggle does not move the ball')
+                free=self.drag_ghost_to(.3,.045,touch=width!=1280)['p']
+                self.assertGreater(free['z_m'],.03,'disabled object snapping leaves grid-only placement')
+                self.click_visible('Snap to objects')
+                self.drag_ghost_to(.31,.02,touch=width!=1280)
+                self.press('Set it down');self.wait(READY,60)
+                self.click_visible('Run it')
+                self.wait("machineBodies()['your marble 2'][0]>.5",30)
+                self.assertGreater(self.js("machineBodies()['your marble 2'][0]"),.5,'native gravity/contact moves the snapped ball along the track')
+                self.click_visible('Pause')
+                self.open('easy-mirror',width,height,phone=width!=1280);self.press('Add a mirror');self.ghost()
+                self.assertEqual(self.js('machineWorkingGuide().primary.label'),'mirror center')
+                self.slide('Mirror angle of your mirror 1',30);self.ghost()
+                direction=self.js('machineWorkingGuide().primary.dir')
+                self.assertAlmostEqual(abs(direction[0]),3**.5/2,places=5)
+                self.assertAlmostEqual(abs(direction[2]),.5,places=5)
+                self.assertTrue(self.js("(()=>{const b=document.getElementById('object-snap'),r=b.getBoundingClientRect();return r.height>=44&&r.right<=innerWidth;})()"))
+                self.press('Cancel')
+
+        # Prepared marbles in examples use the same scene assistance, while
+        # their exact base declaration and Undo history remain authoritative.
+        draft=dict(name='Prepared lane snapping',placements=[],base={'schema':'banjo.machine.v1','cell_m':.02,'parts':[
+            {'name':'board','shape':'box','material':'oak','size_m':[.6,.02,.12],'at_m':[0,.3,0],'fixed':True},
+            {'name':'ball','shape':'sphere','material':'glass','size_m':[.04]*3,'at_m':[.1,.34,.045],'fixed':False}]})
+        packed=base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
+        self.page.send('Page.navigate',{'url':self.base+'/machine#build=j'+packed});self.wait(READY,60)
+        index=self.js("machineEditableObjects().find(o=>o.name==='ball').index")
+        self.click_piece(index);self.ghost()
+        self.js('machineView({azimuth:0,elevation:1.1,distance:1.5,at:[0,.3,0]})');self.wait('machineCamera().settled',20)
+        self.drag_ghost_to(.1,.035,touch=True)
+        self.assertIn('board',self.js('machineWorkingGuide().joined'))
+        self.click_visible('Set it down');self.wait(READY,60)
+        self.assertAlmostEqual(self.js("machineDesign().draft.base.parts.find(p=>p.name==='ball').at_m[2]"),0,delta=.006)
+        self.click_visible('Undo');self.wait(READY,60)
+        self.assertAlmostEqual(self.js("machineDesign().draft.base.parts.find(p=>p.name==='ball').at_m[2]"),.045,places=5)
 
     def test_fine_ground_grid_gently_snaps_dragging_but_precision_stays_free(self):
         for width,height in ((1280,860),(390,844),(844,390),(320,568)):
@@ -4213,4 +4273,13 @@ class Puzzles(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    shard=next((a for a in sys.argv[1:] if a.startswith('--shard=')),None)
+    if shard:
+        index,count=map(int,shard.split('=',1)[1].split('/'))
+        if not 0<=index<count<=16:raise SystemExit('shard must be INDEX/COUNT with 0 <= INDEX < COUNT <= 16')
+        tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Puzzles))
+        suite=unittest.TestSuite(test for i,test in enumerate(tests) if i%count==index)
+        print(f'Browser batch {index+1}/{count}: {suite.countTestCases()} of {len(tests)} cases',flush=True)
+        result=unittest.TextTestRunner(verbosity=2).run(suite)
+        raise SystemExit(0 if result.wasSuccessful() else 1)
     unittest.main(verbosity=2)

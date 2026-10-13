@@ -106,10 +106,31 @@ def edit(base, object_id, delta=None, remove=False):
     return original, selected, result
 
 
-def ghost(base, object_id, delta):
+def ghost(base, object_id, delta, snapping=False, snap_hold=None, nearby=False):
+    import machine_alignment
     next_base, selected, compiled = edit(base, object_id, delta)
     initial = {p['name']:p for p in mw.compile_spec(base)['parts']}
     selected_names=set(selected['parts']);problems=[]
+    suggestion=None
+    # A prepared loose sphere gets the same local lane seating as a tray
+    # marble. Translating a whole multi-body assembly is never auto-snapped.
+    selected_parts=[p for p in compiled['parts'] if p['name'] in selected_names]
+    if nearby and len(selected_parts)==1 and selected_parts[0]['shape']=='sphere' and not selected_parts[0]['fixed']:
+        ball=selected_parts[0]
+        p=dict(diameter_m=ball['size_m'][0],placement='at height')
+        choices=machine_alignment.seat_candidates(p,ball,compiled)
+        eligible=[q for q in choices if q['distance'] <= (machine_alignment.RELEASE_M
+            if snap_hold==q['to']+'|'+q['port'] else machine_alignment.CAPTURE_M)]
+        if eligible:
+            candidate=min(eligible,key=lambda q:q['distance'])
+            change=[candidate['at'][i]-ball['at_m'][i] for i in range(3)]
+            shifted=[delta[i]+change[i] for i in range(3)]
+            # Reuse the ordinary overlap/ground checks at the proposed pose.
+            fitted=ghost(base,object_id,shifted) if math.hypot(*change)>.006 else None
+            if not fitted or fitted['fits']:
+                moved=math.hypot(*change)>.006
+                if snapping or not moved:
+                    suggestion=dict(candidate,knobs=dict(x_m=candidate['at'][0],z_m=candidate['at'][2],height_m=shifted[1]),moved=moved,nearby=True)
     def depth(a,b):
         return max(mw.overlap_depth(sa,sb) for sa in mw.solids_of(a) for sb in mw.solids_of(b))
     for a in compiled['parts']:
@@ -122,4 +143,5 @@ def ghost(base, object_id, delta):
             allowed=max(.001,depth(initial[a['name']],initial[b['name']]))
             if current>allowed+1e-6:problems.append(f'{a["name"]} goes {current*1000:.0f} mm into {b["name"]}; move it')
     return dict(base=next_base, parts=[p for p in compiled['parts'] if p['name'] in selected['parts']],
-                fits=not problems, problems=problems, cost=0, sun=[], selected=selected,airflows=compiled.get('airflows',[]))
+                fits=not problems, problems=problems, cost=0, sun=[], selected=selected,airflows=compiled.get('airflows',[]),
+                alignment=machine_alignment.guide(compiled, selected_names),**({'snap':suggestion} if suggestion else {}))

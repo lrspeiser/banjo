@@ -1,5 +1,5 @@
 import * as THREE from '/three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, thermalCells} from '/machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells} from '/machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from '/anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from '/profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from '/level-library.mjs';
@@ -54,6 +54,8 @@ grid.add(fineGrid,majorGrid);
 scene.add(grid);
 let gridSnapEnabled=true;
 try {gridSnapEnabled=localStorage.getItem('banjo-grid-snap')!=='off';} catch { /* private window */ }
+let objectSnapEnabled=true;
+try {objectSnapEnabled=localStorage.getItem('banjo-object-snap')!=='off';} catch { /* private window */ }
 const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 200);
 const target = new THREE.Vector3(1, 0.4, 0), goal = target.clone();
 let azimuth = -0.55, elevation = 0.42, distance = 6.5;
@@ -2379,17 +2381,20 @@ async function checkGhost(g) {
   g.busy = true; g.again = false; g.snapNext = false;
   try {
     const r = await api(g.baseObject ? {op:'sandbox_object',level:'free',base:g.originalBase,object:g.baseObject.id,
-      delta:[g.p.x_m-g.baseObject.at_m[0],g.p.height_m,g.p.z_m-g.baseObject.at_m[2]],placements} : {op: 'level_ghost', level: level.id, ...sandboxRequest(), placements: ghostPlacements(), index: g.index, snap: snapping, edit_key: g.card});
+      delta:[g.p.x_m-g.baseObject.at_m[0],g.p.height_m,g.p.z_m-g.baseObject.at_m[2]],placements,
+      snap:snapping&&objectSnapEnabled,nearby_snap:true,snap_hold:g.objectLock} : {op: 'level_ghost', level: level.id, ...sandboxRequest(), placements: ghostPlacements(), index: g.index,
+      snap: snapping && objectSnapEnabled, nearby_snap:true, snap_hold:g.objectLock, edit_key: g.card});
     if (ghost !== g) return;
     if(g.baseObject)g.base=r.base;
     // Moved by hand near where it connects to another piece: put where the
     // two connect, and asked about again there.
-    if (r.snap && r.snap.moved && !g.again) {
+    if (r.snap && r.snap.moved && snapping && objectSnapEnabled && !g.again) {
       const moved = Object.entries(r.snap.knobs).map(([k, v]) => setKnob(g.p, k, v)).some(Boolean);
       if (moved) { followGhost(); showGhostKnobs(); g.again = true; }
     }
     Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], energy: r.energy, drawnAt: sent, answered: true,
-                      joined: r.snap ? `${r.snap.port} of ${r.snap.to}` : null});
+                      joined: objectSnapEnabled && r.snap ? `${r.snap.port} of ${r.snap.to}` : null,
+                      objectLock:r.snap && objectSnapEnabled ? r.snap.to+'|'+r.snap.port : null, alignment:r.alignment||null});
     g.electrical = r.electrical_preview || null;
     g.batteryPreview=r.battery_preview||[];g.proposedParts=r.parts||[];
     g.optical_setup = r.optical_setup || null;
@@ -2684,10 +2689,16 @@ function renderGhostBar() {
     gridSnapEnabled=!gridSnapEnabled;if (ghost) ghost.gridLocks=null;
     try {localStorage.setItem('banjo-grid-snap',gridSnapEnabled?'on':'off');} catch { /* private window */ }
     snapButton.setAttribute('aria-pressed',String(gridSnapEnabled));showGridSnap();
-  },{id:'grid-snap',title:'Gently align to nearby 5 cm grid lines while dragging. Exact controls stay free. Pieces still join at their connectors.'});
+  },{id:'grid-snap',title:'Gently align to nearby 5 cm grid lines while dragging. Exact controls stay free. Snap to objects separately aligns nearby surfaces and connectors. Alt+drag bypasses both.'});
   snapButton.setAttribute('aria-pressed',String(gridSnapEnabled));
+  const objectButton=button('Snap to objects',()=>{
+    objectSnapEnabled=!objectSnapEnabled;if(ghost){ghost.objectLock=null;ghost.joined=null;}
+    try{localStorage.setItem('banjo-object-snap',objectSnapEnabled?'on':'off');}catch{/* private window */}
+    objectButton.setAttribute('aria-pressed',String(objectSnapEnabled));showGridSnap();
+  },{id:'object-snap',title:'Center a marble on a nearby board or join nearby track and pipe ends. Pull away to release; Alt+drag bypasses both snaps. Green guides show alignment, not a predicted win.'});
+  objectButton.setAttribute('aria-pressed',String(objectSnapEnabled));
   gridRow.hidden=!movableGhost()||!grid.visible;
-  gridRow.append(snapButton,Object.assign(document.createElement('output'),{id:'grid-snap-status',ariaLive:'polite'}));
+  gridRow.append(snapButton,objectButton,Object.assign(document.createElement('output'),{id:'grid-snap-status',ariaLive:'polite'}));
   const setting=Object.assign(document.createElement('output'),{id:'adjustment-feedback',className:'adjustment-feedback',ariaLive:'polite'});
   fields.append(head,chips,row,setting,state,gridRow,precision,$('instrument-panel'),$('preview-legend'),$('flow-preview'));
   if(ghost.p.piece==='ignition'&&ghost.p.attachment_version===2) {
@@ -3710,9 +3721,13 @@ function alignedGridAxes() {
 function showGridSnap() {
   const output=$('grid-snap-status');if (!output) return;
   const axes=alignedGridAxes();
-  output.textContent=!gridSnapEnabled?'Free placement':axes.length?`5 cm · ${axes.map(a=>a.toUpperCase()).join(' + ')} aligned`:'5 cm grid';
-  output.classList.toggle('aligned',axes.length>0);
+  const match=guideMatch?.direction||guideMatch?.matches?.[0],primary=ghost?.alignment?.primary;
+  const label=ghost?.joined && objectSnapEnabled ? `Snapped to ${ghost.joined}` : match ? `${match.axis?.toUpperCase()||'Facing'} aligned · ${match.part.replace(/^your /,'')} ${match.label}` : '';
+  output.textContent=[primary?.label, label || (!gridSnapEnabled?'Free placement':axes.length?`5 cm · ${axes.map(a=>a.toUpperCase()).join(' + ')} aligned`:'5 cm grid')].filter(Boolean).join(' · ');
+  output.title=primary?.kinematic?'The lowest point of the cutting edge’s hinge circle. Contact and energy can stop the knife before it reaches this point.':'Green means geometric alignment within 8 mm in 3D. It does not check obstructions, reflected rays or available energy.';
+  output.classList.toggle('aligned',axes.length>0||Boolean(match)||Boolean(ghost?.joined&&objectSnapEnabled));
 }
+window.machineWorkingGuide=()=>({primary:ghost?.alignment?.primary,match:guideMatch,objects_enabled:objectSnapEnabled,joined:ghost?.joined});
 window.machinePlacementGrid=()=>({enabled:gridSnapEnabled,step_m:PLACEMENT_GRID.step_m,
   major_step_m:PLACEMENT_GRID.major_step_m,visible:grid.visible,fine_opacity:fineGrid.material.opacity,
   fine_vertices:fineGrid.geometry.attributes.position.count,major_vertices:majorGrid.geometry.attributes.position.count,
@@ -3769,7 +3784,7 @@ renderer.domElement.addEventListener('pointermove', e => {
       z:knobs.z_m?draggingGhost.z+at.z-draggingGhost.from.z:undefined},{enabled:gridSnapEnabled&&grid.visible&&!e.altKey,previous:ghost.gridLocks||{}});
     const moved = [setKnob(ghost.p,'x_m',snapped.point.x),setKnob(ghost.p,'z_m',snapped.point.z)].some(Boolean);
     ghost.gridLocks=snapped.locks; showGridSnap();
-    if (moved) { ghost.snapNext = true; followGhost(); showGhostKnobs(); askGhost(); }
+    if (moved) { ghost.snapNext = objectSnapEnabled&&!e.altKey; if(e.altKey)ghost.objectLock=null;followGhost(); showGhostKnobs(); askGhost(); }
   } else if (!e.buttons) view.classList.toggle('grab', movableGhost() && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
 });
 renderer.domElement.addEventListener('pointerup', e => {
@@ -3821,6 +3836,16 @@ function guideBar(colour, opacity) {
 }
 const guideX = guideBar(0xff5c5c, .85), guideZ = guideBar(0x4d9dff, .85), guideY = guideBar(0x6fe08a, .9);
 const guideGroundX = guideBar(0xff5c5c, .4), guideGroundZ = guideBar(0x4d9dff, .4);
+const guideAim=guideBar(0xffcf59,.9);
+const guideAimHead=new THREE.Mesh(new THREE.ConeGeometry(1,1,12),new THREE.MeshBasicMaterial({color:0xffcf59}));
+guides.add(guideAimHead);
+const guideOrigin=new THREE.Mesh(new THREE.SphereGeometry(.012,12,8),new THREE.MeshBasicMaterial({color:0xffcf59}));
+guides.add(guideOrigin);
+const guideMatches=Array.from({length:8},()=>{
+  const dot=new THREE.Mesh(new THREE.SphereGeometry(.012,12,8),new THREE.MeshBasicMaterial({color:0x50ffb0,depthWrite:false}));
+  guides.add(dot);return dot;
+});
+let guideMatch=null;
 const gridSnapMarker=new THREE.Group();
 for (const axis of ['x','z']) {
   const points=axis==='x'?[new THREE.Vector3(0,0,-.08),new THREE.Vector3(0,0,.08)]
@@ -3841,11 +3866,16 @@ function updateGuides() {
     for (const line of gridSnapMarker.children) line.visible=axes.includes(line.userData.axis);
   }
   guides.visible = Boolean(ghost && ghostGroup.children.length);
-  if (!guides.visible) return;
+  if (!guides.visible) {guideMatch=null;return;}
   ghostBox.setFromObject(ghostGroup);
   if (ghostBox.isEmpty()) { guides.visible = false; return; }
-  const cx = (ghostBox.min.x + ghostBox.max.x) / 2, cz = (ghostBox.min.z + ghostBox.max.z) / 2;
-  const base = Math.max(.004, ghostBox.min.y), top = ghostBox.max.y + .4, far = 50;
+  const working=ghost.alignment?.primary;
+  const at=working?.at?.map((v,i)=>v+ghostGroup.position.getComponent(i));
+  const cx = at?.[0]??(ghostBox.min.x + ghostBox.max.x) / 2, cz = at?.[2]??(ghostBox.min.z + ghostBox.max.z) / 2;
+  const base = Math.max(.004, at?.[1]??ghostBox.min.y), top = Math.max(base+.4,ghostBox.max.y + .4), far = 50;
+  guideMatch=workingAlignment(working?{...working,at}:null,ghost.alignment?.targets||[]);
+  for(const [bar,axis,color] of [[guideX,'x',0xff5c5c],[guideY,'y',0x6fe08a],[guideZ,'z',0x4d9dff]])
+    bar.material.color.setHex(guideMatch.axes.includes(axis)?0x50ffb0:color);
   const t = Math.max(.004, .0025 * camera.position.distanceTo(new THREE.Vector3(cx, base, cz)));
   guideX.position.set(cx, base, cz); guideX.scale.set(far, t, t);
   guideZ.position.set(cx, base, cz); guideZ.scale.set(t, t, far);
@@ -3855,6 +3885,20 @@ function updateGuides() {
   guideGroundX.position.set(cx, .004, cz); guideGroundX.scale.set(far, .002, t);
   guideGroundZ.position.set(cx, .004, cz); guideGroundZ.scale.set(t, .002, far);
   guideFoot.position.set(cx, .005, cz);
+  guideOrigin.position.set(cx,base,cz);
+  const direction=working?.dir&&new THREE.Vector3(...working.dir);
+  guideAim.visible=guideAimHead.visible=Boolean(direction?.lengthSq()>1e-9);
+  if(guideAim.visible){
+    direction.normalize();const length=Math.min(1.2,guideMatch.direction?.along??.6),origin=new THREE.Vector3(cx,base,cz);
+    const rotation=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),direction);
+    guideAim.position.copy(origin).addScaledVector(direction,length/2);guideAim.quaternion.copy(rotation);guideAim.scale.set(t,length,t);
+    guideAimHead.position.copy(origin).addScaledVector(direction,length);guideAimHead.quaternion.copy(rotation);guideAimHead.scale.set(t*3,t*8,t*3);
+    guideAim.material.color.setHex(guideMatch.direction?0x50ffb0:0xffcf59);guideAimHead.material.color.copy(guideAim.material.color);
+  }
+  const unique=[...new Map(guideMatch.matches.map(q=>[q.part+'|'+q.label,q])).values()];
+  if(guideMatch.direction)unique.unshift(guideMatch.direction);
+  guideMatches.forEach((dot,i)=>{dot.visible=Boolean(unique[i]);if(unique[i])dot.position.set(...unique[i].at);});
+  showGridSnap();
 }
 // ---- testing a part: a pull ----------------------------------------------------
 // With Pull on, pressing a loose part and dragging pulls it that way -- the

@@ -48,6 +48,81 @@ EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):
+    def test_prepared_sphere_object_can_snap_without_moving_a_group_or_clipping(self):
+        import sandbox_edit
+        base={'schema':mw.SCHEMA,'cell_m':.02,'parts':[
+            {'name':'board','shape':'box','material':'oak','size_m':[.6,.02,.12],'at_m':[0,.3,0],'fixed':True},
+            {'name':'ball','shape':'sphere','material':'glass','size_m':[.04]*3,'at_m':[.1,.34,.045],'fixed':False}]}
+        before=copy.deepcopy(base)
+        reply=sandbox_edit.ghost(base,'part:ball',[0,0,0],snapping=True,nearby=True)
+        self.assertEqual(base,before);self.assertIn('snap',reply)
+        self.assertAlmostEqual(reply['snap']['knobs']['z_m'],0)
+        self.assertNotIn('snap',sandbox_edit.ghost(base,'part:board',[0,0,0],snapping=True,nearby=True))
+        self.assertNotIn('snap',sandbox_edit.ghost(base,'part:ball',[0,.5,0],snapping=True,nearby=True))
+        # Seating on an inclined plane is stable, not a creeping translation
+        # from repeatedly adding the sphere's normal offset to its x position.
+        import machine_alignment as ma
+        board=copy.deepcopy(base['parts'][0]);board['turn_deg']=[0,0,-30]
+        compiled=mw.compile_spec(dict(base,parts=[board,base['parts'][1]]))
+        ball=compiled['parts'][1]
+        choices=ma.seat_candidates(dict(diameter_m=.04),ball,compiled)
+        self.assertTrue(choices)
+        at=min(choices,key=lambda q:q['distance'])['at']
+        ball=dict(ball,at_m=at)
+        again=ma.seat_candidates(dict(diameter_m=.04),ball,compiled)
+        self.assertAlmostEqual(min(again,key=lambda q:q['distance'])['distance'],0,places=8)
+
+    def test_working_guides_use_compiled_optics_and_the_knifes_edge_circle(self):
+        import machine_alignment as ma
+        for id,piece in [('easy-mirror','mirror'),('easy-lens','lens'),('easy-cut','knife')]:
+            level=mg.level_by_id(id)
+            placed=copy.deepcopy(level['solution'])
+            index=next(i for i,p in enumerate(placed) if p['piece']==piece)
+            before=copy.deepcopy(placed)
+            _,_,_,compiled=mg._assemble(level,placed,lenient=True)
+            row=mg.ghost(level,placed,index,nearby=True)['alignment']['primary']
+            self.assertEqual(placed,before,'guides never mutate declarations')
+            if piece=='mirror':
+                part=next(p for p in compiled['parts'] if p['name']==row['part'])
+                for a,b in zip(row['at'],part['at_m']):self.assertAlmostEqual(a,b,places=6)
+                self.assertEqual(row['dir'],mw._axes(part)[0])
+            elif piece=='lens':
+                lens=next(p for p in compiled['light']['lenses'] if p['on']==row['part'])
+                for a,b in zip(row['at'],lens['at_m']):self.assertAlmostEqual(a,b,places=6)
+            else:
+                blade=next(b for b in compiled['blades'] if b['part']==row['part'])
+                joint=next(j for j in compiled['joints'] if j['kind']=='hinge' and j['name'].startswith('your knife'))
+                edge=[(a+b)/2 for a,b in zip(blade['heel_m'],blade['tip_m'])]
+                self.assertTrue(row['kinematic']);self.assertLess(row['at'][1],edge[1])
+                self.assertAlmostEqual(math.dist(row['at'],joint['at_m']),math.dist(edge,joint['at_m']),places=5)
+
+    def test_nearby_marble_snap_centers_on_a_prepared_track_and_releases_in_3d(self):
+        free=mg.free_build()
+        free['machine']={'schema':mw.SCHEMA,'cell_m':.02,'ground':None,
+            'kits':[{'kit':'ramp','name':'prepared path','top_m':[0,.6,0],
+                'bottom_m':[.6,.5,0],'width_m':.12,'thickness_m':.02}]}
+        marble={'piece':'marble','x_m':.3,'z_m':.045,'placement':'on surface','diameter_m':.04}
+        before=copy.deepcopy(marble)
+        suggestion=mg.ghost(free,[marble],0,snapping=True,nearby=True)['snap']
+        self.assertEqual(marble,before)
+        self.assertAlmostEqual(suggestion['knobs']['z_m'],0,places=5)
+        self.assertIn('prepared path',suggestion['to'])
+        self.assertNotIn('snap',mg.ghost(free,[dict(marble,z_m=.16)],0,snapping=True,nearby=True))
+        airborne=dict(marble,placement='at height',height_m=1.8)
+        self.assertNotIn('snap',mg.ghost(free,[airborne],0,snapping=True,nearby=True),'same screen line is not proximity in 3D')
+        self.assertNotIn('snap',mg.ghost(free,[marble],0,snapping=False,nearby=True),'exact controls do not snap')
+        seated=dict(marble,**suggestion['knobs'])
+        self.assertFalse(mg.ghost(free,[seated],0,nearby=True)['snap']['moved'])
+        near_release=dict(marble,z_m=.085)
+        self.assertNotIn('snap',mg.ghost(free,[near_release],0,snapping=True,nearby=True))
+        hold=suggestion['to']+'|'+suggestion['port']
+        self.assertIn('snap',mg.ghost(free,[near_release],0,snapping=True,nearby=True,snap_hold=hold))
+        # A different solid over the landing surface must never be bypassed.
+        blocked=copy.deepcopy(free)
+        blocked['machine']['parts']=[{'name':'obstacle','shape':'box','material':'oak',
+            'at_m':[.3,.75,0],'size_m':[.12,.4,.08],'fixed':True}]
+        self.assertNotIn('snap',mg.ghost(blocked,[marble],0,snapping=True,nearby=True))
+
     def test_sandbox_ghost_refuses_moving_a_prepared_body_into_another(self):
         import sandbox_edit
         base={'schema':mw.SCHEMA,'parts':[{'name':name,'shape':'box','material':'oak',

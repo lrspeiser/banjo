@@ -126,8 +126,11 @@ class MechanicalSwitch(unittest.TestCase):
                     self.assertAlmostEqual(angle(state(engine)),0,delta=.001)
                     print('ROCKER ACTION',material,dt,'closed_rad',closed_angle,'pulls',engine.op(op='pulls')['pulls'])
 
-    def test_paddle_geometry_and_measured_threshold_are_unchanged(self):
-        fragment=e.switch('paddle',dict(mode='paddle',threshold_deg=5),{})
+    def test_retained_v1_paddle_geometry_and_measured_threshold_are_unchanged(self):
+        # The threshold paddle is the archived v1 apparatus. New paddles
+        # use the separate native metal-contact construction.
+        fragment=e.switch('paddle',dict(mode='paddle',threshold_deg=5,mechanism_version=1),
+                          {'tray':{'legacy_contacts':True}})
         self.assertEqual(len(fragment['parts']),2)
         self.assertEqual(fragment['parts'][1]['size_m'],[.36,.04,.16])
         self.assertEqual(fragment['joints'][0]['friction_n_m'],.002)

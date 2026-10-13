@@ -906,16 +906,17 @@ if(BANJO_BUILD_TESTS)
                     ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine;electrical")
                 # The same puzzles in Chrome: a piece's ghost moved, turned,
                 # set down and run, on a desktop and a phone.
-                add_test(NAME banjo_machine_game_browser_tests COMMAND ${CMAKE_COMMAND} -E env
-                    BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
-                    ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_game_browser_tests.py)
-                # The growing suite includes desktop and two phone viewports.
-                # Linux software-rendered Chrome hit the 600 s aggregate cap
-                # on f0c92476 and 27ba653d with passing tests still in progress.
-                # Individual waits, physical deadlines and assertions remain
-                # unchanged; give the whole suite time to finish.
-                set_tests_properties(banjo_machine_game_browser_tests PROPERTIES TIMEOUT 1200
-                    LABELS "native;world;machine;browser")
+                # Keep all cases but report bounded batches. The aggregate
+                # software-rendered Linux run exceeded 1200 s at e52b87ac;
+                # sharding retains every assertion, wait and physical deadline.
+                foreach(browser_shard RANGE 0 3)
+                    add_test(NAME banjo_machine_game_browser_tests_${browser_shard} COMMAND ${CMAKE_COMMAND} -E env
+                        BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
+                        ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_game_browser_tests.py
+                        --shard=${browser_shard}/4)
+                    set_tests_properties(banjo_machine_game_browser_tests_${browser_shard} PROPERTIES TIMEOUT 1200
+                        LABELS "native;world;machine;browser")
+                endforeach()
             endif()
             target_link_libraries(banjo_motor_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_motor_tests)

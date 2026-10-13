@@ -467,9 +467,9 @@ instead of drawing tiny lines across the entire distant ground.
 remembers the browser's preference. A real drag catches each x/z grid line
 within 8 mm and holds it until the pointer leaves a 12 mm release band. This
 small hysteresis avoids chatter; positions farther from a line move freely.
-**Alt+drag** temporarily bypasses ground snapping on a computer. A small gold
+**Alt+drag** temporarily bypasses ground and object snapping on a computer. A small gold
 ground mark and **X / Z aligned** feedback identify the placement point and
-aligned axes. Connector joining still takes precedence; a connector adjustment
+aligned axes. Nearby object/connector joining, when enabled, takes precedence; a connector adjustment
 clears grid feedback if it changes x/z. No ground snapping is applied where
 the flat grid is absent, or to wire/power-cable endpoints.
 
@@ -479,6 +479,54 @@ saved versions, and it never moves a simulated body. A tap, a drag below the
 existing 6 px threshold, camera gestures, and zoom with a stationary held piece
 retain their previous behavior. The precision-fields scroll area reserves
 8 px at its edges so revealed controls clear the Set down footer.
+
+October 13: **Snap to objects** is a separate remembered preference, enabled
+initially. A real drag can seat a tray marble on the center lane of a nearby
+compiled flat board or track, or seat an independently editable prepared
+loose sphere. Surface placement retains the compiler's ordinary support
+height; explicit-height/prepared spheres can adjust height to the nearby
+surface. Candidates need at least a diameter plus 10 mm of lane width, 5 mm
+end clearance, and an upward face normal with vertical component ≥0.65.
+Capture uses a full 3D distance of 80 mm; an existing match releases at 110 mm.
+An airborne ball far above a track does not teleport down. Ordinary overlap,
+ground and support-height checks reject blocked seats. Track/pipe connector
+translations use the same local capture band, including height. The old
+explicit joining API and authored recipes retain their wider search. Toggles,
+exact controls, camera movement and existing saved placements never relocate
+an object; Alt bypasses both capture systems. No magnet force is added to a run.
+
+XYZ guides pass through the selected working point: compiled mirror center
+and face normal, lens center/axis, panel collecting face, a track/pipe endpoint,
+a board top or a generic body center. Changing track length/drop selects the
+exit endpoint. A knife uses its declared edge and connected hinge to locate
+the lowest point of its edge circle, with a tangent in the initial gravity
+torque direction. This is reachable geometry, not an engine-predicted swing:
+contact, stops and energy may prevent reaching it. Its tooltip states that.
+Other compiled centers, flat surfaces and electrical terminals supply target
+points. A bright green axis requires both transverse coordinates within
+8 mm and a target within 5 m along it. Facing arrows require the same 3D
+perpendicular tolerance, forward of the face. Occlusion, reflection and energy
+are not checked by these annotations; native laser previews and runs remain
+authoritative. Small dots mark matching points; text stays in Controls.
+
+Verification: 59 full game/engine tests passed in 98.197 s before the final
+prepared-sphere addition; its added geometry and obstruction cases passed
+separately. Desktop/portrait/landscape browser checks passed ordinary marble
+drag capture/release, disabled assistance, native rolling after Set down/Run,
+turning mirror normals, prepared-sphere placement and exact Undo restoration
+in 15.737 s. Existing track joining and the four-size ground-grid check also
+passed, along with the client geometry CTest and 269 source registrations.
+100 knife-geometry replies measured median 1.82 ms, maximum 2.61 ms locally;
+they do not run the engine. Windows engine SHA-256 remains
+`4bde8f581098a877616ac5647923de8a2b0aada2d5db39911f85b8bef1e783a8`.
+
+CI follow-up: the e52b87 switch fixture accidentally requested the new contact
+paddle while asserting archived v1 geometry; it now explicitly requests v1
+and all five mechanical-switch tests pass locally. The crowded-wire browser
+check also passed locally. The growing 111-case browser suite is registered
+as four disjoint batches after Linux's aggregate run exceeded 1200 s. No case,
+individual wait, physical deadline or tolerance was removed or increased.
+Broader CI remains separate from the measured local placement checks.
 
 Measured with the unchanged native SHA-256
 `807ae9c34f0516a0d0dbf588400451b865083043d614cd1aab8040140c830f87`:

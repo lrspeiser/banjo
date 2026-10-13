@@ -3,7 +3,7 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, thermalCells} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells} from '../client/voxel-lab/machine-view.mjs';
 
 const heated={body:'cord',at_m:[0,.5,1],local_m:[0,.02,0],cell_m:.02,temperature_k:573.15,how:'chars',cut_w:100,held_j:400,needed_j:1000};
 assert.equal(thermalCells({hot_cells:[heated]})[0].progress,.4);
@@ -35,6 +35,15 @@ assert.deepEqual(snapGroundPoint({x:.024,z:-.024}).point,{x:.024,z:-.024},'the m
 assert.deepEqual(snapGroundPoint({z:.051}).point,{z:.05},'pieces with one positional axis retain only that axis');
 assert.equal(PLACEMENT_GRID.major_step_m/PLACEMENT_GRID.step_m,10,'ten small squares per major square');
 assert.deepEqual(snapGroundPoint({x:NaN,z:Infinity}).locks,{x:null,z:null},'invalid coordinates do not create an alignment');
+const working={at:[1,.5,2],dir:[1,0,0]};
+const target={part:'cord',label:'center',at:[2,.504,2.004]};
+assert.deepEqual(workingAlignment(working,[target]).axes,['x']);
+assert.equal(workingAlignment(working,[target]).direction.part,'cord');
+assert.deepEqual(workingAlignment(working,[{...target,at:[2,.52,2]}]).axes,[], 'both transverse coordinates matter');
+assert.equal(workingAlignment(working,[{...target,at:[0,.5,2]}]).direction,null,'a facing arrow is forward only');
+assert.deepEqual(workingAlignment(working,[{...target,at:[7,.5,2]}]).axes,[],'far-off collinear points do not highlight');
+assert.equal(workingAlignment({...working,dir:[0,0,0]},[target]).direction,null);
+assert.deepEqual(workingAlignment(null,[target]).axes,[]);
 
 const pinA = [-.68, .18, .07], pinB = [.68, .08, .07];
 for (const [a,b] of [[pinA,pinB], [pinB,pinA], [pinA,[-.68,.18,.07]], [[0,.012,.1],[0,.012,.3]]]) {

@@ -8,6 +8,14 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 13 placement assistance: working-point guides and local board/track
+seating derive from compiled geometry and declared optical, blade and terminal
+records. Snap edits only proposed placement coordinates, with overlap/support
+checks; no simulated force, trajectory, spin or success is assigned. The
+knife's lowest hinge-circle point is a kinematic reach annotation, not proof
+that it swings there or cuts. Green means 3D geometric alignment, not a
+clear ray or successful energy transfer. See [editor measurements](machine-game.md).
+
 October 13 heater attachment: new **Heat to release** and **Burn the cord**
 use a hollow four-box iron clip with native fixed mounts to a scene-selected
 box target and explicit player-drawn supply/return leads. Current, Joule power

@@ -310,13 +310,14 @@ class Handler(BaseHTTPRequestHandler):
      names=lambda c:{row['name'] for rows in [c['parts'],c['joints'],c.get('electrical',{}).get('devices',[]),c.get('electrical',{}).get('power_ports',[])] for row in rows}
      r={'ok':True,'base':base,'removed':sorted(names(before)-names(compiled))}
     else:
-     r={'ok':True,**sandbox_edit.ghost(level['machine'],data.get('object'),data.get('delta'))}
+     r={'ok':True,**sandbox_edit.ghost(level['machine'],data.get('object'),data.get('delta'),
+       snapping=bool(data.get('snap')),snap_hold=data.get('snap_hold'),nearby=bool(data.get('nearby_snap')))}
      edited=machine_game.requested_level({'level':'free','base':r['base']})
      machine_game.compose(edited,data.get('placements') or [])
    elif op=='level_ghost':
     # A piece before it is set down: what it would be and where, and why it
     # could not go there. Compiled only, never run, so it is not rationed.
-    r={'ok':True,**machine_game.ghost(machine_game.requested_level(data),data.get('placements'),data.get('index'),snapping=bool(data.get('snap')),edit_key=data.get('edit_key'))}
+    r={'ok':True,**machine_game.ghost(machine_game.requested_level(data),data.get('placements'),data.get('index'),snapping=bool(data.get('snap')),edit_key=data.get('edit_key'),nearby=bool(data.get('nearby_snap')),snap_hold=data.get('snap_hold'))}
    elif op=='level_score':
     # Stars from what the engine measured in this session's run.
     s=host.get(data.get('session'));game=getattr(s,'game',None)
