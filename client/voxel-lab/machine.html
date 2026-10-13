@@ -72,6 +72,11 @@
 <details id="solar-load-help"><summary>Why the bulb?</summary><p>The bulb uses the same battery as the motor. It is a shared load. Aim the panel at the sun to collect enough power for both.</p></details>
 </section>
 <label id="piece-edit-row" class="piece-edit-row" hidden>Adjust a piece<select id="piece-edit" aria-label="Adjust a piece"></select></label>
+<details id="sandbox-environment" hidden><summary>Ground and river</summary>
+<label>Ground<select id="environment-kind" aria-label="Sandbox ground"><option value="table">Table</option><option value="channel">Dry channel</option><option value="river">River</option></select></label>
+<label>River flow (L/s)<input id="river-flow" type="number" min="1" max="1000" step="1" value="100" aria-label="River flow (L/s)"></label>
+<button id="environment-apply" type="button">Apply ground</button><output id="environment-status" aria-live="polite"></output>
+</details>
 <div id="ghost-bar" class="ghost-bar" hidden aria-label="The ghost: change it, turn it and set it down"></div>
 <details id="instrument-panel" hidden><summary>Readings and wiring</summary>
 <button id="wire-mode" type="button" aria-pressed="false">Connect wires</button>
@@ -148,6 +153,7 @@
 <div class="guide-head"><h2 id="recent-changes-title">Recent Changes</h2><button id="recent-changes-done" type="button">Close</button></div>
 <div class="guide-body changes-body" tabindex="0" aria-label="Game updates, newest first">
 <section aria-labelledby="changes-oct12"><h3 id="changes-oct12"><time datetime="2026-10-12">October 12, 2026</time></h3>
+<article><h4>Edit the whole Sandbox</h4><p>Click objects already in an example, or choose them in <b>Adjust a piece</b>, to move them. <b>Remove</b> is beside Set down. Hinged assemblies move together; removing an object also clears its dependent connections. <b>Ground and river</b> adds a river without replacing your design. The first water piece creates a dry collection channel if needed. Undo and saved versions keep both object and ground changes. The gallery shows your designs first and all examples below, with no filters.</p></article>
 <article><h4>Readings move out of the way</h4><p>Wire gauges, power readings and water-container meters now sit at the edges of the scene. Thin dashed leader lines point back to the cable or object. The readings wrap on phones and leave components, connection rings and the scene controls clear. Solar connection callouts also use the edges.</p></article>
 <article><h4>Choose and see your wire gauge</h4><p>While drawing a wire, choose <b>Thin</b>, <b>Standard</b> or <b>Thick</b> directly in the controls. Placed wires show their gauge and copper cross-section beside the cable, even before power flows. Select a wire under <b>Adjust a piece</b> to change its thickness. Thicker wires reduce voltage loss; both leads still need a complete circuit.</p></article>
 <article><h4>Click a cable to remove it and start again</h4><p>A wrong connection is simpler to fix: click a wire or solar cable you placed to delete it, then draw a new connection between the rings. <b>Undo</b> restores an accidental deletion. Overlapping wires offer a labelled choice. Battery case clicks now reopen its voltage controls without being caught by nearby wire terminals. A placed piece's tray card also says <b>Click to adjust</b>, and battery lessons show a short wiring prompt.</p></article>

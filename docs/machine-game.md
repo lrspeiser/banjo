@@ -1204,7 +1204,7 @@ piece knobs unchanged; it is a camera action, not an extra placement operation.
 
 A selected piece has one inspector in **Controls**: its name, adjustment chips, a full-width active slider, an editable exact value using the same min/max/step limits, **Set down** and Cancel. Dragging is the primary placement gesture. **Precision controls** holds the movement arrows, full positioning/angle controls, guide caption and construction-energy comparison. The placement action row stays visible when the inspector scrolls. Level/Design no longer repeats the ghost editor.
 
-Level cards show title, task count and stars. **Level details** reveals learning and energy records without opening a live machine. The chooser’s **More** menu contains return-link controls, fresh challenge selection and recent challenges. The sandbox uses **Your designs / Examples** tabs with setup previews, and names new designs after creation. **Preview key**, guide captions, full solar meters and electrical readings sit in Controls rather than over the objects. **Readings and wiring** reveals the measured details and **Connect wires** enables compact endpoint buttons on the pieces. Outside wiring, only a small collector watts marker and the physical switch drag handle remain. Endpoints hide during a run; the switch's handle stays usable. The clock and View/Move switch use smaller backgrounds, while their buttons retain 44 px touch targets. Laser/water/current flow geometry and the arrows showing an adjustment remain in 3D; their detailed keys and number labels are on demand.
+Level cards show title, task count and stars. **Level details** reveals learning and energy records without opening a live machine. The chooser’s **More** menu contains return-link controls, fresh challenge selection and recent challenges. The sandbox shows your designs first and all examples below with setup previews, and names new designs after creation. **Preview key**, guide captions, full solar meters and electrical readings sit in Controls rather than over the objects. **Readings and wiring** reveals the measured details and **Connect wires** enables compact endpoint buttons on the pieces. Outside wiring, only a small collector watts marker and the physical switch drag handle remain. Endpoints hide during a run; the switch's handle stays usable. The clock and View/Move switch use smaller backgrounds, while their buttons retain 44 px touch targets. Laser/water/current flow geometry and the arrows showing an adjustment remain in 3D; their detailed keys and number labels are on demand.
 
 Clear-scene checks, October 11: the new desktop/portrait/landscape regression
 measures the default solar watts marker below 3% of the scene area, requires
@@ -1231,7 +1231,7 @@ Final scroll-footer correction: the inspector now scrolls in a bounded inner are
 
 ## Sandbox (including the former Free build)
 
-The header's **Sandbox** link and the levels screen's Sandbox card open `/machine`: a gallery with **Your designs** and **Examples** tabs, plus **Add New Design** in its header. A new design opens immediately as **Untitled design**; rename it in the editor’s **Design** tab. Cards show static top-view setup sketches from declared geometry (unexpanded pieces are position markers), rather than a physics rehearsal. Start from an editable copy of **Gate and split** (the former free-build example) or **Chain reaction** (the original sandbox declaration). There is one editor: the levels' tray and placement controls, Run it, Pause, Set up again, Pull and Attach, plus the sandbox's speed, Follow, engine readings and base declaration. Nothing is scored. The empty table's corners are marked by small concrete stones, 2 m out each way. The tray has every piece, subject to the server's part, cell and tray limits.
+The header's **Sandbox** link and the levels screen's Sandbox card open `/machine`: a single gallery with **Your designs** first and all **Examples** below, plus **Add New Design** in its header. A new design opens immediately as **Untitled design**; rename it in the editor’s **Design** tab. Cards show static top-view setup sketches from declared geometry (unexpanded pieces are position markers), rather than a physics rehearsal. Start from an editable copy of **Gate and split** (the former free-build example) or **Chain reaction** (the original sandbox declaration). There is one editor: the levels' tray and placement controls, Run it, Pause, Set up again, Pull and Attach, plus the sandbox's speed, Follow, engine readings and base declaration. Nothing is scored. The empty table's corners are marked by small concrete stones, 2 m out each way. The tray has every piece, subject to the server's part, cell and tray limits.
 
 **Choose a piece.** **Add a piece**, attached to the scene beside Run it, opens a full-screen library with large thumbnails drawn from each piece's actual parts, descriptions, search and category filters. Choose a card to return to the same design with that piece as a ghost, ready to place. **Back to sandbox** or Escape closes the library without adding anything. Only the cards scroll: search and Back stay visible. Keyboard focus stays inside the library and returns to the scene when it closes. Puzzle trays of four pieces or fewer keep their individual buttons in the control panel; larger puzzle trays use the same library with remaining counts and **Back to puzzle**. Attach remains beside the scene. Checked on October 11, 2026 (`tests/machine_game_browser_tests.py`): search, category filters, no matches, closing without changing the setup, selecting and placing a piece, running and resetting the resulting machine at 1280 × 860, 390 × 844 and 844 × 390. No engine or physics model changed.
 
@@ -1480,3 +1480,45 @@ but resistance is not yet derived from contact pressure, real surface area,
 metal resistivity or oxidation. No electron, arcing or elastic contact-bounce
 model is claimed. Existing wire sizing uses copper resistance at 20 °C.
 See [contact measurements](sandbox-electrics-measured.md#current-driven-display-and-paddle-metal-contact-october-12).
+
+## Editing prepared Sandbox objects and adding a river — October 12
+
+The gallery has one list: your recently edited designs first, then every
+example. The headings do not filter or hide cards. **Add New Design** stays
+in the header.
+
+Prepared parts can now be selected by clicking their bodies or through
+**Adjust a piece** in Controls. Drag their blue ghost, use movement arrows
+or precision positions, then **Set down**. **Remove** sits beside Set down
+for both prepared and tray objects. Kits and hinge/slide/weld assemblies
+move together. Kit translation applies to generated parts, joint anchors,
+water sources, thermal regions, blades and light sources while preserving
+compound-local geometry. Removing an apparatus clears dependent joints,
+electrical devices, wires and observations; Undo recovers the whole setup.
+Custom declarations with unsupported dependencies are refused before commit.
+Prepared apparatus remains fixed in scored challenges.
+
+**Ground and river**, attached to the scene in Controls, chooses Table, Dry
+channel or River. River inlet flow is 1–1,000 L/s; current still comes from
+the native flume. Changing ground keeps the other declarations and tray
+placements. The first water wheel, tank, chute or collector creates a dry
+channel if its design had none, so adding those pieces no longer requires
+opening a separate example. Ground changes participate in Undo, drafts and
+saved versions. Removing a channel needed by existing water pieces is
+refused with the compiler's reason. The ground disclosure hides while
+editing a piece to keep the phone inspector's scroll area usable.
+
+Verification: all 104 prepared object groups across the example catalogue
+compile after a 5 cm horizontal move and after removal, without mutating
+the shared template. Geometry/material/volume are preserved by translation;
+glass, oak and iron lever pivots follow a declared 3D translation. A native
+free-fall comparison for glass/oak/iron boxes at 2 cm resolution and 1/240 s
+steps preserves native mass and velocity and translates the position within
+1 µm after 24 steps. This is a setup transformation test, not a new contact
+law or a full momentum/energy audit. All 21 Tray checks pass. The three new
+browser checks pass in 23.953 s at 1280×860, 390×844 and 844×390: body selection,
+prepared moves/removal, dependent rope cleanup, Undo, version save/reload,
+automatic water ground, added river current, tray removal and the unfiltered
+gallery. An initial phone failure exposed the open ground disclosure reducing
+the inspector's scroll area; hiding it during editing fixes the actual layout
+without changing the 44 px touch-target checks.

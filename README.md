@@ -75,7 +75,7 @@ and material) plus what the machine used while it ran. Win on par or less for
 three stars.
 
 **Sandbox** (`/machine`) combines the former Free build and machine sandbox.
-It opens **Your designs / Examples** gallery tabs with setup previews and **Add New Design**.
+It shows your designs first and every example below in one gallery, with setup previews and **Add New Design**.
 New designs open immediately; rename them in the editor’s Design tab.
 Each design has a table with no goal and every piece in
 the tray: 39 cards including knives, mirrors, lenses, solar panels, tackle,
@@ -89,6 +89,12 @@ Older saved gear pairs retain their original ideal coupling.
 There are 31 editable prebuilt designs, including a battery holder, a river workbench and a
 river-powered gate lift. The river's current pushes submerged wheel paddles;
 connect the wheel's drum rope to a load to lift it.
+Click prepared objects or use **Adjust a piece** to move them; **Remove** in
+the inspector removes the selected object and its dependent connections.
+Kits and bodies joined by a hinge, slide or weld move as assemblies.
+**Ground and river** in Controls adds a river to an existing design, with
+editable inlet flow. Adding the first water piece supplies a dry collection
+channel when needed. Undo and saved versions retain these changes.
 **Wheel in the river** teaches moving a wheel into that current. Tanks and
 wheels are separate pieces: open a tank's tap, aim its outlet at the paddles,
 and watch its native remaining water and flow decrease as it drains. These

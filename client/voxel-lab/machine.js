@@ -1897,8 +1897,8 @@ const LEVEL_MODE = true;
 let levels = [], level = null, placements = [], placedCost = [], placedEnergy = {}, helped = false, scored = false, lastRun = null, rebuildTimer = null;
 let generatedLevel = null;
 let freeLevel = null;
-let sandboxBase = null, sandboxTemplates = [], activeDesign = null;
-function sandboxRequest() { return level?.free && activeDesign?.draft.base ? {base: activeDesign.draft.base} : {}; }
+let sandboxBase = null, sandboxTemplates = [], activeDesign = null, sandboxObjects = [];
+function sandboxRequest() { const base=ghost?.baseObject ? ghost.base || ghost.originalBase : activeDesign?.draft.base; return level?.free && base ? {base} : {}; }
 
 // ---- the ghost: a piece before it is set down ------------------------------------
 // A see-through copy of a piece. It stays put until deliberately dragged;
@@ -1918,10 +1918,10 @@ const ghostGroup = new THREE.Group();
 scene.add(ghostGroup);
 const TURN_KEYS = {q: ['yaw_deg', 1], e: ['yaw_deg', -1], r: ['pitch_deg', 1], f: ['pitch_deg', -1], z: ['roll_deg', -1], c: ['roll_deg', 1]};
 
-function ghostName() { return ghost ? `your ${ghost.p.piece} ${ghost.index + 1}` : ''; }
+function ghostName() { return ghost?.baseObject?.name || (ghost ? `your ${ghost.p.piece} ${ghost.index + 1}` : ''); }
 // The piece picked up is hidden while its ghost is out; Cancel shows it again.
-function hiddenPiece(name) { return Boolean(ghost && ghost.was) && (name === ghostName() || name.startsWith(ghostName() + ' ')); }
-function ghostPlacements() { const list = placements.slice(); list[ghost.index] = ghost.p; return list; }
+function hiddenPiece(name) { return ghost?.baseObject ? ghost.baseObject.parts.includes(name) : Boolean(ghost && ghost.was) && (name === ghostName() || name.startsWith(ghostName() + ' ')); }
+function ghostPlacements() { const list = placements.slice(); if(!ghost.baseObject)list[ghost.index] = ghost.p; return list; }
 
 // A knob set as its slider would set it: on its step, within its range.
 function setKnob(p, key, v) {
@@ -2309,11 +2309,13 @@ function askGhost() {
 }
 async function checkGhost(g) {
   const sent = {x: g.p.x_m ?? 0, z: g.p.z_m ?? 0}, snapping = Boolean(g.snapNext);
-  const setupStamp = JSON.stringify(ghostPlacements());
+  const setupStamp = JSON.stringify([ghostPlacements(),g.baseObject?[g.p.x_m,g.p.height_m,g.p.z_m]:null]);
   g.busy = true; g.again = false; g.snapNext = false;
   try {
-    const r = await api({op: 'level_ghost', level: level.id, ...sandboxRequest(), placements: ghostPlacements(), index: g.index, snap: snapping, edit_key: g.card});
+    const r = await api(g.baseObject ? {op:'sandbox_object',level:'free',base:g.originalBase,object:g.baseObject.id,
+      delta:[g.p.x_m-g.baseObject.at_m[0],g.p.height_m,g.p.z_m-g.baseObject.at_m[2]],placements} : {op: 'level_ghost', level: level.id, ...sandboxRequest(), placements: ghostPlacements(), index: g.index, snap: snapping, edit_key: g.card});
     if (ghost !== g) return;
+    if(g.baseObject)g.base=r.base;
     // Moved by hand near where it connects to another piece: put where the
     // two connect, and asked about again there.
     if (r.snap && r.snap.moved && !g.again) {
@@ -2381,6 +2383,7 @@ function startGhost(p, index, keepPlace = false) {
   ghost = {p, index, was: index < placements.length ? placements[index] : null, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {},card:trayItem(p.piece).focus_knob,
            frameOnAdd:index>=placements.length && Boolean(trayItem(p.piece).frame_on_add)};
+  if(p.piece==='base_object')Object.assign(ghost,{baseObject:sandboxObjects.find(o=>o.id===p.object),originalBase:clone(activeDesign.draft.base || sandboxBase)});
   view.classList.add('placing'); view.classList.remove('pickable', 'looking');
   looking = false;
   renderTray(); renderPlaced(); renderGhostBar();
@@ -2400,6 +2403,12 @@ function startGhost(p, index, keepPlace = false) {
 // panel, or by clicking it in the scene). After a run, or during one, the
 // level goes back to its start first: pieces are placed there.
 function pickUp(i) {
+  if(level?.free && i>=placements.length){
+    const object=sandboxObjects[i-placements.length];if(!object)return;
+    if(playing||world.t>0)rebuildLevel(false).then(()=>pickUp(i)).catch(()=>{});
+    else startGhost({piece:'base_object',object:object.id,x_m:object.at_m[0],z_m:object.at_m[2],height_m:0},placements.length,true);
+    return;
+  }
   if (!placements[i]) return;
   if (playing || world.t > 0) rebuildLevel(false).catch(() => {});
   startGhost({...placements[i]}, i);
@@ -2425,7 +2434,8 @@ function cancelGhost() { if (!ghost) return; endGhost(); renderTray(); renderPla
 function placeGhost() {
   if (!ghost || !ghost.fits || ghost.busy || !ghost.answered) return false;
   remember();
-  if (ghost.was) placements[ghost.index] = ghost.p; else placements.push(ghost.p);
+  if(ghost.baseObject)activeDesign.draft.base=ghost.base;
+  else if (ghost.was) placements[ghost.index] = ghost.p; else placements.push(ghost.p);
   endGhost(); renderTray(); renderPlaced();
   return true;
 }
@@ -2474,7 +2484,7 @@ function renderGhostBar() {
   $('focus-piece').hidden = !ghost;
   ghost && (ghost.cardInput = null);
   ghost && (ghost.gaugeButtons = null);
-  $('piece-edit-row').hidden = Boolean(ghost) || !placements.length;
+  $('piece-edit-row').hidden = Boolean(ghost) || (!placements.length && !(level?.free && sandboxObjects.length));
   if (!ghost) {
     for(const id of ['flow-preview','phone-tools','move-pad','preview-legend','instrument-panel','edit-guide-label']) if($(id)) $('control-panel').append($(id));
     card.replaceChildren(); return;
@@ -2553,6 +2563,7 @@ function renderGhostBar() {
   const state = Object.assign(document.createElement('p'), {className: 'state'});
   const actions = Object.assign(document.createElement('div'), {className: 'actions'});
   actions.append(button('✓ Set down', setGhostDown, {className: 'down', disabled: !ghost.fits || ghost.busy}), throwAway);
+  if(ghost.baseObject || ghost.was)actions.insertBefore(button('Remove',()=>removeSelectedObject(),{ariaLabel:'Remove selected object'}),throwAway);
   if(ghost.rewireKey) actions.insertBefore(button('Disconnect wire',()=>{
     if(!ghost?.rewireKey || terminalBusy || powerBusy)return;
     const index=ghost.index;
@@ -3458,7 +3469,7 @@ function movableGhost() {
 // Which of the player's pieces (its index), if any, is the first thing under
 // the pointer in the scene.
 function placedAt(clientX, clientY) {
-  if (!LEVEL_MODE || !level || !placements.length) return -1;
+  if (!LEVEL_MODE || !level || (!placements.length && !sandboxObjects.length)) return -1;
   pointerRay(clientX, clientY);
   const owner = name => {
     const m = name?.match(/^your (\S+) (\d+)(?: |$)/), i = m ? Number(m[2]) - 1 : -1;
@@ -3480,6 +3491,7 @@ function placedAt(clientX, clientY) {
   while (o && !nameOf.has(o)) o = o.parent;
   const name = o && nameOf.get(o), i = owner(name);
   if (i >= 0) return i;
+  if(level.free){const baseIndex=sandboxObjects.findIndex(o=>o.parts.includes(name));if(baseIndex>=0)return placements.length+baseIndex;}
   const attached = loadOwners.get(name);
   return attached?.size === 1 ? [...attached][0] : -1;
 }
@@ -4122,7 +4134,7 @@ function bestStars(id) { return record(id).stars || 0; }
 const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
                     mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens', flipflop: 'flip-flop'};
 // A piece's name on its button: as the tray calls it, but a flip-flop has its hyphen.
-function pieceLabel(piece) { return ({flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'ignition coil',power_cable:'power cable'})[piece] || piece; }
+function pieceLabel(piece) { return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'ignition coil',power_cable:'power cable'})[piece] || piece; }
 function toolsOf(player) {
   if (!player.tools) {
     player.tools = {};
@@ -4174,7 +4186,11 @@ function renderLevels() {
 function knobDefault(rule) { return rule.default ?? (rule.choices ? rule.choices[0] : rule.min); }
 function levelTitle(l) { return l.free ? (activeDesign?.name || 'Sandbox') : l.variant
   ? `${l.title} · seed ${l.variant.seed.toString(16).padStart(8, '0')}` : `${levels.indexOf(l) + 1}. ${l.title}`; }
-function trayItem(piece) { return level.tray.find(t => t.piece === piece); }
+const baseObjectTray={piece:'base_object',knobs:{
+  x_m:{min:-10,max:10,step:.01,default:0,label:'along X (m)'},
+  z_m:{min:-10,max:10,step:.01,default:0,label:'along Z (m)'},
+  height_m:{min:-4,max:4,step:.01,default:0,label:'height change (m)'}}};
+function trayItem(piece) { return piece==='base_object'?baseObjectTray:level.tray.find(t => t.piece === piece); }
 
 const PIECE_INFO = {
   marble: ['motion', 'A ball to roll, drop, or set a machine moving.'],
@@ -4220,8 +4236,12 @@ const PIECE_INFO = {
 };
 function libraryTray() { return level.free || level.tray.filter(t => !t.attach).length > 4; }
 function piecesLeft(t) { return (t.count || 1) - placements.filter(p => p.piece === t.piece).length; }
-function addTrayPiece(t) {
+async function addTrayPiece(t) {
   if (ghost || piecesLeft(t) <= 0) return;
+  if(level.free && ['water_wheel','water_tank','water_chute','water_collector'].includes(t.piece) && !(activeDesign.draft.base||sandboxBase).ground){
+    try{if(!await applySandboxGround('channel'))return;t=trayItem(t.piece);}
+    catch(e){$('verdict').textContent=e.data?.problems?.join('; ')||e.message;return;}
+  }
   trayPiece = t.piece;
   const p = {piece: t.piece};
   for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
@@ -4483,8 +4503,9 @@ function ghostItem() {
 
 function renderPlaced() {
   const edit = $('piece-edit');
-  edit.replaceChildren(new Option('Choose a piece', ''), ...placements.map((p, i) => new Option(`${i + 1}. ${pieceLabel(p.piece)}`, String(i))));
-  $('piece-edit-row').hidden = Boolean(ghost) || !placements.length;
+  edit.replaceChildren(new Option('Choose an object', ''), ...placements.map((p, i) => new Option(`${i + 1}. ${pieceLabel(p.piece)}`, String(i))),
+    ...(level?.free?sandboxObjects.map((o,i)=>new Option(o.name,String(placements.length+i))):[]));
+  $('piece-edit-row').hidden = Boolean(ghost) || (!placements.length && !(level?.free && sandboxObjects.length));
   const ol = $('placed'); ol.replaceChildren();
   placements.forEach((p, i) => {
     if (ghost && ghost.was && ghost.index === i) return;
@@ -4577,6 +4598,20 @@ function travel(from, to) {
   endGhost(); cancelAttach(); renderTray(); renderPlaced(); showUndo(); scheduleRebuild(0);
 }
 function setupSnapshot() { return JSON.stringify(level?.free ? {placements, base: activeDesign?.draft.base || null} : placements); }
+async function removeSelectedObject(){
+  const g=ghost;if(!g)return;
+  try{
+    if(g.baseObject){
+      const stamp=setupSnapshot(),r=await api({op:'sandbox_object',level:'free',base:g.originalBase,object:g.baseObject.id,remove:true});
+      if(ghost!==g || setupSnapshot()!==stamp)return;
+      const removed=new Set(r.removed);
+      const dependent=placements.map((p,i)=>({p,i})).filter(({p})=>Object.values(p).some(v=>typeof v==='string'&&removed.has(v.split(':')[0])));
+      remember();activeDesign.draft.base=r.base;
+      for(const {i} of dependent.reverse())removePiece(i);
+    }else{remember();removePiece(g.index);}
+    endGhost();renderTray();renderPlaced();scheduleRebuild(0);
+  }catch(e){$('verdict').textContent=e.data?.problems?.join('; ')||e.message;}
+}
 $('undo-pieces').addEventListener('click', () => travel(undone, redone));
 $('redo-pieces').addEventListener('click', () => travel(redone, undone));
 $('piece-edit').addEventListener('change', () => {
@@ -4639,6 +4674,9 @@ function renderDesignControls() {
   $('sandbox-controls').hidden = !level?.free;
   $('design-versions').hidden = !level?.free;
   $('machine-data').hidden = !level?.free;
+  $('sandbox-environment').hidden = !level?.free;
+  if(level?.free){const g=activeDesign?.draft.base?.ground;$('environment-kind').value=g?.kind==='flume'?(g.discharge_m3_s>0?'river':'channel'):'table';
+    $('river-flow').value=(g?.discharge_m3_s||.1)*1000;}
   if (!level?.free || !activeDesign) return;
   $('design-name').value = activeDesign.name;
   const pick = $('version-pick');
@@ -4678,6 +4716,25 @@ function showSandboxScreen(show = true) {
 }
 $('sandbox-open').addEventListener('click', e => { e.preventDefault(); if (freeLevel) showSandboxScreen(); });
 $('designs-open').addEventListener('click', () => showSandboxScreen());
+async function applySandboxGround(kind,flow=100){
+  if(!activeDesign||!level?.free)return false;
+  if(ghostInTheWay())return false;
+  const stamp=setupSnapshot(),design=activeDesign,next=clone(activeDesign.draft.base||sandboxBase);
+  next.ground=kind==='table'?null:{kind:'flume',nx:100,nz:60,cell_m:.1,trench_z_m:0,
+    trench_width_m:.6,trench_depth_m:.35,trench_slope:.005,...(next.ground||{}),discharge_m3_s:kind==='river'?flow/1000:0};
+  await api({op:'check',level:'free',base:next,placements});
+  if(activeDesign!==design||setupSnapshot()!==stamp)return false;
+  remember();activeDesign.draft.base=next;framedFree=false;
+  await rebuildLevel(false);return true;
+}
+$('environment-apply').addEventListener('click',async()=>{
+  const b=$('environment-apply');b.disabled=true;
+  try{const kind=$('environment-kind').value,flow=Number($('river-flow').value);
+    if(kind==='river'&&!$('river-flow').checkValidity())throw Error('Choose a flow from 1 to 1,000 L/s.');
+    if(await applySandboxGround(kind,flow))$('environment-status').textContent=kind==='river'?`River added · ${flow} L/s`:'Ground updated';
+  }catch(e){$('environment-status').textContent=e.data?.problems?.join('; ')||e.message;renderDesignControls();}
+  finally{b.disabled=false;}
+});
 $('design-name').addEventListener('change', () => {
   if (!activeDesign) return;
   activeDesign.name = $('design-name').value.trim() || 'Untitled design';
@@ -4736,12 +4793,14 @@ async function rebuildLevel(start) {
     // The chosen sandbox environment can supply appropriate tray defaults:
     // a river wheel starts without the separate falling-water feed.
     if (level.free && opened.level?.tray) {
+      sandboxObjects=opened.sandbox_objects||[];
       level.tray = opened.level.tray;
       renderTray();
     }
     placedCost = (opened.placements || []).map(p => p.cost);
     placedEnergy = opened.energy || {};
     renderPlaced();
+    renderDesignControls();
     // Its goal is about a piece not placed yet: shown, not run.
     if (opened.needs) $('verdict').textContent = opened.needs;
     else if (start) await setPlaying(true);
@@ -4991,6 +5050,7 @@ async function chooseLevel(id, design = null) {
     persist();
   }
   activeDesign = null;
+  sandboxObjects=[];
   if (level.free) {
     const store = designStore();
     if (sharedBuild) {

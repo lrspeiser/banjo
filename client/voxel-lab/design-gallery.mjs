@@ -126,29 +126,16 @@ export function renderDesignGallery({box, head, store, templates, openDesign, cr
   newButton.setAttribute('aria-label', 'Add New Design');
   newButton.addEventListener('click', () => invoke(newButton, async () => openDesign(await createDesign('Untitled design', {base: null, placements: []}))));
   head.append(newButton);
-  const tabs = element('div', {className: 'gallery-tabs'}); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Sandbox designs');
-  gallery.append(tabs, status); box.append(gallery);
+  gallery.append(status); box.append(gallery);
   const entries = [
     {key: 'owned', label: 'Your designs', id: 'saved-designs', rows: [...rows(store?.items)].sort((a,b)=>String(b.at).localeCompare(String(a.at)))},
     {key: 'examples', label: 'Examples', id: 'prebuilt-designs', rows: rows(templates)},
   ];
-  function select(index, focus = false) {
-    entries.forEach((entry, i) => { entry.tab.setAttribute('aria-selected', String(i === index));
-      entry.tab.tabIndex = i === index ? 0 : -1; entry.panel.hidden = i !== index; });
-    if (focus) entries[index].tab.focus();
-  }
   entries.forEach((entry, index) => {
-    entry.tab = element('button', {type: 'button', id: `design-tab-${entry.key}`, textContent: entry.label});
-    entry.tab.setAttribute('role', 'tab'); entry.tab.setAttribute('aria-controls', `design-panel-${entry.key}`);
     entry.panel = element('section', {id: `design-panel-${entry.key}`, className: 'gallery-panel'});
-    entry.panel.setAttribute('role', 'tabpanel'); entry.panel.setAttribute('aria-labelledby', entry.tab.id);
-    entry.panel.tabIndex = 0;
-    entry.tab.addEventListener('click', () => select(index));
-    entry.tab.addEventListener('keydown', event => {
-      const target = {ArrowRight: (index + 1) % 2, ArrowLeft: (index + 1) % 2, Home: 0, End: 1}[event.key];
-      if (target !== undefined) { event.preventDefault(); select(target, true); }
-    });
-    tabs.append(entry.tab); gallery.append(entry.panel);
+    const heading = element('h2', {id: `design-heading-${entry.key}`, textContent: entry.label});
+    entry.panel.setAttribute('aria-labelledby', heading.id);
+    entry.panel.append(heading); gallery.append(entry.panel);
     const list = element('div', {className: 'ls-list design-gallery-list', id: entry.id}); entry.panel.append(list);
     if (!entry.rows.length) entry.panel.append(element('p', {className: 'gallery-empty', textContent: index ? 'No examples available.' : 'No designs yet. Add New Design to start building.'}));
     for (const row of entry.rows) {
@@ -164,6 +151,5 @@ export function renderDesignGallery({box, head, store, templates, openDesign, cr
       list.append(card);
     }
   });
-  select(0);
-  return {select: key => select(entries.findIndex(entry => entry.key === key) === 1 ? 1 : 0), element: gallery};
+  return {element: gallery};
 }

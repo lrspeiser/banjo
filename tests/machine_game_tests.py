@@ -48,6 +48,41 @@ EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):
+    def test_sandbox_apparatus_moves_and_removes_without_dangling_base_references(self):
+        import sandbox_edit
+        count=0
+        for template in mg.sandbox_templates():
+            if not template['base']:continue
+            base=template['base'];before=copy.deepcopy(base)
+            for obj in sandbox_edit.objects(base):
+                moved,selected,compiled=sandbox_edit.edit(base,obj['id'],[.05,0,0])
+                initial=mw.compile_spec(base)
+                old={p['name']:p for p in initial['parts']}
+                for part in compiled['parts']:
+                    previous=old[part['name']]
+                    expected=[previous['at_m'][0]+(.05 if part['name'] in selected['parts'] else 0),*previous['at_m'][1:]]
+                    for a,b in zip(part['at_m'],expected):self.assertAlmostEqual(a,b,places=6,msg=(template['name'],obj['name']))
+                    self.assertEqual(mg._volume(part),mg._volume(previous))
+                    self.assertEqual(part['material'],previous['material'])
+                removed,_,after=sandbox_edit.edit(base,obj['id'],remove=True)
+                self.assertFalse(set(selected['parts']) & {p['name'] for p in after['parts']})
+                self.assertEqual(base,before,'Editing must not mutate a shared template')
+                count+=1
+        self.assertGreater(count,80)
+
+    def test_sandbox_kit_translation_preserves_glass_oak_iron_mass_geometry_and_pivots(self):
+        import sandbox_edit
+        for material in ('glass','oak','iron'):
+            base={'schema':mw.SCHEMA,'kits':[{'kit':'lever','name':'lever','pivot_m':[0,.3,0],
+                'length_m':.8,'width_m':.2,'material':material}],'parts':[]}
+            original=mw.compile_spec(base)
+            moved,_,compiled=sandbox_edit.edit(base,'kit:lever',[.2,.1,-.15])
+            self.assertEqual([mg._volume(p) for p in original['parts']],[mg._volume(p) for p in compiled['parts']])
+            for old,new in zip(original['joints'],compiled['joints']):
+                for a,b,d in zip(old['at_m'],new['at_m'],[.2,.1,-.15]):self.assertAlmostEqual(a+d,b)
+            for old,new in zip(original['parts'],compiled['parts']):
+                self.assertEqual(old['size_m'],new['size_m']);self.assertEqual(old['turn_deg'],new['turn_deg'])
+
     def test_every_level_starts_with_an_object_or_visible_goal_area(self):
         for level in LEVELS:
             initial=mw.compile_spec(mg.compose(level,[],leave_out_goal=True)[0])
@@ -706,6 +741,29 @@ class FreeBuild(unittest.TestCase):
 
 
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_sandbox_translation_preserves_native_mass_and_free_dynamics_for_three_materials(self):
+        import sandbox_edit
+        delta=[.2,.1,-.15]
+        for material in ('glass','oak','iron'):
+            base={'schema':mw.SCHEMA,'parts':[{'name':'block','shape':'box','material':material,
+                'at_m':[0,.6,0],'size_m':[.12,.12,.12],'fixed':False}]}
+            moved,_,compiled=sandbox_edit.edit(base,'part:block',delta)
+            with tempfile.TemporaryDirectory() as logs:
+                records=[]
+                for i,spec in enumerate((base,moved)):
+                    folder=Path(logs)/str(i);folder.mkdir()
+                    engine,_,_=mw.build_engine(ENGINE,mw.compile_spec(spec),folder)
+                    try:
+                        initial=engine.first['bodies'][0]
+                        final=engine.op(op='step',dt=1/240,n=24,moved=False)['bodies'][0]
+                        records.append((initial,final))
+                    finally:engine.close()
+                a,b=records
+                self.assertEqual(a[0]['mass_kg'],b[0]['mass_kg'])
+                self.assertEqual(a[1]['velocity_m_s'],b[1]['velocity_m_s'])
+                for x,y,d in zip(a[1]['position_m'],b[1]['position_m'],delta):self.assertAlmostEqual(x+d,y,places=6)
+
     @need_engine
     def test_laser_exposes_real_hot_cell_energy_then_removes_the_cell_and_releases_the_load(self):
         level=mg.level_by_id('laser')

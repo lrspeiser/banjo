@@ -261,6 +261,9 @@ class Handler(BaseHTTPRequestHandler):
     spec,checked,cost=machine_game.compose(level,data.get('placements') or [],leave_out_goal=True)
     needs=spec.pop('_needs',None)
     r=host.open(spec);r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost;r['energy']=machine_game.pieces_energy(r['machine'])
+    if level.get('free'):
+     import sandbox_edit
+     r['sandbox_objects']=sandbox_edit.objects(level['machine'])
     if needs:r['needs']=needs
     host.get(r['session']).game={'level':level['id'],'definition':level,'checked':checked,'cost':cost,'helped':bool(data.get('helped'))}
    elif op=='feedback':
@@ -297,6 +300,19 @@ class Handler(BaseHTTPRequestHandler):
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is working out other previews; trying again in a moment')
     try:r={'ok':True,**machine_game.optical_preview(machine_game.requested_level(data),data.get('placements') or [],host.exe,host.logs)}
     finally:self.server.preview_busy.release()
+   elif op=='sandbox_object':
+    import sandbox_edit
+    level=machine_game.requested_level(data)
+    if not level.get('free'):raise ValueError('Only Sandbox apparatus can be edited')
+    if data.get('remove'):
+     base,selected,compiled=sandbox_edit.edit(level['machine'],data.get('object'),remove=True)
+     before=sandbox_edit.mw.compile_spec(level['machine'])
+     names=lambda c:{row['name'] for rows in [c['parts'],c['joints'],c.get('electrical',{}).get('devices',[]),c.get('electrical',{}).get('power_ports',[])] for row in rows}
+     r={'ok':True,'base':base,'removed':sorted(names(before)-names(compiled))}
+    else:
+     r={'ok':True,**sandbox_edit.ghost(level['machine'],data.get('object'),data.get('delta'))}
+     edited=machine_game.requested_level({'level':'free','base':r['base']})
+     machine_game.compose(edited,data.get('placements') or [])
    elif op=='level_ghost':
     # A piece before it is set down: what it would be and where, and why it
     # could not go there. Compiled only, never run, so it is not rationed.

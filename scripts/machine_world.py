@@ -1363,6 +1363,7 @@ def compile_spec(spec, lenient=False):
         if not isinstance(name, str) or not name.strip():
             problems.append(f'kit {i + 1} ({kit["kit"]}) needs a name')
             continue
+        before_ropes = len(ropes)
         before = ({key: len(rows) for key, rows in thermo.items()}, len(blades), len(spouts),
                   {key: len(rows) for key, rows in light_extra.items() if isinstance(rows, list)})
         p, j = KITS[kit['kit']](dict(kit, _known={r['name']: r for r in parts if isinstance(r, dict) and 'name' in r},
@@ -1389,6 +1390,15 @@ def compile_spec(spec, lenient=False):
                 lift = _ground_deficit(p, ground) if turned.get('clear_ground') else 0.0
                 if lift > 0.0:
                     shift_rows([0.0, lift + 0.001, 0.0], list(p) + made)
+        if 'translated_m' in kit:
+            # An editor moves the complete kit, including its generated
+            # world-space joints/sources. Local compound coordinates stay local.
+            delta = _vec(kit['translated_m'], 3, f'kit {name} translated_m', problems)
+            made = (list(j) + [r for key, rows in thermo.items() for r in rows[before[0].get(key, 0):]]
+                    + blades[before[1]:] + spouts[before[2]:]
+                    + [r for key, rows in light_extra.items() if isinstance(rows, list)
+                       for r in rows[before[3].get(key, 0):]] + ropes[before_ropes:])
+            shift_rows(delta, list(p) + made)
         for row in p:
             row['kit'] = name.strip()
         parts += p
