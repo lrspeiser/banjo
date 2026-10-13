@@ -3261,6 +3261,68 @@ class Puzzles(unittest.TestCase):
         self.drag([x,y],[x+96,y])
         self.assertNotEqual(self.ghost()['p']['x_m'],p0['x_m'],'in Move, the drag moves it')
 
+    def test_desktop_trackpad_pinch_zooms_the_scene_without_changing_the_page_or_design(self):
+        self.open('free')
+        self.press('Add a plank');before=self.ghost()['p']
+        x,y=self.empty_scene_point()
+        distance=self.js('window.machineCamera().distance')
+        page=self.js('[innerWidth,innerHeight,visualViewport.scale,scrollX,scrollY]')
+        # Chromium emits trackpad pinch as Ctrl+wheel, with small pixel deltas.
+        for delta in [-3]*10:
+            self.page.send('Input.dispatchMouseEvent',{'type':'mouseWheel','x':x,'y':y,
+                           'deltaX':0,'deltaY':delta,'modifiers':2})
+        self.wait(f'window.machineCamera().distance < {distance}*.8',5)
+        self.assertEqual(self.js('[innerWidth,innerHeight,visualViewport.scale,scrollX,scrollY]'),page)
+        self.assertEqual(self.ghost()['p'],before,'a pinch is a camera gesture, not a piece edit')
+        for delta in [3]*10:
+            self.page.send('Input.dispatchMouseEvent',{'type':'mouseWheel','x':x,'y':y,
+                           'deltaX':0,'deltaY':delta,'modifiers':2})
+        self.wait(f'Math.abs(window.machineCamera().distance-{distance})<1e-6',5)
+        self.assertEqual(self.ghost()['p'],before)
+        self.page.send('Input.dispatchMouseEvent',{'type':'mouseWheel','x':x,'y':y,'deltaX':0,'deltaY':-120})
+        self.wait(f'window.machineCamera().distance < {distance}*.9',5)
+        self.assertGreater(self.js('window.machineCamera().distance'),distance*.8,'ordinary wheel sensitivity is retained')
+        # Firefox may report line/page wheel units instead of pixels. Check
+        # those DOM event forms too, including the scene's safety bounds.
+        for mode,delta in [(1,-2),(2,-.1),(0,-1e6),(0,1e6)]:
+            prior=self.js('window.machineCamera().distance')
+            cancelled=self.js(f"!document.querySelector('#view canvas').dispatchEvent(new WheelEvent('wheel',{{bubbles:true,cancelable:true,ctrlKey:true,deltaMode:{mode},deltaY:{delta}}}))")
+            self.assertTrue(cancelled,'the scene consumes pinch rather than zooming the page')
+            current=self.js('window.machineCamera().distance')
+            if delta<0:self.assertLess(current,prior)
+            else:self.assertGreater(current,prior)
+            self.assertGreaterEqual(current,.4);self.assertLessEqual(current,40)
+            self.assertEqual(self.ghost()['p'],before)
+        self.assertEqual(self.js('[innerWidth,innerHeight,visualViewport.scale,scrollX,scrollY]'),page)
+        # Scene sockets must not swallow a trackpad pinch or start a cable.
+        # Ordinary wheel scrolling over controls remains available.
+        self.open('sun');self.press('Add a solar panel');self.ghost()
+        for label,value in [('x',1),('z',.4),('height',.6),('turn',-45),('tip',75)]:
+            self.slide(f'{label} of your solar 1',value)
+        self.ghost()
+        self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+        self.click_visible('Connect wires')
+        kept=self.js('window.machinePlacements()')
+        x,y=self.js("(() => {const e=[...document.querySelectorAll('#power-pins button')].find(e=>e.getClientRects().length),r=e.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2];})()")
+        self.assertTrue(self.js(f"Boolean(document.elementFromPoint({x},{y}).closest('#power-pins button'))"))
+        distance=self.js('window.machineCamera().distance')
+        self.page.send('Input.dispatchMouseEvent',{'type':'mouseWheel','x':x,'y':y,'deltaX':0,'deltaY':-30,'modifiers':2})
+        self.wait(f'window.machineCamera().distance < {distance}*.8',5)
+        self.assertEqual(self.js('window.machinePlacements()'),kept)
+        self.assertIsNone(self.js('window.machineGhostState()'),'pinching over a socket cannot start a wire')
+        # Socket positions follow the camera. Aim at its current position,
+        # rather than the canvas it occupied before zooming.
+        x,y=self.js("(() => {const e=[...document.querySelectorAll('#power-pins button')].find(e=>e.getClientRects().length),r=e.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2];})()")
+        self.assertTrue(self.js(f"Boolean(document.elementFromPoint({x},{y}).closest('#power-pins button'))"))
+        distance=self.js('window.machineCamera().distance')
+        self.page.send('Input.dispatchMouseEvent',{'type':'mouseWheel','x':x,'y':y,'deltaX':0,'deltaY':-30})
+        time.sleep(.1)
+        self.assertEqual(self.js('window.machineCamera().distance'),distance)
+        self.click_visible('Finish wiring')
+        self.click_visible('Run it')
+        self.wait("!window.machineGhostState() && /calculating live/.test(document.getElementById('clock').textContent)",30)
+        self.click_visible('Pause')
+
     def test_zoom_during_a_held_piece_drag_does_not_relocate_a_stationary_pointer(self):
         self.open('laser')
         self.press('Add a mirror');self.ghost()
@@ -3269,7 +3331,7 @@ class Puzzles(unittest.TestCase):
         self.mouse('mousePressed',x,y)
         self.page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':x+20,'y':y,'button':'left','buttons':1})
         before=self.ghost()['p'];distance=self.js('window.machineCamera().distance')
-        self.page.send('Input.dispatchMouseEvent',{'type':'mouseWheel','x':x+20,'y':y,'deltaX':0,'deltaY':-120,'button':'left','buttons':1})
+        self.page.send('Input.dispatchMouseEvent',{'type':'mouseWheel','x':x+20,'y':y,'deltaX':0,'deltaY':-30,'button':'left','buttons':1,'modifiers':2})
         self.wait(f'window.machineCamera().distance < {distance}',5)
         self.page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':x+20,'y':y,'button':'left','buttons':1})
         self.assertEqual(self.ghost()['p'],before,'zooming with the pointer held still cannot relocate the piece')

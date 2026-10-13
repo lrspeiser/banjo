@@ -1616,12 +1616,18 @@ function moveCameraPointer(e) {
   elevation = Math.min(1.45, Math.max(.05, elevation + (e.clientY - last[1]) * .006));
 }
 renderer.domElement.addEventListener('pointermove',moveCameraPointer);
-renderer.domElement.addEventListener('wheel', e => {
+view.addEventListener('wheel', e => {
+  // A trackpad pinch belongs to the whole scene, including floating sockets
+  // and labels. Ordinary wheel scrolling over controls keeps its behavior.
+  if (!e.ctrlKey && e.target !== renderer.domElement) return;
   e.preventDefault();
   if (switchDragging) return;
-  if (ghost && (e.shiftKey || e.altKey)) return;
+  if (ghost && !e.ctrlKey && (e.shiftKey || e.altKey)) return;
   const previous = distance;
-  distance = Math.min(40, Math.max(.4, distance * Math.exp(e.deltaY * .001)));
+  // Desktop trackpad pinches arrive as Ctrl+wheel, usually only a few
+  // pixels per event. Ordinary wheels retain their existing sensitivity.
+  const pixels = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? view.clientHeight : 1);
+  distance = Math.min(40, Math.max(.4, distance * Math.exp(pixels * (e.ctrlKey ? .01 : .001))));
   // Zoom while holding a piece without changing its position under the new
   // camera. Subsequent movement is relative to this new grab ray.
   if (ghost && draggingGhost) {
@@ -3615,7 +3621,7 @@ window.machineAttachState = () => ({on: attachMode, picked: attaching.map(p => p
 
 // Turning by hand: Shift and the wheel turns it, Alt and the wheel tips it.
 renderer.domElement.addEventListener('wheel', e => {
-  if (!ghost || !(e.shiftKey || e.altKey)) return;
+  if (!ghost || e.ctrlKey || !(e.shiftKey || e.altKey)) return;
   e.preventDefault();
   turnGhost(e.altKey ? 'pitch_deg' : 'yaw_deg', Math.sign(e.deltaY || e.deltaX) * -15);
 }, {passive: false});
@@ -4968,7 +4974,7 @@ async function startGame() {
     ['view-left', () => { azimuth -= .2; }], ['view-right', () => { azimuth += .2; }],
     ['view-in', () => { distance = Math.max(.4, distance / 1.2); }], ['view-out', () => { distance = Math.min(40, distance * 1.2); }]
   ]) $(id).addEventListener('click', change);
-  $('scene-note').textContent = 'Drag a ghost to move · Drag empty space to turn · Wheel or two fingers to zoom';
+  $('scene-note').textContent = 'Drag a ghost to move · Drag empty space to turn · Wheel or trackpad pinch to zoom';
   $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;
   for (const d of document.querySelectorAll('aside details:not(#feedback):not(#phone-tools):not(#solar-load-help)')) d.hidden = true;
