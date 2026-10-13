@@ -29,6 +29,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install the electrical solver
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libngspice0-dev
+
       - name: Configure
         run: cmake -S . -B build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=ON
 

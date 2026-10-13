@@ -1,4 +1,7 @@
 #include "machines/Circuit.hpp"
+#ifdef BANJO_USE_NGSPICE
+#include "machines/SpiceNetwork.hpp"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -56,7 +59,15 @@ void keys(const nlohmann::json &doc, std::initializer_list<const char *> support
 }
 
 Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
-    keys(doc, {"schema", "id", "nodes", "source", "ambient_k", "thermal_nodes", "thermal_links", "branches", "ledger", "last"});
+    keys(doc, {"schema", "id", "nodes", "source", "ambient_k", "thermal_nodes", "thermal_links", "branches", "ledger", "last", "solver"});
+    if (doc.contains("solver")) {
+        // Saved receipts describe the producing solver, not a request to load
+        // executable code or choose a different backend during restoration.
+        const auto &receipt = doc.at("solver");
+        keys(receipt, {"backend", "version", "method"});
+        require(receipt.at("backend").is_string() && receipt.at("version").is_string() &&
+                receipt.at("method") == "dc-backward-euler-rc-v1", "invalid solver receipt");
+    }
     require(doc.at("schema") == "banjo.circuit.v1", "unsupported schema");
     Circuit c;
     c.id_ = doc.at("id").get<std::string>();
@@ -301,6 +312,13 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
     // leakage resistor to ground. The supply is CV with internal resistance,
     // changing to CC when its finite chemical-energy/power budget is reached.
     const auto solveAt = [&](bool limited, double source_current) {
+#ifdef BANJO_USE_NGSPICE
+        std::vector<SpiceBranch> network;
+        network.reserve(count);
+        for (std::size_t i = 0; i < count; ++i)
+            network.push_back({branches_[i].a, branches_[i].b, g[i], emf[i]});
+        return solveSpiceNetwork(n, network, positive_, negative_, source_resistance_, voltage, limited, source_current);
+#else
         std::vector<std::vector<double>> a(n, std::vector<double>(n));
         std::vector<double> rhs(n);
         std::vector<std::size_t> parent(n); std::iota(parent.begin(), parent.end(), 0);
@@ -319,6 +337,7 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
             std::fill(a[i].begin(), a[i].end(), 0.0); a[i][i] = 1.0; rhs[i] = 0.0;
         }
         return linear(std::move(a), std::move(rhs));
+#endif
     };
     s.voltage_v = solveAt(false, 0.0);
     s.source_current_a = (voltage - (s.voltage_v[positive_] - s.voltage_v[negative_])) / source_resistance_;
@@ -490,6 +509,7 @@ nlohmann::json Circuit::saved() const {
            {"source", {{"store", store_}, {"positive", nodes_[positive_]}, {"negative", nodes_[negative_]},
                        {"resistance_ohm", source_resistance_}, {"thermal", heat_[source_heat_].id}}},
            {"branches", json::array()}, {"thermal_nodes", json::array()}, {"thermal_links", json::array()}};
+    d["solver"] = {{"backend", solverName()}, {"version", solverVersion()}, {"method", "dc-backward-euler-rc-v1"}};
     for (const auto &h : heat_) d["thermal_nodes"].push_back({{"id", h.id}, {"component", h.component},
         {"capacity_j_k", h.capacity}, {"temperature_k", h.temperature}, {"ambient_w_k", h.ambient_conductance}});
     for (const auto &l : heat_links_) d["thermal_links"].push_back({{"a", heat_[l.a].id}, {"b", heat_[l.b].id},
@@ -537,5 +557,20 @@ nlohmann::json Circuit::saved() const {
                   {"power_limited", last_.limited}, {"max_kcl_a", last_.max_kcl_a}, {"dt_s", last_.dt_s},
                   {"branch_heat_j", last_.branch_heat_j}, {"shaft_j", last_.shaft_j}, {"light_j", last_.light_j}};
     return d;
+}
+
+const char *Circuit::solverName() {
+#ifdef BANJO_USE_NGSPICE
+    return "ngspice";
+#else
+    return "native-linear";
+#endif
+}
+const char *Circuit::solverVersion() {
+#ifdef BANJO_USE_NGSPICE
+    return spiceVersion();
+#else
+    return "1";
+#endif
 }
 }

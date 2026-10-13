@@ -2,6 +2,8 @@
 
 // Bounded DC/RC networks. Construction and collision geometry stay
 // with the product; this value owns only electrical and lumped thermal state.
+// Default builds use ngspice operating points for reversible DC/BE trials;
+// accepted capacitor/thermal/energy state remains here, not in SPICE history.
 // See docs/electronics-expansion.md for the laws and numerical boundary.
 #include <nlohmann/json.hpp>
 #include <string>
@@ -69,6 +71,8 @@ struct CircuitBodyHeat {
 class Circuit {
 public:
     static Circuit read(const nlohmann::json &doc, bool restore = false);
+    [[nodiscard]] static const char *solverName();
+    [[nodiscard]] static const char *solverVersion();
     [[nodiscard]] const std::string &id() const { return id_; }
     [[nodiscard]] std::vector<CircuitHingeSwitch> hingeSwitches() const;
     [[nodiscard]] std::vector<CircuitLightSwitch> lightSwitches() const;

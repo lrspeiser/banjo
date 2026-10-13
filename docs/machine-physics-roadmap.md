@@ -4,9 +4,21 @@ October 10, 2026. A list of the physics a Rube Goldberg machine on `/machine` sh
 
 **In the machine now** means a person or the chat can put it in a machine today. **In the engine** means LiveWorld calculates it, but the machine cannot ask for it yet. **New physics** means it has to be built.
 
-Nothing on the page is animated. Every position, cut, pressure and dent is the engine's own calculation, sent to the page as it happens; change a size or a material and the outcome changes because the physics does. Heavy moments (an impact or a cut solved cell by cell) can run slower than real time, and the page's clock says when.
+Runtime body positions, cuts, pressure and dents come from the engine's declared
+models; guides, current markers and tap illustrations are visual annotations.
+Some device laws remain lumped or ideal, and the coupling/calibration limits
+below matter. Heavy impacts or cuts can run slower than real time; the page's
+clock says when.
 
 ## In the machine now
+
+October 13 specialist-solver update: new builds use ngspice for circuit operating
+points, including existing backward-Euler RC companions and motor back EMFs.
+Charge, heat and reversible mechanical coupling remain engine-owned. This
+adds no semiconductor, magnetic field, filament, flexible cable or detailed
+device-interior model. Jolt still owns rigid contacts; it never solved water
+or electricity. The [solver audit](physics-solvers.md) records measurements,
+candidate libraries and concrete missing internal components.
 
 October 13 placement assistance: working-point guides and local board/track
 seating derive from compiled geometry and declared optical, blade and terminal

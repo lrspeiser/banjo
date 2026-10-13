@@ -175,8 +175,11 @@ The larger semiconductor, magnetic and control-device catalogue remains planned.
    break, bend or be cut is also a lattice of 2 cm cells held by bonds
    (`src/fastlattice`), so a break is wherever the bonds give way. Heat and fire
    (`src/thermo`), light (`src/optics`), electric circuits
-   (`src/machines/Circuit.cpp`), water and gas pressure are worked out by the
-   same engine on every step.
+(`src/machines/Circuit.cpp`, using ngspice by default), water and gas pressure
+are worked out by the same engine on every step. These are finite-resolution
+models with explicit limits, not fully resolved device interiors. The
+[specialist solver audit](docs/physics-solvers.md) records the electrical
+backend and the remaining component, fluid and thermal work.
 
 The rules the engine keeps: an outcome comes from the materials, shapes and
 forces, never from a name or a canned animation. Nothing floats: every fixed
@@ -201,6 +204,10 @@ You need:
 
 Build the engine on Windows:
 
+First install the pinned ngspice dependency using the
+[Windows setup](docs/physics-solvers.md#reproducible-build), then pass its printed
+`NGSPICE_INCLUDE_DIR` and `NGSPICE_LIBRARY` arguments to the configure command.
+
 ```powershell
 cmake -S . -B build/release -G "Visual Studio 17 2022" -A x64
 cmake --build build/release --config Release --parallel 8 --target banjo_live_world_run
@@ -209,6 +216,7 @@ cmake --build build/release --config Release --parallel 8 --target banjo_live_wo
 Or on Linux, as the container does:
 
 ```bash
+sudo apt-get install libngspice0-dev
 cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=OFF
 cmake --build build/linux --parallel 2 --target banjo_live_world_run
 ```

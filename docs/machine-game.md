@@ -1,5 +1,11 @@
 # Puzzles on the machine (/play)
 
+October 13 electrical backend: new engine builds solve circuit operating
+points with ngspice. Player controls, wiring, capacitor state and lesson goals
+are unchanged. Circuit receipts name the solver and numerical method. This
+does not add AC/semiconductor components or complete device interiors.
+See [solver scope and measurements](physics-solvers.md).
+
 October 12, 2026. Open `/play` to choose eight chain-reaction levels, twenty-three piece lessons and three advanced electronics activities. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
 October 13 onboarding audit: all 34 authored levels use an audited teaching

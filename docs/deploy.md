@@ -16,10 +16,12 @@ The `Dockerfile` has two stages:
 
 1. **Build.** Ubuntu 24.04 compiles one program, the engine
    `banjo_live_world_run`, with no tests. CMake downloads Jolt Physics and
-   nlohmann/json from GitHub while it configures. It compiles two files at a
+   nlohmann/json from GitHub while it configures. The build also installs
+   `libngspice0-dev` for the electrical solver. It compiles two files at a
    time (`BUILD_JOBS`, default 2), because one compile per core ran Render's
    8 GB build machine out of memory.
-2. **Run.** Ubuntu 24.04 with Python 3 and nothing else. The image holds the
+2. **Run.** Ubuntu 24.04 with Python 3 and `libngspice0` (including its package
+   dependencies and notices). The image holds the
    whole source tree, as a checkout does, with the engine in `/app/bin`. There
    is no git in it, so the commit the page shows is written to
    `/app/bin/build-receipt.json` from the commit Render builds

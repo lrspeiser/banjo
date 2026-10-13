@@ -5,7 +5,7 @@
 FROM ubuntu:24.04 AS build
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      build-essential cmake ninja-build git ca-certificates python3 \
+      build-essential cmake ninja-build git ca-certificates python3 libngspice0-dev \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
@@ -21,7 +21,7 @@ RUN cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_
 FROM ubuntu:24.04
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      python3 ca-certificates \
+      python3 ca-certificates libngspice0 \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . /app
