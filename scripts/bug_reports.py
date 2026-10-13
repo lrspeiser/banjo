@@ -40,6 +40,9 @@ class Reports:
                 # Classify existing pending deliveries on the first worker pass
                 # after migration, keeping their stable issue identities.
                 db.execute('UPDATE reports SET retry_at=0 WHERE sent_url IS NULL')
+            if db.execute('PRAGMA user_version').fetchone()[0] < 1:
+                db.execute('UPDATE reports SET retry_at=0 WHERE sent_url IS NULL')
+                db.execute('PRAGMA user_version=1')
 
     @contextmanager
     def connect(self):
@@ -92,7 +95,10 @@ class Reports:
                 # or credentials in the public operational checkpoint.
                 codes = {(error.get('extensions') or {}).get('code') for error in result['errors'] if isinstance(error, dict)}
                 known = sorted(codes & {'AUTHENTICATION_ERROR', 'FORBIDDEN', 'UNAUTHENTICATED', 'RATELIMITED', 'GRAPHQL_VALIDATION_FAILED', 'INPUT_ERROR'})
-                raise LinearUnavailable('Linear rejected the request' + (' (' + ', '.join(known) + ')' if known else ''))
+                types = {(error.get('extensions') or {}).get('type') for error in result['errors'] if isinstance(error, dict)}
+                known += sorted(types & {'authentication error', 'forbidden', 'invalid input', 'ratelimited', 'graphql error', 'feature not accessible', 'usage limit exceeded', 'internal error', 'lock timeout'})
+                stage = 'project lookup' if 'BanjoProject' in query else 'issue creation' if 'BanjoBug' in query else 'issue lookup'
+                raise LinearUnavailable('Linear rejected ' + stage + (' (' + ', '.join(known) + ')' if known else ''))
             if not isinstance(result, dict) or not isinstance(result.get('data'), dict):
                 raise LinearUnavailable('Linear rejected the request')
             return result['data']

@@ -90,8 +90,9 @@ class BugReports(unittest.TestCase):
         import io
         with tempfile.TemporaryDirectory() as folder:
             store=bug_reports.Reports(Path(folder)/'reports.sqlite3','test-only-key')
-            with patch('bug_reports.urllib.request.urlopen',return_value=io.BytesIO(b'{"errors":[{"message":"denied"}],"data":{"issueCreate":{"success":true}}}')) as send:
-                with self.assertRaises(bug_reports.LinearUnavailable):store.graphql('query Test {viewer{id}}',{})
+            response=json.dumps({'errors':[{'message':'secret-provider-message','extensions':{'type':'forbidden'}}],'data':{'issueCreate':{'success':True}}}).encode()
+            with patch('bug_reports.urllib.request.urlopen',return_value=io.BytesIO(response)) as send:
+                with self.assertRaisesRegex(bug_reports.LinearUnavailable,r'Linear rejected project lookup \(forbidden\)'):store.graphql('query BanjoProject {project(id:"fixture"){id}}',{})
                 request=send.call_args.args[0]
                 self.assertEqual(request.full_url,'https://api.linear.app/graphql')
                 self.assertEqual(request.get_header('Authorization'),'test-only-key')

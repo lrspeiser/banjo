@@ -15,6 +15,9 @@ configured credential. Operational checkpoints now retain a sanitized failure
 category; outbox migration and HTTP-authentication failures have regressions.
 Migration resumes pending reports immediately without changing their identities;
 the expanded 18-test host suite passes.
+The live checkpoint confirmed a GraphQL rejection. Classification now uses
+Linear's documented SDK `extensions.type` as well as standard GraphQL codes,
+with the failed project/issue operation; provider messages remain private.
 Confirmed delivery still requires resolving that live failure.
 The 17 host tests passed, including restart retention and simulated recovery of
 an issue created before its response was lost. Eight focused browser tests passed
