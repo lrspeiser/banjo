@@ -1896,6 +1896,59 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('level-done').textContent"))
 
+    def click_existing_wire(self,name,touch=False,fraction=.5):
+        self.wait(f'Boolean(window.machineWireScreen({json.dumps(name)},{fraction}))',10)
+        x,y=self.js(f'window.machineWireScreen({json.dumps(name)},{fraction})')
+        self.assertEqual(self.js(f'document.elementFromPoint({x},{y})?.tagName'),'CANVAS')
+        if touch:
+            self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y,'id':1}]})
+            self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+        else:
+            self.mouse('mousePressed',x,y);self.mouse('mouseReleased',x,y)
+        if self.js("!document.getElementById('socket-choices').hidden"):
+            self.click_visible('Rewire '+name.removeprefix('your '))
+
+    def test_existing_wire_click_reconnects_preserves_ratings_and_cancel_undo_restore_it(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-loop',width,height,phone=width!=1280)
+                self.click_scene_socket('lamp:minus',touch=width!=1280);self.ghost()
+                self.slide('wire thickness of your wire 1','standard')
+                self.slide('cable length including slack (m) of your wire 1',7)
+                self.ghost();self.click_scene_socket('supply:minus',touch=width!=1280)
+                self.wait(f'!window.machineGhostState() && {READY}',60)
+                kept=self.js('window.machinePlacements()')
+                self.click_existing_wire('your wire 1',touch=width!=1280);opened=self.ghost()['p']
+                self.assertEqual(self.js('window.machinePlacements()'),kept,'lifting an end retains the original for cancellation')
+                self.assertEqual(self.js('window.machineGhostState().index'),0)
+                self.assertEqual((opened['size'],opened['length_m']),('standard',7))
+                key='a_terminal' if not opened['a_terminal'] else 'b_terminal'
+                other='b_terminal' if key=='a_terminal' else 'a_terminal'
+                self.assertEqual(opened[other],kept[0][other])
+                self.assertFalse(self.js("window.machineWiringState().wires.some(w=>w.name==='your wire 1'&&w.visible)"))
+                self.click_visible('Disconnect wire')
+                self.wait(f'window.machinePlacements().length===0 && !window.machineGhostState() && {READY}',60)
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Not this time',self.js("document.getElementById('level-done').textContent"),'removing the return must physically open the circuit')
+                self.press('Undo');self.wait(f'window.machinePlacements().length===1 && {READY}',60)
+                self.assertEqual(self.js('window.machinePlacements()'),kept)
+                self.click_existing_wire('your wire 1',touch=width!=1280);self.ghost()
+                self.key('Escape');self.wait('!window.machineGhostState()',5)
+                self.assertEqual(self.js('window.machinePlacements()'),kept)
+                self.click_existing_wire('your wire 1',touch=width!=1280);opened=self.ghost()['p']
+                key='a_terminal' if not opened['a_terminal'] else 'b_terminal'
+                other='b_terminal' if key=='a_terminal' else 'a_terminal'
+                self.click_scene_socket('control:out',touch=width!=1280)
+                self.wait(f'!window.machineGhostState() && {READY}',60)
+                changed=self.js('window.machinePlacements()')
+                self.assertEqual(len(changed),1,'rewiring replaces the wire instead of adding another')
+                self.assertEqual(changed[0][key],'control:out');self.assertEqual(changed[0][other],kept[0][other])
+                self.assertEqual((changed[0]['size'],changed[0]['length_m']),('standard',7))
+                self.press('Undo');self.wait(f'window.machinePlacements()[0]?.{key}==={json.dumps(kept[0][key])} && {READY}',60)
+                self.assertEqual(self.js('window.machinePlacements()'),kept)
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('level-done').textContent"))
+
     def test_close_scene_pins_offer_labelled_touch_targets_instead_of_guessing(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
@@ -1915,6 +1968,61 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('window.machineWiringState().selected'),'supply:minus')
                 self.key('Escape');self.wait('!window.machineGhostState()',5)
                 self.assertEqual(self.js('window.machinePlacements()'),[])
+
+    def test_solar_wire_click_detaches_each_end_and_can_remove_restore_and_edit_live(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('sun',width,height,phone=width!=1280)
+                self.press('Add a solar panel');self.ghost()
+                for label,value in [('x',1),('z',.4),('height',.6),('turn',-45),('tip',75)]:
+                    self.slide(f'{label} of your solar 1',value)
+                self.ghost();self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.click_scene_socket('your solar 1:power',touch=width!=1280)
+                self.click_scene_socket('winch:power',touch=width!=1280)
+                self.wait(f'window.machinePlacements().length===2 && {READY}',60)
+                kept=self.js('window.machinePlacements()')
+                detached=set()
+                for fraction in (.3,.7):
+                    self.click_existing_wire('your power_cable 2',touch=width!=1280,fraction=fraction)
+                    opened=self.ghost()['p']
+                    key='a_port' if not opened['a_port'] else 'b_port'
+                    detached.add(key)
+                    other='b_port' if key=='a_port' else 'a_port'
+                    self.assertEqual(opened[other],kept[1][other])
+                    self.wait("!window.machineWiringState().powerCables.some(w=>w.visible)",5)
+                    self.click_scene_socket(kept[1][key],touch=width!=1280)
+                    self.wait(f'!window.machineGhostState() && {READY}',60)
+                    self.assertEqual(self.js('window.machinePlacements().length'),2)
+                    self.assertEqual(self.js('window.machinePlacements()[1].a_port'),kept[1]['a_port'])
+                    self.assertEqual(self.js('window.machinePlacements()[1].b_port'),kept[1]['b_port'])
+                self.assertEqual(detached,{'a_port','b_port'})
+                kept=self.js('window.machinePlacements()')
+                self.click_existing_wire('your power_cable 2',touch=width!=1280);self.ghost()
+                self.click_visible('Disconnect wire');self.wait(f'window.machinePlacements().length===1 && {READY}',60)
+                self.press('Undo');self.wait(f'window.machinePlacements().length===2 && {READY}',60)
+                self.assertEqual(self.js('window.machinePlacements()'),kept)
+                self.click_visible('Run it');self.wait("/calculating live/.test(document.getElementById('clock').textContent)",10)
+                self.click_existing_wire('your power_cable 2',touch=width!=1280);self.ghost()
+                self.assertTrue(self.js(READY),'editing a live cable first restores a paused starting setup')
+                self.key('Escape');self.wait('!window.machineGhostState()',5)
+                self.assertEqual(self.js('window.machinePlacements()'),kept)
+
+    def test_wire_drags_turn_the_camera_and_prepared_puzzle_wires_stay_fixed(self):
+        self.open('easy-loop')
+        prepared=self.js('window.machineWiringState().wires[0].name')
+        self.assertFalse(prepared.startswith('your '))
+        self.click_existing_wire(prepared)
+        self.assertIsNone(self.js('window.machineGhostState()'))
+        self.assertEqual(self.js('window.machinePlacements()'),[])
+        self.click_scene_socket('lamp:minus');self.ghost();self.click_scene_socket('supply:minus')
+        self.wait(f'!window.machineGhostState() && {READY}',60)
+        kept=self.js('window.machinePlacements()')
+        x,y=self.js("window.machineWireScreen('your wire 1')")
+        angle=self.js('window.machineCamera().azimuth')
+        self.drag([x,y],[x+50,y])
+        self.assertNotEqual(self.js('window.machineCamera().azimuth'),angle)
+        self.assertIsNone(self.js('window.machineGhostState()'))
+        self.assertEqual(self.js('window.machinePlacements()'),kept)
 
     def test_terminal_clicks_teach_wiring_and_prepared_leads_use_the_same_routes(self):
         for width, height in ((1280,860), (390,844), (844,390)):
@@ -2233,6 +2341,22 @@ class Puzzles(unittest.TestCase):
         first = self.js('window.machinePlacements()')
         self.press('Save version')
         self.wait("/Version 1 saved/.test(document.getElementById('design-status').textContent)", 10)
+        self.click_existing_wire('your wire 3');opened=self.ghost()['p']
+        free_key='a_terminal' if not opened['a_terminal'] else 'b_terminal'
+        keep_key='b_terminal' if free_key=='a_terminal' else 'a_terminal'
+        target='your bulb 2:minus' if opened[keep_key]!='your bulb 2:minus' else 'your battery 1:minus'
+        self.click_scene_socket(target);self.wait(f'!window.machineGhostState() && {READY}',60)
+        rewired=self.js('window.machinePlacements()')
+        self.assertNotEqual(rewired,first)
+        self.assertEqual(len(rewired),4)
+        self.press('Save version');self.wait("/Version 2 saved/.test(document.getElementById('design-status').textContent)",10)
+        self.anonymous_cloud_saved()
+        self.page.send('Page.reload',{});self.wait(READY,60)
+        self.assertEqual(self.js('window.machinePlacements()'),rewired)
+        self.js("document.getElementById('design-versions').open=true;document.getElementById('version-pick').value='1'")
+        self.press('Restore version');self.wait(f'window.machinePlacements().length===4 && {READY}',60)
+        self.assertEqual(self.js('window.machinePlacements()'),first)
+        self.assertEqual(self.js('window.machineDesign().versions.map(v=>v.number)'),[1,2,3],'restoring keeps a Before restore checkpoint')
         self.press('Remove your battery 1')
         self.wait(f'window.machinePlacements().length === 1 && {READY}', 60)
         self.assertEqual(self.js('window.machinePlacements()[0].piece'), 'bulb')
@@ -2245,7 +2369,7 @@ class Puzzles(unittest.TestCase):
         self.press('Remove your battery 1')
         self.wait(f'window.machinePlacements().length === 1 && {READY}', 60)
         self.press('Save version')
-        self.wait("/Version 2 saved/.test(document.getElementById('design-status').textContent)", 10)
+        self.wait("/Version 4 saved/.test(document.getElementById('design-status').textContent)", 10)
         self.js("document.getElementById('design-versions').open = true; document.getElementById('version-pick').value = '1'")
         self.press('Restore version')
         self.wait(f'window.machinePlacements().length === 4 && {READY}', 60)
