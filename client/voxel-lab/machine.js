@@ -2424,6 +2424,7 @@ async function checkGhost(g) {
     }
     Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], energy: r.energy, drawnAt: sent, answered: true,
                       joined: objectSnapEnabled && r.snap ? `${r.snap.port} of ${r.snap.to}` : null,
+                      alignmentOnly:r.snap?.port==='cutting plane',
                       objectLock:r.snap && objectSnapEnabled ? r.snap.to+'|'+r.snap.port : null, alignment:r.alignment||null});
     g.electrical = r.electrical_preview || null;
     g.batteryPreview=r.battery_preview||[];g.proposedParts=r.parts||[];
@@ -2789,7 +2790,7 @@ function showGhostState() {
       `Preview · ${Math.round(panel.sunlight_w)} W sunlight · ${panel.shaded?'center shaded by '+panel.shaded_by:panel.ray_cast?'center in sunlight':'face away from sun'}`:'sunlight not measured');
     said.textContent = choosingTerminal ? (socketSelection()?'Choose the other connection point.':'Choose the first connection point.') : checkingCable?'Checking connection…' : (ghost.fits ? (ghost.sun && ghost.sun.length
       ? `Fits · aim ${ghost.sun[0].off_sun_deg}° · ${solarText}` : 'Fits')
-      : ghost.problems.join('; ')) + (ghost.joined ? ` · joined to ${ghost.joined}` : '');
+      : ghost.problems.join('; ')) + (ghost.joined ? ` · ${ghost.alignmentOnly ? 'aligned with' : 'joined to'} ${ghost.joined}` : '');
     said.title=ghost.fits && ghost.energy ? madeAgainstPar() : said.textContent;
   }
   const cost=$('ghost-cost');
