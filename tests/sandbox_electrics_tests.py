@@ -20,6 +20,23 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_clipped_heater_has_a_hollow_mount_and_cannot_heat_remotely(self):
+        level=mg.level_by_id('easy-heat')
+        spec=mg.compose(level,level['solution'])[0]
+        compiled=mw.compile_spec(spec)
+        heater=next(d for d in compiled['electrical']['devices'] if d['kind']=='coil')
+        self.assertEqual(heater['clipped_to'],'weight rope')
+        housing=next(p for p in compiled['parts'] if p['name']==heater['part'])
+        self.assertFalse(housing['fixed']);self.assertEqual(housing['shape'],'box')
+        self.assertEqual(len(heater['mechanical_parts']),4)
+        bad=copy.deepcopy(spec);bad['joints']=[j for j in bad['joints'] if j['name']!='your ignition 1 clip']
+        with self.assertRaises(mw.MachineRefused):mw.compile_spec(bad)
+        loose=mg.compose(level,[dict(piece='ignition',attachment_version=2,target='',preset='hot')])[0]
+        device=next(d for d in loose['electrical']['devices'] if d['kind']=='coil')
+        self.assertEqual(device['heats'],device['part'])
+        device['heats']='weight rope'
+        with self.assertRaises(mw.MachineRefused):mw.compile_spec(loose)
+
     def test_storage_cards_are_nonpolar_and_initial_energy_cannot_be_invented(self):
         spec=e.capacitor_workbench()
         compiled=mw.compile_spec(spec)
@@ -270,6 +287,40 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_visible_heater_clip_requires_attachment_and_both_leads(self):
+        level=mg.level_by_id('easy-heat')
+        for mode in ('correct','unattached','missing feed','missing return','warm'):
+            placements=copy.deepcopy(level['solution'])
+            if mode=='unattached':placements[0]['target']=''
+            if mode=='warm':placements[0]['preset']='warm'
+            if mode=='missing feed':placements.pop(1)
+            if mode=='missing return':placements.pop()
+            with tempfile.TemporaryDirectory() as logs:
+                trial=mg.trial(level,placements,ENGINE,Path(logs),runs=3)
+            self.assertEqual(trial['worked'],3 if mode=='correct' else 0,(mode,trial))
+
+    def test_clipped_heater_material_and_timestep_heat_transfer_receipts(self):
+        for material in ('glass','oak','iron'):
+            for dt in (1/240,1/480):
+                spec=e.empty('Physical heater mount comparison')
+                e.merge(spec,e.battery('supply',{'x_m':-.6},{}))
+                sample=e.box('sample',[.5,.15,0],[.04,.3,.04],material)
+                spec['parts'].append(sample)
+                e.merge(spec,e.ignition('heater',dict(target='sample',preset='warm',attachment_version=2),{'parts':[sample]}))
+                e.link(spec,'feed','supply:plus','heater:plus');e.link(spec,'return','heater:minus','supply:minus')
+                with tempfile.TemporaryDirectory() as logs:
+                    engine,_,_=mw.build_engine(ENGINE,mw.compile_spec(spec),Path(logs))
+                    try:
+                        engine.op(op='step',dt=dt,n=round(2/dt))
+                        circuit=engine.op(op='circuits')['circuits'][0]['ledger']
+                        thermo=engine.op(op='thermo')['thermo']
+                        measured=next(b for b in thermo['bodies'] if b['name']=='sample')
+                        self.assertGreater(measured['temperature_k'],293.15)
+                        self.assertGreater(circuit['exported_j'],20)
+                        self.assertLess(abs(circuit['electrical_residual_j']),1e-8)
+                        print('CLIPPED_HEATER_MATERIAL',material,dt,measured['temperature_k'],circuit)
+                    finally:engine.close()
+
     def test_motor_rear_terminals_keep_the_nudged_direction_lesson(self):
         level=mg.level_by_id('easy-motor')
         compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])

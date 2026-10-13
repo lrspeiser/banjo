@@ -2526,6 +2526,33 @@ class Puzzles(unittest.TestCase):
         self.assertIn('easy-switch',self.js('Object.keys(window.machineSave().players[window.machineSave().current].levels)'))
         self.assertIn('your pulls',result,'actual external work remains in the scored energy receipt')
 
+    def test_heat_clip_and_two_scene_wires_release_the_weight_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-heat',width,height,phone=width<1000)
+                self.press('Add a heating coil');self.ghost()
+                self.assertEqual(self.ghost()['p']['target'],'')
+                self.assertFalse(self.js("Boolean(document.querySelector('#ghost-bar select[aria-label=\"Its attached target\"]'))"))
+                self.click_scene_socket('heat:weight rope',touch=width<1000)
+                if self.js("!document.getElementById('socket-choices').hidden"):
+                    self.click_visible('heat · weight rope (Clip)')
+                self.wait("window.machineGhostState()?.p.target==='weight rope' && "+SETTLED,30)
+                self.assertTrue(self.ghost()['fits'])
+                self.slide('Its coil preset','hot');self.ghost()
+                self.click_visible('✓ Set down');self.wait(READY,60)
+                self.assertEqual(len(self.js('window.machineWiringState().wires')),0,'attachment alone does not power the heater')
+                for a,b in [('supply:plus','your ignition 1:plus'),('your ignition 1:minus','supply:minus')]:
+                    self.click_scene_socket(a,touch=width<1000);self.ghost()
+                    self.click_scene_socket(b,touch=width<1000)
+                    self.wait('!window.machineGhostState() && '+READY,60)
+                self.assertEqual(len(self.js('window.machineWiringState().wires')),2)
+                self.click_visible('Run it')
+                self.wait("document.getElementById('power-feedback-labels').textContent.includes('Material')",20)
+                self.wait("!document.getElementById('level-done').hidden",45)
+                self.assertRegex(self.js("document.getElementById('level-done').textContent"),'Level complete|Achievement Unlocked')
+                self.click_visible('Reset');self.wait(READY,60)
+                self.assertEqual(self.js('window.machinePlacements().length'),0)
+
     def test_marble_switch_wires_stay_dark_until_actual_contact_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

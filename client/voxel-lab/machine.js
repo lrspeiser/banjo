@@ -596,8 +596,9 @@ const socketTail = document.createElementNS(socketNS,'path');
 socketTail.classList.add('wire-tail'); socketSvg.append(socketTail);
 socketTail.style.display='none';
 function sceneSockets() {
+  const heater=ghost?.p.piece==='ignition'&&ghost.p.attachment_version===2;
   if (!level || playing || terminalBusy || powerBusy || rewiringBusy || pullMode || attachMode || switchDragging ||
-      (ghost && !['wire','power_cable'].includes(ghost.p.piece))) return [];
+      (ghost && !heater&&!['wire','power_cable'].includes(ghost.p.piece))) return [];
   const rect=renderer.domElement.getBoundingClientRect(), rows=[];
   const available=kind=>ghost?.p.piece===kind || level.tray.some(t=>t.piece===kind && piecesLeft(t)>0);
   const project=(name,at,kind,label,data)=>{
@@ -609,6 +610,12 @@ function sceneSockets() {
     if(document.elementFromPoint(x,y)!==renderer.domElement)return;
     rows.push({name,at,kind,label,data,x,y});
   };
+  if(heater) {
+    for(const part of machine.parts.filter(p=>p.shape==='box'&&!p.name.startsWith(ghostName()))) {
+      project('heat:'+part.name,world.bodies.get(part.name)?.position_m||part.at_m,'heater','Clip',part);
+    }
+    return rows;
+  }
   if(available('wire') && ghost?.p.piece!=='power_cable') for(const {rows:terminals} of terminalLabels.values()) for(const row of terminals) {
     const at=terminalAt(row.device,row.key,row.declaredAt);
     project(row.name,at,'terminal',row.control.textContent,row);
@@ -628,7 +635,9 @@ function socketsAt(x,y,touch=false) {
 }
 function chooseSceneSocket(row) {
   $('socket-choices').hidden=true;
-  if(row.kind==='terminal') pickTerminal(row.name,true);
+  if(row.kind==='heater'&&ghost?.p.piece==='ignition') {
+    ghost.p.target=row.data.name;renderGhostBar();showGhostKnobs();askGhost();
+  } else if(row.kind==='terminal') pickTerminal(row.name,true);
   else pickPowerPort(row.data,true);
 }
 function finishSocketClick(x,y,touch) {
@@ -671,7 +680,9 @@ function drawSceneSockets() {
   view.classList.toggle('socket-hover',Boolean(hover));
   const learningWires=!level?.free && placements.some(p=>p.piece==='battery') && level.tray.some(t=>t.piece==='wire'&&piecesLeft(t)>0);
   const hint=$('scene-wire-hint');hint.hidden=!rows.length || (!selected&&!ghost&&!hover&&!wiringMode&&!learningWires);
-  hint.textContent=selected?`${selected.replace(/^your /,'')} → click another connection point · Esc cancels`
+  hint.hidden=hint.hidden&&ghost?.p.piece!=='ignition';
+  hint.textContent=ghost?.p.piece==='ignition'&&ghost.p.attachment_version===2?
+    (hover?.kind==='heater'?`Clip heater to ${hover.data.name}`:'Click a Clip ring on the material to attach the heater'):selected?`${selected.replace(/^your /,'')} → click another connection point · Esc cancels`
     :hover?`Click ${hover.name.replace(/^your /,'')} to start a wire`:learningWires?'Click a + or − ring to start a wire, then click its other end':'Click a connection point on a piece, then the other end';
 }
 window.machineSceneSockets=()=>{freshView();return {selected:socketSelection(),pending:socketTail.style.display!=='none',
@@ -2526,10 +2537,12 @@ function electricalEditRating(){
   else if(p.piece==='capacitor')rating=`${p.capacitance_f} F · ${p.esr_ohm??.1} Ω internal · ${p.leakage_ohm??1000000} Ω leakage`;
   else if(p.piece==='motor')rating=`${Math.round((p.throttle??1)*100)}% throttle · ${p.direction||'forward'}`;
   else if(p.piece==='wire')rating=`${p.size||'standard'} wire · ${p.length_m??5} m`;
+  else if(p.piece==='ignition')rating=`${p.preset==='hot'?'.12':'12'} Ω heater · ${p.target?'clipped to '+p.target:'not attached'}`;
   else if(p.piece==='switch')rating=p.mode==='paddle'?`Contact closes at ${p.threshold_deg}°`:`Starting switch: ${p.state||'open'}`;
   return rating?`Proposed ${rating}`:'';
 }
 function pieceKnobVisible(p,key) {
+  if(p.piece==='ignition'&&p.attachment_version===2&&key==='target')return false;
   if(p.piece==='marble' && key==='height_m' && p.placement!=='at height')return false;
   if(p.piece==='pipe_elbow' && key==='fall_m' && p.plane==='downward')return false;
   if(trayItem(p.piece)?.knobs?.[key]?.hidden)return false;
@@ -2575,7 +2588,7 @@ function renderGhostBar() {
   const head = Object.assign(document.createElement('p'), {className: 'head',
     textContent: ghost.rewireKey?`Rewire ${selectedName}`:looking ? `View mode · ${selectedName}` : `Adjust ${selectedName}`});
   // Where it stands is the arrows' and the drag's; the menu changes the rest.
-  const knobs = trayItem(ghost.p.piece).knobs, allKeys = Object.keys(knobs).filter(k => k !== 'x_m' && k !== 'z_m' && pieceKnobVisible(ghost.p,k));
+  const knobs = trayItem(ghost.p.piece).knobs, allKeys = Object.keys(knobs).filter(k => k !== 'x_m' && k !== 'z_m' && !(ghost.p.attachment_version===2&&knobs[k].scene_attach) && pieceKnobVisible(ghost.p,k));
   // Endpoints are chosen on the objects. Their selectors stay in Precision
   // controls; ordinary cable editing exposes thickness/length instead.
   const connecting=['wire','power_cable'].includes(ghost.p.piece);
@@ -2677,6 +2690,12 @@ function renderGhostBar() {
   gridRow.append(snapButton,Object.assign(document.createElement('output'),{id:'grid-snap-status',ariaLive:'polite'}));
   const setting=Object.assign(document.createElement('output'),{id:'adjustment-feedback',className:'adjustment-feedback',ariaLive:'polite'});
   fields.append(head,chips,row,setting,state,gridRow,precision,$('instrument-panel'),$('preview-legend'),$('flow-preview'));
+  if(ghost.p.piece==='ignition'&&ghost.p.attachment_version===2) {
+    const prompt=Object.assign(document.createElement('p'),{className:'wire-prompt',textContent:ghost.p.target?
+      `Heater clipped to ${ghost.p.target}. Click a Clip ring to move the attachment.`:'Click a Clip ring on the material in the 3D scene. Then set the heater down and connect both power leads.'});
+    head.after(prompt);
+    if(ghost.p.target)prompt.after(button('Unclip heater',()=>{ghost.p.target='';renderGhostBar();askGhost();}));
+  }
   precision.append($('scene-actions'));
   for(const id of ['laser-preview-status','water-status','river-wheel-status','solar-lift-guide'])fields.append($(id));
   if(connecting&&!ghost.was){
@@ -2981,6 +3000,13 @@ function updatePowerFeedback() {
   if(rating&&proposed)items.push({id:'proposed-setting',name:`Adjust ${pieceLabel(ghost.p.piece)}`,kind:'object',at:proposed.at_m,text:rating,title:'Proposed component rating. Measured voltage, current and power remain separate.'});
   for(const d of sample.devices) {
     const at=world.bodies.get(d.part)?.position_m||d.at_m;if(!at)continue;
+    if(d.requirement==='heater') {
+      items.push({id:'device:'+d.name,name:'Heater',kind:'object',at,
+        text:`${d.resistance_ohm} Ω · ${d.clipped_to?'clipped to '+d.clipped_to:'not attached'}\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${d.input_w.toFixed(0)} W · ${Math.abs(d.current_a).toFixed(2)} A`}`+
+          (Number.isFinite(d.material_temperature_k)?`\n${d.clipped_to?'Material':'Heater'} ${(d.material_temperature_k-273.15).toFixed(0)} °C${d.burning?' · burning':''}`:''),
+        title:'Native current supplies I²R heat to the body this clip is mounted on. The winding uses the existing ideal lumped thermal coupling; surface contact heat transport is not modeled.'});
+      continue;
+    }
     if(d.requirement==='capacitor'||d.requirement==='resistor') {
       const storage=d.requirement==='capacitor';
       items.push({id:'device:'+d.name,name:d.name.replace(/^your /,''),kind:'object',at,
@@ -3611,6 +3637,7 @@ function clickExistingWire(x,y,touch) {
 }
 function movableGhost() {
   if (!ghost || ['wire', 'power_cable'].includes(ghost.p.piece)) return false;
+  if(ghost.p.piece==='ignition'&&ghost.p.attachment_version===2&&ghost.p.target)return false;
   const knobs = ghost && trayItem(ghost.p.piece)?.knobs;
   return Boolean(knobs?.x_m || knobs?.z_m);
 }
@@ -4297,7 +4324,7 @@ function bestStars(id) { return record(id).stars || 0; }
 const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
                     mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens', flipflop: 'flip-flop'};
 // A piece's name on its button: as the tray calls it, but a flip-flop has its hyphen.
-function pieceLabel(piece) { return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({door:'hinged door',trampoline:'spring trampoline',wind:'open airflow',loose_block:'loose block',flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'ignition coil',power_cable:'power cable'})[piece] || piece; }
+function pieceLabel(piece) { return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({door:'hinged door',trampoline:'spring trampoline',wind:'open airflow',loose_block:'loose block',flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'heating coil',power_cable:'power cable'})[piece] || piece; }
 function toolsOf(player) {
   if (!player.tools) {
     player.tools = {};
@@ -5231,6 +5258,7 @@ async function chooseLevel(id, design = null) {
     'easy-tackle':'Choose enough counterweight to lift the glass crate with the pulleys.',
     'easy-switch':'Place the switch, then drag its handle to close the lamp circuit.',
     'easy-bulb':'Choose a smaller bulb that the supply can power.',
+    'easy-heat':'Clip the heater to the hanging cord, wire both leads and heat it to release the weight.',
     'easy-water-receiver':'Widen the tap to fill the waiting box with 3 L in 5 seconds.',
     'easy-spring':'Extend the relaxed spring to lift the waiting load.',
     'easy-gears':'Size and place a gear between the powered wheel and the target wheel.',

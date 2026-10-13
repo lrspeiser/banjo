@@ -70,6 +70,37 @@ structural buckling. See [measurements and limits](sandbox-water-launch-measured
 
 ## Advanced electronics
 
+October 13: **Heat to release** v2 uses a hollow, four-bar iron heating coil.
+Click a prepared box-shaped material's **Clip** ring while placing the heater;
+its bars surround the target and declared native fixed joints mount it there.
+The target dropdown is replaced by this scene attachment. **Unclip heater**
+lets you choose another target. Set down, then draw both source/return leads
+with the ordinary scene terminals and select **hot**. No current is supplied
+merely by placement. Native current, Joule power and material temperature are
+shown beside the heater. **Burn the cord** supplies editable copies of this
+heater and both leads; saved v1 recipes retain their previous remote-target
+coil and automatic leads.
+
+The winding is a lumped rated resistor: native Joule energy goes into its
+mounted material parcel, not spatially resolved surface heat transport. A
+wired unattached heater heats its own bar, never a remote cord. Box targets
+only are offered; precise compound bodies cannot accept this thermal model.
+The goal/deadline are unchanged; the current construction's energy par is
+37.9 MJ, measured from 37.776 MJ construction plus 84.167 kJ battery work.
+At 1/240 s, the reference hot circuit releases the weight at about 8.33 s;
+missing either lead, an unattached heater and the warm preset fail in all
+three nudges. The electrical suite passed 39 tests; current and legacy heat
+recipes and ordinary scene wiring passed desktop 1280×860, phone 390×844
+and landscape 844×390 checks. The generic edit-guide compatibility case
+was repaired and passed again after the full game suite found it.
+
+Glass/oak/iron comparison: identical 4×30×4 cm targets, 12 V, 12 Ω, 2 s,
+at both 1/240 and 1/480 s. Final temperatures were respectively 293.173491,
+293.273858–293.273861 and 293.163958 K. Each run used 23.860812 J from the
+source, exported 23.722431 J and retained 0.138381 J as heat. Maximum circuit
+residual was 4.4e-13 J and thermal residual 1.1e-8 J. These are electrical
+and thermal ledgers, not a full mechanical support-reaction audit.
+
 October 13: **Marble turns on a light** uses a broad one-sided press deck,
 lower counterbalance, open support frame and shallow colliding curbs. A marble
 on the deck lowers the attached iron contact leaf onto a separate iron pad;

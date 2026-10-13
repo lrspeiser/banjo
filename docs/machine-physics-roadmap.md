@@ -8,6 +8,16 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 13 heater attachment: new **Heat to release** and **Burn the cord**
+use a hollow four-box iron clip with native fixed mounts to a scene-selected
+box target and explicit player-drawn supply/return leads. Current, Joule power
+and target temperature come from the engine. Unattached heaters heat their
+own bar; missing mount declarations cannot designate remote thermal targets.
+The fixed mount and winding's thermal coupling are ideal lumped models:
+contact-dependent thermal conductance, a resolved winding, insulation and
+mechanical attachment failure remain unimplemented. Precise compounds are
+excluded from this thermal attachment. See [measurements](machine-game.md#advanced-electronics).
+
 October 13 switch audit: the current **Marble turns on a light** lesson and
 example use a broad counterbalanced press deck, open frame, colliding curbs
 and actual iron leaf/pad contact. Inspection and current markers expose that

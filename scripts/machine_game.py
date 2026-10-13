@@ -57,7 +57,7 @@ PLAYER_TASK_COUNTS = {
     'easy-tackle': 1, 'easy-water-wheel': 1, 'easy-river-wheel': 1, 'easy-spring': 1,
     'easy-gears': 2, 'easy-weight': 1, 'easy-motor': 1, 'easy-power': 3,
     'easy-switch': 2, 'easy-bulb': 1, 'easy-loop': 1,
-    'easy-water-receiver': 1, 'easy-divert-water': 1, 'easy-heat': 1, 'easy-catapult': 1,
+    'easy-water-receiver': 1, 'easy-divert-water': 1, 'easy-heat': 3, 'easy-catapult': 1,
     'easy-marble-light': 1, 'easy-water-gate': 3, 'easy-charge-lift': 2,
     'easy-river-lift': 2, 'advanced-resistor':1,'advanced-parallel':4,'advanced-capacitor':1,
 }
@@ -1788,7 +1788,7 @@ def public(level):
                                   'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty') if k in level}
     if not level.get('free'):
         family = level.get('variant', {}).get('family', level['id'])
-        legacy_counts={'easy-solar':1,'easy-water-wheel':1,'easy-water-gate':2,'easy-water-receiver':1,'easy-gears':1,'easy-charge-lift':1}
+        legacy_counts={'easy-solar':1,'easy-water-wheel':1,'easy-water-gate':2,'easy-water-receiver':1,'easy-gears':1,'easy-charge-lift':1,'easy-heat':1}
         result['task_count'] = (legacy_counts.get(family,PLAYER_TASK_COUNTS[family]) if level.get('variant',{}).get('version')==1
                                else PLAYER_TASK_COUNTS[family])
         if family=='easy-water-wheel' and level.get('variant',{}).get('version')==2:result['task_count']=2

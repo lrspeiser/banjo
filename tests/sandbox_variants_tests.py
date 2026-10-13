@@ -32,6 +32,22 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
+    def test_heat_v2_clips_and_wires_while_v1_retains_the_original_attachment(self):
+        family=game.level_by_id('easy-heat')
+        self.assertEqual(variants.family_version(family['id']),2)
+        legacy=variants.construct(family,42,version=1)
+        self.assertEqual(game.public(legacy)['task_count'],1)
+        self.assertEqual(len(legacy['solution']),1)
+        self.assertIn('connect_to',legacy['tray'][0])
+        old_spec=game.compose(legacy,legacy['solution'])[0]
+        self.assertTrue(next(p for p in old_spec['parts'] if p['name']=='your ignition 1 housing')['fixed'])
+        seen={variants.construct(family,seed)['variant']['value']:variants.construct(family,seed) for seed in range(32)}
+        self.assertEqual(set(seen),set(variants.POLICIES[family['id']][-1]))
+        for candidate in [legacy,*seen.values()]:
+            self.assertEqual(candidate['goal'],family['goal']);self.assertEqual(candidate['time_s'],12)
+            with tempfile.TemporaryDirectory() as logs:
+                if ENGINE.is_file():self.assertTrue(variants.validate(candidate,ENGINE,Path(logs))['valid'],candidate)
+
     def test_marble_v3_press_deck_retains_both_earlier_switch_recipes(self):
         family=game.level_by_id('easy-marble-light')
         self.assertEqual(variants.family_version(family['id']),3)

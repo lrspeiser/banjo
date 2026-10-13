@@ -2688,7 +2688,7 @@ class MachineSession:
         out['water_regions']=[dict(title=r['title'],at_m=r['at_m'],
             litres=water_in_region_l(self.parcels,r),target_l=r['target_l']) for r in regions]
         out['power_devices']=electrics.power_requirements(self.compiled,self.bodies,out.get('electrical',{}),
-            (self.machines or {}).get('motors',[]),native_circuits)
+            (self.machines or {}).get('motors',[]),native_circuits,out['heat'])
         self.readouts = out
         out['stations'] = self._stations(out)
         self._capture_flows()
@@ -2748,6 +2748,8 @@ class MachineSession:
         # Otherwise a future closed branch would be drawn over an open rocker.
         switch_names=set()
         for device in graph.get('devices',[]):
+            if device['kind']=='coil' and device.get('attachment_version')==2:
+                switch_names.update(device.get('mechanical_parts',[device['part']]))
             if device['kind']!='switch' or not device.get('touch') or not device.get('hinge'): continue
             joint=next(j for j in self.compiled['joints'] if j['name']==device['hinge'])
             switch_names.update([joint['b'],device['touch'][0]])

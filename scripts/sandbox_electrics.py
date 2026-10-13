@@ -290,6 +290,8 @@ def motor(name, k, ctx):
 
 
 def ignition(name, k, ctx):
+    if k.get('attachment_version', 1) == 2:
+        return clipped_heater(name,k,ctx)
     x, z = k.get('x_m', 0), k.get('z_m', 0)
     target = k.get('target', 'included oak cord')
     parts = [box(name + ' housing', [x, .04, z], [.18, .08, .14], 'concrete')]
@@ -300,6 +302,52 @@ def ignition(name, k, ctx):
         'name': name, 'kind': 'coil', 'part': name + ' housing', 'heats': target,
         'terminals': terminal_rows(name, x, .12, z),
         'resistance_ohm': {'warm': 12, 'hot': .12}.get(k.get('preset', 'warm'), 12)}]}}
+
+
+def clipped_heater(name,k,ctx):
+    """A hollow heater clip fixed to its explicitly selected material body.
+
+    Native winding heat is still the existing lumped body-energy coupling.
+    The fix mount supplies real attachment reactions, not a remote pose.
+    An unattached clip directs its heat to its own material body.
+    """
+    target=k.get('target','')
+    try:available=ctx['parts'] if ctx else []
+    except KeyError:available=[]
+    extras=[]
+    if target=='included oak cord':
+        target=name+' target'
+        extras=[box(target,[k.get('x_m',0),.18,k.get('z_m',0)],[.02,.2,.02],'oak',False)]
+        available=[*available,*extras]
+    body=next((p for p in available if p['name']==target),None)
+    if target and (body is None or body['shape']!='box'):
+        raise ValueError('Clip the heater onto a box-shaped material body.')
+    at=list(body['at_m']) if body else [k.get('x_m',0),.05,k.get('z_m',0)]
+    dx,dz=(body['size_m'][0],body['size_m'][2]) if body else (.02,.02)
+    turn=list(body.get('turn_deg',[0,0,0])) if body else [0,0,0]
+    part=name+' housing'
+    pieces=[dict(shape='box',at_m=[side*(dx/2+.01),0,0],size_m=[.02,.06,dz+.04]) for side in (-1,1)]+[
+        dict(shape='box',at_m=[0,0,side*(dz/2+.01)],size_m=[dx,.06,.02]) for side in (-1,1)]
+    def world(local):
+        import machine_world as mw
+        w,x,y,z=mw.quaternion_of_turn(turn)
+        vx,vy,vz=local;tx,ty,tz=2*(y*vz-z*vy),2*(z*vx-x*vz),2*(x*vy-y*vx)
+        return [at[0]+vx+w*tx+y*tz-z*ty,at[1]+vy+w*ty+z*tx-x*tz,at[2]+vz+w*tz+x*ty-y*tx]
+    device=dict(name=name,kind='coil',part=part,attachment_version=2,clipped_to=target if body else '',heats=target if body else part,
+        resistance_ohm={'warm':12,'hot':.12}.get(k.get('preset','warm'),12),
+        terminals={key:world([side*(dx/2+.03),0,dz/2+.035]) for key,side in [('plus',-1),('minus',1)]})
+    # Four ordinary cell bodies form the hollow clip. Exact compounds cannot
+    # participate in native heating yet; these bars retain native heat/mass.
+    names=[part,name+' opposite bar',name+' front bridge',name+' back bridge']
+    parts=[dict(box(n,world(p['at_m']),p['size_m'],fixed=False),turn_deg=turn) for n,p in zip(names,pieces)]
+    device['mechanical_parts']=names
+    joints=[dict(name=name+' '+label,kind='fix',a=names[a],b=names[b],at_m=world(point))
+        for label,a,b,point in [('front bond',0,2,[-dx/2,0,dz/2+.01]),
+            ('back bond',0,3,[-dx/2,0,-dz/2-.01]),('right bond',2,1,[dx/2,0,dz/2+.01])]]
+    if body:
+        device['heats']=target
+        joints.append(dict(name=name+' clip',kind='fix',a=target,b=part,at_m=world([-dx/2,0,0])))
+    return dict(parts=extras+parts,joints=joints,electrical={'devices':[device]})
 
 
 def connected(builder):
@@ -519,6 +567,12 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
                 problems.append(f'electrical {name}: initial charge is zero; runtime charge belongs to the native snapshot')
         if kind == 'coil':
             if not isinstance(d.get('heats'), str) or d['heats'] not in names: problems.append(f'electrical {name}: coil target is missing')
+            if d.get('attachment_version')==2:
+                if d.get('clipped_to'):
+                    if d['heats']!=d['clipped_to'] or not any(j['kind']=='fix' and {j.get('a'),j.get('b')}=={d['part'],d['heats']} for j in joints):
+                        problems.append(f'electrical {name}: a clipped heater needs its physical fix mount')
+                elif d.get('heats')!=d['part']:
+                    problems.append(f'electrical {name}: an unattached heater can only heat itself')
             d['resistance_ohm'] = number(d, 'resistance_ohm', 12, .01, 1e6)
         if kind == 'switch':
             if not isinstance(d.get('closed', False), bool): problems.append(f'electrical {name}: closed is boolean')
@@ -629,7 +683,8 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
                 if d.get('touch'): row['follows_contact'] = dict(zip(('a','b'),d['touch']))
                 elif d.get('hinge'): row['follows_hinge'] = {'joint': joint_ids[d['hinge']], 'closed_at_or_below_deg': d['closed_at_or_below_deg']}
             elif d['kind'] == 'coil':
-                row.update(kind='resistor', resistance_ohm=d['resistance_ohm'], heats_body=d['heats'])
+                row.update(kind='resistor', resistance_ohm=d['resistance_ohm'])
+                if d.get('heats'):row['heats_body']=d['heats']
             elif d['kind']=='resistor':
                 row.update(kind='resistor',resistance_ohm=d['resistance_ohm'])
             elif d['kind']=='capacitor':
@@ -703,7 +758,7 @@ def readouts(graph, native, batteries=()):
             'networks': [c for c in native if c['id'].startswith('electrical ')]}
 
 
-def power_requirements(compiled,bodies,measured,motors,native):
+def power_requirements(compiled,bodies,measured,motors,native,heat=()):
     """Display-only static estimates; never a motor command or win rule.
 
     Use native mass/COM and declared geometry. Only simple grounded hinges
@@ -714,7 +769,7 @@ def power_requirements(compiled,bodies,measured,motors,native):
     devices={d['name']:d for d in measured.get('devices',[])}
     branches={b['id']:b for c in native for b in c['branches']}
     declarations=[(d['name'],d['part'],d,devices.get(d['name'],{}),branches.get(d['name'],{}))
-                  for d in compiled.get('electrical',{}).get('devices',[]) if d['kind'] in ('motor','bulb','resistor','capacitor')]
+                  for d in compiled.get('electrical',{}).get('devices',[]) if d['kind'] in ('motor','bulb','resistor','capacitor','coil')]
     for c in compiled.get('circuits',[]):
         if c.get('motor'):
             branch=next((b for n in native if n['id']==c['name'] for b in n['branches'] if b['id']=='motor'),{})
@@ -722,7 +777,13 @@ def power_requirements(compiled,bodies,measured,motors,native):
     motor_states={m['id']:m for m in motors}
     for name,part,declaration,reading,branch in declarations:
         row=dict(name=name,part=part,input_w=reading.get('power_w',0))
-        if declaration.get('kind')=='bulb':
+        if declaration.get('kind')=='coil':
+            row.update(requirement='heater',resistance_ohm=declaration['resistance_ohm'],heats=declaration.get('heats'),
+                clipped_to=declaration.get('clipped_to') if declaration.get('attachment_version')==2 else declaration.get('heats'),
+                voltage_v=reading.get('voltage_v',0),current_a=reading.get('current_a',0))
+            warming=next((h for h in heat if h['name']==declaration.get('heats')),None)
+            if warming:row.update(material_temperature_k=warming['temperature_k'],burning=warming['reacting'])
+        elif declaration.get('kind')=='bulb':
             row.update(rated_w=declaration['watts'],rated_voltage_v=declaration['rated_voltage_v'],
                        voltage_v=reading.get('voltage_v',0),requirement='rated')
             for station in compiled.get('stations',[]):
@@ -1032,6 +1093,31 @@ _marble_template = next(row for row in TEMPLATES if row['name']=='Marble turns o
 _marble_device = next(d for d in _marble_template['base']['electrical']['devices'] if d['kind']=='switch')
 press_paddle(_marble_template['base'], _marble_device)
 _marble_template['description'] = 'A marble presses the broad deck. A separate metal leaf meets its output pad to light the wired lamp.'
+
+_heat_lesson=next(row for row in EASY_LEVELS if row['id']=='easy-heat')
+LEGACY_HEAT_LEVEL=copy.deepcopy(_heat_lesson)
+_heater_tray=next(row for row in TRAY if row['piece']=='ignition')
+_heater_tray['knobs']['attachment_version']=dict(default=2,legacy_default=1,min=1,max=2,step=1,hidden=True,label='heater construction version')
+_heater_tray['knobs']['target'].update(default='',legacy_default='included oak cord',scene_attach=True)
+_heater_tray['description']='Clip the hollow heater onto material in the scene, then connect both power leads. Current supplies native Joule heat.'
+_heat_row=tray('ignition',start_at_defaults=True,focus_knob='preset')
+_heat_wire=tray('wire');_heat_wire['count']=2
+_heat_lesson['tray']=[_heat_row,_heat_wire]
+_heat_lesson['solution']=[dict(piece='ignition',attachment_version=2,target='weight rope',preset='hot'),
+    dict(piece='wire',a_terminal='supply:plus',b_terminal='your ignition 1:plus'),
+    dict(piece='wire',a_terminal='your ignition 1:minus',b_terminal='supply:minus')]
+_heat_lesson['wrong']=copy.deepcopy(_heat_lesson['solution']);_heat_lesson['wrong'][0]['preset']='warm'
+_heat_lesson['brief']='Clip the heater onto the hanging cord. Connect battery + to heater + and heater − to battery −. Choose hot to weaken the cord and release the weight.'
+_heat_lesson['hints']=[_heat_lesson['brief'],'The hollow clip surrounds the cord. Without both power leads, current and heating are zero. Watch measured watts and cord temperature.']
+_heat_lesson['style_pieces']=3
+_heat_lesson['par_energy_j']=37900000  # New iron clip construction and measured source use, rounded up.
+_burn_template=next(row for row in TEMPLATES if row['name']=='Burn the cord')
+_burn_template['base']['parts']=[p for p in _burn_template['base']['parts'] if not p['name'].startswith('heater ')]
+_burn_template['base']['electrical']['devices']=[d for d in _burn_template['base']['electrical']['devices'] if d['name']!='heater']
+_burn_template['base']['electrical']['wires']=[]
+_burn_template['placements']=copy.deepcopy(_heat_lesson['solution'])
+_burn_template['pieces']=['ignition','battery','wire']
+_burn_template['description']='A visible heater clip surrounds the hanging cord. Two drawn power leads supply Joule heat until the cord weakens and drops the load.'
 
 
 def advanced_electronics():

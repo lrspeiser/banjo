@@ -15,6 +15,7 @@ VERSION = 1
 FAMILY_VERSIONS = {family: 2 for family in ('easy-power', 'easy-switch', 'easy-bulb', 'easy-loop')}
 FAMILY_VERSIONS['easy-switch'] = 3
 FAMILY_VERSIONS['easy-marble-light'] = 3
+FAMILY_VERSIONS['easy-heat'] = 2
 FAMILY_VERSIONS['easy-solar'] = 2
 FAMILY_VERSIONS.update({family:2 for family in ('easy-water-wheel','easy-water-gate','easy-water-receiver')})
 FAMILY_VERSIONS.update({family:2 for family in ('easy-spring','easy-tackle','easy-gears')})
@@ -137,6 +138,10 @@ def _apparatus(family_level, version):
     """
     result = copy.deepcopy(family_level)
     family = family_level['id']
+    if family=='easy-heat' and version==1:
+        import sandbox_electrics as electrical
+        import machine_game as game
+        return game._with_free_knobs(copy.deepcopy(electrical.LEGACY_HEAT_LEVEL))
     if family=='easy-marble-light' and version==2:
         import sandbox_electrics as electrical
         import machine_game as game
