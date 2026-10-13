@@ -61,7 +61,7 @@ a declared container region, retained for half a second. Millimetre-exported
 positions and unrounded per-source volume ledgers supply the observation.
 No native water law changed. These are fixed vessels with parcels resting
 on the floor, not calibrated free-surface bucket containment, sloshing or
-movable liquid vessels. Chutes admit positive 5–35° slopes; perfectly flat
+movable liquid vessels. Chutes admit positive 5â€“35Â° slopes; perfectly flat
 pooled chutes are outside the offered domain after an instability in the
 existing weakly-compressible parcel model. Invalid colliding placements are
 refused. See [routing measurements](sandbox-water-launch-measured.md#divert-water-into-a-fixed-container-october-12).
@@ -75,9 +75,9 @@ filament temperature-dependent resistance and realistic failure remain
 unsupported. See [bulb measurements](sandbox-electrics-measured.md#bulb-sizing-and-shared-supply-limits-october-12).
 
 October 12 battery update: selected wire length and cross section now compile
-to copper resistance at 20 °C (`R = 0.0172 L/A`, metres and mm²). Native
-circuit voltage drop and `I²R` heating determine brightness. Old saved wires
-keep their 0.01 Ω resistance. The battery lesson uses a grounded source,
+to copper resistance at 20 Â°C (`R = 0.0172 L/A`, metres and mmÂ²). Native
+circuit voltage drop and `IÂ²R` heating determine brightness. Old saved wires
+keep their 0.01 Î© resistance. The battery lesson uses a grounded source,
 player-drawn positive/return leads, voltage choice and wire thickness.
 Its resistive bulb works with reversed leads; signed motor current reverses
 direction. Cable mass, spatial copper temperature, temperature-dependent
@@ -175,7 +175,7 @@ See [solar controls and limitations](machine-game.md#solar-feedback-and-explicit
 | Rigid bodies: rolling, sliding, falling, toppling, friction, rolling resistance | parts, kits | Marble run, dominoes, falling weight in the default machine |
 | Turning a whole kit any way | `"turned": {"yaw_deg", "pitch_deg", "roll_deg", "about_m", "clear_ground"}` on any kit: its parts, joints, gas, edges and lamps all turn about `about_m`; with `clear_ground` it is lifted to stand on the ground | A cannon turned 20 degrees fires 20 degrees off its line; a knife pendulum turned 30 degrees still cuts its rope (tests/machine_game_tests.py) |
 | Hinges, fixings, ropes (ties), springs, slides, a rope wound on a drum | `joints` | Lever, rope and gate |
-| Gears | New pieces use separate toothed bodies and contact torque; saved paired gears retain their ideal `gear` joint | Contact-gear measurements at 1/240 through 1/960 s are in [sandbox-mechanics-measured.md](sandbox-mechanics-measured.md#individual-contact-gears-october-12); the historical ideal pair turns 1189 / −594 degrees |
+| Gears | New pieces use separate toothed bodies and contact torque; saved paired gears retain their ideal `gear` joint | Contact-gear measurements at 1/240 through 1/960 s are in [sandbox-mechanics-measured.md](sandbox-mechanics-measured.md#individual-contact-gears-october-12); the historical ideal pair turns 1189 / âˆ’594 degrees |
 | Pulleys (block and tackle) | a `pulley` joint with a ratio | 2:1: the counterweight falls 0.538 m, the load rises 0.269 m |
 | Motors | a circuit's `motor` on a hinge: stall torque, no-load speed, throttle | Draws its battery down as it turns |
 | The sun and solar panels | `sun`, `solar_panels` on a part, charging a battery | 0.25 m2 under a 50 degree sun: 191.5 W of sunlight, 38.3 W into the battery |
@@ -205,8 +205,8 @@ October 11 contact-holder update: **Give it power** and the new saved sandbox ex
 
 | Physics | What the engine does | Planned use |
 |---|---|---|
-| Rocket thrust | A region with a nozzle pushes its vessel (thrust 2·Cd·A·Δp) | A rocket cart along a rail |
-| Fuses | A fuse branch that melts at its I²t | A fuse that blows and opens a circuit |
+| Rocket thrust | A region with a nozzle pushes its vessel (thrust 2Â·CdÂ·AÂ·Î”p) | A rocket cart along a rail |
+| Fuses | A fuse branch that melts at its IÂ²t | A fuse that blows and opens a circuit |
 
 ## New physics
 
@@ -246,4 +246,3 @@ independent blocks and prescribed open-air drag. It does not close the
 remaining cable/contact, flexible membrane, fluid pressure, magnetic or
 phase-change gaps. Air drag uses explicit external work and atmosphere
 reaction; shielding, lift and powered fans are still unsupported.
-
