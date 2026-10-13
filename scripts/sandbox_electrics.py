@@ -22,6 +22,13 @@ def terminal_rows(name, x, y, z, switch=False):
             ('out' if switch else 'minus'): [x + .08, y, z + .07]}
 
 
+def motor_terminals(housing):
+    """Connection points on the fixed, axis-aligned motor housing's rear."""
+    x,y,z=housing['at_m'];width,height,depth=housing['size_m']
+    return {key:[x+side*width/3,y+min(.02,height/4),z-depth/2-.005]
+            for key,side in [('plus',-1),('minus',1)]}
+
+
 def battery(name, k, ctx):
     if k.get('mount') == 'contact pack':
         return socket.battery(name, k, ctx)
@@ -245,7 +252,7 @@ def motor(name, k, ctx):
     return {'parts': parts, 'joints': joints, 'electrical': {'devices': [{
         # Fixed rear housing connections, clear of the rotor's swept volume.
         # The cable model is electrical; it does not supply mechanical snagging.
-        'name': name, 'kind': 'motor', 'part': part, 'terminals': terminal_rows(name, x, .2, z-.395),
+        'name': name, 'kind': 'motor', 'part': part, 'terminals': motor_terminals(parts[0]),
         'hinge': hinge, 'stall_torque_n_m': 2, 'no_load_rad_s': 8,
         'command': k.get('throttle', 1) * (1 if k.get('direction', 'forward') == 'forward' else -1),
         'brake_torque_n_m': 0, 'gear_ratio': 1}]}}

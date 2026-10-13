@@ -1483,6 +1483,13 @@ See [contact measurements](sandbox-electrics-measured.md#current-driven-display-
 
 ## Editing prepared Sandbox objects and adding a river — October 12
 
+Gear-workbench routing follow-up: its custom small motor housing previously
+overrode the ordinary motor's corrected pins. Both now derive their rear
+connection points from the actual housing dimensions, with x/y inside that
+face and z 5 mm beyond it. The gear lesson's three nudged native solutions
+still reach its unchanged goal. These are clear drawing routes, not a newly
+implemented mechanical cable law.
+
 Phone gear-choice follow-up: manual review found that slider-column styles
 overrode the new choice grid. Gear choices now explicitly use two equal
 columns and normal button text. Both gear browser checks pass in 16.513 s;

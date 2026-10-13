@@ -455,7 +455,7 @@ def gear_workbench():
         dict(x_m=-.31,z_m=-.3,hinge='drive gear axle'),{}))
     housing=next(p for p in apparatus['parts'] if p['name']=='drive motor housing')
     housing.update(at_m=[-.31,.65,-.1],size_m=[.14,.14,.1])
-    apparatus['electrical']['devices'][-1]['terminals']=_starter_electrics.terminal_rows('drive motor',-.31,.73,-.1)
+    apparatus['electrical']['devices'][-1]['terminals']=_starter_electrics.motor_terminals(housing)
     # A declared 4 N m actuator is sized for the three aluminum wheels.
     # Its native finite-power torque/speed law still determines every angle.
     apparatus['electrical']['devices'][-1]['stall_torque_n_m']=4

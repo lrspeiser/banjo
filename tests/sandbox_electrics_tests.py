@@ -285,6 +285,19 @@ class Native(unittest.TestCase):
             wrong=mg.trial(level,level['wrong'],ENGINE,Path(logs),runs=3)
             self.assertEqual(wrong['worked'],0,wrong)
 
+    def test_prepared_gear_motor_uses_its_actual_housing_and_keeps_nudged_goal(self):
+        level=mg.level_by_id('easy-gears')
+        compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+        motor=next(d for d in compiled['electrical']['devices'] if d['kind']=='motor')
+        housing=next(p for p in compiled['parts'] if p['name']==motor['part'])
+        for at in motor['terminals'].values():
+            self.assertLess(abs(at[0]-housing['at_m'][0]),housing['size_m'][0]/2)
+            self.assertLess(abs(at[1]-housing['at_m'][1]),housing['size_m'][1]/2)
+            self.assertAlmostEqual(at[2],housing['at_m'][2]-housing['size_m'][2]/2-.005)
+        with tempfile.TemporaryDirectory() as logs:
+            result=mg.trial(level,level['solution'],ENGINE,Path(logs),runs=3)
+            self.assertEqual(result['worked'],3,result)
+
     def test_sunlight_placement_sample_uses_native_geometry_without_advancing_or_charging(self):
         with tempfile.TemporaryDirectory() as logs:
             for identity in ('sun','easy-solar'):

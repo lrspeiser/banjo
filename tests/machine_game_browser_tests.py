@@ -736,6 +736,11 @@ class Puzzles(unittest.TestCase):
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
                 self.assertIn('target gear wheel',self.js('Object.keys(window.machineBodies())'))
+                for cable in self.js('machineWiringState().wires'):
+                    for a,b in zip(cable['route'],cable['route'][1:]):
+                        for i in range(101):
+                            p=[a[k]+(b[k]-a[k])*i/100 for k in range(3)]
+                            self.assertTrue(p[1]<.32 or p[2]<-.05,(cable,p))
 
     def test_individual_gear_example_library_and_saved_version_reopen(self):
         self.anonymous_levels(width=390,height=844)
