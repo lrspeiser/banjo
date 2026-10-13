@@ -8,9 +8,18 @@ export const PLACEMENT_GRID = Object.freeze({size_m:40, fine_size_m:10, step_m:.
 // guide within 8 mm, and the target must be within 5 m. No screen projection.
 export function workingAlignment(primary, targets, tolerance=.008) {
   if (!primary?.at?.every(Number.isFinite)) return {axes:[],matches:[],direction:null};
+  const targetOnLine = (q, n) => {
+    if (!q.span?.length || q.span.length !== 2 || !q.span.every(p=>p?.length===3&&p.every(Number.isFinite))) return q;
+    const [a,b]=q.span, v=b.map((x,i)=>x-a[i]), w=a.map((x,i)=>x-primary.at[i]);
+    const alongV=v.reduce((s,x,i)=>s+x*n[i],0), alongW=w.reduce((s,x,i)=>s+x*n[i],0);
+    const vp=v.map((x,i)=>x-alongV*n[i]), wp=w.map((x,i)=>x-alongW*n[i]);
+    const length2=vp.reduce((s,x)=>s+x*x,0);
+    const t=length2>1e-12 ? Math.max(0,Math.min(1,-wp.reduce((s,x,i)=>s+x*vp[i],0)/length2)) : .5;
+    return {...q,at:a.map((x,i)=>x+t*v[i])};
+  };
   const matches=[], axes=[];
   for(const [axis,i] of ['x','y','z'].map((axis,i)=>[axis,i])) {
-    const hits=targets.filter(q=>q.at?.every(Number.isFinite)&&Math.hypot(...q.at.map((v,j)=>j===i?0:v-primary.at[j]))<=tolerance&&
+    const hits=targets.map(q=>targetOnLine(q,[0,1,2].map(j=>j===i?1:0))).filter(q=>q.at?.every(Number.isFinite)&&Math.hypot(...q.at.map((v,j)=>j===i?0:v-primary.at[j]))<=tolerance&&
       Math.abs(q.at[i]-primary.at[i])<=5);
     if(hits.length){axes.push(axis);matches.push(...hits.map(q=>({...q,axis})));}
   }
@@ -18,7 +27,7 @@ export function workingAlignment(primary, targets, tolerance=.008) {
   if(primary.dir?.length===3&&primary.dir.every(Number.isFinite)) {
     const length=Math.hypot(...primary.dir);
     if(length>1e-9){const n=primary.dir.map(v=>v/length);
-      direction=targets.map(q=>{const d=q.at?.map((v,i)=>v-primary.at[i]);if(!d?.every(Number.isFinite))return null;
+      direction=targets.map(q=>targetOnLine(q,n)).map(q=>{const d=q.at?.map((v,i)=>v-primary.at[i]);if(!d?.every(Number.isFinite))return null;
         const along=d.reduce((s,v,i)=>s+v*n[i],0),off=Math.hypot(...d.map((v,i)=>v-along*n[i]));
         return along>.02&&along<=5&&off<=tolerance?{...q,along}:null;
       }).filter(Boolean).sort((a,b)=>a.along-b.along)[0]||null;

@@ -48,6 +48,33 @@ EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):
+    def test_knife_plane_snaps_to_the_compiled_member_span_and_releases(self):
+        for identity in ('easy-cut', 'cut'):
+            with self.subTest(level=identity):
+                level = mg.level_by_id(identity)
+                proposed = copy.deepcopy(level['solution'])
+                proposed[0]['z_m'] += .04
+                before = copy.deepcopy(proposed)
+                reply = mg.ghost(level, proposed, 0, snapping=True, nearby=True)
+                self.assertEqual(proposed, before, 'only an editor suggestion is returned')
+                self.assertIn('snap', reply)
+                self.assertEqual(reply['snap']['port'], 'cutting plane')
+                self.assertAlmostEqual(reply['snap']['knobs']['z_m'], .235)
+                self.assertEqual(reply['snap']['knobs']['x_m'], proposed[0]['x_m'])
+                spans = [q for q in reply['alignment']['targets'] if q.get('span')]
+                self.assertTrue(spans)
+                self.assertTrue(any(q['span'][0][1] <= reply['alignment']['primary']['at'][1] <= q['span'][1][1] for q in spans))
+                held = reply['snap']['to'] + '|' + reply['snap']['port']
+                proposed[0]['z_m'] = .235 + .09
+                self.assertNotIn('snap', mg.ghost(level, proposed, 0, snapping=True, nearby=True))
+                self.assertIn('snap', mg.ghost(level, proposed, 0, snapping=True, nearby=True, snap_hold=held))
+                proposed[0]['z_m'] = .235 + .12
+                self.assertNotIn('snap', mg.ghost(level, proposed, 0, snapping=True, nearby=True, snap_hold=held))
+                proposed[0].update(z_m=.235, x_m=-1)
+                self.assertNotIn('snap', mg.ghost(level, proposed, 0, snapping=True, nearby=True), 'distant collinear guides do not pull pieces')
+                proposed[0].update(x_m=-.08, pivot_height_m=2)
+                self.assertNotIn('snap', mg.ghost(level, proposed, 0, snapping=True, nearby=True), 'a tangent above the cord is not a cutting alignment')
+
     def test_prepared_sphere_object_can_snap_without_moving_a_group_or_clipping(self):
         import sandbox_edit
         base={'schema':mw.SCHEMA,'cell_m':.02,'parts':[

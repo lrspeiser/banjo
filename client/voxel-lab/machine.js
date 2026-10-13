@@ -2730,7 +2730,7 @@ function renderGhostBar() {
     objectSnapEnabled=!objectSnapEnabled;if(ghost){ghost.objectLock=null;ghost.joined=null;}
     try{localStorage.setItem('banjo-object-snap',objectSnapEnabled?'on':'off');}catch{/* private window */}
     objectButton.setAttribute('aria-pressed',String(objectSnapEnabled));showGridSnap();
-  },{id:'object-snap',title:'Center a marble on a nearby board or join nearby track and pipe ends. Pull away to release; Alt+drag bypasses both snaps. Green guides show alignment, not a predicted win.'});
+  },{id:'object-snap',title:'Align a knife with a nearby cord, center a marble on a board or join track and pipe ends. Pull away to release; Alt+drag bypasses both snaps. Green guides show alignment, not a predicted win.'});
   objectButton.setAttribute('aria-pressed',String(objectSnapEnabled));
   gridRow.hidden=!movableGhost()||!grid.visible;
   gridRow.append(snapButton,objectButton,Object.assign(document.createElement('output'),{id:'grid-snap-status',ariaLive:'polite'}));

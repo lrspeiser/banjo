@@ -1388,6 +1388,8 @@ def ghost(level, placements, index, snapping=False, edit_key=None, nearby=False,
         # joining API remains available for saved workflows and explicit joins.
         choices = []
         p = checked[index]
+        if reply['alignment']['primary'] and reply['alignment']['primary'].get('kinematic'):
+            choices.extend(machine_alignment.blade_candidates(reply['alignment']['primary'], reply['alignment']['targets'], p))
         if p['piece']=='marble' and mine:
             choices.extend(machine_alignment.seat_candidates(p, mine[0], compiled))
             for q in all_ports:

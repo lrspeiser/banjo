@@ -44,6 +44,15 @@ assert.equal(workingAlignment(working,[{...target,at:[0,.5,2]}]).direction,null,
 assert.deepEqual(workingAlignment(working,[{...target,at:[7,.5,2]}]).axes,[],'far-off collinear points do not highlight');
 assert.equal(workingAlignment({...working,dir:[0,0,0]},[target]).direction,null);
 assert.deepEqual(workingAlignment(null,[target]).axes,[]);
+const cordSpan={part:'member',label:'member span',at:[0,.675,.235],span:[[0,.525,.235],[0,.825,.235]]};
+const knifeSweep={at:[-.08,.69,.235],dir:[1,0,0]};
+const spanAligned=workingAlignment(knifeSweep,[cordSpan]);
+assert.deepEqual(spanAligned.axes,['x'],'a guide recognizes the cord between its endpoints');
+assert.deepEqual(spanAligned.direction.at,[0,.69,.235]);
+assert.deepEqual(workingAlignment({...knifeSweep,at:[-.08,.9,.235]},[cordSpan]).axes,[],'the cord does not extend infinitely upwards');
+assert.equal(workingAlignment({...knifeSweep,at:[-.08,.69,.27]},[cordSpan]).direction,null,'screen crossings at different depths do not align');
+const tiltedSpan={...cordSpan,span:[[0,.525,.185],[0,.825,.285]]};
+assert.equal(workingAlignment({at:[-.08,.675,.235],dir:[1,0,0]},[tiltedSpan]).direction.part,'member','rotated member geometry remains usable');
 
 const pinA = [-.68, .18, .07], pinB = [.68, .08, .07];
 for (const [a,b] of [[pinA,pinB], [pinB,pinA], [pinA,[-.68,.18,.07]], [[0,.012,.1],[0,.012,.3]]]) {

@@ -1,5 +1,30 @@
 # Puzzles on the machine (/play)
 
+October 13 knife/cord alignment: compiled slender box members named by a
+joint's `member` record expose finite centerline spans from their real size
+and rotated axes. Working XYZ/direction guides compare against the nearest
+point on that span, so a cord crossing between its center and endpoints
+highlights green. No piece-name or level-ID lookup chooses the target.
+For a horizontal knife sweep, dragging with **Snap to objects** on captures
+the cutting plane within 8 cm transversely and holds it to 11 cm. The
+working-point height must cross the finite member, and its forward tangent
+offset must be between -1 cm and 11 cm. Only horizontal transverse placement
+is suggested; forward position, height and simulated motion are untouched.
+Existing assembly overlap/range checks validate the suggestion. Pull away,
+disable object snapping or Alt-drag to bypass it. The slider's centimetre
+step can leave a 5 mm center offset, inside the existing 8 mm green-guide
+tolerance. Green indicates geometric alignment, not a guaranteed cut.
+Measured in Chrome at 1280 × 860, 390 × 844 and 844 × 390: a knife dragged
+near the cord captures its plane, reports alignment, releases when pulled
+away and completes the level through the native cut after recapture. Marble
+seating, working guides and initial piece framing regressions passed too.
+Backend checks cover both knife levels, release hysteresis, off-depth/far
+placements and a tangent above the cord; view checks include angled spans.
+All 34 authored solutions still reached their goals in three nudged native
+runs per level, and misplaced-piece checks passed. No goals, energy pars,
+physics laws or tolerances changed.
+
+
 October 13 new-piece framing: the first compiled preview of every newly added
 piece checks all eight corners of its rendered bounds in the current camera.
 The camera only moves backwards as needed (up to the existing 40 m limit),

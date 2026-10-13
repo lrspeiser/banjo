@@ -3706,6 +3706,34 @@ class Puzzles(unittest.TestCase):
                     # The actual comparison is visible, in Controls, with no disclosure.
                     self.assertTrue(self.js("(() => {const e=document.getElementById('level-done-score'), r=e.getBoundingClientRect(), p=document.getElementById('control-panel').getBoundingClientRect(); return e.checkVisibility() && r.left>=p.left && r.right<=p.right+1 && r.top>=p.top && r.bottom<=p.bottom+1;})()"))
 
+    def test_knife_drag_captures_cord_and_colors_its_working_guide_on_all_screens(self):
+        for width, height in ((1280, 860), (390, 844), (844, 390)):
+            with self.subTest(viewport=(width, height)):
+                self.open('easy-cut', width, height, phone=width != 1280)
+                self.press('Add a knife'); self.ghost()
+                if not self.js('machineWorkingGuide().objects_enabled'):
+                    self.click_visible('Snap to objects')
+                if self.js('machinePlacementGrid().enabled'):
+                    self.click_visible('Snap to grid')
+                self.slide('Position along (m) of your knife 1', -.08)
+                self.slide('Position across (m) of your knife 1', .29)
+                self.ghost()
+                self.assertFalse(self.js("machineWorkingGuide().match.axes.includes('x')"))
+                self.drag_ghost_to(-.08, .275, touch=width != 1280)
+                self.wait("machineWorkingGuide().joined?.includes('cutting plane') && machineWorkingGuide().match.axes.includes('x')", 20)
+                snapped = self.ghost()['p']
+                self.assertAlmostEqual(snapped['z_m'], .235, delta=.006)
+                self.assertAlmostEqual(snapped['x_m'], -.08, delta=.011)
+                self.assertTrue(self.js("document.getElementById('grid-snap-status').classList.contains('aligned')"))
+                self.drag_ghost_to(-.08, .4, touch=width != 1280)
+                self.wait("!machineWorkingGuide().joined && !machineWorkingGuide().match.axes.includes('x')", 20)
+                self.assertGreater(self.ghost()['p']['z_m'], .35)
+                self.drag_ghost_to(-.08, .275, touch=width != 1280)
+                self.wait("machineWorkingGuide().match.axes.includes('x')", 20)
+                self.press('Run it')
+                self.wait("!document.getElementById('level-done').hidden", 20)
+                self.assertIn('Goal at', self.js("document.getElementById('verdict').textContent"), 'the snapped build still needs and completes a native cut')
+
     def test_new_oversized_piece_fits_before_placement_without_overriding_later_camera_edits(self):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):

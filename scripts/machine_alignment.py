@@ -27,6 +27,7 @@ def feature(name, label, at, direction=None, **extra):
 def features(compiled):
     """Working points use the actual declared faces, axes and blade edges."""
     parts = {p['name']: p for p in compiled['parts']}
+    members = {j['member'] for j in compiled.get('joints', []) if j.get('member')}
     special = {}
     light = compiled.get('light') or {}
     for name in light.get('mirrors', []):
@@ -74,6 +75,10 @@ def features(compiled):
             if solid['shape'] != 'box':
                 continue
             size, axes = solid['size_m'], mw._axes(solid)
+            longest = max(range(3), key=lambda i: size[i])
+            if p['name'] in members and size[longest] >= 3*max(size[i] for i in range(3) if i != longest):
+                ends = [[solid['at_m'][i]+sign*size[longest]/2*axes[longest][i] for i in range(3)] for sign in (-1, 1)]
+                out.append(feature(p['name'], 'member span', solid['at_m'], span=ends))
             # Thin upward-facing boards/decks. A pillar is not a track.
             if size[1] >= min(size[0], size[2]) or axes[1][1] < .65:
                 continue
@@ -83,6 +88,50 @@ def features(compiled):
     for d in compiled.get('electrical', {}).get('devices', []):
         for key, at in d.get('terminals', {}).items():
             out.append(feature(d['part'], key+' terminal', at))
+    return out
+
+
+def blade_candidates(primary, targets, p):
+    """Seat a nearby cutting sweep beside a structural member in 3D.
+
+    Translate only the horizontal direction transverse to the sweep tangent.
+    Its forward offset and pivot height remain the player's choices. This is
+    geometry assistance, not a cut prediction or a stored level solution.
+    """
+    if not primary or not primary.get('kinematic') or not primary.get('dir'):
+        return []
+    direction = mw._unit(primary['dir'])
+    # Horizontal placement cannot align a tilted hinge's height reliably.
+    if abs(direction[1]) > .01:
+        return []
+    normal = mw._unit([-direction[2], 0, direction[0]])
+    if not normal:
+        return []
+    out = []
+    for target in targets:
+        span = target.get('span')
+        if not span:
+            continue
+        a, b = span
+        vector = [b[i]-a[i] for i in range(3)]
+        # The knife's tangent-height crossing must lie inside the member,
+        # not on an infinite continuation above or below the cord.
+        if abs(vector[1]) < 1e-9:
+            continue
+        t = (primary['at'][1]-a[1])/vector[1]
+        if not 0 <= t <= 1:
+            continue
+        at = [a[i]+t*vector[i] for i in range(3)]
+        delta = [at[i]-primary['at'][i] for i in range(3)]
+        # A distant collinear point may light a guide but must not attract
+        # a knife. Keep capture local to the working point in world units.
+        along = dot(delta, direction)
+        if not -.01 <= along <= RELEASE_M:
+            continue
+        correction = dot(delta, normal)
+        knobs = {key: round(p.get(key, 0)+correction*normal[i], 6) for key, i in (('x_m', 0), ('z_m', 2))}
+        out.append(dict(distance=abs(correction), knobs=knobs,
+                        to=target['part'], port='cutting plane', at=at))
     return out
 
 
