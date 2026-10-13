@@ -209,29 +209,36 @@ passes while Render fails:
 
 Help → Report a bug captures the player's note, setup, last result, screen size
 and server revision. Public replay links use banjo.is; profile return credentials
-and cookies are excluded. Delivery targets the owner's [Banjo project](https://linear.app/horizon3/project/9e5cee1b-625f-4961-be40-22efa4ab791d/overview).
+and cookies are excluded. Delivery defaults to the owner's
+[Banjo team (BAN)](https://linear.app/horizon3/team/BAN/overview), UUID
+`7b265858-df39-4202-b1f4-0aed0f73dec7`. The original Banjo project in Kangaroo
+(ROO), `9e5cee1b-625f-4961-be40-22efa4ab791d`, was archived on October 13 at
+21:47:10 UTC; Linear can read it but rejects issue creation referencing it.
 
-Set `LINEAR_API_KEY` as a server secret in Render Environment, with access to
-read the project and create its issues. Keep it out of chat, source and browser
-code. `BANJO_LINEAR_PROJECT_ID` defaults to `9e5cee1b-625f-4961-be40-22efa4ab791d`.
-The server resolves the project's team; if it has multiple teams, configure
-`BANJO_LINEAR_TEAM_ID` with a team belonging to that project. The integration
-uses [Linear's GraphQL API](https://linear.app/developers/graphql), including
-checking GraphQL errors even when HTTP succeeds.
+Set `LINEAR_API_KEY` as a server secret in Render Environment, with team read
+and issue-creation access. Keep it out of chat, source and browser code.
+No OAuth or webhook is required. `BANJO_LINEAR_TEAM_ID` can override the default
+team UUID. `BANJO_LINEAR_PROJECT_ID` is optional: leave it unset or empty for
+team-only reports, or configure an active project and a team belonging to it.
+When only a project is configured, its single team is resolved automatically.
+The integration uses [Linear's GraphQL API](https://linear.app/developers/graphql),
+checking GraphQL errors even when HTTP succeeds. Successful creation must
+return the expected issue ID and team, and the project when one is configured.
 
 Reports are committed to `bug-reports.sqlite3` beside the profile database
 before delivery. With `/data` configured, pending reports survive deployments.
-The worker retries once a minute with exponential backoff capped at one hour;
-a derived issue UUID recovers a successful create whose response was lost.
-Without a credential, reports remain pending and the page says so. Existing
-limits allow 10 submissions per visitor per hour and 500 globally per day;
-the outbox accepts at most 5,000 records and 60 KB per record. It does not
-add independent backups or automatically prune reports.
+The worker retries once a minute with exponential backoff capped at one hour.
+A stable, derived version-4 UUID recovers a successful create whose response
+was lost; Linear rejected version-5 issue IDs in direct validation. Migration
+resumes the saved pending report without deleting records. Without a credential,
+reports remain pending and the page says so. Existing limits allow 10 submissions
+per visitor per hour and 500 globally per day; the outbox accepts at most 5,000
+records and 60 KB per record. This adds no independent backups or automatic pruning.
 
-`/api/checkpoint` includes `bug_reporting.configured`, the pending count and a sanitized
-`last_error` for pending delivery. It never exposes the provider's raw error
-messages or credentials. Existing outboxes migrate without clearing reports.
-Configured means a credential exists, not that Linear accepted it. Verify
-one report's confirmed issue URL and project after configuring the key.
-Automated tests use a simulated Linear service; real delivery still requires
-this provisioning and a live verification.
+`/api/checkpoint` includes `bug_reporting.configured`, the pending count,
+team/project IDs and a sanitized `last_error`. It never exposes the provider's
+raw error messages or credentials. Configured means a credential exists, not
+that Linear accepted it. Verify one report's confirmed issue URL and destination
+after configuring the key. Automated tests simulate provider success, failure,
+restart and timeout recovery; direct tests confirmed team access, UUID validation
+and the archived project's rejection. Live creation completes the release check.

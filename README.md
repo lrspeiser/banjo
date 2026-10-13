@@ -59,7 +59,7 @@ heating and catapults one step at a time. **Share** uses banjo.is links; older
 seeded challenges still reopen from their links and recent-challenges list.
 Sandbox **Describe a design** opens the existing builder in Help: it keeps your
 base machine and checks proposed additions in the native engine. **Report a bug**
-in Help saves the setup and queues delivery to the owner's Linear project.
+in Help saves the setup and queues delivery to the owner's Banjo team in Linear.
 [Server configuration](docs/deploy.md#bug-reports-to-linear) is required for delivery.
 Every authored level opens with a visible object or goal area. The spring
 and tackle act on waiting loads, the gear lesson starts with wheels to power,

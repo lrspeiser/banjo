@@ -17,6 +17,8 @@ from urllib.parse import quote, urlsplit
 
 PROJECT_ID = '9e5cee1b-625f-4961-be40-22efa4ab791d'
 PROJECT_URL = 'https://linear.app/horizon3/project/' + PROJECT_ID + '/overview'
+DEFAULT_PROJECT_ID = ''
+TEAM_ID = '7b265858-df39-4202-b1f4-0aed0f73dec7'
 API_URL = 'https://api.linear.app/graphql'
 
 
@@ -25,10 +27,11 @@ class LinearUnavailable(Exception):
 
 
 class Reports:
-    def __init__(self, path, key='', project_id=PROJECT_ID, team_id=''):
+    def __init__(self, path, key='', project_id=DEFAULT_PROJECT_ID, team_id=None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.key, self.project_id, self.team_id = key, str(uuid.UUID(project_id)), team_id
+        self.key, self.project_id = key, str(uuid.UUID(project_id)) if project_id else None
+        self.team_id = team_id or ('' if self.project_id else TEAM_ID)
         self.team_resolved = False
         self.delivery_lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -41,9 +44,9 @@ class Reports:
                 # Classify existing pending deliveries on the first worker pass
                 # after migration, keeping their stable issue identities.
                 db.execute('UPDATE reports SET retry_at=0 WHERE sent_url IS NULL')
-            if db.execute('PRAGMA user_version').fetchone()[0] < 2:
+            if db.execute('PRAGMA user_version').fetchone()[0] < 3:
                 db.execute('UPDATE reports SET retry_at=0 WHERE sent_url IS NULL')
-                db.execute('PRAGMA user_version=2')
+                db.execute('PRAGMA user_version=3')
 
     @contextmanager
     def connect(self):
@@ -64,7 +67,8 @@ class Reports:
         with self.connect() as db:
             pending = db.execute('SELECT COUNT(*) FROM reports WHERE sent_url IS NULL').fetchone()[0]
             error = db.execute('SELECT last_error FROM reports WHERE sent_url IS NULL AND last_error IS NOT NULL ORDER BY created DESC LIMIT 1').fetchone()
-        return dict(configured=bool(self.key), pending=pending, last_error=error[0] if error else None)
+        return dict(configured=bool(self.key), pending=pending, last_error=error[0] if error else None,
+                    team_id=self.team_id, project_id=self.project_id)
 
     def submit(self, report_id, note):
         report_id = str(uuid.UUID(report_id))
@@ -98,7 +102,7 @@ class Reports:
                 known = sorted(codes & {'AUTHENTICATION_ERROR', 'FORBIDDEN', 'UNAUTHENTICATED', 'RATELIMITED', 'GRAPHQL_VALIDATION_FAILED', 'INPUT_ERROR', 'INVALID_INPUT'})
                 types = {(error.get('extensions') or {}).get('type') for error in result['errors'] if isinstance(error, dict)}
                 known += sorted(types & {'authentication error', 'forbidden', 'invalid input', 'ratelimited', 'graphql error', 'feature not accessible', 'usage limit exceeded', 'internal error', 'lock timeout'})
-                stage = 'project lookup' if 'BanjoProject' in query else 'issue creation' if 'BanjoBug' in query else 'issue lookup'
+                stage = 'project lookup' if 'BanjoProject' in query else 'team lookup' if 'BanjoTeam' in query else 'issue creation' if 'BanjoBug' in query else 'issue lookup'
                 raise LinearUnavailable('Linear rejected ' + stage + (' (' + ', '.join(known) + ')' if known else ''))
             if not isinstance(result, dict) or not isinstance(result.get('data'), dict):
                 raise LinearUnavailable('Linear rejected the request')
@@ -109,6 +113,14 @@ class Reports:
             raise LinearUnavailable('Linear delivery is unavailable') from error
 
     def resolve_team(self):
+        if not self.project_id:
+            if not self.team_id:
+                raise LinearUnavailable('Configure BANJO_LINEAR_TEAM_ID')
+            team = self.graphql('query BanjoTeam($id:String!){team(id:$id){id}}', {'id': self.team_id}).get('team')
+            if not team or str(uuid.UUID(team['id'])) != self.team_id:
+                raise LinearUnavailable('Linear team is unavailable')
+            self.team_resolved = True
+            return
         project = self.graphql('query BanjoProject($id:String!){project(id:$id){id teams{nodes{id}}}}',
                                {'id': self.project_id}).get('project')
         if not project or project.get('id') != self.project_id:
@@ -140,20 +152,21 @@ class Reports:
         # Use a derived ID, never a caller's arbitrary existing Linear issue ID.
         # Linear's issue-create validator accepts v4 IDs, not UUID5. Derive
         # stable bytes and set v4/variant bits so retries reuse the same ID.
-        issue_id = str(uuid.UUID(bytes=hashlib.sha256((self.project_id + ':' + report_id).encode()).digest()[:16], version=4))
+        issue_id = str(uuid.UUID(bytes=hashlib.sha256(('banjo-report:' + report_id).encode()).digest()[:16], version=4))
         if attempts:
             # A timeout may occur after Linear created the issue. Recover that
             # exact UUID on retry instead of filing the same report twice.
             try:
-                existing = self.graphql('query BanjoReport($id:String!){issue(id:$id){id url project{id}}}', {'id': issue_id}).get('issue')
+                existing = self.graphql('query BanjoReport($id:String!){issue(id:$id){id url team{id} project{id}}}', {'id': issue_id}).get('issue')
             except LinearUnavailable:
                 existing = None
-            if existing and (existing.get('project') or {}).get('id') == self.project_id:
+            if existing:
                 return self.issue_url(existing, issue_id)
         title = 'Banjo: ' + note['text'].splitlines()[0][:150]
-        data = self.graphql('mutation BanjoBug($input:IssueCreateInput!){issueCreate(input:$input){success issue{id url project{id}}}}',
-                            {'input': dict(id=issue_id, title=title, description=self.description(note),
-                                           teamId=self.team_id, projectId=self.project_id)})
+        issue_input = dict(id=issue_id, title=title, description=self.description(note), teamId=self.team_id)
+        if self.project_id:
+            issue_input['projectId'] = self.project_id
+        data = self.graphql('mutation BanjoBug($input:IssueCreateInput!){issueCreate(input:$input){success issue{id url team{id} project{id}}}}', {'input': issue_input})
         created = data.get('issueCreate') or {}
         if not created.get('success') or not created.get('issue'):
             raise LinearUnavailable('Linear did not confirm issue creation')
@@ -162,7 +175,7 @@ class Reports:
     def issue_url(self, issue, expected_id):
         url = issue.get('url', '')
         parsed = urlsplit(url)
-        if issue.get('id') != expected_id or (issue.get('project') or {}).get('id') != self.project_id or parsed.scheme != 'https' or parsed.netloc != 'linear.app':
+        if issue.get('id') != expected_id or (issue.get('team') or {}).get('id') != self.team_id or (self.project_id and (issue.get('project') or {}).get('id') != self.project_id) or parsed.scheme != 'https' or parsed.netloc != 'linear.app':
             raise LinearUnavailable('Linear returned an unexpected issue')
         return url
 

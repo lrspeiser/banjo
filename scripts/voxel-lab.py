@@ -97,7 +97,7 @@ class Server(ThreadingHTTPServer):
   self.profiles=anonymous_profiles.ProfileStore(profile_db or os.environ.get('BANJO_PROFILE_DB') or logs.parent/'profiles.sqlite3')
   import bug_reports
   self.bug_reports=bug_reports.Reports(self.profiles.path.with_name('bug-reports.sqlite3'),
-   os.environ.get('LINEAR_API_KEY',''),os.environ.get('BANJO_LINEAR_PROJECT_ID',bug_reports.PROJECT_ID),os.environ.get('BANJO_LINEAR_TEAM_ID',''))
+   os.environ.get('LINEAR_API_KEY',''),os.environ.get('BANJO_LINEAR_PROJECT_ID',bug_reports.DEFAULT_PROJECT_ID),os.environ.get('BANJO_LINEAR_TEAM_ID'))
   self.bug_reports.start()
   self.profile_creations=Allowance(20,2000,'new visitor profiles')
   self.profile_requests=Allowance(6000,100000,'profile requests')

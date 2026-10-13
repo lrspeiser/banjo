@@ -68,13 +68,13 @@ class BugReports(unittest.TestCase):
                 if 'BanjoReport' in query:return {'issue':issues.get(variables['id'])}
                 issue=variables['input'];creates.append(issue)
                 self.assertEqual(uuid.UUID(issue['id']).version,4,'Linear rejects issue-create IDs with a different UUID version')
-                issues[issue['id']]={'id':issue['id'],'url':'https://linear.app/horizon3/issue/TEST-1/bug','project':{'id':bug_reports.PROJECT_ID}}
+                issues[issue['id']]={'id':issue['id'],'url':'https://linear.app/horizon3/issue/TEST-1/bug','team':{'id':'team-1'},'project':{'id':bug_reports.PROJECT_ID}}
                 raise bug_reports.LinearUnavailable('Response lost after issue creation')
-            reopened=bug_reports.Reports(path,'test-only-key')
+            reopened=bug_reports.Reports(path,'test-only-key',project_id=bug_reports.PROJECT_ID)
             reopened.graphql=remote
             reopened.flush()
             self.assertEqual(reopened.status(report_id)['delivery'],'pending')
-            recovered=bug_reports.Reports(path,'test-only-key');recovered.graphql=remote
+            recovered=bug_reports.Reports(path,'test-only-key',project_id=bug_reports.PROJECT_ID);recovered.graphql=remote
             with recovered.connect() as db:db.execute('UPDATE reports SET retry_at=0')
             recovered.flush()
             self.assertEqual(recovered.status(report_id)['delivery'],'sent')
@@ -85,6 +85,25 @@ class BugReports(unittest.TestCase):
             self.assertNotEqual(creates[0]['id'],report_id,'a caller cannot nominate an arbitrary existing Linear issue')
             self.assertIn('https://banjo.is/play?level=easy-cut',creates[0]['description'])
             with self.assertRaises(ValueError):recovered.submit(report_id,dict(note,text='A different report'))
+
+    def test_default_reports_go_to_banjo_team_without_the_archived_project(self):
+        import bug_reports
+        with tempfile.TemporaryDirectory() as folder:
+            store=bug_reports.Reports(Path(folder)/'reports.sqlite3','test-only-key')
+            requests=[]
+            def remote(query,variables):
+                requests.append((query,variables))
+                if 'BanjoTeam' in query:return {'team':{'id':bug_reports.TEAM_ID}}
+                issue=variables['input']
+                return {'issueCreate':{'success':True,'issue':{'id':issue['id'],'url':'https://linear.app/horizon3/issue/BAN-1/bug','team':{'id':bug_reports.TEAM_ID},'project':None}}}
+            store.graphql=remote
+            result=store.submit(str(uuid.uuid4()),dict(text='A test report',level='easy-cut'))
+            self.assertEqual(result['delivery'],'sent')
+            created=requests[-1][1]['input']
+            self.assertEqual(created['teamId'],bug_reports.TEAM_ID)
+            self.assertNotIn('projectId',created)
+            self.assertEqual(uuid.UUID(created['id']).version,4)
+            self.assertEqual(store.summary()['pending'],0)
 
     def test_graphql_errors_do_not_count_as_delivery_and_private_return_links_are_excluded(self):
         import bug_reports
