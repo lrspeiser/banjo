@@ -620,5 +620,9 @@ retain their behavior.
 
 Checks: 32/32 electrical tests in 47.765 s, 53/53 game tests in 95.423 s, and
 four solar browser checks in 58.654 s. Source registration is 269/269. This
+The immediate-edit follow-up also checks the setup caption clears its old shade
+message before the delayed reply; the six desktop/phone scenarios pass in
+19.770 s with unchanged assertions for the live world and rendered geometry.
+This
 observation/UI change reuses verified engine SHA-256
 `acb79f1926052467cd1dad869ddd3b31cd503c54f0f77c641e99e270c0da8dfc`.

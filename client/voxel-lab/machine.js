@@ -2165,9 +2165,10 @@ function askGhost() {
   scheduleLaserPreview();
   scheduleSolarPreview();
   updatePowerLabels();
-  if (ghost.busy) { ghost.again = true; return ghost.check; }
+  if (ghost.busy) { ghost.again = true; showGhostState(); return ghost.check; }
   const g = ghost;
   g.check = checkGhost(g);
+  showGhostState();
   return g.check;
 }
 async function checkGhost(g) {

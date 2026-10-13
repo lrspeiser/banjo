@@ -1442,7 +1442,7 @@ class Puzzles(unittest.TestCase):
                     # Delay only this observation so stale visible labels are measurable.
                     self.js("(()=>{const previous=window.fetch;window.fetch=async(...args)=>{const response=await previous(...args);if(args[1]?.body?.includes('level_sunlight'))await new Promise(resolve=>setTimeout(resolve,500));return response;};})()")
                     self.slide(('x' if identity=='sun' else 'Position along (m)')+' of your solar 1',1.4)
-                    self.wait("machineSolarState().pending && !document.getElementById('power-labels').textContent.includes('In shadow') && machineSolarState().guides.length===0",10)
+                    self.wait("machineSolarState().pending && !document.getElementById('power-labels').textContent.includes('In shadow') && machineSolarState().guides.length===0 && document.querySelector('#ghost-bar .state').textContent.includes('measuring sunlight')",10)
                     self.ghost()
                     self.wait("!machineSolarState().pending && machineSolarState().panels[0]?.sunlight_w>249",30)
                     self.assertIn('Preview',self.js("document.getElementById('power-labels').textContent"))
