@@ -21,7 +21,8 @@ Windows, built and tested on Linux in CI, and not tested on macOS.
 **Eight chain-reaction levels, twenty-three piece lessons and three advanced electronics activities.**
 Every card shows its task count and stars; Level details reveals energy records.
 The game shares Controls / Level (or Design) / Help tabs on desktop and phone,
-with Run/Pause/Reset kept beside the 3D view. **Recent Changes** in the top
+with Run/Pause/Reset and a labelled **Undo** kept beside the 3D view, even
+when the controls are collapsed. **Recent Changes** in the top
 navigation opens dated player-friendly update notes over the current screen;
 closing it keeps the level or design. Each published checkpoint updates these
 notes in `client/voxel-lab/machine.html`, as required by `AGENTS.md`.

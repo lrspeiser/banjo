@@ -27,7 +27,7 @@
 <button id="start">Start</button><button id="reset">Set up again</button>
 <button id="pull-tool" aria-pressed="false" title="Pull a part to test it: press on it and drag">🖐 Pull</button>
 <button id="attach-tool" aria-pressed="false" hidden title="Join two parts: press one, then the other">🔗 Attach</button>
-<button id="undo-pieces" hidden disabled title="Take back the last change to your pieces (Ctrl+Z)" aria-label="Undo">↶</button>
+<button id="undo-pieces" hidden disabled title="Take back the last change to your pieces (Ctrl+Z)" aria-label="Undo">↶ Undo</button>
 <button id="redo-pieces" hidden disabled title="Put it back (Ctrl+Y)" aria-label="Redo">↷</button>
 <label class="speed">Speed<select id="speed" aria-label="Speed of world time"><option value="0.25">¼×</option><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
 <button id="follow" aria-pressed="true">Follow</button>
@@ -147,6 +147,7 @@
 <div class="guide-head"><h2 id="recent-changes-title">Recent Changes</h2><button id="recent-changes-done" type="button">Close</button></div>
 <div class="guide-body changes-body" tabindex="0" aria-label="Game updates, newest first">
 <section aria-labelledby="changes-oct12"><h3 id="changes-oct12"><time datetime="2026-10-12">October 12, 2026</time></h3>
+<article><h4>Undo stays beside Run and Reset</h4><p>Made a mistake? Use <b>Undo</b> beside Run and Reset to take back placement, adjustment, removal or wiring changes. It stays visible on every game tab and when the controls are collapsed. <b>Redo</b> remains under Tools and speed; Ctrl+Z and Ctrl+Y also work.</p></article>
 <article><h4>Click an existing wire to rewire it</h4><p>Click a wire you placed to lift its nearest end, then click a new connection ring. The other end stays attached and your wire thickness and length are kept. Choose <b>Disconnect wire</b> to remove it completely, Esc to restore it, or Undo to reverse a finished change. This also works for solar power cables. Overlapping wires offer a short labelled choice.</p></article>
 <article><h4>Connect wires by clicking the actual pieces</h4><p>Click a small connection ring on a battery, bulb, switch or other electrical part, then click the other end to connect a wire. You can start right in the scene or add a Wire from the tray. The first ring turns amber and a dashed line follows your pointer. Solar power cables work the same way, starting at either end. Esc or clicking your first ring cancels. Nearby points offer a short labelled choice; endpoint dropdowns are now tucked into <b>Precision controls</b>.</p></article>
 <article><h4>Zoom with your computer’s trackpad</h4><p>Pinch apart or together with the pointer over the 3D scene to zoom in or out. Small trackpad gestures now give a clear response, including over object labels. Zooming keeps the piece you are placing where you put it. A mouse wheel and phone pinch gestures still work.</p></article>

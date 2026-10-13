@@ -1192,6 +1192,46 @@ class Puzzles(unittest.TestCase):
                 self.assertFalse(self.js("document.getElementById('phone-help-panel').hidden"))
                 self.assertEqual(self.js('machinePlacements()'),before)
 
+    def test_undo_is_visible_on_every_tab_and_collapsed_and_restores_setup(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for level in ('gap','free'):
+                with self.subTest(viewport=(width,height),level=level):
+                    self.open(level,width,height,phone=width!=1280)
+                    if level=='free':
+                        self.press('All designs')
+                        self.create_design()
+                    self.assertTrue(self.js("document.getElementById('undo-pieces').disabled"))
+                    self.press('Add a plank');self.ghost();self.press('Set it down');self.wait(READY,30)
+                    placed=self.js('machinePlacements()')
+                    self.assertEqual(len(placed),1)
+                    for tab in ('Controls','Level' if level=='gap' else 'Design','Help'):
+                        self.click_visible(tab)
+                        # Check before the helper can reveal any hidden tab or disclosure.
+                        visible=self.js("""(()=>{const b=document.getElementById('undo-pieces'),r=b.getBoundingClientRect();
+                          return {parent:b.parentElement.id,text:b.textContent.trim(),disabled:b.disabled,
+                            visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight&&r.width>=44&&r.height>=44,
+                            uncovered:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})()""")
+                        self.assertEqual(visible['parent'],'phone-runbar',visible)
+                        self.assertIn('Undo',visible['text'])
+                        self.assertTrue(visible['visible'] and visible['uncovered'] and not visible['disabled'],visible)
+                    self.click_visible('Collapse controls');self.click_visible('Undo')
+                    self.wait(f'machinePlacements().length===0 && {READY}',30)
+                    self.assertTrue(self.js("document.body.classList.contains('panel-collapsed')"))
+                    self.assertTrue(self.js("document.getElementById('undo-pieces').disabled"))
+                    self.click_visible('Expand controls');self.click_visible('Controls');self.press('Redo')
+                    self.wait(READY,30);self.assertEqual(self.js('machinePlacements()'),placed)
+                    self.press('Pick up your plank 1');self.ghost()
+                    self.slide(('Cut to length' if level=='gap' else 'length')+' of your plank 1',.66)
+                    self.ghost();self.press('Set it down');self.wait(READY,30)
+                    self.assertNotEqual(self.js('machinePlacements()'),placed)
+                    self.click_visible('Undo');self.wait(READY,30)
+                    self.assertEqual(self.js('machinePlacements()'),placed)
+                    self.press('Remove your plank 1');self.wait(READY,30)
+                    self.click_visible('Undo');self.wait(READY,30)
+                    self.assertEqual(self.js('machinePlacements()'),placed)
+                    if level=='free':
+                        self.assertEqual(self.js('machineDesign().draft.placements'),placed)
+
     def test_active_piece_slider_exact_value_and_precision_disclosure_agree(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

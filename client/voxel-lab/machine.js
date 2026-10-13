@@ -5142,7 +5142,7 @@ function installPhonePanels() {
     document.body.classList.toggle('phone-panels',mobile);
     $('phone-toolbar').hidden = false; tools.hidden = false;
     tools.append($('scene-actions'),$('view-controls'));
-    $('phone-runbar').append($('start'),$('reset'));
+    $('phone-runbar').append($('start'),$('reset'),$('undo-pieces'));
     $('reset').textContent = 'Reset';
     $('reset').setAttribute('aria-label','Set up again');
     $('reset').title = 'Restore the starting setup';
@@ -5182,7 +5182,7 @@ async function startGame() {
   controls.append($('preview-legend'));
   controls.prepend($('scene-tray'), $('scene-actions'));
   $('view-controls').before($('flow-preview'));
-  $('view-controls').prepend($('undo-pieces'), $('redo-pieces'));
+  $('view-controls').prepend($('redo-pieces'));
   controls.append($('machine-controls'));
   installPhonePanels();
   // Browser scroll-to-target must leave secondary buttons below this sticky
