@@ -5107,12 +5107,23 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   selectPhonePanel('controls',true);$('control-panel').prepend(box);$('control-panel').scrollTop=0;
   const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
   const allLevels = button('All levels', () => { closeDone(); showLevelsScreen(true); });
+  const compareScore = () => {
+    if (!Number.isFinite(r.energy_j) || !(r.par_energy_j > 0)) return;
+    const summary = add('div', {id: 'level-done-score'});
+    const line = (className, textContent) => summary.appendChild(Object.assign(document.createElement('p'), {className, textContent}));
+    line('energy', `Energy used: ${energyText(r.energy_j)}`);
+    // This is the authored three-star benchmark, not a theoretical minimum.
+    line('score-target', `Perfect score target: ${energyText(r.par_energy_j)} or less.`);
+    const over = r.energy_j - r.par_energy_j;
+    line('score-margin', over > 0 ? `${energyText(over)} above target.` : 'Energy target met.');
+  };
   if (r.tested) {
     // Pulled by hand: what happened, and that it is a test, not a win.
     add('h2', {textContent: 'A test run'});
     add('p', {textContent: r.earned.goal ? `With your pull, the goal happened at ${describeTime(r.goal_at_s)}.`
                                          : `With your pull, the goal did not happen within ${level.time_s} s.`});
     add('p', {className: 'hint', textContent: 'A run you pull by hand tests the parts. To win, let the machine do it: run it without pulling.'});
+    compareScore();
     const actions = add('div', {className: 'actions'});
     actions.append(button('Play again', () => { closeDone(); startOver(true); }, {className: 'primary', ariaLabel: 'Play this level again'}),
                    allLevels);
@@ -5126,8 +5137,8 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
         .join(' and ')}!` + (completedAll && !level.variant ? ' And you finished every level!' : '')});
     } else add('h2', {textContent: level.variant ? 'Challenge complete!' : completedAll ? 'You finished every level!' : 'Level complete!'});
     add('p', {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)});
-    // What the win took, in energy, against par: behind Energy details, so the
-    // card is the stars and what to do next.
+    compareScore();
+    // Keep the score comparison visible; the fabrication/run breakdown is optional.
     const how = button('Energy details', () => {
       details.hidden = !details.hidden;
       how.setAttribute('aria-expanded', String(!details.hidden));
@@ -5137,16 +5148,13 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     const details = add('div', {id: 'level-done-energy', className: 'how', hidden: true});
     const addHow = (tag, props) => details.appendChild(Object.assign(document.createElement(tag), props));
     const e = r.energy || {}, run = e.run || {};
-    addHow('p', {className: 'energy', textContent: `Energy used: ${energyText(r.energy_j)}`});
     addHow('p', {className: 'breakdown', textContent: `${energyText(e.pieces_j)} to make your pieces, ` +
       (run.j ? `${energyText(run.j)} in the run` : 'nothing used in the run') + (run.j ? ` (${[['heat', run.heat_j], ['powder', run.powder_j],
       ['electricity', run.electric_j], ['water source', run.water_j], ['your pulls', run.pull_j]].filter(([, j]) => j).map(([w, j]) => `${w} ${energyText(j)}`).join(', ')})` : '') + '.'});
-    // Par is the level's own solution's energy, rounded up: within 1% of it is on par.
-    const par = r.par_energy_j, verdict = r.energy_j < 0.99 * par ? `Under par (${energyText(par)})!`
-      : r.energy_j <= par ? `At par (${energyText(par)}).` : `Par is ${energyText(par)}.`;
+    const par = r.par_energy_j;
     const best = kept.was.energy_j != null
-      ? (r.energy_j < kept.was.energy_j ? ` New best for ${save.current}!` : ` Your best: ${energyText(kept.was.energy_j)}.`) : '';
-    addHow('p', {textContent: `Goal at ${describeTime(r.goal_at_s)}. ${verdict}${best}`});
+      ? (r.energy_j < kept.was.energy_j ? ' New personal best!' : ` Your best: ${energyText(kept.was.energy_j)}.`) : '';
+    addHow('p', {textContent: `Goal at ${describeTime(r.goal_at_s)}.${best}`});
     // What each piece took, and how far from par: a piece made of the same
     // stuff takes energy in proportion to its weight.
     const pieces = Object.entries(e.pieces || {});
@@ -5170,6 +5178,7 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     // over, with no pieces or with the same ones to change.
     add('h2', {textContent: 'Not this time'});
     add('p', {textContent: `The goal did not happen within ${level.time_s} s.`});
+    compareScore();
     const actions = add('div', {className: 'actions'});
     actions.append(button('Start over', () => { closeDone(); startOver(false); }, {className: 'primary'}),
                    button('Keep my pieces', () => { closeDone(); startOver(true); }), allLevels);

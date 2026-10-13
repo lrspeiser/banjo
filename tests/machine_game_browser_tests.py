@@ -3605,6 +3605,13 @@ class Puzzles(unittest.TestCase):
         self.press('Run it')
         self.wait("!document.getElementById('level-done').hidden", 30)
         self.assertIn('Not this time', self.js("document.getElementById('level-done').textContent"))
+        comparison = self.js("document.getElementById('level-done-score').innerText")
+        self.assertIn('Perfect score target:', comparison)
+        self.press('Keep my pieces'); self.wait(READY, 60)
+        self.assertEqual(len(self.js('machinePlacements()')), 1)
+        self.press('Run it'); self.wait("!document.getElementById('level-done').hidden", 30)
+        self.assertIn('Not this time', self.js("document.getElementById('level-done').textContent"))
+        self.assertEqual(self.js("document.getElementById('level-done-score').innerText"), comparison)
         self.press('Start over')
         self.wait(READY, 60)
         self.assertEqual(self.js("document.querySelectorAll('#placed li').length"), 0)
@@ -3665,6 +3672,36 @@ class Puzzles(unittest.TestCase):
                                         "return r.left >= p.left && r.right <= p.right && r.top >= p.top && r.bottom <= p.bottom + 1; })"))
         self.press('Energy details')
         self.assertTrue(self.js("document.getElementById('level-done-energy').hidden"))
+
+    def test_kept_pieces_reruns_show_current_energy_against_perfect_score_on_all_screens(self):
+        for width, height in ((1280, 860), (390, 844), (844, 390)):
+            with self.subTest(viewport=(width, height)):
+                self.open('gap', width, height, phone=width != 1280)
+                self.press('Add a plank'); self.ghost()
+                for label, value in [('Cut to length', .78), ('Set down at x', .3), ('across (z, m)', 0)]:
+                    self.slide(label + ' of your plank 1', value)
+                self.ghost(); self.press('Set it down'); self.wait(READY)
+                # A first win and two ordinary reruns: same build, then a lighter one.
+                for attempt, length in enumerate((.78, .78, .70)):
+                    if attempt:
+                        self.press('Restart with my pieces' if attempt == 1 else 'Play this level again'); self.wait(READY)
+                        self.assertTrue(self.js("document.getElementById('level-done').hidden"))
+                        self.assertEqual(len(self.js('machinePlacements()')), 1)
+                    if attempt == 2:
+                        self.click_piece(0)
+                        self.slide('Cut to length of your plank 1', length)
+                        self.ghost(); self.press('Set it down'); self.wait(READY)
+                    self.press('Run it')
+                    self.wait("!document.getElementById('level-done').hidden")
+                    self.assertTrue(self.js("document.getElementById('level-done-energy').hidden"))
+                    summary = self.js("document.getElementById('level-done-score').innerText")
+                    self.assertIn('Perfect score target: 30.6 MJ or less.', summary)
+                    self.assertIn('Energy used: ' + ('34.1 MJ' if attempt < 2 else '30.6 MJ'), summary)
+                    self.assertIn('above target.' if attempt < 2 else 'Energy target met.', summary)
+                    self.assertEqual(self.js("document.querySelector('#level-done .stars').textContent"),
+                                     '★★☆' if attempt < 2 else '★★★')
+                    # The actual comparison is visible, in Controls, with no disclosure.
+                    self.assertTrue(self.js("(() => {const e=document.getElementById('level-done-score'), r=e.getBoundingClientRect(), p=document.getElementById('control-panel').getBoundingClientRect(); return e.checkVisibility() && r.left>=p.left && r.right<=p.right+1 && r.top>=p.top && r.bottom<=p.bottom+1;})()"))
 
     def test_view_move_buttons_stay_in_the_scene_corner_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390),(320,568)):
