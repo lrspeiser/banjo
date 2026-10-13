@@ -1483,6 +1483,12 @@ See [contact measurements](sandbox-electrics-measured.md#current-driven-display-
 
 ## Editing prepared Sandbox objects and adding a river — October 12
 
+Phone gear-choice follow-up: manual review found that slider-column styles
+overrode the new choice grid. Gear choices now explicitly use two equal
+columns and normal button text. Both gear browser checks pass in 16.513 s;
+the lesson checks all four button widths/heights, bounds and two-row layout
+at desktop, portrait and landscape sizes, in addition to its native win.
+
 Follow-up verification: the motor lesson's terminals are on the rear face of
 its fixed housing, 5 mm beyond that face and over 25 cm behind the rotor's
 rear face. Rendered floor routes clear the rotor's full swept bounds on

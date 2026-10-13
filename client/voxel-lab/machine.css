@@ -516,6 +516,8 @@ body.panel-tabs .control-panel .ghost-bar{flex:1;min-height:0;height:100%;gap:0}
 body.panel-tabs .ghost-fields>.head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px;margin:0;font-size:14px;font-weight:600}
 body.panel-tabs .ghost-fields>.head>.exact-value{width:100px;flex:none}
 body.panel-tabs .ghost-fields>.knob-row{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:6px;width:100%}
+body.panel-tabs .ghost-fields>.knob-row.gear-choices{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+body.panel-tabs .ghost-bar .gear-choices button{font:14px system-ui;padding:8px;min-width:44px;min-height:44px}
 body.panel-tabs .ghost-fields>.state{margin:0;font-size:12px}
 body.panel-tabs .ghost-fields>.move-pad{display:grid;grid-template-columns:repeat(6,44px);grid-template-rows:44px;position:static;gap:3px}
 body.panel-tabs .ghost-fields .move-pad button{grid-area:auto}
