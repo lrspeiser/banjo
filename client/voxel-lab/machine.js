@@ -412,7 +412,7 @@ function syncTerminalLabels() {
   }
   showInstrumentPanel();
 }
-async function pickTerminal(name) {
+async function pickTerminal(name,fromScene=false) {
   if (!level || playing || terminalBusy || (ghost && ghost.p.piece !== 'wire')) return;
   const tray = level.tray.find(t => t.piece === 'wire');
   if (!tray || (!ghost && piecesLeft(tray) <= 0)) return;
@@ -424,7 +424,7 @@ async function pickTerminal(name) {
     }
     terminalStart = name; ghost.p.a_terminal = name; ghost.p.b_terminal = '';
     renderGhostBar(); askGhost();
-    powerMessage('Now choose the other terminal. Esc cancels this wire.'); return;
+    powerMessage('Now choose the other terminal. Esc cancels this wire.',!fromScene); return;
   }
   if (terminalStart === name) { cancelGhost(); powerMessage(''); return; }
   const g = ghost, sourceLevel = level;
@@ -436,7 +436,7 @@ async function pickTerminal(name) {
     if (!g.fits) { powerMessage(g.problems.join(' · ')); return; }
     if (placeGhost()) {
       await rebuildLevel(false);
-      if (level === sourceLevel) powerMessage('Wire connected. Run it to try the circuit.');
+      if (level === sourceLevel) powerMessage('Wire connected. Run it to try the circuit.',!fromScene);
     }
   } catch (e) { powerMessage(e.message); }
   finally { terminalBusy = false; positionTerminalLabels(); }
@@ -457,7 +457,7 @@ function positionTerminalLabels() {
   const physical=shownElectrical().devices?.some(d=>d.kind==='socket');
   for (const {card: reading, overlay: card, controls, rows, device, feedback,handle} of terminalLabels.values()) {
     reading.hidden = false;
-    controls.hidden = playing || (!wiringMode && !terminalStart);
+    controls.hidden = playing || !wiringMode;
     feedback.hidden=false;
     {
       const prefix=snapshot.preview?'Preview · ':'';
@@ -504,7 +504,7 @@ function positionTerminalLabels() {
     if (!first) {card.hidden=true; for (const row of rows) row.leader.style.display='none'; continue;}
     const grip=device.handle&&terminalAt({name:device.name,part:device.handle.part},'',device.handle.at_m);
     const p = new THREE.Vector3(...(grip||first.at)).project(camera);
-    card.hidden = ((playing || (!wiringMode && !terminalStart)) && !handle) || Math.abs(p.z) > 1 || Math.abs(p.x) > 1.4 || Math.abs(p.y) > 1.4;
+    card.hidden = ((playing || !wiringMode) && !handle) || Math.abs(p.z) > 1 || Math.abs(p.x) > 1.4 || Math.abs(p.y) > 1.4;
     for (const row of rows) { row.leader.style.display = card.hidden ? 'none' : ''; row.control.disabled = !editable; row.control.setAttribute('aria-pressed', String(row.name === terminalStart)); }
     if (card.hidden) continue;
     const w = card.offsetWidth, h = card.offsetHeight, ax = (p.x+1)*rect.width/2, ay = (1-p.y)*rect.height/2;
@@ -537,6 +537,98 @@ window.machineWiringState = () => ({selected:terminalStart, busy:terminalBusy,
   terminals:Object.fromEntries([...terminalLabels.values()].flatMap(({rows})=>rows.filter(r=>r.at).map(r=>[r.name,r.at]))),
   powerPorts:Object.fromEntries((machine?.electrical?.power_ports||[]).map(p=>[p.name,powerPortAt(p)])),
   powerCables:wires.filter(w=>w.powerCable).map(w=>({name:w.name,points_m:w.points_m,visible:w.line.visible}))});
+
+// Pick the actual connection point in the scene, independently of the
+// optional offset buttons and precision selectors. These rings and the
+// unfinished line are editing guides, not energized wires or conductors.
+let socketPointer = null, socketPress = null;
+const socketMarks = new Map();
+const socketSvg = $('scene-sockets'), socketNS = socketSvg.namespaceURI;
+const socketTail = document.createElementNS(socketNS,'path');
+socketTail.classList.add('wire-tail'); socketSvg.append(socketTail);
+socketTail.style.display='none';
+function sceneSockets() {
+  if (!level || playing || terminalBusy || powerBusy || pullMode || attachMode || switchDragging ||
+      (ghost && !['wire','power_cable'].includes(ghost.p.piece))) return [];
+  const rect=renderer.domElement.getBoundingClientRect(), rows=[];
+  const available=kind=>ghost?.p.piece===kind || level.tray.some(t=>t.piece===kind && piecesLeft(t)>0);
+  const project=(name,at,kind,label,data)=>{
+    if (!at?.every(Number.isFinite)) return;
+    const p=new THREE.Vector3(...at).project(camera);
+    const x=rect.left+(p.x+1)*rect.width/2,y=rect.top+(1-p.y)*rect.height/2;
+    if(p.z < -1 || p.z>1 || x<rect.left+10 || x>rect.right-10 || y<$('clock').getBoundingClientRect().bottom+12 || y>rect.bottom-10)return;
+    // UI actions remain authoritative where they overlap a world endpoint.
+    if(document.elementFromPoint(x,y)!==renderer.domElement)return;
+    rows.push({name,at,kind,label,data,x,y});
+  };
+  if(available('wire') && ghost?.p.piece!=='power_cable') for(const {rows:terminals} of terminalLabels.values()) for(const row of terminals) {
+    const at=terminalAt(row.device,row.key,row.declaredAt);
+    project(row.name,at,'terminal',row.control.textContent,row);
+  }
+  if(available('power_cable') && ghost?.p.piece!=='wire') for(const row of powerLabels.values()) {
+    if(row.control)project(row.port.name,powerPortAt(row.port),'power',row.port.kind==='output'?'Out':'In',row.port);
+  }
+  return rows;
+}
+function socketSelection() {
+  return terminalStart || pickedPowerPort || (ghost?.p.piece==='power_cable' && (ghost.p.a_port||ghost.p.b_port)) || null;
+}
+function socketsAt(x,y,touch=false) {
+  freshView();
+  return sceneSockets().map(row=>({...row,gap:Math.hypot(row.x-x,row.y-y)}))
+    .filter(row=>row.gap<=(touch?28:22)).sort((a,b)=>a.gap-b.gap);
+}
+function chooseSceneSocket(row) {
+  $('socket-choices').hidden=true;
+  if(row.kind==='terminal') pickTerminal(row.name,true);
+  else pickPowerPort(row.data,true);
+}
+function finishSocketClick(x,y,touch) {
+  const rows=socketsAt(x,y,touch);
+  if(!rows.length)return false;
+  // When two pins are nearly on top of one another, offer labelled touch
+  // targets instead of guessing which conductor the player intended.
+  if(rows[1] && rows[1].gap-rows[0].gap<8) {
+    const choice=$('socket-choices');choice.replaceChildren();
+    for(const row of rows.slice(0,4))choice.append(button(`${row.name.replace(/^your /,'').replace(':',' · ')} (${row.label})`,()=>chooseSceneSocket(row)));
+    choice.append(button('Cancel',()=>{choice.hidden=true;}));choice.hidden=false;
+    const rect=renderer.domElement.getBoundingClientRect();
+    choice.style.left=`${Math.max(6,Math.min(rect.width-choice.offsetWidth-6,x-rect.left+12))}px`;
+    choice.style.top=`${Math.max(6,Math.min(rect.height-choice.offsetHeight-6,y-rect.top+12))}px`;
+  } else chooseSceneSocket(rows[0]);
+  return true;
+}
+function drawSceneSockets() {
+  const rows=sceneSockets(), rect=renderer.domElement.getBoundingClientRect(), selected=socketSelection();
+  const hover=socketPointer && !cameraGesture && !sceneDragged && !draggingGhost && !switchDragging
+    ?rows.map(row=>({...row,gap:Math.hypot(row.x-socketPointer[0],row.y-socketPointer[1])})).filter(row=>row.gap<=22).sort((a,b)=>a.gap-b.gap)[0]:null;
+  const names=new Set(rows.map(row=>row.name));
+  for(const [name,mark] of socketMarks)if(!names.has(name)){mark.remove();socketMarks.delete(name);}
+  for(const row of rows) {
+    let mark=socketMarks.get(row.name);
+    if(!mark){mark=document.createElementNS(socketNS,'g');mark.dataset.socket=row.name;
+      const ring=document.createElementNS(socketNS,'circle');ring.setAttribute('r','9');
+      const label=document.createElementNS(socketNS,'text');label.textContent=row.label;
+      mark.append(ring,label);socketSvg.append(mark);socketMarks.set(row.name,mark);}
+    mark.setAttribute('transform',`translate(${row.x-rect.left},${row.y-rect.top})`);
+    mark.setAttribute('stroke',row.kind==='power'?'#ffe066':row.name.endsWith(':minus')?'#83bbff':'#f19076');
+    mark.classList.toggle('selected',row.name===selected);mark.classList.toggle('hovered',row.name===hover?.name&&row.name!==selected);
+  }
+  const first=rows.find(row=>row.name===selected), end=hover || (socketPointer && {x:socketPointer[0],y:socketPointer[1]});
+  socketTail.style.display=first&&end?'':'none';
+  if(first&&end)socketTail.setAttribute('d',`M ${first.x-rect.left} ${first.y-rect.top} L ${end.x-rect.left} ${end.y-rect.top}`);
+  view.classList.toggle('socket-hover',Boolean(hover));
+  const hint=$('scene-wire-hint');hint.hidden=!rows.length || (!selected&&!ghost&&!hover&&!wiringMode);
+  hint.textContent=selected?`${selected.replace(/^your /,'')} → click another connection point · Esc cancels`
+    :hover?`Click ${hover.name.replace(/^your /,'')} to start a wire`:'Click a connection point on a piece, then the other end';
+}
+window.machineSceneSockets=()=>{freshView();return {selected:socketSelection(),pending:socketTail.style.display!=='none',
+  points:sceneSockets().map(({name,at,x,y,kind})=>({name,at,x,y,kind}))};};
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape' || document.querySelector('dialog[open]'))return;
+  if(!$('socket-choices').hidden){$('socket-choices').hidden=true;e.preventDefault();e.stopImmediatePropagation();return;}
+  if(ghost?.p.piece==='power_cable' && ghost.p.a_port){cancelGhost();setWiringMode(false);}
+});
 
 function contactSnapshot() {
   const frame=flowGroup.visible&&flowIndex>=0?previewShown?.flow_frames?.[flowIndex]:null;
@@ -606,10 +698,10 @@ function solarSnapshot() {
   }
   return {preview:false,pending:false,panels:readouts.machines?.solar_panels||[],batteries:readouts.machines?.batteries||[]};
 }
-function powerMessage(text) {
+function powerMessage(text,reveal=true) {
   $('power-status').textContent = text;
   $('power-status').hidden = !text;
-  if (text) $('instrument-panel').open = true;
+  if (text && reveal) $('instrument-panel').open = true;
 }
 // Explain the graph that actually exists; this UI never connects or powers it
 // without the same two-port player action used in the sandbox.
@@ -787,18 +879,35 @@ window.machineSolarState=()=>({
     return {name:p.name,part:owner?.[0]||null,point:hit?.point.toArray()||null};
   })
 });
-async function pickPowerPort(port) {
+async function pickPowerPort(port,fromScene=false) {
+  if(ghost?.p.piece==='power_cable' && !playing && !powerBusy && !terminalBusy && level) {
+    const g=ghost, sourceLevel=level;
+    const selected=g.p.a_port||g.p.b_port, key=port.kind==='output'?'a_port':'b_port', other=key==='a_port'?'b_port':'a_port';
+    if(selected===port.name){cancelGhost();return;}
+    if(!selected || g.p[key]) {
+      g.p[key]=port.name;g.p[other]='';renderGhostBar();askGhost();return;
+    }
+    g.p[key]=port.name;renderGhostBar();powerBusy=true;terminalBusy=true;
+    try {
+      askGhost();while(ghost===g && g.busy)await g.check;
+      if(ghost!==g || level!==sourceLevel)return;
+      if(!g.fits){powerMessage(g.problems.join(' · '));return;}
+      if(placeGhost()){await rebuildLevel(false);setWiringMode(false);powerMessage('Power cable connected. Run it to try the machine.',!fromScene);}
+    } catch(e){powerMessage(e.message);}
+    finally{powerBusy=false;terminalBusy=false;updatePowerLabels();}
+    return;
+  }
   if (playing || powerBusy || ghost || !level) return;
-  if (port.kind === 'output') {
+  const selectedPort=[...powerLabels.values()].find(row=>row.port.name===pickedPowerPort)?.port;
+  if (!selectedPort || selectedPort.kind===port.kind || pickedPowerPort===port.name) {
     pickedPowerPort = pickedPowerPort === port.name ? null : port.name;
-    powerMessage(pickedPowerPort ? 'Now click the winch or battery input to connect the power cable. Esc cancels.' : '');
+    powerMessage(pickedPowerPort ? (port.kind==='output'?'Now click the winch or battery input to connect the power cable. Esc cancels.':'Now click a solar output to connect the power cable. Esc cancels.') : '',!fromScene);
     updatePowerLabels(); return;
   }
-  if (!pickedPowerPort) { powerMessage('Click the solar output first, then this input.'); return; }
-  const output = pickedPowerPort;
+  const output = port.kind==='output'?port.name:pickedPowerPort, input=port.kind==='input'?port.name:pickedPowerPort;
   const sourceLevel = level, designId = activeDesign?.id, before = JSON.stringify(placements);
   const existing = placements.findIndex(p => p.piece === 'power_cable' && p.a_port === output);
-  const cable = {piece:'power_cable',a_port:output,b_port:port.name};
+  const cable = {piece:'power_cable',a_port:output,b_port:input};
   powerBusy = true; updatePowerLabels();
   try {
     // Validate the whole saved graph before replacing its current connection.
@@ -810,7 +919,7 @@ async function pickPowerPort(port) {
     remember(); placements = next; pickedPowerPort = null; renderTray(); renderPlaced();
     await rebuildLevel(false);
     setWiringMode(false);
-    if (level === sourceLevel && activeDesign?.id === designId) powerMessage('Power cable connected. Run it to try the machine.');
+    if (level === sourceLevel && activeDesign?.id === designId) powerMessage('Power cable connected. Run it to try the machine.',!fromScene);
   } catch (e) { powerMessage(e.message); }
   finally { powerBusy = false; updatePowerLabels(); }
 }
@@ -1683,6 +1792,7 @@ function render() {
   renderer.render(scene, camera);
   positionPowerLabels();
   positionTerminalLabels();
+  drawSceneSockets();
   updatePowerFeedback();
 }
 
@@ -2280,6 +2390,7 @@ function pickUp(i) {
 }
 
 function endGhost() {
+  $('socket-choices').hidden=true;
   clearTimeout(solarTimer);solarTimer=null;solarWanted='';solarStamp='';solarResult=null;solarVersion++;solarPending=false;solarError='';
   ghost = null; draggingGhost = null; pressedAt = null;
   view.classList.remove('grabbing', 'grab');
@@ -2355,7 +2466,12 @@ function renderGhostBar() {
   const head = Object.assign(document.createElement('p'), {className: 'head',
     textContent: looking ? `View mode · ${pieceLabel(ghost.p.piece)}` : `Adjust ${pieceLabel(ghost.p.piece)}`});
   // Where it stands is the arrows' and the drag's; the chips change the rest.
-  const knobs = trayItem(ghost.p.piece).knobs, keys = Object.keys(knobs).filter(k => k !== 'x_m' && k !== 'z_m' && pieceKnobVisible(ghost.p,k));
+  const knobs = trayItem(ghost.p.piece).knobs, allKeys = Object.keys(knobs).filter(k => k !== 'x_m' && k !== 'z_m' && pieceKnobVisible(ghost.p,k));
+  // Endpoints are chosen on the objects. Their selectors stay in Precision
+  // controls; ordinary cable editing exposes thickness/length instead.
+  const connecting=['wire','power_cable'].includes(ghost.p.piece);
+  const keys=connecting?allKeys.filter(k=>!knobs[k].terminal&&!knobs[k].power_port):allKeys;
+  if(!keys.length)keys.push(allKeys[0]);
   if (!keys.includes(ghost.card)) ghost.card = keys[0];
   const chips = Object.assign(document.createElement('div'), {className: 'chips'});
   for (const key of keys) {
@@ -2426,6 +2542,10 @@ function renderGhostBar() {
   gridRow.hidden=!movableGhost()||!grid.visible;
   gridRow.append(snapButton,Object.assign(document.createElement('output'),{id:'grid-snap-status',ariaLive:'polite'}));
   fields.append(head,chips,row,state,gridRow,precision,$('instrument-panel'),$('preview-legend'),$('flow-preview'));
+  if(connecting){
+    const prompt=Object.assign(document.createElement('p'),{className:'wire-prompt',textContent:'Click a connection point in the 3D scene, then click the other end.'});
+    head.after(prompt);if(!keys.some(k=>!knobs[k].terminal&&!knobs[k].power_port)){row.hidden=true;chips.hidden=true;}
+  }
   if($('phone-tools')) fields.append($('phone-tools'));
   card.replaceChildren(fields,actions);
   showGhostKnobs(); showGhostState();
@@ -2448,16 +2568,19 @@ function madeAgainstPar() {
 function showGhostState() {
   $('focus-piece').hidden = !ghost || !ghostGroup.children.length;
   $('focus-piece').disabled = !ghost?.drawnAt || Boolean(ghost.busy);
-  const choosingTerminal = Boolean(terminalStart && ghost?.p.piece === 'wire' && !ghost.p.b_terminal);
+  const cable=ghost && ['wire','power_cable'].includes(ghost.p.piece);
+  const choosingTerminal=Boolean(cable && (ghost.p.piece==='wire'
+    ?!ghost.p.a_terminal||!ghost.p.b_terminal:!ghost.p.a_port||!ghost.p.b_port));
+  const checkingCable=Boolean(cable && !choosingTerminal && ghost.busy);
   const bar = document.querySelector('#ghost-bar .down');
   if (bar && ghost) bar.disabled = !ghost.fits || ghost.busy || !ghost.answered;
   const said = document.querySelector('#ghost-bar .state');
   if (said && ghost) {
-    said.className = 'state ' + (choosingTerminal ? '' : ghost.fits ? 'fits' : 'refused');
+    said.className = 'state ' + (choosingTerminal || checkingCable ? '' : ghost.fits ? 'fits' : 'refused');
     const sunlight=solarSnapshot(),panel=sunlight.panels.find(p=>p.name===ghostName());
     const solarText=sunlight.error || (sunlight.pending?'measuring sunlight at this position…':panel?
       `Preview · ${Math.round(panel.sunlight_w)} W sunlight · ${panel.shaded?'center shaded by '+panel.shaded_by:panel.ray_cast?'center in sunlight':'face away from sun'}`:'sunlight not measured');
-    said.textContent = choosingTerminal ? 'Choose the other terminal.' : (ghost.fits ? (ghost.sun && ghost.sun.length
+    said.textContent = choosingTerminal ? (socketSelection()?'Choose the other connection point.':'Choose the first connection point.') : checkingCable?'Checking connection…' : (ghost.fits ? (ghost.sun && ghost.sun.length
       ? `Fits · aim ${ghost.sun[0].off_sun_deg}° · ${solarText}` : 'Fits')
       : ghost.problems.join('; ')) + (ghost.joined ? ` · joined to ${ghost.joined}` : '');
     said.title=ghost.fits && ghost.energy ? madeAgainstPar() : said.textContent;
@@ -2743,8 +2866,11 @@ function updatePowerFeedback() {
   const seen=new Set(items.map(i=>i.id));
   for(const [id,row] of powerFeedbackRows)if(!seen.has(id)){row.card.remove();powerFeedbackRows.delete(id);}
   const rect=renderer.domElement.getBoundingClientRect();
-  const occupied=[...view.querySelectorAll('#clock,#scene-mode,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done')]
+  const occupied=[...view.querySelectorAll('#clock,#scene-mode,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
+  // A power reading must not hide the connection the player is trying to
+  // click, especially on a phone. Reserve the rings before placing labels.
+  occupied.push(...sceneSockets().map(p=>({x:p.x-rect.left-14,y:p.y-rect.top-14,w:28,h:28})));
   const top=Math.max(8,$('clock').getBoundingClientRect().bottom-rect.top+6),bottom=rect.height-26;
   for(const item of items) {
     let row=powerFeedbackRows.get(item.id);
@@ -3221,10 +3347,15 @@ window.machinePlacementGrid=()=>({enabled:gridSnapEnabled,step_m:PLACEMENT_GRID.
 renderer.domElement.addEventListener('pointerdown', e => {
   if (pointers.size > 1) {
     if (pulling) letGo();
-    cameraGesture = true; draggingGhost = null; pressedAt = null;
+    cameraGesture = true; draggingGhost = null; pressedAt = null; socketPress=null;$('socket-choices').hidden=true;
     view.classList.remove('grabbing'); return;
   }
   if (cameraGesture) return;
+  $('socket-choices').hidden=true;
+  socketPointer=[e.clientX,e.clientY];socketPress=null;
+  if(e.button===0&&!e.ctrlKey && socketsAt(e.clientX,e.clientY,e.pointerType==='touch').length) {
+    socketPress=e.pointerId;pressedAt=[e.clientX,e.clientY];sceneDragged=false;draggingGhost=null;return;
+  }
   if (!ghost&&!pullMode&&!attachMode&&e.button===0&&!e.ctrlKey) {
     const device=switchHandleAt(e.clientX,e.clientY,e.pointerType==='touch');
     if (device&&startSwitchDrag(device,e)) return;
@@ -3239,6 +3370,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
   }
 });
 renderer.domElement.addEventListener('pointermove', e => {
+  socketPointer=[e.clientX,e.clientY];if(!e.buttons)sceneDragged=false;
   if (!ghost) {
     view.classList.remove('grab');
     // A piece of yours under the mouse can be clicked to pick it up.
@@ -3265,6 +3397,10 @@ renderer.domElement.addEventListener('pointermove', e => {
 renderer.domElement.addEventListener('pointerup', e => {
   if(switchDragging?.pointerId===e.pointerId){endSwitchPointer(e);pressedAt=null;if(!pointers.size)cameraGesture=false;return;}
   const click = e.button === 0 && !cameraGesture && !sceneDragged && pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6;
+  if(click && socketPress===e.pointerId && finishSocketClick(e.clientX,e.clientY,e.pointerType==='touch')) {
+    socketPress=null;draggingGhost=null;pressedAt=null;return;
+  }
+  socketPress=null;
   if (ghost && click) setLooking(true);
   else if (!ghost && click && !pullMode && !attachMode) {
     const i = placedAt(e.clientX, e.clientY);
@@ -3275,11 +3411,12 @@ renderer.domElement.addEventListener('pointerup', e => {
   view.classList.remove('grabbing');
 });
 const cancelPlacementGesture = () => {
-  draggingGhost = null; pressedAt = null;
+  draggingGhost = null; pressedAt = null;socketPress=null;
   if (!pointers.size) cameraGesture = false;
   view.classList.remove('grabbing');
 };
 renderer.domElement.addEventListener('pointercancel', cancelPlacementGesture);
+renderer.domElement.addEventListener('pointerleave',()=>{socketPointer=null;view.classList.remove('socket-hover');});
 renderer.domElement.addEventListener('lostpointercapture', e => {
   pointers.delete(e.pointerId); pinch = 0; cancelPlacementGesture();
 });

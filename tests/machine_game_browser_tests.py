@@ -1811,6 +1811,111 @@ class Puzzles(unittest.TestCase):
                 self.press(title); self.wait(READY, 60)
                 self.assertEqual(self.js('location.href'), link)
 
+    def click_scene_socket(self,name,touch=False):
+        self.wait(f"window.machineSceneSockets().points.some(p=>p.name==={json.dumps(name)})",15)
+        point=self.js(f"window.machineSceneSockets().points.find(p=>p.name==={json.dumps(name)})")
+        self.assertTrue(self.js(f"document.elementFromPoint({point['x']},{point['y']})===document.querySelector('#view canvas')"),point)
+        if touch:
+            self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':point['x'],'y':point['y'],'id':1}]})
+            self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+        else:
+            self.mouse('mousePressed',point['x'],point['y']);self.mouse('mouseReleased',point['x'],point['y'])
+
+    def test_click_actual_scene_sockets_draws_a_wire_without_dropdowns_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-loop',width,height,phone=width!=1280)
+                self.wait('window.machineFlowPreviewState()?.frames>2',30)
+                self.assertTrue(self.js("(() => {const labels=[...document.querySelectorAll('.power-feedback-label')].filter(e=>!e.hidden).map(e=>e.getBoundingClientRect());return [...document.querySelectorAll('#scene-sockets circle')].every(e=>{const p=e.getBoundingClientRect();return labels.every(r=>p.right<r.left||p.left>r.right||p.bottom<r.top||p.top>r.bottom);});})()"),'power labels must leave actual connection rings visible')
+                self.assertFalse(self.js("document.getElementById('wire-mode').matches('[aria-pressed=true]')"))
+                self.click_scene_socket('lamp:minus',touch=width!=1280)
+                self.ghost()
+                self.assertEqual(self.js('window.machineWiringState().selected'),'lamp:minus')
+                self.assertEqual(self.js("document.querySelector('#ghost-bar .state').textContent"),'Choose the other connection point.')
+                self.assertEqual(self.js('window.machinePlacements()'),[],'the first click creates no saved wire')
+                self.assertTrue(self.js("document.getElementById('scene-wire-hint').textContent.includes('lamp:minus')"))
+                self.assertFalse(self.js("[...document.querySelectorAll('#ghost-bar select')].some(e=>!e.closest('#precision-controls')&&/terminal/.test(e.getAttribute('aria-label'))&&e.getClientRects().length)"))
+                self.key('Escape');self.wait('!window.machineGhostState()',5)
+                self.assertEqual(self.js('window.machinePlacements()'),[])
+                self.click_scene_socket('lamp:minus',touch=width!=1280);self.ghost()
+                self.click_scene_socket('supply:minus',touch=width!=1280)
+                self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.assertEqual(self.js('window.machinePlacements().map(p=>[p.piece,p.a_terminal,p.b_terminal])'),
+                                 [['wire','lamp:minus','supply:minus']])
+                self.assertEqual(len(self.js('window.machineWiringState().wires')),3)
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('level-done').textContent"))
+                self.assertEqual(self.js('window.machineSceneSockets().points'),[],'live runs do not accept wiring edits')
+                self.open('easy-loop',width,height,phone=width!=1280)
+                self.press('Add a wire');self.ghost()
+                self.click_scene_socket('lamp:minus',touch=width!=1280);self.ghost()
+                self.click_scene_socket('supply:minus',touch=width!=1280)
+                self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.assertEqual(self.js('window.machinePlacements()[0].b_terminal'),'supply:minus')
+
+    def test_scene_socket_drag_and_two_fingers_do_not_connect_or_move_components(self):
+        self.open('easy-loop');self.click_scene_socket('lamp:minus');self.ghost()
+        target=self.js("window.machineSceneSockets().points.find(p=>p.name==='supply:minus')")
+        self.mouse('mouseMoved',target['x'],target['y'])
+        self.wait('window.machineSceneSockets().pending',5)
+        self.drag([target['x'],target['y']],[target['x']+45,target['y']])
+        self.assertEqual(self.js('window.machinePlacements()'),[])
+        self.assertEqual(self.js('window.machineWiringState().selected'),'lamp:minus')
+        self.assertEqual(self.ghost()['p']['b_terminal'],'')
+        self.click_scene_socket('lamp:minus');self.wait('!window.machineGhostState()',5)
+        self.open('easy-loop',390,844,phone=True)
+        target=self.js("window.machineSceneSockets().points.find(p=>p.name==='lamp:minus')")
+        self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':target['x'],'y':target['y'],'id':1}]})
+        self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':target['x'],'y':target['y'],'id':1},{'x':target['x']-60,'y':target['y'],'id':2}]})
+        self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+        self.assertIsNone(self.js('window.machineGhostState()'))
+        self.assertEqual(self.js('window.machinePlacements()'),[])
+
+    def test_solar_scene_points_connect_in_either_order_and_from_the_cable_tray(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('sun',width,height,phone=width!=1280)
+                self.press('Add a solar panel');self.ghost()
+                for label,value in [('x',1),('z',.4),('height',.6),('turn',-45),('tip',75)]:
+                    self.slide(f'{label} of your solar 1',value)
+                self.ghost();self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                kept=self.js('window.machinePlacements()')
+                self.click_scene_socket('winch:power',touch=width!=1280)
+                self.assertEqual(self.js('window.machineSceneSockets().selected'),'winch:power')
+                self.assertEqual(self.js('window.machinePlacements()'),kept)
+                self.click_scene_socket('your solar 1:power',touch=width!=1280)
+                self.wait(f'window.machinePlacements().length===2 && {READY}',60)
+                self.assertEqual(self.js('window.machinePlacements()[1]'),dict(piece='power_cable',a_port='your solar 1:power',b_port='winch:power'))
+                self.press('Undo');self.wait(f'window.machinePlacements().length===1 && {READY}',60)
+                self.press('Next piece')
+                self.press('Add a power cable');self.ghost()
+                self.assertFalse(self.js("[...document.querySelectorAll('#ghost-bar select')].some(e=>!e.closest('#precision-controls')&&e.getClientRects().length)"))
+                self.click_scene_socket('winch:power',touch=width!=1280);self.ghost()
+                self.click_scene_socket('your solar 1:power',touch=width!=1280)
+                self.wait(f'!window.machineGhostState() && window.machinePlacements().length===2 && {READY}',60)
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('level-done').textContent"))
+
+    def test_close_scene_pins_offer_labelled_touch_targets_instead_of_guessing(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-loop',width,height,phone=width!=1280)
+                self.js('window.machineView({distance:14})')
+                a,b=self.js("['supply:plus','supply:minus'].map(name=>window.machineSceneSockets().points.find(p=>p.name===name))")
+                x,y=(a['x']+b['x'])/2,(a['y']+b['y'])/2
+                self.assertLess(((a['x']-b['x'])**2+(a['y']-b['y'])**2)**.5,44,'both connection points are within the click area')
+                if width!=1280:
+                    self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y,'id':1}]})
+                    self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+                else:
+                    self.mouse('mousePressed',x,y);self.mouse('mouseReleased',x,y)
+                self.wait("!document.getElementById('socket-choices').hidden",5)
+                self.assertIsNone(self.js('window.machineGhostState()'),'an ambiguous click does not choose a conductor')
+                self.click_visible('supply · minus (−)');self.ghost()
+                self.assertEqual(self.js('window.machineWiringState().selected'),'supply:minus')
+                self.key('Escape');self.wait('!window.machineGhostState()',5)
+                self.assertEqual(self.js('window.machinePlacements()'),[])
+
     def test_terminal_clicks_teach_wiring_and_prepared_leads_use_the_same_routes(self):
         for width, height in ((1280,860), (390,844), (844,390)):
             with self.subTest(width=width, height=height):
@@ -2106,6 +2211,8 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('machineSave().players[machineSave().current].levels.fire.stars'),3)
 
     def test_saved_terminal_graph_removal_undo_reload_and_restore(self):
+        self.page.send('Emulation.setDeviceMetricsOverride',{'width':1280,'height':860,'deviceScaleFactor':1,'mobile':False})
+        self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':False})
         self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
         self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)
         self.create_design('Saved terminal graph')
@@ -2120,10 +2227,8 @@ class Puzzles(unittest.TestCase):
             self.wait(f'!window.machineGhostState() && {READY}', 60)
         for terminal in ('plus', 'minus'):
             self.wait('window.machineCamera().settled', 30)
-            self.reveal_control(self.button_expression(f'Connect your battery 1 {terminal}'))
-            self.wait("!window.machineWiringState().busy && [...document.querySelectorAll('#terminal-pins .terminal-buttons button')].some(b=>!b.disabled && b.offsetParent!==null)", 10)
-            self.click_visible(f'Connect your battery 1 {terminal}'); self.ghost()
-            self.click_visible(f'Connect your bulb 2 {terminal}')
+            self.click_scene_socket(f'your battery 1:{terminal}');self.ghost()
+            self.click_scene_socket(f'your bulb 2:{terminal}')
             self.wait(f'!window.machineGhostState() && {READY}', 60)
         first = self.js('window.machinePlacements()')
         self.press('Save version')

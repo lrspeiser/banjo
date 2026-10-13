@@ -29,8 +29,11 @@ Optical levels keep an engine-traced light path visible while editing. Lenses
 have a clear rim and a larger drag marker; focusing a lens or mirror keeps
 its source and receiver in view, and **Whole machine** restores the overview.
 Cables show measured power/current and moving flow dots while editing or
-running. Small object labels show a bulb's rating or power goal, and an
-estimated starting power/torque for simple motor lifts. Complex loads retain
+running. Draw wires by clicking their actual connection rings in the 3D scene.
+A dashed guide follows the pointer between clicks; endpoint dropdowns remain
+optional precision controls. Solar cables accept either click order.
+Small object labels show a bulb's rating or power goal, and an estimated
+starting power/torque for simple motor lifts. Complex loads retain
 a variable-demand label rather than a guessed threshold.
 The lessons introduce cutting, optics, springs, gearing, wiring, water,
 heating and catapults one step at a time. **New challenge** offers tested
