@@ -8,6 +8,18 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 12 electronics expansion: independent rated resistors and nonpolar
+capacitors can be placed and wired in 3D. Native Circuit now uses accepted-step
+RC charge state, explicit ESR/leakage and separate stored-energy/numerical-loss
+ledgers. Three advanced activities teach series voltage drop, parallel lamp
+wiring and storage. Open supply switches and exhausted batteries do not prevent
+a connected charged capacitor from discharging into a load. The component's
+capacitance/resistance is a declared rating; case geometry sets housing mass,
+not dielectric microphysics. There is no breakdown, polarized failure,
+electrostatic moving-plate force or magnetic flux law. See the
+[expansion catalogue](electronics-expansion.md) and
+[RC measurements](sandbox-electrics-measured.md#native-rc-components-and-advanced-activities-october-12).
+
 October 12 routing update: **Divert the water** and a Sandbox example use a
 separate mounted chute and fixed collector. Native falling-parcel contact
 and gravity route the flow; the goal observes current parcel volume inside

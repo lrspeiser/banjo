@@ -403,10 +403,94 @@ void contactSwitch() {
     std::cout << "contact switch closed at " << closed_at << " s\n";
 }
 }
+// Electrical storage oracles are material-neutral. Housing comparisons live
+// in the product regressions; a resistor/capacitor rating is not a bulk law.
+void capacitorTransients() {
+    auto declaration = network();
+    declaration["nodes"] = {"p", "n", "bus"};
+    declaration["source"]["resistance_ohm"] = 1.0;
+    declaration["branches"] = json::array({
+        {{"id","feed"},{"component","feed"},{"kind","switch"},{"a","p"},{"b","bus"},
+         {"thermal","case"},{"resistance_ohm",9.0}},
+        {{"id","storage"},{"component","storage"},{"kind","capacitor"},{"a","bus"},{"b","n"},
+         {"thermal","winding"},{"resistance_ohm",.1},{"capacitance_f",.1}}});
+    double previous_error = 1.0, previous_loss = 100.0;
+    for (const double dt : {.01, .005, .0025}) {
+        auto circuit = Circuit::read(declaration);
+        const auto before = circuit.saved();
+        (void)circuit.solve(dt,12,1000,0,{});
+        check(circuit.saved()==before,"trial charged a capacitor");
+        for (int k=0;k<static_cast<int>(std::round(1.0/dt));++k) {
+            const auto step = circuit.solve(dt,12,1000,0,{});
+            near(step.electrical_residual_j,0,1e-10,"RC energy balance");
+            circuit.commit(step,0);
+        }
+        auto state = circuit.saved();
+        const double voltage = state["branches"][1]["capacitor_voltage_v"];
+        const double exact = 12*(1-std::exp(-1.0/1.01));
+        const double error = std::abs(voltage-exact);
+        const double loss = state["ledger"]["numerical_loss_j"];
+        check(error<previous_error && loss<previous_loss,"RC did not converge with timestep");
+        check(error<.025,"RC charging curve wrong");
+        previous_error=error;previous_loss=loss;
+        near(state["ledger"]["source_j"].get<double>(),
+             state["ledger"]["heat_j"].get<double>()+state["ledger"]["storage_delta_j"].get<double>()+loss,
+             1e-9,"RC complete energy transfer");
+        auto resumed = Circuit::read(state,true);
+        circuit.setSwitch("feed",false);resumed.setSwitch("feed",false);
+        const auto isolated = circuit.solve(dt,12,0,0,{});
+        near(isolated.current_a[1],0,1e-10,"isolated capacitor loses charge");
+        circuit.commit(isolated,0);
+        resumed.commit(resumed.solve(dt,12,0,0,{}),0);
+        check(circuit.saved()==resumed.saved(),"capacitor snapshot changed continuation");
+        // An independent capacitor/load island, with zero source current.
+        auto discharge = state;
+        discharge["branches"][0]["closed"] = false;
+        discharge["branches"].push_back({{"id","load"},{"component","load"},{"kind","resistor"},
+            {"a","bus"},{"b","n"},{"thermal","case"},{"resistance_ohm",10.0}});
+        discharge.erase("last");
+        auto draining = Circuit::read(discharge,true);
+        for (int k=0;k<static_cast<int>(std::round(1.0/dt));++k) {
+            const auto step=draining.solve(dt,12,0,0,{});
+            near(step.source_j,0,1e-12,"discharge borrowed battery energy");
+            check(step.current_a[2]>0 && step.current_a[1]<0,"discharge current sign wrong");
+            draining.commit(step,0);
+        }
+        const auto end=draining.saved();
+        near(end["branches"][1]["capacitor_voltage_v"],voltage*std::exp(-1.0/1.01),.015,"RC discharge curve");
+        std::cout << "RC dt=" << dt << " V=" << voltage << " error=" << error << " numerical_j=" << loss
+                  << " residual_j=" << state["ledger"]["electrical_residual_j"] << '\n';
+    }
+    // Equal capacitors in series share voltage, in parallel add charge.
+    for (const bool parallel : {false,true}) {
+        auto d=declaration;
+        d["nodes"].push_back("mid");
+        auto second=d["branches"][1];second["id"]="second";second["component"]="second";
+        if (!parallel) {d["branches"][1]["b"]="mid";second["a"]="mid";}
+        d["branches"].push_back(second);
+        auto c=Circuit::read(d);
+        for (int k=0;k<4000;++k)c.commit(c.solve(.0025,12,1000,0,{}),0);
+        const auto state=c.saved();
+        near(state["branches"][1]["capacitor_voltage_v"],parallel?12:6, .09,"capacitor topology voltage");
+        near(state["branches"][1]["charge_c"],state["branches"][2]["charge_c"],1e-9,"equal capacitor charge");
+    }
+    rejects([&]{auto d=declaration;d["branches"][1]["capacitance_f"]=0;Circuit::read(d);});
+    rejects([&]{auto d=declaration;d["branches"][0]["capacitance_f"]=1;Circuit::read(d);});
+    auto world=LiveWorld::open(room());
+    auto live=declaration;
+    live["source"]["store"]=world->energyStore("battery","post",8,8,12,0);
+    world->circuit(live.dump());
+    for(int k=0;k<240;++k)world->step(1.0/240);
+    std::string why;
+    auto restored=LiveWorld::open(room(),world->snapshot(why));
+    check(restored->circuits()==world->circuits(),"world snapshot lost capacitor state");
+    for(int k=0;k<240;++k){world->step(1.0/240);restored->step(1.0/240);}
+    check(restored->circuits()==world->circuits(),"world capacitor continuation changed");
+}
 int main() {
     try {
         const auto start = std::chrono::steady_clock::now();
-        circuitsAndHeat(); switchingFailureAndValidation(); bulbEnergyAndSharedSupply(); liveLoopAndRestore(); stalledAndEmpty();
+        capacitorTransients(); circuitsAndHeat(); switchingFailureAndValidation(); bulbEnergyAndSharedSupply(); liveLoopAndRestore(); stalledAndEmpty();
         sharedMotorsAndGeneration(); housingReactionAndConvergence(); hingeSwitchAndBodyHeat(); contactSwitch();
         std::cout << "circuits passed in " << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() << " s\n";
         return 0;

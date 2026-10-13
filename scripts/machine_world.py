@@ -1897,10 +1897,18 @@ def compile_spec(spec, lenient=False):
                     _num(arg,'l',what,problems,0,.001,1000)
                     _num(arg,'for_s',what,problems,0,0,60)
             elif kind == 'load_power_w':
-                if not isinstance(arg, dict) or arg.get('device') not in {d['name'] for d in electrical.get('devices', [])} or \
+                targets=arg.get('devices',[arg.get('device')]) if isinstance(arg,dict) else []
+                if not isinstance(arg, dict) or not isinstance(targets,list) or not targets or \
+                        any(not isinstance(target,str) or target not in {d['name'] for d in electrical.get('devices', [])} for target in targets) or \
                         not isinstance(arg.get('at_least_w'), (int, float)) or arg['at_least_w'] <= 0 or \
                         not isinstance(arg.get('for_s', 0), (int, float)) or arg.get('for_s', 0) < 0:
                     problems.append(f'{what}: load_power_w needs an electrical device, positive watts and nonnegative for_s')
+            elif kind == 'capacitor_energy_j':
+                if not isinstance(arg,dict) or arg.get('device') not in {d['name'] for d in electrical.get('devices',[]) if d['kind']=='capacitor'}:
+                    problems.append(f'{what}: capacitor_energy_j needs a capacitor device')
+                else:
+                    _num(arg,'at_least_j',what,problems,0,.000001,1e6)
+                    _num(arg,'for_s',what,problems,0,0,60)
             elif kind == 'charged_j':
                 if not isinstance(arg, dict) or arg.get('battery') not in battery_names or \
                         not isinstance(arg.get('at_least_j'), (int, float)) or arg['at_least_j'] <= 0:
@@ -2852,11 +2860,19 @@ class MachineSession:
                     else:self._power_since.pop(i,None)
                 elif 'load_power_w' in rule:
                     r = rule['load_power_w']
-                    d = next((d for d in out.get('electrical', {}).get('devices', []) if d['name'] == r['device']), {})
-                    if d.get('power_w', 0) >= r['at_least_w']:
+                    targets=r.get('devices',[r.get('device')])
+                    devices={d['name']:d for d in out.get('electrical',{}).get('devices',[])}
+                    if all(devices.get(name,{}).get('power_w',0)>=r['at_least_w'] for name in targets):
                         self._power_since.setdefault(i, self.t)
                         if self.t - self._power_since[i] >= r.get('for_s', 0): hit = self.t
                     else: self._power_since.pop(i, None)
+                elif 'capacitor_energy_j' in rule:
+                    r=rule['capacitor_energy_j']
+                    d=next((d for d in out.get('electrical',{}).get('devices',[]) if d['name']==r['device']),{})
+                    if d.get('stored_j',0)>=r['at_least_j']:
+                        self._power_since.setdefault(i,self.t)
+                        if self.t-self._power_since[i]>=r.get('for_s',0):hit=self.t
+                    else:self._power_since.pop(i,None)
                 elif 'charged_j' in rule:
                     r = rule['charged_j']
                     if any(b['name'] == r['battery'] and b['charge_j'] >= r['at_least_j']

@@ -271,6 +271,61 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(all(r['visible'] and r['inView'] and not r['coversRun'] and not r['overlapsOther'] for r in layout), layout)
 
     # ---- the tests ---------------------------------------------------------------------
+    def test_capacitor_charges_has_live_scene_meter_and_resets_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('advanced-capacitor',width,height,phone=width!=1280)
+                self.click_visible('Add a capacitor');self.ghost()
+                self.slide('Its capacitance',.1);self.ghost()
+                self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.click_visible('Run it')
+                self.wait("window.machineContactState().liveDevices.some(d=>d.kind==='capacitor'&&d.stored_j>=4)",30)
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertTrue(self.js("document.getElementById('level-done').closest('#control-panel')!==null"))
+                self.assertNotIn('finished every level',self.js("document.getElementById('level-done').textContent"))
+                self.wait("/run over/.test(document.getElementById('clock').textContent)",15)
+                self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='capacitor 1'&&/Now .* V.* J/.test(r.text)&&!r.text.includes('Updating'))",15)
+                self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='capacitor 1'&&!r.hidden)",10)
+                self.assertTrue(self.js("(()=>{const el=document.querySelector('[data-device=\"capacitor 1\"].power-feedback-label'),r=el.getBoundingClientRect(),view=document.getElementById('view').getBoundingClientRect(),run=document.getElementById('start').getBoundingClientRect();return r.left>=view.left&&r.right<=view.right&&r.top>=view.top&&r.bottom<=view.bottom&&!(r.left<run.right&&r.right>run.left&&r.top<run.bottom&&r.bottom>run.top);})()"))
+                self.click_visible('Set up again');self.wait(READY,60)
+                self.assertTrue(all(d['stored_j']==0 for d in self.js('window.machineContactState().liveDevices') if d['kind']=='capacitor'))
+
+    def test_parallel_activity_draws_actual_feeds_and_returns_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('advanced-parallel',width,height,phone=width!=1280)
+                for lamp in ('first lamp','second lamp'):
+                    for terminal in ('plus','minus'):
+                        self.click_visible('Connect supply '+terminal)
+                        self.wait(SETTLED,20)
+                        self.click_visible('Connect '+lamp+' '+terminal)
+                        self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.assertEqual(len(self.js('window.machinePlacements()')),4)
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
+                lamps=[d for d in self.js('window.machineContactState().liveDevices') if d['kind']=='bulb']
+                self.assertEqual(len(lamps),2)
+                self.assertTrue(all(d['power_w']>2 for d in lamps),lamps)
+
+    def test_rc_sandbox_library_and_saved_version_preserve_component_ratings_and_wires(self):
+        self.page.send('Page.navigate',{'url':self.base+'/machine'})
+        self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
+        self.press('Start from Charge and release');self.wait(READY,60)
+        base=self.js('window.machineDesign().draft.base')
+        cap=next(d for d in base['electrical']['devices'] if d['kind']=='capacitor')
+        self.assertEqual(cap['capacitance_f'],.1)
+        self.assertEqual(len(base['electrical']['wires']),6)
+        version=self.js('Math.max(0,...window.machineDesign().versions.map(v=>v.number))+1')
+        self.click_visible('Save version');self.wait(f"/Version {version} saved/.test(document.getElementById('design-status').textContent)",10)
+        self.press('Add a piece')
+        self.assertTrue(self.js("[...document.querySelectorAll('#piece-grid button')].some(b=>b.textContent.includes('capacitor'))"))
+        self.assertTrue(self.js("[...document.querySelectorAll('#piece-grid button')].some(b=>b.textContent.includes('resistor'))"))
+        self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,60)
+        self.assertEqual(self.js('window.machineDesign().draft.base'),base)
+        self.assertIn(version,[v['number'] for v in self.js('window.machineDesign().versions')])
+        self.click_visible('Run it')
+        self.wait("window.machineContactState().liveDevices.some(d=>d.kind==='capacitor'&&d.stored_j>1)",30)
+        self.click_visible('Pause')
+
     def test_laser_burn_has_native_cell_progress_inspection_and_a_visible_gap_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

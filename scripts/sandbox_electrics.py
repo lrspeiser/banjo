@@ -189,6 +189,27 @@ def bulb(name, k, ctx):
                                         'watts': watts, 'rated_voltage_v': 12, 'efficiency': .2}]}}
 
 
+def resistor(name, k, ctx):
+    x,z=k.get('x_m',0),k.get('z_m',0)
+    part=name+' housing'
+    return {'parts':[box(part,[x,.08,z],[.24,.16,.12],k.get('housing_material','glass'))],
+        'electrical':{'devices':[dict(name=name,kind='resistor',part=part,
+            terminals={'a':[x-.15,.08,z],'b':[x+.15,.08,z]},
+            resistance_ohm=k.get('resistance_ohm',48))]}}
+
+
+def capacitor(name, k, ctx):
+    x,z=k.get('x_m',0),k.get('z_m',0)
+    part=name+' housing'
+    # A rated nonpolar two-terminal part. Geometry/material set housing mass;
+    # capacitance is a declared component rating, not a bulk glass/oak law.
+    return {'parts':[box(part,[x,.12,z],[.18,.24,.14],k.get('housing_material','glass'))],
+        'electrical':{'devices':[dict(name=name,kind='capacitor',part=part,
+            terminals={'a':[x-.12,.12,z],'b':[x+.12,.12,z]},
+            capacitance_f=k.get('capacitance_f',.1),resistance_ohm=k.get('esr_ohm',.1),
+            leakage_ohm=k.get('leakage_ohm',1e6))]}}
+
+
 def wire(name, k, ctx):
     row = {'name': name, 'a': k.get('a_terminal', ''), 'b': k.get('b_terminal', '')}
     # Missing fields retain the original saved-wire model. Length includes
@@ -254,7 +275,8 @@ def connected(builder):
 
 PIECES = {key: connected(value) for key, value in
           {'battery': battery, 'switch': switch, 'bulb': bulb, 'wire': wire,
-           'motor': motor, 'ignition': ignition, 'power_cable': power_cable}.items()}
+           'motor': motor, 'ignition': ignition, 'power_cable': power_cable,
+           'resistor':resistor,'capacitor':capacitor}.items()}
 
 
 def knob(default, minimum, maximum, step, label):
@@ -263,6 +285,16 @@ def knob(default, minimum, maximum, step, label):
 
 POS = {'x_m': knob(0, -2, 2, .02, 'along (m)'), 'z_m': knob(0, -2, 2, .02, 'across (m)')}
 TRAY = [
+    {'piece':'resistor','label':'Resistor','count':20,'cost':1,'turning':False,
+     'description':'A two-terminal rated resistance. Wiring decides series or parallel; native current determines voltage drop and heat.',
+     'knobs':{**POS,'resistance_ohm':knob(48,1,1000,1,'resistance (ohms)'),
+              'housing_material':{'default':'glass','choices':['glass','oak','iron'],'label':'housing material'}}},
+    {'piece':'capacitor','label':'Capacitor','count':12,'cost':1,'turning':False,
+     'description':'A nonpolar capacitor stores charge and energy. Current charges or discharges it; no initial charge is supplied.',
+     'knobs':{**POS,'capacitance_f':knob(.1,.005,1,.005,'capacitance (F)'),
+              'esr_ohm':knob(.1,.01,10,.01,'internal resistance (ohms)'),
+              'leakage_ohm':knob(1000000,1000,1000000,1000,'leakage resistance (ohms)'),
+              'housing_material':{'default':'glass','choices':['glass','oak','iron'],'label':'housing material'}}},
     {'piece': 'battery', 'label': 'Battery', 'count': 8, 'cost': 1, 'turning': False,
      'description': 'A finite 12 V energy store with two labelled terminals.',
      'knobs': {**POS, 'mount': {'default':'fixed','choices':['fixed','contact pack'],'label':'battery mount'},
@@ -419,9 +451,9 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
         if not isinstance(name, str) or not name or name in ids:
             problems.append('electrical device names must be nonempty and unique'); continue
         ids.add(name)
-        if kind not in ('battery', 'switch', 'bulb', 'motor', 'coil', 'socket') or not isinstance(d.get('part'), str) or d['part'] not in names:
+        if kind not in ('battery', 'switch', 'bulb', 'motor', 'coil', 'socket','resistor','capacitor') or not isinstance(d.get('part'), str) or d['part'] not in names:
             problems.append(f'electrical {name}: unsupported kind or missing housing'); continue
-        keys = ('in', 'out') if kind == 'switch' else ('plus', 'minus')
+        keys = ('in', 'out') if kind == 'switch' else (('a','b') if kind in ('resistor','capacitor') else ('plus', 'minus'))
         if not isinstance(d.get('terminals'), dict) or set(d['terminals']) != set(keys):
             problems.append(f'electrical {name}: needs {" and ".join(keys)} terminals'); continue
         for key, xyz in d['terminals'].items():
@@ -438,6 +470,13 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
             d['watts'] = number(d, 'watts', 3, .01, 1000)
             d['rated_voltage_v'] = number(d, 'rated_voltage_v', 12, 1, 1000)
             d['efficiency'] = number(d, 'efficiency', .2, 0, 1)
+        if kind in ('resistor','capacitor'):
+            d['resistance_ohm']=number(d,'resistance_ohm',48 if kind=='resistor' else .1,.01,1e6)
+        if kind=='capacitor':
+            d['capacitance_f']=number(d,'capacitance_f',.1,1e-6,100)
+            d['leakage_ohm']=number(d,'leakage_ohm',1e6,1000,1e12)
+            if any(key in d for key in ('initial_voltage_v','capacitor_voltage_v','stored_j','charge_c')):
+                problems.append(f'electrical {name}: initial charge is zero; runtime charge belongs to the native snapshot')
         if kind == 'coil':
             if not isinstance(d.get('heats'), str) or d['heats'] not in names: problems.append(f'electrical {name}: coil target is missing')
             d['resistance_ohm'] = number(d, 'resistance_ohm', 12, .01, 1e6)
@@ -551,6 +590,12 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
                 elif d.get('hinge'): row['follows_hinge'] = {'joint': joint_ids[d['hinge']], 'closed_at_or_below_deg': d['closed_at_or_below_deg']}
             elif d['kind'] == 'coil':
                 row.update(kind='resistor', resistance_ohm=d['resistance_ohm'], heats_body=d['heats'])
+            elif d['kind']=='resistor':
+                row.update(kind='resistor',resistance_ohm=d['resistance_ohm'])
+            elif d['kind']=='capacitor':
+                row.update(kind='capacitor',resistance_ohm=d['resistance_ohm'],capacitance_f=d['capacitance_f'])
+                branches.append(dict(id=d['name']+' leakage',component=d['name'],kind='resistor',
+                    a=row['a'],b=row['b'],thermal=d['name'],resistance_ohm=d['leakage_ohm']))
             elif d['kind'] == 'bulb':
                 at = d.get('at_m', compiled['parts'][next(i for i, p in enumerate(compiled['parts']) if p['name'] == d['part'])]['at_m'])
                 lamp = engine.op(op='lamp', name=d['name'], body=d['part'], store=0, watts=d['watts'],
@@ -605,6 +650,9 @@ def readouts(graph, native, batteries=()):
                             voltage_v=device_voltage(d),
                             current_a=branches.get(d['name'], {}).get('current_a', 0),
                             power_w=branches.get(d['name'], {}).get('power_w', 0),
+                            capacitor_voltage_v=branches.get(d['name'],{}).get('capacitor_voltage_v',0),
+                            stored_j=branches.get(d['name'],{}).get('stored_j',0),
+                            charge_c=branches.get(d['name'],{}).get('charge_c',0),
                             emitted_w=branches.get(d['name'], {}).get('emitted_w', 0)) for d in graph.get('devices', [])],
             'wires': [dict(w, current_a=branches.get(w['name'], {}).get('current_a', 0),
                            **wire_supply.get(w['name'],{}),
@@ -626,7 +674,7 @@ def power_requirements(compiled,bodies,measured,motors,native):
     devices={d['name']:d for d in measured.get('devices',[])}
     branches={b['id']:b for c in native for b in c['branches']}
     declarations=[(d['name'],d['part'],d,devices.get(d['name'],{}),branches.get(d['name'],{}))
-                  for d in compiled.get('electrical',{}).get('devices',[]) if d['kind'] in ('motor','bulb')]
+                  for d in compiled.get('electrical',{}).get('devices',[]) if d['kind'] in ('motor','bulb','resistor','capacitor')]
     for c in compiled.get('circuits',[]):
         if c.get('motor'):
             branch=next((b for n in native if n['id']==c['name'] for b in n['branches'] if b['id']=='motor'),{})
@@ -639,7 +687,16 @@ def power_requirements(compiled,bodies,measured,motors,native):
                        voltage_v=reading.get('voltage_v',0),requirement='rated')
             for station in compiled.get('stations',[]):
                 goal=(station.get('done_when') or {}).get('load_power_w',{})
-                if goal.get('device')==name:row.update(required_w=goal['at_least_w'],requirement='goal')
+                if name in goal.get('devices',[goal.get('device')]):row.update(required_w=goal['at_least_w'],requirement='goal')
+        elif declaration.get('kind') in ('capacitor','resistor'):
+            row.update(requirement=declaration['kind'],voltage_v=reading.get('voltage_v',0),
+                current_a=reading.get('current_a',0),resistance_ohm=declaration['resistance_ohm'])
+            if declaration['kind']=='capacitor':
+                row.update(capacitance_f=declaration['capacitance_f'],stored_j=reading.get('stored_j',0),
+                    capacitor_voltage_v=reading.get('capacitor_voltage_v',0))
+                for station in compiled.get('stations',[]):
+                    goal=(station.get('done_when') or {}).get('capacitor_energy_j',{})
+                    if goal.get('device')==name:row['required_j']=goal['at_least_j']
         else:
             hinge=joints.get(declaration.get('hinge'),{})
             body=bodies.get(hinge.get('b'),{})
@@ -913,4 +970,73 @@ _marble_lesson=next(row for row in EASY_LEVELS if row['id']=='easy-marble-light'
 _marble_lesson['tray'][0]['knobs']['threshold_deg']['default']=5
 _marble_lesson['tray'][0]['knobs']['mode']['choices']=['paddle']
 _marble_lesson['brief']='Place the paddle beneath the marble. Its iron contact leaf must touch the separate iron output pad to complete the wired bulb loop.'
+
+
+def advanced_electronics():
+    levels=[]
+    s=empty('Limit the voltage drop')
+    merge(s,battery('supply',{'x_m':-.7},{}));merge(s,bulb('lamp',{'x_m':.7},{}))
+    link(s,'lamp return','lamp:minus','supply:minus')
+    row=tray('resistor',connect_to={'a':'supply:plus','b':'lamp:plus'},start_at_defaults=True,focus_knob='resistance_ohm')
+    lv=easy('advanced-resistor','Limit the voltage drop',
+        'The lamp needs at least 2 W. Reduce the series resistor until enough voltage reaches the lamp.',
+        s,row,{'piece':'resistor','resistance_ohm':4},
+        {'load_power_w':{'device':'lamp','at_least_w':2,'for_s':.5}},
+        {'piece':'resistor','resistance_ohm':48})
+    levels.append(lv)
+    s=empty('Series or parallel?')
+    merge(s,battery('supply',{'x_m':-.7},{}))
+    merge(s,bulb('first lamp',{'x_m':.5,'z_m':-.3},{}));merge(s,bulb('second lamp',{'x_m':.5,'z_m':.3},{}))
+    row=tray('wire');row['count']=4
+    solution=[dict(piece='wire',a_terminal='supply:'+key,b_terminal=lamp+':'+key)
+        for lamp in ('first lamp','second lamp') for key in ('plus','minus')]
+    wrong=[dict(piece='wire',a_terminal=a,b_terminal=b) for a,b in
+        [('supply:plus','first lamp:plus'),('first lamp:minus','second lamp:plus'),('second lamp:minus','supply:minus')]]
+    lv=easy('advanced-parallel','Series or parallel?',
+        'Both 12 V lamps must receive at least 2 W each. Draw their feeds and returns. A series chain splits the voltage; parallel branches each receive the supply voltage.',
+        s,row,solution[0],{'load_power_w':{'devices':['first lamp','second lamp'],'at_least_w':2,'for_s':.5}},wrong[0])
+    lv['solution']=solution;lv['wrong']=wrong;lv['style_pieces']=1
+    levels.append(lv)
+    s=empty('Store the charge')
+    merge(s,battery('supply',{'x_m':-.7},{}));merge(s,resistor('charging resistor',{'x_m':-.3,'resistance_ohm':12},{}))
+    link(s,'resistor feed','supply:plus','charging resistor:a')
+    row=tray('capacitor',connect_to={'a':'charging resistor:b','b':'supply:minus'},
+        start_at_defaults=True,focus_knob='capacitance_f')
+    row['knobs']['x_m']['default']=.3
+    row['knobs']['capacitance_f']['default']=.005
+    lv=easy('advanced-capacitor','Store the charge',
+        'Store at least 4 J in the capacitor within 4 seconds. Increase its capacitance and watch measured volts, current and stored energy rise through the charging resistor.',
+        s,row,{'piece':'capacitor','x_m':.3,'capacitance_f':.1},
+        {'capacitor_energy_j':{'device':'your capacitor 1','at_least_j':4,'for_s':.1}},
+        {'piece':'capacitor','x_m':.3,'capacitance_f':.005})
+    levels.append(lv)
+    for lv in levels:
+        lv['difficulty']='advanced'
+        lv['par_energy_j']={'advanced-resistor':173000000,'advanced-parallel':3.5,
+                            'advanced-capacitor':227000000}[lv['id']]
+    return levels
+
+
+EASY_LEVELS.extend(advanced_electronics())
+
+
+def capacitor_workbench():
+    s=empty('Charge and release')
+    merge(s,battery('supply',{'x_m':-.8},{}))
+    merge(s,switch('control',{'x_m':-.4,'state':'closed'},{}))
+    merge(s,resistor('charging resistor',{'x_m':0,'resistance_ohm':12},{}))
+    merge(s,capacitor('storage',{'x_m':.4,'z_m':-.3},{}))
+    merge(s,bulb('lamp',{'x_m':.7,'z_m':.3},{}))
+    for index,(a,b) in enumerate([('supply:plus','control:in'),('control:out','charging resistor:a'),
+        ('charging resistor:b','storage:a'),('storage:b','supply:minus'),('storage:a','lamp:plus'),('lamp:minus','storage:b')]):
+        link(s,'lead '+str(index+1),a,b)
+    return s
+
+
+TEMPLATES.extend([
+    dict(name='Charge and release',description='Run to charge the nonpolar capacitor. Drag the switch open: stored energy keeps the lamp glowing while it discharges. Reset starts uncharged.',
+         base=capacitor_workbench(),placements=[],pieces=['resistor','capacitor','battery','switch','bulb','wire']),
+    dict(name='Series and parallel bench',description='Wire two separate 12 V lamps in series or parallel and compare their measured volts, amps and brightness.',
+         base=copy.deepcopy(next(lv['machine'] for lv in EASY_LEVELS if lv['id']=='advanced-parallel')),placements=[],
+         pieces=['resistor','capacitor','bulb','battery','wire'])])
 _marble_lesson['hints'][0]=_marble_lesson['brief']

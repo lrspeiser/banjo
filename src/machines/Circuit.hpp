@@ -1,8 +1,8 @@
 #pragma once
 
-// Bounded, quasi-static DC networks. Construction and collision geometry stay
+// Bounded DC/RC networks. Construction and collision geometry stay
 // with the product; this value owns only electrical and lumped thermal state.
-// See docs/machine-circuits.md for the laws, signs and numerical boundary.
+// See docs/electronics-expansion.md for the laws and numerical boundary.
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
@@ -22,9 +22,11 @@ struct CircuitStep {
     // one of the circuit's own lumped nodes. Not in heat_j: it leaves the
     // circuit, and the host hands it to that body's thermal parcel.
     double exported_j{}, emitted_j{};
+    double storage_delta_j{}, numerical_loss_j{};
     bool limited{};
     std::vector<double> voltage_v, current_a, motor_current_a, torque_n_m;
     std::vector<double> heat_j, branch_heat_j, shaft_j, light_j;
+    std::vector<double> capacitor_voltage_v;
 };
 
 // A switch worked by a hinge in the world: closed while the pin's measured
@@ -107,6 +109,7 @@ private:
         std::size_t a{}, b{}, thermal{};
         double resistance{}, alpha{}, reference_k{293.15}, trip_k{};
         double fuse_limit{}, fuse_used{}, ratio{1.0};
+        double capacitance{}, capacitor_voltage{};
         unsigned motor{}, lamp{};
         double efficiency{};
         bool closed{true}, failed{}, present{true};
@@ -128,6 +131,7 @@ private:
     double source_resistance_{}, ambient_k_{293.15};
     double elapsed_s_{}, source_j_{}, heat_j_{}, shaft_j_{}, ambient_j_{}, exported_j_{}, emitted_j_{};
     double electrical_residual_j_{}, thermal_residual_j_{}, coupling_residual_j_{};
+    double storage_delta_j_{}, numerical_loss_j_{};
     CircuitStep last_;
 };
 }

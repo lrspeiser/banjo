@@ -1,6 +1,34 @@
 # Puzzles on the machine (/play)
 
-October 12, 2026. Open `/play` to choose eight chain-reaction levels or twenty-three freely selectable piece lessons. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+October 12, 2026. Open `/play` to choose eight chain-reaction levels, twenty-three piece lessons and three advanced electronics activities. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
+
+## Advanced electronics
+
+**Resistor** and **Capacitor** are separate Sandbox cards with A/B terminals.
+Choose rated resistance or capacitance, location and glass/oak/iron housing.
+Capacitors also expose internal series resistance and leakage resistance.
+They are nonpolar rated parts, not a geometry-derived dielectric model.
+Click A/B endpoints to draw wires just as with batteries and lamps. Voltage
+drop, signed current and capacitor volts/joules appear beside the parts;
+Readings and wiring includes the same measurements. Current dots require
+measured flow. Reset starts capacitors uncharged. Saved designs/versions
+preserve ratings, placements and topology; native runtime snapshots additionally
+preserve instantaneous charge.
+
+| Activity | Starting apparatus and player work | Measured goal |
+| --- | --- | --- |
+| Limit the voltage drop | Grounded 12 V supply and lamp; add a series resistor, then reduce its initially excessive 48 Ω resistance. | Lamp receives at least 2 W for 0.5 s. |
+| Series or parallel? | One 12 V supply and two separate lamps; draw four leads to connect parallel feeds and returns. | Both lamps receive at least 2 W each for 0.5 s. A series chain or lighting only one fails. |
+| Store the charge | Grounded supply and 12 Ω charging resistor; increase the initially small 0.005 F capacitor. | Store at least 4 J for 0.1 s within 4 s. The 0.1 F author solution reaches the goal at 1.867 s. |
+
+All three author solutions pass nominal and two nudged native runs. The high
+resistance, series chain and undersized-capacitor controls fail all three runs.
+The **Charge and release** Sandbox example connects a switch, charging resistor,
+capacitor and lamp. Run to charge, then drag the rocker open in the scene:
+the capacitor supplies the lamp and loses stored energy. **Series and parallel
+bench** gives two unwired lamps for comparison. See the
+[measurements and validity](sandbox-electrics-measured.md#native-rc-components-and-advanced-activities-october-12)
+and [full electronics catalogue](electronics-expansion.md).
 
 **Divert the water** starts with a finite four-litre source and a separate,
 empty fixed container. Add a water chute, turn it from the crosswise starting

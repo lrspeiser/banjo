@@ -18,7 +18,7 @@ Windows, built and tested on Linux in CI, and not tested on macOS.
 
 ## What there is
 
-**Eight chain-reaction levels and twenty-three freely selectable piece lessons.**
+**Eight chain-reaction levels, twenty-three piece lessons and three advanced electronics activities.**
 Every card shows its task count and stars; Level details reveals energy records.
 The game shares Controls / Level (or Design) / Help tabs on desktop and phone,
 with Run/Pause/Reset kept beside the 3D view. **Recent Changes** in the top
@@ -65,7 +65,7 @@ three stars.
 It opens **Your designs / Examples** gallery tabs with setup previews and **Add New Design**.
 New designs open immediately; rename them in the editor’s Design tab.
 Each design has a table with no goal and every piece in
-the tray: 33 cards including knives, mirrors, lenses, solar panels, tackle,
+the tray: 35 cards including knives, mirrors, lenses, solar panels, tackle,
 springs, gears, weights, motors, batteries, switches, bulbs, wires, water
 wheels, finite water tanks, heating coils and counterweight catapults.
 Gears are individual toothed wheels: choose their size, align their axles and
@@ -73,7 +73,7 @@ mesh their teeth. A separate wired battery/motor supplies power. **Turn the big
 wheel** teaches bridging a gap between a powered gear and a larger target;
 the **Fast wheel slow wheel** example uses the same contact-driven apparatus.
 Older saved gear pairs retain their original ideal coupling.
-There are 26 editable prebuilt designs, including a battery holder, a river workbench and a
+There are 28 editable prebuilt designs, including a battery holder, a river workbench and a
 river-powered gate lift. The river's current pushes submerged wheel paddles;
 connect the wheel's drum rope to a load to lift it.
 **Wheel in the river** teaches moving a wheel into that current. Tanks and
@@ -117,7 +117,12 @@ star at most), or builds what you describe in the Sandbox. It uses OpenAI's
 works, what was measured, and how to add a level.
 The [physics roadmap](docs/machine-physics-roadmap.md) records the experimental
 models and remaining limits; the measured sandbox reports distinguish working
-controls from full physical validation.
+controls from full physical validation. The [electronics catalogue](docs/electronics-expansion.md)
+lists placeable component families, proposed activities and implementation stages.
+Standalone resistor and nonpolar capacitor cards are available now; capacitor
+charge, ESR heat, leakage and stored energy use native RC physics. Three advanced
+activities teach resistance, series/parallel lamp wiring and capacitor storage.
+The larger semiconductor, magnetic and control-device catalogue remains planned.
 
 ## How it works
 

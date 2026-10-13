@@ -369,7 +369,7 @@ function syncTerminalLabels() {
     const controls = document.createElement('div'); controls.className = 'terminal-buttons';
     const rows = [];
     for (const [key, at] of Object.entries(device.terminals || {})) {
-      const name = `${device.name}:${key}`, text = {plus:'+', minus:'−', in:'In', out:'Out'}[key] || key;
+      const name = `${device.name}:${key}`, text = {plus:'+', minus:'−', in:'In', out:'Out',a:'A',b:'B'}[key] || key;
       const control = button(text, () => pickTerminal(name), {ariaLabel:`Connect ${device.name} ${key}`});
       // New labels remain inert until the current tray and scene position
       // have been evaluated, including between a rebuild and its next frame.
@@ -468,9 +468,13 @@ function positionTerminalLabels() {
       } else if (device.kind==='bulb') {
         const bulb=snapshot.devices.find(d=>d.name===device.name);
         feedback.textContent=prefix+`${(bulb?.power_w||0).toFixed(2)} W lamp · ${Math.abs(bulb?.voltage_v||0).toFixed(1)} V / ${device.rated_voltage_v} V rated`;
-      } else if (device.kind==='coil' || device.kind==='motor') {
+      } else if(device.kind==='capacitor') {
+        const measured=snapshot.devices.find(d=>d.name===device.name);
+        feedback.textContent=prefix+`${device.capacitance_f} F · ${(measured?.capacitor_voltage_v||0).toFixed(2)} V · ${(measured?.stored_j||0).toFixed(2)} J · ${(measured?.current_a||0).toFixed(3)} A`;
+      } else if (device.kind==='coil' || device.kind==='motor' || device.kind==='resistor') {
         const measured=snapshot.devices.find(d=>d.name===device.name);
         feedback.textContent=prefix+`${Math.abs(measured?.current_a||0).toFixed(3)} A · ${(measured?.power_w||0).toFixed(1)} W`;
+        if(device.kind==='resistor')feedback.textContent=prefix+`${device.resistance_ohm} Ω · ${Math.abs(measured?.voltage_v||0).toFixed(2)} V drop · ${Math.abs(measured?.current_a||0).toFixed(3)} A`;
         if(device.kind==='coil') {
           const heat=!snapshot.preview&&readouts.heat?.find(h=>h.name===device.heats);
           feedback.textContent+=heat?` · ${heat.temperature_k.toFixed(0)} K${heat.reacting?' · burning':''}`:` → ${device.heats.replace(/^your /,'')}`;
@@ -1274,7 +1278,8 @@ function renderReadings(frame) {
     if (device.kind === 'battery') continue;
     pair(dl, device.name, device.kind === 'switch' ? (device.closed ? 'closed' : 'open') :
       `${(device.current_a || 0).toFixed(3)} A · ${(device.power_w || 0).toFixed(2)} W` +
-      (device.kind === 'bulb' ? ` · ${(device.emitted_w || 0).toFixed(2)} W light` : ''));
+      (device.kind === 'bulb' ? ` · ${(device.emitted_w || 0).toFixed(2)} W light` :
+        device.kind==='capacitor'?` · ${(device.capacitor_voltage_v||0).toFixed(2)} V · ${(device.stored_j||0).toFixed(2)} J stored`:''));
     if (device.kind === 'bulb') {
       const part = machine.electrical.devices.find(row => row.name === device.name)?.part;
       meshes.get(part)?.traverse(object => {
@@ -2610,12 +2615,21 @@ function feedbackCurve(w) {
 function updatePowerFeedback() {
   updateSolarLiftGuide();
   const host=$('power-feedback-labels'),sample=powerFeedbackSnapshot(),items=[];
-  const pending=!playing&&Boolean(flowPending||ghost&&!ghost.answered);
+  const pending=!(world?.t>0)&&!playing&&Boolean(flowPending||ghost&&!ghost.answered);
   powerFlowDots.count=0;
   if(!machine||document.body.matches('.on-levels,.on-sandbox')) {host.hidden=true;return;}
   host.hidden=false;
   for(const d of sample.devices) {
     const at=world.bodies.get(d.part)?.position_m||d.at_m;if(!at)continue;
+    if(d.requirement==='capacitor'||d.requirement==='resistor') {
+      const storage=d.requirement==='capacitor';
+      items.push({id:'device:'+d.name,name:d.name.replace(/^your /,''),kind:'object',at,
+        text:storage?`${d.capacitance_f} F${d.required_j?` · Goal ≥ ${d.required_j} J`:''}\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${d.capacitor_voltage_v.toFixed(2)} V · ${d.stored_j.toFixed(2)} J · ${d.current_a.toFixed(3)} A`}`:
+          `${d.resistance_ohm} Ω\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${Math.abs(d.voltage_v).toFixed(2)} V drop · ${Math.abs(d.current_a).toFixed(3)} A`}`,
+        low:storage&&d.required_j&&d.stored_j<d.required_j,
+        title:storage?'Nonpolar rated capacitor. Signed current charges (+) or discharges (−) the A-to-B voltage. Stored energy is measured by the native solver.':'Rated resistance; measured voltage drop and current determine Joule heat.'});
+      continue;
+    }
     let need;
     if(d.requirement==='goal')need=`Goal ≥ ${d.required_w.toFixed(1)} W`;
     else if(d.requirement==='rated')need=`Rated ${d.rated_w.toFixed(1)} W`;
@@ -3801,6 +3815,8 @@ const PIECE_INFO = {
   wire: ['electrics', 'Connect two terminals. Crossed wires stay separate.'],
   power_cable: ['electrics', 'Click a solar output, then a winch or battery input. A two-conductor lead carries collected power.'],
   ignition: ['electrics', 'A wired heating coil attached to a material target.'],
+  resistor: ['electrics', 'A rated two-terminal resistance with measured voltage drop and Joule heat.'],
+  capacitor: ['electrics', 'A nonpolar capacitor: charge, stored energy, internal resistance and leakage.'],
   water_wheel: ['water', 'River current or falling water pushes the paddles. Connect its drum to lift a load.'],
   water_tank: ['water', 'A separate finite gravity tank. Open its tap wider for more flow; falling water level slows it.'],
   water_chute: ['water', 'Aim and tip a supported open trough. Gravity and contact divert the falling water.'],
@@ -4399,8 +4415,10 @@ function closeDone() {
 function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   closeDone();
   const box = $('level-done'), next = level.variant ? null : levels[levels.indexOf(level) + 1];
+  const completedAll = levels.every(row=>bestStars(row.id)>0);
   // Leave the cut/fall or collected water visible after the physical goal.
-  if(heatingTarget || readouts.water_regions?.length || machine?.ground?.kind==='flume')$('control-panel').append(box);
+  if(heatingTarget || readouts.water_regions?.length || machine?.ground?.kind==='flume' ||
+     machine?.electrical?.wires?.length)$('control-panel').append(box);
   const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
   const allLevels = button('All levels', () => { closeDone(); showLevelsScreen(true); });
   if (r.tested) {
@@ -4419,8 +4437,8 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     if (unlocked.length) {
       add('h2', {textContent: 'Achievement Unlocked'});
       add('p', {className: 'unlocked', textContent: `Your first win with ${unlocked.map(t => (/^[aeiou]/.test(t) ? 'an ' : 'a ') + t)
-        .join(' and ')}!` + (next || level.variant ? '' : ' And you finished every level!')});
-    } else add('h2', {textContent: level.variant ? 'Challenge complete!' : next ? 'Level complete!' : 'You finished every level!'});
+        .join(' and ')}!` + (completedAll && !level.variant ? ' And you finished every level!' : '')});
+    } else add('h2', {textContent: level.variant ? 'Challenge complete!' : completedAll ? 'You finished every level!' : 'Level complete!'});
     add('p', {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)});
     // What the win took, in energy, against par: behind Energy details, so the
     // card is the stars and what to do next.

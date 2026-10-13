@@ -20,6 +20,20 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_storage_cards_are_nonpolar_and_initial_energy_cannot_be_invented(self):
+        spec=e.capacitor_workbench()
+        compiled=mw.compile_spec(spec)
+        cap=next(d for d in compiled['electrical']['devices'] if d['kind']=='capacitor')
+        self.assertEqual(set(cap['terminals']),{'a','b'})
+        self.assertEqual(cap['capacitance_f'],.1)
+        for key,value in [('capacitance_f',0),('resistance_ohm',-1),('leakage_ohm',0),('initial_voltage_v',12)]:
+            bad=copy.deepcopy(spec)
+            next(d for d in bad['electrical']['devices'] if d['kind']=='capacitor')[key]=value
+            with self.assertRaises(mw.MachineRefused):mw.compile_spec(bad)
+        bad=copy.deepcopy(spec)
+        bad['stations']=[dict(title='Both loads',done_when={'load_power_w':{'devices':[{}],'at_least_w':2}})]
+        with self.assertRaises(mw.MachineRefused):mw.compile_spec(bad)
+
     def test_paddle_contacts_require_conductors_and_bound_terminals(self):
         spec=e.marble_light()
         control=next(d for d in spec['electrical']['devices'] if d['kind']=='switch')
@@ -256,6 +270,39 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_advanced_electronics_require_the_right_ratings_and_real_topology(self):
+        with tempfile.TemporaryDirectory() as logs:
+            for identifier in ('advanced-resistor','advanced-parallel','advanced-capacitor'):
+                level=mg.level_by_id(identifier)
+                good=mg.trial(level,level['solution'],ENGINE,Path(logs),runs=3)
+                wrong=mg.trial(level,level['wrong'],ENGINE,Path(logs),runs=3)
+                self.assertEqual(good['worked'],3,(identifier,good['results']))
+                self.assertEqual(wrong['worked'],0,(identifier,wrong['results']))
+                if identifier=='advanced-parallel':
+                    only_one=mg.trial(level,level['solution'][:2],ENGINE,Path(logs),runs=1)
+                    self.assertEqual(only_one['worked'],0,'lighting only one lamp cannot complete both-load goal')
+
+    def test_capacitor_shares_battery_energy_then_powers_a_load_after_exhaustion(self):
+        with tempfile.TemporaryDirectory() as logs:
+            for material in ('glass','oak','iron'):
+                spec=e.capacitor_workbench()
+                source=spec['batteries'][0];source.update(capacity_j=8,charge_j=8)
+                for p in spec['parts']:
+                    if p['name'] in ('storage housing','charging resistor housing'):p['material']=material
+                out=mw.rehearse(mw.compile_spec(spec),ENGINE,Path(logs),seconds=8,flows=True)
+                networks=out['readouts']['electrical']['networks']
+                ledger=networks[0]['ledger']
+                cap=next(d for d in out['readouts']['electrical']['devices'] if d['kind']=='capacitor')
+                self.assertGreater(cap['stored_j'],0)
+                self.assertLess(cap['current_a'],0,'capacitor must be discharging')
+                self.assertAlmostEqual(ledger['source_j'],8,places=7)
+                self.assertAlmostEqual(ledger['source_j'],ledger['heat_j']+ledger['emitted_j']+
+                    ledger['storage_delta_j']+ledger['numerical_loss_j'],places=7)
+                self.assertLess(abs(ledger['electrical_residual_j']),1e-7)
+                self.assertLess(abs(ledger['thermal_residual_j']),1e-7)
+                print('CAPACITOR_MATERIAL',dict(material=material,stored_j=cap['stored_j'],
+                    current_a=cap['current_a'],ledger=ledger))
+
     def test_contact_paddle_current_requires_a_closed_metal_gap_and_complete_loop(self):
         level=mg.level_by_id('easy-marble-light')
         spec=mg.compose(level,level['solution'])[0]

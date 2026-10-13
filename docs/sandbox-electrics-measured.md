@@ -501,3 +501,79 @@ landscape cases separately in 7.287 s. The current/retained recipe test passes i
 The inspection-card follow-up changes only UI placement. Its same complete
 current/contact/reset/touch test passes in 7.386 s across all three viewports;
 the native measurements above remain unchanged. Source registration is 269/269.
+
+## Native RC components and advanced activities (October 12)
+
+The standalone Resistor and nonpolar Capacitor cards use native Circuit,
+including explicit series resistance and a separate leakage resistor. They have
+A/B terminals; wiring determines series/parallel topology. Component ratings
+are independent of housing geometry/material. Glass/oak/iron housings are
+anchored, with native material-derived mass; the lumped thermal capacities are
+declared component parameters, not a bulk-material heat model. No spatial
+dielectric field, breakdown, electrolytic damage, arcing or magnetic flux is
+implemented. A fresh/reset capacitor starts uncharged; snapshots preserve its
+signed voltage/charge. The compiler retains a single battery per declared graph.
+The graph includes open switches, so opening the supply leaves capacitor/load
+islands available to the solver; an entirely battery-free declaration is not
+yet compiled into a runtime circuit.
+
+For each accepted timestep, backward Euler solves
+`I = (V_A - V_B - V_C_old)/(R_ESR + dt/C)`, then
+`V_C_new = V_C_old + dt*I/C`. Physical ESR heat is `I² R_ESR dt`.
+The storage delta is `½ C (V_C_new² - V_C_old²)`. The numerical loss
+`½ C (V_C_new - V_C_old)²` has its own ledger and never heats a body.
+Source work balances heat, light, shaft work, storage delta and numerical loss,
+with unchanged electrical tolerance `1e-8` times the step energy scale.
+The KCL tolerance remains `1e-8*(1+abs(source_current))` amperes. There is one
+voltage reference per conducting island, without an artificial ground leak.
+Trial solves do not commit charge or thermal/fuse state.
+
+Material-neutral analytic test: a 12 V source with 1 Ω internal resistance,
+9 Ω feed, 0.1 Ω ESR and 0.1 F capacitor has τ=1.01 s. At 1 s:
+
+| dt (s) | Native voltage (V) | Error vs exponential (V) | Numerical loss (J) |
+| --- | --- | --- | --- |
+| 0.0100 | 7.51976 | 0.0217629 | 0.0305240 |
+| 0.0050 | 7.53062 | 0.0109040 | 0.0153117 |
+| 0.0025 | 7.53606 | 0.0054576 | 0.00766831 |
+
+Electrical residuals are below 4e-14 J. Isolated storage retains voltage;
+discharge through 10 Ω matches its exponential within 0.015 V. Equal capacitors
+share approximately 6 V in series and receive approximately 12 V in parallel;
+charge equality is within 1e-9 C. A native LiveWorld save/resume preserves the
+complete circuit state and identical continuation. Existing DC/motor/contact
+tests continue to pass; their coupled mechanical residuals remain reported
+above and are not proof of full-pipeline conservation for arbitrary machines.
+
+Same anchored apparatus with glass, oak and iron resistor/capacitor housings:
+12 V finite 8 J supply, manual closed switch, 12 Ω charging resistor, 0.1 F
+capacitor with 0.1 Ω ESR/1 MΩ leakage, 12 V/3 W lamp. At 7.95 s each records
+0.09719398 J stored and −0.02897543 A capacitor current after source exhaustion.
+Each consumes exactly 8 J: 7.49741150 J heat, 0.39627997 J emitted light,
+0.09719398 J remaining storage and 0.00911454 J numerical loss. Electrical
+residual is −2.60e-12 J; thermal residual is 6.63e-8 J. Electrical ratings are
+identical across housings, intentionally; this does not claim microscopic
+glass/oak/iron conduction or temperature calibration. The native default step
+for this anchored scene is 1/240 s, with 20 mm body cells.
+
+Three advanced activities pass their correct/empty/wrong checks. Correct and
+wrong controls each receive nominal and two nudged runs:
+
+| Activity | Correct result | Physical wrong control | Measured author energy / initial par |
+| --- | --- | --- | --- |
+| Limit the voltage drop | 3/3, goal at 0.583 s | 48 Ω series resistor, 0/3 | 172800001.613 J / 173000000 J |
+| Series or parallel? | 3/3, both lamps at goal at 0.583 s | Series lamp chain, 0/3; a single powered lamp also fails | 3.491 J / 3.5 J |
+| Store the charge | 3/3, 4 J goal at 1.867 s | 0.005 F stores at most 0.36 J at 12 V, 0/3 | 226800011.282 J / 227000000 J |
+
+These pars are initial native calibrations for new levels; previous goals,
+pars and tolerances are unchanged. The compact scene readings show volts,
+current and stored joules without inventing flow. **Charge and release** and
+**Series and parallel bench** are editable Sandbox examples.
+
+Verification: 53/53 game tests in 88.026 s; 31/31 electrical tests in 42.717 s;
+native circuit CTest passes in 0.34 s (0.38 s including runner). Source
+registration is 269/269. Three browser tests pass in 21.453 s: charge/current
+meters, reset, unobstructed labels, both-load wiring goals across desktop,
+phone portrait and landscape, plus library availability and saving/reloading
+component ratings/wires. The published revision is reported with the checkpoint.
+See [the complete catalogue](electronics-expansion.md).

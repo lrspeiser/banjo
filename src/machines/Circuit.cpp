@@ -99,13 +99,14 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
         keys(b, {"id", "kind", "component", "a", "b", "thermal", "resistance_ohm", "alpha_per_k", "reference_k", "trip_k",
                  "fuse_a2_s", "gear_ratio", "motor", "closed", "failed", "used_a2_s", "current_a", "motor_current_a",
                  "torque_n_m", "housing_reaction_n_m", "heats_body", "follows_hinge", "follows_light",
-                 "follows_contact", "lamp", "efficiency", "power_w", "emitted_w"});
+                 "follows_contact", "lamp", "efficiency", "power_w", "emitted_w",
+                 "capacitance_f", "initial_voltage_v", "capacitor_voltage_v", "stored_j", "charge_c"});
         Branch row;
         row.id = b.at("id"); row.kind = b.at("kind"); row.component = b.at("component");
         unique(ids, row.id);
         require(!row.component.empty(), "branch needs source component identity");
         require(row.kind == "resistor" || row.kind == "wire" || row.kind == "switch" ||
-                row.kind == "fuse" || row.kind == "motor" || row.kind == "bulb", "unsupported branch " + row.kind);
+                row.kind == "fuse" || row.kind == "motor" || row.kind == "bulb" || row.kind == "capacitor", "unsupported branch " + row.kind);
         row.a = index(c.nodes_, b.at("a")); row.b = index(c.nodes_, b.at("b"));
         require(row.a != row.b, "branch terminals must differ");
         if (b.contains("heats_body")) {
@@ -170,6 +171,15 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
             require(row.touch_a != row.touch_b, "follows_contact names two different bodies");
         }
         row.resistance = number(b, "resistance_ohm");
+        if (row.kind == "capacitor") {
+            row.capacitance = number(b, "capacitance_f");
+            row.capacitor_voltage = number(b, restore ? "capacitor_voltage_v" : "initial_voltage_v");
+            require(row.capacitance >= 1e-6 && row.capacitance <= 100.0 &&
+                    std::abs(row.capacitor_voltage) <= 1000.0, "capacitor outside supported domain");
+            require(number(b, "alpha_per_k") == 0.0 && number(b, "trip_k") == 0.0 &&
+                    number(b, "fuse_a2_s") == 0.0, "capacitor ESR has no thermal/fuse law");
+        } else require(!b.contains("capacitance_f") && !b.contains("initial_voltage_v") &&
+                     !b.contains("capacitor_voltage_v"), "only capacitors store charge");
         if (row.kind == "bulb") {
             require(b.at("lamp").is_number_integer() && b.at("lamp").get<std::int64_t>() > 0,
                     "bulb needs a lamp id");
@@ -216,6 +226,9 @@ Circuit Circuit::read(const nlohmann::json &doc, bool restore) {
         c.ambient_j_ = number(ledger, "ambient_j");
         c.exported_j_ = number(ledger, "exported_j");
         c.emitted_j_ = number(ledger, "emitted_j");
+        c.storage_delta_j_ = number(ledger, "storage_delta_j");
+        c.numerical_loss_j_ = number(ledger, "numerical_loss_j");
+        require(c.numerical_loss_j_ >= 0.0, "negative numerical loss history");
         require(c.exported_j_ >= 0.0, "invalid exported heat history");
         c.electrical_residual_j_ = number(ledger, "electrical_residual_j");
         c.thermal_residual_j_ = number(ledger, "thermal_residual_j");
@@ -264,6 +277,13 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
             (b.fuse_limit > 0.0 && b.fuse_used >= b.fuse_limit)) continue;
         const double factor = 1.0 + b.alpha * (heat_[b.thermal].temperature - b.reference_k);
         require(factor > 0.0 && std::isfinite(factor), "resistance law outside positive domain");
+        if (b.capacitance > 0.0) {
+            // Backward Euler companion: terminal drop = R_ESR I + V_C,
+            // V_C(new) = V_C(old) + dt I/C. State changes only at commit.
+            g[i] = 1.0 / (b.resistance + dt / b.capacitance);
+            emf[i] = b.capacitor_voltage;
+            continue;
+        }
         if (!b.motor) { g[i] = 1.0 / (b.resistance * factor); continue; }
         const auto m = std::find_if(motors_in.begin(), motors_in.end(), [&](const auto &v) { return v.id == b.motor; });
         require(m != motors_in.end(), "missing motor input");
@@ -310,6 +330,7 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
     }
     s.current_a.resize(count); s.motor_current_a.resize(count); s.torque_n_m.resize(count);
     s.branch_heat_j.resize(count); s.shaft_j.resize(count); s.light_j.resize(count); s.heat_j.resize(heat_.size());
+    s.capacitor_voltage_v.resize(count);
     std::vector<double> kcl(n);
     for (std::size_t i = 0; i < count; ++i) {
         const auto &b = branches_[i];
@@ -318,12 +339,21 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
         s.torque_n_m[i] = current * gain[i];
         s.motor_current_a[i] = command[i] != 0.0 ? current / command[i] : 0.0;
         s.branch_heat_j[i] = g[i] > 0.0 ? current * current / g[i] * dt : 0.0;
+        if (b.capacitance > 0.0) {
+            const double change = dt * current / b.capacitance;
+            s.capacitor_voltage_v[i] = b.capacitor_voltage + change;
+            s.storage_delta_j += 0.5 * b.capacitance * change * (2.0 * b.capacitor_voltage + change);
+            // BE's discretization loss is NOT physical heat. Report it on its
+            // own ledger, measure convergence, and never warm a body with it.
+            s.numerical_loss_j += 0.5 * b.capacitance * change * change;
+            s.branch_heat_j[i] = current * current * b.resistance * dt;
+        }
         s.light_j[i] = s.branch_heat_j[i] * b.efficiency;
         s.emitted_j += s.light_j[i];
         s.branch_heat_j[i] -= s.light_j[i];
         if (b.body.empty()) s.heat_j[b.thermal] += s.branch_heat_j[i];
         else s.exported_j += s.branch_heat_j[i];
-        s.shaft_j[i] = emf[i] * current * dt;
+        s.shaft_j[i] = b.motor ? emf[i] * current * dt : 0.0;
         kcl[b.a] += current; kcl[b.b] -= current;
     }
     kcl[positive_] -= s.source_current_a; kcl[negative_] += s.source_current_a;
@@ -333,8 +363,9 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
     s.heat_j[source_heat_] += std::max(0.0, source_loss);
     s.source_j = voltage * s.source_current_a * dt;
     s.electrical_residual_j = s.source_j - std::accumulate(s.heat_j.begin(), s.heat_j.end(), 0.0) -
-                              std::accumulate(s.shaft_j.begin(), s.shaft_j.end(), 0.0) - s.exported_j - s.emitted_j;
-    const double scale = 1.0 + std::abs(s.source_j) + s.exported_j +
+                              std::accumulate(s.shaft_j.begin(), s.shaft_j.end(), 0.0) - s.exported_j - s.emitted_j -
+                              s.storage_delta_j - s.numerical_loss_j;
+    const double scale = 1.0 + std::abs(s.source_j) + s.exported_j + std::abs(s.storage_delta_j) + s.numerical_loss_j +
                         std::accumulate(s.heat_j.begin(), s.heat_j.end(), 0.0);
     require(std::isfinite(s.electrical_residual_j) && std::abs(s.electrical_residual_j) <= 1e-8 * scale &&
             s.max_kcl_a <= 1e-8 * (1.0 + std::abs(s.source_current_a)), "electrical conservation tolerance exceeded");
@@ -344,6 +375,7 @@ CircuitStep Circuit::solve(double dt, double voltage, double charge, double max_
 void Circuit::commit(const CircuitStep &s, double actual_work) {
     require(std::isfinite(actual_work) && s.heat_j.size() == heat_.size() && s.current_a.size() == branches_.size(),
             "invalid accepted step");
+    require(s.capacitor_voltage_v.size() == branches_.size(), "invalid capacitor accepted state");
     const auto n = heat_.size();
     std::vector<std::vector<double>> a(n, std::vector<double>(n));
     std::vector<double> rhs(n);
@@ -365,6 +397,7 @@ void Circuit::commit(const CircuitStep &s, double actual_work) {
     }
     for (std::size_t i = 0; i < branches_.size(); ++i) {
         auto &b = branches_[i];
+        if (b.capacitance > 0.0) b.capacitor_voltage = s.capacitor_voltage_v[i];
         if (b.fuse_limit > 0.0) b.fuse_used += s.current_a[i] * s.current_a[i] * s.dt_s;
         b.failed = b.failed || (b.fuse_limit > 0.0 && b.fuse_used >= b.fuse_limit) ||
                    (b.trip_k > 0.0 && std::max(heat_[b.thermal].temperature, temperatures[b.thermal]) >= b.trip_k);
@@ -375,6 +408,8 @@ void Circuit::commit(const CircuitStep &s, double actual_work) {
     elapsed_s_ += s.dt_s; source_j_ += s.source_j; heat_j_ += heat; shaft_j_ += actual_work; ambient_j_ += ambient;
     exported_j_ += s.exported_j;
     emitted_j_ += s.emitted_j;
+    storage_delta_j_ += s.storage_delta_j;
+    numerical_loss_j_ += s.numerical_loss_j;
     electrical_residual_j_ += s.electrical_residual_j;
     thermal_residual_j_ += stored + ambient - heat;
     coupling_residual_j_ += actual_work - shaft;
@@ -466,6 +501,13 @@ nlohmann::json Circuit::saved() const {
                  {"reference_k", b.reference_k}, {"trip_k", b.trip_k}, {"fuse_a2_s", b.fuse_limit},
                  {"used_a2_s", b.fuse_used}, {"failed", b.failed}, {"closed", b.closed}, {"gear_ratio", b.ratio}};
         if (b.motor) row["motor"] = b.motor;
+        if (b.capacitance > 0.0) {
+            row["capacitance_f"] = b.capacitance;
+            row["initial_voltage_v"] = b.capacitor_voltage;
+            row["capacitor_voltage_v"] = b.capacitor_voltage;
+            row["charge_c"] = b.capacitance * b.capacitor_voltage;
+            row["stored_j"] = 0.5 * b.capacitance * b.capacitor_voltage * b.capacitor_voltage;
+        }
         if (b.lamp) { row["lamp"] = b.lamp; row["efficiency"] = b.efficiency; }
         if (!b.body.empty()) row["heats_body"] = b.body;
         if (b.follow_joint)
@@ -488,6 +530,7 @@ nlohmann::json Circuit::saved() const {
     }
     d["ledger"] = {{"elapsed_s", elapsed_s_}, {"source_j", source_j_}, {"heat_j", heat_j_}, {"shaft_j", shaft_j_},
                    {"ambient_j", ambient_j_}, {"exported_j", exported_j_}, {"emitted_j", emitted_j_},
+                   {"storage_delta_j", storage_delta_j_}, {"numerical_loss_j", numerical_loss_j_},
                    {"electrical_residual_j", electrical_residual_j_},
                    {"thermal_residual_j", thermal_residual_j_}, {"coupling_residual_j", coupling_residual_j_}};
     d["last"] = {{"voltage_v", last_.voltage_v}, {"source_current_a", last_.source_current_a},

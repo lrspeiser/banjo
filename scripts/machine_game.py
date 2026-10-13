@@ -57,7 +57,7 @@ PLAYER_TASK_COUNTS = {
     'easy-switch': 2, 'easy-bulb': 1, 'easy-loop': 1,
     'easy-water-receiver': 1, 'easy-divert-water': 1, 'easy-heat': 1, 'easy-catapult': 1,
     'easy-marble-light': 1, 'easy-water-gate': 3, 'easy-charge-lift': 2,
-    'easy-river-lift': 2,
+    'easy-river-lift': 2, 'advanced-resistor':1,'advanced-parallel':4,'advanced-capacitor':1,
 }
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -100,7 +100,7 @@ def _with_free_knobs(level):
 
 def load_levels():
     levels = json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['levels']
-    menu = [level['id'] for level in levels] + EASY_ORDER
+    menu = [level['id'] for level in levels] + EASY_ORDER + ['advanced-resistor','advanced-parallel','advanced-capacitor']
     # Learn one reflection before routing a beam through two mirrors.
     # Menu order changes no level declaration, ID, saved score or simulation.
     menu.remove('easy-mirror')
