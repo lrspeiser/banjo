@@ -1,5 +1,22 @@
 # Puzzles on the machine (/play)
 
+October 13 new-piece framing: the first compiled preview of every newly added
+piece checks all eight corners of its rendered bounds in the current camera.
+The camera only moves backwards as needed (up to the existing 40 m limit),
+preserving its angle and look-at point and leaving room for scene controls.
+Both the current and settled camera pan are checked. This replaces the
+selected tray cards' automatic whole-machine framing; it also covers
+**Cut the cord**, **Cut it down** and Sandbox additions. Later edits,
+pickup and manual zoom keep the player's camera; small additions that
+already fit do not change it. Placement coordinates and physics are unchanged.
+Measured in Chrome at 1280 × 860, 390 × 844 and 844 × 390: the new knife's
+complete bounds fit inside the scene before placement; its angle is retained,
+a later manual zoom survives a position edit and a small plank leaves zoom
+unchanged. Gear meshing and river-wheel drag-to-current lessons still complete
+through their ordinary controls. Plank drag/edit/run and desktop trackpad
+pinch checks also passed. The plank browser test's next-level assertion was
+updated to follow the current catalogue rather than the removed level order.
+
 October 13 retry scoring: every result card shows the current run's energy,
 the **Perfect score target** and its energy margin without opening Energy
 details, including **Play again**, **Keep my pieces** and **Restart with my

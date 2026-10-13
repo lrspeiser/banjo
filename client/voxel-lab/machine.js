@@ -2168,6 +2168,30 @@ function followGhost() {
   if (!ghost || !ghost.drawnAt) return;
   ghostGroup.position.set((ghost.p.x_m ?? 0) - ghost.drawnAt.x, 0, (ghost.p.z_m ?? 0) - ghost.drawnAt.z);
 }
+function fitNewPieceInView() {
+  const bounds = new THREE.Box3().setFromObject(ghostGroup);
+  if (bounds.isEmpty() || ![...bounds.min.toArray(), ...bounds.max.toArray()].every(Number.isFinite)) return;
+  freshView();
+  // Keep the player's angle and look-at point. Moving the camera backwards
+  // fits the addition and preserves the apparatus already visible beside it.
+  // Leave room for the clock and corner controls, including short phone views.
+  const horizontal = Math.tan(camera.fov * Math.PI / 360) * camera.aspect * (1 - 2 * Math.min(.2, 24 / view.clientWidth));
+  const vertical = Math.tan(camera.fov * Math.PI / 360) * (1 - 2 * Math.min(.3, 60 / view.clientHeight));
+  const corner = new THREE.Vector3();
+  const settledCamera = camera.clone();
+  settledCamera.position.add(new THREE.Vector3().subVectors(goal, target));
+  settledCamera.updateMatrixWorld();
+  let extra = 0;
+  // Check both ends of any existing camera pan so the piece stays in view
+  // while the look-at point finishes easing into place.
+  for (const eye of [camera, settledCamera]) for (let i = 0; i < 8; i++) {
+    corner.set(i & 1 ? bounds.max.x : bounds.min.x, i & 2 ? bounds.max.y : bounds.min.y,
+               i & 4 ? bounds.max.z : bounds.min.z).applyMatrix4(eye.matrixWorldInverse);
+    extra = Math.max(extra, Math.abs(corner.x) / horizontal + corner.z,
+                    Math.abs(corner.y) / vertical + corner.z, eye.near + corner.z);
+  }
+  if (extra > 0) { distance = Math.min(40, distance + extra); freshView(); }
+}
 function focusSelectedPiece() {
   if (!ghost?.drawnAt || !ghostGroup.children.length) return;
   const bounds = new THREE.Box3().setFromObject(ghostGroup);
@@ -2434,9 +2458,9 @@ async function checkGhost(g) {
     g.editGuide = r.edit_guide || null;
     drawEditGuide(r.parts);
     drawPorts(r.ports || [], r.snap);
-    // Authored tall additions must fit beside the existing apparatus once,
-    // without moving the player's view again as they adjust or drag them.
-    if(g.frameOnAdd){g.frameOnAdd=false;frameCamera(true);freshView();}
+    // Fit every new addition once, before placement; later adjustments and
+    // manual zooms remain under the player's control.
+    if(g.frameOnAdd){g.frameOnAdd=false;fitNewPieceInView();}
     // Selecting a control changes annotations, not the simulated setup.
     if (!g.again && setupStamp !== g.previewStamp) { g.previewStamp = setupStamp; schedulePreview(); }
   } catch (e) {
@@ -2461,7 +2485,7 @@ function startGhost(p, index, keepPlace = false) {
   selectPhonePanel('controls');
   ghost = {p, index, was: index < placements.length ? placements[index] : null, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {},card:trayItem(p.piece).focus_knob,
-           frameOnAdd:index>=placements.length && Boolean(trayItem(p.piece).frame_on_add)};
+           frameOnAdd:index>=placements.length};
   if(p.piece==='base_object')Object.assign(ghost,{baseObject:sandboxObjects.find(o=>o.id===p.object),originalBase:clone(activeDesign.draft.base || sandboxBase)});
   view.classList.add('placing'); view.classList.remove('pickable', 'looking');
   looking = false;

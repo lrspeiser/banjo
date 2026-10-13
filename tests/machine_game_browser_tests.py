@@ -2825,15 +2825,18 @@ class Puzzles(unittest.TestCase):
         self.wait('!window.machineGhostState()', 5)
         self.wait("Boolean(document.querySelector('#verdict .stars'))", 90)
         self.assertIn('★★★', self.js("document.getElementById('verdict').textContent"))
-        # The goal says so, over the scene, and leads on to the next level.
+        # The result in Controls leads on to the next catalogue entry.
         self.wait("!document.getElementById('level-done').hidden", 10)
         done = self.js("document.getElementById('level-done').textContent")
         self.assertIn('Achievement Unlocked', done)
         self.assertIn('Your first win with a plank!', done)
         self.assertIn('Energy used: 30.6 MJ', done)
         self.assertIn('Your plank 1: 2.94 kg, 30.6 MJ', done)
+        import machine_game
+        catalogue = machine_game.load_levels()
+        next_level = catalogue[next(i for i, row in enumerate(catalogue) if row['id'] == 'gap') + 1]['id']
         self.press('Next level')
-        self.wait("/^2\\. /.test(document.getElementById('title').textContent)", 30)
+        self.wait(f"new URLSearchParams(location.search).get('level') === {json.dumps(next_level)} && {READY}", 30)
 
     def test_help_is_only_an_overlay_and_keeps_each_screen_and_setup_on_desktop_and_phones(self):
         def open_help():
@@ -3702,6 +3705,29 @@ class Puzzles(unittest.TestCase):
                                      '★★☆' if attempt < 2 else '★★★')
                     # The actual comparison is visible, in Controls, with no disclosure.
                     self.assertTrue(self.js("(() => {const e=document.getElementById('level-done-score'), r=e.getBoundingClientRect(), p=document.getElementById('control-panel').getBoundingClientRect(); return e.checkVisibility() && r.left>=p.left && r.right<=p.right+1 && r.top>=p.top && r.bottom<=p.bottom+1;})()"))
+
+    def test_new_oversized_piece_fits_before_placement_without_overriding_later_camera_edits(self):
+        for width, height in ((1280, 860), (390, 844), (844, 390)):
+            with self.subTest(viewport=(width, height)):
+                self.open('easy-cut', width, height, phone=width != 1280)
+                before = self.js('machineCamera()')
+                self.press('Add a knife'); proposed = self.ghost()['p']
+                self.wait('machineCamera().settled', 20)
+                self.assertGreater(self.js('machineCamera().distance'), before['distance'])
+                self.assertTrue(self.js("(()=>{const b=machineGhostScreen(),r=document.querySelector('#view canvas').getBoundingClientRect();return b&&b.x0>=r.left+10&&b.x1<=r.right-10&&b.y0>=r.top+10&&b.y1<=r.bottom-10;})()"), 'The entire default knife fits while it is still being placed')
+                self.assertEqual(len(self.js('machinePlacements()')), 0)
+                camera = self.js('machineCamera()')
+                self.assertEqual((camera['azimuth'], camera['elevation']), (before['azimuth'], before['elevation']))
+                self.click_visible('Zoom in')
+                closer = self.js('machineCamera()')
+                self.slide('Position along (m) of your knife 1', proposed['x_m'] + .02)
+                self.ghost()
+                self.assertEqual(self.js('machineCamera().distance'), closer['distance'], 'Later edits respect the player zoom')
+                self.press('Cancel')
+                self.open('gap', width, height, phone=width != 1280)
+                before = self.js('machineCamera()')
+                self.press('Add a plank'); self.ghost()
+                self.assertEqual(self.js('machineCamera().distance'), before['distance'], 'A small addition does not zoom in or reframe')
 
     def test_view_move_buttons_stay_in_the_scene_corner_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390),(320,568)):
