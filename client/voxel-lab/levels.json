@@ -375,7 +375,7 @@
    "id": "fire",
    "title": "Knock it off",
    "teaches": "a powder charge",
-   "brief": "Aim the cannon at the block. Connect trigger Out to cannon +, then cannon − to supply − in Readings and wiring. Drag the trigger handle down to fire. Current heats the powder; gas pushes the ball, which knocks the block into the green zone.",
+   "brief": "Aim the cannon at the block. Connect trigger Out to cannon +, then cannon − to supply − using Connect wires in Controls. Drag the trigger handle down to fire. Current heats the powder; gas pushes the ball, which knocks the block into the green zone.",
    "time_s": 4,
    "budget": 40,
    "par": 26,
@@ -703,8 +703,8 @@
    ],
    "hints": [
     "The block is 0.45 m above the ground. A level shot drops during flight: adjust bore height, direction and powder.",
-    "Open Readings and wiring, choose Connect wires, then draw both firing leads. The existing supply lead powers the trigger; crossings do not connect.",
-    "Run it alone does not fire. Drag the trigger handle down; watch switch state and coil current in Readings and wiring. The coil must heat the powder before the ball moves."
+    "Choose Connect wires in Controls, then draw both firing leads. The existing supply lead powers the trigger; crossings do not connect.",
+    "Run it alone does not fire. Drag the trigger handle down; watch switch state and coil current using Connect wires in Controls. The coil must heat the powder before the ball moves."
    ],
    "solution": [
     {
@@ -1414,7 +1414,7 @@
    "id": "sun",
    "title": "Catch the sun",
    "teaches": "sunlight: a panel facing the sun catches the most",
-   "brief": "Move the solar panel out of the big wall’s shadow, then turn and tip it toward the low sun. In Readings and wiring, connect panel Out to winch In. The empty winch battery receives no power without your cable.",
+   "brief": "Move the solar panel out of the big wall’s shadow, then turn and tip it toward the low sun. Click Connect wires in Controls, then connect panel Out to winch In. The empty winch battery receives no power without your cable.",
    "time_s": 8,
    "budget": 20,
    "par": 10,

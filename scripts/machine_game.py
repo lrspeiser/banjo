@@ -1351,8 +1351,9 @@ def ghost(level, placements, index, snapping=False, edit_key=None):
         reply['water_setup'] = compiled['spouts']
     # Draw the compiled terminals while placing a device, including its
     # prepared socket leads. This does not advance the engine.
-    if checked[index]['piece'] in ('battery', 'switch', 'bulb', 'motor', 'ignition', 'wire', 'cannon'):
+    if checked[index]['piece'] in ('battery', 'switch', 'bulb', 'motor', 'ignition', 'wire', 'cannon', 'resistor', 'capacitor'):
         reply['electrical_preview'] = compiled.get('electrical', {})
+        reply['battery_preview'] = compiled.get('batteries', [])
     if checked[index]['piece'] == 'wire':
         terminals = {device['name'] + ':' + key: at for device in compiled.get('electrical', {}).get('devices', [])
                      for key, at in device['terminals'].items()}

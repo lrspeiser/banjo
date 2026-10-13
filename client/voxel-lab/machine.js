@@ -263,7 +263,7 @@ function syncContactCircuits() {
   contactCircuitOutlines.length=0;contactCircuitRows.clear();
   if(inspectedCircuit){follow=inspectionFollow;$('follow').setAttribute('aria-pressed',String(follow));if(!ghost)$('control-panel').append($('instrument-panel'));}
   inspectedCircuit=null;
-  view.append($('level-done'));
+  $('control-panel').append($('level-done'));
   const labels=$('contact-switch-labels');labels.replaceChildren();labels.hidden=true;
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');labels.append(svg);
   for(const text of ['Moving contact','Fixed pad']) {
@@ -306,7 +306,7 @@ function inspectContactCircuit(name) {
   flowGroup.visible=false;freshView();updateContactCircuitReadings();
 }
 $('inspect-switch').addEventListener('click',()=>{
-  if(inspectedCircuit){inspectedCircuit=null;follow=inspectionFollow;$('follow').setAttribute('aria-pressed',String(follow));frameCamera();$('inspect-switch').textContent='Inspect switch';view.append($('level-done'));if(!ghost){$('control-panel').append($('instrument-panel'));$('control-panel').scrollTop=0;}}
+  if(inspectedCircuit){inspectedCircuit=null;follow=inspectionFollow;$('follow').setAttribute('aria-pressed',String(follow));frameCamera();$('inspect-switch').textContent='Inspect switch';$('control-panel').append($('level-done'));if(!ghost){$('control-panel').append($('instrument-panel'));$('control-panel').scrollTop=0;}}
   else inspectContactCircuit(contactCircuitRows.keys().next().value);
 });
 function updateContactCircuitReadings() {
@@ -462,7 +462,7 @@ function positionTerminalLabels() {
   const rect = renderer.domElement.getBoundingClientRect();
   const top = Math.max(8, $('clock').getBoundingClientRect().bottom - rect.top + 8);
   const bottom = Math.min(rect.height - 8, innerHeight - rect.top - 8);
-  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #clock, #panel-toggle, .power-pin')]
+  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #clock, #viewer-zoom, #viewer-history, #panel-toggle, .power-pin')]
     .filter(el => !el.hidden && el.style.visibility !== 'hidden' && el.offsetWidth && el.offsetHeight).map(el => {
       const r = el.getBoundingClientRect(); return {x:r.left-rect.left, y:r.top-rect.top, w:r.width, h:r.height};
     });
@@ -605,6 +605,9 @@ function finishSocketClick(x,y,touch) {
   // targets instead of guessing which conductor the player intended.
   if(rows[1] && rows[1].gap-rows[0].gap<8) {
     const choice=$('socket-choices');choice.replaceChildren();
+    const editIndex=!ghost&&!wiringMode&&!socketSelection()?placedAt(x,y):-1;
+    if(editIndex>=0){const label=placements[editIndex]?`${pieceLabel(placements[editIndex].piece)} ${editIndex+1}`:sandboxObjects[editIndex-placements.length]?.name;
+      const adjust=button(`Adjust ${label}`,()=>{choice.hidden=true;pickUp(editIndex);});adjust.dataset.pieceIndex=editIndex;choice.append(adjust);}
     for(const row of rows.slice(0,4))choice.append(button(`${row.name.replace(/^your /,'').replace(':',' · ')} (${row.label})`,()=>chooseSceneSocket(row)));
     choice.append(button('Cancel',()=>{choice.hidden=true;}));choice.hidden=false;
     const rect=renderer.domElement.getBoundingClientRect();
@@ -955,7 +958,7 @@ function positionPowerLabels() {
   const clock = $('clock').getBoundingClientRect();
   const top = Math.max(8, clock.bottom - rect.top + 8);
   const bottom = rect.height - 10;
-  const occupied = ['scene-mode','sun-bearing','panel-toggle']
+  const occupied = ['scene-mode','sun-bearing','viewer-zoom','viewer-history','panel-toggle']
     .map(id => $(id)).concat(collapsedPanel()).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
     .map(el => { const r = el.getBoundingClientRect(); return {x:r.left - rect.left,y:r.top - rect.top,w:r.width,h:r.height}; });
   occupied.push(...readoutBodyRects(rect));
@@ -1777,6 +1780,7 @@ renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 // first frame after a change (a slow phone, a level just built), and it must
 // not aim at the view as it was before.
 function aimCamera() {
+  $('view-zoom').value=Math.round(100*Math.log(40/distance)/Math.log(100));
   camera.position.set(target.x + distance * Math.cos(elevation) * Math.sin(azimuth), target.y + distance * Math.sin(elevation),
                       target.z + distance * Math.cos(elevation) * Math.cos(azimuth));
   camera.lookAt(target);
@@ -2246,7 +2250,7 @@ function updateEditGuide() {
   const x = (screen.x + 1) * view.clientWidth / 2 + 14, y = (1 - screen.y) * view.clientHeight / 2 + 16;
   // A wrapped toolbar can fill a short phone scene. Try spaces beside the
   // piece and the controls, rather than forcing the caption below every row.
-  const obstacles = [...collapsedPanel(), ...view.querySelectorAll('#clock, #scene-mode, #panel-toggle, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
+  const obstacles = [...collapsedPanel(), ...view.querySelectorAll('#clock, #scene-mode, #viewer-zoom, #viewer-history, #panel-toggle, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
     .filter(e => e.offsetWidth && e.offsetHeight).map(e => e.getBoundingClientRect());
   let best = null;
   for (const [cx, cy] of [[x, y], [x, y - height - 40], [x - width - 30, y], [8, maxY], [maxX, maxY], [maxX, minY]]) {
@@ -2344,6 +2348,7 @@ async function checkGhost(g) {
     Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], energy: r.energy, drawnAt: sent, answered: true,
                       joined: r.snap ? `${r.snap.port} of ${r.snap.to}` : null});
     g.electrical = r.electrical_preview || null;
+    g.batteryPreview=r.battery_preview||[];g.proposedParts=r.parts||[];
     g.optical_setup = r.optical_setup || null;
     g.water_setup = r.water_setup || [];
     g.solar_setup = r.solar_setup || [];
@@ -2384,7 +2389,7 @@ async function checkGhost(g) {
     if (ghost === g) Object.assign(g, {fits: false, problems: e.data && e.data.problems ? e.data.problems : [e.message], answered: true});
   } finally {
     g.busy = false;
-    if (ghost === g) { showGhostState(); if (g.again) askGhost(); else scheduleSolarPreview(); }
+    if (ghost === g) { showGhostKnobs();showGhostState(); if (g.again) askGhost(); else scheduleSolarPreview(); }
   }
 }
 
@@ -2465,9 +2470,33 @@ function setGhostDown() {
 
 // The ghost's own controls, just below the scene and out of its way (the top
 // of the side panel, kept in sight as the panel scrolls): on a phone the list
-// of pieces is a scroll away. One knob at a time -- its chip picks which --
-// with - and + either side of its slider, and Set down.
+// of pieces is a scroll away. One adjustment menu, a stepped flat slider
+// and an exact value keep the active setting beside Set down.
 function knobName(rule, key) { return (rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
+let sliderSerial=0;
+function addSliderTicks(input,rule){
+  const list=document.createElement('datalist');list.id=`slider-ticks-${++sliderSerial}`;
+  const count=Math.min(10,Math.round((rule.max-rule.min)/(rule.step||.01)));
+  for(let i=0;i<=count;i++){
+    const value=rule.min+Math.round((rule.max-rule.min)*i/Math.max(1,count)/(rule.step||.01))*(rule.step||.01);
+    if(value<=rule.max+1e-9)list.append(new Option('',String(Number(value.toFixed(6)))));
+  }
+  input.setAttribute('list',list.id);input.classList.add('flat-slider');input.tickList=list;
+}
+function electricalEditRating(){
+  if(!ghost)return '';
+  const p=ghost.p,name=ghostName(),device=ghost.electrical?.devices?.find(d=>d.name===name);
+  const battery=ghost.batteryPreview?.find(b=>b.name.startsWith(name+' '));
+  let rating;
+  if(p.piece==='battery')rating=battery?`${battery.voltage_v} V · ${battery.charge_j} J / ${battery.capacity_j} J · ≤ ${p.max_power_w??200} W`:`${p.voltage_v??12} V`;
+  else if(p.piece==='bulb'&&device)rating=`${device.rated_voltage_v} V · ${device.watts} W bulb`;
+  else if(p.piece==='resistor')rating=`${p.resistance_ohm} Ω resistance`;
+  else if(p.piece==='capacitor')rating=`${p.capacitance_f} F · ${p.esr_ohm??.1} Ω internal · ${p.leakage_ohm??1000000} Ω leakage`;
+  else if(p.piece==='motor')rating=`${Math.round((p.throttle??1)*100)}% throttle · ${p.direction||'forward'}`;
+  else if(p.piece==='wire')rating=`${p.size||'standard'} wire · ${p.length_m??5} m`;
+  else if(p.piece==='switch')rating=p.mode==='paddle'?`Contact closes at ${p.threshold_deg}°`:`Starting switch: ${p.state||'open'}`;
+  return rating?`Proposed ${rating}`:'';
+}
 function pieceKnobVisible(p,key) {
   if(p.piece==='marble' && key==='height_m' && p.placement!=='at height')return false;
   if(p.piece==='pipe_elbow' && key==='fall_m' && p.plane==='downward')return false;
@@ -2505,15 +2534,15 @@ function renderGhostBar() {
   ghost && (ghost.cardInput = null);
   ghost && (ghost.gaugeButtons = null);
   ghost && (ghost.choiceButtons = null);
-  $('piece-edit-row').hidden = Boolean(ghost) || (!placements.length && !(level?.free && sandboxObjects.length));
   if (!ghost) {
-    for(const id of ['flow-preview','phone-tools','move-pad','preview-legend','instrument-panel','edit-guide-label']) if($(id)) $('control-panel').append($(id));
+    for(const id of ['flow-preview','move-pad','preview-legend','instrument-panel','edit-guide-label','view-controls','scene-actions','laser-preview-status','water-status','river-wheel-status','solar-lift-guide']) if($(id)) $('control-panel').append($(id));
     card.replaceChildren(); return;
   }
   const throwAway = button('✕', cancelGhost, {ariaLabel: 'Throw the ghost away', title: 'Throw the ghost away'});
+  const selectedName=ghost.baseObject?.name || pieceLabel(ghost.p.piece);
   const head = Object.assign(document.createElement('p'), {className: 'head',
-    textContent: ghost.rewireKey?`Rewire ${pieceLabel(ghost.p.piece)}`:looking ? `View mode · ${pieceLabel(ghost.p.piece)}` : `Adjust ${pieceLabel(ghost.p.piece)}`});
-  // Where it stands is the arrows' and the drag's; the chips change the rest.
+    textContent: ghost.rewireKey?`Rewire ${selectedName}`:looking ? `View mode · ${selectedName}` : `Adjust ${selectedName}`});
+  // Where it stands is the arrows' and the drag's; the menu changes the rest.
   const knobs = trayItem(ghost.p.piece).knobs, allKeys = Object.keys(knobs).filter(k => k !== 'x_m' && k !== 'z_m' && pieceKnobVisible(ghost.p,k));
   // Endpoints are chosen on the objects. Their selectors stay in Precision
   // controls; ordinary cable editing exposes thickness/length instead.
@@ -2521,14 +2550,13 @@ function renderGhostBar() {
   const keys=connecting?allKeys.filter(k=>!knobs[k].terminal&&!knobs[k].power_port):allKeys;
   if(!keys.length)keys.push(allKeys[0]);
   if (!keys.includes(ghost.card)) ghost.card = keys[0];
-  const chips = Object.assign(document.createElement('div'), {className: 'chips'});
+  const chips = Object.assign(document.createElement('div'), {className: 'adjustment-picker'});
+  const adjustment=document.createElement('select');adjustment.id='adjustment-choice';adjustment.setAttribute('aria-label','Adjustment');
   for (const key of keys) {
-    const chip = button(knobName(knobs[key], key), () => selectGhostKnob(key),
-                        {ariaLabel: `Change its ${knobName(knobs[key], key)}`});
-    chip.setAttribute('aria-pressed', String(key === ghost.card));
-    if (key === ghost.card) chip.append(Object.assign(document.createElement('span'), {className:'knob-value'}));
-    chips.append(chip);
+    adjustment.append(new Option(knobs[key].label||knobName(knobs[key],key),key));
   }
+  adjustment.value=ghost.card;adjustment.addEventListener('change',()=>selectGhostKnob(adjustment.value));
+  chips.append(Object.assign(document.createElement('label'),{textContent:'Adjust',htmlFor:'adjustment-choice'}),adjustment);
   chips.hidden=keys.length===1&&Boolean(knobs[keys[0]].connection_target);
   const key = ghost.card, rule = knobs[key], name = knobName(rule, key);
   const row = Object.assign(document.createElement('div'), {className: 'knob-row'});
@@ -2568,10 +2596,11 @@ function renderGhostBar() {
     row.append(select);
     ghost.cardInput = [select, null, key];
   } else {
-    const step = rule.turning ? 15 : (rule.step || 0.01) * 5;
+    row.classList.add('numeric-slider');
     const input = Object.assign(document.createElement('input'), {type: 'range', min: rule.min, max: rule.max,
       step: rule.step || 0.01, value: ghost.p[key]});
     input.setAttribute('aria-label', `Its ${name}`);
+    addSliderTicks(input,rule);
     input.addEventListener('input', () => { if (setKnob(ghost.p, key, Number(input.value))) { followGhost(); showGhostKnobs(); askGhost(); } });
     const shown = Object.assign(document.createElement('input'), {type:'number',min:rule.min,max:rule.max,
       step:rule.step || 0.01,value:ghost.p[key],className:'exact-value'});
@@ -2586,15 +2615,15 @@ function renderGhostBar() {
       applyExact();
       showGhostKnobs();
     });
-    row.append(button('−', () => nudgeKnob(key, -step), {ariaLabel: `Less ${name}`}), input,
-               button('+', () => nudgeKnob(key, step), {ariaLabel: `More ${name}`}));
+    row.append(input);
+    row.append(input.tickList);
     head.append(shown);
     ghost.cardInput = [input, shown, key];
   }
   const state = Object.assign(document.createElement('p'), {className: 'state'});
   const actions = Object.assign(document.createElement('div'), {className: 'actions'});
   actions.append(button('✓ Set down', setGhostDown, {className: 'down', disabled: !ghost.fits || ghost.busy}), throwAway);
-  if(ghost.baseObject || ghost.was)actions.insertBefore(button('Remove',()=>removeSelectedObject(),{ariaLabel:'Remove selected object'}),throwAway);
+  if(ghost.baseObject || ghost.was)actions.insertBefore(button('Delete piece',()=>removeSelectedObject(),{ariaLabel:'Delete selected piece'}),throwAway);
   if(ghost.rewireKey) actions.insertBefore(button('Disconnect wire',()=>{
     if(!ghost?.rewireKey || terminalBusy || powerBusy)return;
     const index=ghost.index;
@@ -2614,12 +2643,15 @@ function renderGhostBar() {
   snapButton.setAttribute('aria-pressed',String(gridSnapEnabled));
   gridRow.hidden=!movableGhost()||!grid.visible;
   gridRow.append(snapButton,Object.assign(document.createElement('output'),{id:'grid-snap-status',ariaLive:'polite'}));
-  fields.append(head,chips,row,state,gridRow,precision,$('instrument-panel'),$('preview-legend'),$('flow-preview'));
-  if(connecting){
+  const setting=Object.assign(document.createElement('output'),{id:'adjustment-feedback',className:'adjustment-feedback',ariaLive:'polite'});
+  fields.append(head,chips,row,setting,state,gridRow,precision,$('instrument-panel'),$('preview-legend'),$('flow-preview'));
+  precision.append($('scene-actions'));
+  for(const id of ['laser-preview-status','water-status','river-wheel-status','solar-lift-guide'])fields.append($(id));
+  if(connecting&&!ghost.was){
     const prompt=Object.assign(document.createElement('p'),{className:'wire-prompt',textContent:ghost.rewireKey?'Click a new connection point for the detached end. Esc restores this wire.':'Click a connection point in the 3D scene, then click the other end.'});
     head.after(prompt);if(!keys.some(k=>!knobs[k].terminal&&!knobs[k].power_port)){row.hidden=true;chips.hidden=true;}
   }
-  if($('phone-tools')) fields.append($('phone-tools'));
+  fields.append($('view-controls'));
   card.replaceChildren(fields,actions);
   showGhostKnobs(); showGhostState();
 }
@@ -2673,6 +2705,8 @@ function showGhostKnobs() {
   for(const b of ghost.choiceButtons||[])b.setAttribute('aria-pressed',String(b.dataset.value===String(ghost.p[b.dataset.key])));
   showGridSnap();
   const knobs = trayItem(ghost.p.piece).knobs;
+  const choice=$('adjustment-choice');if(choice)choice.value=ghost.card;
+  const feedback=$('adjustment-feedback');if(feedback)feedback.textContent=electricalEditRating() || `${knobName(knobs[ghost.card],ghost.card)}: ${ghost.p[ghost.card]}${knobs[ghost.card].turning?'°':''}`;
   const value = document.querySelector('#ghost-bar .knob-value');
   if (value) value.textContent = ` ${ghost.p[ghost.card]}${knobs[ghost.card].turning ? '°' : ''}`;
   for (const [key, [input, shown]] of Object.entries(ghost.inputs)) {
@@ -2895,11 +2929,14 @@ function feedbackCurve(w) {
 
 function updatePowerFeedback() {
   updateSolarLiftGuide();
+  updateWireAdjustments();
   const host=$('power-feedback-labels'),sample=powerFeedbackSnapshot(),items=[];
   const pending=!(world?.t>0)&&!playing&&Boolean(flowPending||ghost&&!ghost.answered);
   powerFlowDots.count=0;
   if(!machine||document.body.matches('.on-levels,.on-sandbox')) {host.hidden=true;return;}
   host.hidden=false;
+  const rating=electricalEditRating(),proposed=ghost?.proposedParts?.find(p=>p.name.startsWith(ghostName()));
+  if(rating&&proposed)items.push({id:'proposed-setting',name:`Adjust ${pieceLabel(ghost.p.piece)}`,kind:'object',at:proposed.at_m,text:rating,title:'Proposed component rating. Measured voltage, current and power remain separate.'});
   for(const d of sample.devices) {
     const at=world.bodies.get(d.part)?.position_m||d.at_m;if(!at)continue;
     if(d.requirement==='capacitor'||d.requirement==='resistor') {
@@ -2957,7 +2994,7 @@ function updatePowerFeedback() {
   const seen=new Set(items.map(i=>i.id));
   for(const [id,row] of powerFeedbackRows)if(!seen.has(id)){row.card.remove();row.leader.remove();powerFeedbackRows.delete(id);}
   const rect=renderer.domElement.getBoundingClientRect();
-  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#panel-toggle,#collector-status,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint')]
+  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#viewer-zoom, #viewer-history,#panel-toggle,#collector-status,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   // A power reading must not hide the connection the player is trying to
   // click, especially on a phone. Reserve the rings before placing labels.
@@ -2967,7 +3004,10 @@ function updatePowerFeedback() {
   for(const item of items) {
     let row=powerFeedbackRows.get(item.id);
     if(!row) {
-      const card=document.createElement('section');card.className='power-feedback-label '+item.kind;
+      const editableWire=item.kind==='wire' && /^your (wire|power_cable) \d+$/.test(item.name);
+      const card=document.createElement(editableWire?'button':'section');card.className='power-feedback-label '+item.kind;
+      if(editableWire){card.type='button';card.setAttribute('aria-label',`Adjust ${item.name}`);card.classList.add('editable-wire');
+        card.addEventListener('click',()=>{const index=Number(item.name.match(/ (\d+)$/)[1])-1;if(placements[index])pickUp(index);});}
       card.dataset[item.kind==='object'?'device':'wire']=item.name;
       const name=document.createElement('strong'),output=document.createElement('output');card.append(name,output);host.append(card);
       const leader=document.createElementNS(feedbackLeaders.namespaceURI,'line');feedbackLeaders.append(leader);
@@ -2976,6 +3016,7 @@ function updatePowerFeedback() {
     const title=item.displayName||item.name;
     row.name.hidden=item.kind==='wire';if(row.name.textContent!==title)row.name.textContent=title;
     if(row.output.textContent!==item.text)row.output.textContent=item.text;row.card.title=item.title;
+    if(row.card.classList.contains('editable-wire'))row.card.title+=' Click this label to adjust the wire; click its cable to remove it.';
     row.card.classList.toggle('low',Boolean(item.low));row.card.hidden=false;
     const p=new THREE.Vector3(...item.at).project(camera);
     row.leader.style.display='none';
@@ -2995,6 +3036,17 @@ function updatePowerFeedback() {
     row.leader.setAttribute('y2',String(Math.max(labelY,Math.min(labelY+placed.height,ay))));
   }
 }
+function updateWireAdjustments() {
+  const host=$('wire-adjustments');
+  const rows=placements.flatMap((p,index)=>{
+    if(!['wire','power_cable'].includes(p.piece))return [];
+    const name=`your ${p.piece} ${index+1}`,d=(shownElectrical().wires||[]).find(w=>w.name===name);
+    const area=d?.area_mm2,gauge=Number.isFinite(area)?`${({.01:'Thin',.5:'Standard',2.5:'Thick'})[area]||'Copper'} · ${area} mm²`:'';
+    return [{index,label:`${p.piece==='wire'?'Wire':'Power cable'} ${index+1}${gauge?' · '+gauge:''}`}];
+  });
+  const key=JSON.stringify(rows);if(host.dataset.contents===key)return;host.dataset.contents=key;
+  host.replaceChildren(...rows.map(row=>{const b=button(row.label,()=>pickUp(row.index));b.setAttribute('aria-label',`Adjust placed ${row.label}`);return b;}));
+}
 function readoutSideXs(anchor,width,viewWidth) {
   const sides=[6,Math.max(6,viewWidth-width-6)];
   return anchor<viewWidth/2?sides:sides.reverse();
@@ -3005,7 +3057,7 @@ function positionSceneReading(card,anchor) {
   if(!leader){leader=document.createElementNS(feedbackLeaders.namespaceURI,'line');leader.dataset.reading=card.id;feedbackLeaders.append(leader);sceneReadingLeaders.set(card.id,leader);}
   leader.setAttribute('visibility','hidden');if(card.hidden)return;
   const {width,height}=card.getBoundingClientRect(),top=$('clock').getBoundingClientRect().bottom-rect.top+6;
-  const occupied=[...view.querySelectorAll('#scene-mode,#panel-toggle,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint')]
+  const occupied=[...view.querySelectorAll('#scene-mode,#viewer-zoom, #viewer-history,#panel-toggle,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   occupied.push(...readoutBodyRects(rect),{x:anchor.x-18,y:anchor.y-18,w:36,h:36});
   const ys=[anchor.y-height/2,top,rect.height-height-6,...occupied.flatMap(r=>[r.y-height-6,r.y+r.h+6])];
@@ -3500,8 +3552,8 @@ function movableGhost() {
 }
 // Which of the player's pieces (its index), if any, is the first thing under
 // the pointer in the scene.
-function placedAt(clientX, clientY) {
-  if (!LEVEL_MODE || !level || (!placements.length && !sandboxObjects.length)) return -1;
+function placedOwnersAt(clientX, clientY) {
+  if (!LEVEL_MODE || !level || (!placements.length && !sandboxObjects.length)) return [];
   pointerRay(clientX, clientY);
   const owner = name => {
     const m = name?.match(/^your (\S+) (\d+)(?: |$)/), i = m ? Number(m[2]) - 1 : -1;
@@ -3509,7 +3561,7 @@ function placedAt(clientX, clientY) {
   };
   const nameOf = new Map([...meshes].map(([name, m]) => [m, name]));
   // A pulley device includes its drawn rope and its connected load. A load
-  // shared by several devices is ambiguous; use the piece selector instead.
+  // shared by several devices is ambiguous; click the owning device instead.
   const loadOwners = new Map();
   for (const j of machine?.joints || []) {
     if (j.kind !== 'pulley' || owner(j.name) < 0) continue;
@@ -3518,14 +3570,27 @@ function placedAt(clientX, clientY) {
   for (const r of ropes) if (r.line.visible && owner(r.name) >= 0) nameOf.set(r.line, r.name);
   // Keep thin ropes easy to select without a one-metre raycaster tolerance.
   raycaster.params.Line.threshold = Math.max(.002, distance * 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 6 / view.clientHeight);
-  const hit = raycaster.intersectObjects([...nameOf.keys()].filter(m => m.visible), true)[0];
-  let o = hit && hit.object;
-  while (o && !nameOf.has(o)) o = o.parent;
-  const name = o && nameOf.get(o), i = owner(name);
-  if (i >= 0) return i;
-  if(level.free){const baseIndex=sandboxObjects.findIndex(o=>o.parts.includes(name));if(baseIndex>=0)return placements.length+baseIndex;}
-  const attached = loadOwners.get(name);
-  return attached?.size === 1 ? [...attached][0] : -1;
+  const hits=raycaster.intersectObjects([...nameOf.keys()].filter(m=>m.visible),true).filter(h=>h.object.isMesh || (nameOf.has(h.object)&&h.object.isLine)),indices=[];
+  for(const hit of hits){
+    let o=hit.object;while(o&&!nameOf.has(o))o=o.parent;
+    const name=o&&nameOf.get(o);let i=owner(name);
+    if(i<0&&level.free){const baseIndex=sandboxObjects.findIndex(o=>o.parts.includes(name));if(baseIndex>=0)i=placements.length+baseIndex;}
+    if(i<0){const attached=loadOwners.get(name);if(attached?.size===1)i=[...attached][0];}
+    if(i>=0&&!indices.includes(i))indices.push(i);
+    const material=hit.object.material;
+    if(!material?.transparent || material.opacity>=.95)break;
+  }
+  return indices;
+}
+function placedAt(x,y){return placedOwnersAt(x,y)[0]??-1;}
+function chooseScenePiece(indices,x,y){
+  const choice=$('socket-choices');choice.replaceChildren();
+  for(const index of indices){const name=placements[index]?`${pieceLabel(placements[index].piece)} ${index+1}`:sandboxObjects[index-placements.length]?.name;
+    const b=button(`Adjust ${name}`,()=>{choice.hidden=true;pickUp(index);});b.dataset.pieceIndex=index;choice.append(b);}
+  choice.append(button('Cancel',()=>{choice.hidden=true;}));choice.hidden=false;
+  const rect=renderer.domElement.getBoundingClientRect();
+  choice.style.left=`${Math.max(6,Math.min(rect.width-choice.offsetWidth-6,x-rect.left+12))}px`;
+  choice.style.top=`${Math.max(6,Math.min(rect.height-choice.offsetHeight-6,y-rect.top+12))}px`;
 }
 // For tests: where a body is on the page (the middle of its mesh).
 window.machineBodyScreen = name => {
@@ -3542,6 +3607,7 @@ window.machineBodies = () => Object.fromEntries([...world.bodies].map(([name, b]
 // For tests: where the piece being placed is on the screen, and the view.
 window.machineGhostScreen = () => ghostScreenBox();
 window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible, settled: target.distanceTo(goal) < 1e-3});
+window.machineScenePick=(x,y)=>{const sockets=socketsAt(x,y,true),pieces=placedOwnersAt(x,y);return {piece:pieces[0]??-1,pieces,wire:wireCandidates(x,y,true).length>0,socket:sockets.some(s=>s.gap<=9),ambiguous:sockets.length>1&&sockets[1].gap-sockets[0].gap<8};};
 window.machineWireScreen=(name,fraction=.5)=>{
   const wire=wires.find(w=>w.name===name);if(!wire?.line.visible || !wire.line.geometry.parameters?.path)return null;
   freshView();const at=wire.line.geometry.parameters.path.getPoint(fraction).project(camera),rect=renderer.domElement.getBoundingClientRect();
@@ -3627,8 +3693,9 @@ renderer.domElement.addEventListener('pointerup', e => {
   }
   if (ghost && click) setLooking(true);
   else if (!ghost && click && !pullMode && !attachMode) {
-    const i = placedAt(e.clientX, e.clientY);
-    if (i >= 0) pickUp(i);
+    const choices=placedOwnersAt(e.clientX,e.clientY);
+    if(choices.length>1)chooseScenePiece(choices,e.clientX,e.clientY);
+    else if(choices.length)pickUp(choices[0]);
   }
   draggingGhost = null; pressedAt = null;
   if (!pointers.size) cameraGesture = false;
@@ -4541,51 +4608,33 @@ function ghostItem() {
 }
 
 function renderPlaced() {
-  const edit = $('piece-edit');
-  edit.replaceChildren(new Option('Choose an object', ''), ...placements.map((p, i) => new Option(`${i + 1}. ${pieceLabel(p.piece)}`, String(i))),
-    ...(level?.free?sandboxObjects.map((o,i)=>new Option(o.name,String(placements.length+i))):[]));
-  $('piece-edit-row').hidden = Boolean(ghost) || (!placements.length && !(level?.free && sandboxObjects.length));
-  const ol = $('placed'); ol.replaceChildren();
-  placements.forEach((p, i) => {
-    if (ghost && ghost.was && ghost.index === i) return;
-    const t = trayItem(p.piece), li = document.createElement('li');
-    const head = Object.assign(document.createElement('div'), {className: 'piece-head'});
-    const made = placedEnergy[`your ${p.piece} ${i + 1}`];
-    head.append(Object.assign(document.createElement('strong'), {textContent: `your ${p.piece} ${i + 1}${made ? ' · ' + energyText(made.j) + ' to make' : ''}`}));
-    const actions = Object.assign(document.createElement('div'), {className: 'ghost-actions'});
-    const remove = button('Remove', () => {
-      if (ghost) endGhost();
-      remember(); removePiece(i); renderTray(); renderPlaced(); scheduleRebuild(0);
-    }, {ariaLabel: `Remove your ${p.piece} ${i + 1}`});
-    if (p.piece === 'link') {
-      // A join is not picked up or copied: it is made again with Attach.
-      actions.append(remove);
-      head.append(actions);
-      li.append(head, Object.assign(document.createElement('p'), {className: 'knob-summary', textContent:
-        `${p.kind === 'string' ? 'A string' : p.kind === 'pin' ? `A pin (its axle ${p.axis || 'along z'})` : 'Glue'} between ${p.a} and ${p.b}`}));
-      ol.append(li);
-      return;
-    }
-    // Picked up, it becomes a ghost again: moved, changed, turned, set down.
-    // A copy is a new ghost of it, 10 cm along.
-    actions.append(button('Pick up', () => pickUp(i), {ariaLabel: `Pick up your ${p.piece} ${i + 1}`}),
-                   button('Copy', () => {
-                     const copy = {...p};
-                     if (typeof copy.x_m === 'number') setKnob(copy, 'x_m', copy.x_m + 0.1);
-                     startGhost(copy, placements.length, true);
-                   }, {ariaLabel: `Copy your ${p.piece} ${i + 1}`}),
-                   remove);
-    head.append(actions);
-    li.append(head, Object.assign(document.createElement('p'), {className: 'knob-summary', textContent: describeKnobs(p, t)}));
-    ol.append(li);
-  });
+  $('placed').replaceChildren();
+  $('placed-head').hidden=true;
   if (ghost) { showGhostKnobs(); showGhostState(); }
   const made = Object.values(placedEnergy).reduce((a, b) => a + (b.j || 0), 0);
   $('cost-line').textContent = !placements.length ? ''
     : level.free ? `${placements.length} ${placements.length === 1 ? 'piece' : 'pieces'} on the table, ${energyText(made)} to make.`
     : `Your pieces take ${energyText(made)} to make. Par for the whole win, pieces and run: ${energyText(level.par_energy_j)}.`;
-  $('placed-head').hidden = !placements.length && !ghost;
+  $('placed-head').hidden = true;
+  $('restart-pieces').hidden=Boolean(level?.free)||!placements.length;
 }
+window.machineEditableObjects=()=>[
+  ...placements.map((p,index)=>{const name=`your ${p.piece} ${index+1}`;return {index,name,parts:[...(machine?.parts||[]).filter(part=>part.name===name||part.name.startsWith(name+' ')).map(part=>part.name),...(machine?.joints||[]).filter(j=>j.name===name||j.name.startsWith(name+' ')).map(j=>j.name),...(machine?.joints||[]).filter(j=>j.kind==='pulley'&&j.name.startsWith(name+' ')).map(j=>j.b)]};}),
+  ...(level?.free?sandboxObjects.map((o,i)=>({...o,index:placements.length+i})):[])];
+// QA can click actual rendered solids, rather than the empty center of a
+// hollow pipe or compound ramp. This reads geometry and changes no setup.
+window.machineBodyHitPoints=name=>{
+  freshView();const mesh=meshes.get(name)||ropes.find(r=>r.name===name)?.line,rect=renderer.domElement.getBoundingClientRect(),points=[];
+  mesh?.traverse(part=>{
+    if(part.isLine){const data=part.geometry.attributes.position;for(let i=1;i<data.count;i++){const p=new THREE.Vector3().fromBufferAttribute(data,i).lerp(new THREE.Vector3().fromBufferAttribute(data,i-1),.5).applyMatrix4(part.matrixWorld).project(camera);points.push([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2]);}return;}
+    if(!part.isMesh||!part.geometry)return;
+    part.geometry.computeBoundingBox();const center=part.geometry.boundingBox.getCenter(new THREE.Vector3()),size=part.geometry.boundingBox.getSize(new THREE.Vector3());
+    const samples=[center,...['x','y','z'].flatMap(axis=>[-.3,.3].map(offset=>{const p=center.clone();p[axis]+=size[axis]*offset;return p;}))];
+    const emit=matrix=>{for(const point of samples){const p=point.clone().applyMatrix4(matrix).project(camera);if(Math.abs(p.z)<=1)points.push([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2]);}};
+    if(part.isInstancedMesh){const local=new THREE.Matrix4();for(let i=0;i<part.count;i+=Math.max(1,Math.ceil(part.count/24))){part.getMatrixAt(i,local);emit(part.matrixWorld.clone().multiply(local));}}
+    else emit(part.matrixWorld);
+  });return points;
+};
 
 // A piece taken away: the pieces after it move up one, so what a join names
 // moves with them, and a join to the piece taken away goes with it.
@@ -4653,9 +4702,6 @@ async function removeSelectedObject(){
 }
 $('undo-pieces').addEventListener('click', () => travel(undone, redone));
 $('redo-pieces').addEventListener('click', () => travel(redone, undone));
-$('piece-edit').addEventListener('change', () => {
-  if ($('piece-edit').value !== '') pickUp(Number($('piece-edit').value));
-});
 document.addEventListener('keydown', e => {
   if (document.querySelector('dialog[open]') || !LEVEL_MODE || !(e.ctrlKey || e.metaKey) || e.target.closest('input, textarea, select')) return;
   const key = e.key.toLowerCase();
@@ -4778,6 +4824,7 @@ $('design-name').addEventListener('change', () => {
   if (!activeDesign) return;
   activeDesign.name = $('design-name').value.trim() || 'Untitled design';
   $('title').textContent = activeDesign.name; keepBuild();
+  $('scene-goal').querySelector('strong').textContent=activeDesign.name;
 });
 $('save-design').addEventListener('click', async () => {
   if (!activeDesign || ghostInTheWay()) return;
@@ -4910,9 +4957,8 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   closeDone();
   const box = $('level-done'), next = level.variant ? null : levels[levels.indexOf(level) + 1];
   const completedAll = levels.every(row=>bestStars(row.id)>0);
-  // Leave the cut/fall or collected water visible after the physical goal.
-  if(heatingTarget || readouts.water_regions?.length || machine?.ground?.kind==='flume' ||
-     machine?.electrical?.wires?.length)$('control-panel').append(box);
+  // Every result belongs in Controls, so all machines remain clickable.
+  selectPhonePanel('controls',true);$('control-panel').prepend(box);$('control-panel').scrollTop=0;
   const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
   const allLevels = button('All levels', () => { closeDone(); showLevelsScreen(true); });
   if (r.tested) {
@@ -5107,7 +5153,35 @@ async function chooseLevel(id, design = null) {
   history_.replaceState(null, '', level.free ? '/machine?design=' + encodeURIComponent(activeDesign.id) : '/play?level=' + level.id);
   $('title').textContent = levelTitle(level);
   $('brief').textContent = level.brief;
-  $('scene-goal').textContent = level.free ? 'Build anything' : 'Goal: '+level.goal.title;
+  const objectives={
+    gap:'Bridge the gap with a plank so the marble reaches the cup.',
+    cut:'Swing the knife through the cord and drop the weight into the bin.',
+    fire:'Aim the cannon, wire its trigger, then drag the trigger to knock off the block.',
+    steam:'Heat the boiler until its piston reaches the marked height.',
+    chain:'Land the marble on the seesaw to close the switch and fire the cannon.',
+    laser:'Bounce the laser around the wall to burn through the cord.',
+    sun:'Aim the panel in sunlight and wire it to the winch to lift the load.',
+    tackle:'Use a falling counterweight and pulleys to lift the crate.',
+    'easy-power':'Set the battery voltage and connect both leads with suitable wire thickness.',
+    'easy-solar':'Aim the panel in sunlight and connect its output to the battery input.',
+    'easy-tackle':'Choose enough counterweight to lift the glass crate with the pulleys.',
+    'easy-switch':'Place the switch, then drag its handle to close the lamp circuit.',
+    'easy-bulb':'Choose a smaller bulb that the supply can power.',
+    'easy-water-receiver':'Widen the tap to fill the waiting box with 3 L in 5 seconds.',
+    'easy-spring':'Extend the relaxed spring to lift the waiting load.',
+    'easy-gears':'Size and place a gear between the powered wheel and the target wheel.',
+    'easy-water-wheel':'Aim a separate tank at the paddles and open its tap.',
+    'easy-water-gate':'Aim the tank at the wheel, open the tap and connect the drum to the gate.',
+    'easy-divert-water':'Aim and tip the chute downhill to fill the separate container.',
+    'easy-river-wheel':'Move the wheel’s lower paddles into the current.',
+    'easy-charge-lift':'Aim the panel at the sun and connect Panel Out to Battery In.',
+    'easy-marble-light':'Place the paddle so the marble presses its metal contact closed.',
+    'advanced-resistor':'Reduce the series resistance until enough power reaches the lamp.',
+    'advanced-parallel':'Wire both lamps in parallel with complete feeds and returns.',
+    'advanced-capacitor':'Increase capacitance to store enough energy before time runs out.'};
+  const objective=objectives[level.variant?.family||level.id]||level.brief.split(/(?<=\.)\s+(?=[A-Z])/)[0];
+  $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:level.free?'Build anything. Click a piece to adjust it.':objective}));
+  $('pull-tool').hidden=false;$('restart-pieces').hidden=level.free;
   $('scene-goal').title = level.free ? 'Build anything' : `Goal within ${level.time_s} s`;
   $('goal-line').textContent = level.free
     ? 'No goal: build anything and run it.'
@@ -5335,15 +5409,17 @@ function installPhonePanels() {
   }
   aside.append(design,help);
   $('view').append($('panel-toggle'));
-  const tools = Object.assign(document.createElement('details'),{id:'phone-tools'});
-  tools.append(Object.assign(document.createElement('summary'),{textContent:'Tools and speed'}));
-  controls.append(tools);
+  controls.append($('scene-actions'),$('view-controls'));
+  $('viewer-history').append($('undo-pieces'),$('redo-pieces'));
+  $('viewer-zoom').prepend($('view-out'));$('viewer-zoom').append($('view-in'));
+  for(const [id,plus] of [['view-out',false],['view-in',true]])$(id).innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M14 14L21 21M6 9H12${plus?'M9 6V12':''}"/></svg>`;
+  $('redo-pieces').textContent='Redo';
+  $('view-left').hidden=true;$('view-right').hidden=true;
   const update = () => {
     const mobile = phoneLayout.matches;
     document.body.classList.toggle('phone-panels',mobile);
-    $('phone-toolbar').hidden = false; tools.hidden = false;
-    tools.append($('scene-actions'),$('view-controls'));
-    $('phone-runbar').append($('start'),$('reset'),$('undo-pieces'));
+    $('phone-toolbar').hidden = false;
+    $('phone-runbar').append($('start'),$('reset'));
     $('reset').textContent = 'Reset';
     $('reset').setAttribute('aria-label','Reset');
     $('reset').title = level?.free ? 'Return your machine to time zero' : 'Start the level over; Undo recovers your pieces';
@@ -5383,7 +5459,7 @@ async function startGame() {
   controls.append($('preview-legend'));
   controls.prepend($('scene-tray'), $('scene-actions'));
   $('view-controls').before($('flow-preview'));
-  $('view-controls').prepend($('redo-pieces'));
+  $('view-zoom').addEventListener('input',()=>{distance=40*Math.pow(.01,Number($('view-zoom').value)/100);follow=false;$('follow').setAttribute('aria-pressed','false');freshView();});
   controls.append($('machine-controls'));
   installPhonePanels();
   // Browser scroll-to-target must leave secondary buttons below this sticky
@@ -5396,7 +5472,7 @@ async function startGame() {
   $('scene-note').textContent = 'Drag a ghost to move · Drag empty space to turn · Wheel or trackpad pinch to zoom';
   $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;
-  for (const d of document.querySelectorAll('aside details:not(#feedback):not(#phone-tools):not(#solar-load-help)')) d.hidden = true;
+  for (const d of document.querySelectorAll('aside details:not(#feedback):not(#solar-load-help)')) d.hidden = true;
   // The levels have their own screen, and the engine's readings are the
   // sandbox's: a player sees the scene, the goal and the result.
   $('levels').hidden = true;

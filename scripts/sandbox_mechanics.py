@@ -505,8 +505,8 @@ _solar_lesson['solution'].append(dict(piece='power_cable',a_port='your solar 1:p
 _solar_lesson['wrong'] = copy.deepcopy(_solar_lesson['solution'])
 _solar_lesson['wrong'][0]['pitch_deg'] = 0
 _solar_lesson['goal']['station']['done_when']['charged_j']['battery'] = 'solar battery'
-_solar_lesson['brief'] = 'Move the panel out of the wall’s shadow and aim it at the low sun. In Readings and wiring, connect its output to the battery input to deliver 20 J.'
+_solar_lesson['brief'] = 'Move the panel out of the wall’s shadow and aim it at the low sun. Click Connect wires in Controls, then connect its output to the battery input to deliver 20 J.'
 _solar_lesson['hints'] = [_solar_lesson['brief'],
     'The wall blocks sunlight behind it. A panel at either side can collect power; the watts meter and the ray to the sun show whether it is shaded.',
-    'Open Readings and wiring, choose Connect wires, then click panel Out and battery In. Without the cable only the panel’s local store charges.']
+    'Choose Connect wires in Controls, then click panel Out and battery In. Without the cable only the panel’s local store charges.']
 _solar_lesson['par_energy_j'] = 192000000  # 191,439,840 J fabrication, rounded up to three figures

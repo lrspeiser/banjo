@@ -502,7 +502,7 @@ body.panel-tabs .control-panel .ghost-bar{gap:4px}
 body.panel-tabs .control-panel .ghost-bar>.head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:44px}
 body.panel-tabs .control-panel .ghost-bar>.head>.exact-value{width:100px;flex:none}
 /* Editing scrolls above a dedicated placement row, never behind it. */
-body.panel-tabs #control-panel:has(.ghost-bar:not([hidden])){display:flex;flex-direction:column;overflow:hidden}
+body.panel-tabs #control-panel:has(.ghost-bar:not([hidden])){display:flex;flex-direction:column;overflow:clip}
 body.panel-tabs #control-panel:has(.ghost-bar:not([hidden]))>.scene-tray{display:none}
 body.panel-tabs .control-panel .ghost-bar{flex:1;min-height:0;height:100%;gap:0}
 .ghost-fields{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:4px;padding-bottom:6px;scroll-padding-block:8px}
@@ -528,7 +528,7 @@ body.panel-tabs .ghost-bar>.actions{position:static;flex:none;padding:4px 0 0;ma
 body.panel-tabs #clock{right:auto;max-width:calc(100% - 20px);padding:2px 6px;border:0;font-size:12px;line-height:16px;background:#142836b0}
 body.panel-tabs .scene-mode button{min-width:44px;padding:4px 6px;font-size:12px}
 #instrument-panel>summary{min-height:44px;display:flex;align-items:center}
-#instrument-panel:not([open])>:not(summary),#precision-controls:not([open])>:not(summary){display:none!important}
+#precision-controls:not([open])>:not(summary){display:none!important}
 #instrument-panel #wire-mode{min-height:44px;padding:8px 14px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;font:14px system-ui;cursor:pointer}
 #instrument-panel #wire-mode[aria-pressed=true]{background:#356178;border-color:#9ed6ef}
 #instrument-panel .power-label,#instrument-panel .terminal-label{position:static;width:100%;margin-top:8px;padding:8px;box-shadow:none;pointer-events:auto}
@@ -603,3 +603,51 @@ body.panel-tabs #precision-controls .move-pad button{grid-area:auto}
 /* Reserve enough inspector space to expose a complete touch target even when
    the narrow toolbar and header wrap; collapsing controls restores the scene. */
 @media(max-width:599px){body.panel-tabs:not(.panel-collapsed) main{grid-template-rows:min(42dvh,max(140px,calc(100dvh - var(--site-header-height,53px) - 300px))) minmax(0,1fr)}body.panel-tabs #view{min-height:0}}
+
+/* One object editor, with scene tools kept in the viewport corners. */
+.viewer-corner{display:contents}
+#viewer-zoom{background:#142836b8;border-radius:5px}
+#view-zoom{width:100%;min-width:0;margin:0;height:44px;flex:1}
+input[type=range]{appearance:none;-webkit-appearance:none;background:transparent;height:44px;cursor:ew-resize;min-width:0;touch-action:pan-y}
+input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:0;background:#55768a;border:1px solid #8aa8ba}
+input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;height:26px;width:24px;margin-top:-11px;border:1px solid #b6d9ed;border-radius:2px;background:repeating-linear-gradient(90deg,#c9e4f0 0 6px,#7f9cab 6px 7px,#c9e4f0 7px 10px);box-shadow:0 2px 4px #0008}
+input[type=range]::-moz-range-track{height:5px;border-radius:0;background:#55768a;border:1px solid #8aa8ba}
+input[type=range]::-moz-range-thumb{height:24px;width:22px;border:1px solid #b6d9ed;border-radius:2px;background:repeating-linear-gradient(90deg,#c9e4f0 0 6px,#7f9cab 6px 7px,#c9e4f0 7px 10px)}
+input[type=range]:focus-visible{outline:2px solid #9fdcff;outline-offset:1px}
+.scene-goal{margin:0;padding:4px 0;font-size:13px;line-height:1.35;white-space:normal}
+.scene-goal strong,.scene-goal span{display:block}
+.scene-goal strong{font-size:16px;color:#fff;margin-bottom:3px}
+.scene-goal span{color:#bdd1dd}
+.adjustment-picker{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px}
+.adjustment-picker select{min-height:44px;width:100%;min-width:0;padding:6px;background:#10202a;color:#e7f2f8;border:1px solid #63899d;border-radius:5px;font:15px system-ui}
+.adjustment-feedback{color:#9fdcff;font:600 13px/1.35 system-ui;min-height:18px}
+body.panel-tabs #instrument-panel{margin:0;display:flex;flex-wrap:wrap;gap:4px;align-items:start}
+#instrument-panel #power-labels,#instrument-panel #power-status[hidden],#instrument-panel .terminal-label>strong,#instrument-panel .terminal-label>output{display:none}
+#instrument-panel .terminal-label{border:0;background:none;margin:0;padding:0;box-shadow:none}
+#contact-circuit-readings section>:not(button){display:none}
+#contact-circuit-readings section{border:0;background:none;margin:0;padding:0}
+#contact-circuit-readings:empty,#terminal-labels:empty{display:none}
+#control-panel #scene-actions{position:static;display:flex;flex-wrap:wrap;border:0;margin:0;padding:0;background:none}
+#control-panel #scene-actions button,#control-panel #view-controls button{font-size:13px;min-height:44px}
+body.panel-tabs .control-panel .ghost-bar .knob-row input[type=range]{height:44px}
+body.panel-tabs #control-panel .adjustment-picker{flex:none}
+body.panel-tabs #phone-design-panel #title,body.panel-tabs #placed-head,body.panel-tabs #placed{display:none}
+@media(max-width:359px){body.panel-tabs aside:has(.ghost-bar:not([hidden])) #scene-goal span{display:none}}
+
+#viewer-history{position:absolute;left:8px;top:30px;z-index:6;pointer-events:auto;display:flex;gap:3px}
+#viewer-zoom{position:absolute;right:60px;bottom:8px;z-index:6;width:210px;pointer-events:auto;display:flex;gap:3px;align-items:center}
+#viewer-history button,#viewer-zoom button{min-width:44px;min-height:44px;border:1px solid #63899d;border-radius:5px;background:#183442ed;color:#e7f2f8;font:12px system-ui;padding:4px 6px;cursor:pointer}
+#viewer-history button:disabled{opacity:.45;cursor:default}
+#viewer-zoom button{padding:4px}
+#viewer-zoom svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.7}
+body.panel-tabs .scene-mode{padding:0;gap:0}
+@media(max-width:500px){#viewer-zoom{width:174px}}
+@media(max-width:359px){#viewer-zoom{width:144px}}
+.scene-wire-hint{top:82px}
+
+.power-feedback-label.editable-wire{pointer-events:auto;cursor:pointer;min-height:44px;min-width:44px;border:1px solid #729bad;text-align:left}
+
+body.panel-tabs .control-panel .ghost-bar .knob-row.numeric-slider{display:block}
+.wire-adjustments{display:flex;flex-wrap:wrap;gap:4px;flex-basis:100%}
+.wire-adjustments:empty{display:none}
+.wire-adjustments button{min-height:44px;font-size:12px}

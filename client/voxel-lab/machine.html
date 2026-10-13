@@ -5,6 +5,10 @@
 <main hidden>
 <section id="view" tabindex="-1" aria-label="The machine in 3D, as the engine calculates it">
 <output id="clock">Setting up…</output>
+<div id="viewer-corner" class="viewer-corner" role="group" aria-label="Zoom and edit history">
+<div id="viewer-history"></div>
+<div id="viewer-zoom"><input id="view-zoom" type="range" min="0" max="100" step="1" value="50" aria-label="Scene zoom"></div>
+</div>
 <div id="scene-mode" class="scene-mode" hidden role="group" aria-label="Scene interaction">
 <button id="mode-view" type="button" aria-pressed="false" title="Drag empty space to turn the view; right/middle drag or two fingers also work (Esc)">View</button>
 <button id="mode-move" type="button" aria-pressed="true" title="Drag the selected piece to move it; a click returns to View (Esc)">Move</button>
@@ -18,7 +22,7 @@
 <div id="terminal-pins" class="power-labels" aria-label="Electrical endpoints"></div>
 <div id="power-feedback-labels" class="power-feedback-labels" aria-label="Cable power and object requirements"></div>
 <svg id="scene-sockets" class="scene-sockets" aria-hidden="true"></svg>
-<div id="socket-choices" class="socket-choices" hidden aria-label="Choose a connection point"></div>
+<div id="socket-choices" class="socket-choices" hidden aria-label="Choose a piece or connection point"></div>
 <output id="scene-wire-hint" class="scene-wire-hint" hidden aria-live="polite"></output>
 <output id="edit-guide-label" class="edit-guide-label" hidden aria-live="polite"></output>
 <div id="lens-grip" class="lens-grip" hidden aria-hidden="true"><span>Lens</span></div>
@@ -34,7 +38,7 @@
 <button id="follow" aria-pressed="true">Follow</button>
 <button id="path-toggle" aria-pressed="true" hidden title="Show where things will go">Path</button>
 </div>
-<details id="machine-controls" class="machine-controls" hidden><summary>Valves and release</summary><div id="machine-control-rows"></div><output id="machine-control-status" aria-live="polite"></output></details>
+<section id="machine-controls" class="machine-controls" hidden aria-label="Valves and release"><div id="machine-control-rows"></div><output id="machine-control-status" aria-live="polite"></output></section>
 <section id="scene-tray" class="scene-tray" hidden aria-label="Your tray: add a piece">
 <div class="tray-heading"><h2 id="tray-head">Your tray</h2><output id="tray-page" aria-live="polite"></output></div>
 <div class="tray-carousel"><button id="tray-prev" type="button" hidden aria-label="Previous piece" title="Previous piece">‹</button><ul id="tray"></ul><button id="tray-next" type="button" hidden aria-label="Next piece" title="Next piece">›</button></div>
@@ -71,19 +75,19 @@
 <output id="solar-lift-reading"></output><output id="solar-lift-connection"></output>
 <details id="solar-load-help"><summary>Why the bulb?</summary><p>The bulb uses the same battery as the motor. It is a shared load. Aim the panel at the sun to collect enough power for both.</p></details>
 </section>
-<label id="piece-edit-row" class="piece-edit-row" hidden>Adjust a piece<select id="piece-edit" aria-label="Adjust a piece"></select></label>
 <details id="sandbox-environment" hidden><summary>Ground and river</summary>
 <label>Ground<select id="environment-kind" aria-label="Sandbox ground"><option value="table">Table</option><option value="channel">Dry channel</option><option value="river">River</option></select></label>
 <label>River flow (L/s)<input id="river-flow" type="number" min="1" max="1000" step="1" value="100" aria-label="River flow (L/s)"></label>
 <button id="environment-apply" type="button">Apply ground</button><output id="environment-status" aria-live="polite"></output>
 </details>
 <div id="ghost-bar" class="ghost-bar" hidden aria-label="The ghost: change it, turn it and set it down"></div>
-<details id="instrument-panel" hidden><summary>Readings and wiring</summary>
+<section id="instrument-panel" hidden aria-label="Wiring and inspection">
 <button id="wire-mode" type="button" aria-pressed="false">Connect wires</button>
+<div id="wire-adjustments" class="wire-adjustments" aria-label="Adjust placed wires"></div>
 <output id="power-status" class="power-status" hidden aria-live="polite"></output>
 <div id="power-labels" aria-label="Solar meters and power connections"></div>
  <div id="terminal-labels" aria-label="Electrical readings"></div>
- <div id="contact-circuit-readings" aria-label="Pressure switch and coil readings"></div></details>
+ <div id="contact-circuit-readings" aria-label="Pressure switch and coil readings"></div></section>
 <details id="flow-preview" class="flow-preview" hidden><summary id="flow-summary">Flow preview</summary>
 <div class="flow-time-row"><button id="flow-play" type="button" aria-pressed="true">Pause preview</button><label>Preview time<input id="flow-time" type="range" min="0" max="1" step="0.01" value="0" aria-label="Preview time"></label></div>
 <output id="flow-readings"></output></details>
@@ -138,12 +142,12 @@
 <li><b>Choose a challenge.</b> Read its goal beside the scene. Green boxes mark destinations; other challenges measure things like light, power or water.</li>
 <li><b>Add a piece.</b> Click the pictured card in <b>Your tray</b>, beside the scene controls. If there are several pieces, use its arrows to browse them. Browsing does not place a piece. In the Sandbox, <b>Add a piece</b> also opens the full piece library.</li>
 <li><b>Move and tweak it.</b> Drag the blue ghost or use the arrows. A click or tap leaves it where it is and returns to <b>View</b>; dragging the ghost resumes <b>Move</b>. The small ground squares are 5 cm wide. <b>Snap to grid</b> gently aligns a drag near a grid line; turn it off for free placement, or hold Alt while dragging on a computer. Precision controls and movement arrows stay free. Drag empty space to turn the view, or use a right/middle mouse drag or Ctrl+drag even over the piece. On a phone, drag near the piece to move it and use two fingers to turn and zoom the view. Change its size and angle with the piece controls. A red ghost tells you why it cannot fit. <b>Set down</b> confirms your placement.</li>
-<li><b>Try your machine.</b> Press <b>Run it</b> to place the piece you are adjusting and start the machine. A piece that does not fit stays red so you can move it. <b>Pause</b> stops the run; <b>Reset</b> starts the challenge over; Undo recovers your pieces. <b>Restart with my pieces</b> in Tools and speed retries the same build. In Sandbox, Reset returns your machine to time zero and keeps your design. Tap a piece to move or change it. Solar collectors connect by clicking <b>Output</b>, then the receiving <b>Input</b>.</li>
-<li><b>Zoom the view.</b> Point at the 3D scene and pinch apart or together on your computer’s trackpad, or use the mouse wheel. On a touch screen, pinch with two fingers. Zooming keeps the piece you are adjusting in place.</li>
+<li><b>Try your machine.</b> Press <b>Run it</b> to place the piece you are adjusting and start the machine. A piece that does not fit stays red so you can move it. <b>Pause</b> stops the run; <b>Reset</b> starts the challenge over. <b>Undo</b> and <b>Redo</b> are in the upper corner of the scene. <b>Restart with my pieces</b> in Controls retries the same build. In Sandbox, Reset returns your machine to time zero and keeps your design. Tap a piece to move or change it. Choose an <b>Adjustment</b> and drag its flat slider, or enter an exact value. Electrical edits show the proposed rating before placement.</li>
+<li><b>Zoom the view.</b> Use the slider between the magnifiers in the lower corner of the scene. You can also pinch on your computer’s trackpad, use the mouse wheel or pinch with two fingers on a touch screen. Zooming keeps the piece you are adjusting in place.</li>
 <li><b>Keep building.</b> Beat a challenge's energy par for three stars. In the Sandbox, choose a prebuilt design or <b>Add New Design</b>, name your build and use <b>Save version</b> to keep a setup you can reopen.</li>
 <li><b>Draw wires on the pieces.</b> Click a small connection ring in the 3D scene, then click the other end. You can start directly or choose <b>Wire</b> from the tray. Use <b>+</b> and <b>−</b> on batteries and bulbs, <b>In</b>/<b>Out</b> on switches and <b>A</b>/<b>B</b> on resistors and capacitors. A solar <b>Out</b> connects to a winch or battery <b>In</b>, in either click order. The selected ring turns amber; the dashed line follows your pointer until you finish. Esc or clicking your first ring again cancels. If points overlap, choose from the short labelled list. <b>Precision controls</b> keeps optional endpoint selectors. Yellow flow arrows appear only when the engine measures current.</li>
 <li><b>Need a hand?</b> Use <b>Ask for help</b> beside the game. <b>Place it for me</b> attempts a solution, worth one star at most.</li>
-<li><b>Replace a connection.</b> Click a wire you placed to remove it, then click two connection rings to draw a new wire. <b>Undo</b> restores an accidental deletion. If wires overlap, choose the one to remove from the short labelled list. Clicking a wire during a run stops the machine and returns to its starting setup first. Click a battery's case to adjust it; its tray card also reopens the battery after placement.</li>
+<li><b>Replace a connection.</b> Click a wire you placed to remove it, then click two connection rings to draw a new wire. Click its gauge label or its Wire button in Controls to adjust thickness or length. <b>Undo</b> restores an accidental deletion. If wires overlap, choose the one to remove from the short labelled list. Clicking a wire during a run stops the machine and returns to its starting setup first. Click a battery's case to adjust it; its tray card also reopens the battery after placement. <b>Delete piece</b> removes the selected piece.</li>
 </ol>
 <p><b>Keyboard:</b> arrows move a piece; Page Up/Down change its height; Q/E turn, R/F tip and Z/C roll. Enter sets it down. Esc switches between moving and looking around. Ctrl+Z undoes a change.</p>
 </div>
@@ -153,6 +157,9 @@
 <div class="guide-head"><h2 id="recent-changes-title">Recent Changes</h2><button id="recent-changes-done" type="button">Close</button></div>
 <div class="guide-body changes-body" tabindex="0" aria-label="Game updates, newest first">
 <section aria-labelledby="changes-oct13"><h3 id="changes-oct13"><time datetime="2026-10-13">October 13, 2026</time></h3>
+<article><h4>A clearer view and fewer controls</h4><p>Opening a level shows its name and a short task beside the scene. <b>Undo</b> and <b>Redo</b> are in the upper scene corner; a flat zoom slider with magnifiers is in the lower corner. Tools and readings no longer need opening: useful actions such as <b>Connect wires</b> and inspection appear directly in Controls. Run results also stay in Controls so they leave your machine clear.</p></article>
+<article><h4>Click a piece, choose an adjustment</h4><p>Click the object you want to change. One <b>Adjustment</b> menu replaces the scrolling row of settings, with a full-width slider, useful increments and an exact value. Electrical edits show the proposed rating on the inspector and beside the part. Click a wire’s gauge label to change its thickness; clicking the cable still removes it. The extra piece selector and duplicate Pick up, Copy and Remove list are gone.</p></article>
+<article><h4>Pick the part you meant</h4><p>Thin boards can be selected independently of the supports beneath them. If objects overlap inside transparent glass, a short list lets you choose the piece you can see. Overlapping connection rings also offer an <b>Adjust</b> choice for the component. In <b>Support a loose board</b>, click the board, reposition it, and save your new setup. Move it off the platform and Run to see it fall.</p></article>
 <article><h4>More ways to build a chain reaction</h4><p>The piece library now includes <b>Hinged door</b>, <b>Trapdoor</b>, <b>Pendulum</b>, <b>Spring trampoline</b>, <b>Flywheel</b>, <b>Loose block</b> and <b>Open airflow</b>. Domino rows also let you choose material and lean the first domino to start the chain. Adjust the parts, combine them with your other pieces, and save a version to come back to it.</p></article>
 <article><h4>Seven new Sandbox examples</h4><p>Try <b>Domino chain</b>, <b>Wind opens a door</b>, <b>Spring trampoline</b>, <b>Pendulum and blocks</b>, <b>Gravity trapdoor</b>, <b>Flywheel workbench</b> and <b>Stack loose blocks</b>. Airflow arrows show its direction while you adjust it. The flywheel has a wired battery and motor; disconnect a lead to see the difference. Each example becomes your own editable design. Run, Pause, Reset and Undo stay beside the scene on phones.</p></article>
 </section>
