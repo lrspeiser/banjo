@@ -67,6 +67,7 @@ class BugReports(unittest.TestCase):
                 if 'BanjoProject' in query:return {'project':{'id':bug_reports.PROJECT_ID,'teams':{'nodes':[{'id':'team-1'}]}}}
                 if 'BanjoReport' in query:return {'issue':issues.get(variables['id'])}
                 issue=variables['input'];creates.append(issue)
+                self.assertEqual(uuid.UUID(issue['id']).version,4,'Linear rejects issue-create IDs with a different UUID version')
                 issues[issue['id']]={'id':issue['id'],'url':'https://linear.app/horizon3/issue/TEST-1/bug','project':{'id':bug_reports.PROJECT_ID}}
                 raise bug_reports.LinearUnavailable('Response lost after issue creation')
             reopened=bug_reports.Reports(path,'test-only-key')

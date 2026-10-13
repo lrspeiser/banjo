@@ -18,7 +18,12 @@ the expanded 18-test host suite passes.
 The live checkpoint confirmed a GraphQL rejection. Classification now uses
 Linear's documented SDK `extensions.type` as well as standard GraphQL codes,
 with the failed project/issue operation; provider messages remain private.
-Confirmed delivery still requires resolving that live failure.
+Direct authenticated verification confirmed project and BAN-team access.
+The API rejected UUID5 issue IDs with `id must be a UUID`; a v4 ID passed
+validation in a request with a deliberately invalid team, creating no issue.
+Issue IDs now derive stable bytes with v4/variant bits, and an API-contract
+regression checks the UUID version. Migration resumes the saved pending report.
+Confirmed delivery still requires the final live create.
 The 17 host tests passed, including restart retention and simulated recovery of
 an issue created before its response was lost. Eight focused browser tests passed
 in 30.4 s across desktop, portrait and landscape: merged Help, canonical sharing,

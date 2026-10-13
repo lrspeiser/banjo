@@ -4,6 +4,7 @@ Only a player's explicit report is queued. Credentials stay on the server;
 editor snapshots contain no profile return token, cookie or visitor address.
 """
 import json
+import hashlib
 import sqlite3
 import threading
 import time
@@ -40,9 +41,9 @@ class Reports:
                 # Classify existing pending deliveries on the first worker pass
                 # after migration, keeping their stable issue identities.
                 db.execute('UPDATE reports SET retry_at=0 WHERE sent_url IS NULL')
-            if db.execute('PRAGMA user_version').fetchone()[0] < 1:
+            if db.execute('PRAGMA user_version').fetchone()[0] < 2:
                 db.execute('UPDATE reports SET retry_at=0 WHERE sent_url IS NULL')
-                db.execute('PRAGMA user_version=1')
+                db.execute('PRAGMA user_version=2')
 
     @contextmanager
     def connect(self):
@@ -94,7 +95,7 @@ class Reports:
                 # Classify failures without exposing provider messages, variables
                 # or credentials in the public operational checkpoint.
                 codes = {(error.get('extensions') or {}).get('code') for error in result['errors'] if isinstance(error, dict)}
-                known = sorted(codes & {'AUTHENTICATION_ERROR', 'FORBIDDEN', 'UNAUTHENTICATED', 'RATELIMITED', 'GRAPHQL_VALIDATION_FAILED', 'INPUT_ERROR'})
+                known = sorted(codes & {'AUTHENTICATION_ERROR', 'FORBIDDEN', 'UNAUTHENTICATED', 'RATELIMITED', 'GRAPHQL_VALIDATION_FAILED', 'INPUT_ERROR', 'INVALID_INPUT'})
                 types = {(error.get('extensions') or {}).get('type') for error in result['errors'] if isinstance(error, dict)}
                 known += sorted(types & {'authentication error', 'forbidden', 'invalid input', 'ratelimited', 'graphql error', 'feature not accessible', 'usage limit exceeded', 'internal error', 'lock timeout'})
                 stage = 'project lookup' if 'BanjoProject' in query else 'issue creation' if 'BanjoBug' in query else 'issue lookup'
@@ -137,7 +138,9 @@ class Reports:
         if not self.team_resolved:
             self.resolve_team()
         # Use a derived ID, never a caller's arbitrary existing Linear issue ID.
-        issue_id = str(uuid.uuid5(uuid.UUID(self.project_id), report_id))
+        # Linear's issue-create validator accepts v4 IDs, not UUID5. Derive
+        # stable bytes and set v4/variant bits so retries reuse the same ID.
+        issue_id = str(uuid.UUID(bytes=hashlib.sha256((self.project_id + ':' + report_id).encode()).digest()[:16], version=4))
         if attempts:
             # A timeout may occur after Linear created the issue. Recover that
             # exact UUID on retry instead of filing the same report twice.
