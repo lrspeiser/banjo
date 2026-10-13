@@ -37,6 +37,9 @@ class Reports:
                        'created REAL NOT NULL, sent_url TEXT, attempts INTEGER NOT NULL DEFAULT 0, retry_at REAL NOT NULL DEFAULT 0)')
             if 'last_error' not in [row[1] for row in db.execute('PRAGMA table_info(reports)')]:
                 db.execute('ALTER TABLE reports ADD COLUMN last_error TEXT')
+                # Classify existing pending deliveries on the first worker pass
+                # after migration, keeping their stable issue identities.
+                db.execute('UPDATE reports SET retry_at=0 WHERE sent_url IS NULL')
 
     @contextmanager
     def connect(self):
