@@ -26,6 +26,8 @@ when the controls are collapsed. **Recent Changes** in the top
 navigation opens dated player-friendly update notes over the current screen;
 closing it keeps the level or design. Each published checkpoint updates these
 notes in `client/voxel-lab/machine.html`, as required by `AGENTS.md`.
+Reset starts a challenge over with a fresh tray; Undo recovers its cleared
+pieces. Sandbox Reset rewinds the machine while keeping the design.
 Optical levels keep an engine-traced light path visible while editing. Lenses
 have a clear rim and a larger drag marker; focusing a lens or mirror keeps
 its source and receiver in view, and **Whole machine** restores the overview.

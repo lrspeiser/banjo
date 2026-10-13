@@ -287,7 +287,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='capacitor 1'&&/Now .* V.* J/.test(r.text)&&!r.text.includes('Updating'))",15)
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='capacitor 1'&&!r.hidden)",10)
                 self.assertTrue(self.js("(()=>{const el=document.querySelector('[data-device=\"capacitor 1\"].power-feedback-label'),r=el.getBoundingClientRect(),view=document.getElementById('view').getBoundingClientRect(),run=document.getElementById('start').getBoundingClientRect();return r.left>=view.left&&r.right<=view.right&&r.top>=view.top&&r.bottom<=view.bottom&&!(r.left<run.right&&r.right>run.left&&r.top<run.bottom&&r.bottom>run.top);})()"))
-                self.click_visible('Set up again');self.wait(READY,60)
+                self.click_visible('Restart with my pieces');self.wait(READY,60)
                 self.assertTrue(all(d['stored_j']==0 for d in self.js('window.machineContactState().liveDevices') if d['kind']=='capacitor'))
 
     def test_parallel_activity_draws_actual_feeds_and_returns_on_desktop_and_phones(self):
@@ -359,7 +359,7 @@ class Puzzles(unittest.TestCase):
                     'A removed segment cannot remain a char overlay; its neighbors may still be heated')
                 self.click_visible('Whole machine')
                 self.wait('!window.machineThermalState().inspecting',5)
-                self.click_visible('Set up again');self.wait(READY,60)
+                self.click_visible('Restart with my pieces');self.wait(READY,60)
                 self.assertFalse(self.js('window.machineThermalState().visible'))
 
     def test_catalogue_audit_opens_every_level_with_attached_touch_controls(self):
@@ -413,7 +413,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run it');self.wait("/World [12]\\./.test(document.getElementById('clock').textContent)",30)
                 self.click_visible('Pause')
                 self.assertTrue(self.js("document.getElementById('level-done').hidden"))
-                self.click_visible('Set up again');self.wait(READY,60)
+                self.click_visible('Restart with my pieces');self.wait(READY,60)
                 self.assert_power_layout()
                 self.click_visible('Power output of your solar 1');self.click_visible('Power input of supply')
                 self.wait(f'window.machinePlacements().length===2 && {READY}',60)
@@ -680,7 +680,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("Number(document.getElementById('collector-status').textContent.match(/Container ([\\d.]+)/)?.[1])>0",30)
                 self.click_visible('Pause')
                 self.assertTrue(self.js("Number(document.getElementById('collector-status').textContent.match(/Container ([\\d.]+)/)?.[1])>0"))
-                self.press('Set up again');self.wait(READY,60)
+                self.press('Restart with my pieces');self.wait(READY,60)
                 self.slide('Adjust a piece','1');self.ghost()
                 self.slide('support of your pipe_elbow 2','loose')
                 self.assertTrue(self.ghost()['fits'])
@@ -695,7 +695,7 @@ class Puzzles(unittest.TestCase):
                 self.press('Start from Marble through a pipe');self.wait(READY,60)
                 self.click_visible('Run it')
                 self.wait("machineBodies()['your marble 2'][0]>.65",30)
-                self.click_visible('Pause');self.press('Set up again');self.wait(READY,60)
+                self.click_visible('Pause');self.press('Restart with my pieces');self.wait(READY,60)
                 self.slide('Adjust a piece','1');self.ghost()
                 self.slide('starting position of your marble 2','on surface');self.ghost()
                 self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"center height (m) of your marble 2\"]')?.getClientRects().length)"))
@@ -708,7 +708,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run it');self.wait("/World [1-9]/.test(document.getElementById('clock').textContent)",30)
                 self.click_visible('Pause')
                 self.assertAlmostEqual(self.js("machineBodies()['loose board'][1]"),.62,delta=.001)
-                self.press('Set up again');self.wait(READY,60)
+                self.press('Restart with my pieces');self.wait(READY,60)
                 self.press('Remove your scaffold 1');self.wait(f'machinePlacements().length===0 && {READY}',60)
                 self.click_visible('Run it');self.wait("machineBodies()['loose board'][1]<.1",30)
                 self.click_visible('Pause')
@@ -776,7 +776,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(len(self.js('window.machinePlacements()')),1)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
                 self.assertLess(self.js('window.machineWaterDisplay()[0].litres'),4)
-                self.click_visible('Set up again');self.wait(READY,60)
+                self.click_visible('Restart with my pieces');self.wait(READY,60)
                 self.wait('window.machineWaterDisplay()[0].litres===4',10)
                 self.assertEqual(self.js('window.machinePlacements()[0].opening_percent'),75)
 
@@ -810,7 +810,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("document.getElementById('collector-status').textContent.includes('Filled in')",5)
                 self.assertEqual(self.js("document.getElementById('level-done').parentElement.id"),'control-panel')
                 self.assertGreaterEqual(self.js("Number(document.getElementById('collector-status').textContent.match(/Container ([\\d.]+)/)[1])"),3)
-                self.click_visible('Set up again');self.wait(READY,60)
+                self.click_visible('Restart with my pieces');self.wait(READY,60)
                 self.wait("/Container 0.00/.test(document.getElementById('collector-status').textContent)",10)
 
     def test_water_diversion_shows_retained_litres_and_resets_on_desktop_and_phones(self):
@@ -833,7 +833,7 @@ class Puzzles(unittest.TestCase):
                 self.assertIn('★★★',self.js("document.getElementById('level-done').textContent"))
                 self.assertEqual(self.js("document.getElementById('level-done').parentElement.id"),'control-panel')
                 self.assertGreaterEqual(self.js("Number(document.getElementById('collector-status').textContent.match(/Container ([\\d.]+)/)[1])"),3)
-                self.click_visible('Set up again');self.wait(READY,60)
+                self.click_visible('Restart with my pieces');self.wait(READY,60)
                 self.wait("/Container 0.00/.test(document.getElementById('collector-status').textContent)",10)
 
     def test_water_shares_preserve_legacy_feeds_and_new_tap_versions(self):
@@ -890,7 +890,7 @@ class Puzzles(unittest.TestCase):
         self.press('Save version');self.wait(f'window.machineDesign().versions.length==={count+1}',10)
         self.click_visible('Run it');self.assert_measured_river_current()
         self.wait(f"window.machineBodies()['river gate'][1]>={initial+.08}",30)
-        self.click_visible('Pause');self.click_visible('Set up again');self.wait(READY,60)
+        self.click_visible('Pause');self.click_visible('Restart with my pieces');self.wait(READY,60)
         self.assertEqual(self.js('window.machineDesign().draft.base'),base)
         self.assertEqual(self.js('window.machinePlacements()'),setup)
         self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,60)
@@ -1043,7 +1043,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(len(self.js('window.machinePlacements()')),1)
                 opens=[json.loads(e['params']['request']['postData']) for e in self.page.events if e['method']=='Network.requestWillBeSent' and e['params']['request']['url'].endswith('/api/machine') and e['params']['request'].get('postData') and json.loads(e['params']['request']['postData']).get('op')=='level_open']
                 self.assertEqual(len(opens),1,'placing and running uses one setup')
-                self.click_visible('Set up again'); self.wait(READY,30)
+                self.click_visible('Restart with my pieces'); self.wait(READY,30)
                 self.press('Pick up your plank 1'); self.ghost()
                 self.slide('Cut to length of your plank 1',.66)
                 # Two clicks while validation is in flight cannot duplicate it.
@@ -1053,7 +1053,7 @@ class Puzzles(unittest.TestCase):
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
                 self.assertEqual(len(self.js('window.machinePlacements()')),1)
                 self.assertEqual(self.js('window.machinePlacements()[0].length_m'),.66)
-                self.click_visible('Set up again'); self.wait(READY,30)
+                self.click_visible('Restart with my pieces'); self.wait(READY,30)
                 self.press('Undo'); self.wait(READY,30)
                 self.assertEqual(self.js('window.machinePlacements()[0].length_m'),.7)
                 # The same shortcut keeps a sandbox draft and saved version.
@@ -1066,7 +1066,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("/World (?!0\\.00)[0-9.]+ s/.test(document.getElementById('clock').textContent)",30)
                 self.assertIsNone(self.js('window.machineGhostState()'))
                 self.assertEqual(len(self.js('window.machineDesign().draft.placements')),1)
-                self.click_visible('Pause'); self.click_visible('Set up again'); self.wait(READY,30)
+                self.click_visible('Pause'); self.click_visible('Restart with my pieces'); self.wait(READY,30)
                 self.press('Save version')
                 self.wait('window.machineDesign().versions.length===1',5)
                 self.assertEqual(len(self.js('window.machineDesign().versions[0].draft.placements')),1)
@@ -1130,7 +1130,7 @@ class Puzzles(unittest.TestCase):
                 self.js("document.getElementById('message').value='Keep this draft while I adjust the machine'")
                 self.click_visible('Run it')
                 self.wait("/World (?!0\\.00)[0-9.]+ s/.test(document.getElementById('clock').textContent)",30)
-                self.click_visible('Pause'); self.click_visible('Set up again'); self.wait(READY,30)
+                self.click_visible('Pause'); self.click_visible('Reset'); self.wait(READY,30)
                 self.assertEqual(self.js("document.getElementById('phone-help-tab').getAttribute('aria-selected')"),'true')
                 self.click_visible('Design')
                 self.js("document.getElementById('save-design').scrollIntoView({block:'center'})")
@@ -1187,10 +1187,60 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js("['control-panel','phone-design-panel','phone-help-panel'].every(id=>document.getElementById(id).hidden)"))
                 self.click_visible('Run it')
                 self.wait("/World (?!0\\.00)[0-9.]+ s/.test(document.getElementById('clock').textContent)",30)
-                self.click_visible('Pause');self.click_visible('Set up again');self.wait(READY,30)
+                self.click_visible('Pause');self.click_visible('Reset');self.wait(READY,30)
                 self.click_visible('Expand controls')
                 self.assertFalse(self.js("document.getElementById('phone-help-panel').hidden"))
                 self.assertEqual(self.js('machinePlacements()'),before)
+
+    def test_reset_returns_challenge_to_authored_beginning_and_undo_restores_attempt(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width!=1280)
+                self.press('Add a plank');self.ghost()
+                self.slide('Cut to length of your plank 1',.7)
+                self.slide('Set down at x of your plank 1',.3)
+                self.slide('across (z, m) of your plank 1',0)
+                self.ghost();self.click_visible('Run it')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                kept=self.js('machinePlacements()')
+                self.click_visible('Help');self.click_visible('Collapse controls')
+                self.click_visible('Reset');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements()'),[])
+                self.assertIsNone(self.js('machineGhostState()'))
+                self.assertTrue(self.js("document.getElementById('level-done').hidden"))
+                self.assertEqual(self.js("document.getElementById('tray-add').disabled"),False)
+                self.assertIn('World 0.00 s',self.js("document.getElementById('clock').textContent"))
+                self.click_visible('Undo');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements()'),kept)
+                self.click_visible('Expand controls');self.press('Pick up your plank 1');self.ghost()
+                self.slide('Cut to length of your plank 1',.66);self.ghost()
+                self.click_visible('Reset');self.wait(READY,30)
+                self.assertIsNone(self.js('machineGhostState()'))
+                self.assertEqual(self.js('machinePlacements()'),[])
+                self.click_visible('Undo');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements()'),kept,'Reset discards the uncommitted edit; Undo restores the completed setup')
+
+    def test_sandbox_reset_rewinds_machine_and_cancels_pending_edits_without_erasing_design(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.wait("!document.getElementById('sandbox-screen').hidden",10)
+                self.press('Start from Gate and split');self.wait(READY,60)
+                kept=self.js('machinePlacements()');base=self.js('machineDesign().draft.base')
+                versions=self.js('machineDesign().versions')
+                self.click_visible('Run it');self.wait("/World [12]\\./.test(document.getElementById('clock').textContent)",30)
+                self.click_visible('Help');self.click_visible('Reset');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements()'),kept)
+                self.assertEqual(self.js('machineDesign().draft.base'),base)
+                self.assertEqual(self.js('machineDesign().versions'),versions)
+                self.assertIn('World 0.00 s',self.js("document.getElementById('clock').textContent"))
+                self.assertEqual(self.js("document.getElementById('phone-help-tab').getAttribute('aria-selected')"),'true')
+                self.click_visible('Controls');self.slide('Adjust a piece','0')
+                self.ghost();self.click_visible('Reset');self.wait(READY,30)
+                self.assertIsNone(self.js('machineGhostState()'))
+                self.assertEqual(self.js('machinePlacements()'),kept)
+                self.assertEqual(self.js('machineDesign().draft.placements'),kept)
 
     def test_undo_is_visible_on_every_tab_and_collapsed_and_restores_setup(self):
         for width,height in ((1280,860),(390,844),(844,390)):
@@ -1368,7 +1418,7 @@ class Puzzles(unittest.TestCase):
                 self.press('Set it down');self.wait(READY,30)
                 self.press('Run it');self.wait("/World (?!0.00)\\d/.test(document.getElementById('clock').textContent) && !window.machineLaserPreviewState().visible",30)
                 self.assertFalse(self.js('window.machineLaserPreviewState().visible'),'Run shows actual native light instead of a setup prediction')
-                self.press('Set up again');self.wait(READY,30)
+                self.press('Restart with my pieces');self.wait(READY,30)
                 self.wait('window.machineLaserPreviewState().visible',30)
                 for level in ('easy-mirror','laser'):
                     self.open(level,width,height,phone=width!=1280)
@@ -1459,7 +1509,7 @@ class Puzzles(unittest.TestCase):
                     self.wait('Boolean(window.machineGhostState())',5)
                     self.assertEqual(self.ghost()['p'], setup[0])
                     self.assertTrue(self.js(READY), 'selecting a device never starts the live simulation')
-                    for label in ('Run it','Set up again','Turn the view left','Zoom in','✓ Set down','Throw the ghost away'):
+                    for label in ('Run it','Reset','Turn the view left','Zoom in','✓ Set down','Throw the ghost away'):
                         self.reveal_control(f"[...document.querySelectorAll('button')].find(b=>(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(label)})")
                         target = self.js(f"(() => {{const b=[...document.querySelectorAll('#control-panel button,#phone-runbar button')].find(b=>(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(label)}),r=b?.getBoundingClientRect();return r?{{visible:r.x>=0 && r.right<=innerWidth && r.y>=0 && r.bottom<=innerHeight,uncovered:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),h:r.height,w:r.width}}:null;}})()")
                         self.assertIsNotNone(target,label)
@@ -2179,7 +2229,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("window.machineSwitchState().handles.find(h=>h.name==='control').closed===true",15)
                 self.wait("window.machineContactState().liveDevices.some(d=>d.kind==='bulb'&&d.power_w>2)",15)
                 self.assertEqual(self.js('window.machineDesign().versions.slice(-1)[0].draft'), saved)
-                self.press('Set up again')
+                self.press('Restart with my pieces')
                 self.wait(READY, 60)
                 self.wait("/controlclosed/.test(document.getElementById('readings').textContent)", 15)
                 self.assertEqual(self.js('window.machineDesign().versions.slice(-1)[0].draft'),saved)
@@ -2307,7 +2357,7 @@ class Puzzles(unittest.TestCase):
                     x,y=self.screen_point(self.js(f'window.machineContactState().liveTerminals[{json.dumps(terminal)}]'))
                     bounds=self.js("(()=>{const r=document.getElementById('view').getBoundingClientRect();return [r.left,r.top,r.right,r.bottom];})()")
                     self.assertTrue(bounds[0]<=x<=bounds[2] and bounds[1]<=y<=bounds[3],(terminal,x,y,bounds))
-                self.click_visible('Set up again')
+                self.click_visible('Restart with my pieces')
                 self.wait(READY,60)
                 self.wait('window.machinePowerFeedbackState().dots===0',15)
 
@@ -3075,7 +3125,7 @@ class Puzzles(unittest.TestCase):
         self.wait("/World 2\\./.test(document.getElementById('clock').textContent)", 30)
         self.press('Pause')
         self.assertTrue(self.js("document.getElementById('level-done').hidden"))
-        self.press('Set up again')
+        self.press('Restart with my pieces')
         self.wait(READY, 60)
         self.assertEqual(self.js("document.querySelectorAll('#stations li').length"), 9)
 
@@ -3135,7 +3185,7 @@ class Puzzles(unittest.TestCase):
                 self.press('Run it')
                 self.wait("/World 2\\./.test(document.getElementById('clock').textContent)", 30)
                 self.press('Pause')
-                self.press('Set up again')
+                self.press('Restart with my pieces')
                 self.wait(READY, 60)
                 self.assertEqual(self.js('window.machinePlacements().length'), 12)
 

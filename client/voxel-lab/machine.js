@@ -1805,8 +1805,17 @@ $('start').addEventListener('click', () => {
   if (LEVEL_MODE && level) { runLevel(); return; }
   setPlaying(!playing).catch(e => { $('clock').textContent = e.message; });
 });
-// A level is set up again as a level (its pieces, not running), not as a sandbox machine.
-$('reset').addEventListener('click', () => (LEVEL_MODE && level ? rebuildLevel(false) : build(spec)).catch(() => {}));
+// Reset a challenge to its authored beginning; sandbox resets its built machine.
+function resetGame(keep) {
+  endGhost(); cancelAttach(); stopSwitchDrag();
+  if (!keep) { startOver(false); return; }
+  rebuildLevel(false).catch(() => {});
+}
+$('reset').addEventListener('click', () => {
+  if (LEVEL_MODE && level) resetGame(Boolean(level.free));
+  else build(spec).catch(() => {});
+});
+$('restart-pieces').addEventListener('click', () => resetGame(true));
 $('speed').addEventListener('change', () => { if (session) api({op: 'play', session, running: playing, speed: Number($('speed').value)}).catch(() => {}); });
 $('follow').addEventListener('click', () => { follow = !follow; $('follow').setAttribute('aria-pressed', String(follow)); if (!follow) goal.copy(target); });
 // Press a station to look at it. The list is drawn again with every frame, so
@@ -4883,6 +4892,7 @@ async function chooseLevel(id, design = null) {
   document.querySelector('main').hidden = false;
   keepBuild(); showSandboxScreen(false); showLevelsScreen(false);
   level = id === 'free' && freeLevel ? {...freeLevel} : levels.find(l => l.id === id) || (generatedLevel?.id === id ? generatedLevel : levels[0]);
+  $('reset').title = level.free ? 'Return your machine to time zero' : 'Start the level over; Undo recovers your pieces';
   $('phone-design-tab').textContent = level.free ? 'Design' : 'Level';
   selectPhonePanel('controls');
   if (level.variant) {
@@ -5134,6 +5144,7 @@ function installPhonePanels() {
     (node.matches('.chat') ? help : design).append(node);
   }
   aside.append(design,help);
+  $('view').append($('panel-toggle'));
   const tools = Object.assign(document.createElement('details'),{id:'phone-tools'});
   tools.append(Object.assign(document.createElement('summary'),{textContent:'Tools and speed'}));
   controls.append(tools);
@@ -5144,8 +5155,8 @@ function installPhonePanels() {
     tools.append($('scene-actions'),$('view-controls'));
     $('phone-runbar').append($('start'),$('reset'),$('undo-pieces'));
     $('reset').textContent = 'Reset';
-    $('reset').setAttribute('aria-label','Set up again');
-    $('reset').title = 'Restore the starting setup';
+    $('reset').setAttribute('aria-label','Reset');
+    $('reset').title = level?.free ? 'Return your machine to time zero' : 'Start the level over; Undo recovers your pieces';
     for (const [key,pane] of [['controls',controls],['design',design],['help',help]]) {
       pane.classList.add('phone-pane');
       pane.setAttribute('role','tabpanel'); pane.setAttribute('aria-labelledby','phone-'+key+'-tab'); pane.tabIndex = 0;
@@ -5174,7 +5185,7 @@ async function startGame() {
   // A level plays at real time, the camera following what moves, its path
   // shown: the sandbox's switches for those are not on the game page.
   for (const id of ['follow', 'path-toggle']) $(id).hidden = true;
-  for (const id of ['undo-pieces', 'redo-pieces']) $(id).hidden = false;
+  for (const id of ['undo-pieces', 'redo-pieces','restart-pieces']) $(id).hidden = false;
   document.querySelector('#scene-actions .speed').hidden = true;
   // What the player works with, together at the top of the scene: the
   // Running, viewing and piece editing share the adjacent control panel.
