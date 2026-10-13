@@ -1794,6 +1794,10 @@ function ghostPlacements() { const list = placements.slice(); list[ghost.index] 
 // A knob set as its slider would set it: on its step, within its range.
 function setKnob(p, key, v) {
   const r = trayItem(p.piece).knobs[key];
+  if(r?.choices) {
+    if(!r.choices.includes(v) || p[key]===v)return false;
+    p[key]=v; return true;
+  }
   if (!r || r.choices || r.part || r.hinge || r.terminal || r.power_port || !Number.isFinite(v)) return false;
   if (r.turning) v = ((v + 180) % 360 + 360) % 360 - 180;
   // On its step counted from its minimum, as the slider steps.
@@ -2302,6 +2306,8 @@ function setGhostDown() {
 // with - and + either side of its slider, and Set down.
 function knobName(rule, key) { return (rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
 function pieceKnobVisible(p,key) {
+  if(p.piece==='marble' && key==='height_m' && p.placement!=='at height')return false;
+  if(p.piece==='pipe_elbow' && key==='fall_m' && p.plane==='downward')return false;
   if(trayItem(p.piece)?.knobs?.[key]?.hidden)return false;
   if(p.piece==='bulb' && key==='preset' && p.size && p.size!=='preset')return false;
   if(p.piece==='spring' && p.load && p.load!=='included load' && ['height_m','material','load'].includes(key))return false;
@@ -3793,7 +3799,7 @@ function bestStars(id) { return record(id).stars || 0; }
 const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
                     mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens', flipflop: 'flip-flop'};
 // A piece's name on its button: as the tray calls it, but a flip-flop has its hyphen.
-function pieceLabel(piece) { return ({flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',solar:'solar panel',tackle:'block and tackle',ignition:'ignition coil',power_cable:'power cable'})[piece] || piece; }
+function pieceLabel(piece) { return ({flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'ignition coil',power_cable:'power cable'})[piece] || piece; }
 function toolsOf(player) {
   if (!player.tools) {
     player.tools = {};
@@ -3883,6 +3889,10 @@ const PIECE_INFO = {
   water_tank: ['water', 'A separate finite gravity tank. Open its tap wider for more flow; falling water level slows it.'],
   water_chute: ['water', 'Aim and tip a supported open trough. Gravity and contact divert the falling water.'],
   water_collector: ['water', 'A separate fixed container. Its meter counts water currently retained inside.'],
+  pipe: ['routes', 'A hollow pipe for water or marbles. Adjust its bore, slope and length; remove scaffolding to let it fall.'],
+  pipe_elbow: ['routes', 'A hollow corner for water or marbles. Adjust the bore, bend radius, turn and fall.'],
+  pipe_reducer: ['routes', 'A tapered pipe with independent inlet and outlet radii. A ball wider than its outlet cannot pass.'],
+  scaffold: ['structure', 'A grounded platform with visible legs and feet. Put it below a loose piece to support it by contact.'],
   catapult: ['motion', 'A counterweight turns a cradle that launches through physical contact.']
 };
 function libraryTray() { return level.free || level.tray.filter(t => !t.attach).length > 4; }

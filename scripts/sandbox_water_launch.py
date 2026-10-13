@@ -94,6 +94,9 @@ def water_tank(name, k, ctx):
     # collection channel. Saved legacy tanks retain their metered outlet.
     channel_z=g.get('trench_z_m',0)
     bank = channel_z + .5*g.get('trench_width_m',.6) + .22
+    # Keep the outlet clear of the vessel when moved across the channel.
+    # A source too near its own wall catches newly emitted finite parcels.
+    if abs(bank-z) < .32:bank=z+.4
     tank = dict(name=name+' tank',shape='compound',material='iron',at_m=[x,y+.12,bank],fixed=True,
         parts=[dict(shape='box',at_m=[0,-.11,0],size_m=[.28,.02,.28],turn_deg=[0,0,0]),
                dict(shape='box',at_m=[-.13,0,0],size_m=[.02,.24,.28],turn_deg=[0,0,0]),

@@ -47,6 +47,7 @@ At 8 s, equal-geometry glass/oak/iron chute and collector runs all retain
 below 1e-12 m³. Engine: Windows Release SHA-256
 `1ebc084656f9b4c0206e6c7ca7f9d0e12546700c60e495781ca781493587c352`.
 
+
 | Material | dt (s) | Falling-water energy residual (J) | Momentum residual magnitude (N s) | Explicit numerical correction (J) |
 |---|---|---|---|---|
 | Glass | 1/240 | −1.92049e−8 | 8.06e−10 | +0.774295 |
@@ -522,3 +523,93 @@ and phone portrait/landscape, with the diversion lesson in the same run:
 2/2 browser checks in 52.085 s.
 Native engine SHA-256 is unchanged:
 `1ebc084656f9b4c0206e6c7ca7f9d0e12546700c60e495781ca781493587c352`.
+
+## Hollow pipes and scaffolding (October 12)
+
+`scripts/sandbox_plumbing.py` adds straight pipes, horizontal/downward elbows,
+reducers and separate scaffolding. The pipe is a precise rigid compound of
+twelve tangent box walls per section, 20 mm thick, with material-derived union
+mass. Elbows use four chords per 90° bend with internal seam overlap; their
+open ends are not extended. Reducers slope their actual walls between two
+apertures. These are faceted approximations, not smooth circular swept solids.
+The quoted inside radius is the polygon's apothem. Joining separate pieces
+leaves 15 mm clearance, rather than creating an invisible fluid connection.
+
+Grounded iron trestles, feet, short mounting screws and native fix joints hold
+a supported pipe. Their beams are below the lowest wall in their clipped
+footprint, so the support does not occupy the bore. Removing them removes the
+fix joints. A separate platform has grounded legs/feet and supports a board
+by native contact; the board is not fixed. These are ideal ground-anchored
+rigid assemblies, not calibrated load-bearing trusses or buckling/fracture
+models. Glass/oak/iron supported boards settle at y=0.620 m and their marble
+at 0.680 m; removing the platform leaves the board at y=0.020 m after 1 s.
+
+Native `PreciseRigidScene` now integrates same-density box unions by signed
+tetrahedra from the existing clipped exposed boundary. Prefix-union volume
+differences preserve earlier-part material ownership. Cylinders and mixed
+densities keep their existing bounded overlap sampling. A 1.5 m long,
+twelve-sided tube of 120 mm inside radius and 20 mm walls agrees with the
+analytical polygon-annulus mass, centroid and axial/transverse inertia, both
+unturned and rotated 20°. Glass/oak/iron masses are 62.7001/17.5560/197.380 kg;
+relative mass residuals are at most 2.16e-15 and builds took 0.0010–0.0014 s.
+The tests also open, drop, snapshot, restore and continue an exact-only world
+without a hidden lattice marker. These are geometry/representation checks,
+not a full coupled momentum/energy conservation proof.
+
+The water example uses the native finite 4 L gravity reservoir, 65% tap,
+1.4 m outlet, a 0.5 m downward elbow starting at 1.3 m, and a 0.5 m reducer
+falling 5° from 120 to 80 mm inside radius. The receiving box floor is 0.25 m.
+Native 40 mm / 64 mL water parcels have 18 mm contact radius. At 8 s all six
+glass/oak/iron comparisons retain 3.968 L; 32 mL remains below the emission
+quantum. Turning the elbow 90° misses the receiver and retains less than
+0.2 L. Moving the fixed tank vessel clear of a nearby moved outlet prevents
+the vessel wall from catching new parcels; default authored tank placements
+retain their original vessel position.
+
+| Pipe wall | Step (s) | Water energy residual (J) | Numerical correction (J) | Contact loss (J) | Wall time (s) |
+| --- | --- | --- | --- | --- | --- |
+| Glass | 1/240 | -7.59e-8 | 0.6381 | 45.8152 | 1.53 |
+| Glass | 1/480 | -1.71e-7 | 0.6331 | 46.1353 | 1.87 |
+| Oak | 1/240 | -2.89e-7 | 0.6394 | 45.8891 | 1.56 |
+| Oak | 1/480 | -1.78e-8 | 0.6346 | 45.9904 | 1.79 |
+| Iron | 1/240 | -1.54e-7 | 0.6408 | 45.8548 | 1.54 |
+| Iron | 1/480 | +3.59e-8 | 0.6373 | 45.9381 | 1.83 |
+
+Volume residuals are below 5.3e-18 m³ and water momentum residual norms below
+9.3e-10 N s. The ledgers include source/gravity impulses, contact transfer,
+pressure/viscous work and explicit numerical correction. Fixed reservoir
+support reactions remain recorded. The moving pipe/fix/ground system's full
+reaction and dissipated-work reconciliation is not established by those water
+receipts. The correction and uncalibrated parcel pressure model must not be
+presented as calibrated pipe hydraulics.
+
+A separate straight-pipe snapshot comparison starts each glass/oak/iron ball
+with zero spin. At 0.5 s, 1/480 s steps, native friction has produced
+21.58/21.34/21.58 rad/s spin; measured tangential contact-point slips are
+-0.0000010/-0.0000020/-0.0000071 m/s. The contact offset uses the actual
+40 mm sphere radius and the 15° floor normal. No no-slip velocity assignment
+is used.
+
+The 80 mm ball comparison starts at rest inside a 1.2 m, 20° reducer. Native
+contact/friction creates its later motion; no velocity or spin is assigned.
+At both 1/240 and 1/480 s, glass/oak/iron balls pass a 90 mm outlet and stop
+near x=0.4006 m at a 30 mm outlet. Passing runs' mechanical-energy changes
+over 3 s are -3.76/-1.07/-11.83 J at 1/240 s; no mechanical energy increase
+was observed. This is a bounded energy observation, not an accounting of every
+rolling/contact loss or a closed fluid/ball coupling audit.
+
+Unsupported: sealed pipe pressure/flow networks, calibrated friction factors,
+water hammer, pumps, internal valves, leakage seals, resolved free surfaces,
+pipe heat/failure, and water drag on a ball inside a pipe. Bore changes alter
+real geometry; they do not install a declared hydraulic-resistance law.
+Existing authored goals, pars and physical test tolerances are unchanged.
+Native engine SHA-256:
+`0bcf6978067ec59ab0b89325abb8feef051e398594169c602e664a989e2883a0`.
+
+Verification: 53/53 game checks in 93.996 s; 32/32 electrical checks in
+44.846 s; 22/22 water/launch checks (including six plumbing checks) in
+60.104 s, plus the new slip check in 0.288 s. Native water, live-world and
+precise-rigid CTest targets passed 3/3 in 14.83 s. Plumbing library, bore
+adjustments, version save/reload and existing water lessons passed on desktop
+and phone portrait/landscape: 3/3 browser checks in 66.662 s.
+The additional marble-height and removable-platform browser check passed across all three viewports in 14.710 s.

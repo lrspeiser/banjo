@@ -8,6 +8,19 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 12 plumbing update: straight hollow pipes, elbows, reducers and
+grounded scaffolding are placeable. Native rigid contact moves marbles; native
+falling-water contact routes finite gravity-fed parcels through the same
+walls. Inside radius changes actual clearance. Removing pipe mounts lets the
+body fall; a separate platform supports a loose board by contact. Same-density
+box compounds now integrate mass/centroid/inertia from their clipped union
+boundary, avoiding overlap sampling limits for thin rotated walls. Mixed-density
+and cylinder unions retain bounded sampling. Worlds containing only precise
+bodies can open, step and save without an artificial lattice marker. This does
+not add sealed hydraulic networks, calibrated pipe loss/pressure, fluid/ball
+drag inside pipes or structural failure of ideal anchored frames. See
+[pipe measurements](sandbox-water-launch-measured.md#hollow-pipes-and-scaffolding-october-12).
+
 October 12 solar feedback correction: proposed panel positions now receive
 native ready-state sunlight/occlusion samples without stepping or charging
 the live machine. The meter and obstruction guide clear their old results

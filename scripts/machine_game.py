@@ -35,10 +35,11 @@ import machine_world as mw
 import sandbox_mechanics
 import sandbox_electrics
 import sandbox_water_launch
+import sandbox_plumbing
 import sandbox_combinations
 import sandbox_variants
 
-SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_combinations)
+SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations)
 EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel', 'easy-river-wheel',
               'easy-spring', 'easy-gears', 'easy-weight', 'easy-motor', 'easy-power', 'easy-switch',
               'easy-bulb', 'easy-loop', 'easy-water-receiver', 'easy-divert-water', 'easy-heat', 'easy-catapult',
@@ -123,6 +124,11 @@ def free_build():
         for row in module.TRAY:
             tray[row['piece']] = dict(copy.deepcopy(row), sandbox_builder=True)
     level['tray'] = list(tray.values())
+    marble = next(row for row in level['tray'] if row['piece']=='marble')
+    marble['knobs'].update(placement=dict(choices=['on surface','at height'],default='on surface',label='starting position'),
+        height_m=dict(min=.05,max=2,step=.01,default=.6,label='center height (m)'))
+    marble['knobs']['material']['choices'].append('glass')
+    marble['knobs']['diameter_m']['choices'].extend([.08,.10])
     link = next(row for row in level['tray'] if row['piece'] == 'link')
     link['knobs']['kind']['choices'].append('spring')
     link['knobs'].update(rest_m=dict(min=.01, max=3, default=.3, step=.01, label='spring relaxed length (m)'),
@@ -462,7 +468,7 @@ def _marble(name, k, ctx):
     d = k.get('diameter_m', 0.04)
     part = {'name': name, 'shape': 'sphere', 'material': k.get('material', 'iron'), 'size_m': [d, d, d],
             'at_m': [k['x_m'], 0.0, k.get('z_m', 0.0)], 'turn_deg': [0.0, 0.0, 0.0], 'fixed': False}
-    part['at_m'][1] = round(rest_height(part, ctx['parts']), 4)
+    part['at_m'][1] = round(k['height_m'] if k.get('placement')=='at height' else rest_height(part, ctx['parts']), 4)
     return {'parts': [part]}
 
 
@@ -1000,6 +1006,17 @@ def ports(checked, compiled):
             h = math.radians(way)
             add('top end', 'in', top, fwd)
             add('far end', 'out', end, [math.cos(h), 0.0, -math.sin(h)])
+        elif p['piece'] in sandbox_plumbing.PIPE_KINDS:
+            route = sandbox_plumbing.path(p, p['piece'])
+            rotation = mw.heading(p.get('yaw_deg',0),0,0)
+            origin = [p['x_m'],p['height_m'],p.get('z_m',0)]
+            for label,kind,point,a,b in (('inlet','in',route[0],route[0],route[1]),
+                                       ('outlet','out',route[-1],route[-2],route[-1])):
+                along = [b[j]-a[j] for j in range(3)];length=math.hypot(*along)
+                direction=mw._mat_apply(rotation,[v/length for v in along])
+                at=mw._mat_apply(rotation,point)
+                add(label,kind,[origin[j]+at[j] for j in range(3)],direction)
+                out[-1]['bore_radius_m']=p.get('outlet_radius_m',p['radius_m']) if kind=='out' else p['radius_m']
         elif p['piece'] == 'funnel':
             # In at its mouth, from above; out of its hole, falling straight down.
             depth = p.get('depth_m', 0.12)
@@ -1031,12 +1048,14 @@ def _connect(p, m, q):
     another piece -- moved by the gap between m and where m should be,
     across by x_m and z_m and up by its height -- or None when the two do not
     connect."""
-    rise_knob = 'height_m' if p['piece'] in ('flipflop', 'funnel') else 'top_height_m'
+    rise_knob = 'height_m' if p['piece'] in ('flipflop', 'funnel', *sandbox_plumbing.PIPE_KINDS) else 'top_height_m'
 
     def moved_by(target):
         return {'x_m': p['x_m'] + target[0] - m['at'][0], 'z_m': p.get('z_m', 0.0) + target[2] - m['at'][2],
                 rise_knob: p[rise_knob] + target[1] - m['at'][1]}
     way = m['dir']
+    if p['piece'] in sandbox_plumbing.PIPE_KINDS and m['port']=='inlet' and q['kind']=='out':
+        return moved_by([q['at'][j]+.015*q['dir'][j] for j in range(3)])
     if m['port'] == 'top end' and q['kind'] == 'out':
         # Under it and a little past it: what rolls off drops onto this.
         return moved_by([q['at'][0] + 0.03 * q['dir'][0], q['at'][1] - 0.04, q['at'][2] + 0.03 * q['dir'][2]])
@@ -1062,7 +1081,14 @@ def _connect(p, m, q):
 def _seat(p, q):
     """A marble at the top of a track: just in from its end."""
     r = 0.5 * p.get('diameter_m', 0.04)
-    return {'x_m': q['at'][0] + (0.03 + r) * q['dir'][0], 'z_m': q['at'][2] + (0.03 + r) * q['dir'][2]}
+    if q.get('bore_radius_m') is not None and q['kind']=='in':
+        if r+.005 >= q['bore_radius_m']:return None
+        along=q['dir']; yaw=math.degrees(math.atan2(-along[2],along[0]));side=mw._mat_apply(mw.heading(yaw,0,0),[0,0,1])
+        up=[side[1]*along[2]-side[2]*along[1],side[2]*along[0]-side[0]*along[2],side[0]*along[1]-side[1]*along[0]]
+        at=[q['at'][j]+(.03+r)*along[j]-(q['bore_radius_m']-r-.015)*up[j] for j in range(3)]
+        return dict(x_m=at[0],z_m=at[2],height_m=at[1],placement='at height')
+    return {'x_m': q['at'][0] + (0.03 + r) * q['dir'][0], 'z_m': q['at'][2] + (0.03 + r) * q['dir'][2],
+            **({'placement':'on surface'} if p.get('placement')=='at height' else {})}
 
 
 def join_to(level, placed, index, to, port):
@@ -1077,16 +1103,19 @@ def join_to(level, placed, index, to, port):
         have = [r['port'] for r in found if r['piece'] == to]
         raise LevelRefused([f'{what}: piece {to + 1} has no port "{port}"' + (f' (it has {", ".join(have)})' if have else '')])
     p = checked[index]
-    if q['kind'] == 'out' and p['piece'] in ('track', 'shelf', 'bend'):
+    if q['kind'] == 'out' and p['piece'] in ('track', 'shelf', 'bend', *sandbox_plumbing.PIPE_KINDS):
         # It starts the way what leaves there goes: turned straight away, it
         # would run into what it joins (a turn there is a bend's to make).
-        p = dict(p, yaw_deg=round(math.degrees(math.atan2(-q['dir'][2], q['dir'][0]))))
+        yaw=math.degrees(math.atan2(-q['dir'][2],q['dir'][0]))
+        if p['piece']=='pipe_elbow' and p.get('plane','horizontal')=='horizontal':
+            yaw-=p['bend_deg']/(2*math.ceil(abs(p['bend_deg'])/22.5))
+        p = dict(p, yaw_deg=round(yaw))
         placed = list(placed)
         placed[index] = dict(placed[index], yaw_deg=p['yaw_deg'])
         _, checked, _, compiled = _assemble(level, placed[:index + 1], lenient=True)
         found = ports(checked, compiled)
     if p['piece'] == 'marble':
-        knobs = _seat(p, q) if q['port'] == 'top end' else None
+        knobs = _seat(p, q) if q['port']=='top end' or q.get('bore_radius_m') is not None and q['kind']=='in' else None
         if knobs:
             # Marbles joined to the same top end line up along it, one behind
             # another, rather than one on top of the other.
@@ -1095,14 +1124,15 @@ def join_to(level, placed, index, to, port):
             for k in range(40):
                 at = [knobs['x_m'] + k * gap * q['dir'][0], knobs['z_m'] + k * gap * q['dir'][2]]
                 if all(math.dist(at, o) > 0.5 * gap for o in taken):
-                    knobs = {'x_m': at[0], 'z_m': at[1]}
+                    knobs = dict(knobs,x_m=at[0],z_m=at[1])
+                    if knobs.get('placement')=='at height':knobs['height_m']+=k*gap*q['dir'][1]
                     break
     else:
         knobs = next((k for m in found if m['piece'] == index for k in [_connect(p, m, q)] if k), None)
     if not knobs:
         raise LevelRefused([f'{what}: a {p["piece"]} does not join a {port}'])
     out = list(placed)
-    out[index] = dict(placed[index], **{k: round(v, 4) for k, v in knobs.items()})
+    out[index] = dict(placed[index], **{k: round(v,4) if isinstance(v,(int,float)) else v for k,v in knobs.items()})
     return out
 
 
@@ -1149,7 +1179,7 @@ def snap(level, placed, index, compiled):
 
     def consider(d, knobs, to):
         nonlocal best
-        if best is None or d < best[0]:
+        if knobs and (best is None or d < best[0]):
             best = (d, knobs, to)
 
     def near(a, b):
@@ -1161,14 +1191,14 @@ def snap(level, placed, index, compiled):
             if knobs:
                 consider(d, knobs, q)
     for q in theirs:
-        if p['piece'] == 'marble' and q['port'] == 'top end':
+        if p['piece']=='marble' and (q['port']=='top end' or q.get('bore_radius_m') is not None and q['kind']=='in'):
             d, rise = near([p['x_m'], 0.0, p.get('z_m', 0.0)], q['at'])
             if d <= SNAP_M:
                 consider(d, _seat(p, q), q)
     if best is None:
         return None
     _, knobs, to = best
-    return {'knobs': {k: round(v, 4) for k, v in knobs.items()}, 'to': to['name'], 'port': to['port']}
+    return {'knobs': {k: round(v,4) if isinstance(v,(int,float)) else v for k,v in knobs.items()}, 'to': to['name'], 'port': to['port']}
 
 
 def editing_guide(level, checked, index, compiled, key):
@@ -1326,7 +1356,8 @@ def ghost(level, placements, index, snapping=False, edit_key=None):
             tray = next(t for t in level['tray'] if t['piece'] == checked[index]['piece'])
             knobs = {k: v for k, v in found['knobs'].items() if k in tray['knobs']}
             # Within half a slider step is where it is: the page sets knobs on their steps.
-            moved = any(abs(knobs[k] - checked[index].get(k, 0.0)) > 0.006 for k in knobs)
+            moved = any(abs(v-checked[index].get(k,0.0))>.006 if isinstance(v,(int,float)) else v!=checked[index].get(k)
+                        for k,v in knobs.items())
             reply['snap'] = dict(found, knobs=knobs, moved=moved)
             if not snapping and moved:
                 reply.pop('snap')      # only a piece being moved by hand is snapped

@@ -655,6 +655,64 @@ class Puzzles(unittest.TestCase):
         self.press('Restore version');self.wait(READY,60)
         self.assertEqual(self.js('window.machinePlacements()'),original)
 
+    def test_plumbing_library_radius_controls_saved_versions_and_phone_scene(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(width=width,height=height):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.wait("!document.getElementById('sandbox-screen').hidden",10)
+                self.press('Start from Water through pipes');self.wait(READY,60)
+                self.assertEqual([p['piece'] for p in self.js('machinePlacements()')],
+                                 ['water_tank','pipe_elbow','pipe_reducer','water_collector'])
+                self.press('Add a piece');self.slide('Search pieces','pipe')
+                self.assertEqual(self.js("[...document.querySelectorAll('#piece-grid strong')].map(e=>e.textContent)"),
+                                 ['straight pipe','pipe elbow','pipe reducer'])
+                self.press('Back to sandbox')
+                self.slide('Adjust a piece','2');self.ghost()
+                self.slide('outlet inside radius (m) of your pipe_reducer 3',.09)
+                self.assertTrue(self.ghost()['fits'])
+                self.assertEqual(self.ghost()['p']['outlet_radius_m'],.09)
+                self.press('Set it down');self.wait(READY,60)
+                before=self.js('machineDesign().versions.length')
+                self.press('Save version');self.wait(f'machineDesign().versions.length==={before+1}',10)
+                self.page.send('Page.reload',{});self.wait(READY,60)
+                self.assertEqual(self.js('machinePlacements()[2].outlet_radius_m'),.09)
+                self.click_visible('Run it')
+                self.wait("Number(document.getElementById('collector-status').textContent.match(/Container ([\\d.]+)/)?.[1])>0",30)
+                self.click_visible('Pause')
+                self.assertTrue(self.js("Number(document.getElementById('collector-status').textContent.match(/Container ([\\d.]+)/)?.[1])>0"))
+                self.press('Set up again');self.wait(READY,60)
+                self.slide('Adjust a piece','1');self.ghost()
+                self.slide('support of your pipe_elbow 2','loose')
+                self.assertTrue(self.ghost()['fits'])
+                self.assertEqual(self.js("machineGhostState().p.support"),'loose')
+                self.press('Cancel')
+
+    def test_pipe_marble_and_removable_platform_work_through_ordinary_controls(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(width=width,height=height):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.wait("!document.getElementById('sandbox-screen').hidden",10)
+                self.press('Start from Marble through a pipe');self.wait(READY,60)
+                self.click_visible('Run it')
+                self.wait("machineBodies()['your marble 2'][0]>.65",30)
+                self.click_visible('Pause');self.press('Set up again');self.wait(READY,60)
+                self.slide('Adjust a piece','1');self.ghost()
+                self.slide('starting position of your marble 2','on surface');self.ghost()
+                self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"center height (m) of your marble 2\"]')?.getClientRects().length)"))
+                self.slide('starting position of your marble 2','at height');self.ghost()
+                self.assertTrue(self.ghost()['fits'])
+                self.press('Set it down');self.wait(READY,60)
+                self.js("document.getElementById('sandbox-open').click()")
+                self.wait("!document.getElementById('sandbox-screen').hidden",10)
+                self.press('Start from Support a loose board');self.wait(READY,60)
+                self.click_visible('Run it');self.wait("/World [1-9]/.test(document.getElementById('clock').textContent)",30)
+                self.click_visible('Pause')
+                self.assertAlmostEqual(self.js("machineBodies()['loose board'][1]"),.62,delta=.001)
+                self.press('Set up again');self.wait(READY,60)
+                self.press('Remove your scaffold 1');self.wait(f'machinePlacements().length===0 && {READY}',60)
+                self.click_visible('Run it');self.wait("machineBodies()['loose board'][1]<.1",30)
+                self.click_visible('Pause')
+
     def place_river_wheel(self):
         self.press('Add a water wheel');initial=self.ghost()['p']
         self.assertEqual(initial['radius_m'],self.river_solution['radius_m'],'The river base must provide its usable wheel size before editing')

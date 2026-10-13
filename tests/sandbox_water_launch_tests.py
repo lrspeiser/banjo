@@ -14,6 +14,7 @@ sys.path.insert(0,str(ROOT/'scripts'))
 import machine_world as mw
 import machine_game as mg
 import sandbox_water_launch as sw
+import sandbox_plumbing as plumbing
 
 ENGINE=Path(os.environ.get('BANJO_LIVE_ENGINE',ROOT/'build/rube/Release/banjo_live_world_run.exe')).resolve()
 if '--engine' in sys.argv:
@@ -356,6 +357,158 @@ class WaterLaunchTests(unittest.TestCase):
                     self.assertIsNone(r['error'])
                     self.assertTrue(r['stations'][0]['done'],r)
                     print('\n river discharge',discharge,'seed',seed,'wins',r['stations'][0]['at_s'],'s; wall',r['wall_s'],'s')
+
+
+class PlumbingTests(unittest.TestCase):
+    def build(self, base, placements, logs):
+        level=mg.requested_level(dict(level='free',base=base))
+        compiled=mw.compile_spec(mg.compose(level,placements)[0])
+        engine,_,_=mw.build_engine(ENGINE,compiled,logs)
+        return engine,compiled
+
+    def test_examples_fit_and_new_geometry_is_hollow_and_grounded(self):
+        for template in plumbing.TEMPLATES:
+            level=mg.requested_level(dict(level='free',base=template['base']))
+            for index in range(len(template['placements'])):
+                ghost=mg.ghost(level,template['placements'],index)
+                self.assertTrue(ghost['fits'],ghost['problems'])
+        level=mg.free_build()
+        for piece in plumbing.PIPE_KINDS:
+            ghost=mg.ghost(level,[dict(piece=piece)],0)
+            self.assertTrue(ghost['fits'],ghost['problems'])
+            shell=next(p for p in ghost['parts'] if p['name']==f'your {piece} 1')
+            self.assertEqual(shell['shape'],'compound')
+            self.assertLessEqual(len(shell['parts']),64)
+            for sub in shell['parts']:self.assertEqual(sub['shape'],'box')
+        for piece,parameters in [('pipe',dict(drop_deg=90,length_m=.6,height_m=1.3)),
+                                 ('pipe_elbow',dict(plane='downward',height_m=1.3))]:
+            self.assertTrue(mg.ghost(level,[dict(piece=piece,**parameters)],0)['fits'])
+
+    def test_pipe_inlets_seat_marble_and_join_sections_with_saved_knobs(self):
+        level=mg.free_build();initial=[dict(piece='pipe'),dict(piece='marble')]
+        seated=mg.join_to(level,initial,1,0,'inlet')
+        self.assertEqual(seated[1]['placement'],'at height')
+        self.assertLess(seated[1]['height_m'],1)
+        ghost=mg.ghost(level,seated,1)
+        self.assertTrue(ghost['fits'],ghost['problems'])
+        placed=[dict(piece='pipe'),dict(piece='pipe',x_m=1.2,height_m=.8)]
+        joined=mg.join_to(level,placed,1,0,'outlet')
+        g=mg.ghost(level,joined,1)
+        self.assertTrue(g['fits'],g['problems'])
+        checked=mg.check_placements(level,joined)[0]
+        compiled=mw.compile_spec(mg.compose(level,joined)[0]);ports=mg.ports(checked,compiled)
+        end=next(p for p in ports if p['piece']==0 and p['kind']=='out')
+        start=next(p for p in ports if p['piece']==1 and p['kind']=='in')
+        self.assertAlmostEqual(math.dist(end['at'],start['at']),.015,delta=.00015)
+
+    def test_pure_precise_world_needs_no_hidden_lattice_marker_and_support_removal_falls(self):
+        for support in ('scaffolding','loose'):
+            with self.subTest(support=support),tempfile.TemporaryDirectory() as logs:
+                engine,compiled=self.build(sw.DRY_BASE,[dict(piece='pipe',support=support)],logs)
+                try:
+                    self.assertTrue(all(p['shape']=='compound' for p in compiled['parts']))
+                    self.assertEqual(len(engine.first['bodies']),3 if support=='scaffolding' else 1)
+                    start=next(b for b in engine.first['bodies'] if b['name']=='your pipe 1')['position_m'][1]
+                    result=engine.op(op='step',dt=1/240,n=120,moved=False)
+                    height=next(b for b in result['bodies'] if b['name']=='your pipe 1')['position_m'][1]
+                    if support=='scaffolding':self.assertAlmostEqual(height,start,delta=.001)
+                    else:self.assertLess(height,start-.2)
+                    snapshot=engine.op(op='snapshot')
+                    self.assertTrue(snapshot['ok'],snapshot)
+                    self.assertEqual(len(snapshot['snapshot']['bodies']),len(compiled['parts']))
+                finally:engine.close()
+
+    def test_gravity_tank_elbow_reducer_and_collector_compare_materials_and_steps(self):
+        template=plumbing.TEMPLATES[0]
+        for material in ('glass','oak','iron'):
+            for dt in (1/240,1/480):
+                with self.subTest(material=material,dt=dt),tempfile.TemporaryDirectory() as logs:
+                    placements=copy.deepcopy(template['placements'])
+                    for p in placements:
+                        if p['piece'] in plumbing.PIPE_KINDS:p['material']=material
+                    began=time.perf_counter();engine,compiled=self.build(template['base'],placements,logs)
+                    try:
+                        for _ in range(80):result=engine.op(op='step',dt=dt,n=round(.1/dt),moved=False)
+                        water=result['parcels'];litres=mw.water_in_region_l(water,compiled['water_regions'][0])
+                        self.assertAlmostEqual(litres,3.968,delta=1e-8)
+                        self.assertLess(abs(water['residual_m3']),1e-12)
+                        self.assertLess(abs(water['energy_residual_j']),1e-6)
+                        self.assertLess(math.hypot(*water['momentum_residual_n_s']),1e-8)
+                        self.assertGreater(water['contact_loss_j'],0)
+                        source=water['sources'][0]
+                        self.assertAlmostEqual(source['remaining_m3']+source['emitted_m3'],.004,delta=1e-12)
+                        print('PIPE WATER',material,dt,'L',litres,'volume residual',water['residual_m3'],
+                            'energy residual',water['energy_residual_j'],'momentum residual',water['momentum_residual_n_s'],
+                            'contact loss',water['contact_loss_j'],'numerical correction',water['numerical_correction_j'],
+                            'body work',water['body_work_j'],'wall seconds',time.perf_counter()-began,flush=True)
+                    finally:engine.close()
+        wrong=copy.deepcopy(template['placements']);wrong[1]['yaw_deg']=90
+        with tempfile.TemporaryDirectory() as logs:
+            engine,compiled=self.build(template['base'],wrong,logs)
+            try:
+                for _ in range(80):result=engine.op(op='step',dt=1/240,n=24,moved=False)
+                self.assertLess(mw.water_in_region_l(result['parcels'],compiled['water_regions'][0]),.2)
+            finally:engine.close()
+
+    def test_real_bore_blocks_an_oversized_ball_without_a_script(self):
+        for material in ('glass','oak','iron'):
+            for radius,passes in ((.09,True),(.03,False)):
+                for dt in (1/240,1/480):
+                    with self.subTest(material=material,radius=radius,dt=dt),tempfile.TemporaryDirectory() as logs:
+                        placements=[dict(piece='pipe_reducer',x_m=-.6,z_m=0,height_m=1,length_m=1.2,drop_deg=20,
+                            radius_m=.12,outlet_radius_m=radius,material=material),
+                            dict(piece='marble',x_m=-.4667,z_m=0,height_m=.9026,placement='at height',diameter_m=.08,material=material)]
+                        engine,compiled=self.build(sw.DRY_BASE,placements,logs)
+                        try:
+                            initial=engine.op(op='thermo')['thermo']['ledger']['mechanical_j'];peak=0
+                            for _ in range(30):
+                                result=engine.op(op='step',dt=dt,n=round(.1/dt),moved=False)
+                                ball=next(b for b in result['bodies'] if b['name']=='your marble 2')
+                                peak=max(peak,ball['position_m'][0])
+                            self.assertEqual(peak>.6,passes)
+                            energy=engine.op(op='thermo')['thermo']['ledger']['mechanical_j']
+                            self.assertLessEqual(energy,initial+.01)
+                            print('PIPE BALL',material,dt,'outlet radius',radius,'max x',peak,'mass',ball['mass_kg'],
+                                  'mechanical delta',energy-initial,flush=True)
+                        finally:engine.close()
+
+    def test_scaffolding_holds_a_loose_board_by_contact_and_can_be_removed(self):
+        template=plumbing.TEMPLATES[2]
+        for material in ('glass','oak','iron'):
+            for support in (True,False):
+                with self.subTest(material=material,support=support),tempfile.TemporaryDirectory() as logs:
+                    base=copy.deepcopy(template['base']);base['parts'][0]['material']=material
+                    placements=[dict(template['placements'][0],material=material)] if support else []
+                    engine,_=self.build(base,placements,logs)
+                    try:
+                        result=engine.op(op='step',dt=1/240,n=240,moved=False)
+                        board=next(b for b in result['bodies'] if b['name']=='loose board')
+                        marble=next(b for b in result['bodies'] if b['name']=='waiting marble')
+                        if support:
+                            self.assertAlmostEqual(board['position_m'][1],.62,delta=.001)
+                            self.assertAlmostEqual(marble['position_m'][1],.68,delta=.001)
+                        else:self.assertLess(board['position_m'][1],.1)
+                        print('SCAFFOLD',material,'supported',support,'board y',board['position_m'][1],flush=True)
+                    finally:engine.close()
+
+    def test_ball_spin_and_contact_slip_come_from_native_friction(self):
+        slope=math.radians(15);normal=[math.sin(slope),math.cos(slope),0];along=[math.cos(slope),-math.sin(slope),0]
+        for material in ('glass','oak','iron'):
+            with self.subTest(material=material),tempfile.TemporaryDirectory() as logs:
+                placements=[dict(piece='pipe',x_m=-.8,z_m=0,height_m=1,radius_m=.12,material=material),
+                    dict(piece='marble',x_m=-.71875,z_m=0,height_m=.94668,placement='at height',diameter_m=.08,material=material)]
+                engine,_=self.build(sw.DRY_BASE,placements,logs)
+                try:
+                    def pose():return next(b for b in engine.op(op='snapshot')['snapshot']['bodies'] if b['name']=='your marble 2')['pose']
+                    initial=pose();self.assertEqual(initial['w_rad_s'],[0,0,0])
+                    engine.op(op='step',dt=1/480,n=240,moved=False)
+                    state=pose();spin=state['w_rad_s'];v=state['v_m_s'];offset=[-.04*n for n in normal]
+                    cross=[spin[1]*offset[2]-spin[2]*offset[1],spin[2]*offset[0]-spin[0]*offset[2],spin[0]*offset[1]-spin[1]*offset[0]]
+                    slip=sum((v[i]+cross[i])*along[i] for i in range(3))
+                    self.assertGreater(math.hypot(*spin),1)
+                    self.assertLess(abs(slip),.1)
+                    print('PIPE ROLLING',material,'dt',1/480,'linear',v,'spin',spin,'contact-point along slip',slip,flush=True)
+                finally:engine.close()
 
 
 if __name__=='__main__':unittest.main()

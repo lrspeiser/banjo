@@ -5555,8 +5555,8 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         // lives. Refusing the whole block here as well meant a room could
         // not have a hot chamber in it merely because something exact stood
         // in the same valley.
-        if (request.bodies.empty() || request.loose_cells)
-            throw std::invalid_argument("precise-rigid rooms need at least one lattice body and no loose-cell declarations");
+        if (request.loose_cells)
+            throw std::invalid_argument("precise-rigid rooms cannot use loose-cell declarations");
         for (const SceneBody &body : request.bodies)
             if (impl.precise_bodies.count(body.name) ||
                 (!body.join.empty() && impl.precise_bodies.count(body.join)))

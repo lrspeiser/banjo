@@ -2,6 +2,46 @@
 
 October 12, 2026. Open `/play` to choose eight chain-reaction levels, twenty-three piece lessons and three advanced electronics activities. Each level starts with an object or visible goal area and a tray of pieces you add to make the goal happen. The engine runs the whole thing; nothing about the outcome is decided by the game.
 
+## Pipes and scaffolding
+
+Sandbox has **straight pipe**, **pipe elbow**, **pipe reducer** and
+**scaffolding** cards. Pipes have colliding hollow walls, so the same opening
+can carry native water parcels or a marble. Glass walls let you see inside;
+oak and iron use the same offered geometry with their own mass and contact
+properties. Choose the inlet position/height, inside radius, material and
+support. Straight pipes and reducers expose length and 5–90° downhill angle;
+reducers additionally expose an independent outlet radius. Elbows expose bend
+radius, ±45°/±90° turn and **horizontal**/**downward** bend plane. Horizontal
+elbows have an independent fall; downward elbows derive it from the bend.
+A bend radius smaller than twice the outside pipe radius is refused.
+
+Green inlet and amber outlet dots use the real route endpoints. Drag a pipe
+near an outlet to snap its inlet there; the connector leaves 15 mm of clearance
+for the independently colliding walls. Move a marble near an inlet to seat it
+inside. Sandbox marbles also expose **starting position: on surface / at
+height**, a center height, glass material and 8/10 cm sizes. Ordinary placement
+still rests on the highest surface; the chosen height lets a ball enter a
+hollow route instead of being placed on its roof. Nothing forces its later
+velocity or spin.
+
+Pipe **support: scaffolding / loose** adds/removes two grounded trestles and
+declared mounting bolts (one for a vertical straight pipe). These supports
+have real geometry and count toward construction energy. **Scaffolding** is
+a separate grounded platform: adjust height, width, depth, direction and
+material, then place it below a loose board or other part. Contact supports
+the object; adding a platform does not anchor the object itself. Ground or
+object penetration is refused rather than hidden.
+
+Try the three editable examples **Water through pipes**, **Marble through a
+pipe** and **Support a loose board**. The first connects a finite gravity tank,
+downward elbow, reducer and separate container. The second uses a straight
+pipe and a waiting bin. The third lets you remove a platform to watch its board
+and marble fall. Water tank vessels move clear of their outlet when the
+outlet is relocated near the tank wall, preventing that wall from catching
+newly emitted water. These are gravity-driven routes, not a pressure network,
+calibrated hydraulic resistance, leaking joints, valves inside pipes or
+structural buckling. See [measurements and limits](sandbox-water-launch-measured.md#hollow-pipes-and-scaffolding-october-12).
+
 ## Advanced electronics
 
 **Resistor** and **Capacitor** are separate Sandbox cards with A/B terminals.

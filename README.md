@@ -65,7 +65,7 @@ three stars.
 It opens **Your designs / Examples** gallery tabs with setup previews and **Add New Design**.
 New designs open immediately; rename them in the editor’s Design tab.
 Each design has a table with no goal and every piece in
-the tray: 35 cards including knives, mirrors, lenses, solar panels, tackle,
+the tray: 39 cards including knives, mirrors, lenses, solar panels, tackle,
 springs, gears, weights, motors, batteries, switches, bulbs, wires, water
 wheels, finite water tanks, heating coils and counterweight catapults.
 Gears are individual toothed wheels: choose their size, align their axles and
@@ -73,13 +73,20 @@ mesh their teeth. A separate wired battery/motor supplies power. **Turn the big
 wheel** teaches bridging a gap between a powered gear and a larger target;
 the **Fast wheel slow wheel** example uses the same contact-driven apparatus.
 Older saved gear pairs retain their original ideal coupling.
-There are 28 editable prebuilt designs, including a battery holder, a river workbench and a
+There are 31 editable prebuilt designs, including a battery holder, a river workbench and a
 river-powered gate lift. The river's current pushes submerged wheel paddles;
 connect the wheel's drum rope to a load to lift it.
 **Wheel in the river** teaches moving a wheel into that current. Tanks and
 wheels are separate pieces: open a tank's tap, aim its outlet at the paddles,
 and watch its native remaining water and flow decrease as it drains. These
 are fixed gravity reservoirs; free tipping/sloshing buckets remain future work.
+Straight pipes, elbows and reducers have hollow colliding walls for water and
+marbles, adjustable bores, downhill slopes and removable mounting scaffolding.
+Elbows can turn across the ground or bend a falling stream toward a horizontal
+outlet. Separate scaffolding platforms hold loose objects by contact. Try
+**Water through pipes**, **Marble through a pipe** and **Support a loose board**.
+These are gravity routes, not sealed pressure plumbing; see the
+[measurements and boundaries](docs/sandbox-water-launch-measured.md#hollow-pipes-and-scaffolding-october-12).
 Pieces snap
 together, can be joined with glue, a pin, a string or a spring, and a build can be shared
 as a link. **Add a piece** opens a full-screen library with large thumbnails,

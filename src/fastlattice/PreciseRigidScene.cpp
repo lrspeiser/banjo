@@ -1,4 +1,5 @@
 #include "fastlattice/PreciseRigidScene.hpp"
+#include "water/CompoundWaterSurface.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <array>
@@ -86,6 +87,56 @@ struct Moments {
                 second.m[a][k] += own.m[a][k] + m * ((a == k ? dot(at, at) : 0) - c[a] * c[k]);
     }
 };
+
+// Integrate tetrahedra from the exposed boundary of a same-density box union.
+// All box faces are planar, so clipping (already used for water contact) is
+// exact apart from floating-point arithmetic. This avoids allocating millions
+// of overlap samples for thin, rotated hollow walls. Earlier parts continue to
+// own overlap: differences of prefix-union volumes assign each part its matter.
+// Cylinders and mixed densities retain the existing bounded sampling model.
+bool exactBoxUnion(const std::vector<Solid> &solids, Moments &moments,
+                   std::vector<double> &part_mass_kg) {
+    if (solids.empty()) return false;
+    const double density = solids.front().density;
+    for (const auto &s : solids) {
+        const auto d = s.part->geometry.dimensions_m;
+        if (s.part->geometry.kind != PrimitiveKind::Box || s.density != density ||
+            std::max({d.x,d.y,d.z}) > 6) return false;
+    }
+    std::vector<water::CompoundWaterPart> prefix;
+    double previous_volume = 0;
+    for (std::size_t i = 0; i < solids.size(); ++i) {
+        const auto &p = *solids[i].part;
+        prefix.push_back({p.geometry, p.center_local_m, p.rotation_local});
+        Moments union_moments;
+        // No surface subdivision is needed for planar box face integration.
+        for (const auto &face : water::compoundWaterSurface(prefix, 8)) {
+            for (int triangle = 1; triangle < 3; ++triangle) {
+                const Vec3 a=face.corner[0], b=face.corner[triangle], c=face.corner[triangle+1];
+                const double volume = dot(a,cross(b,c))/6;
+                const Vec3 sum = a+b+c;
+                const double aa[3]{a.x,a.y,a.z}, bb[3]{b.x,b.y,b.z}, cc[3]{c.x,c.y,c.z}, ss[3]{sum.x,sum.y,sum.z};
+                Mat3 integral;
+                double trace = 0;
+                for (int j=0; j<3; ++j) for (int k=0; k<3; ++k) {
+                    integral.m[j][k] = volume*(ss[j]*ss[k]+aa[j]*aa[k]+bb[j]*bb[k]+cc[j]*cc[k])/20;
+                    if (j==k) trace += integral.m[j][k];
+                }
+                union_moments.volume += volume;
+                union_moments.mass += density*volume;
+                union_moments.first += (density*volume/4)*sum;
+                for (int j=0; j<3; ++j) for (int k=0; k<3; ++k)
+                    union_moments.second.m[j][k] += density*((j==k ? trace : 0)-integral.m[j][k]);
+            }
+        }
+        const double owned = union_moments.volume-previous_volume;
+        require(owned >= -1e-12, "box union material allocation lost volume");
+        part_mass_kg[i] = density*std::max(0.0, owned);
+        previous_volume = union_moments.volume;
+        moments = union_moments;
+    }
+    return true;
+}
 
 // Where a part runs into one listed before it, that space is the earlier
 // part's: take it back out of the later part's share. Each overlap is measured
@@ -252,7 +303,8 @@ std::vector<PreciseRigidBody> readPreciseRigidScene(const std::string &text) {
                 }
             }
         } else {
-            takeBackWhatEarlierPartsClaim(solids, moments, b.part_mass_kg);
+            if (!exactBoxUnion(solids, moments, b.part_mass_kg))
+                takeBackWhatEarlierPartsClaim(solids, moments, b.part_mass_kg);
         }
         require(moments.mass > 0 && moments.volume > 0, "precise compound has no matter");
 

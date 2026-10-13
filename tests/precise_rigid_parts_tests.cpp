@@ -45,6 +45,9 @@
 #include <numbers>
 #include <stdexcept>
 #include <string>
+#include <sstream>
+#include <iomanip>
+#include <chrono>
 
 using namespace banjo;
 using namespace banjo::fastlattice;
@@ -166,6 +169,78 @@ void overlappingBoxesAreOneUnion() {
         require(close(pair.inertia.m[0][0], ix, 1e-9) && close(pair.inertia.m[1][1], iy, 1e-9),
                 name(preset) + ": the union does not turn as the 300 mm box it is");
         require(close(pair.initial.center_of_mass_world_m.x, 0.05, 1e-9), name(preset) + ": the union's middle is not at x = 50 mm");
+    }
+}
+
+void hollowRotatedBoxUnionsHaveAnalyticalMassAndInertia() {
+    constexpr int facets=12;
+    constexpr double radius=.12, thickness=.02, length=1.5;
+    const double tangent=std::tan(kPi/facets), outside=radius+thickness;
+    const double area=facets*tangent*(outside*outside-radius*radius);
+    const double polar=facets*.5*tangent*(1+tangent*tangent/3)*
+        (std::pow(outside,4)-std::pow(radius,4));
+    for (MaterialPreset preset : {MaterialPreset::Glass, MaterialPreset::Oak, MaterialPreset::Iron}) {
+        for (double turn : {0.0, .3490658503988659}) {
+            const auto began=std::chrono::steady_clock::now();
+            std::ostringstream source; source << std::setprecision(17);
+            source << "[{\"name\":\"tube\",\"material\":\"" << sceneName(preset)
+                   << "\",\"position_m\":[0,1,0],\"parts\":[";
+            const Quat common{std::cos(turn/2),0,0,std::sin(turn/2)};
+            for (int i=0;i<facets;++i) {
+                const double angle=2*kPi*i/facets;
+                const Vec3 at=common.rotate({length/2,(radius+thickness/2)*std::cos(angle),
+                                           (radius+thickness/2)*std::sin(angle)});
+                // Rz(turn) Rx(angle), in w,x,y,z order.
+                const Quat q{std::cos(turn/2)*std::cos(angle/2), std::cos(turn/2)*std::sin(angle/2),
+                             std::sin(turn/2)*std::sin(angle/2), std::sin(turn/2)*std::cos(angle/2)};
+                if (i) source << ',';
+                source << "{\"dimensions_m\":[" << length << ',' << thickness << ',' << 2*outside*tangent
+                       << "],\"center_local_m\":[" << at.x << ',' << at.y << ',' << at.z
+                       << "],\"rotation_wxyz\":[" << q.w << ',' << q.x << ',' << q.y << ',' << q.z << "]}";
+            }
+            source << "]}]";
+            const auto body=one(source.str());
+            const double rho=density(preset), expected=rho*area*length;
+            require(close(body.mass_kg,expected,1e-9),sceneName(preset)+": hollow union counts shared wall corners twice");
+            const Vec3 centre=common.rotate({length/2,0,0})+Vec3{0,1,0};
+            require(lengthSquared(body.initial.center_of_mass_world_m-centre)<1e-20,"rotated hollow union has wrong centre of mass");
+            const auto about=[&](Vec3 axis) {
+                const double a[3]{axis.x,axis.y,axis.z}; double out=0;
+                for(int j=0;j<3;++j)for(int k=0;k<3;++k)out+=a[j]*body.inertia.m[j][k]*a[k];
+                return out;
+            };
+            require(close(about(common.rotate({1,0,0})),rho*length*polar,1e-9),"hollow axial inertia differs from polygon oracle");
+            require(close(about(common.rotate({0,1,0})),rho*(length*polar/2+area*length*length*length/12),1e-9),"hollow transverse inertia differs from polygon oracle");
+            double allocated=0;for(double mass:body.part_mass_kg){require(mass>=0,"negative union wall mass");allocated+=mass;}
+            require(close(allocated,body.mass_kg,1e-12),"native union part allocations do not sum to mass");
+            std::cout << "  hollow union " << sceneName(preset) << " turn " << turn << " mass " << body.mass_kg
+                      << " kg; relative residual " << (body.mass_kg-expected)/expected << "; build "
+                      << std::chrono::duration<double>(std::chrono::steady_clock::now()-began).count() << " s\n";
+        }
+    }
+}
+
+void aPureExactWorldFallsAndRestoresWithoutAMarker() {
+    for (const char *material : {"glass","oak","iron"}) {
+        TileImpactRequest request;
+        request.backend=BackendKind::CpuParallel;
+        request.authored_scene=true;
+        request.precise_rigid_scene_json=std::string(R"([{"name":"only body","material":")")+material+
+            R"(","position_m":[0,1,0],"parts":[{"dimensions_m":[0.1,0.1,0.1],"center_local_m":[0,0,0]}]}])";
+        const auto world=LiveWorld::open(request);
+        require(world->poses().size()==1,"pure exact world manufactured a lattice marker");
+        world->foreseeCollisions(1);
+        for(int i=0;i<48;++i)world->step(1.0/240);
+        const auto before=world->poses().front().position_m;
+        require(before.y<.9 && before.y>.75,"an unsupported exact body did not fall under gravity");
+        std::string why;const auto snapshot=world->snapshot(why);
+        require(!snapshot.empty(),"pure exact snapshot failed: "+why);
+        const auto restored=LiveWorld::open(request,snapshot);
+        require(restored->restored().tier=="whole" && restored->poses().size()==1,"pure exact restore was not whole");
+        require(lengthSquared(restored->poses().front().position_m-before)<1e-18,"pure exact restore moved its body");
+        restored->step(1.0/240);world->step(1.0/240);
+        require(lengthSquared(restored->poses().front().position_m-world->poses().front().position_m)<1e-16,
+                "pure exact restore changed its continued motion");
     }
 }
 
@@ -687,6 +762,8 @@ int main() {
         aCylinderWeighsAndTurnsAsACylinder();
         anAxleThroughItsWheelsIsCountedOnce();
         overlappingBoxesAreOneUnion();
+        hollowRotatedBoxUnionsHaveAnalyticalMassAndInertia();
+        aPureExactWorldFallsAndRestoresWithoutAMarker();
         aBodyStandsAtItsCentreOfMass();
         partsThatDoNotMeetAreRefused();
         malformedPartsAreRefused();
