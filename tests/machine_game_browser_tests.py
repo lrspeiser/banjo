@@ -500,7 +500,9 @@ class Puzzles(unittest.TestCase):
                     self.click_scene_socket(b,touch=width!=1280)
                     self.wait(f'!window.machineGhostState() && {READY}',60)
                 self.wait('window.machineFlowPreviewState()?.frames>0',30)
-                if not self.js('machineFlowPreviewState().playing'):
+                self.reveal_control("document.getElementById('flow-play')")
+                self.wait("document.getElementById('flow-play').getClientRects().length && /^(Play|Pause) preview$/.test(document.getElementById('flow-play').textContent)",10)
+                if self.js("document.getElementById('flow-play').textContent==='Play preview'"):
                     self.click_visible('Play preview')
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='lamp'&&/8\\.8 V/.test(r.text))",30)
                 self.wait("machinePowerFeedbackState().labels.filter(r=>r.wire&&r.text.includes('Thin')&&r.text.includes('0.01 mm²')).length===2",10)
@@ -512,13 +514,51 @@ class Puzzles(unittest.TestCase):
                     self.click_visible('Standard wire');self.ghost()
                     self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
                 self.wait('window.machineFlowPreviewState()?.frames>0',30)
-                if not self.js('machineFlowPreviewState().playing'):
+                self.reveal_control("document.getElementById('flow-play')")
+                self.wait("document.getElementById('flow-play').getClientRects().length && /^(Play|Pause) preview$/.test(document.getElementById('flow-play').textContent)",10)
+                if self.js("document.getElementById('flow-play').textContent==='Play preview'"):
                     self.click_visible('Play preview')
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='lamp'&&/11\\.9 V/.test(r.text))",30)
                 self.wait("machinePowerFeedbackState().labels.filter(r=>r.wire&&r.text.includes('Standard')&&r.text.includes('0.5 mm²')).length===2",10)
                 self.assertTrue(self.js("window.machinePowerFeedbackState().labels.some(r=>r.device==='lamp'&&/3\\.0 W/.test(r.text))"))
                 self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertGreater(next(d for d in self.js('window.machineContactState()')['liveDevices'] if d['kind']=='bulb')['power_w'],2)
+
+    def test_wire_readings_stay_at_scene_edges_with_leaders_and_do_not_cover_components(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-power',width,height,phone=width!=1280)
+                self.press('Add a battery');self.ghost();self.slide('Its voltage',12);self.ghost()
+                self.press('Set it down');self.wait(READY,30)
+                for terminal in ('plus','minus'):
+                    self.click_scene_socket('your battery 1:'+terminal,touch=width!=1280);self.ghost()
+                    self.click_visible('Standard wire');self.ghost()
+                    self.click_scene_socket('lamp:'+terminal,touch=width!=1280)
+                    self.wait(f'!machineGhostState() && {READY}',30)
+                self.wait('machineReadoutCallouts().labels.length===3',30)
+                self.wait('machineCamera().settled',30)
+                for moved in (False,True):
+                    if moved:
+                        start=self.empty_scene_point()
+                        self.drag(start,[start[0]-35,start[1]+10],touch=width!=1280)
+                        self.wait('machineCamera().settled',30)
+                    self.wait('machineReadoutCallouts().labels.length===3',10)
+                    layout=self.js('machineReadoutCallouts()')
+                    for label in layout['labels']:
+                        self.assertTrue(label['x']<=8 or label['x']+label['w']>=layout['width']-8,(label,layout))
+                        self.assertTrue(label['leader'],label)
+                        self.assertGreaterEqual(label['y'],0);self.assertLessEqual(label['y']+label['h'],layout['height'])
+                        for body in layout['bodies']:
+                            overlap=(label['x']<body['x']+body['w'] and label['x']+label['w']>body['x'] and
+                                     label['y']<body['y']+body['h'] and label['y']+label['h']>body['y'])
+                            self.assertFalse(overlap,(label,body))
+                        self.assertTrue(label['x']<=label['to'][0]<=label['x']+label['w'] and
+                                        label['y']<=label['to'][1]<=label['y']+label['h'],label)
+                        if label.get('wire'):
+                            anchor=self.js(f'machineWireScreen({json.dumps(label["wire"])})')
+                            view=self.js("document.getElementById('view').getBoundingClientRect().toJSON()")
+                            self.assertAlmostEqual(label['from'][0]+view['x'],anchor[0],delta=2)
+                            self.assertAlmostEqual(label['from'][1]+view['y'],anchor[1],delta=2)
 
     def place_contact_battery(self, placement, charge=None):
         self.press('Add a battery'); self.ghost()

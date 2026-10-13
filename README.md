@@ -40,6 +40,8 @@ an accidental removal. Clicking a battery's case adjusts it; a used-up level
 tray card also reopens its placed piece.
 Wire thickness uses visible Thin / Standard / Thick choices. Cable labels
 show the declared copper cross-section alongside measured current and power.
+Readings sit at the scene edges with thin leader lines, keeping electrical
+components and their connection rings clear; water meters use the same layout.
 Small object labels show a bulb's rating or power goal, and an estimated
 starting power/torque for simple motor lifts. Complex loads retain
 a variable-demand label rather than a guessed threshold.

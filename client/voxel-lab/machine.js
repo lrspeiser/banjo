@@ -451,6 +451,7 @@ function positionTerminalLabels() {
     .filter(el => !el.hidden && el.style.visibility !== 'hidden' && el.offsetWidth && el.offsetHeight).map(el => {
       const r = el.getBoundingClientRect(); return {x:r.left-rect.left, y:r.top-rect.top, w:r.width, h:r.height};
     });
+  occupied.push(...readoutBodyRects(rect));
   const tray = level?.tray.find(t => t.piece === 'wire');
   const editable = !playing && !terminalBusy && Boolean(tray && (ghost?.p.piece === 'wire' || (!ghost && piecesLeft(tray) > 0)));
   const snapshot=contactSnapshot(), previewTerminals=snapshot.preview?new Map((snapshot.terminals||[]).map(t=>[t.name,t.at_m])):null;
@@ -509,8 +510,7 @@ function positionTerminalLabels() {
     if (card.hidden) continue;
     const w = card.offsetWidth, h = card.offsetHeight, ax = (p.x+1)*rect.width/2, ay = (1-p.y)*rect.height/2;
     const collides = (x,y) => occupied.some(r => x < r.x+r.w+6 && x+w+6 > r.x && y < r.y+r.h+6 && y+h+6 > r.y);
-    const xs = [Math.max(8, Math.min(rect.width-w-8, ax-w/2)), 8, rect.width-w-8,
-      ...occupied.flatMap(r => [r.x+r.w+8, r.x-w-8])];
+    const xs = readoutSideXs(ax,w,rect.width).map(x=>Math.max(8,Math.min(rect.width-w-8,x)));
     const preferredY = Math.max(top, Math.min(bottom-h, ay-h-30));
     // Align rows so an anchor cannot leave two gaps just too short for
     // another card on a landscape phone. Leaders still point to the pins.
@@ -943,6 +943,7 @@ function positionPowerLabels() {
   const occupied = ['scene-mode','sun-bearing','panel-toggle']
     .map(id => $(id)).concat(collapsedPanel()).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
     .map(el => { const r = el.getBoundingClientRect(); return {x:r.left - rect.left,y:r.top - rect.top,w:r.width,h:r.height}; });
+  occupied.push(...readoutBodyRects(rect));
   // Place the larger meters first, then fit receiver buttons beside them.
   const rows = [...powerLabels.values()].sort((a,b) => (a.port.kind === 'input') - (b.port.kind === 'input'));
   for (const {port, card: reading, pin: card, badge, control, leader, dot} of rows) {
@@ -958,15 +959,16 @@ function positionPowerLabels() {
     if (card.hidden) continue;
     const width = card.offsetWidth, height = card.offsetHeight;
     const anchor = {x:(p.x + 1) / 2 * rect.width, y:(1 - p.y) / 2 * rect.height};
-    let x = Math.max(8, Math.min(rect.width - width - 8, anchor.x + 16));
+    let x = Math.max(8, Math.min(rect.width - width - 8, readoutSideXs(anchor.x,width,rect.width)[0]));
     let y = Math.max(top, Math.min(bottom - height, anchor.y - height - 10));
     const collides = (x, y) => occupied.some(r => x < r.x + r.w + 6 && x + width + 6 > r.x && y < r.y + r.h + 6 && y + height + 6 > r.y);
     if (collides(x, y)) {
-      const xs = [anchor.x - width - 16, 8, rect.width - width - 8, x];
+      const xs = readoutSideXs(anchor.x,width,rect.width).map(x=>Math.max(8,Math.min(rect.width-width-8,x)));
       const ys = [y, bottom - height, top, ...occupied.map(r => r.y + r.h + 8)];
       const candidates = xs.flatMap(x => ys.map(y => ({x,y})));
       const free = candidates.find(c => c.x >= 8 && c.x + width <= rect.width - 8 && c.y >= top && c.y + height <= bottom && !collides(c.x,c.y));
       if (free) { x = free.x; y = free.y; }
+      else {card.hidden=true;if(leader)leader.style.display=dot.style.display='none';continue;}
     }
     card.style.left = `${x}px`; card.style.top = `${y}px`;
     if (leader) {
@@ -2704,9 +2706,9 @@ function updateWaterDisplay() {
       (timed?` At least ${region.target_l} L must stay inside for ${level.goal.station.done_when.water_in_zone_l.for_s||0} s before the ${level.time_s} s deadline.`:'');
     const point=new THREE.Vector3(...region.at_m).project(camera);
     collector.hidden=Math.abs(point.z)>1 || Math.abs(point.x)>1 || Math.abs(point.y)>1;
-    collector.style.left=`${Math.max(6,Math.min(view.clientWidth-collector.offsetWidth-6,(point.x+1)*view.clientWidth/2+12))}px`;
-    collector.style.top=`${Math.max(58,Math.min(view.clientHeight-collector.offsetHeight-12,(1-point.y)*view.clientHeight/2-36))}px`;
+    positionSceneReading(collector,{x:(point.x+1)*view.clientWidth/2,y:(1-point.y)*view.clientHeight/2});
   }
+  if(collector.hidden)sceneReadingLeaders.get(collector.id)?.setAttribute('visibility','hidden');
   updateRiverWheelStatus();
 }
 function updateRiverWheelStatus(){
@@ -2808,6 +2810,10 @@ let flowIndex = -1, flowTime = 0, flowPlaying = true, flowTick = 0;
 let flowPending=false;
 const flowLabels = [];
 const powerFeedbackRows = new Map();
+const feedbackLeaders=document.createElementNS('http://www.w3.org/2000/svg','svg');
+feedbackLeaders.classList.add('feedback-leaders');feedbackLeaders.setAttribute('aria-hidden','true');
+$('power-feedback-labels').append(feedbackLeaders);
+const sceneReadingLeaders=new Map();
 const powerFlowDots = new THREE.InstancedMesh(new THREE.SphereGeometry(.014,8,6),
   new THREE.MeshBasicMaterial({color:0xfff1a6,depthTest:false}),24);
 powerFlowDots.count=0;powerFlowDots.frustumCulled=false;scene.add(powerFlowDots);
@@ -2898,19 +2904,22 @@ function updatePowerFeedback() {
     let text=w.unit==='W'?`${watts.toFixed(1)} W`:
       w.return_path?`Return · ${Math.abs(w.value).toFixed(3)} A`:`${watts.toFixed(1)} W · ${Math.abs(w.value).toFixed(3)} A`;
     if(w.show_supply_limit&&Number.isFinite(w.supply_max_power_w))text+=`\nShared supply ≤ ${w.supply_max_power_w.toFixed(1)} W · ${w.supply_voltage_v} V`;
-    items.push({id:'wire:'+w.name,name:w.name,kind:'wire',at:curve.getPoint(.5).toArray(),
+    const drawnWire=wires.find(row=>row.name===w.name&&row.line.visible);
+    const labelCurve=drawnWire?.line.geometry.parameters?.path||curve;
+    items.push({id:'wire:'+w.name,name:w.name,kind:'wire',at:labelCurve.getPoint(.5).toArray(),
       text:(gauge?((ghost?.p.piece==='wire'&&ghost.busy)?'Gauge updating…':gauge)+'\n':'')+
         (pending?'Updating…':(sample.preview?'Preview · ':'')+text),title:'Wire cross-section is the declared copper area used by the engine to calculate resistance. Measured flow and shared supply limits include losses; dots show conventional-current direction. Return-wire watts depend on the battery-negative reference.'});
   }
   powerFlowDots.instanceMatrix.needsUpdate=true;
   const seen=new Set(items.map(i=>i.id));
-  for(const [id,row] of powerFeedbackRows)if(!seen.has(id)){row.card.remove();powerFeedbackRows.delete(id);}
+  for(const [id,row] of powerFeedbackRows)if(!seen.has(id)){row.card.remove();row.leader.remove();powerFeedbackRows.delete(id);}
   const rect=renderer.domElement.getBoundingClientRect();
-  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#panel-toggle,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint')]
+  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#panel-toggle,#collector-status,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   // A power reading must not hide the connection the player is trying to
   // click, especially on a phone. Reserve the rings before placing labels.
   occupied.push(...sceneSockets().map(p=>({x:p.x-rect.left-14,y:p.y-rect.top-14,w:28,h:28})));
+  occupied.push(...readoutBodyRects(rect,sample.devices));
   const top=Math.max(8,$('clock').getBoundingClientRect().bottom-rect.top+6),bottom=rect.height-26;
   for(const item of items) {
     let row=powerFeedbackRows.get(item.id);
@@ -2918,26 +2927,83 @@ function updatePowerFeedback() {
       const card=document.createElement('section');card.className='power-feedback-label '+item.kind;
       card.dataset[item.kind==='object'?'device':'wire']=item.name;
       const name=document.createElement('strong'),output=document.createElement('output');card.append(name,output);host.append(card);
-      row={card,name,output};powerFeedbackRows.set(item.id,row);
+      const leader=document.createElementNS(feedbackLeaders.namespaceURI,'line');feedbackLeaders.append(leader);
+      row={card,name,output,leader};powerFeedbackRows.set(item.id,row);
     }
     const title=item.displayName||item.name;
     row.name.hidden=item.kind==='wire';if(row.name.textContent!==title)row.name.textContent=title;
     if(row.output.textContent!==item.text)row.output.textContent=item.text;row.card.title=item.title;
     row.card.classList.toggle('low',Boolean(item.low));row.card.hidden=false;
     const p=new THREE.Vector3(...item.at).project(camera);
+    row.leader.style.display='none';
     if(Math.abs(p.z)>1||Math.abs(p.x)>1||Math.abs(p.y)>1){row.card.hidden=true;continue;}
-    const width=row.card.offsetWidth,height=row.card.offsetHeight;
+    const {width,height}=row.card.getBoundingClientRect();
     const ax=(p.x+1)*rect.width/2,ay=(1-p.y)*rect.height/2;
-    const xs=[ax-width/2,ax+12,ax-width-12],ys=[ay-height-14,ay+14,ay-height-38,ay+38,
+    const xs=readoutSideXs(ax,width,rect.width),ys=[ay-height/2,ay-height-14,ay+14,ay-height-38,ay+38,
       top,bottom-height,...occupied.flatMap(r=>[r.y-height-6,r.y+r.h+6])];
     const candidate=xs.flatMap(x=>ys.map(y=>({x:Math.max(6,Math.min(rect.width-width-6,x)),y})))
       .find(c=>c.y>=top&&c.y+height<=bottom&&!occupied.some(r=>c.x<r.x+r.w+4&&c.x+width+4>r.x&&c.y<r.y+r.h+4&&c.y+height+4>r.y));
     if(!candidate){row.card.hidden=true;continue;}
     row.card.style.left=`${candidate.x}px`;row.card.style.top=`${candidate.y}px`;occupied.push({...candidate,w:width,h:height});
+    const placed=row.card.getBoundingClientRect(),labelX=placed.left-rect.left,labelY=placed.top-rect.top;
+    row.leader.style.display='';
+    row.leader.setAttribute('x1',String(ax));row.leader.setAttribute('y1',String(ay));
+    row.leader.setAttribute('x2',String(Math.max(labelX,Math.min(labelX+placed.width,ax))));
+    row.leader.setAttribute('y2',String(Math.max(labelY,Math.min(labelY+placed.height,ay))));
   }
+}
+function readoutSideXs(anchor,width,viewWidth) {
+  const sides=[6,Math.max(6,viewWidth-width-6)];
+  return anchor<viewWidth/2?sides:sides.reverse();
+}
+function positionSceneReading(card,anchor) {
+  const rect=renderer.domElement.getBoundingClientRect();
+  let leader=sceneReadingLeaders.get(card.id);
+  if(!leader){leader=document.createElementNS(feedbackLeaders.namespaceURI,'line');leader.dataset.reading=card.id;feedbackLeaders.append(leader);sceneReadingLeaders.set(card.id,leader);}
+  leader.setAttribute('visibility','hidden');if(card.hidden)return;
+  const {width,height}=card.getBoundingClientRect(),top=$('clock').getBoundingClientRect().bottom-rect.top+6;
+  const occupied=[...view.querySelectorAll('#scene-mode,#panel-toggle,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint')]
+    .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
+  occupied.push(...readoutBodyRects(rect),{x:anchor.x-18,y:anchor.y-18,w:36,h:36});
+  const ys=[anchor.y-height/2,top,rect.height-height-6,...occupied.flatMap(r=>[r.y-height-6,r.y+r.h+6])];
+  const candidate=readoutSideXs(anchor.x,width,rect.width).flatMap(x=>ys.map(y=>({x,y})))
+    .find(c=>c.y>=top&&c.y+height<=rect.height-6&&!occupied.some(r=>c.x<r.x+r.w+4&&c.x+width+4>r.x&&c.y<r.y+r.h+4&&c.y+height+4>r.y));
+  if(!candidate){card.hidden=true;return;}
+  card.style.left=`${candidate.x}px`;card.style.top=`${candidate.y}px`;
+  const placed=card.getBoundingClientRect(),x=placed.left-rect.left,y=placed.top-rect.top;
+  leader.setAttribute('visibility','visible');leader.setAttribute('x1',String(anchor.x));leader.setAttribute('y1',String(anchor.y));
+  leader.setAttribute('x2',String(Math.max(x,Math.min(x+placed.width,anchor.x))));
+  leader.setAttribute('y2',String(Math.max(y,Math.min(y+placed.height,anchor.y))));
+}
+function readoutBodyRects(rect,devices=[]) {
+  const boxes=[];
+  const names=new Set([...(shownElectrical().devices||[]),...(machine?.solar_panels||[]),...(readouts.power_devices||[]),...devices].map(d=>d.part));
+  const protectedMeshes=[...names].map(name=>meshes.get(name)).filter(m=>m?.visible);
+  if(ghost&&!['wire','power_cable'].includes(ghost.p.piece)&&ghostGroup.children.length)protectedMeshes.push(ghostGroup);
+  for(const mesh of protectedMeshes) {
+    const b=new THREE.Box3().setFromObject(mesh),points=[];
+    for(const x of [b.min.x,b.max.x])for(const y of [b.min.y,b.max.y])for(const z of [b.min.z,b.max.z]) {
+      const p=new THREE.Vector3(x,y,z).project(camera);
+      if(p.z>=-1&&p.z<=1)points.push({x:(p.x+1)*rect.width/2,y:(1-p.y)*rect.height/2});
+    }
+    if(!points.length)continue;
+    const x=Math.min(...points.map(p=>p.x)),y=Math.min(...points.map(p=>p.y));
+    boxes.push({x:x-4,y:y-4,w:Math.max(...points.map(p=>p.x))-x+8,h:Math.max(...points.map(p=>p.y))-y+8});
+  }
+  return boxes;
 }
 window.machinePowerFeedbackState=()=>({dots:powerFlowDots.count,
   labels:[...powerFeedbackRows.values()].filter(r=>!r.card.hidden).map(r=>({device:r.card.dataset.device,wire:r.card.dataset.wire,text:r.output.textContent}))});
+window.machineReadoutCallouts=()=>{
+  const rect=renderer.domElement.getBoundingClientRect();
+  return {width:rect.width,height:rect.height,bodies:readoutBodyRects(rect),
+    labels:[...powerFeedbackRows.values()].filter(r=>!r.card.hidden).map(r=>{
+      const box=r.card.getBoundingClientRect();return {wire:r.card.dataset.wire,device:r.card.dataset.device,
+        x:box.left-rect.left,y:box.top-rect.top,w:box.width,h:box.height,
+        leader:r.leader.style.display!=='none',
+        from:[Number(r.leader.getAttribute('x1')),Number(r.leader.getAttribute('y1'))],
+        to:[Number(r.leader.getAttribute('x2')),Number(r.leader.getAttribute('y2'))]};})};
+};
 
 function clearFlowFrame() {
   for (const child of [...flowGroup.children]) {
@@ -3114,6 +3180,10 @@ function drawFlowFrame(frame) {
   $('flow-readings').textContent=rows.join(' · ');
 }
 
+function syncFlowPlayButton() {
+  $('flow-play').textContent=flowPlaying?'Pause preview':'Play preview';
+  $('flow-play').setAttribute('aria-pressed',String(flowPlaying));
+}
 function updateFlowPreview() {
   const frames=previewShown?.flow_frames || [];
   const visible=Boolean(frames.length) && !flowPending && !playing && !(world?.t>0) && previewOn && !inspectedCircuit && !document.body.matches('.on-sandbox,.on-levels');
@@ -3136,8 +3206,7 @@ function updateFlowPreview() {
   const currents=(frames[index].surface?.flow_samples||[]).map(s=>Math.hypot(...s.velocity_m_s)).filter(Number.isFinite);
   $('flow-summary').textContent=`Flow preview · ${describeTime(frames[index].t)}${currents.length?` · Current up to ${Math.max(...currents).toFixed(2)} m/s`:''}${previewShown.complete?'':' · incomplete'}`;
   $('flow-time').max=String(end); $('flow-time').value=String(flowTime);
-  $('flow-play').textContent=flowPlaying?'Pause preview':'Play preview';
-  $('flow-play').setAttribute('aria-pressed',String(flowPlaying));
+  syncFlowPlayButton();
   const scale=distance*2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/view.clientHeight;
   const rect=view.getBoundingClientRect(), occupied=[...collapsedPanel(), ...view.querySelectorAll('.power-label, .terminal-label, #clock, #preview-legend')]
     .filter(e=>!e.hidden).map(e=>{const r=e.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
@@ -3150,8 +3219,8 @@ function updateFlowPreview() {
   }
 }
 
-$('flow-play').addEventListener('click',()=>{flowPlaying=!flowPlaying;flowTick=performance.now();});
-$('flow-time').addEventListener('input',()=>{flowPlaying=false;flowTime=Number($('flow-time').value);flowIndex=-1;});
+$('flow-play').addEventListener('click',()=>{flowPlaying=!flowPlaying;flowTick=performance.now();syncFlowPlayButton();});
+$('flow-time').addEventListener('input',()=>{flowPlaying=false;flowTime=Number($('flow-time').value);flowIndex=-1;syncFlowPlayButton();});
 $('flow-preview').addEventListener('toggle',()=>{
   if ($('flow-preview').open) $('flow-time').scrollIntoView({block:'nearest',inline:'nearest'});
 });
@@ -3201,6 +3270,7 @@ function drawPreview(r) {
   // Electrical rehearsals start at their initial state. Future current and
   // bulb light appear only if the player explicitly plays/scrubs the preview.
   flowPlaying=!(r.flow_frames||[]).some(f=>f.wires?.some(w=>w.unit==='A'));
+  syncFlowPlayButton();
   const zone = level.goal && level.goal.station.done_when.in_zone;
   const inZone = p => Boolean(zone) && [0, 1, 2].every(i => Math.abs(p[i] - zone.at_m[i]) <= zone.size_m[i] / 2);
   const colourOf = new Map(), dotShape = PREVIEW_DOT;
