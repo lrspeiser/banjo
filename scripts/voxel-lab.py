@@ -95,6 +95,10 @@ class Server(ThreadingHTTPServer):
   from machine_world import MachineHost,engine_path
   self.machines=MachineHost(engine_path(native),logs/'machines');self.chat_busy=threading.BoundedSemaphore(2)
   self.profiles=anonymous_profiles.ProfileStore(profile_db or os.environ.get('BANJO_PROFILE_DB') or logs.parent/'profiles.sqlite3')
+  import bug_reports
+  self.bug_reports=bug_reports.Reports(self.profiles.path.with_name('bug-reports.sqlite3'),
+   os.environ.get('LINEAR_API_KEY',''),os.environ.get('BANJO_LINEAR_PROJECT_ID',bug_reports.PROJECT_ID),os.environ.get('BANJO_LINEAR_TEAM_ID',''))
+  self.bug_reports.start()
   self.profile_creations=Allowance(20,2000,'new visitor profiles')
   self.profile_requests=Allowance(6000,100000,'profile requests')
  def checkpoint_status(self):
@@ -102,7 +106,11 @@ class Server(ThreadingHTTPServer):
   # server is still running an older one.
   revision,dirty=repository_state()
   return {'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,
-          'restart_pending':revision!=self.started_revision,'engine_sha256':hashlib.sha256(self.native.read_bytes()).hexdigest()}
+          'restart_pending':revision!=self.started_revision,'engine_sha256':hashlib.sha256(self.native.read_bytes()).hexdigest(),
+          'bug_reporting':self.bug_reports.summary()}
+ def server_close(self):
+  if hasattr(self,'bug_reports'):self.bug_reports.close()
+  super().server_close()
 class Handler(BaseHTTPRequestHandler):
  def send(self,status,body,kind='application/json',headers=None):
   try:
@@ -275,12 +283,15 @@ class Handler(BaseHTTPRequestHandler):
     if not isinstance(text,str) or not text.strip() or len(text)>2000:raise ValueError('Feedback is 1 to 2000 characters')
     note={'at':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'text':text.strip(),'level':str(data.get('level') or '')[:40],
      'placements':data.get('placements') if isinstance(data.get('placements'),list) else None,'last_run':data.get('last_run'),
-     'screen':data.get('screen'),'touch':bool(data.get('touch')),'site':os.environ.get('RENDER_GIT_COMMIT','')[:12]}
-    line=json.dumps(note,separators=(',',':'))[:16000]
+     'screen':data.get('screen'),'touch':bool(data.get('touch')),'site':self.server.started_revision,
+     'base':data.get('base'),'world_t':data.get('world_t'),'replay_link':data.get('replay_link','')}
+    import uuid
+    delivery=self.server.bug_reports.submit(data.get('report_id') or str(uuid.uuid4()),note)
+    line=json.dumps(note,separators=(',',':'),allow_nan=False)
     print('FEEDBACK '+line,flush=True)
     with self.server.lock:
      with open(self.server.logs/'feedback.jsonl','a',encoding='utf-8') as f:f.write(line+'\n')
-    r={'ok':True}
+    r={'ok':True,**delivery}
    elif op=='level_preview':
     # Where things will go: the level rehearsed once by the engine, unpaced,
     # with its loose bodies' paths and hits. That is engine time, so it is
@@ -342,6 +353,7 @@ class Handler(BaseHTTPRequestHandler):
   except LookupError as e:self.send(410,json.dumps({'ok':False,'error':str(e),'code':'session_expired'}).encode())
   except machine_chat.ChatUnavailable as e:self.send(503,json.dumps({'ok':False,'error':str(e)}).encode())
   except SiteBusy as e:self.send(503,json.dumps({'ok':False,'error':str(e),'code':'site_busy'}).encode())
+  except sqlite3.Error:self.send(503,b'{"ok":false,"error":"Bug-report storage is unavailable; keep your text and try again"}')
   except (ValueError,TypeError,KeyError,RuntimeError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def log_message(self,*args):pass
 if __name__=='__main__':

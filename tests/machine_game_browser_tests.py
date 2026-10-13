@@ -20,6 +20,7 @@ import re
 import os
 import sys
 import tempfile
+from unittest.mock import patch
 import threading
 import time
 import unittest
@@ -1386,8 +1387,8 @@ class Puzzles(unittest.TestCase):
                 self.assertFalse(self.js("document.getElementById('phone-toolbar').hidden"))
                 self.assertEqual(self.js("document.getElementById('start').parentElement.id"),'phone-runbar')
                 self.assertEqual(self.js("document.getElementById('reset').parentElement.id"),'phone-runbar')
-                self.assertEqual(self.js("document.getElementById('phone-design-tab').textContent"),'Level')
-                for label,pane in [('Controls','control-panel'),('Level','phone-design-panel'),('Help','phone-help-panel')]:
+                self.assertTrue(self.js("document.getElementById('phone-design-tab').hidden"))
+                for label,pane in [('Controls','control-panel'),('Help','phone-help-panel')]:
                     self.click_visible(label)
                     self.assertEqual(self.js("['control-panel','phone-design-panel','phone-help-panel'].filter(id=>!document.getElementById(id).hidden)"),[pane])
                     self.assertTrue(self.js("(()=>{const r=document.getElementById('scene-goal').getBoundingClientRect();return r.height>0&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"))
@@ -1463,7 +1464,7 @@ class Puzzles(unittest.TestCase):
                     self.press('Add a plank');self.ghost();self.press('Set it down');self.wait(READY,30)
                     placed=self.js('machinePlacements()')
                     self.assertEqual(len(placed),1)
-                    for tab in ('Controls','Level' if level=='gap' else 'Design','Help'):
+                    for tab in (('Controls','Help') if level=='gap' else ('Controls','Design','Help')):
                         self.click_visible(tab)
                         # Check before the helper can reveal any hidden tab or disclosure.
                         visible=self.js("""(()=>{const b=document.getElementById('undo-pieces'),r=b.getBoundingClientRect();
@@ -1652,7 +1653,7 @@ class Puzzles(unittest.TestCase):
                 self.click_summary('#level-more > summary')
                 self.assertTrue(self.js("document.getElementById('level-more').open"))
                 self.assertTrue(self.js("Boolean(document.getElementById('visitor-return-link').closest('#level-more'))"))
-                self.assertTrue(self.js("Boolean(document.querySelector('#level-more #challenge-family'))"))
+                self.assertFalse(self.js("Boolean(document.querySelector('#level-more #challenge-family'))"))
                 requests=[e['params']['request'] for e in self.page.events if e['method']=='Network.requestWillBeSent']
                 opens=[r for r in requests if r['url'].endswith('/api/machine') and r.get('postData') and json.loads(r['postData']).get('op') in ('open','level_open')]
                 self.assertEqual(opens,[],'Reading details and save tools cannot initialize a machine')
@@ -2137,23 +2138,22 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(self.js('window.machinePlacements()'), first)
         self.assertIn('Cable connected', self.js("document.getElementById('power-labels').textContent"))
 
-    def test_fresh_easy_challenge_can_be_solved_shared_and_reopened_on_phones(self):
+    def test_legacy_seeded_challenge_can_be_solved_shared_and_reopened_on_phones(self):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
                 self.page.send('Emulation.setDeviceMetricsOverride', {'width':width,'height':height,'deviceScaleFactor':1,'mobile':width != 1280})
                 self.page.send('Page.navigate', {'url': f'{self.base}/play'})
                 self.wait("!document.getElementById('levels-screen').hidden", 60)
                 self.assertLessEqual(self.js('document.body.scrollWidth'), width)
-                self.slide('Challenge family', 'easy-loop')
-                self.press('New challenge')
+                self.open('easy-loop--v2--0000002a--0',width,height,phone=width!=1280)
                 self.wait(f"/easy-loop--v2--/.test(location.search) && {READY}", 60)
                 link = self.js('location.href')
                 title = self.js("document.getElementById('title').textContent")
                 goal = self.js("document.getElementById('goal-line').textContent")
                 self.assertIn('seed', title)
                 self.assertIn('Fresh setup', goal)
-                self.press('Share this challenge')
-                self.assertEqual(self.js("document.getElementById('challenge-link').value"), link)
+                self.press('Share')
+                self.assertEqual(self.js("document.getElementById('challenge-link').value"), link.replace(self.base,'https://banjo.is',1))
                 self.page.send('Page.navigate', {'url':link})
                 self.wait(READY, 60)
                 self.assertEqual(self.js("document.getElementById('title').textContent"), title)
@@ -2169,8 +2169,7 @@ class Puzzles(unittest.TestCase):
                 self.assertFalse(self.js("Boolean(document.querySelector('#level-done [aria-label=\"Next level\"]'))"))
                 self.press('All levels')
                 self.assertLessEqual(self.js('document.body.scrollWidth'), width)
-                self.reveal_control("document.getElementById('challenge-family')")
-                self.assertGreaterEqual(self.js("document.getElementById('challenge-family').getBoundingClientRect().height"), 44)
+                self.assertFalse(self.js("Boolean(document.getElementById('challenge-family'))"))
                 self.assertIn(title, self.js("document.querySelector('[aria-label=\"Recent challenges\"]').textContent"))
                 self.press(title); self.wait(READY, 60)
                 self.assertEqual(self.js('location.href'), link)
@@ -2962,13 +2961,46 @@ class Puzzles(unittest.TestCase):
                 self.press('Add New Design'); self.wait(READY,60)
                 before=open_updates(); self.click_visible('Close'); closed(before)
 
+    def test_combined_help_public_share_and_sandbox_word_builder_on_all_screens(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-cut',width,height,phone=width!=1280)
+                self.assertEqual(self.js("[...document.querySelectorAll('#phone-tabs button')].filter(b=>b.checkVisibility()).map(b=>b.textContent)"),['Controls','Help'])
+                self.assertFalse(self.js("document.getElementById('pull-tool').checkVisibility()"))
+                self.assertFalse(self.js("Boolean(document.getElementById('challenge-fresh'))"))
+                self.click_visible('Help')
+                self.assertTrue(self.js("document.getElementById('phone-help-panel').contains(document.getElementById('game')) && document.getElementById('phone-help-panel').contains(document.getElementById('feedback'))"))
+                self.click_summary('#level-details > summary')
+                self.assertTrue(self.js("document.getElementById('brief').checkVisibility() && /par /.test(document.getElementById('goal-line').textContent)"))
+                self.press('Share')
+                self.assertEqual(self.js("document.getElementById('challenge-link').value"),'https://banjo.is/play?level=easy-cut')
+                self.click_summary('#feedback > summary')
+                self.assertTrue(self.js("document.getElementById('feedback-form').checkVisibility()"))
+                self.assertTrue(self.js("(()=>{const r=document.getElementById('feedback-send').getBoundingClientRect();return r.height>=44&&r.right<=innerWidth;})()"))
+                self.open('free',width,height,phone=width!=1280)
+                self.press('All designs'); self.press('Start from Tip the lever'); self.wait(READY,60)
+                base=self.js('machineDesign().draft.base')
+                self.assertIsNotNone(base)
+                self.click_visible('Controls'); self.click_visible('Describe a design')
+                self.assertEqual(self.js("document.getElementById('phone-help-tab').getAttribute('aria-selected')"),'true')
+                self.assertEqual(self.js('document.activeElement.id'),'message')
+                self.js("document.getElementById('message').value='Add a glass marble on the table'")
+                answer={'reply':'Added a marble.','clear':False,'add':[{'piece':'marble','x_m':1,'z_m':1}]}
+                with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')), patch('machine_chat._call',return_value=(answer,{})):
+                    self.press('Build it')
+                    self.wait("/Added a marble/.test(document.getElementById('chat-log').textContent) && machinePlacements().some(p=>p.piece==='marble') && "+READY,60)
+                self.assertEqual(self.js('machineDesign().draft.base'),base)
+                self.assertTrue(self.js("machineBodies()['your marble 2'] || machinePlacements().some(p=>p.piece==='marble')"))
+                self.press('Share this design'); self.wait("Boolean(machineShareLink())",10)
+                self.assertTrue(self.js('machineShareLink()').startswith('https://banjo.is/machine#build='))
+
     def test_a_player_can_tell_us_what_happened(self):
         self.open('gap')
         # Telling us: the words, with the level and its pieces, reach the log.
         self.js("document.getElementById('feedback').open = true")
         self.js("document.getElementById('feedback-text').value = 'The plank looked like it floated'")
-        self.press('Send')
-        self.wait("/Thank you/.test(document.getElementById('feedback-status').textContent)", 10)
+        self.press('Send report')
+        self.wait("/Report saved/.test(document.getElementById('feedback-status').textContent)", 10)
         notes = [json.loads(line) for line in (Path(self.logs.name) / 'feedback.jsonl').read_text(encoding='utf-8').splitlines()]
         self.assertEqual((notes[-1]['text'], notes[-1]['level']), ('The plank looked like it floated', 'gap'))
         self.assertNotIn('127.0.0.1', json.dumps(notes[-1]), 'nothing that names the player is kept')
@@ -3390,7 +3422,8 @@ class Puzzles(unittest.TestCase):
         self.press('Share this design')
         self.wait("/#build=/.test(window.machineShareLink())", 10)
         link = self.js('window.machineShareLink()')
-        self.page.send('Page.navigate', {'url': link})
+        self.assertTrue(link.startswith('https://banjo.is/machine#build='))
+        self.page.send('Page.navigate', {'url': link.replace('https://banjo.is',self.base,1)})
         self.wait(f"document.getElementById('clock') && {READY}", 60)
         self.assertEqual(self.js('window.machineDesign().draft.base'), base)
         self.assertEqual(self.js('window.machinePlacements().length'), 1)
@@ -3579,7 +3612,8 @@ class Puzzles(unittest.TestCase):
         link = self.js('window.machineShareLink()')
         self.press('Clear the table')
         self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
-        self.page.send('Page.navigate', {'url': link})
+        self.assertTrue(link.startswith('https://banjo.is/machine#build='))
+        self.page.send('Page.navigate', {'url': link.replace('https://banjo.is',self.base,1)})
         self.wait(f"typeof window.machinePlacements === 'function' && window.machinePlacements().length === 11 && {READY}", 90)
         self.assertEqual(self.js('window.machinePlacements()'), made)
         self.assertNotIn('#build', self.js('location.href'), 'the link is read once')
@@ -4102,7 +4136,7 @@ class Puzzles(unittest.TestCase):
         self.mouse('mouseReleased',x+60,y)
         self.assertNotEqual(self.ghost()['p'],before,'an intentional pointer movement still works after zooming')
 
-    def test_a_part_pulled_by_hand_is_a_test_and_earns_nothing(self):
+    def test_internal_force_test_is_unavailable_in_player_controls_and_earns_nothing(self):
         # Level 5 with no ramp: Pull on, the lever's end pulled down -- the
         # engine's force at that point, no hand in the world. The ratchet
         # catches, the contact closes, the cannon fires and the block goes in.
@@ -4112,7 +4146,8 @@ class Puzzles(unittest.TestCase):
         self.js("window.machineView({azimuth: -0.2, elevation: 0.35, distance: 2.2, at: [0.4, 0.15, 0]})")
         time.sleep(1.5)
         x, y = self.screen_point([0.15, 0.16, 0.0])
-        self.press('🖐 Pull')
+        self.assertTrue(self.js("document.getElementById('pull-tool').hidden"))
+        self.js("document.getElementById('pull-tool').click()")  # Internal diagnostic fixture, not a player action.
         self.mouse('mouseMoved', x, y)
         self.mouse('mousePressed', x, y)
         for k in range(1, 16):
@@ -4127,12 +4162,13 @@ class Puzzles(unittest.TestCase):
         self.assertIn('the goal happened', done)
         self.assertNotIn('chain', self.js("Object.keys(window.machineSave().players[window.machineSave().current].levels)"))
 
-    def test_a_second_finger_releases_the_pull_before_turning_the_camera(self):
+    def test_internal_force_fixture_releases_before_a_second_finger_turns_the_camera(self):
         self.open('chain')
         self.js("window.machineView({azimuth: -0.2, elevation: 0.35, distance: 2.2, at: [0.4, 0.15, 0]})")
         self.wait('window.machineCamera().settled',30)
         x,y=self.screen_point([0.15,0.16,0])
-        self.press('🖐 Pull')
+        self.assertTrue(self.js("document.getElementById('pull-tool').hidden"))
+        self.js("document.getElementById('pull-tool').click()")  # Retain force-release coverage after retiring the menu control.
         self.page.send('Network.enable'); self.page.events.clear()
         touch=lambda kind,points:self.page.send('Input.dispatchTouchEvent',{'type':kind,'touchPoints':points})
         touch('touchStart',[{'x':x,'y':y,'id':1}])
@@ -4179,7 +4215,7 @@ class Puzzles(unittest.TestCase):
         # The panel's tray shows each piece, with a picture, and how many are left.
         self.wait("Boolean(document.querySelector('#tray img:not([hidden])'))", 30)
         self.assertEqual(self.js("document.querySelector('#tray li').textContent"), 'plank1 left')
-        self.click_visible('Level')
+        self.click_visible('Help')
         self.js("document.getElementById('phone-design-panel').scrollTop = document.getElementById('phone-design-panel').scrollHeight")
         self.assertGreaterEqual(self.js("document.getElementById('view').getBoundingClientRect().top"), 0,
                                 'the scene remains visible while the phone panel scrolls')

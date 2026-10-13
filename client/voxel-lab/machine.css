@@ -165,10 +165,11 @@ body.reading-guide{overflow:hidden}
 .changes-body p{margin:6px 0 0}
 .feedback button{padding:.35rem .8rem;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer;font:14px system-ui}
 .feedback{margin:.6rem 0}
-.feedback summary{cursor:pointer;color:#9fdcff}
+.feedback summary{cursor:pointer;color:#9fdcff;min-height:44px;padding:12px 0;box-sizing:border-box;line-height:20px}
 .feedback form{display:grid;gap:.35rem;margin-top:.35rem}
 .feedback label{font-size:.85rem}
 .feedback textarea{width:100%;box-sizing:border-box;font:14px system-ui}
+#sandbox-build-description{min-height:44px;padding:8px 14px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;font:14px system-ui;cursor:pointer}
 /* How the run went. */
 .level-done{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;width:min(360px,calc(100% - 24px));box-sizing:border-box;padding:16px 18px;text-align:center;background:#142836f5;border:1px solid #5fe08f;border-radius:12px;box-shadow:0 10px 30px #000a}
 .level-done[hidden]{display:none}
@@ -632,7 +633,8 @@ body.panel-tabs #instrument-panel{margin:0;display:flex;flex-wrap:wrap;gap:4px;a
 #control-panel #scene-actions button,#control-panel #view-controls button{font-size:13px;min-height:44px}
 body.panel-tabs .control-panel .ghost-bar .knob-row input[type=range]{height:44px}
 body.panel-tabs #control-panel .adjustment-picker{flex:none}
-body.panel-tabs #phone-design-panel #title,body.panel-tabs #placed-head,body.panel-tabs #placed{display:none}
+body.panel-tabs aside #title,body.panel-tabs #placed-head,body.panel-tabs #placed{display:none}
+#level-details>summary{min-height:44px;padding:12px 0;box-sizing:border-box;line-height:20px}
 @media(max-width:359px){body.panel-tabs aside:has(.ghost-bar:not([hidden])) #scene-goal span{display:none}}
 
 #viewer-history{position:absolute;left:8px;top:30px;z-index:6;pointer-events:auto;display:flex;gap:3px}

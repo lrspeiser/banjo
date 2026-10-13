@@ -19,12 +19,12 @@ Windows, built and tested on Linux in CI, and not tested on macOS.
 ## What there is
 
 **Eight chain-reaction levels, twenty-three piece lessons and three advanced electronics activities.**
-Every card shows its task count and stars; Level details reveals energy records.
+Every card shows its task count and stars; Help reveals level details and energy records.
 The 34 levels follow the [audited onboarding order](docs/level-onboarding-audit.md),
 with estimated player-time ranges on each card. These ranges are based on blind
 LLM probes and interface review, not a timed human study. Lesson controls put
 the relevant adjustments first; Precision controls restores the full menu.
-The game shares Controls / Level (or Design) / Help tabs on desktop and phone,
+Levels share Controls / Help tabs on desktop and phone; Sandbox also has Design,
 with Run/Pause/Reset kept beside the 3D view, even when the controls are
 collapsed. Each level shows its name and a one-line task. **Undo / Redo**
 are in the upper scene corner; a flat zoom slider and magnifiers are in the
@@ -55,8 +55,12 @@ Small object labels show a bulb's rating or power goal, and an estimated
 starting power/torque for simple motor lifts. Complex loads retain
 a variable-demand label rather than a guessed threshold.
 The lessons introduce cutting, optics, springs, gearing, wiring, water,
-heating and catapults one step at a time. **New challenge** offers tested
-physical variations with repeatable seed links and a recent-challenges list.
+heating and catapults one step at a time. **Share** uses banjo.is links; older
+seeded challenges still reopen from their links and recent-challenges list.
+Sandbox **Describe a design** opens the existing builder in Help: it keeps your
+base machine and checks proposed additions in the native engine. **Report a bug**
+in Help saves the setup and queues delivery to the owner's Linear project.
+[Server configuration](docs/deploy.md#bug-reports-to-linear) is required for delivery.
 Every authored level opens with a visible object or goal area. The spring
 and tackle act on waiting loads, the gear lesson starts with wheels to power,
 and the pour lesson starts with a wheel waiting for a separate tank. Water-only

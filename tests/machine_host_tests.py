@@ -9,6 +9,7 @@ import tempfile
 import threading
 import unittest
 import uuid
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +31,53 @@ class Configuration(unittest.TestCase):
         for value in ('https://banjo.is', '*.banjo.is', 'banjo.is:443', 'user@banjo.is', 'banjo.is/path'):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 lab.public_hostnames(value)
+
+
+class BugReports(unittest.TestCase):
+    def test_pending_reports_survive_restart_and_timeout_recovery_does_not_duplicate_linear_issue(self):
+        import bug_reports
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'reports.sqlite3'
+            report_id=str(uuid.uuid4())
+            note=dict(text='The cutting guide did not turn green',level='easy-cut',placements=[],screen=[390,844])
+            store=bug_reports.Reports(path)
+            self.assertEqual(store.submit(report_id,note)['delivery'],'pending')
+            issues={}; creates=[]
+            def remote(query,variables):
+                if 'BanjoProject' in query:return {'project':{'id':bug_reports.PROJECT_ID,'teams':{'nodes':[{'id':'team-1'}]}}}
+                if 'BanjoReport' in query:return {'issue':issues.get(variables['id'])}
+                issue=variables['input'];creates.append(issue)
+                issues[issue['id']]={'id':issue['id'],'url':'https://linear.app/horizon3/issue/TEST-1/bug','project':{'id':bug_reports.PROJECT_ID}}
+                raise bug_reports.LinearUnavailable('Response lost after issue creation')
+            reopened=bug_reports.Reports(path,'test-only-key')
+            reopened.graphql=remote
+            reopened.flush()
+            self.assertEqual(reopened.status(report_id)['delivery'],'pending')
+            recovered=bug_reports.Reports(path,'test-only-key');recovered.graphql=remote
+            with recovered.connect() as db:db.execute('UPDATE reports SET retry_at=0')
+            recovered.flush()
+            self.assertEqual(recovered.status(report_id)['delivery'],'sent')
+            recovered.submit(report_id,note)
+            self.assertEqual(len(creates),1)
+            self.assertEqual(creates[0]['projectId'],bug_reports.PROJECT_ID)
+            self.assertEqual(creates[0]['teamId'],'team-1')
+            self.assertNotEqual(creates[0]['id'],report_id,'a caller cannot nominate an arbitrary existing Linear issue')
+            self.assertIn('https://banjo.is/play?level=easy-cut',creates[0]['description'])
+            with self.assertRaises(ValueError):recovered.submit(report_id,dict(note,text='A different report'))
+
+    def test_graphql_errors_do_not_count_as_delivery_and_private_return_links_are_excluded(self):
+        import bug_reports
+        import io
+        with tempfile.TemporaryDirectory() as folder:
+            store=bug_reports.Reports(Path(folder)/'reports.sqlite3','test-only-key')
+            with patch('bug_reports.urllib.request.urlopen',return_value=io.BytesIO(b'{"errors":[{"message":"denied"}],"data":{"issueCreate":{"success":true}}}')) as send:
+                with self.assertRaises(bug_reports.LinearUnavailable):store.graphql('query Test {viewer{id}}',{})
+                request=send.call_args.args[0]
+                self.assertEqual(request.full_url,'https://api.linear.app/graphql')
+                self.assertEqual(request.get_header('Authorization'),'test-only-key')
+            described=store.description(dict(text='Bug',level='free',replay_link='https://banjo.is/machine?return=private-key',placements=[]))
+            self.assertNotIn('private-key',described)
+            self.assertIn('https://banjo.is/machine',described)
 
 
 class Requests(unittest.TestCase):
@@ -227,6 +275,18 @@ class Requests(unittest.TestCase):
                 status, body, _ = self.request([host], 'POST', '/api/machine', 'https://' + host)
                 self.assertEqual(status, 200)
                 self.assertTrue(json.loads(body)['ok'])
+
+    def test_bug_report_is_durably_queued_without_credentials_and_retry_keeps_its_id(self):
+        report_id=str(uuid.uuid4())
+        payload=dict(op='feedback',report_id=report_id,text='The knife guide missed the cord',level='easy-cut',placements=[],screen=[390,844])
+        for _ in range(2):
+            status,body,_=self.request(['banjo.is'],'POST','/api/machine','https://banjo.is',payload=payload)
+            self.assertEqual(status,200)
+            response=json.loads(body)
+            self.assertEqual(response['delivery'],'pending')
+            self.assertEqual(response['report_id'],report_id)
+        with self.server.bug_reports.connect() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM reports WHERE id=?',(report_id,)).fetchone()[0],1)
 
     def test_allowing_aliases_does_not_allow_cross_origin_api_calls(self):
         for host, origin in (('banjo.is', 'https://evil.example'),

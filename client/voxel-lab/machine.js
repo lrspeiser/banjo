@@ -5254,18 +5254,7 @@ function showLevelsScreen(show) {
     add(free, 'span', {className: 'teaches', textContent: 'Your designs and examples'});
     box.append(free);
   }
-  const freshBox = add(more, 'section', {className: 'ls-player', ariaLabel: 'Fresh challenges'});
-  add(freshBox, 'label', {textContent: 'Learn a piece', htmlFor: 'challenge-family'});
-  const familyPick = add(freshBox, 'select', {id: 'challenge-family', ariaLabel: 'Challenge family'});
-  for (const l of levels.filter(l => l.difficulty === 'easy')) familyPick.append(new Option(l.title, l.id));
-  const freshStatus = add(freshBox, 'p', {role: 'status'});
-  const newEasy = button('New challenge', async () => {
-    newEasy.disabled = true; freshStatus.textContent = 'Testing a fresh setup in the physics engine…';
-    try { await freshChallenge(familyPick.value); }
-    catch (e) { freshStatus.textContent = e.message; }
-    finally { newEasy.disabled = false; }
-  });
-  freshBox.append(newEasy);
+  const freshStatus = add(more, 'p', {role: 'status'});
   if (me().freshChallenges?.length) {
     const recent = add(more, 'section', {className: 'chat-actions', ariaLabel: 'Recent challenges'});
     add(recent, 'h2', {textContent: 'Return to a challenge'});
@@ -5306,7 +5295,13 @@ async function chooseLevel(id, design = null) {
   keepBuild(); showSandboxScreen(false); showLevelsScreen(false);
   level = id === 'free' && freeLevel ? {...freeLevel} : levels.find(l => l.id === id) || (generatedLevel?.id === id ? generatedLevel : levels[0]);
   $('reset').title = level.free ? 'Return your machine to time zero' : 'Start the level over; Undo recovers your pieces';
-  $('phone-design-tab').textContent = level.free ? 'Design' : 'Level';
+  $('phone-design-tab').textContent = 'Design';
+  $('phone-design-tab').hidden = !level.free;
+  $('sandbox-build-description').hidden = !level.free;
+  const sectionPanel = level.free ? $('phone-design-panel') : $('phone-help-panel');
+  sectionPanel.prepend($('title'), $('sandbox-controls'), $('game'));
+  $('phone-help-panel').append($('feedback'));
+  $('level-details').hidden = Boolean(level.free);
   selectPhonePanel('controls');
   if (level.variant) {
     me().freshChallenges = [{id:level.id, title:levelTitle(level)}, ...(me().freshChallenges || []).filter(row => row.id !== level.id)].slice(0, 12);
@@ -5360,7 +5355,7 @@ async function chooseLevel(id, design = null) {
     'advanced-capacitor':'Increase capacitance to store enough energy before time runs out.'};
   const objective=objectives[level.variant?.family||level.id]||level.brief.split(/(?<=\.)\s+(?=[A-Z])/)[0];
   $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:level.free?'Build anything. Click a piece to adjust it.':objective}));
-  $('pull-tool').hidden=false;$('restart-pieces').hidden=level.free;
+  $('pull-tool').hidden=true;$('restart-pieces').hidden=level.free;
   $('scene-goal').title = level.free ? 'Build anything' : `Goal within ${level.time_s} s`;
   $('goal-line').textContent = level.free
     ? 'No goal: build anything and run it.'
@@ -5369,7 +5364,7 @@ async function chooseLevel(id, design = null) {
   if (level.variant) $('goal-line').textContent += level.variant.fallback
     ? ' This seed uses the tested original setup because fresh candidates failed verification.'
     : ` Fresh setup: ${level.variant.parameter_label || level.variant.parameter.replaceAll('_', ' ')} = ${level.variant.value}.`;
-  $('challenge-actions').hidden = level.difficulty !== 'easy';
+  $('challenge-actions').hidden = Boolean(level.free);
   $('challenge-link').hidden = true;
   $('chat-log').replaceChildren();
   // On a level the chat hints and places the tray's pieces; in a free build
@@ -5397,23 +5392,12 @@ async function chooseLevel(id, design = null) {
   await rebuildLevel(false);
 }
 
-async function freshChallenge(family) {
-  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-  const r = await api({op:'easy_variant', family, seed});
-  generatedLevel = r.level;
-  await chooseLevel(generatedLevel.id);
-}
-$('challenge-fresh').addEventListener('click', async () => {
-  const b = $('challenge-fresh'); b.disabled = true;
-  $('clock').textContent = 'Testing a fresh setup in the physics engine…';
-  try { await freshChallenge(level.variant?.family || level.id); }
-  catch (e) { $('clock').textContent = e.message; }
-  finally { b.disabled = false; }
-});
-$('challenge-share').addEventListener('click', () => {
-  const link = $('challenge-link'); link.value = location.origin + '/play?level=' + encodeURIComponent(level.id);
+$('challenge-share').addEventListener('click', async () => {
+  const link = $('challenge-link'); link.value = 'https://banjo.is/play?level=' + encodeURIComponent(level.id);
   link.hidden = false; link.focus(); link.select();
+  try { await navigator.clipboard.writeText(link.value); } catch { /* visible link remains available */ }
 });
+$('sandbox-build-description').addEventListener('click',()=>{selectPhonePanel('help',true);$('message').focus();});
 
 // A free build's own buttons: clear the table, or set out the example.
 $('free-clear').addEventListener('click', () => {
@@ -5487,7 +5471,7 @@ async function unpackBuild(packed) {
   return {base: draft.base || null, placements: list, name: typeof draft.name === 'string' ? draft.name.slice(0, 60) : 'Shared design'};
 }
 $('free-share').addEventListener('click', async () => {
-  const link = `${location.origin}/machine#build=${await packBuild({name: activeDesign.name, base: activeDesign.draft.base, placements})}`;
+  const link = `https://banjo.is/machine#build=${await packBuild({name: activeDesign.name, base: activeDesign.draft.base, placements})}`;
   const box = $('share-link');
   box.hidden = false; box.value = link; box.select();
   let copied = false;
@@ -5509,13 +5493,14 @@ async function askLevel(mode) {
   $('chat-status').textContent = mode === 'hint' ? 'Thinking about your last run…' : 'Placing pieces from your tray, then rehearsing them once in the engine…';
   say('you', message);
   try {
-    const r = await api({op: 'chat', level: level.id, placements, mode, message, last_run: lastRun});
+    const r = await api({op: 'chat', level: level.id, ...(level.free&&activeDesign?.draft.base?{base:activeDesign.draft.base}:{}), placements, mode, message, last_run: lastRun});
     say('model', r.reply);
     if (mode === 'build' && Array.isArray(r.placements)) {
       endGhost(); remember();
       placements = r.placements.map(p => { const q = {...p}; delete q.cost; return q; });
       helped = true; renderTray(); renderPlaced();
-      if (r.rehearsal) say(r.rehearsal.manual_input_required || r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.manual_input_required
+      if (r.rehearsal && level.free) say(r.rehearsal.error?'refused':'model',r.rehearsal.error?`Engine check: ${r.rehearsal.error}`:'Built and checked in the engine. Run it to try it.');
+      else if (r.rehearsal) say(r.rehearsal.manual_input_required || r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.manual_input_required
         ? 'Setup checked. Drag the field handle to try the machine.' : r.rehearsal.goal_at_s != null
         ? `Rehearsed once in the engine: the goal happened at ${describeTime(r.rehearsal.goal_at_s)}.`
         : 'Rehearsed once in the engine: the goal did not happen. Try moving the pieces.');
@@ -5550,16 +5535,26 @@ for (const id of ['guide', 'recent-changes']) {
 
 // What a player tells us: with the level and pieces it is about, to the
 // server's log. Nothing that names them is sent.
+let feedbackAttempt=null;
 $('feedback-form').addEventListener('submit', async e => {
   e.preventDefault();
   const text = $('feedback-text').value.trim();
   if (!text) return;
   $('feedback-send').disabled = true;
   try {
-    await api({op: 'feedback', text, level: level && level.id, placements, last_run: lastRun,
-               screen: [innerWidth, innerHeight], touch: matchMedia('(pointer: coarse)').matches});
+    const base=level?.free?activeDesign?.draft.base||null:null;
+    const fingerprint=JSON.stringify([text,level?.id,placements,base]);
+    if(feedbackAttempt?.fingerprint!==fingerprint){
+      const replay=level?.free?`https://banjo.is/machine#build=${await packBuild({name:activeDesign.name,base,placements})}`:null;
+      feedbackAttempt={fingerprint,request:{op:'feedback',report_id:crypto.randomUUID(),text,level:level?.id,
+        placements:clone(placements),base:clone(base),last_run:clone(lastRun),world_t:world.t,replay_link:replay||'',
+        screen:[innerWidth,innerHeight],touch:matchMedia('(pointer: coarse)').matches}};
+    }
+    const delivered=await api(feedbackAttempt.request);
     $('feedback-text').value = '';
-    $('feedback-status').textContent = 'Thank you: it is with us.';
+    feedbackAttempt=null;
+    $('feedback-status').textContent = delivered.delivery==='sent'?'Report sent to Linear.':'Report saved. Linear delivery is pending.';
+    if(delivered.issue_url){const link=Object.assign(document.createElement('a'),{href:delivered.issue_url,textContent:'Open report',target:'_blank',rel:'noopener'});$('feedback-status').append(' ',link);}
   } catch (err) { $('feedback-status').textContent = err.message; }
   finally { $('feedback-send').disabled = false; }
 });
@@ -5567,11 +5562,12 @@ $('feedback-form').addEventListener('submit', async e => {
 let phonePanel = 'controls';
 const phoneLayout = matchMedia('(max-width:820px), (max-height:500px) and (min-width:600px)');
 function selectPhonePanel(name, focus = false) {
+  if (name === 'design' && !level?.free) name = 'help';
   phonePanel = name;
   if (!$('phone-design-panel')) return;
   if(focus && document.body.classList.contains('panel-collapsed')) $('panel-toggle').click();
   for (const [key,id] of [['controls','control-panel'],['design','phone-design-panel'],['help','phone-help-panel']]) {
-    const tab = $('phone-'+key+'-tab'), pane = $(id), selected = key === name;
+    const tab = $('phone-'+key+'-tab'), pane = $(id), selected = key === name && !tab.hidden;
     tab.setAttribute('aria-selected',String(selected)); tab.tabIndex = selected ? 0 : -1;
     pane.hidden = !selected || document.body.classList.contains('panel-collapsed');
     if (selected && focus) tab.focus();
@@ -5618,8 +5614,8 @@ function installPhonePanels() {
   $('panel-toggle').addEventListener('click',()=>expand(document.body.classList.contains('panel-collapsed')));
   for (const key of ['controls','design','help']) $('phone-'+key+'-tab').addEventListener('click',()=>{expand(true);selectPhonePanel(key);});
   $('phone-tabs').addEventListener('keydown',e=>{
-    const names=['controls','design','help'], index=names.indexOf(phonePanel);
-    const next=e.key==='Home'?0:e.key==='End'?2:e.key==='ArrowRight'?(index+1)%3:e.key==='ArrowLeft'?(index+2)%3:null;
+    const names=level?.free?['controls','design','help']:['controls','help'], index=names.indexOf(phonePanel);
+    const next=e.key==='Home'?0:e.key==='End'?names.length-1:e.key==='ArrowRight'?(index+1)%names.length:e.key==='ArrowLeft'?(index+names.length-1)%names.length:null;
     if(next!==null){e.preventDefault();e.stopPropagation();selectPhonePanel(names[next],true);}
   });
   phoneLayout.addEventListener('change',update); update();

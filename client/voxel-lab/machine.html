@@ -29,7 +29,7 @@
 <output id="sun-bearing" class="sun-bearing" hidden aria-label="Direction to the sun"><span aria-hidden="true">☀ Sun</span><span id="sun-arrow" aria-hidden="true">↑</span><span id="sun-side"></span></output>
 <div id="scene-actions" class="scene-actions">
 <button id="start">Start</button><button id="reset">Set up again</button>
-<button id="pull-tool" aria-pressed="false" title="Pull a part to test it: press on it and drag">🖐 Pull</button>
+<button id="pull-tool" hidden aria-pressed="false" title="Internal force test">🖐 Pull</button>
 <button id="attach-tool" aria-pressed="false" hidden title="Join two parts: press one, then the other">🔗 Attach</button>
 <button id="undo-pieces" hidden disabled title="Take back the last change to your pieces (Ctrl+Z)" aria-label="Undo">Undo</button>
 <button id="redo-pieces" hidden disabled title="Put it back (Ctrl+Y)" aria-label="Redo">↷</button>
@@ -66,6 +66,7 @@
 <button id="focus-piece" type="button" hidden>Focus selected piece</button>
 <button id="view-overview" type="button">Whole machine</button>
 </div>
+<button id="sandbox-build-description" type="button" hidden>Describe a design</button>
 <output id="laser-preview-status" class="laser-preview-status" hidden></output>
 <output id="water-status" class="water-status" hidden></output>
 <output id="river-wheel-status" class="water-status" hidden></output>
@@ -103,17 +104,18 @@
 <nav id="levels" aria-label="Levels"></nav>
 <details id="level-details"><summary>Puzzle details</summary><p id="brief"></p>
 <p id="goal-line" class="legend"></p></details>
-<div id="challenge-actions" class="chat-actions" hidden><button id="challenge-fresh" type="button">New challenge</button><button id="challenge-share" type="button">Share this challenge</button></div>
+<div id="challenge-actions" class="chat-actions" hidden><button id="challenge-share" type="button">Share</button></div>
 <input id="challenge-link" class="share-link" type="text" readonly hidden aria-label="A link to this challenge">
 <div id="free-actions" class="chat-actions" hidden><button id="free-example" type="button">Set out the example</button><button id="free-share" type="button">Share this design</button><button id="free-clear" type="button">Clear the table</button></div>
 <input id="share-link" class="share-link" type="text" readonly hidden aria-label="A link to this build">
 <h2 id="placed-head">Your pieces</h2><ol id="placed"></ol>
 <p id="cost-line"></p>
 <output id="verdict" aria-live="polite"></output>
-<details id="feedback" class="feedback"><summary>Tell us what happened</summary>
-<form id="feedback-form"><label for="feedback-text">Something odd, broken, confusing or fun? We read every one.</label>
+<details id="feedback" class="feedback"><summary>Report a bug</summary>
+<form id="feedback-form"><label for="feedback-text">What went wrong?</label>
 <textarea id="feedback-text" rows="3" maxlength="2000" placeholder="e.g. “The plank fell through the table” or “I could not tell where the sun was.”"></textarea>
-<div class="chat-actions"><button id="feedback-send" type="submit">Send</button></div>
+<p class="legend">Includes this setup, game version and screen size.</p>
+<div class="chat-actions"><button id="feedback-send" type="submit">Send report</button></div>
 <output id="feedback-status" aria-live="polite"></output></form></details>
 </section>
 <p class="lede">One world, one engine. Each station tests a different part of the physics, and each sets off the next. Nothing is animated: the engine calculates every contact, hinge, current, temperature and break as you watch.</p>
@@ -157,6 +159,8 @@
 <div class="guide-head"><h2 id="recent-changes-title">Recent Changes</h2><button id="recent-changes-done" type="button">Close</button></div>
 <div class="guide-body changes-body" tabindex="0" aria-label="Game updates, newest first">
 <section aria-labelledby="changes-oct13"><h3 id="changes-oct13"><time datetime="2026-10-13">October 13, 2026</time></h3>
+<article><h4>Help and sharing together</h4><p>Level details and hints now share one <b>Help</b> tab. <b>Share</b> uses banjo.is so a copied level or Sandbox design opens the public game. The New challenge and Pull buttons are gone.</p></article>
+<article><h4>Describe a Sandbox design or report a bug</h4><p><b>Describe a design</b> opens Help, where you can ask the builder to add to your Sandbox setup and check it in the engine. <b>Report a bug</b> includes your setup and game version; its status tells you whether delivery to Linear is complete or pending.</p></article>
 <article><h4>Object snapping starts on</h4><p><b>Snap to objects</b> now starts enabled whenever you open a level or Sandbox design, even if it was switched off before. You can still turn it off for the current setup or hold Alt while dragging to bypass it.</p></article>
 <article><h4>Feel the knife line catch the cord</h4><p>In <b>Cut the cord</b> and <b>Cut it down</b>, the guide now recognizes crossings along the cord, rather than only its center. With <b>Snap to objects</b> on, drag the knife close to align its cutting plane: the guide turns green and gently holds the alignment. Pull away to release, or hold Alt while dragging to bypass snapping. The knife stays separate from the cord. Green confirms alignment; running the knife still tests the actual cut.</p></article>
 <article><h4>Room to place bigger pieces</h4><p>Adding a piece now zooms out when needed to show the whole piece before you set it down. Try the knife in <b>Cut the cord</b>: its pendulum and support stay in view alongside the cord. Your viewing angle stays the same, and later adjustments respect your own zoom.</p></article>

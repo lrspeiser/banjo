@@ -204,3 +204,32 @@ passes while Render fails:
 
 `-S` keeps Python to its standard library, as the image's is. Then open
 <http://localhost:8090/play> and play a level.
+
+## Bug reports to Linear
+
+Help → Report a bug captures the player's note, setup, last result, screen size
+and server revision. Public replay links use banjo.is; profile return credentials
+and cookies are excluded. Delivery targets the owner's [Banjo project](https://linear.app/horizon3/project/9e5cee1b-625f-4961-be40-22efa4ab791d/overview).
+
+Set `LINEAR_API_KEY` as a server secret in Render Environment, with access to
+read the project and create its issues. Keep it out of chat, source and browser
+code. `BANJO_LINEAR_PROJECT_ID` defaults to `9e5cee1b-625f-4961-be40-22efa4ab791d`.
+The server resolves the project's team; if it has multiple teams, configure
+`BANJO_LINEAR_TEAM_ID` with a team belonging to that project. The integration
+uses [Linear's GraphQL API](https://linear.app/developers/graphql), including
+checking GraphQL errors even when HTTP succeeds.
+
+Reports are committed to `bug-reports.sqlite3` beside the profile database
+before delivery. With `/data` configured, pending reports survive deployments.
+The worker retries once a minute with exponential backoff capped at one hour;
+a derived issue UUID recovers a successful create whose response was lost.
+Without a credential, reports remain pending and the page says so. Existing
+limits allow 10 submissions per visitor per hour and 500 globally per day;
+the outbox accepts at most 5,000 records and 60 KB per record. It does not
+add independent backups or automatically prune reports.
+
+`/api/checkpoint` includes `bug_reporting.configured` and the pending count.
+Configured means a credential exists, not that Linear accepted it. Verify
+one report's confirmed issue URL and project after configuring the key.
+Automated tests use a simulated Linear service; real delivery still requires
+this provisioning and a live verification.
