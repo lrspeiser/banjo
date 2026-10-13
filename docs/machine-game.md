@@ -1,5 +1,13 @@
 # Puzzles on the machine (/play)
 
+October 13 object snapping default: **Snap to objects** starts enabled on
+every level/design open and page load. The old stored off preference is
+ignored. Switching it off affects the current setup; it no longer persists
+to other levels or future visits. Alt-drag continues to bypass snapping.
+Verified in Chrome on desktop, phone portrait and landscape with an existing
+stored off value: reload and an in-page level change restore On; switching
+Off stays available while editing that setup. Sandbox also starts On.
+
 October 13 knife/cord alignment: compiled slender box members named by a
 joint's `member` record expose finite centerline spans from their real size
 and rotated axes. Working XYZ/direction guides compare against the nearest

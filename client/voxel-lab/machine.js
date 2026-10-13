@@ -55,7 +55,6 @@ scene.add(grid);
 let gridSnapEnabled=true;
 try {gridSnapEnabled=localStorage.getItem('banjo-grid-snap')!=='off';} catch { /* private window */ }
 let objectSnapEnabled=true;
-try {objectSnapEnabled=localStorage.getItem('banjo-object-snap')!=='off';} catch { /* private window */ }
 const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 200);
 const target = new THREE.Vector3(1, 0.4, 0), goal = target.clone();
 let azimuth = -0.55, elevation = 0.42, distance = 6.5;
@@ -2729,7 +2728,6 @@ function renderGhostBar() {
   snapButton.setAttribute('aria-pressed',String(gridSnapEnabled));
   const objectButton=button('Snap to objects',()=>{
     objectSnapEnabled=!objectSnapEnabled;if(ghost){ghost.objectLock=null;ghost.joined=null;}
-    try{localStorage.setItem('banjo-object-snap',objectSnapEnabled?'on':'off');}catch{/* private window */}
     objectButton.setAttribute('aria-pressed',String(objectSnapEnabled));showGridSnap();
   },{id:'object-snap',title:'Align a knife with a nearby cord, center a marble on a board or join track and pipe ends. Pull away to release; Alt+drag bypasses both snaps. Green guides show alignment, not a predicted win.'});
   objectButton.setAttribute('aria-pressed',String(objectSnapEnabled));
@@ -5326,7 +5324,7 @@ async function chooseLevel(id, design = null) {
     activeDesign = design || store.items.find(d => d.id === store.last) || store.items[0] || newDesign('Untitled design');
     store.last = activeDesign.id; persist();
   }
-  endGhost(); closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
+  endGhost(); objectSnapEnabled=true; closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
   undone = []; redone = []; showUndo(); cancelAttach();
   $('attach-tool').hidden = !level.free;

@@ -3706,6 +3706,33 @@ class Puzzles(unittest.TestCase):
                     # The actual comparison is visible, in Controls, with no disclosure.
                     self.assertTrue(self.js("(() => {const e=document.getElementById('level-done-score'), r=e.getBoundingClientRect(), p=document.getElementById('control-panel').getBoundingClientRect(); return e.checkVisibility() && r.left>=p.left && r.right<=p.right+1 && r.top>=p.top && r.bottom<=p.bottom+1;})()"))
 
+    def test_object_snap_starts_on_after_old_preference_reload_and_level_switch(self):
+        import machine_game
+        catalogue = machine_game.load_levels()
+        rank = next(i for i, row in enumerate(catalogue, 1) if row['id'] == 'cut')
+        for width, height in ((1280, 860), (390, 844), (844, 390)):
+            with self.subTest(viewport=(width, height)):
+                self.open('easy-cut', width, height, phone=width != 1280)
+                self.js("localStorage.setItem('banjo-object-snap','off')")
+                self.open('easy-cut', width, height, phone=width != 1280)
+                self.press('Add a knife'); self.ghost()
+                self.assertTrue(self.js('machineWorkingGuide().objects_enabled'))
+                self.assertEqual(self.js("document.getElementById('object-snap').getAttribute('aria-pressed')"), 'true')
+                self.click_visible('Snap to objects')
+                self.assertFalse(self.js('machineWorkingGuide().objects_enabled'))
+                self.press('Cancel'); self.press('Add a knife'); self.ghost()
+                self.assertFalse(self.js('machineWorkingGuide().objects_enabled'), 'Off remains available in this setup')
+                self.press('Cancel')
+                point = self.js("(()=>{const r=document.getElementById('levels-open').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()")
+                self.mouse('mousePressed', *point); self.mouse('mouseReleased', *point)
+                self.wait("!document.getElementById('levels-screen').hidden", 10)
+                self.press(f'Play level {rank}, Cut it down'); self.wait(READY)
+                self.press('Add a knife'); self.ghost()
+                self.assertTrue(self.js('machineWorkingGuide().objects_enabled'), 'Opening another level restores the default')
+                self.press('Cancel'); self.open('free', width, height, phone=width != 1280)
+                self.press('Add a knife'); self.ghost()
+                self.assertTrue(self.js('machineWorkingGuide().objects_enabled'), 'Sandbox also starts with snapping on')
+
     def test_knife_drag_captures_cord_and_colors_its_working_guide_on_all_screens(self):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
