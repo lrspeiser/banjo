@@ -1422,6 +1422,40 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(geometry['rows']);self.assertTrue(geometry['inside'],geometry);self.assertTrue(geometry['clear'],geometry)
                 self.click_visible('Pause')
 
+    def test_solar_shade_feedback_follows_the_ghost_and_matches_rendered_geometry(self):
+        for identity in ('sun','easy-solar'):
+            for width,height in ((1280,860),(390,844),(844,390)):
+                with self.subTest(level=identity,viewport=(width,height)):
+                    self.open(identity,width,height,phone=width!=1280)
+                    self.press('Add a solar panel');self.ghost()
+                    values=([('x',-.8),('z',.6),('height',.6),('turn',-45),('tip',75)] if identity=='sun' else
+                        [('Position along (m)',0),('Position across (m)',0),('Post height (m)',.5),('turn',-90),('tip',70)])
+                    for label,value in values:self.slide(f'{label} of your solar 1',value)
+                    self.ghost();self.press('Set it down');self.wait(f'!machineGhostState() && {READY}',60)
+                    self.wait("document.getElementById('power-labels').textContent.includes('In shadow at panel center')",20)
+                    state=self.js('machineSolarState()');panel=state['panels'][0]
+                    self.assertEqual(state['renderedHits'][0]['part'],'shade wall')
+                    for a,b in zip(state['renderedHits'][0]['point'],panel['shadow_hit_m']):self.assertAlmostEqual(a,b,delta=.0001)
+                    for a,b in zip(state['lightDirection'],panel['toward_sun']):self.assertAlmostEqual(a,b,delta=1e-5)
+                    self.slide('Adjust a piece','0');self.ghost()
+                    self.wait("machineSolarState().preview && !machineSolarState().pending && machineSolarState().panels[0]?.shaded",30)
+                    # Delay only this observation so stale visible labels are measurable.
+                    self.js("(()=>{const previous=window.fetch;window.fetch=async(...args)=>{const response=await previous(...args);if(args[1]?.body?.includes('level_sunlight'))await new Promise(resolve=>setTimeout(resolve,500));return response;};})()")
+                    self.slide(('x' if identity=='sun' else 'Position along (m)')+' of your solar 1',1.4)
+                    self.wait("machineSolarState().pending && !document.getElementById('power-labels').textContent.includes('In shadow') && machineSolarState().guides.length===0",10)
+                    self.ghost()
+                    self.wait("!machineSolarState().pending && machineSolarState().panels[0]?.sunlight_w>249",30)
+                    self.assertIn('Preview',self.js("document.getElementById('power-labels').textContent"))
+                    self.assertIn('Panel center in sunlight',self.js("document.getElementById('power-labels').textContent"))
+                    self.assertTrue(self.js('machineSolarState().livePanels[0].shaded'),'a proposed move must not change the live world')
+                    state=self.js('machineSolarState()')
+                    self.assertIsNone(state['renderedHits'][0]['part'])
+                    self.assertGreater(state['panels'][0]['ray_from_m'][0],1)
+                    self.assertTrue(all(store['charge_j']==0 for store in state['batteries']))
+                    self.assertTrue(self.js(READY),'the preview must not run the live machine')
+                    self.press('Set it down');self.wait(f'!machineGhostState() && {READY}',60)
+                    self.wait("!machineSolarState().preview && machineSolarState().panels[0]?.sunlight_w>249",20)
+
     def test_solar_meters_and_explicit_winch_cable_work_on_desktop_and_phones(self):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):

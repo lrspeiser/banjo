@@ -270,6 +270,31 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_sunlight_placement_sample_uses_native_geometry_without_advancing_or_charging(self):
+        with tempfile.TemporaryDirectory() as logs:
+            for identity in ('sun','easy-solar'):
+                level=mg.level_by_id(identity)
+                for shaded in (False,True):
+                    placed=copy.deepcopy(level['solution'])
+                    if shaded:placed[0].update(x_m=-.8 if identity=='sun' else 0,z_m=.6 if identity=='sun' else 0)
+                    before=copy.deepcopy(placed)
+                    result=mg.solar_preview(level,placed,ENGINE,Path(logs))
+                    self.assertEqual(placed,before)
+                    self.assertEqual(result['world_time_s'],0)
+                    panel=result['panels'][0]
+                    self.assertEqual(panel['shaded'],shaded)
+                    self.assertEqual(panel['shaded_by'],'shade wall' if shaded else '')
+                    self.assertAlmostEqual(panel['sunlight_w'],0 if shaded else 250,places=3)
+                    self.assertEqual(panel['sunlight_j'],0)
+                    self.assertEqual(panel['charged_j'],0)
+                    self.assertTrue(all(store['given_j']==0 and store['taken_j']==0 for store in result['stores']))
+                    if shaded:
+                        start=panel['ray_from_m'];toward=panel['toward_sun'];distance=panel['shadow_distance_m']
+                        # vec() exports each coordinate/direction at 1e-5.
+                        # Bound the three rounding contributions analytically.
+                        for i in range(3):self.assertAlmostEqual(start[i]+toward[i]*distance,panel['shadow_hit_m'][i],
+                            delta=5e-6*(2+distance))
+
     def test_advanced_electronics_require_the_right_ratings_and_real_topology(self):
         with tempfile.TemporaryDirectory() as logs:
             for identifier in ('advanced-resistor','advanced-parallel','advanced-capacitor'):

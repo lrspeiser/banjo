@@ -572,6 +572,40 @@ window.machineContactState=()=>({...contactSnapshot(),terminals:window.machineWi
 // topology; the native collector, energy store and motor decide the power.
 let pickedPowerPort = null, powerBusy = false;
 const powerLabels = new Map(), solarRays = new Map();
+let solarResult=null,solarWanted='',solarStamp='',solarVersion=0,solarTimer=null,solarBusy=false,solarPending=false,solarError='';
+function scheduleSolarPreview(ms=140) {
+  if(!ghost || playing || !level || document.body.matches('.on-sandbox,.on-levels') ||
+     !(ghost.p.piece==='solar' || (ghost.solar_setup||machine?.solar_panels||[]).length))return;
+  const request={op:'level_sunlight',level:level.id,...sandboxRequest(),placements:ghostPlacements()};
+  const stamp=JSON.stringify(request);
+  if(stamp===solarWanted && (solarTimer || solarBusy || stamp===solarStamp))return;
+  clearTimeout(solarTimer);solarWanted=stamp;solarVersion++;solarPending=true;solarError='';
+  solarTimer=setTimeout(()=>{solarTimer=null;askSolarPreview();},ms);
+}
+async function askSolarPreview() {
+  if(solarBusy || !solarWanted || !ghost || ghost.busy || !ghost.answered || !ghost.fits || playing)return;
+  const stamp=solarWanted,mine=solarVersion;solarBusy=true;
+  try {
+    const result=await api(JSON.parse(stamp));
+    if(mine!==solarVersion || !ghost || playing)return;
+    solarResult=result;solarStamp=stamp;solarPending=false;updatePowerLabels();showGhostState();
+  } catch(error) {
+    if(mine!==solarVersion)return;
+    if(error.status===503)solarTimer=setTimeout(()=>{solarTimer=null;askSolarPreview();},500);
+    else {solarError='Sunlight preview unavailable; set down to measure.';solarResult=null;solarStamp=stamp;solarPending=false;updatePowerLabels();showGhostState();}
+  } finally {
+    solarBusy=false;
+    if(mine!==solarVersion && ghost && !playing){clearTimeout(solarTimer);solarTimer=setTimeout(()=>{solarTimer=null;askSolarPreview();},0);}
+  }
+}
+function solarSnapshot() {
+  if(ghost && !playing) {
+    const request={op:'level_sunlight',level:level.id,...sandboxRequest(),placements:ghostPlacements()};
+    const pending=solarPending || solarStamp!==JSON.stringify(request);
+    return {preview:true,pending,error:solarError,panels:pending?[]:solarResult?.panels||[],batteries:pending?[]:solarResult?.stores||[]};
+  }
+  return {preview:false,pending:false,panels:readouts.machines?.solar_panels||[],batteries:readouts.machines?.batteries||[]};
+}
 function powerMessage(text) {
   $('power-status').textContent = text;
   $('power-status').hidden = !text;
@@ -639,7 +673,8 @@ function syncPowerLabels() {
   const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
   svg.classList.add('power-leaders'); svg.setAttribute('aria-hidden','true'); pins.append(svg);
   pickedPowerPort = null; powerBusy = false; powerMessage('');
-  for (const port of machine.electrical?.power_ports || []) {
+  const shown=shownElectrical(),panels=ghost?.solar_setup||machine.solar_panels||[];
+  for (const port of shown.power_ports || []) {
     const pack=machine.electrical.devices?.find(d=>d.kind==='battery'&&d.battery===port.battery&&d.terminal_parts);
     if (pack&&!machine.solar_panels?.length&&!machine.electrical.power_cables?.length) continue;
     if (machine.electrical.devices?.some(d=>d.kind==='socket')&&!machine.solar_panels?.length&&!level?.tray.some(t=>t.piece==='solar'||t.piece==='power_cable')) continue;
@@ -664,7 +699,7 @@ function syncPowerLabels() {
     host.append(card); powerLabels.set(port.name, {port, card, pin, badge, watts, detail, state, control});
   }
   // Older saved declarations also get a visible meter even without ports.
-  for (const panel of machine.solar_panels || []) {
+  for (const panel of panels) {
     if ([...powerLabels.values()].some(row => row.port.solar_panel === panel.name)) continue;
     const card = document.createElement('section'); card.className = 'power-label output';
     const title = document.createElement('strong'); title.textContent = panel.name;
@@ -686,17 +721,18 @@ function syncPowerLabels() {
   showInstrumentPanel();
 }
 function updatePowerLabels() {
+  const snapshot=solarSnapshot(),prefix=snapshot.preview?'Preview · ':'';
   for (const {port, badge, watts, detail, state, control} of powerLabels.values()) {
     const cable = machine.electrical?.power_cables?.find(c => c.a === port.name || c.b === port.name);
     if (port.kind === 'output') {
-      const measured = readouts.machines?.solar_panels?.find(p => p.name === port.solar_panel);
+      const measured = snapshot.panels.find(p => p.name === port.solar_panel);
       const panel = machine.solar_panels?.find(p => p.name === port.solar_panel);
-      const battery = readouts.machines?.batteries?.find(b => b.name === (measured?.battery || panel?.battery));
-      watts.textContent = measured ? `${(measured.power_w || 0).toFixed(1)} W charging` : 'Measuring sunlight…';
+      const battery = snapshot.batteries.find(b => b.name === (measured?.battery || panel?.battery));
+      watts.textContent = measured ? `${prefix}${(measured.power_w || 0).toFixed(1)} W charging` : snapshot.error?'Preview unavailable':'Updating sunlight…';
       badge.textContent = measured ? `${(measured.power_w || 0).toFixed(1)} W` : '… W';
       detail.textContent = measured ? `${(measured.sunlight_w || 0).toFixed(0)} W sunlight · ${(battery?.charge_j || 0).toFixed(1)} J stored` : '';
       const aim = Number.isFinite(measured?.off_sun_deg) ? `${measured.off_sun_deg.toFixed(0)}° off sun` : '';
-      state.textContent = [measured?.shaded ? `In shadow · ${measured.shaded_by || 'a part'}` : '', aim,
+      state.textContent = [snapshot.error || (snapshot.pending?'Measuring proposed position…':measured?.shaded ? `${prefix}In shadow at panel center · ${measured.shaded_by || 'a part'}` : measured?`${prefix}${measured.ray_cast?'Panel center in sunlight':'No sunlight on collecting face'}`:''), aim,
         battery && battery.charge_j >= battery.capacity_j ? 'Store full' : '',
         cable ? 'Cable connected' : 'Output not wired'].filter(Boolean).join(' · ');
     } else state.textContent = cable ? 'Cable connected' : 'Waiting for a cable';
@@ -715,13 +751,15 @@ function updatePowerLabels() {
 }
 function updateSolarRays() {
   const seen = new Set();
-  for (const p of readouts.machines?.solar_panels || []) {
+  for (const p of solarSnapshot().panels) {
     if (!p.ray_cast || !p.ray_from_m || !p.toward_sun) continue;
     seen.add(p.name);
     let line = solarRays.get(p.name);
     if (!line) {
       line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({color:0xffcf59,
         dashSize:.04,gapSize:.025,transparent:true,opacity:.85,depthTest:false}));
+      const sample=new THREE.Mesh(new THREE.SphereGeometry(.014,12,8),new THREE.MeshBasicMaterial({color:0xffcf59,depthTest:false}));
+      line.add(sample);line.userData.sample=sample;
       line.renderOrder = 20; scene.add(line); solarRays.set(p.name, line);
     }
     const from = new THREE.Vector3(...p.ray_from_m);
@@ -729,11 +767,26 @@ function updateSolarRays() {
       : from.clone().addScaledVector(new THREE.Vector3(...p.toward_sun), .7);
     line.geometry.setFromPoints([from, end]); line.computeLineDistances();
     line.material.color.setHex(p.shaded ? 0xff906c : 0xffcf59);
+    line.userData.sample.position.copy(from);line.userData.sample.material.color.copy(line.material.color);
   }
   for (const [name, line] of solarRays) if (!seen.has(name)) {
+    line.userData.sample.geometry.dispose();line.userData.sample.material.dispose();
     scene.remove(line); line.geometry.dispose(); line.material.dispose(); solarRays.delete(name);
   }
 }
+window.machineSolarState=()=>({
+  ...solarSnapshot(),
+  livePanels:readouts.machines?.solar_panels||[],
+  lightDirection:sun.position.clone().sub(sun.target.position).normalize().toArray(),
+  guides:[...solarRays].map(([name,line])=>({name,points:Array.from(line.geometry.attributes.position.array)})),
+  renderedHits:solarSnapshot().panels.filter(p=>p.ray_cast).map(p=>{
+    const caster=new THREE.Raycaster(new THREE.Vector3(...p.ray_from_m),sun.position.clone().sub(sun.target.position).normalize(),0,1000);
+    const rows=[...meshes].filter(([name])=>!hiddenPiece(name));
+    const hit=caster.intersectObjects(rows.map(([,mesh])=>mesh),true).find(hit=>hit.object.castShadow);
+    const owner=hit&&rows.find(([,mesh])=>{let object=hit.object;while(object){if(object===mesh)return true;object=object.parent;}return false;});
+    return {name:p.name,part:owner?.[0]||null,point:hit?.point.toArray()||null};
+  })
+});
 async function pickPowerPort(port) {
   if (playing || powerBusy || ghost || !level) return;
   if (port.kind === 'output') {
@@ -2110,6 +2163,8 @@ function askGhost() {
   // including edits queued behind an in-flight placement check.
   if (JSON.stringify(ghostPlacements()) !== ghost.previewStamp) markFlowPending();
   scheduleLaserPreview();
+  scheduleSolarPreview();
+  updatePowerLabels();
   if (ghost.busy) { ghost.again = true; return ghost.check; }
   const g = ghost;
   g.check = checkGhost(g);
@@ -2133,6 +2188,8 @@ async function checkGhost(g) {
     g.electrical = r.electrical_preview || null;
     g.optical_setup = r.optical_setup || null;
     g.water_setup = r.water_setup || [];
+    g.solar_setup = r.solar_setup || [];
+    syncPowerLabels();
     drawGhost(r.parts, r.fits);
     drawLensOutlines();
     if (g.electrical) {
@@ -2168,7 +2225,7 @@ async function checkGhost(g) {
     if (ghost === g) Object.assign(g, {fits: false, problems: e.data && e.data.problems ? e.data.problems : [e.message], answered: true});
   } finally {
     g.busy = false;
-    if (ghost === g) { showGhostState(); if (g.again) askGhost(); }
+    if (ghost === g) { showGhostState(); if (g.again) askGhost(); else scheduleSolarPreview(); }
   }
 }
 
@@ -2212,6 +2269,7 @@ function pickUp(i) {
 }
 
 function endGhost() {
+  clearTimeout(solarTimer);solarTimer=null;solarWanted='';solarStamp='';solarResult=null;solarVersion++;solarPending=false;solarError='';
   ghost = null; draggingGhost = null; pressedAt = null;
   view.classList.remove('grabbing', 'grab');
   terminalStart = null; powerMessage('');
@@ -2383,8 +2441,11 @@ function showGhostState() {
   const said = document.querySelector('#ghost-bar .state');
   if (said && ghost) {
     said.className = 'state ' + (choosingTerminal ? '' : ghost.fits ? 'fits' : 'refused');
+    const sunlight=solarSnapshot(),panel=sunlight.panels.find(p=>p.name===ghostName());
+    const solarText=sunlight.error || (sunlight.pending?'measuring sunlight at this position…':panel?
+      `Preview · ${Math.round(panel.sunlight_w)} W sunlight · ${panel.shaded?'center shaded by '+panel.shaded_by:panel.ray_cast?'center in sunlight':'face away from sun'}`:'sunlight not measured');
     said.textContent = choosingTerminal ? 'Choose the other terminal.' : (ghost.fits ? (ghost.sun && ghost.sun.length
-      ? `Fits · aim ${ghost.sun[0].off_sun_deg}° · ${Math.round(ghost.sun[0].sunlight_w)} W before shade` : 'Fits')
+      ? `Fits · aim ${ghost.sun[0].off_sun_deg}° · ${solarText}` : 'Fits')
       : ghost.problems.join('; ')) + (ghost.joined ? ` · joined to ${ghost.joined}` : '');
     said.title=ghost.fits && ghost.energy ? madeAgainstPar() : said.textContent;
   }

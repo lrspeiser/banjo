@@ -287,6 +287,11 @@ class Handler(BaseHTTPRequestHandler):
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is working out other previews; trying again in a moment')
     try:r={'ok':True,**machine_game.preview(machine_game.requested_level(data),data.get('placements') or [],host.exe,host.logs)}
     finally:self.server.preview_busy.release()
+   elif op=='level_sunlight':
+    if self.server.optical_allowance:self.server.optical_allowance.take(self.visitor())
+    if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is measuring other previews; trying again in a moment')
+    try:r={'ok':True,**machine_game.solar_preview(machine_game.requested_level(data),data.get('placements') or [],host.exe,host.logs)}
+    finally:self.server.preview_busy.release()
    elif op=='level_optics':
     if self.server.optical_allowance:self.server.optical_allowance.take(self.visitor())
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is working out other previews; trying again in a moment')

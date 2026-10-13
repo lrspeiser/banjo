@@ -577,3 +577,48 @@ meters, reset, unobstructed labels, both-load wiring goals across desktop,
 phone portrait and landscape, plus library availability and saving/reloading
 component ratings/wires. The published revision is reported with the checkpoint.
 See [the complete catalogue](electronics-expansion.md).
+
+## Solar shade while moving a panel (October 12)
+
+The old meter and dashed sunlight sample read only the live world's panel,
+even while the displayed ghost had moved elsewhere. This could leave an
+**In shadow** label and old obstruction ray on an unshaded proposed position.
+The visual key light's direction already matched the engine's sun.
+
+Proposed geometry now receives a separate native ready-state sample through
+`level_sunlight`, debounced by 140 ms and sharing the bounded optical preview
+lane. It builds a paused world, returns its native panels/stores and closes
+it without stepping. New edits invalidate old observations immediately;
+late replies cannot restore old shade data. Preview labels, the setup feedback,
+the sample-origin dot and obstruction line all use that same accepted result.
+Set down restores live readings. An unavailable preview asks for Set down
+rather than displaying the old shade as current. No source, material,
+collision, radiation or battery law changed; no goals/pars were relaxed.
+
+Both wall levels compare shaded and unshaded author setups: 0 W or 250 W
+incident sunlight respectively, zero elapsed simulation time, zero sunlight
+energy, and zero battery draw/charging. Proposed placement declarations remain
+unchanged. Both use the existing center ray; partial-panel shade and area
+integration are still unsupported. The raised collecting face and the ground
+can have different shade boundaries. The small dot identifies the center used
+by this model rather than asserting that every cell receives identical light.
+
+Native JSON vectors round components to 1e-5 (metres for position, dimensionless
+for direction); the distance is unrounded. Reconstructing the reported hit
+therefore has an analytically derived per-coordinate transport bound of
+`5e-6*(2+distance_m)` metres. An initial new test incorrectly required five
+decimal places without accounting for direction rounding; its assertion now
+uses this bound. Existing physical tolerances remain unchanged.
+
+Browser tests independently intersect the rendered wall meshes along the key
+light direction. Their hit positions match native hits within 0.1 mm, and sun
+directions within 1e-5, on both levels at 1280×860, 390×844 and 844×390. A delayed
+sample verifies that moving out of shade clears the old label and guide before
+the reply; the new preview reports 250 W while the actual live world remains
+shaded and paused. Wiring, authored wins and saved cable/version workflows
+retain their behavior.
+
+Checks: 32/32 electrical tests in 47.765 s, 53/53 game tests in 95.423 s, and
+four solar browser checks in 58.654 s. Source registration is 269/269. This
+observation/UI change reuses verified engine SHA-256
+`acb79f1926052467cd1dad869ddd3b31cd503c54f0f77c641e99e270c0da8dfc`.

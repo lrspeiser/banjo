@@ -1298,6 +1298,7 @@ def ghost(level, placements, index, snapping=False, edit_key=None):
                             **({'parts': p['parts']} if p['shape'] == 'compound' else {})) for p in mine]}
     if compiled.get('light'):
         reply['optical_setup'] = compiled['light']
+    reply['solar_setup'] = compiled.get('solar_panels', [])
     if compiled.get('spouts'):
         reply['water_setup'] = compiled['spouts']
     # Draw the compiled terminals while placing a device, including its
@@ -1534,6 +1535,27 @@ def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None):
                         'closest': (r.get('closest_approach') or [None])[0]})
     worked = sum(1 for x in results if x['goal_at_s'] is not None and x['goal_at_s'] <= level['time_s'])
     return {'runs': runs, 'worked': worked, 'results': results, 'cost': cost}
+
+
+def solar_preview(level, placements, exe, logs):
+    """Native ready-state sunlight/occlusion for the proposed geometry.
+
+    Build a separate paused world. No steps, stored charge or live-world
+    mutation; the engine's actual collision shapes decide the center ray.
+    """
+    spec, _, _ = compose(level, placements, leave_out_goal=True)
+    compiled = mw.compile_spec(spec)
+    if not compiled.get('solar_panels'):
+        return {'panels': [], 'stores': [], 'world_time_s': 0, 'wall_s': 0}
+    started = time.perf_counter()
+    with tempfile.TemporaryDirectory(prefix='solar-preview-', dir=str(logs)) as workdir:
+        engine, _, _ = mw.build_engine(exe, compiled, workdir)
+        try:
+            machines = engine.first.get('machines') or {}
+            return {'panels': machines.get('panels', []), 'stores': machines.get('stores', []),
+                    'world_time_s': 0, 'wall_s': time.perf_counter()-started}
+        finally:
+            engine.close()
 
 
 def optical_preview(level, placements, exe, logs):

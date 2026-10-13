@@ -8,6 +8,15 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 12 solar feedback correction: proposed panel positions now receive
+native ready-state sunlight/occlusion samples without stepping or charging
+the live machine. The meter and obstruction guide clear their old results
+while the new position is measured, then report a marked Preview. The sampled
+center is visible on the panel. This corrects observation/display; it changes
+no solar, collision, material or energy law. Center-ray shade remains a
+whole-collector approximation rather than partial-area integration. See
+[solar controls](machine-game.md#clear-solar-shadows-and-required-delivery-cables).
+
 October 12 electronics expansion: independent rated resistors and nonpolar
 capacitors can be placed and wired in 3D. Native Circuit now uses accepted-step
 RC charge state, explicit ESR/leakage and separate stored-energy/numerical-loss

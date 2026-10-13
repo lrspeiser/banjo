@@ -467,6 +467,21 @@ new result can be claimed.
 
 ## Clear solar shadows and required delivery cables
 
+October 12 editing correction: moving a placed solar panel previously left
+its old live shade label and obstruction ray on screen. Proposed placements
+now receive a debounced native **ready-state** sunlight sample in a separate
+paused world. Old shade labels/rays clear as soon as an edit begins; the new
+reading and ray are marked **Preview**. This works independently of path
+playback and does not advance or charge the live machine. Set down switches
+back to live measurements. A small sample dot marks the actual panel-center
+ray origin. **In shadow at panel center** names the blocking part; the setup
+controls also report measured sunlight rather than an unshaded-only estimate.
+The engine still uses a center ray, so this does not establish partial-panel
+shading. Ground shadows are drawn at floor height; the ray is sampled on the
+raised panel, which can have a different shade boundary. Sun direction and
+rendered wall intersections are checked against the native sample on both
+solar-wall levels, on desktop and phone portrait/landscape.
+
 Both **Catch the sun** cards now have a concrete wall, 2 m wide, 1.6 m high
 and 0.12 m thick. The winch wall is turned 45° across the low sun's direction;
 the introductory wall stands across its south-facing sunlight. Move the
