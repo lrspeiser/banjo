@@ -449,6 +449,9 @@ body.panel-tabs .control-panel .ghost-bar>.state{margin:0;font-size:12px}
 body.panel-tabs .control-panel .ghost-bar>.move-pad{display:grid;grid-template-columns:repeat(6,44px);grid-template-rows:44px;position:static;gap:3px}
 body.panel-tabs .control-panel .move-pad button{grid-area:auto}
 #precision-controls{border-top:1px solid #4e7287}
+body.panel-tabs .control-panel .ghost-bar>.ghost-fields>.wire-gauge{grid-template-columns:repeat(3,minmax(44px,1fr))}
+.wire-gauge button{min-height:44px;min-width:44px;padding:6px;border:1px solid #63899d;border-radius:6px;background:#294c60;color:#e7f2f8;font:14px system-ui;cursor:pointer}
+.wire-gauge button[aria-pressed=true]{background:#142836;border-color:#9fdcff;box-shadow:inset 0 -3px #9fdcff}
 #precision-controls summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
 #precision-controls .ghost-piece{list-style:none}
 .scene-goal{margin:0;padding:2px 4px;font-size:13px;color:#d9ebf4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

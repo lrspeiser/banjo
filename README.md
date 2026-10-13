@@ -35,8 +35,11 @@ Cables show measured power/current and moving flow dots while editing or
 running. Draw wires by clicking their actual connection rings in the 3D scene.
 A dashed guide follows the pointer between clicks; endpoint dropdowns remain
 optional precision controls. Solar cables accept either click order.
-Click a placed wire to lift its nearest end and reconnect it; **Disconnect wire**
-removes it, Esc restores a pending edit, and Undo restores a finished change.
+Click a wire you placed to remove it, then draw a new connection; Undo restores
+an accidental removal. Clicking a battery's case adjusts it; a used-up level
+tray card also reopens its placed piece.
+Wire thickness uses visible Thin / Standard / Thick choices. Cable labels
+show the declared copper cross-section alongside measured current and power.
 Small object labels show a bulb's rating or power goal, and an estimated
 starting power/torque for simple motor lifts. Complex loads retain
 a variable-demand label rather than a guessed threshold.

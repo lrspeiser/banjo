@@ -447,7 +447,7 @@ function positionTerminalLabels() {
   const rect = renderer.domElement.getBoundingClientRect();
   const top = Math.max(8, $('clock').getBoundingClientRect().bottom - rect.top + 8);
   const bottom = Math.min(rect.height - 8, innerHeight - rect.top - 8);
-  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #clock, .power-pin')]
+  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #clock, #panel-toggle, .power-pin')]
     .filter(el => !el.hidden && el.style.visibility !== 'hidden' && el.offsetWidth && el.offsetHeight).map(el => {
       const r = el.getBoundingClientRect(); return {x:r.left-rect.left, y:r.top-rect.top, w:r.width, h:r.height};
     });
@@ -618,9 +618,10 @@ function drawSceneSockets() {
   socketTail.style.display=first&&end?'':'none';
   if(first&&end)socketTail.setAttribute('d',`M ${first.x-rect.left} ${first.y-rect.top} L ${end.x-rect.left} ${end.y-rect.top}`);
   view.classList.toggle('socket-hover',Boolean(hover));
-  const hint=$('scene-wire-hint');hint.hidden=!rows.length || (!selected&&!ghost&&!hover&&!wiringMode);
+  const learningWires=!level?.free && placements.some(p=>p.piece==='battery') && level.tray.some(t=>t.piece==='wire'&&piecesLeft(t)>0);
+  const hint=$('scene-wire-hint');hint.hidden=!rows.length || (!selected&&!ghost&&!hover&&!wiringMode&&!learningWires);
   hint.textContent=selected?`${selected.replace(/^your /,'')} → click another connection point · Esc cancels`
-    :hover?`Click ${hover.name.replace(/^your /,'')} to start a wire`:'Click a connection point on a piece, then the other end';
+    :hover?`Click ${hover.name.replace(/^your /,'')} to start a wire`:learningWires?'Click a + or − ring to start a wire, then click its other end':'Click a connection point on a piece, then the other end';
 }
 window.machineSceneSockets=()=>{freshView();return {selected:socketSelection(),pending:socketTail.style.display!=='none',
   points:sceneSockets().map(({name,at,x,y,kind})=>({name,at,x,y,kind}))};};
@@ -939,7 +940,7 @@ function positionPowerLabels() {
   const clock = $('clock').getBoundingClientRect();
   const top = Math.max(8, clock.bottom - rect.top + 8);
   const bottom = rect.height - 10;
-  const occupied = ['scene-mode','sun-bearing']
+  const occupied = ['scene-mode','sun-bearing','panel-toggle']
     .map(id => $(id)).concat(collapsedPanel()).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
     .map(el => { const r = el.getBoundingClientRect(); return {x:r.left - rect.left,y:r.top - rect.top,w:r.width,h:r.height}; });
   // Place the larger meters first, then fit receiver buttons beside them.
@@ -2224,7 +2225,7 @@ function updateEditGuide() {
   const x = (screen.x + 1) * view.clientWidth / 2 + 14, y = (1 - screen.y) * view.clientHeight / 2 + 16;
   // A wrapped toolbar can fill a short phone scene. Try spaces beside the
   // piece and the controls, rather than forcing the caption below every row.
-  const obstacles = [...collapsedPanel(), ...view.querySelectorAll('#clock, #scene-mode, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
+  const obstacles = [...collapsedPanel(), ...view.querySelectorAll('#clock, #scene-mode, #panel-toggle, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
     .filter(e => e.offsetWidth && e.offsetHeight).map(e => e.getBoundingClientRect());
   let best = null;
   for (const [cx, cy] of [[x, y], [x, y - height - 40], [x - width - 30, y], [8, maxY], [maxX, maxY], [maxX, minY]]) {
@@ -2470,6 +2471,7 @@ function renderGhostBar() {
   card.hidden = !ghost;
   $('focus-piece').hidden = !ghost;
   ghost && (ghost.cardInput = null);
+  ghost && (ghost.gaugeButtons = null);
   $('piece-edit-row').hidden = Boolean(ghost) || !placements.length;
   if (!ghost) {
     for(const id of ['flow-preview','phone-tools','move-pad','preview-legend','instrument-panel','edit-guide-label']) if($(id)) $('control-panel').append($(id));
@@ -2511,6 +2513,15 @@ function renderGhostBar() {
       if ((key==='mount' && ghost.p.piece==='battery')||(key==='mode'&&ghost.p.piece==='switch')||(key==='size'&&ghost.p.piece==='bulb')) {renderPlaced();renderGhostBar();}
       showGhostKnobs(); askGhost();
     });
+    if(ghost.p.piece==='wire'&&key==='size') {
+      row.classList.add('wire-gauge');select.hidden=true;
+      ghost.gaugeButtons=rule.choices.map(value=>{
+        const label=value[0].toUpperCase()+value.slice(1);
+        const choice=button(label,()=>{ghost.p.size=value;showGhostKnobs();askGhost();},{ariaLabel:`${label} wire`});
+        choice.dataset.gauge=value;choice.setAttribute('aria-pressed',String(ghost.p.size===value));
+        row.append(choice);return choice;
+      });
+    }
     row.append(select);
     ghost.cardInput = [select, null, key];
   } else {
@@ -2614,6 +2625,7 @@ function showGhostState() {
 
 function showGhostKnobs() {
   if (!ghost) return;
+  for(const b of ghost.gaugeButtons||[])b.setAttribute('aria-pressed',String(b.dataset.gauge===ghost.p.size));
   showGridSnap();
   const knobs = trayItem(ghost.p.piece).knobs;
   const value = document.querySelector('#ghost-bar .knob-value');
@@ -2873,6 +2885,10 @@ function updatePowerFeedback() {
   }
   const dotMatrix=new THREE.Matrix4(),time=performance.now()/1000;
   for(const w of sample.wires.filter(w=>w.points_m?.length>1).slice(0,12)) {
+    const declaration=(shownElectrical().wires||[]).find(row=>row.name===w.name);
+    const area=declaration?.area_mm2;
+    const gauge=Number.isFinite(area)?`${({.01:'Thin',.5:'Standard',2.5:'Thick'})[area]||'Copper'} · ${area} mm²`:
+      w.unit==='A'&&Number.isFinite(declaration?.resistance_ohm)?`Low resistance · ${declaration.resistance_ohm.toFixed(3)} Ω`:'';
     const curve=feedbackCurve(w),active=Math.abs(w.value)>1e-4;
     const watts=w.unit==='W'?Math.abs(w.value):Math.abs(w.through_w||0);
     if(active&&!pending)for(const offset of [0,.5]) {
@@ -2883,13 +2899,14 @@ function updatePowerFeedback() {
       w.return_path?`Return · ${Math.abs(w.value).toFixed(3)} A`:`${watts.toFixed(1)} W · ${Math.abs(w.value).toFixed(3)} A`;
     if(w.show_supply_limit&&Number.isFinite(w.supply_max_power_w))text+=`\nShared supply ≤ ${w.supply_max_power_w.toFixed(1)} W · ${w.supply_voltage_v} V`;
     items.push({id:'wire:'+w.name,name:w.name,kind:'wire',at:curve.getPoint(.5).toArray(),
-      text:pending?'Updating…':(sample.preview?'Preview · ':'')+text,title:'Measured flow. The shared supply limit includes all loads and losses; each wire does not get a separate budget. Dots show conventional-current direction. Return-wire watts depend on the battery-negative reference.'});
+      text:(gauge?((ghost?.p.piece==='wire'&&ghost.busy)?'Gauge updating…':gauge)+'\n':'')+
+        (pending?'Updating…':(sample.preview?'Preview · ':'')+text),title:'Wire cross-section is the declared copper area used by the engine to calculate resistance. Measured flow and shared supply limits include losses; dots show conventional-current direction. Return-wire watts depend on the battery-negative reference.'});
   }
   powerFlowDots.instanceMatrix.needsUpdate=true;
   const seen=new Set(items.map(i=>i.id));
   for(const [id,row] of powerFeedbackRows)if(!seen.has(id)){row.card.remove();powerFeedbackRows.delete(id);}
   const rect=renderer.domElement.getBoundingClientRect();
-  const occupied=[...view.querySelectorAll('#clock,#scene-mode,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint')]
+  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#panel-toggle,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   // A power reading must not hide the connection the player is trying to
   // click, especially on a phone. Reserve the rings before placing labels.
@@ -3338,18 +3355,16 @@ function wireCandidates(clientX,clientY,touch=false) {
   }
   return result.sort((a,b)=>a.gap-b.gap);
 }
-async function rewire(hit) {
+async function disconnectPlacedWire(hit) {
   if(ghost || rewiringBusy || !placements[hit.index])return;
-  const sourceLevel=level,was=JSON.stringify(placements),p={...placements[hit.index]};
+  const sourceLevel=level,was=JSON.stringify(placements);
   rewiringBusy=true;
   try {
     // Stop a live circuit and restore its starting apparatus before editing.
     if(playing || world.t>0)await rebuildLevel(false);
     if(level!==sourceLevel || JSON.stringify(placements)!==was)return;
-    const key=hit.end+(p.piece==='wire'?'_terminal':'_port'),keep=(hit.end==='a'?'b':'a')+(p.piece==='wire'?'_terminal':'_port');
-    p[key]='';startGhost(p,hit.index,true);ghost.rewireKey=key;
-    if(p.piece==='wire')terminalStart=p[keep];
-    renderGhostBar();showGhostState();
+    remember();removePiece(hit.index);setWiringMode(false);renderTray();renderPlaced();
+    await rebuildLevel(false);
   } catch(e){powerMessage(e.message);}
   finally{rewiringBusy=false;}
 }
@@ -3357,12 +3372,12 @@ function clickExistingWire(x,y,touch) {
   const rows=wireCandidates(x,y,touch);if(!rows.length)return false;
   if(rows[1] && rows[1].gap-rows[0].gap<6) {
     const choice=$('socket-choices');choice.replaceChildren();
-    for(const row of rows.slice(0,4))choice.append(button(`Rewire ${row.name.replace(/^your /,'')}`,()=>{choice.hidden=true;rewire(row);}));
+    for(const row of rows.slice(0,4))choice.append(button(`Remove ${row.name.replace(/^your /,'')}`,()=>{choice.hidden=true;disconnectPlacedWire(row);}));
     choice.append(button('Cancel',()=>{choice.hidden=true;}));choice.hidden=false;
     const rect=renderer.domElement.getBoundingClientRect();
     choice.style.left=`${Math.max(6,Math.min(rect.width-choice.offsetWidth-6,x-rect.left+12))}px`;
     choice.style.top=`${Math.max(6,Math.min(rect.height-choice.offsetHeight-6,y-rect.top+12))}px`;
-  } else rewire(rows[0]);
+  } else disconnectPlacedWire(rows[0]);
   return true;
 }
 function movableGhost() {
@@ -3440,7 +3455,12 @@ renderer.domElement.addEventListener('pointerdown', e => {
   if (cameraGesture) return;
   $('socket-choices').hidden=true;
   socketPointer=[e.clientX,e.clientY];socketPress=null;
-  if(e.button===0&&!e.ctrlKey && socketsAt(e.clientX,e.clientY,e.pointerType==='touch').length) {
+  const nearbySockets=socketsAt(e.clientX,e.clientY,e.pointerType==='touch');
+  // The enlarged terminal hit area must not swallow a click on a small case.
+  // Actual rings (9 px radius), or an explicitly started wire, still connect.
+  const caseClick=!ghost&&!wiringMode&&!terminalStart&&!pickedPowerPort&&
+    nearbySockets[0]?.gap>9&&placedAt(e.clientX,e.clientY)>=0;
+  if(e.button===0&&!e.ctrlKey && nearbySockets.length&&!caseClick) {
     socketPress=e.pointerId;pressedAt=[e.clientX,e.clientY];sceneDragged=false;draggingGhost=null;return;
   }
   if (!ghost&&!pullMode&&!attachMode&&e.button===0&&!e.ctrlKey) {
@@ -4227,14 +4247,15 @@ function renderSceneTray() {
   const t = items.find(t => t.piece === trayPiece);
   if (!t) { bar.hidden = true; return; }
   const left = piecesLeft(t), li = document.createElement('li');
-  const card = button('', () => addTrayPiece(t), {id:'tray-add', ariaLabel:`Add a ${pieceLabel(t.piece)}`,
-    disabled:left <= 0, title:left > 0 ? 'Click to place this piece' : 'All of these pieces are placed'});
+  const editIndex=!level.free&&left<=0?placements.findIndex(p=>p.piece===t.piece):-1;
+  const card = button('', () => editIndex>=0?pickUp(editIndex):addTrayPiece(t), {id:'tray-add', ariaLabel:editIndex>=0?`Adjust ${pieceLabel(t.piece)}`:`Add a ${pieceLabel(t.piece)}`,
+    disabled:left <= 0&&editIndex<0, title:editIndex>=0?'Click to adjust the piece you placed':left > 0 ? 'Click to place this piece' : 'All of these pieces are placed'});
   const picture = Object.assign(document.createElement('span'), {className:'tray-picture'});
   const img = Object.assign(document.createElement('img'), {alt:'', hidden:true});
   picture.append(img); pictureInto(img,t);
   const caption = Object.assign(document.createElement('span'), {className:'tray-caption'});
   caption.append(Object.assign(document.createElement('strong'), {className:'tray-name', textContent:pieceLabel(t.piece)}),
-    Object.assign(document.createElement('small'), {className:'tray-left', textContent:left <= 0 ? 'none left' : level.free ? 'Click to add' : `${left} left`}));
+    Object.assign(document.createElement('small'), {className:'tray-left', textContent:editIndex>=0?'Click to adjust':left <= 0 ? 'none left' : level.free ? 'Click to add' : `${left} left`}));
   card.append(picture,caption); li.append(card); ul.append(li);
 }
 function renderTray() { renderSceneTray(); }
