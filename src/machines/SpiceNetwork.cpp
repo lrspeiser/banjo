@@ -25,6 +25,7 @@ struct Session {
     std::mutex mutex;
     std::string diagnostic;
     bool exited{};
+    bool circuit_loaded{};
     static int output(char *message, int, void *context) {
         auto &s = *static_cast<Session *>(context);
         if (message && s.diagnostic.size() < 4096) {
@@ -101,11 +102,24 @@ std::vector<double> solveSpiceNetwork(std::size_t n, const std::vector<SpiceBran
     auto &s = session();
     const std::lock_guard lock(s.mutex);
     s.diagnostic.clear();
-    s.command("destroy all");
+    if (s.circuit_loaded) {
+        // destroy removes result plots, not the sourced circuit. ngspice keeps
+        // a list of sourced circuits, so explicitly release the old definition
+        // before every new reversible trial (manual sections 13.5/15.3).
+        s.command("destroy all");
+        s.command("remcirc");
+        s.circuit_loaded = false;
+    }
+    // The shared API also retains command control structures. There are no
+    // user .control blocks/background jobs here, so discard that history too.
+    if (ngSpice_Command(nullptr) != 0 || s.exited)
+        throw std::runtime_error("circuit: ngspice could not clear trial history: " + s.diagnostic);
     std::vector<char *> lines;
     for (auto &line : netlist) lines.push_back(line.data());
     lines.push_back(nullptr);
-    if (ngSpice_Circ(lines.data()) != 0 || s.exited)
+    const int load_status = ngSpice_Circ(lines.data());
+    s.circuit_loaded = true;
+    if (load_status != 0 || s.exited)
         throw std::runtime_error("circuit: ngspice refused generated network: " + s.diagnostic);
     s.command("op");
     std::vector<double> result(n);

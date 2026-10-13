@@ -4,10 +4,19 @@
 #include <chrono>
 #include <cmath>
 #include <future>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#include <psapi.h>
+#undef near
+#elif defined(__linux__)
+#include <unistd.h>
+#endif
 
 namespace {
 using banjo::machines::SpiceBranch;
@@ -81,13 +90,48 @@ void historyAndThreads() {
     catch(const std::runtime_error &){refused=true;}
     if(!refused)throw std::runtime_error("current source without return accepted");
 }
+std::size_t memoryBytes() {
+#ifdef _WIN32
+    PROCESS_MEMORY_COUNTERS_EX counters{};
+    if (!GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&counters), sizeof(counters)))
+        throw std::runtime_error("cannot read process memory");
+    return counters.PrivateUsage;
+#elif defined(__linux__)
+    std::ifstream input("/proc/self/statm");
+    std::size_t virtual_pages{}, resident_pages{};
+    if (!(input >> virtual_pages >> resident_pages)) throw std::runtime_error("cannot read process memory");
+    return resident_pages * static_cast<std::size_t>(sysconf(_SC_PAGESIZE));
+#else
+    return 0;
+#endif
+}
+void boundedTrialMemory() {
+#if defined(_WIN32) || defined(__linux__)
+    const auto solve = [] {
+        const auto v = solveSpiceNetwork(3,{{0,2,1,0},{2,1,.1,0}},0,1,1,12,false,0);
+        near(v[0]-v[1],11,1e-11,"long-run voltage");
+    };
+    for(int k=0;k<1000;++k) solve();
+    const auto before=memoryBytes();
+    for(int k=0;k<6000;++k) solve();
+    const auto after=memoryBytes();
+    const auto growth=after>before?after-before:0;
+    std::cout<<"6000 additional trials: memory growth "<<growth<<" bytes\n";
+    // Allow bounded allocator/cache growth after warmup, not retention of a
+    // circuit/netlist/command list for each simulation trial. No physics
+    // tolerance changes: voltage/KCL/energy checks remain unchanged.
+    if(growth>8*1024*1024)throw std::runtime_error("electrical trials retain unbounded circuit/history memory");
+#else
+    std::cout<<"long-run memory observation unavailable on this platform\n";
+#endif
+}
 }
 int main() {
     try {
         const auto start=std::chrono::steady_clock::now();
         if (std::string(banjo::machines::Circuit::solverName()) != "ngspice")
             throw std::runtime_error("Circuit is not wired to the ngspice backend");
-        resistorAndCurrentLimit();bridgeAndMotor();capacitorIslandAndIsolation();historyAndThreads();
+        resistorAndCurrentLimit();bridgeAndMotor();capacitorIslandAndIsolation();historyAndThreads();boundedTrialMemory();
         std::cout<<"ngspice "<<banjo::machines::spiceVersion()<<" electrical oracles passed in "
                  <<std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count()<<" s\n";
         return 0;

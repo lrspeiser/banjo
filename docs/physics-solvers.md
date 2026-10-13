@@ -35,6 +35,11 @@ engine processes. Callbacks stay off protocol stdout and old plots are destroyed
 Circuit receipts identify backend, package-header version and numerical method.
 A restored receipt describes provenance; it cannot choose or load a backend.
 
+Long-run follow-up: generated circuits are explicitly removed with `remcirc`,
+and the shared API's command control structures are cleared between trials.
+Destroying result plots alone does not release those allocations. One active
+definition can remain until the next solve; definitions/history do not accumulate.
+
 ## Other domains reviewed
 
 These choices combine source inspection with primary project documentation.
@@ -174,3 +179,28 @@ hash and no restart pending. Both new C++ files are registered and compiled;
 the source-registration guard covers 271/271. Local documentation links,
 Python syntax and changed-file whitespace checks pass. Broader GitHub CI and
 Render's separately compiled production executable are separate verification.
+
+## Long-run retention regression
+
+After publishing the first solver checkpoint, a lifecycle review of the
+ngspice manual identified retained circuit/command lists. A new regression
+warms 1,000 trials, then measures 6,000 additional three-node trials. It
+failed against the first integration: Windows private-memory growth was
+**145,940,480 bytes**. The explicit circuit/history cleanup above fixes that
+retention. The same test now measures **479,232 bytes** on Windows (private
+memory) and **0 bytes** on Linux (resident memory). A fixed 8 MiB allowance
+after warmup permits bounded allocator/cache growth; electrical voltage,
+KCL and energy tolerances are unchanged. This measures solver retention, not
+all world geometry/fluid memory. The test also initially hit Windows' obsolete
+`near` macro; its compile error was fixed before recording the failing baseline.
+
+Final cleanup engine hashes supersede the first checkpoint identities above:
+Windows `997b02d2b9f4594dbb575eeca38c17777a7ce6ec74e8832f97d265f8974464a9`;
+Linux `d74c67470be8bc7464e306ca0f216e8b088f1d60c313d7cc0a1e09880d9f7095`.
+The Windows C++ oracle/circuit targets pass in 2.45 s, including the longer
+memory run. Its full game and electrical suites pass again: 61 checks in
+129.043 s and 39 in 102.336 s. The four browser checks pass together in
+54.639 s on desktop and both phone orientations. Linux's complete four-target
+circuit/oracle/game/electrics rerun passes in 321.60 s. No physics or UI wait
+tolerance changed for the cleanup. The 18893 server is switched to the final
+Windows executable, and its checkpoint hash/restart state are checked.
