@@ -8,6 +8,23 @@ Nothing on the page is animated. Every position, cut, pressure and dent is the e
 
 ## In the machine now
 
+October 13 switch audit: the current **Marble turns on a light** lesson and
+example use a broad counterbalanced press deck, open frame, colliding curbs
+and actual iron leaf/pad contact. Inspection and current markers expose that
+native contact rather than inferring conduction from downward motion. Manual
+rockers still use their measured hinge threshold: a prototype metal-pad
+retrofit failed to hold or reach contact consistently for glass/oak/iron and
+is not published. Circuit voltage/current/RC/thermal laws remain lumped rated
+component models; metal shape alone does not create a conducting network.
+
+Cable drawings now clear conservative bounds of visible native solids and
+retain sharp route corners in flow previews. This is a rendering correction,
+not mechanical cable support or collision. Native slender cable geometry,
+material-derived mass, bending/tension, friction/contact reactions, connector
+retention and full force/work accounting are still needed before a body can
+teeter on a cable or strain it. No collision-triggered cable removal or fake
+teeter animation was added. See [the audit and measurements](sandbox-electrics-measured.md#broad-press-deck-and-electrical-audit-october-13).
+
 October 12 editor/routing update: prepared Sandbox kits and hinged assemblies
 can be moved or removed, with their dependent declarations updated. Gear
 controls show radial size and tangential tooth-alignment guides. The motor's

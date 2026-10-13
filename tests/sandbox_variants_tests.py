@@ -32,17 +32,22 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
-    def test_marble_v2_uses_metal_contacts_and_retains_v1_hinge_shares(self):
+    def test_marble_v3_press_deck_retains_both_earlier_switch_recipes(self):
         family=game.level_by_id('easy-marble-light')
-        self.assertEqual(variants.family_version(family['id']),2)
+        self.assertEqual(variants.family_version(family['id']),3)
         old=variants.construct(family,42,version=1)
         self.assertTrue(old['tray'][0]['legacy_contacts'])
         self.assertEqual(old,variants.reconstruct(family,42,0,version=1))
         old_spec=game.compose(old,old['solution'])[0]
         self.assertNotIn('touch',next(d for d in old_spec['electrical']['devices'] if d['kind']=='switch'))
+        v2=variants.construct(family,42,version=2)
+        v2_spec=game.compose(v2,v2['solution'])[0]
+        self.assertEqual(next(p for p in v2_spec['parts'] if p['name']=='your switch 1 paddle')['shape'],'box')
+        new_spec=game.compose(family,family['solution'])[0]
+        self.assertEqual(next(p for p in new_spec['parts'] if p['name']=='your switch 1 paddle')['shape'],'compound')
         seen={variants.construct(family,seed)['variant']['value']:variants.construct(family,seed) for seed in range(32)}
         self.assertEqual(set(seen),set(variants.POLICIES[family['id']][-1]))
-        for candidate in [old,*seen.values()]:
+        for candidate in [old,v2,*seen.values()]:
             self.assertEqual(candidate['goal'],family['goal'])
             self.assertEqual(candidate['time_s'],family['time_s'])
             with tempfile.TemporaryDirectory() as logs:

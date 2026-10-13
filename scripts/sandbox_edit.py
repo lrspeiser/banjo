@@ -19,7 +19,7 @@ def objects(base):
     # A pin/slide/weld needs its supporting bodies in the same edit. Springs,
     # ropes and drums connect independently placeable apparatus instead.
     for j in compiled['joints']:
-        if j['kind'] not in ('hinge', 'slide', 'weld'): continue
+        if j['kind'] not in ('hinge', 'slide', 'weld', 'fix'): continue
         owners = [k for k, g in groups.items() if j.get('a') in g['parts'] or j.get('b') in g['parts']]
         if len(owners) > 1:
             first = owners[0]

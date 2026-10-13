@@ -57,6 +57,67 @@ export function wireRoute(a, b, lane = 0) {
   return points.filter((p, i) => !i || p.some((v, k) => Math.abs(v - points[i - 1][k]) > 1e-9)).map(p => [...p]);
 }
 
+// A clearance drawing around conservative solid bounds. It does not supply
+// cable mass, collision forces, resistance length or connector retention.
+// Endpoints may be solder points in a conductor: escape its nearest face,
+// then require every remaining segment to clear every expanded solid.
+export function clearWireRoute(a,b,lane,solids,clearance=.022) {
+  const finish=path=>[a,...path,b].filter((p,i,all)=>!i||p.some((v,k)=>Math.abs(v-all[i-1][k])>1e-9));
+  const boxes=solids.map(s=>({min:s.min.map(v=>v-clearance),max:s.max.map(v=>v+clearance)}));
+  const inside=(p,o)=>p.every((v,i)=>v>o.min[i]+1e-8&&v<o.max[i]-1e-8);
+  const escape=p=>{
+    let q=[...p];
+    for(let n=0;n<boxes.length+1;n++) {
+      const hits=boxes.filter(o=>inside(q,o));if(!hits.length)return q;
+      const options=hits.flatMap(o=>[0,1,2].flatMap(i=>[o.min[i],o.max[i]].map(v=>{
+        const point=[...q];point[i]=v;return point;
+      }))).filter(point=>!boxes.some(o=>inside(point,o)));
+      if(!options.length){q[1]=Math.max(...hits.map(o=>o.max[1]));continue;}
+      options.sort((u,v)=>Math.hypot(...u.map((x,i)=>x-p[i]))-Math.hypot(...v.map((x,i)=>x-p[i])));
+      return options[0];
+    }
+    return q;
+  };
+  const intersects=(p,q,o)=>{
+    let lo=0,hi=1;
+    for(let i=0;i<3;i++) {
+      const d=q[i]-p[i];
+      if(Math.abs(d)<1e-10){if(p[i]<=o.min[i]+1e-8||p[i]>=o.max[i]-1e-8)return false;continue;}
+      const x=(o.min[i]-p[i])/d,y=(o.max[i]-p[i])/d;
+      lo=Math.max(lo,Math.min(x,y));hi=Math.min(hi,Math.max(x,y));
+      if(hi-lo<1e-8)return false;
+    }
+    return hi>1e-8&&lo<1-1e-8;
+  };
+  const start=escape(a),end=escape(b),original=wireRoute(start,end,lane);
+  const hitBoxes=new Set();
+  const clear=(p,q)=>{let ok=true;for(const o of boxes)if(intersects(p,q,o)){hitBoxes.add(o);ok=false;}return ok;};
+  if(original.slice(1).every((p,i)=>clear(original[i],p)))return finish(original);
+  // Add corners only for encountered obstacles; most routes need one or two
+  // detours rather than a graph containing every tooth in a large machine.
+  for(let attempt=0;attempt<8;attempt++) {
+    const before=hitBoxes.size;
+    const nodes=[start,end,...original.slice(1,-1)];
+    for(const o of [...hitBoxes])for(let mask=0;mask<8;mask++) {
+      const p=[0,1,2].map(i=>(mask&(1<<i))?o.max[i]:o.min[i]);
+      if(!boxes.some(other=>inside(p,other)))nodes.push(p);
+    }
+    const cost=nodes.map(()=>Infinity),parent=nodes.map(()=>-1),done=new Set();cost[0]=0;
+    for(let step=0;step<nodes.length;step++) {
+      let k=-1;for(let i=0;i<nodes.length;i++)if(!done.has(i)&&(k<0||cost[i]<cost[k]))k=i;
+      if(k<0||!Number.isFinite(cost[k]))break;
+      if(k===1){const path=[];for(let i=1;i>=0;i=parent[i])path.unshift(nodes[i]);return finish(path);}
+      done.add(k);
+      for(let i=0;i<nodes.length;i++)if(!done.has(i)) {
+        const next=cost[k]+Math.hypot(...nodes[k].map((v,j)=>v-nodes[i][j]));
+        if(next<cost[i]&&clear(nodes[k],nodes[i])){cost[i]=next;parent[i]=k;}
+      }
+    }
+    if(hitBoxes.size===before)break;
+  }
+  return null;
+}
+
 // A schematic of an existing ideal contact/coil circuit, not new electrical
 // or mechanical geometry. Body-local connector anchors follow measured poses.
 // The two contact bodies remain separate: no cable bridges their open gap.

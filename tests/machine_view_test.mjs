@@ -3,7 +3,7 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, thermalCells} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, thermalCells} from '../client/voxel-lab/machine-view.mjs';
 
 const heated={body:'cord',at_m:[0,.5,1],local_m:[0,.02,0],cell_m:.02,temperature_k:573.15,how:'chars',cut_w:100,held_j:400,needed_j:1000};
 assert.equal(thermalCells({hot_cells:[heated]})[0].progress,.4);
@@ -47,6 +47,19 @@ for (const [a,b] of [[pinA,pinB], [pinB,pinA], [pinA,[-.68,.18,.07]], [[0,.012,.
 }
 assert.notDeepEqual(wireRoute(pinA,pinB,0), wireRoute(pinA,pinB,1), 'parallel wires have distinct floor lanes');
 assert.deepEqual(pinA, [-.68,.18,.07], 'drawing never mutates native terminal coordinates');
+
+const obstacles=[{min:[-.2,0,.06],max:[.2,.8,.3]},
+  {min:[-.7,0,-.07],max:[-.5,.16,.07]},
+  {min:[.5,0,-.07],max:[.7,.16,.07]}];
+for(const [a,b] of [[pinA,pinB],[pinB,pinA],[[0,.1,-.076],pinB]]) {
+  const route=clearWireRoute(a,b,0,obstacles);
+  assert.ok(route&&route.length>=2,'a route around the pillar and behind a housing is found');
+  assert.deepEqual(route[0],a);assert.deepEqual(route.at(-1),b);
+  for(let n=2;n<route.length-1;n++)for(let t=0;t<=1;t+=.025) {
+    const p=route[n-1].map((v,i)=>v+(route[n][i]-v)*t);
+    assert.ok(!obstacles.some(o=>p.every((v,i)=>v>o.min[i]+1e-8&&v<o.max[i]-1e-8)),'every route segment clears solid interiors');
+  }
+}
 
 const body = (name, extra = {}) => ({name, shape: 'box', material: 'oak', dimensions_m: [.1, .1, .1], position_m: [0, 0, 0],
   orientation_wxyz: [1, 0, 0, 0], revision: 0, ...extra});

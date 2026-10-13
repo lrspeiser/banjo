@@ -70,6 +70,29 @@ structural buckling. See [measurements and limits](sandbox-water-launch-measured
 
 ## Advanced electronics
 
+October 13: **Marble turns on a light** uses a broad one-sided press deck,
+lower counterbalance, open support frame and shallow colliding curbs. A marble
+on the deck lowers the attached iron contact leaf onto a separate iron pad;
+the source lead connects to the leaf and the switched lead to the pad.
+**Inspect contacts** shows both actual bodies, contact state and native branch
+current. Conventional-current markers across the switch require a closed
+contact and nonzero measured current, including a complete return circuit.
+The original balanced paddle remains in saved designs and v2 recipe links;
+v1 angle-based links also retain their earlier apparatus. Fresh pieces carry
+their construction version explicitly. See [measurements and the electrical
+audit](sandbox-electrics-measured.md#broad-press-deck-and-electrical-audit-october-13).
+
+Electrical and solar cable drawings use clearance routes around conservative
+bounds of the native solid shapes; current markers follow the same straight
+segments instead of a curve that cuts across corners. Source/solder endpoints
+may attach to a conductor surface. A route that cannot clear the bounds is
+hidden and labelled as blocked. These are display routes, including during
+the flow preview, not mechanical cables: moving geometry can reroute the
+drawing without mechanical work or changing the declared electrical length.
+Cable mass, collision, flexible bending, support, insulation and connector
+retention still need native models. **Click a wire** remains the deliberate
+editor removal action, recoverable with Undo; collisions never cut a cable.
+
 **Resistor** and **Capacitor** are separate Sandbox cards with A/B terminals.
 Choose rated resistance or capacitance, location and glass/oak/iron housing.
 Capacitors also expose internal series resistance and leakage resistance.

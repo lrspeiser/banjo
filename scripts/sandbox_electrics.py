@@ -88,7 +88,38 @@ def switch(name, k, ctx):
     result = {'parts': parts, 'joints': joints, 'electrical': {'devices': [device]}}
     if CONTACT_SWITCHES and not (ctx or {}).get('tray', {}).get('legacy_contacts'):
         add_switch_contacts(result, device)
+        if k.get('mode') == 'paddle' and k.get('mechanism_version', 2) == 3:
+            press_paddle(result, device)
     return result
+
+
+def press_paddle(spec, device):
+    """An exposed press deck on one side of a gravity counterbalanced hinge.
+
+    All boxes belong to connected compounds; contact, mass and hinge torque
+    decide closure. The lower counterbalance is deliberately not a press deck.
+    The open frame leaves clearance for both it and the metal contact stem.
+    """
+    moving = next(p for p in spec['parts'] if p['name'] == device['name']+' paddle')
+    moving.update(shape='compound', parts=[
+        dict(shape='box', at_m=[.10,0,0], size_m=[.16,.04,.12]),
+        dict(shape='box', at_m=[-.13,-.06,0], size_m=[.16,.10,.06]),
+        dict(shape='box', at_m=[0,0,0], size_m=[.04,.02,.08]),
+        dict(shape='box', at_m=[-.03,-.025,0], size_m=[.04,.07,.06]),
+        dict(shape='box', at_m=[.19,.02,0], size_m=[.02,.04,.16]),
+        dict(shape='box', at_m=[.10,.02,-.07], size_m=[.16,.04,.02]),
+        dict(shape='box', at_m=[.10,.02,.07], size_m=[.16,.04,.02]),
+        dict(shape='box', at_m=[.01,.02,0], size_m=[.02,.04,.12])])
+    moving.pop('size_m', None)
+    housing = next(p for p in spec['parts'] if p['name'] == device['part'])
+    x, _, z = housing['at_m']
+    housing.update(shape='compound', at_m=[x,0,z], parts=[
+        dict(shape='box', at_m=[0,.01,0], size_m=[.26,.02,.24]),
+        dict(shape='box', at_m=[0,.08,-.10], size_m=[.04,.14,.04]),
+        dict(shape='box', at_m=[-.08,.08,-.10], size_m=[.04,.14,.04])])
+    housing.pop('size_m', None)
+    # Surface solder points rather than cable ends buried in the conductor.
+    for at in device['terminals'].values(): at[2] += .033
 
 
 def add_switch_contacts(spec, device):
@@ -979,6 +1010,28 @@ _marble_lesson=next(row for row in EASY_LEVELS if row['id']=='easy-marble-light'
 _marble_lesson['tray'][0]['knobs']['threshold_deg']['default']=5
 _marble_lesson['tray'][0]['knobs']['mode']['choices']=['paddle']
 _marble_lesson['brief']='Place the paddle beneath the marble. Its iron contact leaf must touch the separate iron output pad to complete the wired bulb loop.'
+
+# Missing versions in old saves keep the measured, balanced v2 paddle.
+# Fresh tray pieces explicitly carry v3; recipe URLs preserve both older laws.
+LEGACY_CONTACT_PADDLE_LEVEL = copy.deepcopy(_marble_lesson)
+_switch_tray = next(row for row in TRAY if row['piece']=='switch')
+_switch_tray['knobs']['mechanism_version'] = dict(default=3, legacy_default=2,
+    min=2, max=3, step=1, hidden=True, label='switch construction version')
+_switch_tray['description'] = 'Drag the manual rocker, or press the broad paddle deck to bring its metal leaf onto the output pad.'
+_marble_lesson['tray'][0]['description'] = 'Press the broad deck with the marble. The attached metal leaf must meet the separate output pad.'
+_marble_lesson['tray'][0]['knobs']['mechanism_version'] = copy.deepcopy(_switch_tray['knobs']['mechanism_version'])
+for _placement in _marble_lesson['solution'] + _marble_lesson['wrong']:
+    _placement['mechanism_version'] = 3
+# The longer counterbalance would intersect the battery at the old -30 cm
+# miss. +30 cm instead puts the broad deck clear of the marble without overlap.
+_marble_lesson['wrong'][0]['x_m'] = .3
+_marble_lesson['par_energy_j'] = 575000000  # Measured new deck/frame/curb construction, rounded up.
+_marble_lesson['brief'] = 'Place the broad press deck beneath the marble. Pressing it lowers the metal leaf onto the output pad and completes the lamp circuit.'
+_marble_lesson['hints'][0] = _marble_lesson['brief']
+_marble_template = next(row for row in TEMPLATES if row['name']=='Marble turns on a light')
+_marble_device = next(d for d in _marble_template['base']['electrical']['devices'] if d['kind']=='switch')
+press_paddle(_marble_template['base'], _marble_device)
+_marble_template['description'] = 'A marble presses the broad deck. A separate metal leaf meets its output pad to light the wired lamp.'
 
 
 def advanced_electronics():

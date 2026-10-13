@@ -605,7 +605,7 @@ def check_placements(level, placements, budget=True):
             problems.append(f'{what}: the tray holds {t.get("count", 1)} {p["piece"]}')
         knobs = {}
         for key, rule in t['knobs'].items():
-            value = p.get(key, rule.get('default'))
+            value = p.get(key, rule.get('legacy_default', rule.get('default')))
             if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal', 'power_port')):
                 # A link's ends: a part of the machine, named.
                 if not isinstance(value, str) or not 0 <= len(value) <= 120:

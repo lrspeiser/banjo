@@ -1,5 +1,5 @@
 import * as THREE from '/three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, wireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, thermalCells} from '/machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, thermalCells} from '/machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from '/anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from '/profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from '/level-library.mjs';
@@ -172,8 +172,26 @@ function syncMeshes(changed) {
 // floor routes. A contact circuit includes its supply, switched and return
 // leads; its mechanical gap is not a wire. Other legacy loads retain their
 // schematic source/load path. Current and contact state come from the engine.
+let wireObstacleSeq=null,wireObstacleFrame=-2,wireObstacles=[];
+function wireRoute(a,b,lane=0) {
+  const frame=flowGroup.visible?flowIndex:-1;
+  if(wireObstacleSeq!==world||wireObstacleFrame!==frame) {
+    wireObstacleSeq=world;wireObstacleFrame=frame;wireObstacles=[];
+    for(const [name,liveMesh] of meshes) {
+      const mesh=frame>=0&&flowMechanismMeshes.get(name)?.visible?flowMechanismMeshes.get(name):liveMesh;
+      mesh.updateMatrixWorld(true);
+      for(const solid of mesh.isGroup?mesh.children:[mesh]) {
+        const box=new THREE.Box3().setFromObject(solid);
+        if(!box.isEmpty())wireObstacles.push({min:box.min.toArray(),max:box.max.toArray()});
+      }
+    }
+  }
+  return clearWireRoute(a,b,lane,wireObstacles)||[];
+}
 function routedCurve(a, b, lane) {
   const points = wireRoute(a, b, lane).map(p => new THREE.Vector3(...p));
+  // Unroutable meshes are hidden below, never drawn through an obstacle.
+  if(points.length<2)return new THREE.LineCurve3(new THREE.Vector3(...a),new THREE.Vector3(...b));
   const curve = new THREE.CurvePath();
   for (let i = 1; i < points.length; i++) curve.add(new THREE.LineCurve3(points[i - 1], points[i]));
   return curve;
@@ -243,13 +261,11 @@ function syncWires() {
   for (const cable of machine.electrical?.power_cables || []) {
     const from = ports.get(cable.a), to = ports.get(cable.b), a=from&&powerPortAt(from), b=to&&powerPortAt(to);
     if (!a || !b) continue;
-    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(...a),
-      new THREE.Vector3((a[0] + b[0]) / 2, Math.max(a[1], b[1]) + .18,
-        (a[2] + b[2]) / 2), new THREE.Vector3(...b));
+    const curve = routedCurve(a,b,0);
     const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 24, .008, 6, false),
       new THREE.MeshBasicMaterial({color: 0x83bbff}));
     scene.add(tube); wires.push({line: tube, powerCable: true, panel: from.solar_panel, name: cable.name,
-      fromPort:from,toPort:to,points_m:[a,b]});
+      fromPort:from,toPort:to,points_m:[a,b],route:wireRoute(a,b,0)});
   }
   syncPowerLabels();
   syncTerminalLabels();
@@ -258,6 +274,16 @@ function syncWires() {
 
 const contactCircuitRows = new Map(), contactCircuitOutlines = [];
 let inspectedCircuit = null, inspectionFollow = true;
+function switchDiagram(row) {
+  if (!row?.device) return row && contactCircuitDiagram(row.circuit,machine,world.bodies);
+  const [moving,fixed]=row.device.touch;
+  if (!world.bodies.has(moving)||!world.bodies.has(fixed)) return null;
+  return {moving,fixed,fixedIsStatic:Boolean(machine.parts.find(p=>p.name===fixed)?.fixed),
+    contactCenters:[moving,fixed].map(name=>world.bodies.get(name).position_m)};
+}
+function switchReading(name,row,frame) {
+  return (row.device ? frame?.devices || readouts.electrical?.devices || [] : frame?.contact_circuits || readouts.circuits || []).find(c=>c.name===name);
+}
 function syncContactCircuits() {
   for (const outline of contactCircuitOutlines) {scene.remove(outline);outline.geometry.dispose();outline.material.dispose();}
   contactCircuitOutlines.length=0;contactCircuitRows.clear();
@@ -284,13 +310,26 @@ function syncContactCircuits() {
       outline.userData={part:name,circuit:c.name};scene.add(outline);contactCircuitOutlines.push(outline);
     }
   }
-  $('inspect-switch').hidden=!contactCircuitRows.size;
+  for (const device of machine.electrical?.devices || []) {
+    if (device.kind!=='switch'||!device.touch) continue;
+    const card=document.createElement('section'),title=document.createElement('strong'),status=document.createElement('output');
+    title.textContent=device.name.replace(/^your /,'');
+    const inspect=button('Inspect switch',()=>inspectContactCircuit(device.name),{ariaLabel:`Inspect ${device.name}`});
+    card.append(title,status,inspect);host.append(card);
+    contactCircuitRows.set(device.name,{status,device,inspect});
+    for (const name of device.touch) {
+      const mesh=meshes.get(name);if(!mesh)continue;
+      const outline=new THREE.BoxHelper(mesh,0xffad66);
+      outline.userData={part:name,circuit:device.name};scene.add(outline);contactCircuitOutlines.push(outline);
+    }
+  }
+  $('inspect-switch').hidden=![...contactCircuitRows.values()].some(row=>row.circuit);
   $('inspect-switch').textContent='Inspect switch';view.classList.toggle('has-contact-switch',Boolean(contactCircuitRows.size));
   showInstrumentPanel();updateContactCircuitReadings();
 }
 function inspectContactCircuit(name) {
   const row=contactCircuitRows.get(name);if(!row)return;
-  const diagram=contactCircuitDiagram(row.circuit,machine,world.bodies);if(!diagram)return;
+  const diagram=switchDiagram(row);if(!diagram)return;
   if(!inspectedCircuit)inspectionFollow=follow;
   inspectedCircuit=name;follow=false;$('follow').setAttribute('aria-pressed','false');
   const box=new THREE.Box3().setFromPoints(diagram.contactCenters.map(p=>new THREE.Vector3(...p))).expandByScalar(.12);
@@ -313,21 +352,22 @@ function updateContactCircuitReadings() {
   const frame=flowGroup.visible&&previewShown?.flow_frames?.[flowIndex];
   for(const [name,row] of contactCircuitRows) {
     row.inspect.hidden=contactCircuitRows.size===1 || inspectedCircuit===name;
-    const measured=(frame?.contact_circuits || readouts.circuits || []).find(c=>c.name===name);
+    const measured=switchReading(name,row,frame);
     const state=typeof measured?.closed==='boolean'?(measured.closed?'closed':'open'):'not measured';
     const amps=Number.isFinite(measured?.current_a)?Math.abs(measured.current_a).toFixed(3):'—';
     const watts=Number.isFinite(measured?.coil_w)?measured.coil_w.toFixed(1):'—';
-    row.status.textContent=(frame?'Preview · ':'Live · ')+`Pressure switch: ${state} · ${amps} A · Coil: ${watts} W → ${row.circuit.coil.heats}`;
+    row.status.textContent=(frame?'Preview · ':'Live · ')+(row.device?`Metal contact: ${state} · ${amps} A`:
+      `Pressure switch: ${state} · ${amps} A · Coil: ${watts} W → ${row.circuit.coil.heats}`);
   }
   for(const outline of contactCircuitOutlines) {
     outline.update();outline.visible=!flowGroup.visible;
-    const measured=readouts.circuits?.find(c=>c.name===outline.userData.circuit);
+    const measured=switchReading(outline.userData.circuit,contactCircuitRows.get(outline.userData.circuit));
     outline.material.color.setHex(measured?.closed?0x5fe08f:0xffad66);
   }
-  const diagram=inspectedCircuit&&contactCircuitDiagram(contactCircuitRows.get(inspectedCircuit).circuit,machine,world.bodies);
+  const diagram=inspectedCircuit&&switchDiagram(contactCircuitRows.get(inspectedCircuit));
   const labels=$('contact-switch-labels');labels.hidden=!diagram;
   if(diagram) {
-    const closed=readouts.circuits?.find(c=>c.name===inspectedCircuit)?.closed;
+    const closed=switchReading(inspectedCircuit,contactCircuitRows.get(inspectedCircuit))?.closed;
     const tags=[...labels.querySelectorAll('span')],leaders=[...labels.querySelectorAll('line')];
     tags[1].textContent=diagram.fixedIsStatic?'Fixed pad':'Other contact';
     for(const [i,name] of [diagram.moving,diagram.fixed].entries()) {
@@ -342,8 +382,7 @@ function updateContactCircuitReadings() {
   }
 }
 window.machineContactCircuitState=()=>({inspected:inspectedCircuit,
-  circuits:[...contactCircuitRows.values()].map(row=>({diagram:contactCircuitDiagram(row.circuit,machine,world.bodies),
-    reading:readouts.circuits?.find(c=>c.name===row.circuit.name)})),
+  circuits:[...contactCircuitRows.entries()].map(([name,row])=>({diagram:switchDiagram(row),reading:switchReading(name,row)})),
   wires:wires.filter(w=>w.contactCircuit).map(w=>({name:w.name,leg:w.leg,route:w.route,color:w.line.material.color.getHex(),visible:w.line.visible})),
   outlines:contactCircuitOutlines.map(o=>({part:o.userData.part,color:o.material.color.getHex(),visible:o.visible}))});
 
@@ -398,14 +437,8 @@ function syncTerminalLabels() {
     if (!rows.length) continue;
     const feedback=document.createElement('output'); feedback.className='contact-feedback'; feedback.style.display='block';
     card.append(title, feedback);
-    if(device.touch){const inspect=button('Inspect contacts',()=>{
-      const points=device.touch.map(name=>world.bodies.get(name)?.position_m).filter(Boolean);
-      if(!points.length)points.push(device.terminals.out);
-      new THREE.Box3().setFromPoints(points.map(p=>new THREE.Vector3(...p))).getCenter(goal);
-      target.copy(goal);distance=.85;azimuth=.15;elevation=.22;follow=false;
-      $('instrument-panel').after($('level-done'));
-      $('follow').setAttribute('aria-pressed','false');freshView();
-    },{ariaLabel:`Inspect ${device.name} contacts`});inspect.className='contact-inspect';card.append(inspect);}
+    if(device.touch){const inspect=button('Inspect contacts',()=>inspectContactCircuit(device.name),
+      {ariaLabel:`Inspect ${device.name} contacts`});inspect.className='contact-inspect';card.append(inspect);}
     const overlay = document.createElement('section'); overlay.className='terminal-control-pin';
     overlay.append(controls); pins.append(overlay);
     let handle;
@@ -1366,7 +1399,7 @@ function updateWires() {
   for (const w of wires) {
     if(w.contactCircuit) {
       const diagram=contactCircuitDiagram(w.contactCircuit,machine,world.bodies),leg=diagram?.legs.find(l=>l.id===w.leg);
-      w.line.visible=Boolean(leg)&&!flowGroup.visible;
+      w.line.visible=Boolean(leg)&&w.route?.length>1&&!flowGroup.visible;
       if(leg) {
         const route=wireRoute(leg.a,leg.b,w.lane);
         if(JSON.stringify(route)!==JSON.stringify(w.route)) {
@@ -1379,11 +1412,10 @@ function updateWires() {
     }
     if (w.powerCable) {
       const a=powerPortAt(w.fromPort),b=powerPortAt(w.toPort);
-      w.connected=Boolean(a&&b);w.line.visible=w.connected;
-      if (a&&b&&JSON.stringify([a,b])!==JSON.stringify(w.points_m)) {
-        const curve=new THREE.QuadraticBezierCurve3(new THREE.Vector3(...a),
-          new THREE.Vector3((a[0]+b[0])/2,Math.max(a[1],b[1])+.18,(a[2]+b[2])/2),new THREE.Vector3(...b));
-        w.line.geometry.dispose();w.line.geometry=new THREE.TubeGeometry(curve,24,.008,6,false);w.points_m=[a,b];
+      const route=a&&b?wireRoute(a,b,0):[];
+      w.connected=Boolean(a&&b);w.line.visible=w.connected&&route.length>1;
+      if (a&&b&&JSON.stringify(route)!==JSON.stringify(w.route)) {
+        w.line.geometry.dispose();w.line.geometry=new THREE.TubeGeometry(routedCurve(a,b,0),64,.008,6,false);w.points_m=[a,b];w.route=route;
       }
       const panel = readouts.machines?.solar_panels?.find(p => p.name === w.panel);
       w.line.material.color.setHex(panel?.power_w > .01 ? 0xffd34d : 0x83bbff);
@@ -1399,7 +1431,7 @@ function updateWires() {
           w.route = route;
         }
       }
-      w.connected=Boolean(a&&b); w.line.visible=w.connected;
+      w.connected=Boolean(a&&b); w.line.visible=w.connected&&w.route?.length>1;
       const live = readouts.electrical?.wires?.find(row => row.name === w.name);
       w.line.material.color.setHex(Math.abs(live?.current_a || 0) > 1e-4 ? 0xffd34d : w.color);
       continue;
@@ -2401,7 +2433,7 @@ function startGhost(p, index, keepPlace = false) {
   // Prebuilt/saved placements may omit default-valued knobs. Resolve them
   // before editing so range controls and selectors show the compiled setup.
   for (const [key, rule] of Object.entries(trayItem(p.piece).knobs)) {
-    if (p[key] == null) p[key] = knobDefault(rule);
+    if (p[key] == null) p[key] = index < placements.length && rule.legacy_default != null ? rule.legacy_default : knobDefault(rule);
   }
   if(document.body.classList.contains('panel-collapsed')) $('panel-toggle').click();
   selectPhonePanel('controls');
@@ -2892,7 +2924,7 @@ feedbackLeaders.classList.add('feedback-leaders');feedbackLeaders.setAttribute('
 $('power-feedback-labels').append(feedbackLeaders);
 const sceneReadingLeaders=new Map();
 const powerFlowDots = new THREE.InstancedMesh(new THREE.SphereGeometry(.014,8,6),
-  new THREE.MeshBasicMaterial({color:0xfff1a6,depthTest:false}),24);
+  new THREE.MeshBasicMaterial({color:0xfff1a6,depthTest:false}),64);
 powerFlowDots.count=0;powerFlowDots.frustumCulled=false;scene.add(powerFlowDots);
 
 function powerFeedbackSnapshot() {
@@ -2901,7 +2933,7 @@ function powerFeedbackSnapshot() {
   const samples=[];
   for(const w of wires) {
     if(w.powerCable) {
-      samples.push({name:w.name,points_m:w.points_m,unit:'W',
+      samples.push({name:w.name,points_m:w.route,unit:'W',routed:true,
         value:readouts.machines?.solar_panels?.find(p=>p.name===w.panel)?.power_w||0});
     } else if(w.terminalWire) {
       const live=readouts.electrical?.wires?.find(r=>r.name===w.name);
@@ -2918,9 +2950,14 @@ function powerFeedbackSnapshot() {
 }
 
 function feedbackCurve(w) {
-  const pts=w.points_m.map(p=>new THREE.Vector3(...p));
+  const drawn=wires.find(row=>row.name===w.name&&row.route?.length>1);
+  const pts=(drawn?.route||w.points_m).map(p=>new THREE.Vector3(...p));
   const lane=(shownElectrical().wires||[]).findIndex(row=>row.name===w.name);
-  if(w.routed) return new THREE.CatmullRomCurve3(pts);
+  if(w.routed||drawn) {
+    const curve=new THREE.CurvePath();
+    for(let i=1;i<pts.length;i++)curve.add(new THREE.LineCurve3(pts[i-1],pts[i]));
+    return curve;
+  }
   if(w.unit==='A'&&lane>=0&&pts.length===2) return routedCurve(w.points_m[0],w.points_m[1],lane);
   if(pts.length===2) return new THREE.QuadraticBezierCurve3(pts[0],new THREE.Vector3(
     (pts[0].x+pts[1].x)/2,Math.max(pts[0].y,pts[1].y)+(w.unit==='W'?.18:.1),(pts[0].z+pts[1].z)/2),pts[1]);
@@ -2936,6 +2973,11 @@ function updatePowerFeedback() {
   if(!machine||document.body.matches('.on-levels,.on-sandbox')) {host.hidden=true;return;}
   host.hidden=false;
   const rating=electricalEditRating(),proposed=ghost?.proposedParts?.find(p=>p.name.startsWith(ghostName()));
+  for(const wire of wires.filter(w=>w.connected&&w.route?.length===0)) {
+    const at=wire.points_m?.[0]||terminalMap(machine.electrical).get(wire.a);
+    if(at)items.push({id:'route:'+wire.name,name:wire.name,kind:'wire',at,text:'Cable route blocked · move its endpoints',
+      title:'No drawing route clears the solid parts. This is an electrical connection without a mechanical cable model.'});
+  }
   if(rating&&proposed)items.push({id:'proposed-setting',name:`Adjust ${pieceLabel(ghost.p.piece)}`,kind:'object',at:proposed.at_m,text:rating,title:'Proposed component rating. Measured voltage, current and power remain separate.'});
   for(const d of sample.devices) {
     const at=world.bodies.get(d.part)?.position_m||d.at_m;if(!at)continue;
@@ -2970,6 +3012,28 @@ function updatePowerFeedback() {
         d.requirement==='variable'?'Contacts or connected mechanisms change the torque needed. Stall torque is its full-command rating at rest, not a guaranteed movement threshold.':'The existing level measures power arriving at this object.'});
   }
   const dotMatrix=new THREE.Matrix4(),time=performance.now()/1000;
+  // A current indicator on the metal bridge, never across an open gap.
+  // This visualises the native branch current; it is not an electrical law.
+  for (const device of machine.electrical?.devices || []) {
+    if (device.kind!=='switch'||!device.touch||flowGroup.visible) continue;
+    const measured=readouts.electrical?.devices?.find(d=>d.name===device.name);
+    const a=terminalAt(device,'in',device.terminals.in),b=terminalAt(device,'out',device.terminals.out);
+    if (!a||!b) continue;
+    items.push({id:'contact:'+device.name,name:device.name.replace(/^your /,''),kind:'object',at:b,
+      text:`Metal contact ${measured?.closed?'closed':'open'} · ${Math.abs(measured?.current_a||0).toFixed(3)} A`,
+      title:'The moving iron leaf must touch its separate iron output pad. Closing a contact powers a load only when the full supply and return loop is connected.'});
+    if (!measured?.closed||Math.abs(measured.current_a||0)<=1e-4||pending) continue;
+    const start=electricalStartPoses.get(device.touch[0]);if(!start)continue;
+    const localTip=[2*start.position_m[0]-device.terminals.in[0],2*start.position_m[1]-device.terminals.in[1],device.terminals.in[2]];
+    const tip=terminalAt(device,'in',localTip);
+    const curve=new THREE.CurvePath();
+    curve.add(new THREE.LineCurve3(new THREE.Vector3(...a),new THREE.Vector3(...tip)));
+    curve.add(new THREE.LineCurve3(new THREE.Vector3(...tip),new THREE.Vector3(...b)));
+    for (const offset of [0,.5]) {
+      const t=((time*.7*Math.sign(measured.current_a)+offset)%1+1)%1;
+      powerFlowDots.setMatrixAt(powerFlowDots.count++,dotMatrix.makeTranslation(...curve.getPoint(t).toArray()));
+    }
+  }
   for(const w of sample.wires.filter(w=>w.points_m?.length>1).slice(0,12)) {
     const declaration=(shownElectrical().wires||[]).find(row=>row.name===w.name);
     const area=declaration?.area_mm2;
@@ -3212,9 +3276,9 @@ function drawFlowFrame(frame) {
     const electrical = shownElectrical();
     const lane = (electrical.wires || []).findIndex(wire => wire.name === w.name);
     const routed = w.unit === 'A' && pts.length === 2 && lane >= 0;
-    const curve = leg ? routedCurve(leg.a,leg.b,legLane) : routed ? routedCurve(w.points_m[0], w.points_m[1], lane)
-      : pts.length===2 ? new THREE.QuadraticBezierCurve3(pts[0],new THREE.Vector3(
-      (pts[0].x+pts[1].x)/2,Math.max(pts[0].y,pts[1].y)+(w.unit==='W'?.18:.1),(pts[0].z+pts[1].z)/2),pts[1])
+    const route=pts.length===2?wireRoute(ends[0],ends[1],legLane>=0?legLane:Math.max(0,lane)):null;
+    if(route?.length===0)continue;
+    const curve = pts.length===2 ? routedCurve(ends[0],ends[1],legLane>=0?legLane:Math.max(0,lane))
       : new THREE.CatmullRomCurve3(pts);
     const active = Math.abs(w.value)>1e-4;
     const line = routed || leg ? new THREE.Mesh(new THREE.TubeGeometry(curve, 64, routed?wireDisplayRadius(electrical.wires[lane]):.010, 6, false),

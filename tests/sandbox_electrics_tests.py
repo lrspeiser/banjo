@@ -406,6 +406,51 @@ class Native(unittest.TestCase):
                         print('CONTACT PADDLE',material,dt,'closed samples',closed,'open samples',opened,'electrical residual J',energy)
                     finally:engine.close()
 
+    def test_broad_press_deck_works_without_hitting_the_small_contact(self):
+        level=mg.level_by_id('easy-marble-light')
+        for material in ('glass','oak','iron'):
+            for x in (None,.06,.09,.12,.16):
+                spec=mg.compose(level,level['solution'])[0]
+                next(p for p in spec['parts'] if p['name']=='your switch 1 paddle')['material']=material
+                if x is None:spec['parts']=[p for p in spec['parts'] if p['name']!='trigger marble']
+                else:next(p for p in spec['parts'] if p['name']=='trigger marble')['at_m'][0]=x
+                with tempfile.TemporaryDirectory() as logs:
+                    out=mw.rehearse(mw.compile_spec(spec),ENGINE,Path(logs),seconds=3,flows=True)
+                self.assertIsNone(out['error'])
+                self.assertEqual(out['stations'][0]['done'],x is not None,(material,x,out['stations']))
+                ledger=out['readouts']['electrical']['networks'][0]['ledger']
+                self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+                print('PRESS_DECK',material,x,out['stations'],ledger['electrical_residual_j'])
+
+    def test_press_deck_contact_timestep_and_material_receipts(self):
+        for material in ('glass','oak','iron'):
+            for dt in (1/240,1/480):
+                spec=e.marble_light()
+                device=next(d for d in spec['electrical']['devices'] if d['kind']=='switch')
+                e.press_paddle(spec,device)
+                next(p for p in spec['parts'] if p['name']=='control paddle')['material']=material
+                compiled=mw.compile_spec(spec)
+                with tempfile.TemporaryDirectory() as logs:
+                    engine,_,_=mw.build_engine(ENGINE,compiled,Path(logs))
+                    try:
+                        masses={b['name']:b['mass_kg'] for b in engine.first['bodies']}
+                        closed=0;opened=0;maximum=0
+                        for _ in range(60):
+                            engine.op(op='step',dt=dt,n=round(.05/dt))
+                            networks=engine.op(op='circuits')['circuits']
+                            rows=e.readouts(compiled['electrical'],networks,compiled['batteries'])
+                            reading=next(d for d in rows['devices'] if d['kind']=='switch')
+                            if reading['closed']:closed+=1
+                            else:
+                                opened+=1
+                                self.assertTrue(all(abs(w['current_a'])<1e-10 for w in rows['wires']))
+                            maximum=max(maximum,abs(networks[0]['ledger']['electrical_residual_j']))
+                        self.assertGreater(closed,0,(material,dt))
+                        self.assertGreater(opened,0,(material,dt))
+                        self.assertLess(maximum,1e-8)
+                        print('PRESS_DECK_TIMESTEP',material,dt,masses['control paddle'],closed,opened,maximum)
+                    finally:engine.close()
+
     def test_shrink_the_bulb_matches_native_current_limit_and_full_electrical_ledger(self):
         level=mg.level_by_id('easy-bulb')
         self.assertEqual(level['tray'][0]['knobs']['size']['default'],'large')

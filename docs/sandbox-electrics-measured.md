@@ -625,3 +625,84 @@ message before the delayed reply; the six desktop/phone scenarios pass in
 19.770 s with unchanged assertions for the live world and rendered geometry.
 This observation/UI change reuses verified engine SHA-256
 `acb79f1926052467cd1dad869ddd3b31cd503c54f0f77c641e99e270c0da8dfc`.
+
+## Broad press deck and electrical audit (October 13)
+
+The current marble lesson's v3 switch has a 16 × 12 cm exposed press deck,
+colliding shallow curbs, a lowered counterbalance and an open concrete frame.
+The compound boxes meet; they are one connected body, not pre-cut fragments.
+An ordinary hinge and a fixed iron leaf mounting transmit the marble's contact
+forces. The lower counterbalance is not an alternate press surface. Its
+gravity torque keeps the unpressed deck open. A separate supported iron pad
+closes the branch only on native leaf/pad contact. No angle, name, timed win,
+forced pose, impulse or current is assigned by the lesson.
+
+All four tested marble x positions (0.06, 0.09, 0.12 and 0.16 m, z=0,
+starting y=0.55 m) complete the unchanged ≥2 W for 0.1 s goal within 3 s
+for glass, oak and iron deck compounds. Removing the marble keeps each open.
+The reference solution and all four seeded heights pass their three nudges;
+the empty machine and misplaced +0.30 m deck do not win. The old −0.30 m
+negative case would overlap the extended counterbalance with the battery;
+the new miss is collision-free and fails through its actual geometry.
+The new apparatus measures 574825940.599 J in the existing construction/run
+score. Its par is 575000000 J, rounded up under the unchanged 1% calibration
+check. This recalibrates construction cost, not the physical goal or tolerance.
+Archived v1/v2 recipe apparatus, controls and par values are retained. Missing
+construction versions in saved placements use v2; fresh pieces carry v3.
+
+Three seconds of native integration, sampled every 0.05 s, compares identical
+geometry and iron contact hardware with the deck compound's bulk material
+changed. Global cell size is 20 mm; the compound uses exact rigid primitives.
+
+| Deck material | Compound mass kg | Closed/open samples, 1/240 s | Closed/open samples, 1/480 s | Maximum electrical residual J, 1/240 / 1/480 s |
+| --- | ---: | ---: | ---: | ---: |
+| Glass | 6.03 | 54 / 6 | 53 / 7 | 5.378e−12 / 5.183e−12 |
+| Oak | 1.6884 | 55 / 5 | 13 / 47 | 5.394e−12 / 1.322e−12 |
+| Iron | 18.98244 | 55 / 5 | 55 / 5 | 5.436e−12 / 5.423e−12 |
+
+Counts also varied in the full-suite repeat: glass gave 53/7 at both steps,
+oak 14/46 and 9/51, and iron 55/5 and 53/7. The cause of run-to-run variation
+has not been isolated; oak's intermittent contact is especially sensitive.
+These are observations, not a calibrated elastic bounce model or a claim of
+deterministic contact persistence. Open contacts, displaced pads, missing
+returns and exhausted batteries give zero current within 1e−10 A. Electrical
+source/heat/light/storage/numerical-loss residuals remain under 1e−8 J.
+The checks do not close the full mechanical momentum/energy budget: support
+reactions, hinge/contact losses and numerical pose correction remain
+unseparated. No new material, fracture, grain, plasticity or contact law is
+claimed. Bodies remain native material-derived rigid compounds with ideal
+mounts; contact resistance remains a lumped 0.001 Ω interface.
+
+| Audited system | Implemented behavior | Remaining work |
+| --- | --- | --- |
+| Paddle and Chain reaction pressure switches | Separate conducting bodies must touch. Open/missing-return/flat-source cases cannot conduct. | Pressure-dependent contact resistance, arcing, elastic snap/bounce and a whole mechanical audit. |
+| Manual rockers and cannon handle/latch | Player force moves native hinges; measured hinge thresholds control the branch/latch. | Replace the angle criterion with calibrated actual metal contact. A trial retrofit failed closure/retention in several material cases and is excluded. |
+| Battery holder | Two distinct native conducting body contacts complete its two-terminal circuit. | Connector retention and cable forces. |
+| Batteries, lamps, motors, resistors and capacitors | Explicit terminal networks, finite supply, voltage/current limits, rated resistance and accepted-step RC energy; motors exchange measured mechanical power. | Conducting housings do not infer a network. Dielectric breakdown, realistic filament failure and full spatial conductor/insulation laws are unsupported. |
+| Electrical leads and solar cables | Current feedback uses native measurements; conservative clearance drawing routes avoid solid bounds. | No mechanical cable mass, bending, collision, support, tension, tear/disconnection or insulation. Solar leads remain ideal two-conductor links. |
+
+Cable routing is display-only. It expands individual visible solid bounds by
+22 mm for the enlarged drawing, uses unobstructed straight segments and
+exposes a blocked route instead of drawing it through a solid. Endpoints can
+escape a solder attachment; the new paddle's ports are on conductor faces.
+Moving geometry can reroute this diagram without force/work or changing the
+declared copper length. Holes in a compound are conservatively routed around
+when the primitive bounds do not admit a clear route. Preview/current markers
+retain the same corners rather than smoothing through obstacles. Deliberate
+editor wire deletion remains recoverable with Undo; collision does not cut
+cables. **Objects cannot yet teeter on these electrical wires.** Native
+slender, flexible colliders and connector reactions are required for that.
+
+The contact change reuses verified Windows engine SHA-256
+`4bde8f581098a877616ac5647923de8a2b0aada2d5db39911f85b8bef1e783a8`.
+Checks: 57 game tests pass (98.542 s), 36 electrical tests pass (49.477 s),
+and the source registration guard confirms 269/269. The full 20-test recipe
+suite passed 19; its one failing archived v1 optional-paddle geometry case
+exposed a missing legacy-contact flag. That flag was fixed, and both that
+case and the v3/v2/v1 marble recipe check pass on recheck (7.789 s).
+Seven relevant browser methods pass across their desktop/portrait/landscape
+scenarios: marble contact, battery voltage/gauge, cable deletion/Undo, manual
+field operation, solar wiring, Chain reaction inspection and cannon firing.
+The client geometry CMake test also passes. Manual playing completes the
+new marble lesson with three stars and shows 0.250 A through its closed
+contact. No new C++ source or native physics law is introduced.
