@@ -1,5 +1,27 @@
 # Puzzles on the machine (/play)
 
+October 13 spring follow-up: **Spring lifts the load** now has a visibly coiled
+spring, a narrow iron push plate and a manual latch. The oak box remains on
+its fork cradle; the spring has no joint to that box. Place it beneath the box,
+increase **Relaxed length** from 0.2 m, then press **Release spring** beside it.
+**Try It!** readies this lesson without starting its timer; Release spring
+starts native motion and the unchanged one-second goal clock. It must raise
+the same box 5 cm. The correct 0.7 m setting reaches the goal at 0.100 s in
+all three nudged runs; no release, the 0.2 m setting and a one-metre sideways
+miss each win 0/3. No goal or deadline was relaxed. Its measured construction
+energy par is now 137,614,000 J for the changed assembly.
+
+New Sandbox springs use the same latched contact assembly, with **Held spring
+length**, stiffness, damping and rotation. Move/Turn and the property grip stay
+beside it. Stored joules and push newtons update as proposed settings; live
+spring readings come from the engine. The aiming guide follows the push face
+and the declared slide axis. **Latch and lift** demonstrates it with a separate
+box. Missing construction versions in old saves still select the original
+directly attached spring; shared v1/v2 challenges also retain their apparatus.
+The coil and latch marker depict ideal native constraints, rather than a
+resolved wire or latch material model. Comparative measurements are in
+[the spring audit](sandbox-mechanics-measured.md#latched-contact-spring-october-13).
+
 October 13 direct editing follow-up (supersedes the dock editing descriptions
 below): **Try It!** is the primary left-hand action; compact Controls/Help tabs
 sit on the right. Pause and Continue keep their existing behavior. A successful
@@ -714,8 +736,9 @@ area. No unrelated reference boxes were reintroduced.
 * **Spring lifts the load:** an oak load rests on a real fork cradle. Add the
   spring underneath it and increase its relaxed length from the 20 cm starting
   setting. The existing load must rise the same 5 cm; a green height mark is
-  drawn at its starting top plus 5 cm. The spring can attach to an existing
-  moving load in the sandbox too; its original included-load mode remains.
+  drawn at its starting top plus 5 cm. The October 13 latched contact assembly
+  described above replaces the direct attachment for the current lesson and
+  new Sandbox pieces; earlier saves keep the original construction.
 * **Raise the crate:** the glass crate waits on a physical pedestal. The added
   tackle connects to that crate instead of creating another load. Its unchanged
   target is a 25 cm rise, with a mark above the crate's original top.

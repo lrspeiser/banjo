@@ -55,7 +55,7 @@ PLAYER_TASK_COUNTS = {
     'gap': 1, 'cut': 1, 'fire': 4, 'steam': 1, 'chain': 1,
     'laser': 2, 'sun': 2, 'tackle': 1,
     'easy-cut': 1, 'easy-mirror': 1, 'easy-lens': 1, 'easy-solar': 2,
-    'easy-tackle': 1, 'easy-water-wheel': 1, 'easy-river-wheel': 1, 'easy-spring': 1,
+    'easy-tackle': 1, 'easy-water-wheel': 1, 'easy-river-wheel': 1, 'easy-spring': 2,
     'easy-gears': 2, 'easy-weight': 1, 'easy-motor': 1, 'easy-power': 3,
     'easy-switch': 2, 'easy-bulb': 1, 'easy-loop': 1,
     'easy-water-receiver': 1, 'easy-divert-water': 1, 'easy-heat': 3, 'easy-catapult': 1,
@@ -1360,6 +1360,7 @@ def ghost(level, placements, index, snapping=False, edit_key=None, nearby=False,
         reply['optical_setup'] = compiled['light']
     reply['solar_setup'] = compiled.get('solar_panels', [])
     reply['airflows'] = compiled.get('airflows', [])
+    reply['spring_setup'] = [j for j in compiled['joints'] if j['kind']=='spring' and owner(j)==name]
     if compiled.get('spouts'):
         reply['water_setup'] = compiled['spouts']
     # Draw the compiled terminals while placing a device, including its
@@ -1592,13 +1593,13 @@ def energy_of(compiled, readouts, t_s=0.0):
     return {'j': made + run['j'], 'pieces_j': made, 'pieces': pieces, 'run': run}
 
 
-def measure_energy(level, placements, exe, logs, *, handle_inputs=None):
+def measure_energy(level, placements, exe, logs, *, handle_inputs=None, release_inputs=None):
     """A rehearsal to the goal: when it happened and what the win took (a
     level's par is its own solution's)."""
     spec, _, _ = compose(level, placements)
     compiled = mw.compile_spec(spec)
     r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=120,
-                    handle_inputs=handle_inputs)
+                    handle_inputs=handle_inputs, release_inputs=release_inputs)
     row = (r['stations'] or [{}])[0]
     return dict(energy_of(compiled, r.get('readouts'), r['world_time_s']),
                 goal_at_s=row.get('at_s') if row.get('done') else None)
@@ -1635,7 +1636,7 @@ def nudged(compiled, seed, metres=0.0015):
     return out
 
 
-def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None):
+def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None, release_inputs=None):
     """Run the machine `runs` times, nudged, and say in how many the goal
     happened in time. Unpaced: as fast as the engine goes."""
     spec, checked, cost = compose(level, placements)
@@ -1643,7 +1644,7 @@ def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None):
     results = []
     for seed in range(runs):
         r = mw.rehearse(nudged(compiled, seed + 1) if seed else compiled, exe, logs,
-                        seconds=level['time_s'] + 0.5, wall_limit_s=120, handle_inputs=handle_inputs)
+                        seconds=level['time_s'] + 0.5, wall_limit_s=120, handle_inputs=handle_inputs, release_inputs=release_inputs)
         row = r['stations'][0] if r['stations'] else {}
         at = row.get('at_s') if row.get('done') else None
         results.append({'goal_at_s': at, 'error': r.get('error'),
@@ -1739,7 +1740,8 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0):
             hits.append(h)
         last[key] = h['t']
     return {'paths': paths, 'hits': hits, 'goal_at_s': goal_at, 'world_time_s': r['world_time_s'],
-            'manual_input_required': bool(level.get('solution_inputs')),
+            'manual_input_required': bool(level.get('solution_inputs') or level.get('solution_releases')),
+            'manual_input_label': 'Release spring' if level.get('solution_releases') else 'drag the handle',
             'flow_frames': r.get('flow_frames', []), 'complete': r.get('complete', not r['error']),
             'mechanism_shapes':r.get('mechanism_shapes',[]),
             'wall_s': r['wall_s'], 'error': r['error'], 'zone': rule if 'at_m' in (rule if isinstance(rule, dict) else {}) else None}
@@ -1849,7 +1851,7 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
 def public(level):
     """What the page needs to show a level: never its solution."""
     result = {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
-                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding') if k in level}
+                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding','release_to_start','camera_min_m') if k in level}
     if not level.get('free'):
         family = level.get('variant', {}).get('family', level['id'])
         legacy_counts={'easy-solar':1,'easy-water-wheel':1,'easy-water-gate':2,'easy-water-receiver':1,'easy-gears':1,'easy-charge-lift':1,'easy-heat':1}
@@ -1857,6 +1859,7 @@ def public(level):
                                else PLAYER_TASK_COUNTS[family])
         if family=='easy-water-wheel' and level.get('variant',{}).get('version')==2:result['task_count']=2
         if family=='easy-gears' and level.get('variant',{}).get('version')==2:result['task_count']=1
+        if family=='easy-spring' and level.get('variant',{}).get('version') in (1,2):result['task_count']=1
         if family=='easy-power' and level.get('variant',{}).get('version') in (1,2):result['task_count']=1
     if level.get('variant'):
         result['variant'] = {k: level['variant'][k] for k in ('family', 'seed', 'version', 'attempt',

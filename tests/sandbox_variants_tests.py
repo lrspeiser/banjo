@@ -32,6 +32,17 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
+    def test_contact_spring_v3_presets_require_a_release_and_preserve_private_inputs(self):
+        family=game.level_by_id('easy-spring');seen={}
+        for seed in range(32):
+            candidate=variants.construct(family,seed);seen[candidate['variant']['value']]=candidate
+        self.assertEqual(set(seen),{180,200,220,240})
+        with tempfile.TemporaryDirectory() as td:
+            for candidate in seen.values():
+                self.assertEqual(candidate['variant']['version'],3)
+                self.assertNotIn('solution_releases',game.public(candidate))
+                self.assertEqual(variants.reconstruct(family,candidate['variant']['seed'],0,version=3),candidate)
+                if ENGINE.is_file():self.assertTrue(variants.validate(candidate,ENGINE,Path(td))['valid'])
     def test_heat_v2_clips_and_wires_while_v1_retains_the_original_attachment(self):
         family=game.level_by_id('easy-heat')
         self.assertEqual(variants.family_version(family['id']),2)
@@ -139,7 +150,7 @@ class Recipes(unittest.TestCase):
             if os.environ.get('BANJO_MACHINE_ENGINE')=='required':self.fail('Native engine required')
             self.skipTest('Native engine unavailable')
         with tempfile.TemporaryDirectory() as td:
-            for family,version in [('easy-spring',1),('easy-tackle',1),('easy-gears',1),('easy-gears',2),('easy-water-wheel',1),('easy-water-wheel',2)]:
+            for family,version in [('easy-spring',1),('easy-spring',2),('easy-tackle',1),('easy-gears',1),('easy-gears',2),('easy-water-wheel',1),('easy-water-wheel',2)]:
                 with self.subTest(family=family,version=version):
                     old=variants.construct(game.level_by_id(family),42,version=version)
                     self.assertEqual(variants.reconstruct(game.level_by_id(family),42,0,version=version),old)

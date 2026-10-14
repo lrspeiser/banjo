@@ -2579,6 +2579,12 @@ class MachineSession:
                 self._turned[name] = (j['degrees'], total + step)
                 row['turned_deg'] = round(total + step, 2)
             rows.append(row)
+        # Native unhinge removes the restraint from the joint list. Report that
+        # absence so its marker and release control follow the engine state.
+        present={j['id'] for j in joints}
+        rows.extend(dict(name=j['name'],kind='fix',a=j['a'],b=j['b'],attached=False)
+                    for j in self.compiled['joints'] if j['kind']=='fix' and j['name'].endswith(' restraint')
+                    and self.joint_ids[j['name']] not in present)
         out['joints'] = rows
         # A person's test pulls: what each pulls with and the work it has done.
         if self._pulled:
@@ -2979,7 +2985,7 @@ class MachineSession:
         """Withdraw a named restraint, through the run thread's engine queue."""
         joint = next((j for j in self.compiled['joints'] if j['name'] == name and
                       j['kind'] == 'fix' and j['name'].endswith(' restraint')), None)
-        if not joint: raise ValueError('Choose an unreleased arm restraint')
+        if not joint: raise ValueError('Choose a releasable restraint')
         with self.lock:
             self._water_launch_queue.append(dict(op='unhinge', joint=self.joint_ids[name]))
             self.last_action = time.monotonic()
@@ -3173,7 +3179,7 @@ class MachineSession:
 
 
 def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, after_s=0.0, flows=False,
-             *, handle_inputs=None):
+             *, handle_inputs=None, release_inputs=None):
     """Run a machine once, unpaced, and report what the engine measured: which
     stations happened, when, and the events. Nothing is kept and nothing is
     changed; a person still watches the real run afterwards. track: names of
@@ -3182,6 +3188,8 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
     handle_inputs is an explicit offline verification intervention: bounded
     forces at declared handle grips, never Boolean switch states. Ordinary
     previews and live sessions do not supply these reference player inputs.
+    release_inputs explicitly removes declared restraints for verification;
+    ordinary previews keep them latched until a player releases them.
     """
     session = MachineSession(compiled, exe, logs, paced=False)
     if track:
@@ -3195,6 +3203,8 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
         session._capture_flows()
     started = time.perf_counter()
     try:
+        for name in release_inputs or []:
+            session.release_joint(name)
         for command in handle_inputs or []:
             device = next(d for d in compiled.get('electrical', {}).get('devices', [])
                           if d['name'] == command['name'] and d.get('handle'))

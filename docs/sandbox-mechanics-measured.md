@@ -347,3 +347,60 @@ loads are retained, and the measured bulb glow still renders. The browser
 requires nonempty native ray data and positive bulb glow while verifying
 zero displayed ray-guide segments. The diagram is scoped to this lesson
 and its saved template base; unrelated motor examples keep their controls.
+
+## Latched contact spring (October 13)
+
+The current **Spring lifts the load** uses an ideal Hooke spring acting on an
+iron push plate, a native slide and a removable fixed restraint. The waiting
+box rests on two grounded cradle forks and has no joint to the spring. A
+player's release removes the restraint before native stepping; it does not
+assign velocity or add an impulse. Rotation turns the declared spring
+attachments and slide axis. The helix and red latch marker are constraint
+depictions, not deformable wire or a resolved withdrawal mechanism.
+
+Declared conditions: 0.12 m cubic load, initial centre height 0.4 m; plate
+0.065 × 0.04 × 0.14 m, native voxel dimensions 0.06 × 0.04 × 0.14 m; spring
+held span 0.2 m, rest length 0.7 m, stiffness 200 N/m, internal axial damping
+6 N s/m. Initial stored energy is 25 J. Gravity is 9.81 m/s², cell resolution
+0.02 m. Same apparatus and inputs for oak (700 kg/m³), glass (2500) and iron
+(7870), observed after 0.1 s at two timesteps. Native plate mass is 2.64432 kg.
+
+| Load | Mass kg | dt s | Load height m | Initial / final energy J | Damping quadrature J | Contact + numerical remainder J | Required support impulse N s |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Oak | 1.2096 | 1/240 | 0.467654 | 37.528704 / 36.338503 | 0.484004 | 0.706197 | 0.282169 |
+| Oak | 1.2096 | 1/480 | 0.467445 | 37.528704 / 36.457448 | 0.511073 | 0.560183 | 0.385023 |
+| Glass | 4.32 | 1/240 | 0.428788 | 49.733914 / 48.609095 | 0.152407 | 0.972412 | 1.354073 |
+| Glass | 4.32 | 1/480 | 0.429974 | 49.733914 / 48.681873 | 0.165299 | 0.886742 | 1.556433 |
+| Iron | 13.59936 | 1/240 | 0.400001 | 86.146122 / 84.729256 | 0.079663 | 1.337204 | 5.483354 |
+| Iron | 13.59936 | 1/480 | 0.402012 | 86.146122 / 84.892552 | 0.083806 | 1.169764 | 4.993451 |
+
+Energy includes gravity, measured translation and rotation of both moving
+bodies and native spring stored energy. Angular velocities are transformed
+to body principal axes before applying the uniform voxel-box inertia.
+Internal damping is integrated separately. No environmental drag was added.
+The remainder groups contact losses and numerical corrections; it is not a
+closed thermal ledger. Vertical momentum includes both moving bodies, gravity
+and spring force from the anchored base; the final column is the required
+cradle/guide reaction plus numerical impulse, not a separately measured
+support receipt. Fixed supports export reactions to the environment. These
+results do not certify complete pipeline conservation or calibrated coil
+materials. The unchanged 0.01 J no-energy-creation check passes; native contact
+position refinement stays within the declared 5 mm comparative check. The
+0.1 s audits take approximately 0.03 / 0.06 s wall time at 1/240 / 1/480.
+
+Correct solution with explicit release wins 3/3 at 0.100 s. Without release,
+with a 0.2 m relaxed spring, or displaced sideways by one metre, it wins 0/3.
+All four generated stiffness presets (180/200/220/240 N/m) pass solution,
+empty and wrong checks with three nudges each. v1/v2 challenge recipes and old
+saved pieces preserve their original direct spring attachment and analytical
+regressions; their tolerances were not loosened. Construction energy par is
+137,614,000 J for the new material inventory; game scoring retains its existing
+embodied-cost/source-energy model, not a complete initial-mechanical-energy ledger.
+
+Verification: the 34 authored solutions each win 3/3 and all energy pars pass
+the two full catalogue checks (41.205 s). Tray checks pass 28/28 (16.094 s).
+Six scoped mechanism checks pass (10.125 s), retained challenge versions pass
+(6.887 s), and the browser lift check passes for spring and tackle on desktop,
+phone portrait and landscape (7.789 s). JS geometry/syntax and CMake source
+registration checks pass. No C++ physics changed; verified native SHA-256 is
+`997b02d2b9f4594dbb575eeca38c17777a7ce6ec74e8832f97d265f8974464a9`.

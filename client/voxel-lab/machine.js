@@ -1,5 +1,5 @@
 import * as THREE from '/three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition} from '/machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints} from '/machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from '/anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from '/profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from '/level-library.mjs';
@@ -1297,12 +1297,18 @@ function syncWater(w) {
 window.machineRiverState = () => riverState && {...riverState,visible:Boolean(riverFlow?.visible),
   samples:(riverFlow?.userData.samples||[]).map(s=>({at_m:[...s.at_m],velocity_m_s:[...s.velocity_m_s],depth_m:s.depth_m}))};
 
-// Ropes and springs: a line between their two attachment points, each fixed
+// Ropes and ideal spring depictions follow their two attachment points, fixed
 // in its body's own frame and carried by that body's measured pose. Hidden
 // once the engine reports the joint gone.
 const ropes = [];
 const LINK_DOT = new THREE.SphereGeometry(.012, 12, 8);
 const linkLook = {hinge: new THREE.MeshBasicMaterial({color: 0xffd34d}), fix: new THREE.MeshBasicMaterial({color: 0xf2f6f8})};
+const coilLook=new THREE.MeshStandardMaterial({color:0xaac9de,metalness:.65,roughness:.32});
+const latchLook=new THREE.MeshBasicMaterial({color:0xff7153});
+function coilGeometry(a,b){
+  const points=springCoilPoints(a,b).map(p=>new THREE.Vector3(...p));
+  return points.length ? new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points),128,.0035,6,false) : new THREE.BufferGeometry();
+}
 function syncRopes() {
   for (const r of ropes) { scene.remove(r.line); if (r.line.geometry !== LINK_DOT) r.line.geometry.dispose(); }
   ropes.length = 0;
@@ -1313,6 +1319,14 @@ function syncRopes() {
     return new THREE.Vector3(...at).sub(new THREE.Vector3(...b.position_m)).applyQuaternion(q.invert());
   };
   for (const j of machine.joints) {
+    if(j.kind==='fix' && /^your spring \d+ restraint$/.test(j.name)) {
+      const localA=local(j.b,j.at_m);if(!localA)continue;
+      // Visible outside the plate: a marker of the native restraint, not
+      // an extra collider or a separately simulated withdrawal mechanism.
+      localA.x-=.045;localA.z+=.085;
+      const dot=new THREE.Mesh(LINK_DOT,latchLook);dot.scale.setScalar(1.7);scene.add(dot);
+      ropes.push({line:dot,dot:true,name:j.name,a:j.b,localA});continue;
+    }
     // A pin or glue a player put between two parts: a dot where they join.
     if (/^your link \d+$/.test(j.name) && (j.kind === 'hinge' || j.kind === 'fix')) {
       const a = local(j.a, j.at_m);
@@ -1326,11 +1340,13 @@ function syncRopes() {
     if (j.hidden) continue;   // a rope's cord, inside the chain drawn as its segments
     const a = local(j.a, j.at_m), b = local(j.b, j.at_b_m);
     if (!a || !b) continue;
-    const line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color: j.kind === 'spring' ? 0x9fd3ff : 0xd8c9a3}));
+    const coil=j.kind==='spring';
+    const line = coil ? new THREE.Mesh(coilGeometry(j.at_m,j.at_b_m),coilLook)
+      : new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color:0xd8c9a3}));
     scene.add(line);
     // A pulley's rope runs up over its two fixed points.
     const over = j.kind === 'pulley' ? [new THREE.Vector3(...j.over_a_m), new THREE.Vector3(...j.over_b_m)] : [];
-    ropes.push({line, name: j.name, a: j.a, b: j.b, localA: a, localB: b, over});
+    ropes.push({line,coil, name: j.name, a: j.a, b: j.b, localA: a, localB: b, over});
   }
 }
 const drumLines = new Map();
@@ -1352,13 +1368,18 @@ function updateRopes() {
   for (const r of ropes) {
     if (r.dot) {
       const pa = at(r.a, r.localA);
-      r.line.visible = Boolean(pa) && !gone.has(r.name);
+      r.line.visible = Boolean(pa) && !gone.has(r.name) && !hiddenPiece(r.a);
       if (pa) r.line.position.copy(pa);
       continue;
     }
     const pa = at(r.a, r.localA), pb = at(r.b, r.localB);
-    r.line.visible = Boolean(pa && pb) && !gone.has(r.name);
-    if (r.line.visible) r.line.geometry.setFromPoints([pa, ...r.over, pb]);
+    r.line.visible = Boolean(pa && pb) && !gone.has(r.name) && !hiddenPiece(r.b);
+    if (r.line.visible && r.coil) {
+      const span=[...pa.toArray(),...pb.toArray()];
+      if(!r.span || span.some((v,i)=>Math.abs(v-r.span[i])>.0001)) {
+        r.line.geometry.dispose();r.line.geometry=coilGeometry(pa.toArray(),pb.toArray());r.span=span;
+      }
+    } else if(r.line.visible)r.line.geometry.setFromPoints([pa, ...r.over, pb]);
   }
 }
 
@@ -1585,7 +1606,7 @@ function renderClock(frame) {
   // A level runs at real time, so its clock leaves the speed out.
   let text = `World ${describeTime(frame.t)} · ` + (LEVEL_MODE ? '' : `${frame.speed}× · `) + (frame.error ? 'stopped: ' + frame.error :
     frame.playing ? 'calculating live' : frame.t > 0 ? (LEVEL_MODE && scored ? 'run over' : 'paused')
-    : LEVEL_MODE ? 'ready: press Try It!' : 'ready: press Start');
+    : LEVEL_MODE ? 'ready: press Try It!'+(level?.release_to_start&&machine?.joints.some(j=>j.name.endsWith(' restraint'))&&!ghost?' · Release spring to start':'') : 'ready: press Start');
   if (frame.playing && behind > .25) text += ` · ${behind.toFixed(1)} s behind real time while the engine works`;
   $('clock').textContent = text;
   $('start').hidden=Boolean(LEVEL_MODE&&scored&&lastRun&&lastRun.goal_at_s==null);
@@ -1741,7 +1762,7 @@ function frameCamera(includeGhost=false) {
   // A bounding sphere around the look-at point fits either aspect ratio.
   const half = Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
   const radius = Math.hypot(...lo.map((low, i) => Math.max(Math.abs(low - goal.getComponent(i)), Math.abs(hi[i] - goal.getComponent(i)))));
-  distance = Math.min(40, Math.max(zone ? 2.2 : 1.6, 1.12 * radius / Math.sin(half)));
+  distance = Math.min(40, Math.max(level?.camera_min_m || (zone ? 2.2 : 1.6), 1.12 * radius / Math.sin(half)));
   azimuth = -.25; elevation = .38;
 }
 
@@ -2495,9 +2516,11 @@ async function checkGhost(g) {
     g.optical_setup = r.optical_setup || null;
     g.water_setup = r.water_setup || [];
     g.solar_setup = r.solar_setup || [];
+    g.spring_setup=r.spring_setup||[];
     g.airflows=r.airflows||[];drawAirflows(g.airflows);
     syncPowerLabels();
     drawGhost(r.parts, r.fits);
+    for(const j of r.spring_setup||[])ghostGroup.add(new THREE.Mesh(coilGeometry(j.at_m,j.at_b_m),ghostLook[r.fits?'fits':'refused']));
     drawLensOutlines();
     if (g.electrical) {
       const terminals = terminalMap(g.electrical);
@@ -2642,9 +2665,18 @@ function electricalEditRating(){
   else if(p.piece==='wire')rating=`${p.size||'standard'} wire · ${p.length_m??5} m`;
   else if(p.piece==='ignition')rating=`${p.preset==='hot'?'.12':'12'} Ω heater · ${p.target?'clipped to '+p.target:'not attached'}`;
   else if(p.piece==='switch')rating=p.mode==='paddle'?`Contact closes at ${p.threshold_deg}°`:`Starting switch: ${p.state||'open'}`;
+  else if(p.piece==='spring'&&p.mechanism_version===3){
+    const j=ghost.spring_setup?.[0];
+    if(j){const compression=j.rest_m-Math.hypot(...j.at_m.map((v,i)=>v-j.at_b_m[i]));
+      rating=`${(.5*j.stiffness_n_m*compression**2).toFixed(1)} J stored · ${(j.stiffness_n_m*compression).toFixed(0)} N push · latch held`;}
+  }
   return rating?`Proposed ${rating}`:'';
 }
 function pieceKnobVisible(p,key) {
+  if(p.piece==='spring'&&(p.mechanism_version??1)===1){
+    if(['yaw_deg','pitch_deg','roll_deg','compressed_m'].includes(key))return false;
+    if(key==='height_m'&&(!p.load||p.load==='included load'))return true;
+  }
   if(p.piece==='ignition'&&p.attachment_version===2&&key==='target')return false;
   if(p.piece==='marble' && key==='height_m' && p.placement!=='at height')return false;
   if(p.piece==='pipe_elbow' && key==='fall_m' && p.plane==='downward')return false;
@@ -2907,6 +2939,10 @@ function positionLiveControls(){
   const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#piece-editor,#panel-toggle,#level-done')]
     .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
   for(const card of liveCards.children){
+    if(card.dataset.restraint && readouts.joints?.some(j=>j.name===card.dataset.restraint&&j.attached===false)) {
+      const button=card.querySelector('button');button.textContent='Latch released';button.disabled=true;
+      card.querySelector('output').textContent='The restrained part is free to move.';
+    }
     card.hidden=Boolean(ghost)||document.body.matches('.on-levels,.on-sandbox,.scene-win');if(card.hidden)continue;
     const anchor=card.anchor.clone().project(camera);card.hidden=Math.abs(anchor.z)>1||Math.abs(anchor.x)>1||Math.abs(anchor.y)>1;if(card.hidden)continue;
     if(card.matches(':active')){occupied.push(card.getBoundingClientRect());continue;}
@@ -3227,7 +3263,8 @@ function updatePowerFeedback() {
   if(rating&&proposed){
     const rule=trayItem(ghost.p.piece).knobs[ghost.card],unit=rule?.label?.match(/\(([^)]+)\)/)?.[1]||'';
     const compact=Number.isFinite(ghost.p[ghost.card])?`Proposed ${ghost.p[ghost.card]}${unit?' '+unit:''}`:rating;
-    items.push({id:'proposed-setting',name:`Adjust ${pieceLabel(ghost.p.piece)}`,kind:'object',priority:-1,at:proposed.at_m,text:compact,title:rating+'. Measured voltage, current and power remain separate.'});
+    items.push({id:'proposed-setting',name:`Adjust ${pieceLabel(ghost.p.piece)}`,kind:'object',priority:-1,at:proposed.at_m,text:compact,
+      title:rating+(ghost.p.piece==='spring'?'. Proposed spring settings; the engine measures motion after release.':'. Measured voltage, current and power remain separate.')});
   }
   for(const d of sample.devices) {
     const at=world.bodies.get(d.part)?.position_m||d.at_m;if(!at)continue;
@@ -3744,7 +3781,7 @@ function showPreviewLegend(r, colourOf) {
     textContent: r.error ? 'Preview stopped: '+r.error : !r.complete ? 'Preview incomplete'
       : !level.goal ? 'Preview'
       : r.goal_at_s != null ? `Preview · goal at ${describeTime(r.goal_at_s)}`
-      : r.manual_input_required ? 'Preview · waiting for your handle drag' : 'Preview · goal not reached'}));
+      : r.manual_input_required ? `Preview · ${r.manual_input_label || 'drag the handle'} to start` : 'Preview · goal not reached'}));
   const chip = (colour, text) => {
     const s = Object.assign(document.createElement('span'), {className: 'chip', textContent: text});
     s.style.setProperty('--c', '#' + new THREE.Color(colour).getHexString());
@@ -4705,7 +4742,7 @@ const PIECE_INFO = {
   solar: ['optics', 'Collect sunlight to power a machine.'],
   tackle: ['motion', 'Pulleys and a counterweight to lift a load.'],
   lens: ['optics', 'Focus or spread a beam through a glass lens.'],
-  spring: ['motion', 'A guided load compresses a spring; change stiffness and damping.'],
+  spring: ['motion', 'A latched spring drives a push plate. Aim it, compress it and release the latch to push a separate object.'],
   gear: ['motion', 'One toothed wheel on an axle. Choose its size, mesh it with another gear and connect a powered motor to an axle.'],
   gears: ['motion', 'Legacy gear pair from a saved design.'],
   weight: ['motion', 'A real material block, loose, hanging or guided.'],
@@ -4939,17 +4976,19 @@ function renderMachineControls() {
     const card=document.createElement('section');card.className='device-live-card';card.anchor=new THREE.Vector3(...at);
     card.deviceName=name;card.append(Object.assign(document.createElement('strong'),{textContent:name}),node,Object.assign(document.createElement('output'),{className:'device-control-status',ariaLive:'polite'}));liveCards.append(card);return node;
   };
-  const action = (label, command, name, at) => {
+  const action = (label, command, name, at, autoStart=false) => {
     const b = button(label, async () => {
       b.disabled = true;
       try {
         liveControlPending = true;
-        liveControlRequest = api({...command(), session});
+        const operation=command();liveControlRequest = api({...operation, session});
         await liveControlRequest;
+        if(operation.op==='release_joint')b.dataset.queuedRelease='true';
+        if(autoStart&&!playing){liveControlPending=false;await setPlaying(true);}
         showDeviceControlStatus(playing?'Applying at the next engine step.':'Queued. Choose Try It! to continue.',b); if (wake) wake();
       }
       catch (e) { liveControlPending = false;showDeviceControlStatus(e.message,b); }
-      finally { b.disabled = false; }
+      finally { b.disabled = b.dataset.queuedRelease==='true'; }
     });
     beside(b,name,at);
   };
@@ -4972,8 +5011,10 @@ function renderMachineControls() {
     action(`Toggle ${source.name} valve`, () => ({op: 'water_valve', name: source.name, open: opened = !opened}),source.name,source.at_m);
   }
   for (const joint of machine?.joints || []) {
-    if (!/^your catapult \d+ restraint$/.test(joint.name)) continue;
-    action(`Release ${joint.name.replace(' restraint', '')}`, () => ({op: 'release_joint', name: joint.name}),joint.name.replace(' restraint',''),joint.at_m||machine.parts.find(p=>p.name===joint.b)?.at_m||[0,.5,0]);
+    if (!/^your (catapult|spring) \d+ restraint$/.test(joint.name)) continue;
+    const spring=joint.name.includes(' spring ');
+    action(spring?'Release spring':`Release ${joint.name.replace(' restraint', '')}`, () => ({op: 'release_joint', name: joint.name}),joint.name.replace(' restraint',''),joint.at_m||machine.parts.find(p=>p.name===joint.b)?.at_m||[0,.5,0],spring);
+    liveCards.lastChild.dataset.restraint=joint.name;
   }
   controls.hidden = true; controls.open = false; $('machine-control-status').textContent = '';
 }
@@ -5302,6 +5343,7 @@ async function rebuildLevel(start) {
     renderDesignControls();
     // Its goal is about a piece not placed yet: shown, not run.
     if (opened.needs) $('verdict').textContent = opened.needs;
+    else if (start && level.release_to_start) $('clock').textContent='Ready · press Release spring beside the spring';
     else if (start) await setPlaying(true);
     if (!start) schedulePreview(200);
   } catch (e) {
@@ -5594,7 +5636,7 @@ async function chooseLevel(id, design = null) {
     'easy-bulb':'Choose a smaller bulb that the supply can power.',
     'easy-heat':'Clip the heater to the hanging cord, wire both leads and heat it to release the weight.',
     'easy-water-receiver':'Widen the tap to fill the waiting box with 3 L in 5 seconds.',
-    'easy-spring':'Extend the relaxed spring to lift the waiting load.',
+    'easy-spring':'Put the push plate below the box, compress the spring, then release its latch.',
     'easy-gears':'Size and place a gear between the powered wheel and the target wheel.',
     'easy-water-wheel':'Aim a separate tank at the paddles and open its tap.',
     'easy-water-gate':'Aim the tank at the wheel, open the tap and connect the drum to the gate.',
@@ -5877,7 +5919,7 @@ async function askLevel(mode) {
       helped = true; renderTray(); renderPlaced();
       if (r.rehearsal && level.free) say(r.rehearsal.error?'refused':'model',r.rehearsal.error?`Engine check: ${r.rehearsal.error}`:'Built and checked in the engine. Choose Try It! to watch.');
       else if (r.rehearsal) say(r.rehearsal.manual_input_required || r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.manual_input_required
-        ? 'Setup checked. Drag the field handle to try the machine.' : r.rehearsal.goal_at_s != null
+        ? `Setup checked. ${r.rehearsal.manual_input_label || 'Drag the field handle'} to try the machine.` : r.rehearsal.goal_at_s != null
         ? `Rehearsed once in the engine: the goal happened at ${describeTime(r.rehearsal.goal_at_s)}.`
         : 'Rehearsed once in the engine: the goal did not happen. Try moving the pieces.');
       await rebuildLevel(false);

@@ -133,6 +133,8 @@ def weight(name, k, ctx):
 
 
 def spring(name, k, ctx):
+    if k.get('mechanism_version', 1) == 3:
+        return latched_spring(name, k, ctx)
     x, z = _position(k)
     height = k.get('height_m', .65)
     rest = k.get('rest_m', .5)
@@ -153,6 +155,37 @@ def spring(name, k, ctx):
         {'name': name + ' slide', 'kind': 'slide', 'a': guide['name'], 'b': load['name'],
          'at_m': list(load['at_m']), 'axis': [0, 1, 0], 'lower_m': .145 - height,
          'upper_m': .4, 'friction_n': 0}]}
+
+
+def latched_spring(name, k, ctx):
+    """Ideal axial spring and releasable restraint; the plate contacts the load.
+
+    The coil in the viewer depicts this force element, not resolved wire stress.
+    No joint connects the spring assembly to a separately placed load.
+    """
+    import machine_game as mg
+    x, z = _position(k)
+    held = k.get('compressed_m', .2)
+    base = box(name+' base', [.3,.08,.3], [x,.04,z])
+    plate = box(name+' push plate', [.065,.04,.14], [x,.10+held,z], 'iron', False)
+    guide = box(name+' guide', [.025,.7,.025], [x,.35,z+.18], 'iron')
+    parts = [base, guide, plate]
+    joints = [
+        dict(name=name+' spring',kind='spring',a=base['name'],b=plate['name'],
+             at_m=[x,.08,z],at_b_m=[x,.08+held,z],rest_m=k.get('rest_m',.5),
+             stiffness_n_m=k.get('stiffness_n_m',200),damping_n_s_m=k.get('damping_n_s_m',6)),
+        dict(name=name+' slide',kind='slide',a=guide['name'],b=plate['name'],
+             at_m=list(plate['at_m']),axis=[0,1,0],lower_m=.002-held,upper_m=.4,friction_n=0),
+        dict(name=name+' restraint',kind='fix',a=guide['name'],b=plate['name'],at_m=list(plate['at_m']))]
+    mw.turn_rows(mw.heading(*(mg._turn(k) or [0,0,0])),[x,.04,z],parts,joints)
+    # Lift a tilted base clear of the floor; generated stands carry its weight.
+    lift=max(0, max(mg._reach(p)[1]-p['at_m'][1] for p in parts if p['fixed']))
+    if lift: mw.shift_rows([0,lift,0],parts+joints)
+    if k.get('load','included load')=='included load':
+        parts.append(box(name+' load',[.12]*3,[x,plate['at_m'][1]+.08,z],k.get('material','oak'),False))
+    elif not any(p['name']==k['load'] and not p['fixed'] for p in ctx['parts']):
+        raise ValueError('Choose an existing moving load for the spring')
+    return dict(parts=parts,joints=joints)
 
 
 def gear(name, k, ctx):
@@ -252,12 +285,14 @@ TRAY = [
          'height_m': number('Starting height (m)', .15, 1.5, .6),
          'material': choice('Material', ['oak', 'glass', 'iron'], 'iron'),
          'mount': choice('Mounting', ['loose', 'hanging', 'guided'], 'loose')}),
-    tray('spring', 'Spring and guided load', {'height_m': number('Starting height (m)', .4, .9, .65),
+    tray('spring', 'Latched spring', {'height_m': dict(number('Starting height (m)', .4, .9, .65),hidden=True),
+         'mechanism_version':dict(choice('Spring construction',[1,3],3),legacy_default=1,hidden=True),
+         'compressed_m':number('Held spring length (m)',.1,.4,.2),
          'rest_m': number('Relaxed length (m)', .2, .7, .5),
          'stiffness_n_m': number('Stiffness (N/m)', 50, 1000, 200, 10),
          'damping_n_s_m': number('Internal damping (N s/m)', 0, 30, 6, 1),
          'material': choice('Load material', ['oak', 'glass', 'iron'], 'oak'),
-         'load': {'part':True,'default':'included load','label':'Load'}}, turning=False),
+         'load': {'part':True,'default':'included load','label':'Load'}}),
     tray('gear','Gear',{'height_m':number('Axle height (m)',.35,.9,.65),
          'teeth':choice('Teeth / size',[12,18,24,36],12),
          'module_m':choice('Tooth size (m)',[.016,.024,.032],.024),
@@ -323,7 +358,7 @@ def _templates():
         {'name': 'Lift with less', 'description': 'Change rope ratio or the material-derived counterweight preset.',
          'base': lift, 'placements': [{'piece': 'tackle'}]},
         {'name': 'Bounce and settle', 'description': 'A guided load compresses a linear spring; compare damping and stiffness.',
-         'base': bounce, 'placements': [{'piece': 'spring'}]},
+         'base': bounce, 'placements': [{'piece': 'spring','mechanism_version':1}]},
         {'name': 'Fast wheel slow wheel', 'description': 'A finite battery motor drives a 12:24 ideal gear coupling.',
          'base': gear, 'placements': [{'piece': 'gears', 'drive': 'forward'}]},
         {'name': 'Tip the lever', 'description': 'A loose weight falls onto the end of a supported lever.',
@@ -408,6 +443,34 @@ _spring_lesson['tray'][0].update(start_at_defaults=True,focus_knob='rest_m')
 for key in ('solution','wrong'):_spring_lesson[key][0]['load']='spring load'
 _spring_lesson['brief']='Place the spring beneath the waiting oak load. Increase its relaxed length to lift the load five centimetres off its cradle.'
 _spring_lesson['hints'][0]=_spring_lesson['brief']
+
+# Keep old shared challenges and saved spring constructions reproducible.
+LEGACY_SPRING_STARTER=copy.deepcopy(_spring_lesson)
+LEGACY_SPRING_STARTER['tray'][0]['turning']=False
+LEGACY_SPRING_STARTER['tray'][0]['knobs']['mechanism_version']['default']=1
+for _old in list(LEGACY_LEVELS.values())+[LEGACY_SPRING_STARTER]:
+    for _row in _old['tray']:
+        if _row['piece']=='spring':
+            _row['turning']=False
+            _row['knobs']['mechanism_version']['default']=1
+_spring_lesson['tray'][0]['turning']=True
+for _support in _spring_lesson['machine']['parts']:
+    if _support['name'].startswith('load cradle'):
+        _support['at_m'][2]*=-1
+_spring_lesson['tray'][0]['knobs']['mechanism_version']['legacy_default']=3
+_spring_lesson['tray'][0]['knobs']['compressed_m'].update(min=.2,max=.2,default=.2,hidden=True)
+for key in ('solution','wrong'):
+    _spring_lesson[key][0]['mechanism_version']=3
+_spring_lesson['solution_releases']=['your spring 1 restraint']
+_spring_lesson['release_to_start']=True
+_spring_lesson['camera_min_m']=1.1
+_spring_lesson['par_energy_j']=137614000
+_spring_lesson['brief']='Place the spring under the oak box, increase its relaxed length to compress it, then release its latch to push the box above the green mark.'
+_spring_lesson['hints']=[_spring_lesson['brief'],'The narrow push plate must fit between the two cradle forks. Try It! readies the spring; Release spring beside it starts the run.']
+_latched_example=copy.deepcopy(_spring_lesson['machine'])
+_latched_example['stations']=[dict(title='The box rises',done_when=copy.deepcopy(_spring_lesson['goal']['station']['done_when']))]
+TEMPLATES.append(dict(name='Latch and lift',description='Aim a compressed spring under a waiting box, then release its latch. The push plate lifts the box through contact.',
+    base=_latched_example,placements=copy.deepcopy(_spring_lesson['solution']),pieces=['spring']))
 
 _tackle_lesson=next(row for row in EASY_LEVELS if row['id']=='easy-tackle')
 _tackle_lesson['machine']['parts']=[box('crate',[.14]*3,[.6,.25,0],'glass',False),

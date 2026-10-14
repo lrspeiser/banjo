@@ -29,6 +29,11 @@ def features(compiled):
     parts = {p['name']: p for p in compiled['parts']}
     members = {j['member'] for j in compiled.get('joints', []) if j.get('member')}
     special = {}
+    for joint in compiled.get('joints',[]):
+        if joint['kind']=='slide' and joint['b'].endswith(' push plate'):
+            p=parts[joint['b']];axis=mw._unit(joint['axis'])
+            special[p['name']]=feature(p['name'],'spring push face',
+                [p['at_m'][i]+axis[i]*p['size_m'][1]/2 for i in range(3)],axis)
     light = compiled.get('light') or {}
     for name in light.get('mirrors', []):
         p = parts[name]
@@ -138,7 +143,7 @@ def blade_candidates(primary, targets, p):
 def guide(compiled, mine, port_rows=(), prefer_exit=False):
     all_points = features(compiled)
     own = [f for f in all_points if f['part'] in mine]
-    primary = next((f for f in own if f['label'] in ('lowest cutting-edge sweep', 'cutting edge',
+    primary = next((f for f in own if f['label'] in ('spring push face','lowest cutting-edge sweep', 'cutting edge',
                    'mirror center', 'lens center', 'collecting face')), None)
     if primary is None and port_rows:
         port = next((p for p in port_rows if p['kind']==('out' if prefer_exit else 'in')), port_rows[0])

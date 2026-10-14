@@ -163,7 +163,62 @@ def contact_gear_audit(material,dt):
         finally:engine.close()
 
 
+def latched_spring_audit(material,dt):
+    level=copy.deepcopy(mg.level_by_id('easy-spring'))
+    next(p for p in level['machine']['parts'] if p['name']=='spring load')['material']=material
+    compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+    with tempfile.TemporaryDirectory() as td:
+        engine,ids,_=mw.build_engine(ENGINE,compiled,td)
+        try:
+            bodies={b['name']:b for b in engine.first['bodies'] if not b['anchored']}
+            names=set(bodies)
+            def poses():
+                return {b['name']:b['pose'] for b in engine.op(op='snapshot')['snapshot']['bodies'] if b['name'] in names}
+            def energy(p):
+                total=0
+                for name,state in p.items():
+                    mass=bodies[name]['mass_kg'];size=bodies[name]['dimensions_m']
+                    total+=mass*9.81*state['com_m'][1]+.5*mass*sum(v*v for v in state['v_m_s'])
+                    # Uniform voxel boxes: rotate measured angular velocity
+                    # into each body's principal frame before using inertia.
+                    q=state['q_wxyz'];u=[-v for v in q[1:]];omega=state['w_rad_s']
+                    cross=lambda a,b:[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]
+                    uv=cross(u,omega);uuv=cross(u,uv)
+                    local=[omega[i]+2*q[0]*uv[i]+2*uuv[i] for i in range(3)]
+                    total+=sum(mass*sum(size[j]**2 for j in range(3) if i!=j)/24*local[i]**2 for i in range(3))
+                total+=engine.op(op='joints')['joints'][0]['stored_j']
+                return total
+            initial=poses();initial_j=energy(initial);previous=initial;damping=impulse=0;started=time.perf_counter()
+            engine.op(op='unhinge',joint=ids['your spring 1 restraint'])
+            for _ in range(round(.1/dt)):
+                plate=previous['your spring 1 push plate'];velocity=plate['v_m_s'][1]
+                length=plate['com_m'][1]-.10
+                damping+=6*velocity**2*dt
+                impulse+=(200*(.7-length)-6*velocity)*dt
+                engine.op(op='step',dt=dt,n=1,moved=False);previous=poses()
+            final_j=energy(previous);mass=sum(b['mass_kg'] for b in bodies.values())
+            return dict(material=material,dt=dt,masses_kg={n:b['mass_kg'] for n,b in bodies.items()},
+                load_y_m=previous['spring load']['com_m'][1],initial_j=initial_j,final_j=final_j,
+                damping_quadrature_j=damping,contact_and_numerical_remainder_j=initial_j-final_j-damping,
+                required_cradle_and_guide_impulse_n_s=sum(bodies[n]['mass_kg']*p['v_m_s'][1] for n,p in previous.items())+mass*9.81*.1-impulse,
+                wall_s=time.perf_counter()-started)
+        finally:engine.close()
+
+
 class DeclarationChecks(unittest.TestCase):
+    def test_spring_aim_rotates_the_physical_slide_and_old_saves_keep_the_original_builder(self):
+        free=mg.free_build()
+        old=mg.compose(free,[dict(piece='spring')])[0]
+        self.assertFalse(any(j['name'].endswith(' restraint') for j in old['joints']))
+        new=[dict(piece='spring',mechanism_version=3,load='included load',yaw_deg=25,pitch_deg=15,roll_deg=0)]
+        ghost=mg.ghost(free,new,0,nearby=True)
+        self.assertEqual(len(ghost['spring_setup']),1)
+        axis=ghost['alignment']['primary']['dir']
+        self.assertEqual(ghost['alignment']['primary']['label'],'spring push face')
+        expected=mw._mat_apply(mw.heading(25,15,0),[0,1,0])
+        for actual,wanted in zip(axis,expected):self.assertAlmostEqual(actual,wanted,places=6)
+        self.assertLess(axis[1],1)
+        self.assertNotEqual(ghost['spring_setup'][0]['at_b_m'][2],0)
     def test_each_piece_is_independent_and_saved_examples_compile(self):
         for row in sm.TRAY:
             example = {'base': sm.base(row['title']), 'placements': [{'piece': row['piece']}]}
@@ -197,6 +252,26 @@ class DeclarationChecks(unittest.TestCase):
 
 
 class EngineChecks(unittest.TestCase):
+    @engine_test
+    def test_latched_spring_pushes_by_contact_and_requires_release_alignment_and_preload(self):
+        level=mg.level_by_id('easy-spring');release=level['solution_releases']
+        spec=mg.compose(level,level['solution'])[0]
+        self.assertFalse(any(j.get('a')=='spring load' or j.get('b')=='spring load' for j in spec['joints']))
+        with tempfile.TemporaryDirectory() as td:
+            for label,placed,inputs,wins in [('held',level['solution'],None,0),('released',level['solution'],release,3),
+                    ('weak',level['wrong'],release,0),('miss',[dict(level['solution'][0],x_m=1)],release,0)]:
+                result=mg.trial(level,placed,ENGINE,Path(td),runs=3,release_inputs=inputs)
+                self.assertEqual(result['worked'],wins,(label,result))
+                self.assertFalse(any(r['error'] for r in result['results']))
+        for material in ('oak','glass','iron'):
+            samples=[]
+            for dt in (1/240,1/480):
+                audit=latched_spring_audit(material,dt);samples.append(audit)
+                self.assertLessEqual(audit['final_j'],audit['initial_j']+.01)
+                if material=='iron':self.assertLess(audit['load_y_m'],.405)
+                else:self.assertGreater(audit['load_y_m'],.41)
+                print('LATCHED CONTACT SPRING',json.dumps(audit))
+            self.assertLess(abs(samples[0]['load_y_m']-samples[1]['load_y_m']),.005)
     @engine_test
     def test_contact_gears_compare_material_mass_and_native_power_receipts_at_two_steps(self):
         for material in ('glass','oak','iron'):
@@ -267,7 +342,7 @@ class EngineChecks(unittest.TestCase):
     def test_spring_acts_on_the_waiting_load_and_compares_materials_at_two_steps(self):
         for material,density in [('oak',700),('glass',2500),('iron',7870)]:
             for dt in (1/240,1/480):
-                level=copy.deepcopy(mg.level_by_id('easy-spring'))
+                level=mg._with_free_knobs(copy.deepcopy(sm.LEGACY_SPRING_STARTER))
                 next(p for p in level['machine']['parts'] if p['name']=='spring load')['material']=material
                 spec=mg.compose(level,level['solution'])[0]
                 with tempfile.TemporaryDirectory() as td:
@@ -295,7 +370,7 @@ class EngineChecks(unittest.TestCase):
         level=mg.level_by_id('easy-spring')
         with tempfile.TemporaryDirectory() as td:
             off=[dict(level['solution'][0],x_m=1)]
-            self.assertEqual(mg.trial(level,off,ENGINE,Path(td),runs=3)['worked'],0)
+            self.assertEqual(mg.trial(level,off,ENGINE,Path(td),runs=3,release_inputs=level.get('solution_releases'))['worked'],0)
             self.assertEqual(mg.trial(level,[dict(piece='spring')],ENGINE,Path(td),runs=3)['worked'],0)
 
     @engine_test
@@ -303,8 +378,8 @@ class EngineChecks(unittest.TestCase):
         for original in sm.EASY_LEVELS:
             level = mg.level_by_id(original['id'])
             with tempfile.TemporaryDirectory() as logs, self.subTest(level=level['id']):
-                hit = mg.trial(level, level['solution'], ENGINE, Path(logs), runs=3)
-                wrong = mg.trial(level, level['wrong'], ENGINE, Path(logs), runs=3)
+                hit = mg.trial(level, level['solution'], ENGINE, Path(logs), runs=3,release_inputs=level.get('solution_releases'))
+                wrong = mg.trial(level, level['wrong'], ENGINE, Path(logs), runs=3,release_inputs=level.get('solution_releases'))
                 self.assertEqual(hit['worked'], 3, hit)
                 self.assertEqual(wrong['worked'], 0, wrong)
                 self.assertTrue(all(x['error'] is None for x in hit['results'] + wrong['results']))

@@ -158,6 +158,19 @@ declarations, not contact, spring, pulley, gear or motor laws. Marked height
 guides do not collide or decide outcomes. See the
 [waiting-load comparison](sandbox-mechanics-measured.md#waiting-load-spring-october-12).
 
+October 13 spring update supersedes the direct attachment in the current
+lesson and newly added Sandbox springs: an ideal native axial Hooke spring
+acts on a separate iron push plate, a slide guides its travel, and a removable
+fix constraint represents the latch. The user removes that constraint; no
+launch velocity or scripted lift is applied. The waiting load has no spring
+or slide attachment, so native plate/load contacts transfer force. A coil
+mesh follows the measured attachment poses; its turns are a depiction,
+not resolved elastic wire, self-contact, fatigue or calibrated coil material.
+The red latch marker represents the restraint state, not a simulated pin
+withdrawal or latch material model. See the
+[contact spring comparison](sandbox-mechanics-measured.md#latched-contact-spring-october-13).
+Old saved springs and v1/v2 challenge IDs retain their original construction.
+
 October 12 update: independent fixed tanks now have a constant-area gravity
 reservoir and an adjustable outlet. The native engine derives flow from
 remaining head and opening, debits only accepted parcels, and reports source

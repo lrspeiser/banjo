@@ -3,7 +3,7 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints} from '../client/voxel-lab/machine-view.mjs';
 
 assert.equal(draggedKnobValue({min:0,max:2,step:.1},1,12),1.1);
 assert.equal(draggedKnobValue({min:0,max:2,step:.1},1,400),2);
@@ -149,3 +149,10 @@ assert.deepEqual(moved.legs[0],diagram.legs[0],'moving the tip never relocates t
 assert.equal(contactCircuitDiagram({...contactCircuit,switch:{hinge:'hinge'}},contactMachine,circuitBodies),null);
 circuitBodies.delete('tip');assert.equal(contactCircuitDiagram(contactCircuit,contactMachine,circuitBodies),null,'missing contacts never get an invented connection');
 console.log('PASS machine page draws engine frames, measured heat colours, light beams, contact circuits and the next unmeasured station');
+
+for(const [a,b] of [[[0,0,0],[0,.2,0]],[[1,2,3],[-1,2,3]],[[0,0,0],[.2,.2,.2]]]){
+  const p=springCoilPoints(a,b);assert.equal(p.length,129);
+  for(let k=0;k<3;k++){assert.ok(Math.abs(p[0][k]-a[k])<1e-12);assert.ok(Math.abs(p.at(-1)[k]-b[k])<1e-12);}
+  assert.ok(p.every(row=>row.every(Number.isFinite)));
+}
+assert.deepEqual(springCoilPoints([0,0,0],[0,0,0]),[]);

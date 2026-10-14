@@ -2,6 +2,20 @@
 // merge the engine's frames and choose colours and camera targets; none of
 // them moves a simulated body or predicts anything.
 
+// An ideal spring's coil is a depiction of its measured attachment span.
+// These points do not supply collisions, force, stress or simulated wire mass.
+export function springCoilPoints(a,b,radius=.025,turns=8,samples=128) {
+  const d=b.map((v,i)=>v-a[i]),length=Math.hypot(...d);
+  if(!Number.isFinite(length)||length<1e-6)return [];
+  const n=d.map(v=>v/length),seed=Math.abs(n[1])<.9?[0,1,0]:[1,0,0];
+  const cross=(u,v)=>[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+  const raw=cross(n,seed),norm=Math.hypot(...raw),u=raw.map(v=>v/norm),v=cross(n,u);
+  return Array.from({length:samples+1},(_,i)=>{
+    const t=i/samples,angle=turns*2*Math.PI*t,r=radius*Math.min(1,t*turns,(1-t)*turns);
+    return a.map((x,k)=>x+d[k]*t+r*(u[k]*Math.cos(angle)+v[k]*Math.sin(angle)));
+  });
+}
+
 // Editing assistance changes a proposed placement, never a simulated body.
 export const PLACEMENT_GRID = Object.freeze({size_m:40, fine_size_m:10, step_m:.05, major_step_m:.5, capture_m:.008, release_m:.012});
 // True 3D alignment: both transverse coordinates must match an infinite XYZ

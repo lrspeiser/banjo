@@ -1364,7 +1364,7 @@ class Engine(unittest.TestCase):
             for level in LEVELS:
                 with self.subTest(level=level['id']):
                     t = mg.trial(level, level['solution'], ENGINE, Path(logs), runs=3,
-                                 handle_inputs=level.get('solution_inputs'))
+                                 handle_inputs=level.get('solution_inputs'), release_inputs=level.get('solution_releases'))
                     print(f"\n  {level['id']}: works {t['worked']} of 3, goal at {[r['goal_at_s'] for r in t['results']]}")
                     self.assertEqual(t['worked'], 3, t['results'])
                     try:
@@ -1428,7 +1428,7 @@ class Engine(unittest.TestCase):
         with tempfile.TemporaryDirectory() as logs:
             for level in LEVELS:
                 m = mg.measure_energy(level, level['solution'], ENGINE, Path(logs),
-                                      handle_inputs=level.get('solution_inputs'))
+                                      handle_inputs=level.get('solution_inputs'), release_inputs=level.get('solution_releases'))
                 with self.subTest(level=level['id']):
                     self.assertIsNotNone(m['goal_at_s'])
                     self.assertLessEqual(m['j'], level['par_energy_j'])
@@ -1581,7 +1581,7 @@ class Engine(unittest.TestCase):
             for lv, placed in ((level, high), (fire, weak), (laser, laser['solution'][:1]), (sun, flat), (sun, shaded),
                                (tackle, low)):
                 t = mg.trial(lv, placed, ENGINE, Path(logs), runs=1,
-                             handle_inputs=lv.get('solution_inputs'))
+                             handle_inputs=lv.get('solution_inputs'), release_inputs=lv.get('solution_releases'))
                 self.assertEqual(t['worked'], 0, lv['id'])
 
 

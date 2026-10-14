@@ -19,6 +19,7 @@ FAMILY_VERSIONS['easy-heat'] = 2
 FAMILY_VERSIONS['easy-solar'] = 2
 FAMILY_VERSIONS.update({family:2 for family in ('easy-water-wheel','easy-water-gate','easy-water-receiver')})
 FAMILY_VERSIONS.update({family:2 for family in ('easy-spring','easy-tackle','easy-gears')})
+FAMILY_VERSIONS['easy-spring']=3
 FAMILY_VERSIONS['easy-water-wheel']=3
 FAMILY_VERSIONS['easy-water-receiver']=3
 FAMILY_VERSIONS['easy-gears']=3
@@ -179,6 +180,10 @@ def _apparatus(family_level, version):
         import sandbox_mechanics as mechanics
         import machine_game as game
         return game._with_free_knobs(copy.deepcopy(mechanics.LEGACY_GEARED_STARTER))
+    if family=='easy-spring' and version==2:
+        import sandbox_mechanics as mechanics
+        import machine_game as game
+        return game._with_free_knobs(copy.deepcopy(mechanics.LEGACY_SPRING_STARTER))
     if family=='easy-water-wheel' and version==2:
         import sandbox_water_launch as water
         import machine_game as game
@@ -298,7 +303,7 @@ def construct(family_level, seed, *, attempt=0, version=None):
     return result
 
 
-def _trial(level, placements, native, logs, *, handle_inputs=None):
+def _trial(level, placements, native, logs, *, handle_inputs=None, release_inputs=None):
     import machine_game as game
     import machine_world as world
     # A missing inserted part is an absent physical goal, not a declaration
@@ -309,7 +314,7 @@ def _trial(level, placements, native, logs, *, handle_inputs=None):
     for nudge in range(3):
         run = world.rehearse(game.nudged(compiled, nudge + 1) if nudge else compiled,
                              native, logs, seconds=level['time_s'] + .5, wall_limit_s=120,
-                             handle_inputs=handle_inputs)
+                             handle_inputs=handle_inputs, release_inputs=release_inputs)
         station = (run.get('stations') or [{}])[0]
         reached = station.get('at_s') if station.get('done') else None
         error = run.get('error')
@@ -340,7 +345,9 @@ def validate(candidate, native, logs):
         try:
             receipt['scenarios'][label] = _trial(candidate, placements, native, logs,
                 **({'handle_inputs':candidate['solution_inputs']}
-                   if label=='solution' and candidate.get('solution_inputs') else {}))
+                   if label=='solution' and candidate.get('solution_inputs') else {}),
+                **({'release_inputs':candidate['solution_releases']}
+                   if placements and candidate.get('solution_releases') else {}))
         except Exception as error:
             receipt['scenarios'][label] = {'runs': 0, 'worked': 0,
                                            'error': f'{type(error).__name__}: {error}'}
