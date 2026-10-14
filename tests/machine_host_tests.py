@@ -129,6 +129,7 @@ class BugReports(unittest.TestCase):
 
 
 class Requests(unittest.TestCase):
+    cookie_name='banjo-visitor'
     def test_try_it_stops_its_background_preview_and_late_requests_stay_cancelled(self):
         import machine_game
         from types import SimpleNamespace
@@ -224,13 +225,13 @@ class Requests(unittest.TestCase):
         ids = [str(uuid.uuid4()) for _ in range(3)]
         for visitor in ids:
             self.assertEqual(self.profile({'op': 'create', 'visitor': visitor, 'profile': {'id': visitor}})[0], 200)
-        cookie = {'Cookie': 'banjo-visitor=' + ids[1]}
+        cookie = {'Cookie': self.cookie_name+'=' + ids[1]}
         self.assertEqual(self.profile({'op': 'open', 'visitor': ids[0], 'cached_visitor': ids[2]}, cookie)[1]['visitor'], ids[0])
         self.assertEqual(self.profile({'op': 'open', 'cached_visitor': ids[2]}, cookie)[1]['visitor'], ids[1])
         self.assertEqual(self.profile({'op': 'open', 'cached_visitor': ids[2]})[1]['visitor'], ids[2])
         unknown = str(uuid.uuid4())
         for payload, extra in (({'op': 'open', 'visitor': unknown}, cookie),
-                               ({'op': 'open', 'cached_visitor': ids[0]}, {'Cookie': 'banjo-visitor=' + unknown})):
+                               ({'op': 'open', 'cached_visitor': ids[0]}, {'Cookie': self.cookie_name+'=' + unknown})):
             status, missing, _ = self.profile(payload, extra)
             self.assertEqual((status, missing['visitor']), (404, unknown))
         status, imported, _ = self.profile({'op': 'open', 'cached_visitor': unknown})
@@ -379,6 +380,16 @@ class Requests(unittest.TestCase):
 
 class StagingRequests(Requests):
     """Both real HTTP servers, one actual SQLite database, separate identities."""
+    cookie_name='banjo-test-visitor'
+
+    def test_production_cookie_cannot_select_a_test_profile(self):
+        live=str(uuid.uuid4());test=str(uuid.uuid4())
+        self.upstream.profiles.create(live,{'design':'Live design'})
+        status,opened,headers=self.profile({'op':'open','cached_visitor':test},{'Cookie':'banjo-visitor='+live})
+        self.assertEqual((status,opened['visitor'],opened['profile']),(200,test,{}))
+        self.assertTrue(headers['Set-Cookie'].startswith('banjo-test-visitor='))
+        self.assertNotIn('Domain=',headers['Set-Cookie'])
+        self.assertEqual(self.upstream.profiles.open(visitor=live)['profile'],{'design':'Live design'})
     @classmethod
     def setUpClass(cls):
         if not ENGINE.is_file():raise RuntimeError('pass --engine: the verified executable')

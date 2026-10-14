@@ -22,6 +22,7 @@ MAX_REQUEST_BYTES = 8_100_000
 DEFAULT_TOTAL_BYTES = 512_000_000
 MAX_DATABASE_BYTES = 640_000_000
 COOKIE_NAME = 'banjo-visitor'
+TEST_COOKIE_NAME = 'banjo-test-visitor'
 
 
 class ProfileError(ValueError):

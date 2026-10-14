@@ -98,6 +98,7 @@ class Server(ThreadingHTTPServer):
   self.public=public
   self.environment=environment or os.environ.get('BANJO_ENVIRONMENT') or ('production' if public else 'local')
   if self.environment not in ('production','test','local'):raise ValueError('Environment is production, test or local')
+  self.profile_cookie_name=anonymous_profiles.TEST_COOKIE_NAME if self.environment=='test' else anonymous_profiles.COOKIE_NAME
   if self.environment=='test':public_host=public_host or os.environ.get('RENDER_EXTERNAL_HOSTNAME')
   self.test_url=test_site_url(test_url or os.environ.get('BANJO_TEST_URL'))
   self.chat_allowance=Allowance(int(os.environ.get('BANJO_CHAT_PER_HOUR','12')),int(os.environ.get('BANJO_CHAT_PER_DAY','400')),'chat') if public else None
@@ -222,8 +223,8 @@ class Handler(BaseHTTPRequestHandler):
     jar=SimpleCookie()
     try:jar.load(self.headers.get('Cookie',''))
     except Exception:pass
-    if anonymous_profiles.COOKIE_NAME in jar:
-     try:cookie=anonymous_profiles.visitor_id(jar[anonymous_profiles.COOKIE_NAME].value)
+    if self.server.profile_cookie_name in jar:
+     try:cookie=anonymous_profiles.visitor_id(jar[self.server.profile_cookie_name].value)
      except anonymous_profiles.ProfileError:pass
     reply=self.server.profiles.open(data.get('visitor'),data.get('cached_visitor'),cookie,
       before_create=lambda:rate(self.server.profile_creations))
@@ -236,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
    if op=='open':
     host=(urlsplit('//'+self.headers.get('Host','')).hostname or '').rstrip('.')
     secure=(self.server.public and host not in access_gate.LOOPBACK) or self.headers.get('X-Forwarded-Proto','').split(',')[0].strip().lower()=='https'
-    headers['Set-Cookie']=f'{anonymous_profiles.COOKIE_NAME}={reply["visitor"]}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly'+('; Secure' if secure else '')
+    headers['Set-Cookie']=f'{self.server.profile_cookie_name}={reply["visitor"]}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly'+('; Secure' if secure else '')
    self.send(200,json.dumps(reply,separators=(',',':'),allow_nan=False,ensure_ascii=False).encode(),headers=headers)
   except anonymous_profiles.ProfileError as error:
    self.send(error.status,json.dumps(dict(ok=False,error=str(error),**error.data),separators=(',',':'),ensure_ascii=False).encode())

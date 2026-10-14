@@ -297,7 +297,8 @@ rows, revision checks, schema and backups are unchanged. Test saves and live
 saves are separate rows in **the same database**, with the same durability.
 The mapping prevents accidental live edits; it is not a security boundary
 against someone who already possesses a bearer credential. Cookies remain
-host-only; no domain-wide credential cookie is added. Restore a test profile
+host-only, with `banjo-test-visitor` for tests and `banjo-visitor` for live
+builds; no domain-wide credential cookie is added. Restore a test profile
 with its test return link. To test a live design, open its shared machine setup
 on the test origin and save a test copy. Deliberately choosing the namespace
 `production` would edit live records and must be an explicit owner choice;
@@ -348,8 +349,9 @@ the test origin. The yellow badge and scene controls remain visible at
 Final HTTP run: 39 tests in 6.147 s; the three registered CTest suites for
 profiles, promotion and HTTP pass in 7.38 s. Native SHA-256 remains
 `35230eb7ee76ee0209ff034558ea6110061babd072635561b98d988b92c3f67a`.
-An existing localhost cookie from another local server initially referred to
-an unknown test profile; explicitly opening the isolated QA return identity
-resolved it. Missing explicit/cookie identities remain refused instead of
-silently discarding old data. Hosted test cookies will be host-only on the
-separate test origin.
+An initial local run exposed a production cookie being consulted on a test
+port. Distinct test/live cookie names fix this, and a real two-server regression
+proves that a production cookie cannot choose or overwrite a test profile.
+Missing explicit/test-cookie identities remain refused instead of silently
+discarding old data. The final cookie-aware HTTP suite has 40 passing tests;
+production cookie behavior is unchanged.
