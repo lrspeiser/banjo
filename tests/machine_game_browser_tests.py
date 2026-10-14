@@ -4563,6 +4563,10 @@ class Puzzles(unittest.TestCase):
                     progress=self.js("getComputedStyle(document.querySelector('#coach-overlay .coach-pointer')).offsetDistance")
                     self.wait(f"getComputedStyle(document.querySelector('#coach-overlay .coach-pointer')).offsetDistance!=={json.dumps(progress)}",5)
                     self.assertIn('editing',json.dumps(seen[1]))
+                    ui=json.loads(seen[1][-1]['content'])['ui']
+                    target_labels={t['id']:t['label'] for t in ui['targets']}
+                    self.assertIn('selected: Cut to length',target_labels['control:adjustment-choice'])
+                    self.assertIn('Drag ↔ to change Cut to length',target_labels['control:piece-grip'])
                 proof=ROOT/'build'/'ui-proof';proof.mkdir(parents=True,exist_ok=True)
                 (proof/f'guided-help-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
                 self.click_visible('Close guided help')

@@ -5628,7 +5628,12 @@ function coachTargets() {
   const add=(id,label,box,at_m)=>targets.set(id,{id,label,box,...(at_m?{at_m}:{})});
   for(const id of ['start','reset','phone-controls-tab','tray-library','tray-prev','tray-next','adjustment-choice','piece-grip','wire-mode','undo-pieces',
     'view-in','view-out','view-left','view-right','view-up','view-down']) {
-    const el=$(id);if(el?.checkVisibility()&&!el.disabled)add('control:'+id,el.getAttribute('aria-label')||el.textContent.trim(),()=>el.getBoundingClientRect());
+    const el=$(id);if(el?.checkVisibility()&&!el.disabled){
+      let label=el.getAttribute('aria-label')||el.textContent.trim();
+      if(id==='adjustment-choice')label='Adjust property; selected: '+el.selectedOptions[0]?.textContent+'; options: '+[...el.options].map(o=>o.textContent).join(', ');
+      if(id==='piece-grip')label='Drag ↔ to change '+$('adjustment-choice').selectedOptions[0]?.textContent+'; '+$('adjustment-feedback')?.textContent;
+      add('control:'+id,label,()=>el.getBoundingClientRect());
+    }
   }
   for(const [label,name] of [['Place','place'],['Move selected piece','move'],['Turn selected piece','turn']]) {
     const el=[...$('piece-editor').querySelectorAll('button')].find(b=>(b.getAttribute('aria-label')||b.textContent)===label);

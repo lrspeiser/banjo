@@ -13,6 +13,12 @@ fixture follows that actual annotation with mouse/touch and checks the resulting
 X/Z placement within the existing 2 cm input tolerance; no state is assigned by
 the guide and no physical win is implied.
 The expanded two-test guide/availability rerun passes in 6.58 s.
+The live public follow-up named an internal knob key and confused choosing a
+property with changing its value. Target context now includes the exact menu
+labels, selected property and ↔ handle's current reading. The prompt distinguishes
+those interactions and asks for overlap at bridge supports. Browser regressions
+verify that these displayed labels reach the provider, alongside the read-only
+overlay checks; a hint remains advice rather than an engine-verified solution.
 
 Guided help is available on
 challenges and Sandbox. A separate read-only model request sees the tray and its
