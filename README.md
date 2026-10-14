@@ -3,7 +3,7 @@
 **A Rube Goldberg game where the physics decides what happens.**
 
 Each level is a small machine you cannot change, a goal, and a tray of pieces.
-You add pieces, press **Run it**, and the engine works out what every part
+You add pieces, press **Try It!**, and the engine works out what every part
 does. A ball rolls on the true surface of a plank. A knife cuts an oak rope part
 way, or right through. A cannon fires when a circuit closes and the current
 heats a coil in its powder. A laser chars a cord until it parts. A solar panel
@@ -27,12 +27,16 @@ Estimated player times remain historical estimates from blind LLM probes and
 interface review, not measurements of the new interface or a timed human study.
 Desktop and phone use the same full-width scene with a compact bottom dock.
 Levels share Controls / Help tabs; Sandbox also has Design,
-with Run/Pause/Reset kept beside the 3D view, even when the controls are
+with Try It!/Pause/Reset kept beside the 3D view, even when the controls are
 collapsed. Each level shows its name and a one-line task. **Undo / Redo**
 are in the upper scene corner; a flat zoom slider and magnifiers are in the
 scene corner, with turn/tilt buttons beside zoom. Click a piece to edit it;
 **Move**, **Turn** and **Place** follow the selection. Drag the piece or its
-selected adjustment handle. Exact sliders and snap preferences are in
+selected adjustment handle. A compact property chooser, numeric grip, toggles
+and previous/next choices sit beside the object. Gold handles let you drag
+highlighted dimensions directly. Lens focus adjusts its actual face curvature
+and native beam preview; tank opening and live valve/release controls stay with
+their devices. **Level Complete!** appears over the scene. Exact sliders and snap preferences are in
 **Help → Settings**. Both snaps start on. Used tray cards disappear.
 After a missed goal, **Try again** restores the setup and selects the last
 edited piece. Proposed electrical ratings update beside

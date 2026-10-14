@@ -700,6 +700,13 @@ body.panel-tabs .phone-pane{scroll-padding-block:8px}
 #view.choosing-attachment #viewer-zoom{top:auto;bottom:8px;left:8px;right:auto}
 #view.choosing-attachment #viewer-perspective{top:auto;bottom:56px;left:8px;right:auto}
 
+/* Keep the trial action primary and the section tabs compact. */
+body.panel-tabs #phone-runbar{order:0;flex:none}
+body.panel-tabs #phone-tabs{order:1;flex:none;margin-left:auto}
+body.panel-tabs #phone-tabs button{flex:none;min-width:44px;padding:4px 8px}
+body.panel-tabs #phone-runbar #start{min-width:110px;font:600 16px system-ui;padding:6px 14px}
+@media(max-width:359px){body.panel-tabs #phone-runbar #start{min-width:84px;padding:6px 9px;font-size:15px}body.panel-tabs #phone-tabs button{padding:4px 6px}}
+
 /* One scene and one bottom dock on every screen, with no desktop sidebar. */
 body.panel-tabs:not(.panel-collapsed) main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) clamp(260px,28dvh,280px);height:calc(100dvh - var(--site-header-height,53px))}
 body.panel-tabs #view{height:100%;min-height:0}
@@ -741,3 +748,56 @@ body.coaching .scene-tray .tray-picture,body.coaching .scene-tray #tray img{widt
 @media(max-width:500px){body.coaching .scene-goal strong{font-size:18px}.coach-actions button{font-size:12px;padding:4px 6px}}
 @media(max-width:599px){body.coaching.panel-tabs:not(.panel-collapsed) main{grid-template-rows:minmax(0,1fr) 290px}}
 @media(max-height:500px){body.coaching.panel-tabs:not(.panel-collapsed) main{grid-template-rows:minmax(0,1fr) 190px}body.coaching #viewer-zoom{top:48px}body.coaching #viewer-perspective{top:96px}}
+
+/* A win belongs over the scene, with a compact dock beneath it. */
+body.panel-tabs.scene-win main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) 56px}
+body.scene-win aside{position:static;width:100%;height:auto;grid-template-rows:minmax(0,1fr);gap:0;border-radius:0}
+body.scene-win #scene-goal,body.scene-win .phone-pane,body.scene-win #panel-toggle{display:none!important}
+body.playing-level #view>.level-done{top:50%;transform:translate(-50%,-50%);z-index:10;max-height:calc(100% - 24px);overflow:auto;width:min(420px,calc(100% - 24px));padding:16px 14px}
+#view>.level-done h2{padding:0 36px}
+#view>.level-done button{min-height:44px}
+.level-done .result-close{position:absolute;right:4px;top:4px;width:44px;padding:0;font-size:24px;background:none;border:0}
+#view>.level-done .how-open{position:absolute;left:4px;top:4px;width:44px;padding:0;font-size:24px;background:none;border:0}
+
+
+/* Property editing belongs beside the selected apparatus; exact fields stay in Help. */
+#piece-editor{display:flex;flex-direction:column;width:250px;gap:3px}
+#piece-editor .piece-toolbar{display:flex;gap:3px}
+#piece-editor .adjustment-picker{display:flex;align-items:center}
+#piece-editor .adjustment-picker select{width:0;flex:1;font-size:13px}
+#piece-editor .adjustment-feedback{font-size:12px;line-height:1.25;min-height:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#piece-editor .knob-row{display:flex;gap:3px;margin:0;flex-wrap:wrap}
+#piece-editor .knob-row>button:only-child{width:100%}
+#piece-editor .choice-cycle{flex-wrap:nowrap;align-items:center}
+#piece-editor .choice-cycle output{flex:1;text-align:center;font-size:14px}
+#piece-editor .wire-gauge button{flex:1;padding:4px;font-size:12px}
+#piece-editor .scene-reference{display:flex;gap:3px}
+#piece-editor .scene-reference button:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#piece-editor .connection-action{width:100%;font-size:13px}
+#piece-handles{position:absolute;inset:0;pointer-events:none;z-index:8}
+.piece-dimension-handle{position:absolute;width:44px;height:44px;pointer-events:auto;touch-action:none;cursor:grab;border:1px solid #ffdc72;border-radius:50%;background:#473c20bb;color:#ffdc72;font-size:24px;padding:0;box-shadow:0 0 0 2px #14283688}
+.piece-dimension-handle:active{cursor:grabbing;background:#6b561a}
+#device-live-controls{position:absolute;inset:0;pointer-events:none;z-index:6}
+.device-live-card{position:absolute;width:212px;box-sizing:border-box;pointer-events:auto;background:#142836ed;border:1px solid #91bcd1;border-radius:7px;padding:5px;display:flex;flex-direction:column;gap:2px}
+.device-live-card strong{font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.device-live-card label{display:grid;grid-template-columns:1fr auto;align-items:center;font-size:12px}
+.device-live-card input[type=range]{grid-column:1;width:100%;margin:0}
+.device-live-card button{min-width:44px;min-height:44px;background:#294c60;color:#fff;border:1px solid #63899d;border-radius:5px;font:13px system-ui}
+@media(max-width:359px){#piece-editor{width:224px}}
+
+/* With controls beside the piece, a selected edit needs less bottom-dock space. */
+@media(max-width:599px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 180px}}
+@media(max-height:500px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 130px}}
+
+body.panel-tabs .scene-tray .tray-heading{display:none}
+body.panel-tabs .scene-tray #tray-add{min-height:54px;padding:4px}
+body.panel-tabs .scene-tray .tray-picture,body.panel-tabs .scene-tray #tray img{width:44px;height:44px}
+
+#piece-editor #piece-grip{touch-action:none;cursor:ew-resize}
+
+.device-control-status{font-size:12px;line-height:1.3;color:#cde3ef}.device-control-status:empty{display:none}
+
+body.panel-tabs:has(#phone-controls-tab[aria-selected=false]) #piece-editor>:not(.piece-toolbar),body.panel-tabs:has(#phone-controls-tab[aria-selected=false]) #piece-handles{display:none!important}
+
+body.playing-level #view>.level-done.retry-result{top:auto;bottom:12px;transform:translateX(-50%);width:auto;max-width:calc(100% - 24px);padding:6px;border-radius:8px}
+#view>.level-done.retry-result .actions{margin:0}

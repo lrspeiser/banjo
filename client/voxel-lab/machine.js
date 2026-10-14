@@ -293,7 +293,7 @@ function syncContactCircuits() {
   contactCircuitOutlines.length=0;contactCircuitRows.clear();
   if(inspectedCircuit){follow=inspectionFollow;$('follow').setAttribute('aria-pressed',String(follow));if(!ghost)$('control-panel').append($('instrument-panel'));}
   inspectedCircuit=null;
-  $('control-panel').append($('level-done'));
+  if($('level-done').hidden)$('control-panel').append($('level-done'));
   const labels=$('contact-switch-labels');labels.replaceChildren();labels.hidden=true;
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');labels.append(svg);
   for(const text of ['Moving contact','Fixed pad']) {
@@ -345,11 +345,11 @@ function inspectContactCircuit(name) {
   selectPhonePanel('controls',true);
   if(!ghost){$('control-panel').prepend($('instrument-panel'));$('control-panel').scrollTop=0;}
   else $('instrument-panel').scrollIntoView({block:'start',inline:'nearest',behavior:'instant'});
-  $('instrument-panel').after($('level-done'));
+  if($('level-done').hidden)$('instrument-panel').after($('level-done'));
   flowGroup.visible=false;freshView();updateContactCircuitReadings();
 }
 $('inspect-switch').addEventListener('click',()=>{
-  if(inspectedCircuit){inspectedCircuit=null;follow=inspectionFollow;$('follow').setAttribute('aria-pressed',String(follow));frameCamera();$('inspect-switch').textContent='Inspect switch';$('control-panel').append($('level-done'));if(!ghost){$('control-panel').append($('instrument-panel'));$('control-panel').scrollTop=0;}}
+  if(inspectedCircuit){inspectedCircuit=null;follow=inspectionFollow;$('follow').setAttribute('aria-pressed',String(follow));frameCamera();$('inspect-switch').textContent='Inspect switch';if($('level-done').hidden)$('control-panel').append($('level-done'));if(!ghost){$('control-panel').append($('instrument-panel'));$('control-panel').scrollTop=0;}}
   else inspectContactCircuit(contactCircuitRows.keys().next().value);
 });
 function updateContactCircuitReadings() {
@@ -488,7 +488,7 @@ async function pickTerminal(name,fromScene=false) {
     if (!g.fits) { powerMessage(g.problems.join(' · ')); return; }
     if (placeGhost()) {
       await rebuildLevel(false);
-      if (level === sourceLevel) powerMessage('Wire connected. Run it to try the circuit.',!fromScene);
+      if (level === sourceLevel) powerMessage('Wire connected. Try It! to try the circuit.',!fromScene);
     }
   } catch (e) { powerMessage(e.message); }
   finally { terminalBusy = false; positionTerminalLabels(); }
@@ -965,7 +965,7 @@ async function pickPowerPort(port,fromScene=false) {
       askGhost();while(ghost===g && g.busy)await g.check;
       if(ghost!==g || level!==sourceLevel)return;
       if(!g.fits){powerMessage(g.problems.join(' · '));return;}
-      if(placeGhost()){await rebuildLevel(false);setWiringMode(false);powerMessage('Power cable connected. Run it to try the machine.',!fromScene);}
+      if(placeGhost()){await rebuildLevel(false);setWiringMode(false);powerMessage('Power cable connected. Try It! to try the machine.',!fromScene);}
     } catch(e){powerMessage(e.message);}
     finally{powerBusy=false;terminalBusy=false;updatePowerLabels();}
     return;
@@ -992,7 +992,7 @@ async function pickPowerPort(port,fromScene=false) {
     remember(); placements = next; pickedPowerPort = null; renderTray(); renderPlaced();
     await rebuildLevel(false);
     setWiringMode(false);
-    if (level === sourceLevel && activeDesign?.id === designId) powerMessage('Power cable connected. Run it to try the machine.',!fromScene);
+    if (level === sourceLevel && activeDesign?.id === designId) powerMessage('Power cable connected. Try It! to try the machine.',!fromScene);
   } catch (e) { powerMessage(e.message); }
   finally { powerBusy = false; updatePowerLabels(); }
 }
@@ -1585,12 +1585,12 @@ function renderClock(frame) {
   // A level runs at real time, so its clock leaves the speed out.
   let text = `World ${describeTime(frame.t)} · ` + (LEVEL_MODE ? '' : `${frame.speed}× · `) + (frame.error ? 'stopped: ' + frame.error :
     frame.playing ? 'calculating live' : frame.t > 0 ? (LEVEL_MODE && scored ? 'run over' : 'paused')
-    : LEVEL_MODE ? 'ready: press Run it' : 'ready: press Start');
+    : LEVEL_MODE ? 'ready: press Try It!' : 'ready: press Start');
   if (frame.playing && behind > .25) text += ` · ${behind.toFixed(1)} s behind real time while the engine works`;
   $('clock').textContent = text;
   $('start').hidden=Boolean(LEVEL_MODE&&scored&&lastRun&&lastRun.goal_at_s==null);
   $('start').textContent = frame.playing ? 'Pause' : !LEVEL_MODE ? (frame.t > 0 ? 'Continue' : 'Start')
-    : frame.t > 0 ? (scored ? 'Run again' : 'Continue') : 'Run it';
+    : frame.t > 0 ? (scored ? 'Try It!' : 'Continue') : 'Try It!';
 }
 
 // ---- building and running --------------------------------------------------------
@@ -1691,7 +1691,7 @@ async function poll(mine) {
       watchGoal(frame);
     } catch (e) {
       if (e.status === 410) {
-        $('clock').textContent = LEVEL_MODE ? 'The server closed this level while it sat idle; press Run it to build it again'
+        $('clock').textContent = LEVEL_MODE ? 'The server closed this level while it sat idle; press Try It! to build it again'
           : 'This machine stopped running on the server; press Set up again';
         session = null; return;
       }
@@ -1879,6 +1879,7 @@ function render() {
   updateContactCircuitReadings();
   renderer.render(scene, camera);
   view.classList.toggle('choosing-attachment',Boolean(ghost?.p.attachment_version===2||machine?.electrical?.devices?.some(d=>d.attachment_version===2&&d.heats)));
+  frameNewConnections();
   positionPieceEditor();
   positionPowerLabels();
   positionTerminalLabels();
@@ -2276,6 +2277,56 @@ const editHead = new THREE.ConeGeometry(1, 1, 14);
 const editRing = new THREE.TorusGeometry(1, .09, 8, 40);
 const editShared = new Set([editShaft, editHead, editRing]);
 let editArrows = [], editMarker = null, editAnchor = null;
+const editHandles=document.createElement('div');editHandles.id='piece-handles';view.append(editHandles);
+let handleDrag=null;
+function updatePieceHandles() {
+  if(handleDrag)return; // Preserve pointer capture while native previews are replaced.
+  const rule=ghost&&trayItem(ghost.p.piece).knobs[ghost.card];
+  const numericChoices=rule?.choices?.length>1&&rule.choices.every(Number.isFinite);
+  const numericRange=!rule?.choices&&rule?.min!=null&&rule.max>rule.min;
+  if(!ghost||!editGroup.visible||(!numericChoices&&!numericRange)){editHandles.replaceChildren();return;}
+  const anchors=editArrows.slice(0,2).map(({arrow})=>({at:arrow.position.clone().add(editGroup.position),
+    direction:new THREE.Vector3(0,1,0).applyQuaternion(arrow.quaternion)}));
+  // Lens curvature changes the refracting faces, not its mounting box.
+  // Anchor its grip to the actual front face from the compiled optical setup.
+  if(!anchors.length&&ghost.p.piece==='lens'&&ghost.card==='radius_m'){
+    const lens=ghost.optical_setup?.lenses?.find(l=>l.on===ghostName());
+    if(lens){const direction=new THREE.Vector3(...lens.axis).normalize();anchors.push({at:new THREE.Vector3(...lens.at_m).add(editGroup.position).add(direction.clone().multiplyScalar((lens.thickness_m||.01)/2)),direction});}
+  }
+  if(!anchors.length){editHandles.replaceChildren();return;}
+  const key=ghost.card,rect=view.getBoundingClientRect();
+  if(editHandles.dataset.key!==key||editHandles.childElementCount!==anchors.length){
+    editHandles.replaceChildren();editHandles.dataset.key=key;
+    anchors.forEach((_,i)=>{
+      const h=button('◆',()=>{},{ariaLabel:`Drag ${knobName(rule,key)} handle ${i+1}`,title:'Drag along the highlighted arrow to change this dimension'});
+      h.className='piece-dimension-handle';
+      h.addEventListener('pointerdown',e=>{if(e.button!==0||!ghost)return;e.preventDefault();
+        editorMode='adjust';looking=false;view.classList.remove('looking');
+        handleDrag={id:e.pointerId,key,initial:Number(ghost.p[key]),x:e.clientX,y:e.clientY,dx:Number(h.dataset.dx),dy:Number(h.dataset.dy)};h.setPointerCapture(e.pointerId);
+      });
+      h.addEventListener('pointermove',e=>{if(handleDrag?.id===e.pointerId)editByDrag(handleDrag.key,handleDrag.initial,(e.clientX-handleDrag.x)*handleDrag.dx+(e.clientY-handleDrag.y)*handleDrag.dy);});
+      for(const type of ['pointerup','pointercancel','lostpointercapture'])h.addEventListener(type,()=>{handleDrag=null;updatePieceHandles();});
+      h.addEventListener('keydown',e=>{if(!ghost||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();
+        editByDrag(key,Number(ghost.p[key]),(['ArrowRight','ArrowUp'].includes(e.key)?1:-1)*240*(rule.choices?1/(rule.choices.length-1):(rule.step||.01)/(rule.max-rule.min)));});
+      editHandles.append(h);
+    });
+  }
+  anchors.forEach((anchor,i)=>{
+    const a=anchor.at.clone().project(camera),b=anchor.at.clone().add(anchor.direction.clone().multiplyScalar(.2)).project(camera);
+    let dx=(b.x-a.x)*rect.width/2,dy=-(b.y-a.y)*rect.height/2,l=Math.hypot(dx,dy);if(l<1){dx=1;dy=0;l=1;}
+    dx/=l;dy/=l;const h=editHandles.children[i];
+    const obstacles=[...view.querySelectorAll('#piece-editor,#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')].filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
+    let point=null;
+    for(const distance of [48,72,96,120,-48,-72,-96]){
+      const x=rect.left+(a.x+1)*rect.width/2+dx*distance,y=rect.top+(1-a.y)*rect.height/2+dy*distance;
+      if(Math.abs(a.z)<=1&&x>=rect.left+22&&x<=rect.right-22&&y>=rect.top+22&&y<=rect.bottom-22&&!obstacles.some(r=>x+22>r.left&&x-22<r.right&&y+22>r.top&&y-22<r.bottom)){point={x,y};break;}
+    }
+    h.hidden=!point;if(!point)return;
+    h.style.left=`${point.x-rect.left-22}px`;h.style.top=`${point.y-rect.top-22}px`;h.dataset.dx=dx;h.dataset.dy=dy;
+
+  });
+}
+
 
 function clearEditGuide() {
   for (const c of [...editGroup.children]) {
@@ -2283,6 +2334,7 @@ function clearEditGuide() {
     c.traverse(o => { if (o.geometry && !editShared.has(o.geometry)) o.geometry.dispose(); });
   }
   editArrows = []; editMarker = editAnchor = null;
+  if(!handleDrag)editHandles.replaceChildren();
   $('edit-guide-label').hidden = true;
 }
 function drawEditGuide(parts) {
@@ -2311,7 +2363,7 @@ function drawEditGuide(parts) {
 function updateEditGuide() {
   const label = $('edit-guide-label');
   editGroup.visible = Boolean(ghost && editAnchor && ghost.editGuide?.key === ghost.card);
-  if (!editGroup.visible) { label.hidden = true; return; }
+  if (!editGroup.visible) { label.hidden = true; updatePieceHandles();return; }
   editGroup.position.copy(ghostGroup.position);
   // Keep the arrows legible as the camera zooms, without changing their anchors.
   const metresPerPixel = at => 2 * camera.position.distanceTo(at) * Math.tan(camera.fov * Math.PI / 360) / Math.max(1, view.clientHeight);
@@ -2327,6 +2379,7 @@ function updateEditGuide() {
     editMarker.quaternion.copy(camera.quaternion);
     editMarker.scale.setScalar(Math.max(.04, 22 * metresPerPixel(editMarker.position.clone().add(editGroup.position))));
   }
+  updatePieceHandles();
   const screen = editAnchor.clone().add(editGroup.position).project(camera);
   label.hidden = Math.abs(screen.x) > 1 || Math.abs(screen.y) > 1 || Math.abs(screen.z) > 1;
   if (label.hidden) return;
@@ -2534,7 +2587,7 @@ function pickUp(i) {
 function endGhost() {
   $('socket-choices').hidden=true;
   clearTimeout(solarTimer);solarTimer=null;solarWanted='';solarStamp='';solarResult=null;solarVersion++;solarPending=false;solarError='';
-  ghost = null; draggingGhost = null; pressedAt = null;drawAirflows();
+  ghost = null; draggingGhost = null; pressedAt = null;pendingPieceReference=null;handleDrag=null;drawAirflows();
   view.classList.remove('grabbing', 'grab');
   terminalStart = null; powerMessage('');
   clearGhostMeshes(); ghostGroup.position.set(0, 0, 0); drawPorts([]);
@@ -2612,6 +2665,16 @@ function nudgeKnob(key, by) {
   if (ghost && setKnob(ghost.p, key, (ghost.p[key] ?? 0) + by)) { followGhost(); showGhostKnobs(); askGhost(); }
 }
 
+let pendingPieceReference=null;
+function sceneReferenceControl(p,key,rule,changed){
+  const row=document.createElement('div');row.className='scene-reference';
+  row.append(button(p[key]?`${knobName(rule,key)}: ${p[key]}`:`Choose ${knobName(rule,key)}`,()=>{
+    pendingPieceReference={p,key,rule,changed,allowed:[...referenceControl(p,key,rule,()=>{}).options].map(o=>o.value)};
+    $('adjustment-feedback').textContent=`Click the ${rule.hinge?'axle / hinged part':'object'} in the scene to attach ${knobName(rule,key)}. Escape cancels.`;
+  },{ariaLabel:`Choose ${knobName(rule,key)} in scene`}));
+  if(rule.default&&rule.default!==p[key])row.append(button('Default',()=>{p[key]=rule.default;pendingPieceReference=null;changed();},{ariaLabel:`Use default ${knobName(rule,key)}`}));
+  return row;
+}
 function selectGhostKnob(key) {
   if (!ghost || ghost.card === key) return;
   const rule=trayItem(ghost.p.piece).knobs[key];
@@ -2623,6 +2686,7 @@ function selectGhostKnob(key) {
 }
 
 function renderGhostBar() {
+  pendingPieceReference=null;
   const precisionOpen = Boolean($('precision-controls')?.open);
   renderMovePad();
   const card = $('ghost-bar');
@@ -2650,7 +2714,7 @@ function renderGhostBar() {
   // controls; ordinary cable editing exposes thickness/length instead.
   const connecting=['wire','power_cable'].includes(ghost.p.piece);
   const available=allKeys.filter(k=>!knobs[k].connection_target&&(!connecting||(!knobs[k].terminal&&!knobs[k].power_port)));
-  const keys=primary&&!precisionOpen?primary.filter(k=>available.includes(k)):[...available];
+  const keys=[...available]; // Every supported setting is reachable beside the piece.
   if(editorMode==='turn')for(const k of available.filter(k=>knobs[k].turning))if(!keys.includes(k))keys.push(k);
   if(editorMode!=='turn'&&!precisionOpen)for(const k of heightKnobs(ghost.p))if(available.includes(k)&&!keys.includes(k))keys.push(k);
   if(available.includes(ghost.card)&&!keys.includes(ghost.card))keys.push(ghost.card);
@@ -2659,12 +2723,13 @@ function renderGhostBar() {
   const chips = Object.assign(document.createElement('div'), {className: 'adjustment-picker'});
   const adjustment=document.createElement('select');adjustment.id='adjustment-choice';adjustment.setAttribute('aria-label','Adjustment');
   for (const key of keys) {
-    adjustment.append(new Option(knobs[key].label||knobName(knobs[key],key),key));
+    adjustment.append(new Option(ghost.p.piece==='lens'&&key==='radius_m'?'Focus / face radius (m)':knobs[key].label||knobName(knobs[key],key),key));
   }
   adjustment.value=ghost.card;adjustment.addEventListener('change',()=>selectGhostKnob(adjustment.value));
   chips.append(Object.assign(document.createElement('label'),{textContent:'Adjust',htmlFor:'adjustment-choice'}),adjustment);
   chips.hidden=keys.length===1&&Boolean(knobs[keys[0]].connection_target);
   const key = ghost.card, rule = knobs[key], name = knobName(rule, key);
+  let precisionChoice=null;
   const row = Object.assign(document.createElement('div'), {className: 'knob-row'});
   if (rule.part || rule.hinge || rule.terminal || rule.power_port) {
     const select = referenceControl(ghost.p, key, rule, () => { showGhostKnobs(); askGhost(); });
@@ -2680,26 +2745,31 @@ function renderGhostBar() {
       if ((key==='mount' && ghost.p.piece==='battery')||(key==='mode'&&ghost.p.piece==='switch')||(key==='size'&&ghost.p.piece==='bulb')) {renderPlaced();renderGhostBar();}
       showGhostKnobs(); askGhost();
     });
+    // Choices use labelled buttons; the native selector remains an exact-value fallback.
+    select.hidden=true;
+    const applyChoice=value=>{
+      ghost.p[key]=value;
+      renderGhostBar();showGhostKnobs();askGhost();
+    };
     if(ghost.p.piece==='wire'&&key==='size') {
-      row.classList.add('wire-gauge');select.hidden=true;
+      row.classList.add('wire-gauge');
       ghost.gaugeButtons=rule.choices.map(value=>{
         const label=value[0].toUpperCase()+value.slice(1);
-        const choice=button(label,()=>{ghost.p.size=value;showGhostKnobs();askGhost();},{ariaLabel:`${label} wire`});
+        const choice=button(label,()=>applyChoice(value),{ariaLabel:`${label} wire`});
         choice.dataset.gauge=value;choice.setAttribute('aria-pressed',String(ghost.p.size===value));
         row.append(choice);return choice;
       });
-    }
-    if(ghost.p.piece==='gear'){
-      row.classList.add('gear-choices');select.hidden=true;
-      ghost.choiceButtons=rule.choices.map(value=>{
-        const label=key==='teeth'?`${value} teeth · ≈${Math.round((value+1.4)*ghost.p.module_m*100)} cm`:
-          key==='module_m'?`${Math.round(value*1000)} mm teeth`:String(value);
-        const choice=button(label,()=>{ghost.p[key]=value;renderGhostBar();askGhost();},{ariaLabel:label});
-        choice.dataset.value=String(value);choice.dataset.key=key;
-        choice.setAttribute('aria-pressed',String(ghost.p[key]===value));row.append(choice);return choice;
-      });
-    }
-    row.append(select);
+    } else if(rule.choices.length===2) {
+      const toggle=button(`${ghost.p[key]} ⇄`,()=>applyChoice(rule.choices.find(v=>v!==ghost.p[key])),
+        {ariaLabel:`Toggle ${name}`,title:`${name}: ${rule.choices.join(' or ')}`});
+      toggle.setAttribute('aria-pressed',String(ghost.p[key]===rule.choices[1]));row.append(toggle);
+    } else if(rule.choices.length>1) {
+      const next=direction=>applyChoice(rule.choices[(rule.choices.indexOf(ghost.p[key])+direction+rule.choices.length)%rule.choices.length]);
+      const text=key==='teeth'?`${ghost.p[key]} teeth`:key==='module_m'?`${Math.round(ghost.p[key]*1000)} mm teeth`:String(ghost.p[key]);
+      row.classList.add('choice-cycle');row.append(button('‹',()=>next(-1),{ariaLabel:`Previous ${name}`}),
+        Object.assign(document.createElement('output'),{textContent:text}),button('›',()=>next(1),{ariaLabel:`Next ${name}`}));
+    } else row.append(Object.assign(document.createElement('output'),{textContent:String(ghost.p[key])}));
+    precisionChoice=select;
     ghost.cardInput = [select, null, key];
   } else {
     row.classList.add('numeric-slider');
@@ -2757,20 +2827,21 @@ function renderGhostBar() {
   gridRow.hidden=false;
   gridRow.append(snapButton,objectButton,Object.assign(document.createElement('output'),{id:'grid-snap-status',ariaLive:'polite'}));
   const setting=Object.assign(document.createElement('output'),{id:'adjustment-feedback',className:'adjustment-feedback',ariaLive:'polite'});
-  if(row.classList.contains('numeric-slider'))precision.append(row);
-  else fields.append(row);
-  fields.append(head,chips,setting,state,$('instrument-panel'));
-  for(const key of allKeys.filter(k=>knobs[k].connection_target))fields.prepend(referenceControl(ghost.p,key,knobs[key],()=>{renderGhostBar();askGhost();}));
+  if(row.classList.contains('numeric-slider')||rule.part||rule.hinge||rule.terminal||rule.power_port)precision.append(row);
+  if(precisionChoice){precisionChoice.hidden=false;precision.append(precisionChoice);}
+  fields.append(head,state,$('instrument-panel'));
+  const connectionActions=allKeys.filter(k=>knobs[k].connection_target).map(key=>referenceControl(ghost.p,key,knobs[key],()=>{renderGhostBar();askGhost();}));
   $('snap-settings').replaceChildren(gridRow);
   // Keep these shared nodes connected before replacing the old inspector.
   // Otherwise a second selection discards the controls with its old content.
   precision.append($('scene-actions'),$('view-controls'));
   $('help-settings-content').replaceChildren(precision,$('preview-legend'),$('flow-preview'));
+  let unclipButton=null;
   if(ghost.p.piece==='ignition'&&ghost.p.attachment_version===2) {
     const prompt=Object.assign(document.createElement('p'),{className:'wire-prompt',textContent:ghost.p.target?
       `Heater clipped to ${ghost.p.target}. Click a Clip ring to move the attachment.`:'Click a Clip ring on the material in the 3D scene. Then set the heater down and connect both power leads.'});
     head.after(prompt);
-    if(ghost.p.target)prompt.after(button('Unclip heater',()=>{ghost.p.target='';renderGhostBar();askGhost();}));
+    if(ghost.p.target)unclipButton=button('Unclip heater',()=>{ghost.p.target='';renderGhostBar();askGhost();});
   }
   for(const id of ['laser-preview-status','water-status','river-wheel-status','solar-lift-guide'])fields.append($(id));
   if(connecting&&!ghost.was){
@@ -2811,7 +2882,12 @@ function renderGhostBar() {
     e.preventDefault();const sign=['ArrowRight','ArrowUp'].includes(e.key)?1:-1;
     if(setKnob(ghost.p,key,Number(ghost.p[key])+sign*(rule.step||.01))){followGhost();showGhostKnobs();askGhost();}
   });
-  chips.append(grip);editor.replaceChildren(modes,actions);
+  chips.append(grip);
+  const top=Object.assign(document.createElement('div'),{className:'piece-toolbar'});top.append(modes,actions);
+  editor.replaceChildren(top,chips);
+  if(rule.choices)editor.append(row);
+  else if(rule.part||rule.hinge)editor.append(sceneReferenceControl(ghost.p,key,rule,()=>{renderGhostBar();showGhostKnobs();askGhost();}));
+  editor.append(...connectionActions,...(unclipButton?[unclipButton]:[]),setting);
   if((connecting&&!ghost.was)||needsClip){throwAway.textContent=needsClip?'Cancel heater':'Cancel wire';fields.append(throwAway);}
   showGhostKnobs(); showGhostState();
 }
@@ -2819,17 +2895,37 @@ function renderGhostBar() {
 function editByDrag(key,initial,pixels) {
   if(!ghost)return;
   const rule=trayItem(ghost.p.piece).knobs[key];
-  if(!rule||rule.choices||rule.min==null)return;
-  if(setKnob(ghost.p,key,draggedKnobValue(rule,initial,pixels))){followGhost();showGhostKnobs();askGhost();}
+  if(!rule)return;
+  let value;
+  if(rule.choices?.every(Number.isFinite)&&rule.choices.length>1){const index=Math.max(0,Math.min(rule.choices.length-1,Math.round(rule.choices.indexOf(initial)+pixels*(rule.choices.length-1)/240)));value=rule.choices[index];}
+  else if(!rule.choices&&rule.min!=null)value=draggedKnobValue(rule,initial,pixels);else return;
+  if(setKnob(ghost.p,key,value)){followGhost();showGhostKnobs();askGhost();}
 }
 
+const liveCards=document.createElement('div');liveCards.id='device-live-controls';view.append(liveCards);
+function positionLiveControls(){
+  const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#piece-editor,#panel-toggle,#level-done')]
+    .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
+  for(const card of liveCards.children){
+    card.hidden=Boolean(ghost)||document.body.matches('.on-levels,.on-sandbox,.scene-win');if(card.hidden)continue;
+    const anchor=card.anchor.clone().project(camera);card.hidden=Math.abs(anchor.z)>1||Math.abs(anchor.x)>1||Math.abs(anchor.y)>1;if(card.hidden)continue;
+    if(card.matches(':active')){occupied.push(card.getBoundingClientRect());continue;}
+    const x=rect.left+(anchor.x+1)*rect.width/2,y=rect.top+(1-anchor.y)*rect.height/2;
+    const objects=[...meshes].filter(([name,m])=>m.visible&&(name===card.deviceName||name.startsWith(card.deviceName+' '))).map(([,m])=>m);
+    const body=objects.length?coachObjectBox(objects):null;
+    const bounds=body?{left:body.x,right:body.x+body.width,top:body.y,bottom:body.y+body.height}:{left:x-20,right:x+20,top:y-20,bottom:y+20};
+    const at=pieceToolbarPosition(rect,bounds,card.getBoundingClientRect(),occupied);
+    card.style.left=`${at.x-rect.left}px`;card.style.top=`${at.y-rect.top}px`;occupied.push(card.getBoundingClientRect());
+  }
+}
 function positionPieceEditor() {
+  positionLiveControls();
   const editor=$('piece-editor');if(editor.hidden||!ghost||editor.matches(':active'))return;
   const box=ghostScreenBox();if(!box)return;
   const rect=view.getBoundingClientRect();
   // The toolbar owns its position; readouts yield to it afterwards. Letting
   // both avoid each other's last position makes the buttons oscillate.
-  const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')]
+  const obstacles=[...collapsedPanel(),...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')]
     .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
   const at=pieceToolbarPosition(rect,{left:box.x0,right:box.x1,top:box.y0,bottom:box.y1},editor.getBoundingClientRect(),obstacles);
   editor.style.left=`${at.x-rect.left}px`;editor.style.top=`${at.y-rect.top}px`;
@@ -2886,6 +2982,7 @@ function showGhostKnobs() {
   showGridSnap();
   const knobs = trayItem(ghost.p.piece).knobs;
   const choice=$('adjustment-choice');if(choice)choice.value=ghost.card;
+  const cycle=$('piece-editor').querySelector('.choice-cycle output');if(cycle)cycle.textContent=ghost.card==='teeth'?`${ghost.p[ghost.card]} teeth`:ghost.card==='module_m'?`${Math.round(ghost.p[ghost.card]*1000)} mm teeth`:String(ghost.p[ghost.card]);
   const feedback=$('adjustment-feedback');if(feedback)feedback.textContent=electricalEditRating() || `${knobName(knobs[ghost.card],ghost.card)}: ${ghost.p[ghost.card]}${knobs[ghost.card].turning?'°':''}`;
   const grip=$('piece-grip');if(grip)grip.title=`${knobName(knobs[ghost.card],ghost.card)}: ${ghost.p[ghost.card]}. Drag left or right; exact values are in Help → Settings.`;
   const value = document.querySelector('#ghost-bar .knob-value');
@@ -3874,6 +3971,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
   if (cameraGesture) return;
   $('socket-choices').hidden=true;
   socketPointer=[e.clientX,e.clientY];socketPress=null;
+  if(pendingPieceReference&&ghost&&e.button===0&&!e.ctrlKey){pressedAt=[e.clientX,e.clientY];sceneDragged=false;draggingGhost=null;return;}
   const nearbySockets=socketsAt(e.clientX,e.clientY,e.pointerType==='touch');
   // The enlarged terminal hit area must not swallow a click on a small case.
   // Actual rings (9 px radius), or an explicitly started wire, still connect.
@@ -3942,7 +4040,17 @@ renderer.domElement.addEventListener('pointerup', e => {
   if(click && !ghost && !e.ctrlKey && clickExistingWire(e.clientX,e.clientY,e.pointerType==='touch')) {
     draggingGhost=null;pressedAt=null;return;
   }
-  if (ghost && click) setLooking(true);
+  if(ghost&&click&&pendingPieceReference){
+    const ref=pendingPieceReference;pointerRay(e.clientX,e.clientY);
+    const nameOf=new Map([...meshes].map(([name,m])=>[m,name]));
+    const hit=raycaster.intersectObjects([...nameOf.keys()].filter(m=>m.visible),true).find(h=>h.object.isMesh);
+    let object=hit?.object;while(object&&!nameOf.has(object))object=object.parent;
+    const name=object&&nameOf.get(object);
+    const endpoint=ref.rule.hinge?(machine?.joints||[]).find(j=>j.kind==='hinge'&&(j.a===name||j.b===name)&&ref.allowed.includes(j.name))?.name:
+      ref.key==='battery'?(machine?.batteries||[]).find(b=>b.in===name&&ref.allowed.includes(b.name))?.name:name;
+    if(endpoint&&ref.allowed.includes(endpoint)){ref.p[ref.key]=endpoint;pendingPieceReference=null;ref.changed();}
+    else $('adjustment-feedback').textContent='Choose a compatible object in the scene. Default connections and exact endpoints are in Help → Settings.';
+  } else if (ghost && click) setLooking(true);
   else if (!ghost && click && !pullMode && !attachMode) {
     const choices=placedOwnersAt(e.clientX,e.clientY);
     if(choices.length>1)chooseScenePiece(choices,e.clientX,e.clientY);
@@ -4340,7 +4448,7 @@ document.addEventListener('keydown', e => {
   if (TURN_KEYS[key]) turnGhost(TURN_KEYS[key][0], TURN_KEYS[key][1] * step);
   else if (nudge) moveGhostBy(nudge, e.shiftKey ? 0.1 : 0.01);
   else if (key === 'enter' && !e.target.closest('button')) setGhostDown();
-  else if (key === 'escape') { if (terminalStart) cancelGhost(); else setLooking(!looking); }
+  else if (key === 'escape') { if(pendingPieceReference){pendingPieceReference=null;showGhostKnobs();return;}if (terminalStart) cancelGhost(); else setLooking(!looking); }
   else return;
   e.preventDefault();
 });
@@ -4659,6 +4767,7 @@ function renderPiecePicker() {
       addTrayPiece(t);
       view.focus({preventScroll: true});
     }, {className: 'piece-card', ariaLabel: `Add a ${pieceLabel(t.piece)}`, disabled: left <= 0});
+    card.dataset.piece=t.piece;
     const picture = Object.assign(document.createElement('span'), {className: 'piece-picture'});
     const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
     picture.append(img); pictureInto(img, t);
@@ -4802,23 +4911,47 @@ function referenceControl(p, key, rule, changed) {
   return input;
 }
 
+function showDeviceControlStatus(message,node){
+  $('machine-control-status').textContent=message;
+  const out=node.closest('.device-live-card')?.querySelector('.device-control-status');if(out)out.textContent=message;
+}
+let connectionFramingPending=false;
+function frameNewConnections(){
+  if(!connectionFramingPending||ghost||playing||world.t>0)return;
+  connectionFramingPending=false;
+  const points=[...terminalMap(machine?.electrical).values()].map(at=>new THREE.Vector3(...at));
+  if(!points.length)return;
+  const rect=view.getBoundingClientRect(),top=$('clock').getBoundingClientRect().bottom+18;
+  for(let i=0;i<12;i++){
+    freshView();
+    if(points.every(at=>{const p=at.clone().project(camera),x=rect.left+(p.x+1)*rect.width/2,y=rect.top+(1-p.y)*rect.height/2;
+      return Math.abs(p.z)<=1&&x>=rect.left+18&&x<=rect.right-18&&y>=top&&y<=rect.bottom-18;}))return;
+    distance=Math.min(40,distance*1.12);
+  }
+  freshView();
+}
 function renderMachineControls() {
+  connectionFramingPending=true;
   liveControlPending = false;
   const controls = $('machine-controls'), rows = $('machine-control-rows');
-  rows.replaceChildren();
-  const action = (label, command) => {
+  rows.replaceChildren();liveCards.replaceChildren();
+  const beside=(node,name,at)=>{
+    const card=document.createElement('section');card.className='device-live-card';card.anchor=new THREE.Vector3(...at);
+    card.deviceName=name;card.append(Object.assign(document.createElement('strong'),{textContent:name}),node,Object.assign(document.createElement('output'),{className:'device-control-status',ariaLive:'polite'}));liveCards.append(card);return node;
+  };
+  const action = (label, command, name, at) => {
     const b = button(label, async () => {
       b.disabled = true;
       try {
         liveControlPending = true;
         liveControlRequest = api({...command(), session});
         await liveControlRequest;
-        $('machine-control-status').textContent = playing ? 'Applying at the next engine step.' : 'Queued for the next step. Press Run it to continue.'; if (wake) wake();
+        showDeviceControlStatus(playing?'Applying at the next engine step.':'Queued. Choose Try It! to continue.',b); if (wake) wake();
       }
-      catch (e) { liveControlPending = false; $('machine-control-status').textContent = e.message; }
+      catch (e) { liveControlPending = false;showDeviceControlStatus(e.message,b); }
       finally { b.disabled = false; }
     });
-    rows.append(b);
+    beside(b,name,at);
   };
   for (const source of machine?.spouts || []) {
     if (source.initial_volume_l == null) continue;
@@ -4830,19 +4963,19 @@ function renderMachineControls() {
       input.addEventListener('input',()=>{output.textContent=`${input.value}%`;});
       input.addEventListener('change',async()=>{
         try {liveControlPending=true;liveControlRequest=api({op:'water_opening',session,name:source.name,fraction:Number(input.value)/100});
-          await liveControlRequest;$('machine-control-status').textContent=playing?'Applying tap opening.':'Tap opening queued. Press Run it to continue.';if(wake)wake();}
-        catch(error){liveControlPending=false;$('machine-control-status').textContent=error.message;}
+          await liveControlRequest;showDeviceControlStatus(playing?'Applying tap opening.':'Opening queued. Choose Try It! to continue.',input);if(wake)wake();}
+        catch(error){liveControlPending=false;showDeviceControlStatus(error.message,input);}
       });
-      label.append(input,output);rows.append(label);continue;
+      label.append(input,output);beside(label,source.name.replace(/ outlet$/,''),source.at_m);continue;
     }
     let opened = source.valve_open !== false;
-    action(`Toggle ${source.name} valve`, () => ({op: 'water_valve', name: source.name, open: opened = !opened}));
+    action(`Toggle ${source.name} valve`, () => ({op: 'water_valve', name: source.name, open: opened = !opened}),source.name,source.at_m);
   }
   for (const joint of machine?.joints || []) {
     if (!/^your catapult \d+ restraint$/.test(joint.name)) continue;
-    action(`Release ${joint.name.replace(' restraint', '')}`, () => ({op: 'release_joint', name: joint.name}));
+    action(`Release ${joint.name.replace(' restraint', '')}`, () => ({op: 'release_joint', name: joint.name}),joint.name.replace(' restraint',''),joint.at_m||machine.parts.find(p=>p.name===joint.b)?.at_m||[0,.5,0]);
   }
-  controls.hidden = !rows.childElementCount; controls.open = false; $('machine-control-status').textContent = '';
+  controls.hidden = true; controls.open = false; $('machine-control-status').textContent = '';
 }
 
 function describeKnobs(p, t) {
@@ -5223,7 +5356,7 @@ function startOver(keep) {
   renderTray(); renderPlaced();
   return rebuildLevel(false).then(() => {
     if (!$('verdict').textContent) $('verdict').textContent = keep
-      ? 'Back to the start, with your pieces: pick one up to move or change it, then Run it.'
+      ? 'Back to the start, with your pieces: pick one up to move or change it, then Try It!.'
       : 'Back to the start: add a piece from your tray.';
     sceneIntoView();
   });
@@ -5231,7 +5364,7 @@ function startOver(keep) {
 
 function closeDone() {
   clearInterval(advanceTimer); advanceTimer = null;
-  document.body.classList.remove('run-complete');
+  document.body.classList.remove('run-complete','scene-win');
   $('level-done').hidden = true; $('level-done').replaceChildren();
 }
 function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
@@ -5239,8 +5372,9 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   document.body.classList.toggle('run-complete',Boolean(r.earned.goal||r.tested));
   const box = $('level-done'), next = level.variant ? null : levels[levels.indexOf(level) + 1];
   const completedAll = levels.every(row=>bestStars(row.id)>0);
-  // Every result belongs in Controls, so all machines remain clickable.
-  selectPhonePanel('controls',true);$('control-panel').prepend(box);$('control-panel').scrollTop=0;
+  selectPhonePanel('controls',true);
+  if(!r.tested){view.append(box);box.classList.toggle('retry-result',!r.earned.goal);if(r.earned.goal){closeCoach();document.body.classList.add('scene-win');}}
+  else {box.classList.remove('retry-result');$('control-panel').prepend(box);$('control-panel').scrollTop=0;}
   const add = (tag, props) => box.appendChild(Object.assign(document.createElement(tag), props));
   const allLevels = button('All levels', () => { closeDone(); showLevelsScreen(true); });
   const compareScore = () => {
@@ -5267,14 +5401,15 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     // The win, and what it took: less energy is better.
     // A first win with a tool is an achievement; a win again is the level.
     const unlocked = (kept.unlocked || []).map(toolName);
-    add('h2', {textContent: level.variant ? 'Challenge complete!' : completedAll ? 'You finished every level!' : 'Level complete!'});
+    add('h2', {textContent: level.variant ? 'Challenge complete!' : completedAll ? 'You finished every level!' : 'Level Complete!'});
+    box.append(button('×',closeDone,{className:'result-close',ariaLabel:'Close level complete'}));
     add('p', {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)});
     compareScore();
     // Keep the score comparison visible; the fabrication/run breakdown is optional.
-    const how = button('Energy details', () => {
+    const how = button('ⓘ', () => {
       details.hidden = !details.hidden;
       how.setAttribute('aria-expanded', String(!details.hidden));
-    }, {className: 'how-open'});
+    }, {className: 'how-open',ariaLabel:'Energy details',title:'Energy details'});
     how.setAttribute('aria-expanded', 'false'); how.setAttribute('aria-controls', 'level-done-energy');
     box.appendChild(how);
     const details = add('div', {id: 'level-done-energy', className: 'how', hidden: true});
@@ -5298,7 +5433,7 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
       `${name[0].toUpperCase() + name.slice(1)}: ${Number(Number(m.kg).toPrecision(3))} kg, ${energyText(m.j)}`).join('; ') + '.'});
     if (r.stars < 3) {
       const over = r.energy_j - par, heavy = pieces.sort((a, b) => b[1].j - a[1].j)[0];
-      add('p', {className: 'hint', textContent: r.helped ? 'Place the pieces yourself for more stars.'
+      addHow('p', {className: 'hint', textContent: r.helped ? 'Place the pieces yourself for more stars.'
         : heavy && over > 0 && over < heavy[1].j
           ? `To reach par, take ${energyText(over)} off: ${heavy[0]} about ${Math.ceil(100 * over / heavy[1].j)}% lighter ` +
             '(shorter, smaller or a cheaper material) and still reaching the goal.'
@@ -5549,7 +5684,7 @@ async function askFree() {
       // A marble that opens a gate is spent on the floor: most on a piece is a build that works.
       say(2 * onPieces.length > ended.length ? 'model' : 'refused', `Rehearsed once in the engine: ${onPieces.length} of ${ended.length} ` +
         `marbles ended on a piece${onPieces.length ? ` (${[...new Set(onPieces.map(e => e.on))].join(', ')})` : ''}` +
-        (onPieces.length < ended.length ? `, ${ended.length - onPieces.length} on the ground` : '') + '. Run it to watch, and move what needs moving.');
+        (onPieces.length < ended.length ? `, ${ended.length - onPieces.length} on the ground` : '') + '. Choose Try It! to watch, and move what needs moving.');
     }
     $('message').value = '';
     framedFree = false;
@@ -5740,7 +5875,7 @@ async function askLevel(mode) {
       endGhost(); remember();
       placements = r.placements.map(p => { const q = {...p}; delete q.cost; return q; });
       helped = true; renderTray(); renderPlaced();
-      if (r.rehearsal && level.free) say(r.rehearsal.error?'refused':'model',r.rehearsal.error?`Engine check: ${r.rehearsal.error}`:'Built and checked in the engine. Run it to try it.');
+      if (r.rehearsal && level.free) say(r.rehearsal.error?'refused':'model',r.rehearsal.error?`Engine check: ${r.rehearsal.error}`:'Built and checked in the engine. Choose Try It! to watch.');
       else if (r.rehearsal) say(r.rehearsal.manual_input_required || r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.manual_input_required
         ? 'Setup checked. Drag the field handle to try the machine.' : r.rehearsal.goal_at_s != null
         ? `Rehearsed once in the engine: the goal happened at ${describeTime(r.rehearsal.goal_at_s)}.`
@@ -5867,7 +6002,7 @@ function installPhonePanels() {
     selectPhonePanel(phonePanel); resize();
   };
   $('panel-toggle').addEventListener('click',()=>expand(document.body.classList.contains('panel-collapsed')));
-  for (const key of ['controls','design','help']) $('phone-'+key+'-tab').addEventListener('click',()=>{expand(true);selectPhonePanel(key);});
+  for (const key of ['controls','design','help']) $('phone-'+key+'-tab').addEventListener('click',()=>{if(document.body.classList.contains('scene-win'))closeDone();expand(true);selectPhonePanel(key);});
   $('phone-tabs').addEventListener('keydown',e=>{
     const names=level?.free?['controls','design','help']:['controls','help'], index=names.indexOf(phonePanel);
     const next=e.key==='Home'?0:e.key==='End'?names.length-1:e.key==='ArrowRight'?(index+1)%names.length:e.key==='ArrowLeft'?(index+names.length-1)%names.length:null;
@@ -5927,7 +6062,7 @@ async function startGame() {
     else showLevelsScreen(true);
   }
 }
-// The scene in sight: on a phone the panel below it (the tray, Run it) is a
+// The scene in sight: on a phone the panel below it (the tray, Try It!) is a
 // scroll away, and what happens -- a ghost, a run, how it went -- is up here.
 function sceneIntoView() {
   const seen = view.getBoundingClientRect();
@@ -5943,9 +6078,9 @@ function ghostInTheWay() {
   if (bar) { bar.className = 'state refused'; bar.textContent = said; }
   return true;
 }
-// A level's one button, over the scene: Run it builds the level afresh with
+// A level's one button, over the scene: Try It! builds the level afresh with
 // the pieces and plays it; while it plays it pauses, then continues; after
-// the run, Run again.
+// the run, Try It!.
 let startingRun = false;
 async function runLevel() {
   const failed = e => { $('clock').textContent = e.message; };
