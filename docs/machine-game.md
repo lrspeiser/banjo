@@ -3,7 +3,7 @@
 October 13 Chain reaction follow-up: ramp X/Z placement now accepts −10…10 m
 instead of X −2…0.5 m and Z −0.3…0.3 m. The same 1 cm control increments,
 grid/object snaps and native overlap/support refusal remain. Mouse and touch
-drags beyond both old limits can be placed and selected again. An off-axis
+drags beyond both old limits can be placed and selected again. A new
 ramp begins at its clear declared defaults instead of the view centre, where
 it could overlap the cannon. An off-axis
 ramp still fails because its marble misses the seesaw. Dimensions, rotations,
@@ -27,7 +27,7 @@ still finds a native solution within its unchanged 48-run budget (two runs in
 this measurement). Disjoint proposed search bounds fall back to the ordinary
 property range. This is search assistance, not a physics snap or force.
 
-Scoped browser checks pass at 1280×860, 390×844 and 844×390 (43.014 s): free
+Scoped browser checks pass at 1280×860, 390×844 and 844×390 (42.785 s): free
 ramp drags, placement/reselection, off-axis failure, visible switch contacts,
 current preview and repeated completion. The complete authored-level oracle
 passes: all 34 reference setups win 3/3 with the same nudges, and empty setups
