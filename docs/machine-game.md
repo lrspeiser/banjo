@@ -1,5 +1,20 @@
 # Puzzles on the machine (/play)
 
+October 14 Divert the water simplification: `water_controls: false` is public
+UI metadata for this lesson. It omits the optional source-valve card; Try It!
+starts the existing open finite supply automatically. The introduction and
+first hint explain that sequence. Sandbox and Fill the receiver keep their
+source/tap controls. This does not modify the source, recipe policy, native law,
+saved valve behavior, chute, collector or goal: 4 L at 1 L/s, with 3 L retained
+for 0.5 s before the existing 8 s deadline. No turnable-tap model was added.
+
+Native regression: all three nudged own solutions reach the goal at 4.567 s;
+the empty and reversed-chute cases fail, in 1.902 s total. Browser regression
+passes in 18.089 s: automatic flow and completion on desktop, phone portrait
+and landscape, no valve before/after the run or Reset, plus retained Sandbox
+valve and receiver tap. Intro coverage for all 34 levels, syntax and source
+registration pass. The engine binary and physical tolerances are unchanged.
+
 October 14 on-object adjustment audit: the dropdown-adjacent `↔` grip is removed.
 All adjustable numeric ranges and numeric presets use 56 px gold +/− handles
 in the scene: tap one schema increment, drag along the projected direction, or

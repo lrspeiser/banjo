@@ -1055,6 +1055,30 @@ class Puzzles(unittest.TestCase):
                 self.wait('window.machineWaterDisplay()[0].litres===4',10)
                 self.assertEqual(self.js('window.machinePlacements()[0].opening_percent'),75)
 
+    def test_divert_water_starts_automatically_and_has_no_unneeded_valve(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-divert-water',width,height,phone=width!=1280,dismiss_intro=False)
+                self.assertIn('starts the water automatically',self.js("document.getElementById('level-intro-works').textContent"))
+                self.click_visible('GO')
+                self.assertFalse(self.js("Boolean(document.querySelector('#device-live-controls button,#device-live-controls input'))"))
+                self.press('Add a water chute');self.ghost();self.slide('Adjustment','yaw_deg');self.ghost()
+                self.slide('Its aim',0);self.ghost()
+                self.click_visible('Controls');self.click_visible('Try It!')
+                self.wait("document.body.classList.contains('scene-win')",30)
+                self.assertFalse(self.js("Boolean(document.querySelector('#device-live-controls button,#device-live-controls input'))"))
+                self.assertGreaterEqual(self.js("Number(document.getElementById('collector-status').textContent.match(/Container ([\\d.]+)/)[1])"),3)
+                self.click_visible('Close level complete');self.click_visible('Reset');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements()'),[])
+                self.assertFalse(self.js("Boolean(document.querySelector('#device-live-controls button,#device-live-controls input'))"))
+        self.anonymous_levels(width=1280,height=860);self.press('Sandbox: build anything')
+        self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
+        self.press('Start from Divert water into a container');self.wait(READY,30)
+        self.assertTrue(self.js("[...document.querySelectorAll('#device-live-controls button')].some(b=>b.textContent==='Toggle water supply valve')"))
+        self.open('easy-water-receiver');self.press('Add a water tank');self.ghost()
+        self.click_visible('Place');self.wait(READY,30)
+        self.assertTrue(self.js("Boolean(document.querySelector('#device-live-controls input[aria-label^=\"Live tap opening\"]'))"))
+
     def test_fill_receiver_requires_a_faster_tap_before_the_deadline(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

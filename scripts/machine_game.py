@@ -1895,7 +1895,7 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
 def public(level):
     """What the page needs to show a level: never its solution."""
     result = {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
-                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding','release_to_start','camera_min_m') if k in level}
+                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding','release_to_start','camera_min_m','water_controls') if k in level}
     if not level.get('free'):
         family = level.get('variant', {}).get('family', level['id'])
         legacy_counts={'easy-solar':1,'easy-water-wheel':1,'easy-water-gate':2,'easy-water-receiver':1,'easy-gears':1,'easy-charge-lift':1,'easy-heat':1}

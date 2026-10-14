@@ -438,8 +438,8 @@ _routing=dict(id='easy-divert-water',title='Divert the water',teaches='gravity a
     machine=ROUTING_BASE,goal=dict(title='Three litres stay in the container',focus=['source nozzle','receiving container'],
         station=dict(done_when=_collector_rule)),tray=[_chute_tray],
     solution=[dict(piece='water_chute',drop_deg=20,yaw_deg=0)],wrong=[dict(piece='water_chute',drop_deg=20,yaw_deg=180)],
-    time_s=8,budget=1000000,par=1000000,par_energy_j=6849819400,style_pieces=1,difficulty='easy',
-    hints=['Water runs downhill. The raised end belongs under the source.',
+    time_s=8,budget=1000000,par=1000000,par_energy_j=6849819400,style_pieces=1,difficulty='easy',water_controls=False,
+    hints=['Try It! starts the water automatically. Put the chute’s raised end under the source and aim it downhill into the container.',
            'Aim the lower end into the container. The meter counts water inside, not water that passes nearby.'],turning=False)
 EASY_LEVELS.append(_routing)
 _routing_sandbox=copy.deepcopy(ROUTING_BASE)

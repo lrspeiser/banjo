@@ -5120,7 +5120,7 @@ function renderMachineControls() {
     });
     beside(b,name,at);
   };
-  for (const source of machine?.spouts || []) {
+  for (const source of (level?.water_controls===false?[]:machine?.spouts || [])) {
     if (source.initial_volume_l == null) continue;
     if (source.reservoir_area_m2>0) {
       const label=document.createElement('label');label.textContent='Tap opening';

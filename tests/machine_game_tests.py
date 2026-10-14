@@ -48,6 +48,19 @@ EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):
+    def test_divert_water_hides_only_its_optional_source_controls(self):
+        level=mg.level_by_id('easy-divert-water')
+        self.assertFalse(mg.public(level)['water_controls'])
+        source=level['machine']['spouts'][0]
+        self.assertEqual(source['discharge_l_s'],1)
+        self.assertEqual(source['initial_volume_l'],4)
+        self.assertTrue(source.get('valve_open',True))
+        self.assertFalse(source.get('reservoir_area_m2',0))
+        self.assertEqual(level['time_s'],8)
+        self.assertEqual(level['goal']['station']['done_when']['water_in_zone_l']['l'],3)
+        self.assertNotIn('water_controls',mg.public(mg.free_build()))
+        self.assertNotIn('water_controls',mg.public(mg.level_by_id('easy-water-receiver')))
+
     def test_spring_relaxed_length_guide_uses_joint_ends_without_releasing_latch(self):
         free=mg.free_build()
         for yaw,pitch,roll in ((0,0,0),(35,25,15),(-45,-20,90)):
@@ -993,6 +1006,17 @@ class FreeBuild(unittest.TestCase):
 
 
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_divert_water_auto_source_keeps_nudged_wins_and_physical_misses(self):
+        level=mg.level_by_id('easy-divert-water')
+        with tempfile.TemporaryDirectory() as logs:
+            success=mg.trial(level,level['solution'],ENGINE,logs,runs=3)
+            self.assertEqual(success['worked'],3,success)
+            for placed in ([],level['wrong']):
+                miss=mg.trial(level,placed,ENGINE,logs,runs=1)
+                self.assertEqual(miss['worked'],0,miss)
+        print('Divert water automatic-source goal times:',[r['goal_at_s'] for r in success['results']])
+
     @need_engine
     def test_sandbox_translation_preserves_native_mass_and_free_dynamics_for_three_materials(self):
         import sandbox_edit
