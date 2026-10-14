@@ -1,6 +1,14 @@
 # Puzzles on the machine (/play)
 
 October 13 guided help: **Show me what to do** is the first action in Help on
+challenges and Sandbox. A live local provider check returned a real tray highlight
+without changing the setup. Its first reply combined adding, resizing and placing;
+the prompt is tightened to explain only the highlighted interaction, use visible
+landmarks instead of XYZ prose and request fewer than 180 characters. This is a
+model instruction rather than proof of universally correct teaching advice.
+The read-only guide contract regression still passes.
+
+Guided help is available on
 challenges and Sandbox. A separate read-only model request sees the tray and its
 rules, compiled layout, current edit/mode, supplied target catalogue, previous
 hint and last measured run; it never receives the authored solution. It returns
