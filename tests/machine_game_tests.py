@@ -48,6 +48,28 @@ EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):
+    def test_spring_relaxed_length_guide_uses_joint_ends_without_releasing_latch(self):
+        free=mg.free_build()
+        for yaw,pitch,roll in ((0,0,0),(35,25,15),(-45,-20,90)):
+            placements=[dict(piece='spring',mechanism_version=3,rest_m=.6,compressed_m=.2,
+                             yaw_deg=yaw,pitch_deg=pitch,roll_deg=roll,x_m=0,z_m=0)]
+            kept=copy.deepcopy(placements)
+            ordinary=mg.ghost(free,placements,0)
+            annotated=mg.ghost(free,placements,0,edit_key='rest_m')
+            guide=annotated.pop('edit_guide')
+            self.assertEqual(ordinary,annotated)
+            self.assertEqual(placements,kept)
+            joint=ordinary['spring_setup'][0]
+            a,b=joint['at_m'],joint['at_b_m'];axis=[(b[i]-a[i])/math.dist(a,b) for i in range(3)]
+            self.assertAlmostEqual(math.dist(*guide['rest_span']),joint['rest_m'])
+            self.assertEqual(guide['rest_span'][0],a)
+            for i in range(3):
+                self.assertAlmostEqual(guide['marker'][i],a[i]+joint['rest_m']*axis[i])
+                self.assertAlmostEqual(guide['arrows'][0]['direction'][i],axis[i])
+            # Each compiled endpoint is rounded to micrometres; their
+            # distance can differ by at most sqrt(3) micrometres.
+            self.assertAlmostEqual(math.dist(a,b),.2,delta=math.sqrt(3)*1e-6)
+
     def test_chain_ramp_placement_is_not_limited_to_the_switch_strip(self):
         level=mg.level_by_id('chain')
         for x,z in ((-3,2),(1.2,-1.1),(4,3)):

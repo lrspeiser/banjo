@@ -1,5 +1,47 @@
 # Puzzles on the machine (/play)
 
+October 14 on-object adjustment audit: the dropdown-adjacent `↔` grip is removed.
+All adjustable numeric ranges and numeric presets use 56 px gold +/− handles
+in the scene: tap one schema increment, drag along the projected direction, or
+use arrow keys for one increment without changing X/Z placement. Geometry
+handles keep their compiled face/optical anchors. Joint and rating properties
+that move no face use nearby scene handles and proposed numeric feedback,
+without pretending the solid changed shape. When the axis has no clear phone
+space, handles take the nearest unobstructed space and show a thin leader to
+the working point. Handles also avoid the selected object’s projected bounds;
+readouts yield to them. Help demonstrations follow the handle’s projected direction.
+Exact fields remain in Help → Settings; choices and references retain named
+pickers and toggles. Connected wires anchor length controls to their drawn route.
+
+Spring relaxed-length arrows and a dotted measurement use the compiled spring
+joint’s endpoints, axis and `rest_m`, including turned springs. This annotation
+does not stretch the latched coil, release a restraint, modify a placement,
+change forces or feed preview poses back into the engine. Proposed relaxed
+length, push and stored energy are visible beside the piece. The held coil
+still spans its actual joint endpoints. Coordinate comparisons allow sqrt(3)
+micrometres for the existing independently rounded endpoint coordinates; native
+goal and energy tolerances are unchanged.
+
+Browser auditing covers all 44 current placeable catalogue devices and their
+reachable setting modes (including contact-pack batteries, paddle switches,
+marble placement and elbow planes), plus connected-wire length. Numeric touch
+targets must be at least 56 px and reachable without a toolbar grip. Spring
+tap/drag, unchanged held length, latch readiness, native release and box lift
+pass on desktop, phone portrait/landscape and 320 px portrait. Lens curvature,
+tap opening, keyboard steps, named gear sizes and guided Help have regression
+coverage. Geometry-only ghost comparisons verify annotations cannot alter the
+compiled setup. This is an editor change, not a new physics model or conservation
+claim; the tested native binary is unchanged.
+The final four interaction regressions pass in 52.341 s and the seven-device/
+layout/Help regression group in 93.925 s. The readout follow-up passes in
+7.342 s: its fixture now finishes connecting before changing a placed wire’s
+gauge, matching the ordinary controls. In the 167 px landscape canvas it uses
+Collapse controls to make room for all three callouts; a crowded canvas still
+hides readings that cannot fit, rather than placing them over buttons or bodies.
+The spring/geometry annotation checks pass in 10.907 s. JavaScript syntax,
+machine-view checks and source registration pass. No native source or solver
+binary changed; no full-pipeline conservation claim is added.
+
 October 14 load-chooser follow-up: **Wheel in the river** hides its optional
 load reference because this spin-only lesson has no separate load. The knob
 remains in the schema for saved recipes; no default, native goal or law changes.

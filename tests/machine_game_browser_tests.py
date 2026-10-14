@@ -16,6 +16,7 @@ it skips, unless BANJO_BROWSER_TESTS=required.
 import importlib.util
 import base64
 import json
+import math
 import re
 import os
 import sys
@@ -693,11 +694,18 @@ class Puzzles(unittest.TestCase):
                 self.open('easy-power',width,height,phone=width!=1280)
                 self.press('Add a battery');self.ghost();self.slide('Its voltage',12);self.ghost()
                 self.press('Set it down');self.wait(READY,30)
-                for terminal in ('plus','minus'):
+                for count,terminal in enumerate(('plus','minus'),2):
                     self.click_scene_socket('your battery 1:'+terminal,touch=width!=1280);self.ghost()
-                    self.click_visible('Standard wire');self.ghost()
                     self.click_scene_socket('lamp:'+terminal,touch=width!=1280)
                     self.wait(f'!machineGhostState() && {READY}',30)
+                    # Connection picking keeps the view clear. Change gauge
+                    # through the existing placed-wire control afterwards.
+                    label=self.js(f"[...document.querySelectorAll('#wire-adjustments button')].find(b=>b.textContent.startsWith('Wire {count} ')).getAttribute('aria-label')")
+                    self.click_visible(label);self.ghost();self.click_visible('Standard wire');self.ghost()
+                    self.click_visible('Place');self.wait(READY,30)
+                # A 167 px landscape canvas cannot hold three 44+ px labels
+                # beside its corner tools. Expand it with the ordinary toggle.
+                if height<500:self.click_visible('Collapse controls')
                 self.wait('machineReadoutCallouts().labels.length===3',30)
                 self.wait('machineCamera().settled',30)
                 for moved in (False,True):
@@ -4565,6 +4573,25 @@ class Puzzles(unittest.TestCase):
         self.press('Set it down');self.wait(READY,30)
         self.wait("document.querySelector('#wire-adjustments button')?.textContent.includes('2.5 mm²')",30)
 
+    def test_connected_wire_length_handles_edit_declared_copper_length_in_sandbox(self):
+        self.open('free',844,390,phone=True)
+        self.js('window.confirm=()=>true');self.press('Clear the table');self.wait(READY,30)
+        for label,x in [('battery',-.5),('bulb',.6)]:
+            self.press('Add a '+label);self.ghost();self.drag_ghost_to(x,0,touch=True);self.ghost()
+            self.press('Place');self.wait(READY,30)
+        self.click_scene_socket('your battery 1:plus',touch=True);self.ghost()
+        self.click_scene_socket('your bulb 2:plus',touch=True);self.wait(READY,30)
+        self.wait("Boolean(document.querySelector('#wire-adjustments button'))",10)
+        label=self.js("document.querySelector('#wire-adjustments button').getAttribute('aria-label')")
+        self.click_visible(label);self.ghost();self.click_visible('Thick wire');self.ghost()
+        self.slide('Adjustment','length_m');before=self.ghost()['p']['length_m']
+        self.wait("Boolean(document.querySelector('#piece-handles button:not([hidden])'))",10)
+        self.click_visible('Increase cable length including slack on object')
+        self.assertAlmostEqual(self.ghost()['p']['length_m'],before+.1)
+        self.assertFalse(self.js("Boolean(document.querySelector('#piece-editor #piece-grip'))"))
+        self.press('Place');self.wait(READY,30)
+        self.assertAlmostEqual(self.js('machinePlacements()[2].length_m'),before+.1)
+
     def test_loose_board_is_individually_selectable_repositionable_and_saved(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
@@ -4634,7 +4661,7 @@ class Puzzles(unittest.TestCase):
                     ui=json.loads(seen[1][-1]['content'])['ui']
                     target_labels={t['id']:t['label'] for t in ui['targets']}
                     self.assertIn('selected: Cut to length',target_labels['control:adjustment-choice'])
-                    self.assertIn('Drag ↔ to change Cut to length',target_labels['control:piece-grip'])
+                    self.assertIn('Tap or drag the on-object handle to change Cut to length',target_labels['control:piece-grip'])
                 proof=ROOT/'build'/'ui-proof';proof.mkdir(parents=True,exist_ok=True)
                 (proof/f'guided-help-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
                 self.click_visible('Close guided help')
@@ -4702,8 +4729,8 @@ class Puzzles(unittest.TestCase):
                 if self.js(f"document.elementFromPoint({point[0]},{point[1]})?.tagName==='CANVAS'"):
                     self.drag(point,[point[0]+20,point[1]],touch=width!=1280)
                     self.assertNotEqual(self.ghost()['p']['x_m'],before['x_m'])
-                grip=self.js("(()=>{const r=document.getElementById('piece-grip').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2];})()")
-                self.drag(grip,[grip[0]+24,grip[1]],touch=width!=1280)
+                handle=self.js("(()=>{const b=document.getElementById('piece-grip'),r=b.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,Number(b.dataset.dx),Number(b.dataset.dy)];})()")
+                self.drag(handle[:2],[handle[0]+24*handle[2],handle[1]+24*handle[3]],touch=width!=1280)
                 edited=self.ghost()['p'];self.assertGreater(edited['length_m'],before['length_m'])
                 self.click_visible('Turn selected piece')
                 point=self.js("(()=>{const b=machineGhostScreen();return [(b.x0+b.x1)/2,(b.y0+b.y1)/2];})()")
@@ -4792,9 +4819,9 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js("document.getElementById('adjustment-choice').value"),'opening_percent')
                 self.assertEqual(self.js("document.getElementById('piece-grip').closest('#view').id"),'view')
                 for _ in range(5):
-                    point=self.js("(()=>{const b=document.getElementById('piece-grip'),r=b.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()")
+                    point=self.js("(()=>{const b=document.getElementById('piece-grip'),r=b.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2,Number(b.dataset.dx),Number(b.dataset.dy)];})()")
                     self.assertTrue(self.js(f"document.elementFromPoint({point[0]},{point[1]}).id==='piece-grip'"))
-                    self.drag(point,[point[0]+48,point[1]],touch=width<1000);self.ghost()
+                    self.drag(point[:2],[point[0]+48*point[2],point[1]+48*point[3]],touch=width<1000);self.ghost()
                 self.assertEqual(self.ghost()['p']['opening_percent'],100)
                 self.click_visible('Place');self.wait(READY,30)
                 self.wait("Boolean(document.querySelector('#device-live-controls input'))",10)
@@ -4813,24 +4840,39 @@ class Puzzles(unittest.TestCase):
         catalogue=[t for t in machine_game.free_build()['tray'] if not t.get('attach') and not t.get('legacy') and t['piece'] not in ('wire','power_cable')]
         for item in catalogue:
             with self.subTest(piece=item['piece']):
+                if self.js('Boolean(machineGhostState())'):self.press('Cancel');self.wait(READY,30)
+                self.click_visible('Controls')
                 self.press('Add a piece')
                 label=self.js(f"document.querySelector('#piece-picker [data-piece=\"{item['piece']}\"]')?.getAttribute('aria-label')")
                 if not label:
                     label=self.js(f"[...document.querySelectorAll('#piece-picker button')].find(b=>b.dataset.piece==={json.dumps(item['piece'])})?.getAttribute('aria-label')")
                 self.assertIsNotNone(label,item['piece']);self.press(label);self.ghost()
                 self.assertTrue(self.js("document.getElementById('piece-editor').contains(document.getElementById('adjustment-choice'))"))
-                keys=self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)")
-                for key in keys:
-                    self.slide('Adjustment',key);self.ghost()
-                    rule=item['knobs'][key]
-                    if rule.get('choices'):
-                        self.assertFalse(self.js("Boolean(document.querySelector('#piece-editor select:not(#adjustment-choice)'))"))
-                        if len(rule['choices'])==2:
-                            self.assertTrue(self.js("Boolean(document.querySelector('#piece-editor button[aria-label^=\"Toggle \"]'))"))
-                    elif rule.get('part') or rule.get('hinge'):
-                        self.assertTrue(self.js("Boolean(document.querySelector('#piece-editor button[aria-label^=\"Choose \"]'))"))
-                    else:
-                        self.assertTrue(self.js("document.getElementById('piece-editor').contains(document.getElementById('piece-grip'))"))
+                variants=[None]
+                for key in ('mount','mode','outlet_model','side','plane','placement'):
+                    variants.extend((key,value) for value in item['knobs'].get(key,{}).get('choices',[]))
+                for variant in variants:
+                    if variant:
+                        if variant[0] not in self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"):continue
+                        # Exact controls remain in Help/Settings; use their
+                        # ordinary change event to expose each device mode.
+                        self.slide('Adjustment',variant[0]);self.ghost()
+                        self.slide('Its '+item['knobs'][variant[0]].get('label',variant[0]).split(' (')[0],variant[1]);self.ghost()
+                        self.click_visible('Controls')
+                    keys=self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)")
+                    for key in keys:
+                        self.slide('Adjustment',key);self.ghost()
+                        rule=item['knobs'][key]
+                        if rule.get('choices'):
+                            self.assertFalse(self.js("Boolean(document.querySelector('#piece-editor select:not(#adjustment-choice)'))"))
+                            if len(rule['choices'])==2:
+                                self.assertTrue(self.js("Boolean(document.querySelector('#piece-editor button[aria-label^=\"Toggle \"]'))"))
+                        elif rule.get('part') or rule.get('hinge'):
+                            self.assertTrue(self.js("Boolean(document.querySelector('#piece-editor button[aria-label^=\"Choose \"]'))"))
+                        if (len(rule.get('choices',[]))>1 and all(isinstance(v,(int,float)) for v in rule['choices'])) or (not rule.get('choices') and rule.get('max',0)>rule.get('min',0)):
+                            self.wait("Boolean(document.querySelector('#piece-handles button:not([hidden])'))",10)
+                            self.assertFalse(self.js("Boolean(document.querySelector('#piece-editor #piece-grip'))"))
+                            self.wait("(()=>{const b=document.querySelector('#piece-handles button:not([hidden])');if(!b)return false;const r=b.getBoundingClientRect();return r.width>=56&&r.height>=56&&b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})()",3)
                 self.press('Cancel');self.wait(READY,30)
 
 
@@ -4935,17 +4977,40 @@ class Puzzles(unittest.TestCase):
     def test_adjustment_handle_keyboard_changes_one_step_without_moving_piece(self):
         self.open('gap')
         self.press('Add a plank');self.ghost()
-        for label in ('Drag selected adjustment','Drag Cut to length handle 1'):
-            before=self.ghost()['p']
-            if label.endswith('handle 1'):
-                self.wait("document.querySelector('#piece-handles button:not([hidden])')!==null",10)
-                label=self.js("document.querySelector('#piece-handles button:not([hidden])').getAttribute('aria-label')")
+        for label in ('Increase Cut to length on object','Decrease Cut to length on object'):
+            self.wait("document.querySelector('#piece-handles button:not([hidden])')!==null",10)
             self.click_visible(label)
+            before=self.ghost()['p']
             for kind in ('keyDown','keyUp'):
                 self.page.send('Input.dispatchKeyEvent',{'type':kind,'key':'ArrowRight','code':'ArrowRight','windowsVirtualKeyCode':39})
             after=self.ghost()['p']
             self.assertAlmostEqual(after['length_m'],before['length_m']+.01,places=4)
             self.assertEqual(after['x_m'],before['x_m']);self.assertEqual(after['z_m'],before['z_m'])
+
+    def test_spring_length_scene_handles_reach_the_native_latch_and_lift(self):
+        for width,height in ((1280,860),(390,844),(844,390),(320,568)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-spring',width,height,phone=width!=1280)
+                self.click_visible('Add a spring');before=self.ghost()['p']
+                self.assertEqual(before['rest_m'],.2)
+                self.assertFalse(self.js("Boolean(document.querySelector('#piece-editor #piece-grip'))"))
+                self.click_visible('Increase Relaxed length on object');after=self.ghost()
+                self.assertAlmostEqual(after['p']['rest_m'],.21)
+                self.assertAlmostEqual(math.dist(*after['editGuide']['rest_span']),.21)
+                self.assertEqual(after['p']['compressed_m'],before['compressed_m'])
+                self.assertEqual((after['p']['x_m'],after['p']['z_m']),(before['x_m'],before['z_m']))
+                for _ in range(2):
+                    handle=self.js("(()=>{const b=document.querySelector('#piece-handles [aria-label^=\"Increase \"]:not([hidden])'),r=b.getBoundingClientRect();return [r.x+28,r.y+28,Number(b.dataset.dx),Number(b.dataset.dy)];})()")
+                    self.drag(handle[:2],[handle[0]+120*handle[2],handle[1]+120*handle[3]],touch=width!=1280);self.ghost()
+                self.assertEqual(self.ghost()['p']['rest_m'],.7)
+                proof=ROOT/'build'/'ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'spring-length-handles-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Place');self.wait(READY,30)
+                load=self.js("machineBodies()['spring load']")
+                self.click_visible('Try It!');self.wait("document.getElementById('clock').textContent.includes('Release spring')",30)
+                self.assertAlmostEqual(self.js("machineBodies()['spring load'][1]"),load[1],places=3)
+                self.click_visible('Release spring');self.wait("document.body.classList.contains('scene-win')",30)
+                self.assertGreater(self.js("machineBodies()['spring load'][1]"),load[1]+.049)
 
 
 if __name__ == '__main__':

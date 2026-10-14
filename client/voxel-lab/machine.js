@@ -517,7 +517,7 @@ function positionTerminalLabels() {
   const rect = renderer.domElement.getBoundingClientRect();
   const top = Math.max(8, $('clock').getBoundingClientRect().bottom - rect.top + 8);
   const bottom = Math.min(rect.height - 8, innerHeight - rect.top - 8);
-  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #clock, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, #panel-toggle, .power-pin')]
+  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #clock, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, #panel-toggle, .power-pin, #piece-handles button:not([hidden])')]
     .filter(el => !el.hidden && el.style.visibility !== 'hidden' && el.offsetWidth && el.offsetHeight).map(el => {
       const r = el.getBoundingClientRect(); return {x:r.left-rect.left, y:r.top-rect.top, w:r.width, h:r.height};
     });
@@ -1054,7 +1054,7 @@ function positionPowerLabels() {
   const top = Math.max(8, clock.bottom - rect.top + 8);
   const bottom = rect.height - 10;
   const occupied = ['scene-mode','sun-bearing','viewer-zoom','viewer-perspective','piece-editor','viewer-history','panel-toggle']
-    .map(id => $(id)).concat(collapsedPanel()).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
+    .map(id => $(id)).concat(collapsedPanel(),[...view.querySelectorAll('#piece-handles button:not([hidden])')]).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
     .map(el => { const r = el.getBoundingClientRect(); return {x:r.left - rect.left,y:r.top - rect.top,w:r.width,h:r.height}; });
   occupied.push(...readoutBodyRects(rect));
   // Place the larger meters first, then fit receiver buttons beside them.
@@ -2331,12 +2331,14 @@ scene.add(editGroup);
 const editLook = new THREE.MeshBasicMaterial({color: 0xffcf59, transparent: true, opacity: .12, depthTest: false, depthWrite: false});
 const editEdge = new THREE.LineBasicMaterial({color: 0xffcf59, depthTest: false, depthWrite: false});
 const editArrowLook = new THREE.MeshBasicMaterial({color: 0xffcf59, depthTest: false, depthWrite: false});
+const editRestLook = new THREE.LineDashedMaterial({color:0xffdc72,dashSize:.025,gapSize:.015,depthTest:false,depthWrite:false});
 const editShaft = new THREE.CylinderGeometry(1, 1, 1, 10);
 const editHead = new THREE.ConeGeometry(1, 1, 14);
 const editRing = new THREE.TorusGeometry(1, .09, 8, 40);
 const editShared = new Set([editShaft, editHead, editRing]);
 let editArrows = [], editMarker = null, editAnchor = null;
 const editHandles=document.createElement('div');editHandles.id='piece-handles';view.append(editHandles);
+const editHandleLinks=document.createElementNS('http://www.w3.org/2000/svg','svg');editHandleLinks.id='piece-handle-links';editHandleLinks.setAttribute('aria-hidden','true');view.append(editHandleLinks);
 const valueChoices=document.createElement('div');valueChoices.id='piece-value-choices';valueChoices.setAttribute('popover','auto');view.append(valueChoices);
 function closeValueChoices(){if(valueChoices.matches(':popover-open'))valueChoices.hidePopover();}
 function choiceText(key,value){
@@ -2374,7 +2376,7 @@ function updatePieceHandles() {
   const rule=ghost&&trayItem(ghost.p.piece).knobs[ghost.card];
   const numericChoices=rule?.choices?.length>1&&rule.choices.every(Number.isFinite);
   const numericRange=!rule?.choices&&rule?.min!=null&&rule.max>rule.min;
-  if(!ghost||!editGroup.visible||(!numericChoices&&!numericRange)){editHandles.replaceChildren();return;}
+  if(!ghost||(!numericChoices&&!numericRange)){editHandles.replaceChildren();editHandleLinks.replaceChildren();return;}
   const anchors=editArrows.slice(0,2).map(({arrow})=>({at:arrow.position.clone().add(editGroup.position),
     direction:new THREE.Vector3(0,1,0).applyQuaternion(arrow.quaternion)}));
   // Lens curvature changes the refracting faces, not its mounting box.
@@ -2383,18 +2385,30 @@ function updatePieceHandles() {
     const lens=ghost.optical_setup?.lenses?.find(l=>l.on===ghostName());
     if(lens){const direction=new THREE.Vector3(...lens.axis).normalize();anchors.push({at:new THREE.Vector3(...lens.at_m).add(editGroup.position).add(direction.clone().multiplyScalar((lens.thickness_m||.01)/2)),direction});}
   }
-  if(!anchors.length){editHandles.replaceChildren();return;}
+  // Ratings and joint parameters may change no solid face. Give them the
+  // same scene controls, without inventing a change to the physical shape.
+  const generic=!anchors.length;
+  if(generic){
+    const objects=ghostGroup.children.length?[ghostGroup]:terminalGhostWires.children.filter(w=>w.userData.wireName===ghostName());
+    const box=new THREE.Box3();for(const o of objects)box.expandByObject(o);
+    if(box.isEmpty()){editHandles.replaceChildren();editHandleLinks.replaceChildren();return;}
+    const at=box.getCenter(new THREE.Vector3());
+    const right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+    anchors.push({at:at.clone(),direction:right,side:1},{at:at.clone(),direction:right,side:-1});
+  }
+  if(anchors.length===1)anchors.push({...anchors[0],side:-1});
   const key=ghost.card,rect=view.getBoundingClientRect();
   if(editHandles.dataset.key!==key||editHandles.childElementCount!==anchors.length){
-    editHandles.replaceChildren();editHandles.dataset.key=key;
+    editHandles.replaceChildren();editHandleLinks.replaceChildren();editHandles.dataset.key=key;
     anchors.forEach((_,i)=>{
       const direction=i===0?1:-1;
-      const h=button(numericChoices?(direction>0?'+':'−'):'◆',()=>{
+      const h=button(direction>0?'+':'−',()=>{
         if(h.suppressClick){h.suppressClick=false;return;}
-        if(numericChoices&&ghost)editByDrag(key,Number(ghost.p[key]),direction*240/(rule.choices.length-1));
-      },{ariaLabel:numericChoices?`${direction>0?'Increase':'Decrease'} ${knobName(rule,key)} on object`:`Drag ${knobName(rule,key)} handle ${i+1}`,
-        title:numericChoices?'Tap for the next size, or drag the highlighted edge.':'Drag along the highlighted arrow to change this dimension'});
+        if(ghost)editByDrag(key,Number(ghost.p[key]),direction*240*(numericChoices?1/(rule.choices.length-1):(rule.step||.01)/(rule.max-rule.min)));
+      },{ariaLabel:`${direction>0?'Increase':'Decrease'} ${knobName(rule,key)} on object`,
+        title:'Tap for one increment, or drag along the highlighted direction. Exact values are in Help → Settings.'});
       h.className='piece-dimension-handle';
+      h.link=document.createElementNS('http://www.w3.org/2000/svg','line');editHandleLinks.append(h.link);
       h.addEventListener('pointerdown',e=>{if(e.button!==0||!ghost)return;e.preventDefault();h.focus({preventScroll:true});
         h.suppressClick=false;
         editorMode='adjust';looking=false;view.classList.remove('looking');
@@ -2415,20 +2429,37 @@ function updatePieceHandles() {
     let dx=(b.x-a.x)*rect.width/2,dy=-(b.y-a.y)*rect.height/2,l=Math.hypot(dx,dy);if(l<1){dx=1;dy=0;l=1;}
     dx/=l;dy/=l;const h=editHandles.children[i];
     const obstacles=[...view.querySelectorAll('#piece-editor,#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')].filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
+    const box=ghostScreenBox();if(box)obstacles.push({left:box.x0,right:box.x1,top:box.y0,bottom:box.y1});
+    for(let j=0;j<i;j++){const previous=editHandles.children[j];if(!previous.hidden)obstacles.push(previous.getBoundingClientRect());}
     let point=null;
     const half=28;
-    for(const distance of [56,80,104,128,-56,-80,-104,0]){
+    for(const distance of [56,80,104,128,160,192,224,-56,-80,-104,-128,-160,-192,-224,0].map(v=>v*(anchor.side||1))){
       const x=rect.left+(a.x+1)*rect.width/2+dx*distance,y=rect.top+(1-a.y)*rect.height/2+dy*distance;
       if(Math.abs(a.z)<=1&&x>=rect.left+half&&x<=rect.right-half&&y>=rect.top+half&&y<=rect.bottom-half&&!obstacles.some(r=>x+half>r.left&&x-half<r.right&&y+half>r.top&&y-half<r.bottom)){point={x,y};break;}
     }
+    // On a narrow phone the projected axis can pass through the toolbar.
+    // Keep the handle usable in the nearest clear space and link it back to
+    // the actual working point; dragging still follows the same 3D axis.
+    if(!point&&Math.abs(a.z)<=1){
+      const sx=rect.left+(a.x+1)*rect.width/2,sy=rect.top+(1-a.y)*rect.height/2;
+      let nearest=Infinity;
+      for(let x=rect.left+half+8;x<=rect.right-half-8;x+=16)for(let y=rect.top+half+8;y<=rect.bottom-half-8;y+=16){
+        const distance=(x-sx)**2+(y-sy)**2;
+        if(distance<nearest&&!obstacles.some(r=>x+half>r.left&&x-half<r.right&&y+half>r.top&&y-half<r.bottom)){nearest=distance;point={x,y};}
+      }
+    }
+    h.link.style.display=point?'':'none';
     h.hidden=!point;if(!point)return;
-    if(numericChoices){
-      const limit=rule.choices.indexOf(ghost.p[key])===(i===0?rule.choices.length-1:0);
+    {
+      const limit=numericChoices?rule.choices.indexOf(ghost.p[key])===(i===0?rule.choices.length-1:0):Number(ghost.p[key])===(i===0?rule.max:rule.min);
       h.textContent=limit?(i===0?'MAX':'MIN'):(i===0?'+':'−');h.classList.toggle('at-limit',limit);
     }
     h.style.left=`${point.x-rect.left-half}px`;h.style.top=`${point.y-rect.top-half}px`;h.dataset.dx=dx;h.dataset.dy=dy;
+    for(const [key,value] of Object.entries({x1:(a.x+1)*rect.width/2,y1:(1-a.y)*rect.height/2,x2:point.x-rect.left,y2:point.y-rect.top}))h.link.setAttribute(key,String(value));
 
   });
+  for(const h of editHandles.children){h.removeAttribute('id');h.title=`${knobName(rule,key)}: ${ghost.p[key]}. Tap for one increment, or drag along the highlighted direction.`;}
+  const primary=[...editHandles.children].find(h=>!h.hidden);if(primary)primary.id='piece-grip';
 }
 
 
@@ -2438,13 +2469,13 @@ function clearEditGuide() {
     c.traverse(o => { if (o.geometry && !editShared.has(o.geometry)) o.geometry.dispose(); });
   }
   editArrows = []; editMarker = editAnchor = null;
-  if(!handleDrag&&!editHandles.contains(document.activeElement))editHandles.replaceChildren();
+  if(!handleDrag&&!editHandles.contains(document.activeElement)){editHandles.replaceChildren();editHandleLinks.replaceChildren();}
   $('edit-guide-label').hidden = true;
 }
 function drawEditGuide(parts) {
   clearEditGuide();
   const guide = ghost?.editGuide;
-  if (!guide || guide.key !== ghost.card) return;
+  if (!guide || guide.key !== ghost.card) {updatePieceHandles();return;}
   buildParts(editGroup, parts.filter(p => guide.focus.includes(p.name)), () => editLook, editEdge);
   for (const a of guide.arrows) {
     const arrow = new THREE.Group(), shaft = new THREE.Mesh(editShaft, editArrowLook), head = new THREE.Mesh(editHead, editArrowLook);
@@ -2457,11 +2488,16 @@ function drawEditGuide(parts) {
     editMarker = new THREE.Mesh(editRing, editArrowLook);
     editMarker.position.set(...guide.marker); editGroup.add(editMarker);
   }
+  if(guide.rest_span){
+    const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(guide.rest_span.map(p=>new THREE.Vector3(...p))),
+      editRestLook);
+    line.computeLineDistances();editGroup.add(line);
+  }
   editGroup.traverse(o => { o.renderOrder = 100; });
   const at = guide.marker || guide.arrows[0]?.at;
   editAnchor = at ? new THREE.Vector3(...at) : new THREE.Box3().setFromObject(ghostGroup).getCenter(new THREE.Vector3()).sub(ghostGroup.position);
   const label = knobName(trayItem(ghost.p.piece).knobs[guide.key], guide.key);
-  $('edit-guide-label').textContent = `${label}`;
+  $('edit-guide-label').textContent = `${label}: ${ghost.p[guide.key]}${guide.rest_span?' m relaxed (dotted guide)':''}`;
   updateEditGuide();
 }
 function updateEditGuide() {
@@ -2493,7 +2529,7 @@ function updateEditGuide() {
   const x = (screen.x + 1) * view.clientWidth / 2 + 14, y = (1 - screen.y) * view.clientHeight / 2 + 16;
   // A wrapped toolbar can fill a short phone scene. Try spaces beside the
   // piece and the controls, rather than forcing the caption below every row.
-  const obstacles = [...collapsedPanel(), ...view.querySelectorAll('#clock, #scene-mode, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, #panel-toggle, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
+  const obstacles = [...collapsedPanel(), ...view.querySelectorAll('#clock, #scene-mode, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, #panel-toggle, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend, #piece-handles button:not([hidden])')]
     .filter(e => e.offsetWidth && e.offsetHeight).map(e => e.getBoundingClientRect());
   let best = null;
   for (const [cx, cy] of [[x, y], [x, y - height - 40], [x - width - 30, y], [8, maxY], [maxX, maxY], [maxX, minY]]) {
@@ -3003,23 +3039,6 @@ function renderGhostBar() {
   move.disabled=!movableGhost();turn.hidden=!Object.values(knobs).some(k=>k.turning);
   modes.append(move,turn);
   modes.hidden=move.disabled&&turn.hidden;
-  const grip=button('↔',()=>{},{id:'piece-grip',ariaLabel:'Drag selected adjustment'});
-  grip.hidden=Boolean(rule.choices||rule.part||rule.hinge||rule.terminal||rule.power_port);
-  grip.title='Drag left or right to change this value; arrow keys change one step. Exact values are in Help → Settings.';
-  let gripDrag=null;
-  grip.addEventListener('pointerdown',e=>{
-    if(e.button!==0||!ghost)return;e.preventDefault();grip.focus({preventScroll:true});editorMode='adjust';looking=false;
-    move.setAttribute('aria-pressed','false');turn.setAttribute('aria-pressed','false');grip.setAttribute('aria-pressed','true');
-    gripDrag={id:e.pointerId,x:e.clientX,initial:Number(ghost.p[ghost.card]),key:ghost.card};grip.setPointerCapture(e.pointerId);
-  });
-  grip.addEventListener('pointermove',e=>{if(gripDrag?.id===e.pointerId&&ghost)editByDrag(gripDrag.key,gripDrag.initial,e.clientX-gripDrag.x);});
-  for(const type of ['pointerup','pointercancel','lostpointercapture'])grip.addEventListener(type,()=>{gripDrag=null;});
-  grip.addEventListener('keydown',e=>{
-    if(!ghost||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;
-    e.preventDefault();e.stopPropagation();const sign=['ArrowRight','ArrowUp'].includes(e.key)?1:-1;
-    if(setKnob(ghost.p,key,Number(ghost.p[key])+sign*(rule.step||.01))){followGhost();showGhostKnobs();askGhost();}
-  });
-  chips.append(grip);
   const top=Object.assign(document.createElement('div'),{className:'piece-toolbar'});top.append(modes,actions);
   editor.replaceChildren(top,chips);
   if(rule.choices)editor.append(row);
@@ -3122,10 +3141,13 @@ function showGhostKnobs() {
   for(const b of ghost.choiceButtons||[])b.setAttribute('aria-pressed',String(b.dataset.value===String(ghost.p[b.dataset.key])));
   showGridSnap();
   const knobs = trayItem(ghost.p.piece).knobs;
+  const rule=knobs[ghost.card];if(!rule)return; // Connecting ghosts have no selected setting until their editor is built.
   const choice=$('adjustment-choice');if(choice)choice.value=ghost.card;
   const cycle=$('piece-editor').querySelector('.choice-cycle button');if(cycle)cycle.textContent=choiceText(ghost.card,ghost.p[ghost.card]);
-  const feedback=$('adjustment-feedback');if(feedback)feedback.textContent=electricalEditRating() || `${knobName(knobs[ghost.card],ghost.card)}: ${ghost.p[ghost.card]}${knobs[ghost.card].turning?'°':''}`;
-  const grip=$('piece-grip');if(grip)grip.title=`${knobName(knobs[ghost.card],ghost.card)}: ${ghost.p[ghost.card]}. Drag left or right; exact values are in Help → Settings.`;
+  const rating=electricalEditRating(),numeric=typeof ghost.p[ghost.card]==='number';
+  const units=rule.turning?'°':(rule.label||'').match(/\(([^()]*)\)\s*$/)?.[1]||'';
+  const shownValue=`${ghost.p[ghost.card]}${units?' '+units:''}`;
+  const feedback=$('adjustment-feedback');if(feedback)feedback.textContent=rating?(numeric?`${shownValue} · ${rating}`:rating):`${knobName(rule,ghost.card)}: ${shownValue}`;
   const value = document.querySelector('#ghost-bar .knob-value');
   if (value) value.textContent = ` ${ghost.p[ghost.card]}${knobs[ghost.card].turning ? '°' : ''}`;
   for (const [key, [input, shown]] of Object.entries(ghost.inputs)) {
@@ -3461,7 +3483,7 @@ function updatePowerFeedback() {
   const seen=new Set(items.map(i=>i.id));
   for(const [id,row] of powerFeedbackRows)if(!seen.has(id)){row.card.remove();row.leader.remove();powerFeedbackRows.delete(id);}
   const rect=renderer.domElement.getBoundingClientRect();
-  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#panel-toggle,#collector-status,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint')]
+  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#panel-toggle,#collector-status,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint,#piece-handles button:not([hidden])')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   // A power reading must not hide the connection the player is trying to
   // click, especially on a phone. Reserve the rings before placing labels.
@@ -3524,7 +3546,7 @@ function positionSceneReading(card,anchor) {
   if(!leader){leader=document.createElementNS(feedbackLeaders.namespaceURI,'line');leader.dataset.reading=card.id;feedbackLeaders.append(leader);sceneReadingLeaders.set(card.id,leader);}
   leader.setAttribute('visibility','hidden');if(card.hidden)return;
   const {width,height}=card.getBoundingClientRect(),top=$('clock').getBoundingClientRect().bottom-rect.top+6;
-  const occupied=[...view.querySelectorAll('#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#panel-toggle,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint')]
+  const occupied=[...view.querySelectorAll('#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#panel-toggle,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint,#piece-handles button:not([hidden])')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   occupied.push(...readoutBodyRects(rect),{x:anchor.x-18,y:anchor.y-18,w:36,h:36});
   const ys=[anchor.y-height/2,top,rect.height-height-6,...occupied.flatMap(r=>[r.y-height-6,r.y+r.h+6])];
@@ -5921,7 +5943,7 @@ function coachTargets() {
     const el=$(id);if(el?.checkVisibility()&&!el.disabled){
       let label=el.getAttribute('aria-label')||el.textContent.trim();
       if(id==='adjustment-choice')label='Adjust property; selected: '+el.selectedOptions[0]?.textContent+'; options: '+[...el.options].map(o=>o.textContent).join(', ');
-      if(id==='piece-grip')label='Drag ↔ to change '+$('adjustment-choice').selectedOptions[0]?.textContent+'; '+$('adjustment-feedback')?.textContent;
+      if(id==='piece-grip')label='Tap or drag the on-object handle to change '+$('adjustment-choice').selectedOptions[0]?.textContent+'; '+$('adjustment-feedback')?.textContent;
       if(id==='piece-choice-toggle')label+='; current value: '+el.textContent;
       add('control:'+id,label,()=>el.getBoundingClientRect());
     }
@@ -5998,10 +6020,11 @@ function paintCoachGuide() {
     const p=suggested.project(camera);
     if(Math.abs(p.z)<=1){const x=r.left+(p.x+1)*r.width/2,y=r.top+(1-p.y)*r.height/2;
       if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)end={x,y,width:0,height:0};}}
-  let x=box.x+box.width/2;const y=box.y+box.height/2;
+  let x=box.x+box.width/2;let y=box.y+box.height/2;
   let destination=end?{x:end.x+end.width/2,y:end.y+end.height/2}:null;
   if(!destination&&coach.guide.gesture==='drag'&&coach.guide.target_id==='control:piece-grip') {
-    x-=12;destination={x:x+24,y};
+    const grip=$('piece-grip'),dx=Number(grip?.dataset.dx)||0,dy=Number(grip?.dataset.dy)||0;
+    x-=12*dx;y-=12*dy;destination={x:x+24*dx,y:y+24*dy};
   }
   // Subpixel camera settling must not restart the pointer demonstration.
   const shape=JSON.stringify([box.x,box.y,box.width,box.height,...(destination?[destination.x,destination.y]:[])].map(Math.round));

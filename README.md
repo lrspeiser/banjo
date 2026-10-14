@@ -2,6 +2,12 @@
 
 **A Rube Goldberg game where the physics decides what happens.**
 
+Choose an Adjustment beside a selected piece, then tap or drag the large gold
+handles in the 3D view. Numeric settings, including ratings and joint properties,
+use these controls; exact values remain in Help → Settings. A spring’s dotted
+relaxed-length guide is an editing measurement, while its latch holds the actual
+compressed spring until release.
+
 Each level is a small machine you cannot change, a goal, and a tray of pieces.
 You add pieces, press **Try It!**, and the engine works out what every part
 does. A ball rolls on the true surface of a plank. A knife cuts an oak rope part

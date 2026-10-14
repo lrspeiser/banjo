@@ -1234,6 +1234,18 @@ def editing_guide(level, checked, index, compiled, key):
     if not mine:
         return None
     guide = {'key': key, 'label': rule.get('label', key), 'arrows': [], 'focus': [], 'marker': None}
+    if p['piece']=='spring' and key=='rest_m':
+        joint=next((j for j in compiled.get('joints',[]) if j['kind']=='spring' and j['name']==name+' spring'),None)
+        if joint:
+            a,b=joint['at_m'],joint['at_b_m']
+            length=math.dist(a,b)
+            if length>1e-8:
+                direction=[(b[i]-a[i])/length for i in range(3)]
+                relaxed=[a[i]+joint['rest_m']*direction[i] for i in range(3)]
+                guide.update(focus=[q['name'] for q in mine],marker=relaxed,
+                    rest_span=[list(a),relaxed],arrows=[{'at':relaxed,'direction':direction},
+                    {'at':list(a),'direction':[-v for v in direction]}])
+                return guide
     if p['piece']=='gear' and key in ('teeth','module_m','phase_deg','height_m'):
         wheel=next(q for q in mine if q['name']==name+' wheel')
         centre=wheel['at_m'];radius=p['teeth']*p['module_m']/2+.7*p['module_m']
