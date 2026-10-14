@@ -21,6 +21,7 @@ ASSETS={'/play':'client/voxel-lab/machine.html','/machine':'client/voxel-lab/mac
  '/profile-sync.mjs':'client/voxel-lab/profile-sync.mjs',
  '/level-library.mjs':'client/voxel-lab/level-library.mjs',
  '/design-gallery.mjs':'client/voxel-lab/design-gallery.mjs',
+ '/level-intro.mjs':'client/voxel-lab/level-intro.mjs',
  '/banjo-mark.png':'client/voxel-lab/brand/banjo-mark.png',
  '/banjo-app-icon.jpg':'client/voxel-lab/brand/banjo-app-icon.jpg',
  '/banjo-app-icon.png':'client/voxel-lab/brand/banjo-app-icon.png',

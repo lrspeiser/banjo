@@ -1,5 +1,33 @@
 # Puzzles on the machine (/play)
 
+October 13 level-introduction update: every challenge opens a dismissible
+overlay with its name, **You’ll place**, **How it works**, **Your goal** and one
+**GO** action. The three descriptions use the available tray and a reviewed
+mechanism explanation for each of the 34 authored levels. They read only the
+public level data and do not use private solutions or exact solution settings.
+GO dismisses the card; it does not start native time or add a piece. Escape
+also dismisses it. Retry and Reset keep it dismissed; choosing another level
+shows that level’s introduction. Sandbox designs do not force a level briefing.
+**Help → Level instructions** opens the same card again.
+
+Goal markers remain in the scene, but their large instruction sprites no longer
+render over the working area. In **Wheel in the river** and **River-powered
+lift**, the green current region remains visible while the paddles can be
+positioned without text across them. Native goals, dimensions, laws, timing
+and recorded outcomes are unchanged. The dialog keeps GO visible on desktop
+and phone portrait/landscape; longer text scrolls within the card in small
+viewports. Its position follows the scene while staying within the viewport.
+
+The unit check covers all 34 introductions, public goal thresholds, retained
+spring descriptions and isolation from private answers. Five focused browser
+checks pass in 46.437 s: introduction/dismiss/reopen/reset on nine level and
+viewport combinations, the two river lessons on desktop and both phone
+orientations, spring/tackle lifts and guided-help overlays. The river fixture
+now returns from precision settings to Controls and waits for the adjacent
+rope button to become reachable before using it. Syntax, view geometry and
+source registration checks pass. No native physics or energy validation was
+changed or newly claimed by this interface-only checkpoint.
+
 October 13 spring follow-up: **Spring lifts the load** now has a visibly coiled
 spring, a narrow iron push plate and a manual latch. The oak box remains on
 its fork cradle; the spring has no joint to that box. Place it beneath the box,

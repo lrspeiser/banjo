@@ -4,11 +4,29 @@ import {anonymousSave, validVisitor, returnURL} from '/anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from '/profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from '/level-library.mjs';
 import {renderDesignGallery} from '/design-gallery.mjs';
+import {levelIntroduction} from '/level-intro.mjs';
 
 // The machine page. It asks the server to build a declaration, then shows
 // what the engine measures, frame by frame. It never moves a body itself.
 const $ = id => document.getElementById(id);
 const view = $('view');
+let introduction=null;
+function positionLevelIntroduction(){
+  const dialog=$('level-intro');if(!dialog.open)return;
+  const rect=view.getBoundingClientRect(),card=dialog.getBoundingClientRect();
+  const x=Math.max(card.width/2+12,Math.min(innerWidth-card.width/2-12,rect.left+rect.width/2));
+  const y=Math.max(card.height/2+12,Math.min(innerHeight-card.height/2-12,rect.top+rect.height/2));
+  dialog.style.left=x+'px';dialog.style.top=y+'px';
+}
+function showLevelIntroduction(){
+  if(!introduction||level?.free)return;
+  for(const key of ['title','place','works','goal'])$('level-intro-'+key).textContent=introduction[key];
+  if(!$('level-intro').open)$('level-intro').showModal();
+  positionLevelIntroduction();
+}
+function closeLevelIntroduction(){if($('level-intro').open)$('level-intro').close();}
+$('level-intro').addEventListener('close',()=>view.focus({preventScroll:true}));
+$('level-instructions').addEventListener('click',showLevelIntroduction);
 const collapsedPanel = () => document.body.classList.contains('panel-collapsed') ? [document.querySelector('main>aside')] : [];
 const renderer = new THREE.WebGLRenderer({antialias: true});
 // Advertise the scene as a click target to touch browsers. Otherwise their
@@ -1404,14 +1422,9 @@ function syncZones() {
     box.position.set(...z.at_m);
     box.add(new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), new THREE.LineBasicMaterial({color: 0x5fe08f})));
     scene.add(box); zones.push(box);
-    if(z.label){
-      const canvas=document.createElement('canvas');canvas.width=512;canvas.height=64;
-      const context=canvas.getContext('2d');context.fillStyle='#aaffc5';context.font='bold 28px sans-serif';context.textAlign='center';context.fillText(z.label,256,42);
-      const texture=new THREE.CanvasTexture(canvas),label=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false}));
-      label.position.set(z.at_m[0],z.at_m[1]+.12,z.at_m[2]);label.scale.set(1.6,.2,1);box.add(label);label.position.sub(box.position);
-    }
   }
 }
+window.machineGoalGuideState=()=>zones.map(z=>({at_m:z.position.toArray(),textLabels:z.children.filter(c=>c.isSprite).length}));
 
 // Gas pushing a piston (steam under a piston, a cannon's breech): its column,
 // where the engine says it is, tinted by its measured temperature. Not drawn
@@ -1794,6 +1807,7 @@ function resize() {
   const half = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
   // Preserve the framing when controls collapse or the phone rotates.
   distance = Math.min(40, distance * Math.sin(oldHalf) / Math.sin(half));
+  positionLevelIntroduction();
 }
 addEventListener('resize', resize);
 
@@ -5229,6 +5243,7 @@ function renderDesignControls() {
   $('restore-version').disabled = !activeDesign.versions.length;
 }
 function parkDesign() {
+  closeLevelIntroduction();
   stopSwitchDrag();
   if ($('piece-picker').open) $('piece-picker').close();
   keepBuild(); clearTimeout(rebuildTimer); clearTimeout(previewTimer); endGhost(); cancelAttach(); closeDone();
@@ -5521,6 +5536,7 @@ function renderReturnLink(box) {
   }
 }
 function showLevelsScreen(show) {
+  if(show)closeLevelIntroduction();
   const box = $('levels-screen');
   box.hidden = !show;
   if (!show) for (const panel of box.querySelectorAll('.save-help-panel:popover-open')) panel.hidePopover();
@@ -5569,6 +5585,7 @@ renderer.domElement.addEventListener('pointerdown', () => {
 });
 
 async function chooseLevel(id, design = null) {
+  closeLevelIntroduction();
   closeCoach();
   if (!levels.some(l => l.id === id) && id.includes('--v')) {
     if (generatedLevel?.id !== id) {
@@ -5593,6 +5610,7 @@ async function chooseLevel(id, design = null) {
   const sectionPanel = level.free ? $('phone-design-panel') : $('phone-help-panel');
   sectionPanel.prepend($('title'), $('sandbox-controls'), $('game'));
   $('phone-help-panel').prepend($('coach-open'));
+  $('phone-help-panel').prepend($('level-instructions'));$('level-instructions').hidden=Boolean(level.free);
   $('phone-help-panel').append($('feedback'));
   $('level-details').hidden = Boolean(level.free);
   selectPhonePanel('controls');
@@ -5648,6 +5666,7 @@ async function chooseLevel(id, design = null) {
     'advanced-parallel':'Wire both lamps in parallel with complete feeds and returns.',
     'advanced-capacitor':'Increase capacitance to store enough energy before time runs out.'};
   const objective=objectives[level.variant?.family||level.id]||level.brief.split(/(?<=\.)\s+(?=[A-Z])/)[0];
+  introduction=levelIntroduction(level,{title:levelTitle(level),objective});
   $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:level.free?'Build anything. Click a piece to adjust it.':objective}));
   $('pull-tool').hidden=true;$('restart-pieces').hidden=true;
   $('scene-goal').title = level.free ? 'Build anything' : `Goal within ${level.time_s} s`;
@@ -5683,7 +5702,9 @@ async function chooseLevel(id, design = null) {
   $('follow').hidden = !level.free;
   if (!level.free) { $('speed').value = '1'; follow = true; $('follow').setAttribute('aria-pressed', 'true'); }
   renderLevels(); renderTray(); renderPlaced();
+  const openingLevel=level;
   await rebuildLevel(false);
+  if(level===openingLevel)showLevelIntroduction();
 }
 
 $('challenge-share').addEventListener('click', async () => {

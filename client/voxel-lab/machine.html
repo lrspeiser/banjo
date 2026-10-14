@@ -5,6 +5,11 @@
 <main hidden>
 <section id="view" tabindex="-1" aria-label="The machine in 3D, as the engine calculates it">
 <output id="clock">Setting up…</output>
+<dialog id="level-intro" class="level-intro" aria-labelledby="level-intro-title">
+<h2 id="level-intro-title"></h2>
+<dl><dt>You’ll place</dt><dd id="level-intro-place"></dd><dt>How it works</dt><dd id="level-intro-works"></dd><dt>Your goal</dt><dd id="level-intro-goal"></dd></dl>
+<form method="dialog"><button id="level-intro-go" type="submit" autofocus>GO</button></form>
+</dialog>
 <div id="viewer-corner" class="viewer-corner" role="group" aria-label="Zoom and edit history">
 <div id="viewer-history"></div>
 <div id="viewer-perspective" role="group" aria-label="Turn and tilt the view"><button id="view-up" type="button" aria-label="Look from above" title="Look from above">↑</button><button id="view-down" type="button" aria-label="Look from the side" title="Look from the side">↓</button></div>
@@ -105,6 +110,7 @@
 <section id="game" hidden aria-label="The puzzle">
 <nav id="levels" aria-label="Levels"></nav>
 <section id="level-details"><p id="brief"></p><p id="goal-line" class="legend"></p></section>
+<button id="level-instructions" type="button" hidden>Level instructions</button>
 <div id="challenge-actions" class="chat-actions" hidden><button id="challenge-share" type="button">Share</button></div>
 <input id="challenge-link" class="share-link" type="text" readonly hidden aria-label="A link to this challenge">
 <div id="free-actions" class="chat-actions" hidden><button id="free-example" type="button">Set out the example</button><button id="free-share" type="button">Share this design</button><button id="free-clear" type="button">Clear the table</button></div>
@@ -161,6 +167,7 @@
 <div class="guide-head"><h2 id="recent-changes-title">Recent Changes</h2><button id="recent-changes-done" type="button">Close</button></div>
 <div class="guide-body changes-body" tabindex="0" aria-label="Game updates, newest first">
 <section aria-labelledby="changes-oct13"><h3 id="changes-oct13"><time datetime="2026-10-13">October 13, 2026</time></h3>
+<article><h4>Read the task, then clear the workspace</h4><p>Each level opens with a short introduction: what you’ll place, how the mechanism works and your goal. Press <b>GO</b> to dismiss it and start building. The river’s current marker stays visible without the large instruction covering the paddles. Read the introduction again in <b>Help → Level instructions</b>; retries keep the scene clear.</p></article>
 <article><h4>A spring you can see and release</h4><p>In <b>Spring lifts the load</b>, a visible coil drives a push plate beneath the waiting box. Increase its relaxed length to store energy, then press <b>Release spring</b> beside it. The latch starts the run, and the plate must actually touch the box to lift it. Turn the spring while placing it to aim its push direction. Try <b>Latch and lift</b> in Sandbox too.</p></article>
 <article><h4>Precise keyboard edits</h4><p>Click a ↔ grip or gold dimension handle, then use the arrow keys to change one increment. The keys adjust that value while keeping the piece’s position in place.</p></article>
 <article><h4>Change a piece beside the piece</h4><p>Select an object to find its adjustments beside it in the 3D scene. Drag the ↔ grip, or a gold handle on a highlighted dimension, to change a value. Lens <b>Focus / face radius</b> changes its glass curvature while the laser preview updates. Two-choice settings are toggles; materials, gear sizes and other lists use previous/next buttons. Exact fields remain in Help → Settings.</p></article>

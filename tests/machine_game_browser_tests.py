@@ -98,7 +98,7 @@ class Puzzles(unittest.TestCase):
         if errors:print('BROWSER_SCRIPT_ERRORS',json.dumps(errors[-3:]),flush=True)
         self.fail(f'waited {seconds:.0f} s for {expression}; the page says {said!r}')
 
-    def open(self, level, width=1280, height=860, phone=False):
+    def open(self, level, width=1280, height=860, phone=False, dismiss_intro=True):
         self.page.send('Emulation.setDeviceMetricsOverride',
                        {'width': width, 'height': height, 'deviceScaleFactor': 2 if phone else 1, 'mobile': phone})
         self.page.send('Emulation.setTouchEmulationEnabled', {'enabled': phone, 'maxTouchPoints': 5})
@@ -111,6 +111,9 @@ class Puzzles(unittest.TestCase):
             # The former Free URL opens its saved design in the one sandbox.
             expected=f"location.origin==={json.dumps(self.base)} && location.pathname==='/machine' && new URLSearchParams(location.search).get('design')===window.machineDesign?.()?.id"
         self.wait(f"performance.timeOrigin!=={previous} && ({expected}) && document.getElementById('clock') && {READY}",90)
+        if level!='free':
+            self.wait("document.getElementById('level-intro').open",30)
+            if dismiss_intro:self.click_visible('GO')
         # The view eases to its place as a level opens; a piece added before
         # it gets there lands where a slow page's view happened to be.
         self.wait('window.machineCamera().settled', 30)
@@ -139,6 +142,7 @@ class Puzzles(unittest.TestCase):
           return buttons.find(b=>b.getClientRects().length && !b.disabled) || buttons.find(b=>!b.closest('main[hidden],#levels-screen[hidden],#sandbox-screen[hidden],#piece-picker:not([open]),.save-help-panel:not(:popover-open)'));}})()"""
 
     def press(self, name):
+        if name!='GO' and self.js("Boolean(document.getElementById('level-intro')?.open)"):self.click_visible('GO')
         """A button, by what it says or by its label."""
         if name.startswith('Play level ') and ', ' in name:
             title=name.split(', ',1)[1]
@@ -289,6 +293,7 @@ class Puzzles(unittest.TestCase):
                                                       **({'text': key} if kind == 'keyDown' and key not in named else {})})
 
     def click_visible(self, label):
+        if label!='GO' and self.js("Boolean(document.getElementById('level-intro')?.open)"):self.click_visible('GO')
         if label=='View':return self.key('Escape')
         if label=='Move':label='Move selected piece'
         if label=='Restart with my pieces':return self.retry_existing_setup()
@@ -983,6 +988,8 @@ class Puzzles(unittest.TestCase):
         for key,label in fields:
             self.slide(f'{label} of your water_wheel 1',self.river_solution[key])
         if lesson_button:
+            self.click_visible('Controls')
+            self.wait("(()=>{const b=[...document.querySelectorAll('#piece-editor button')].find(b=>b.textContent==='Connect rope to gate');if(!b)return false;const r=b.getBoundingClientRect();return r.width>0&&b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})()",5)
             self.click_visible('Connect rope to gate');self.ghost()
             self.assertEqual(self.ghost()['p']['load_part'],'river gate')
             self.click_visible('Disconnect rope from gate');self.ghost()
@@ -1120,6 +1127,26 @@ class Puzzles(unittest.TestCase):
             self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,60)
             self.assertEqual(self.js('window.machinePlacements()[0]'),saved)
             self.assertEqual(self.js('window.machineDesign().versions.at(-1).draft.placements[0]'),saved)
+
+    def test_level_introduction_clears_the_working_scene_and_can_be_reopened_in_help(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for ident in ('easy-river-wheel','easy-river-lift','gap'):
+                with self.subTest(viewport=(width,height),level=ident):
+                    self.open(ident,width,height,phone=width!=1280,dismiss_intro=False)
+                    self.assertTrue(self.js("document.getElementById('level-intro').matches(':modal')"))
+                    for field in ('title','place','works','goal'):
+                        self.assertTrue(self.js(f"document.getElementById('level-intro-{field}').textContent.trim().length>0"))
+                    self.assertTrue(self.js("document.getElementById('level-intro-go')===document.activeElement"))
+                    self.assertEqual(self.js('machinePlacements().length'),0)
+                    self.assertTrue(self.js("machineGoalGuideState().length>0 && machineGoalGuideState().every(z=>z.textLabels===0)"))
+                    self.assertTrue(self.js("(()=>{const d=document.getElementById('level-intro'),b=document.getElementById('level-intro-go'),r=b.getBoundingClientRect(),a=d.getBoundingClientRect();return r.width>=44&&r.height>=44&&a.left>=0&&a.top>=0&&a.right<=innerWidth&&a.bottom<=innerHeight&&b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})()"))
+                    self.click_visible('GO');self.wait("!document.getElementById('level-intro').open",5)
+                    self.assertTrue(self.js(READY))
+                    self.click_visible('Reset');self.wait(READY,30)
+                    self.assertFalse(self.js("document.getElementById('level-intro').open"))
+                    self.click_visible('Help');self.click_visible('Level instructions')
+                    self.assertTrue(self.js("document.getElementById('level-intro').open"))
+                    self.key('Escape');self.wait("!document.getElementById('level-intro').open",5)
 
     def test_simple_river_wheel_needs_dragging_off_the_bank(self):
         for width,height in ((1280,860),(390,844),(844,390)):

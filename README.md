@@ -28,7 +28,11 @@ interface review, not measurements of the new interface or a timed human study.
 Desktop and phone use the same full-width scene with a compact bottom dock.
 Levels share Controls / Help tabs; Sandbox also has Design,
 with Try It!/Pause/Reset kept beside the 3D view, even when the controls are
-collapsed. Each level shows its name and a one-line task. **Undo / Redo**
+collapsed. Each level opens with its name, what you’ll place, how the mechanism
+works and your goal. **GO** dismisses the introduction and leaves native time
+paused for building; **Help → Level instructions** reopens it. Goal markers
+remain without large instruction text over the working area. The dock keeps
+the level name and a one-line task. **Undo / Redo**
 are in the upper scene corner; a flat zoom slider and magnifiers are in the
 scene corner, with turn/tilt buttons beside zoom. Click a piece to edit it;
 **Move**, **Turn** and **Place** follow the selection. Drag the piece or its
