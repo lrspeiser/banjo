@@ -721,3 +721,23 @@ body.panel-collapsed aside{width:100%;border-radius:0;max-height:40dvh}
   body.panel-tabs .ghost-fields>.adjustment-feedback{grid-column:2;grid-row:1;align-self:start}
   body.panel-tabs .ghost-fields>.state{grid-column:2;grid-row:1;align-self:end}
 }
+
+#coach-open{min-height:44px;padding:8px 14px;font:600 15px system-ui;background:#285d46;color:#fff;border:1px solid #78cea2;border-radius:6px;cursor:pointer}
+#coach-overlay{position:fixed;inset:0;width:100%;height:100%;z-index:20;pointer-events:none;overflow:hidden}
+.coach-outline{fill:none;stroke:#ffe581;stroke-width:3;filter:drop-shadow(0 0 3px #000);stroke-dasharray:8 4}
+.coach-path{fill:none;stroke:#ffe581;stroke-width:3;stroke-dasharray:7 5;filter:drop-shadow(0 0 2px #000)}
+.coach-destination{fill:none;stroke:#ffe581;stroke-width:3}
+.coach-pointer{fill:#fff3b6;stroke:#795400;stroke-width:2;animation:coach-drag 2.5s ease-in-out infinite}
+@keyframes coach-drag{0%,15%{offset-distance:0%}80%,100%{offset-distance:100%}}
+@media(prefers-reduced-motion:reduce){.coach-pointer{animation:none;offset-distance:50%}}
+body.coaching .scene-goal strong{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.coach-actions{display:flex;gap:4px;flex:none}
+.coach-actions button{min-height:44px;min-width:44px;padding:4px 8px;font:13px system-ui;border:1px solid #9bbac9;border-radius:6px;background:#294c60;color:#fff;cursor:pointer}
+body.coaching .scene-goal>span{font-size:17px;line-height:1.35;color:#fff0b4}
+body.coaching .ghost-fields>.head{display:none}
+body.coaching .tray-heading,body.coaching .tray-left{display:none}
+body.coaching .scene-tray #tray-add{min-height:44px;padding:4px}
+body.coaching .scene-tray .tray-picture,body.coaching .scene-tray #tray img{width:32px;height:32px}
+@media(max-width:500px){body.coaching .scene-goal strong{font-size:18px}.coach-actions button{font-size:12px;padding:4px 6px}}
+@media(max-width:599px){body.coaching.panel-tabs:not(.panel-collapsed) main{grid-template-rows:minmax(0,1fr) 290px}}
+@media(max-height:500px){body.coaching.panel-tabs:not(.panel-collapsed) main{grid-template-rows:minmax(0,1fr) 190px}body.coaching #viewer-zoom{top:48px}body.coaching #viewer-perspective{top:96px}}

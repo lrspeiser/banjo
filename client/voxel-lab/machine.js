@@ -1884,6 +1884,7 @@ function render() {
   positionTerminalLabels();
   drawSceneSockets();
   updatePowerFeedback();
+  paintCoachGuide();
 }
 
 // ---- controls -----------------------------------------------------------------
@@ -5391,6 +5392,7 @@ renderer.domElement.addEventListener('pointerdown', () => {
 });
 
 async function chooseLevel(id, design = null) {
+  closeCoach();
   if (!levels.some(l => l.id === id) && id.includes('--v')) {
     if (generatedLevel?.id !== id) {
       const match = /^(easy-[a-z-]+)--v\d+--([0-9a-f]{8})--(?:\d|c)$/.exec(id);
@@ -5413,6 +5415,7 @@ async function chooseLevel(id, design = null) {
   $('sandbox-build-description').hidden = !level.free;
   const sectionPanel = level.free ? $('phone-design-panel') : $('phone-help-panel');
   sectionPanel.prepend($('title'), $('sandbox-controls'), $('game'));
+  $('phone-help-panel').prepend($('coach-open'));
   $('phone-help-panel').append($('feedback'));
   $('level-details').hidden = Boolean(level.free);
   selectPhonePanel('controls');
@@ -5600,6 +5603,118 @@ addEventListener('hashchange', () => {
   const m = location.hash.match(/^#build=([A-Za-z0-9_-]+)$/);
   if (m && LEVEL_MODE && freeLevel) { sharedBuild = m[1]; showLevelsScreen(false); chooseLevel('free').catch(() => {}); }
 });
+
+// Teaching annotations never dispatch input, edit placements or change physics.
+let coach = null, coachRequest = 0, coachPaintAt = 0;
+const coachSVG=document.createElementNS('http://www.w3.org/2000/svg','svg');
+coachSVG.id='coach-overlay';coachSVG.setAttribute('aria-hidden','true');coachSVG.setAttribute('hidden','');
+document.body.append(coachSVG);
+function coachObjectBox(objects) {
+  const bounds=new THREE.Box3();bounds.makeEmpty();
+  for(const object of objects)if(object?.visible)bounds.expandByObject(object);
+  if(bounds.isEmpty())return null;
+  const r=view.getBoundingClientRect();let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(let i=0;i<8;i++) {
+    const p=new THREE.Vector3(i&1?bounds.max.x:bounds.min.x,i&2?bounds.max.y:bounds.min.y,i&4?bounds.max.z:bounds.min.z).project(camera);
+    if(Math.abs(p.z)>1)return null;
+    const x=r.left+(p.x+1)*r.width/2,y=r.top+(1-p.y)*r.height/2;
+    x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);
+  }
+  x0=Math.max(r.left+3,x0);y0=Math.max(r.top+3,y0);x1=Math.min(r.right-3,x1);y1=Math.min(r.bottom-3,y1);
+  return x1>x0&&y1>y0?{x:x0,y:y0,width:x1-x0,height:y1-y0}:null;
+}
+function coachTargets() {
+  const targets=new Map();
+  const add=(id,label,box,at_m)=>targets.set(id,{id,label,box,...(at_m?{at_m}:{})});
+  for(const id of ['start','reset','phone-controls-tab','tray-library','tray-prev','tray-next','adjustment-choice','piece-grip','wire-mode','undo-pieces',
+    'view-in','view-out','view-left','view-right','view-up','view-down']) {
+    const el=$(id);if(el?.checkVisibility()&&!el.disabled)add('control:'+id,el.getAttribute('aria-label')||el.textContent.trim(),()=>el.getBoundingClientRect());
+  }
+  for(const [label,name] of [['Place','place'],['Move selected piece','move'],['Turn selected piece','turn']]) {
+    const el=[...$('piece-editor').querySelectorAll('button')].find(b=>(b.getAttribute('aria-label')||b.textContent)===label);
+    if(el?.checkVisibility()&&!el.disabled)add('control:'+name,label,()=>el.getBoundingClientRect());
+  }
+  const tray=$('tray-add');if(tray?.checkVisibility()&&!tray.disabled)add('tray:'+trayPiece,'Add '+pieceLabel(trayPiece),()=>tray.getBoundingClientRect());
+  placements.forEach((p,i)=>{
+    const prefix=`your ${p.piece} ${i+1}`,objects=[...meshes].filter(([n])=>n===prefix||n.startsWith(prefix+' ')).map(([,m])=>m);
+    add('piece:'+i,pieceLabel(p.piece),()=>ghost?.index===i?coachObjectBox([ghostGroup]):coachObjectBox(objects),[p.x_m||0,p.height_m||p.top_height_m||.1,p.z_m||0]);
+  });
+  if(ghost)add('piece:'+ghost.index,'Selected '+pieceLabel(ghost.p.piece),()=>coachObjectBox([ghostGroup]),
+    [ghost.p.x_m||0,ghost.p.height_m||ghost.p.top_height_m||.1,ghost.p.z_m||0]);
+  for(const socket of sceneSockets())add('socket:'+socket.name,socket.name,()=>{
+    const p=sceneSockets().find(p=>p.name===socket.name);return p?{x:p.x-16,y:p.y-16,width:32,height:32}:null;
+  },socket.at);
+  for(const [name,mesh] of meshes)if(!name.startsWith('your ')&&mesh.visible&&targets.size<95)
+    add('part:'+name,(level.free?'Scene object: ':'Fixed apparatus: ')+name,()=>coachObjectBox([mesh]),mesh.position.toArray());
+  return targets;
+}
+function closeCoach() {
+  coachRequest++;
+  if(coach){const strong=$('scene-goal').querySelector('strong'),span=$('scene-goal').querySelector(':scope > span');
+    if(strong)strong.textContent=coach.title;if(span)span.textContent=coach.task;}
+  coach=null;coachSVG.setAttribute('hidden','');coachSVG.replaceChildren();coachSVG.dataset.shape='';$('coach-open').disabled=false;
+  document.body.classList.remove('coaching');
+}
+async function askCoach() {
+  if(!level||$('coach-open').disabled)return;
+  selectPhonePanel('controls',true);
+  const strong=$('scene-goal').querySelector('strong'),span=$('scene-goal').querySelector(':scope > span');
+  if(!coach)coach={title:strong.textContent,task:span.textContent,guide:null,reply:''};
+  const token=++coachRequest,previous=coach.reply;coach.guide=null;coachSVG.setAttribute('hidden','');
+  document.body.classList.add('coaching');$('coach-open').disabled=true;
+  strong.replaceChildren(Object.assign(document.createElement('span'),{textContent:coach.title}));
+  const actions=Object.assign(document.createElement('div'),{className:'coach-actions'});
+  const next=button('Next hint',askCoach,{id:'coach-next',disabled:true});
+  actions.append(next,button('Close',closeCoach,{id:'coach-close',ariaLabel:'Close guided help'}));strong.append(actions);
+  span.setAttribute('aria-live','polite');span.textContent='Finding your next step…';
+  const targets=[...coachTargets().values()].filter(t=>t.box()).map(({box,...t})=>t);
+  try {
+    const r=await api({op:'chat',mode:'coach',level:level.id,...sandboxRequest(),placements,last_run:lastRun,
+      ui:{targets,editing:ghost?{index:ghost.index,p:ghost.p,fits:ghost.fits,mode:editorMode,adjustment:ghost.card}:null,previous_hint:previous}});
+    if(token!==coachRequest||!coach)return;
+    coach.reply=r.reply;coach.guide=r.guide;span.textContent=r.reply;
+    if(!r.guide)span.textContent+=' Choose Next hint for a visual step.';
+    // Reveal a dock control without scrolling the scene or the whole page.
+    const target=coachTargets().get(r.guide?.target_id);
+    if(target?.id.startsWith('control:')||target?.id.startsWith('tray:')) {
+      const el=target.id.startsWith('tray:')?$('tray-add'):$(target.id.slice(8));
+      if(el?.closest('.phone-pane'))el.scrollIntoView({block:'nearest'});
+    }
+  } catch(err) {if(token===coachRequest&&coach){span.textContent=err.message;coach.guide=null;}}
+  finally {if(token===coachRequest){$('coach-open').disabled=false;next.disabled=false;}}
+}
+function paintCoachGuide() {
+  if(!coach?.guide||$('view').closest('main').hidden){coachSVG.setAttribute('hidden','');return;}
+  const now=performance.now();if(now-coachPaintAt<100)return;coachPaintAt=now;
+  const targets=coachTargets(),box=targets.get(coach.guide.target_id)?.box();
+  if(!box||box.width<1||box.height<1){coachSVG.setAttribute('hidden','');return;}
+  coachSVG.removeAttribute('hidden');coachSVG.setAttribute('viewBox',`0 0 ${innerWidth} ${innerHeight}`);
+  const make=(name,attrs)=>{const e=document.createElementNS(coachSVG.namespaceURI,name);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));return e;};
+  const outline=make('rect',{x:box.x-3,y:box.y-3,width:box.width+6,height:box.height+6,rx:8,class:'coach-outline'});
+  let end=targets.get(coach.guide.end_target_id)?.box();
+  if(coach.guide.to_m){const r=view.getBoundingClientRect(),p=new THREE.Vector3(...coach.guide.to_m).project(camera);
+    if(Math.abs(p.z)<=1){const x=r.left+(p.x+1)*r.width/2,y=r.top+(1-p.y)*r.height/2;
+      if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)end={x,y,width:0,height:0};}}
+  let x=box.x+box.width/2;const y=box.y+box.height/2;
+  let destination=end?{x:end.x+end.width/2,y:end.y+end.height/2}:null;
+  if(!destination&&coach.guide.gesture==='drag'&&coach.guide.target_id==='control:piece-grip') {
+    x-=12;destination={x:x+24,y};
+  }
+  // Subpixel camera settling must not restart the pointer demonstration.
+  const shape=JSON.stringify([box.x,box.y,box.width,box.height,...(destination?[destination.x,destination.y]:[])].map(Math.round));
+  if(coachSVG.dataset.shape===shape)return;coachSVG.dataset.shape=shape;
+  const items=[outline];
+  if(destination){
+    const path=`M${x} ${y} L${destination.x} ${destination.y}`;
+    items.push(make('path',{d:path,class:'coach-path'}),make('circle',{cx:destination.x,cy:destination.y,r:9,class:'coach-destination'}));
+    const dot=make('circle',{cx:0,cy:0,r:7,class:'coach-pointer'});
+    // CSS animation uses a pointer dot; it never moves a simulated body.
+    dot.style.offsetPath=`path('${path}')`;items.push(dot);
+  }
+  coachSVG.replaceChildren(...items);
+}
+$('coach-open').addEventListener('click',askCoach);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&coach&&!document.querySelector('dialog[open]'))closeCoach();});
 
 async function askLevel(mode) {
   const message = $('message').value.trim() || (mode === 'hint' ? 'Give me a hint.' : 'Place the pieces for me.');

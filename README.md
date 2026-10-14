@@ -154,6 +154,12 @@ previews start paused until **Play preview** or scrubbing is requested. Manual
 rockers still use their measured hinge angle; pressure-dependent contact
 resistance, oxidation, arcing and realistic filament failure remain future work.
 
+**Show me what to do**, at the top of Help, asks for one next action using the
+current scene, selection and last run. It outlines a piece or control and can
+animate a suggested pointer path for dragging or connecting sockets. **Next hint**
+asks again after you act; **Close** returns the task. These are teaching overlays:
+the player still moves, adjusts, connects and runs everything. Typed help remains.
+
 **The chat** gives a hint on a level, places the tray's pieces for you (for one
 star at most), or builds what you describe in the Sandbox. It uses OpenAI's
 `gpt-5-mini`. It never sees a level's solution.

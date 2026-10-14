@@ -639,6 +639,29 @@ class Tray(unittest.TestCase):
         self.assertEqual(hint['reply'], 'Bridge the gap.')
         self.assertNotIn('placements', hint)
 
+    def test_coaching_is_read_only_names_current_targets_and_never_sees_the_solution(self):
+        level=mg.level_by_id('gap');placed=[];seen=[]
+        ui={'targets':[{'id':'tray:plank','label':'Add plank'},{'id':'piece:0','label':'Plank','at_m':[0,.1,0]}]}
+        def call(messages):
+            seen.append(messages)
+            return {'reply':'Add the plank to bridge the gap.','guide':{'target_id':'tray:plank','gesture':'click'},
+                    'placements':level['solution'],'spec':level['machine'],'helped':True},{}
+        result=mc.respond_coach(level,placed,ui,call=call)
+        self.assertEqual(result['guide'],{'target_id':'tray:plank','gesture':'click'})
+        self.assertEqual(placed,[])
+        for key in ['placements','spec','helped','rehearsal']:
+            self.assertNotIn(key,result)
+        self.assertNotIn(json.dumps(level['solution']),json.dumps(seen))
+        for target in ['javascript:alert(1)',{'bad':'selector'},None]:
+            r=mc.respond_coach(level,[],ui,call=lambda m: ({'reply':'Try it.','guide':{'target_id':target}},{}))
+            self.assertIsNone(r['guide'])
+        for at in [[999,0,0],[float('nan'),0,0],[True,0,0],[0,0],'<script>']:
+            r=mc.respond_coach(level,[],ui,call=lambda m: ({'reply':'Drag it.','guide':{'target_id':'piece:0','gesture':'drag','to_m':at}},{}))
+            self.assertNotIn('to_m',r['guide'])
+        r=mc.respond_coach(level,[],ui,call=lambda m: ({'reply':'Drag toward the gap.','guide':{'target_id':'piece:0','gesture':'drag','to_m':[.3,.1,0]}},{}))
+        self.assertEqual(r['guide']['to_m'],[.3,.1,0])
+        self.assertIn('Explore the Sandbox design',mc.level_prompt(mg.free_build(),'coach'))
+
     def test_chat_delivers_manual_setup_without_searching_for_an_automatic_win(self):
         level=mg.level_by_id('fire')
         seen=[]
