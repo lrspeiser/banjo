@@ -110,6 +110,10 @@ A win is scored by energy: what it takes to make your pieces (from their mass
 and material) plus what the machine used while it ran. Win on par or less for
 three stars.
 
+**Chain reaction** lets its ramp move across the workbench (±10 m along/across),
+with collision checks preserved. Its prepared cannon now uses a 0.75 g charge;
+the reference iron box finishes within the existing target in three nudged runs.
+
 **Sandbox** (`/machine`) combines the former Free build and machine sandbox.
 It shows your designs first and every example below in one gallery, with setup previews and **Add New Design**.
 New designs open immediately; rename them in the editor’s Design tab.

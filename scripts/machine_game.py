@@ -1768,6 +1768,40 @@ def miss_m(level, rehearsal):
     return near.get(level['goal']['title'], 1.0) + 0.001
 
 
+def refinement_knobs(level, placements, compiled):
+    """Search near the first declared contact, without restricting the editor.
+
+    Broad position ranges describe where a player can build, not a useful
+    uniform sampling distribution. For a ramp aimed at a waiting apparatus,
+    start with its upstream reach and the target's transverse width. These
+    bounds read public geometry/milestones, never private answer placements.
+    """
+    tray={t['piece']:t for t in level['tray']}
+    bodies={p['name']:p for p in compiled['parts']}
+    out=[]
+    for i,p in enumerate(placements):
+        rules=tray[p['piece']]['knobs'];prefix=f'your {p["piece"]} {i+1}'
+        target=None
+        for m in level.get('milestones',[]):
+            hits=m.get('done_when',{}).get('hits',[])
+            if len(hits)==2 and any(n.startswith(prefix+' ') or n==prefix for n in hits):
+                target=next((bodies[n] for n in hits if n in bodies and not n.startswith('your ')),None)
+                if target:break
+        for key,rule in rules.items():
+            if 'min' not in rule or 'max' not in rule or rule.get('free'):continue
+            search=dict(rule)
+            if target and 'run_m' in rules and key in ('x_m','z_m') and rule['max']-rule['min']>4:
+                axis=0 if key=='x_m' else 2
+                direction=(math.cos(math.radians(p.get('yaw_deg',0))),-math.sin(math.radians(p.get('yaw_deg',0))))[axis//2]
+                extent=_reach(target)[axis];reach=rules['run_m']['max']
+                pad=.2 if abs(direction)<.1 else 0
+                lower=max(rule['min'],target['at_m'][axis]-extent-pad-max(0,direction)*reach)
+                upper=min(rule['max'],target['at_m'][axis]+extent+pad-min(0,direction)*reach)
+                if lower<upper:search.update(min=lower,max=upper)
+            out.append((i,key,search))
+    return out
+
+
 def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
     """Starting from `placements`, move one knob at a time and keep a move
     when the engine says the goal came nearer -- a plain coordinate search,
@@ -1781,9 +1815,7 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
     spec, _, _ = compose(level, best)
     best_run = rehearse(mw.compile_spec(spec))
     best_miss, runs = miss_m(level, best_run), 1
-    tray = {t['piece']: t for t in level['tray']}
-    knobs = [(i, key, rule) for i, p in enumerate(best) for key, rule in tray[p['piece']]['knobs'].items()
-             if 'min' in rule and 'max' in rule and not rule.get('free')]
+    knobs = refinement_knobs(level,best,mw.compile_spec(spec))
     rng = random.Random(seed)
     for _ in range(scatter):
         if best_miss == 0 or runs >= budget:

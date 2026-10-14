@@ -2036,6 +2036,25 @@ class Puzzles(unittest.TestCase):
                 self.open('easy-solar',width,height,phone=width!=1280)
                 self.assertTrue(self.js("document.getElementById('inspect-switch').hidden && document.getElementById('contact-switch-labels').hidden"),'Contact inspection does not leak onto other lessons')
 
+    def test_chain_ramp_can_be_dragged_outside_the_old_placement_strip(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('chain',width,height,phone=width!=1280)
+                self.press('Add a ramp');self.ghost()
+                self.assertTrue(self.ghost()['fits'],'A new ramp starts clear of the cannon')
+                for x,z in ((-.75,.8),(1.1,-.8)):
+                    state=self.drag_ghost_to(x,z,touch=width!=1280)
+                    self.assertAlmostEqual(state['p']['x_m'],x,delta=.025)
+                    self.assertAlmostEqual(state['p']['z_m'],z,delta=.025)
+                    self.assertTrue(state['fits'],state)
+                self.click_visible('Place');self.wait(READY,60)
+                self.click_piece(0);state=self.ghost()
+                self.assertAlmostEqual(state['p']['x_m'],1.1,delta=.025)
+                self.assertAlmostEqual(state['p']['z_m'],-.8,delta=.025)
+                self.click_visible('Place');self.wait(READY,60)
+                self.click_visible('Try It!');self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertNotIn('Level Complete',self.js("document.getElementById('level-done').textContent"),'The off-axis marble must miss the switch physically')
+
     def test_solar_wall_shadow_and_explicit_storage_cable_on_desktop_and_phones(self):
         def assert_wall_in_view():
             self.wait('machineCamera().settled',30)

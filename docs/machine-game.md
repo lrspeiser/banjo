@@ -1,5 +1,50 @@
 # Puzzles on the machine (/play)
 
+October 13 Chain reaction follow-up: ramp X/Z placement now accepts −10…10 m
+instead of X −2…0.5 m and Z −0.3…0.3 m. The same 1 cm control increments,
+grid/object snaps and native overlap/support refusal remain. Mouse and touch
+drags beyond both old limits can be placed and selected again. An off-axis
+ramp begins at its clear declared defaults instead of the view centre, where
+it could overlap the cannon. An off-axis
+ramp still fails because its marble misses the seesaw. Dimensions, rotations,
+goal zone (centre 2.75/0.1/0.6 m, size 1/0.2/0.8 m), six-second deadline,
+budget and energy par are unchanged.
+
+The prepared cannon’s declared powder charge is reduced from 1 g to 0.75 g.
+The former nominal setup crossed the goal but finished at X 3.4866 m, beyond
+its 3.25 m edge. The new nominal/two nudged iron-box runs reach the goal at
+1.562/1.587/1.592 s and finish at respectively (2.7904, 0.0503, 0.6039),
+(2.6590, 0.0505, 0.4222), and (2.9808, 0.0509, 0.5664) m. Each was followed
+through 6.5 s, with actual cannon-ball/block contact and no target-exit on X.
+This edits the authored charge, not propellant, contact, drag or friction laws.
+No velocity is prescribed, no decorative brake is added and no goal is enlarged.
+
+The engine’s setup search now narrows its sampling bounds for broad ramp
+position controls using the first declared contact milestone’s public body
+geometry and ramp reach/orientation. Player ranges are unchanged by search,
+and private answers are never consulted. The existing wrong-start regression
+still finds a native solution within its unchanged 48-run budget (two runs in
+this measurement). Disjoint proposed search bounds fall back to the ordinary
+property range. This is search assistance, not a physics snap or force.
+
+Scoped browser checks pass at 1280×860, 390×844 and 844×390 (43.014 s): free
+ramp drags, placement/reselection, off-axis failure, visible switch contacts,
+current preview and repeated completion. The complete authored-level oracle
+passes: all 34 reference setups win 3/3 with the same nudges, and empty setups
+do not win. Together with the new search isolation and material comparison,
+that verification batch took 35.012 s. Source registration and Python syntax pass.
+
+Comparative cannon impacts use the same 10 cm target block, iron shot, 0.75 g
+charge, 20 mm lattice and 1/240 s timestep. Native initial masses are glass
+2.5 kg, oak 0.7 kg and iron 7.87 kg. Nominal final X is 3.7236, 5.4295 and
+2.7904 m respectively; the level is tuned for its declared iron box, not all
+materials. Runs take 0.90/0.79/0.90 s wall time. Maximum electrical residual is
+4.78e−12 J; reported thermal-ledger residuals are 1.04e−6, 8.20e−7 and
+4.47e−7 J. These subsystem receipts and initial masses are not a full-pipeline
+momentum/energy audit. Fixed support reactions, contact/numerical loss separation,
+propellant/gas calibration, fragmentation and oak grain/plasticity assumptions
+retain the limitations described in the physics roadmap. No native model changed.
+
 October 13 Heat to release usability follow-up: adding its coil shows one
 large **Clip to cord** action beside the declared goal cord. The unrelated
 box attachment rings no longer compete in this lesson. This action uses the

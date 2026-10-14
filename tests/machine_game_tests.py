@@ -48,6 +48,29 @@ EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):
+    def test_chain_ramp_placement_is_not_limited_to_the_switch_strip(self):
+        level=mg.level_by_id('chain')
+        for x,z in ((-3,2),(1.2,-1.1),(4,3)):
+            p=dict(level['solution'][0],x_m=x,z_m=z)
+            spec,checked,_=mg.compose(level,[p])
+            self.assertEqual((checked[0]['x_m'],checked[0]['z_m']),(x,z))
+            self.assertTrue(mg.ghost(level,[p],0)['fits'])
+        self.assertEqual(level['goal']['station']['done_when']['in_zone']['size_m'],[1,.2,.8])
+        self.assertEqual(level['time_s'],6)
+
+    def test_contact_search_uses_public_geometry_without_changing_placement_ranges(self):
+        level=mg.level_by_id('chain');before=copy.deepcopy(level)
+        placed=copy.deepcopy(level['solution'])
+        compiled=mw.compile_spec(mg.compose(level,placed)[0])
+        knobs=mg.refinement_knobs(level,placed,compiled)
+        focused={key:rule for _,key,rule in knobs}
+        self.assertLess(focused['z_m']['max']-focused['z_m']['min'],1)
+        for key in ('x_m','z_m'):
+            self.assertEqual((level['tray'][0]['knobs'][key]['min'],level['tray'][0]['knobs'][key]['max']),(-10,10))
+        level['solution']=[{'secret':'never consult this'}]
+        self.assertEqual(mg.refinement_knobs(level,placed,compiled),knobs)
+        level['solution']=before['solution'];self.assertEqual(level,before)
+
     def test_knife_plane_snaps_to_the_compiled_member_span_and_releases(self):
         for identity in ('easy-cut', 'cut'):
             with self.subTest(level=identity):
@@ -1048,6 +1071,49 @@ class Engine(unittest.TestCase):
                 self.assertTrue(all(w['value']==s['current_a'] for w in f['wires']))
                 self.assertTrue({'lever','lever contact','contact plate'} <= {b['name'] for b in s['bodies']})
             print('CHAIN_CONTACT_DIAGRAM',good,'preview goal',result['goal_at_s'])
+
+    @need_engine
+    def test_chain_charge_keeps_the_iron_box_inside_the_original_target_after_landing(self):
+        level=mg.level_by_id('chain')
+        compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+        zone=level['goal']['station']['done_when']['in_zone']
+        with tempfile.TemporaryDirectory() as logs:
+            for seed in (0,2,3):
+                run=mw.rehearse(mg.nudged(compiled,seed) if seed else compiled,ENGINE,Path(logs),seconds=6.5,
+                               after_s=7,track=['block','cannon ball'])
+                self.assertIsNone(run['error'])
+                self.assertGreaterEqual(run['world_time_s'],6.5)
+                self.assertTrue(run['stations'][0]['done'])
+                self.assertLessEqual(run['stations'][0]['at_s'],level['time_s'])
+                points=run['paths']['block']['points'];end=points[-1][1:4]
+                self.assertTrue(all(abs(end[i]-zone['at_m'][i])<=zone['size_m'][i]/2 for i in range(3)),(seed,end))
+                self.assertLessEqual(max(p[1] for p in points),zone['at_m'][0]+zone['size_m'][0]/2)
+                self.assertTrue(any({h['body'],h['other']}=={'block','cannon ball'} for h in run['hits']))
+                for c in run['readouts']['circuits']:
+                    self.assertLess(abs(c['electrical_residual_j']),1e-6)
+                print('CHAIN_LANDING',dict(seed=seed,end=end,goal_s=run['stations'][0]['at_s'],wall_s=run['wall_s'],circuits=run['readouts']['circuits']))
+
+    @need_engine
+    def test_chain_charge_material_comparison_preserves_declared_masses_and_reports_receipts(self):
+        level=mg.level_by_id('chain')
+        with tempfile.TemporaryDirectory() as logs:
+            for material in ('glass','oak','iron'):
+                spec=mg.compose(level,level['solution'])[0]
+                next(p for p in spec['parts'] if p['name']=='block')['material']=material
+                compiled=mw.compile_spec(spec)
+                session=mw.MachineSession(compiled,ENGINE,Path(logs),paced=False)
+                try:
+                    mass=session.bodies['block']['mass_kg']
+                    self.assertAlmostEqual(mass,mg.DENSITY[material]*.001,places=8)
+                finally:session.close()
+                run=mw.rehearse(compiled,ENGINE,Path(logs),seconds=6.5,after_s=7,track=['block','cannon ball'])
+                self.assertIsNone(run['error'])
+                self.assertTrue(any({h['body'],h['other']}=={'block','cannon ball'} for h in run['hits']))
+                for c in run['readouts']['circuits']:
+                    self.assertLess(abs(c['electrical_residual_j']),1e-6)
+                print('CHAIN_MATERIAL',dict(material=material,mass_kg=mass,
+                    cell_m=compiled['cell_m'],dt_s=mw.DT_S,end=run['paths']['block']['points'][-1],
+                    wall_s=run['wall_s'],circuits=run['readouts']['circuits'],heat_ledger=run['readouts'].get('heat_ledger')))
 
     @need_engine
     def test_cannon_latch_keeps_heat_on_after_a_short_pull_for_glass_oak_and_iron(self):
