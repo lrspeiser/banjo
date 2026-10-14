@@ -495,6 +495,7 @@ This interface work changes no native laws, recipes, goal thresholds, energy
 accounting or physical tolerances. Native preview and goal behavior use the
 previously verified Windows binary, SHA-256
 `997b02d2b9f4594dbb575eeca38c17777a7ce6ec74e8832f97d265f8974464a9`.
+
 The 28 catalogue/placement tests pass in 15.79 s, including existing glass/oak/iron geometry and mass checks. The UI catalogue audit covers all 44 placeable non-wire families; electrical and power wires have separate connection/gauge coverage. JavaScript syntax, client geometry and source registration (271/271 sources in 41 CMake files) pass. Final browser receipts: 14 focused scenarios pass in 157.76 s; the five
 retry/layout/wiring/inspection scenarios pass in 102.64 s. Coverage includes
 1280×720/860, 1440×900, 390×844, 844×390 and 320×568. The new direct
@@ -2502,3 +2503,82 @@ glass broke and settled. The update dialog was inspected at 390×844 and
 the game at 844×390; the desktop and portrait screenshots are saved under
 the ignored `build/ui-proof` directory. Native binary SHA-256 remains
 `997b02d2b9f4594dbb575eeca38c17777a7ce6ec74e8832f97d265f8974464a9`.
+## CPU allocation and rigid workers — October 14
+
+Render's authenticated Compute page shows **1c-2g**, one CPU and 2 GB RAM.
+Read-only inspection of the actual container showed cgroup v2 `cpu.max`
+`100000 100000`, `/proc/self/cgroup` `0::/`, and affinity to 16 logical CPUs.
+The lattice already respected the one-CPU quota; LiveWorld instead requested
+Jolt workers from the host CPU count, capped at 64.
+
+LiveWorld now uses the same affinity/quota detector. It reserves the world
+caller and default fracture lane before assigning at most seven additional
+rigid workers. At one CPU there are zero extra rigid workers: Jolt's existing
+zero-worker thread pool executes its jobs on the caller. The single-threaded
+job-system implementation, physics settings, contact capacity, material laws,
+resolution and timesteps are unchanged. Native state and `/api/machine` frames
+include read-only `runtime` diagnostics (`cpu_slots`, `rigid_workers`,
+`default_fracture_threads`). CPU slots have a minimum of one even on fractional
+allocations; this is a scheduling budget, not a Render plan name.
+
+A Windows CPU-affinity launcher confined both the prior and new engine to the
+same single CPU. Each ran the original Chain reaction declarations to 25 s
+world time, changing only the plate material. All station records and all
+body records (excluding host sequence bookkeeping) were exactly identical
+between old and new runs, including geometry, mass, pose and velocity. Glass
+ended with 110 bodies in both runs; oak and iron retained 25. Timings:
+
+| Plate | Old wall / fracture calls | Bounded workers wall / fracture calls |
+| --- | --- | --- |
+| Glass | 8.268 s / 2.325 s | 8.275 s / 2.319 s |
+| Oak | 5.060 s / 0 s | 5.038 s / 0 s |
+| Iron | 4.967 s / 0 s | 4.920 s / 0 s |
+
+These single-run timings do **not** establish a faster standalone glass break.
+The worker correction bounds resource allocation. A public verification of
+the preceding preview-cancellation revision reached all nine stations, stopped
+its obsolete preview, and took 31.116 s wall to reach 25.0792 s world time,
+with 5.620 s accumulated fracture calls. The worker correction did not resolve the standalone fracture delay.
+
+The new native affinity regression opens 80 mm glass/oak/iron boxes at 2 m,
+with 20 mm cells, on one CPU and observes zero rigid workers. After 24 rigid
+steps at 1/240 s, all masses are preserved and each velocity matches the
+declared gravity plus **environmental** 0.02 /s box drag within 2 µm/s.
+The summed momentum residual is -6.93×10^-6 kg m/s at the native JSON reporting
+precision; the bound is 2 µm/s times total mass. The initial oracle omitted
+that declared drag and was corrected without loosening its tolerance. This is
+a free-fall/scheduling regression, not a full-pipeline fracture conservation
+or material-calibration proof.
+
+
+The AVX2 damage kernel now returns zero immediately when all eight bonds
+are below their material-derived damage-start threshold, matching the scalar
+path. It avoids unused end-threshold calculations without changing the force
+law, arithmetic precision, damage criteria or fragmentation. Five alternating
+before/after runs of the same glass chain on one CPU reached exactly
+25.0125 s: every reported body and station record was identical. Median
+fracture-call waiting decreased from 2.289 s to 2.136 s (6.7%); median wall
+time decreased from 8.202 s to 7.975 s (2.8%). A separate glass/oak/iron
+comparison likewise preserved every body and station record. Oak and iron
+had no fractures in this particular apparatus; their approximately 2% timing
+variation does not establish a speed change. These Windows measurements do
+not predict the same percentage on Render. This leaves substantial fracture
+work; full-detail secondary collisions are still simulated.
+
+Native scalar/SIMD regression CTests pass (lattice 7.70 s, LiveWorld 12.28 s).
+All 79 game tests pass (125.282 s), including authored solutions, nudged
+runs and physical negative cases. All 37 world tests (21.327 s) and 20 HTTP
+tests (2.070 s) pass against this final executable. Python/JavaScript syntax,
+diff whitespace and the CMake source-registration guard pass (271 sources).
+Tested Windows engine SHA-256:
+`35230eb7ee76ee0209ff034558ea6110061babd072635561b98d988b92c3f67a`.
+
+Browser delivery: ordinary Sandbox Try It! → Pause → Continue runs the
+original Chain reaction through 32.40 s, including the broken glass and
+subsequent collisions. The dated Recent Changes article fits at 390×844
+with its Close button unobstructed. Screenshots are in ignored
+`build/ui-proof/fracture-final-local-desktop.png` and
+`build/ui-proof/fracture-final-recent-phone.png`. The local checkpoint reports
+the tested binary hash above and `restart_pending: false`. Finite ropes,
+pulley/drum surfaces and mechanically colliding electrical wires identified
+in the connection audit remain unimplemented by this optimization.

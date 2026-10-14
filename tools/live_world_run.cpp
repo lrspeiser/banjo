@@ -1413,6 +1413,8 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
     }
     nlohmann::json state = {{"ok", true}, {"bulk_transfer_receipts", 1}, {"pickup_admission_version", 1}, {"native_carry_version", 1}, {"tool_use_admission_version", 2}, {"native_tool_use_version", 1}, {"t", world.time_s()}, {"stepped_back", world.steppedBack()},
             {"cell_size_m", world.cellSize()}, {"geometry", with_geometry},
+            {"runtime", {{"cpu_slots", world.cpuSlots()}, {"rigid_workers", world.rigidWorkerThreads()},
+                         {"default_fracture_threads", defaultLatticeThreadCount()}}},
             // `partial` true means bodies missing from this reply are unchanged,
             // not gone; `gone` names the ones that really did go. `count` is how
             // many the world holds either way.

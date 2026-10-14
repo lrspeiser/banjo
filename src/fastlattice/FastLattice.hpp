@@ -386,6 +386,9 @@ public:
 
 // The thread count the machine would allow if it were idle.
 [[nodiscard]] unsigned defaultLatticeThreadCount();
+// Process affinity and container CPU quota, rather than the host CPU count.
+// At least one execution slot, including on a fractional-core allocation.
+[[nodiscard]] unsigned availableCpuCount();
 
 // The default, halved until an empty dispatch is cheap on this machine as it
 // is loaded right now, and 1 if even two threads are not worth it. For tools

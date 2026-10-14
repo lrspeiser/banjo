@@ -2391,6 +2391,7 @@ class MachineSession:
         self.removed = {}
         self.events = []
         self.readouts = {}
+        self.runtime = {}
         self.error = None
         # last_used: anything asked of it, a page's polling included (a page
         # gone stops asking); last_action: something a person did (built it,
@@ -2444,6 +2445,9 @@ class MachineSession:
     # What the engine said, merged into what the page has.
     def _ingest(self, reply, full=False):
         self.seq += 1
+        if isinstance(reply.get('runtime'), dict):
+            self.runtime = {k: reply['runtime'][k] for k in ('cpu_slots', 'rigid_workers', 'default_fracture_threads')
+                            if type(reply['runtime'].get(k)) is int}
         if full or not reply.get('partial', False):
             present = {b['name'] for b in reply.get('bodies', [])}
             for name in list(self.bodies):
@@ -3273,7 +3277,7 @@ class MachineSession:
                     'playing': self.playing, 'speed': self.speed, 'full': after == 0, 'bodies': bodies,
                     'removed': [n for n, s in self.removed.items() if s > after],
                     'events': [e for e in self.events if e['seq'] > after],
-                    'readouts': self.readouts, 'error': self.error,
+                    'readouts': self.readouts, 'error': self.error, 'runtime': self.runtime,
                     'pace': {'compute_s': round(self.wall_compute_s, 3), 'fracture_s': round(self.fracture_s, 3),
                              'behind_s': round(self.behind_s, 3), 'build_s': round(self.build_s, 3)}}
 

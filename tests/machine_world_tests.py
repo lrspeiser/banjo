@@ -961,5 +961,64 @@ class PreviewCancellation(unittest.TestCase):
                 job.cancel();worker.join(5);live.close()
 
 
+class CpuBudget(unittest.TestCase):
+    @need_engine
+    def test_one_cpu_native_world_has_no_extra_rigid_workers_and_preserves_material_free_fall(self):
+        import subprocess
+        import shutil
+        spec={'schema':mw.SCHEMA,'title':'CPU budget free fall','cell_m':.02,
+              'parts':[{'name':material,'shape':'box','material':material,'size_m':[.08]*3,
+                        'at_m':[x,2,0]} for material,x in [('glass',-.5),('oak',0),('iron',.5)]]}
+        compiled=mw.compile_spec(spec)
+        with tempfile.TemporaryDirectory() as folder:
+            scene=Path(folder)/'scene.json';scene.write_text(json.dumps(mw.scene_of(compiled)))
+            native=[str(ENGINE),'--scene',str(scene),'--cell','.02']
+            if os.name=='nt':
+                import ctypes
+                mask=ctypes.c_size_t();system=ctypes.c_size_t()
+                kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+                kernel.GetCurrentProcess.restype=ctypes.c_void_p
+                kernel.GetProcessAffinityMask.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_size_t)]
+                self.assertTrue(kernel.GetProcessAffinityMask(kernel.GetCurrentProcess(),ctypes.byref(mask),ctypes.byref(system)))
+                single=mask.value&-mask.value
+                command=['cmd','/d','/c','start','','/b','/wait','/affinity',format(single,'x'),*native]
+            else:
+                if not hasattr(os,'sched_getaffinity') or not shutil.which('taskset'):
+                    self.skipTest('requires the OS CPU affinity launcher')
+                command=['taskset','-c',str(min(os.sched_getaffinity(0))),*native]
+            process=subprocess.Popen(command,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            try:
+                output,errors=process.communicate(json.dumps({'op':'step','dt':1/240,'n':24})+'\n{"op":"quit"}\n',timeout=10)
+                self.assertEqual(process.returncode,0,errors)
+                replies=[json.loads(line) for line in output.splitlines() if line.strip()]
+                self.assertEqual(len(replies),2,output[-1000:])
+                first,frame=replies
+                self.assertTrue(first['ok'],first)
+                self.assertEqual(first['runtime'],{'cpu_slots':1,'rigid_workers':0,'default_fracture_threads':1})
+                before={b['name']:b for b in first['bodies']}
+                # Ordinary box proxies declare environmental linear damping
+                # 0.02 /s. Include that external impulse; it is not internal
+                # material damping or a conservation residual to hide.
+                expected_velocity=0.0
+                for _ in range(24):
+                    expected_velocity=(expected_velocity-9.81/240)*(1-.02/240)
+                momentum_residual=0
+                for body in frame['bodies']:
+                    material=body['name']
+                    self.assertEqual(body['mass_kg'],before[material]['mass_kg'])
+                    self.assertAlmostEqual(body['velocity_m_s'][1],expected_velocity,delta=2e-6)
+                    self.assertEqual(body['velocity_m_s'][0],0)
+                    self.assertEqual(body['velocity_m_s'][2],0)
+                    self.assertGreater(body['position_m'][1],1.94)
+                    self.assertLess(body['position_m'][1],1.96)
+                    momentum_residual+=body['mass_kg']*(body['velocity_m_s'][1]-expected_velocity)
+                self.assertEqual({b['name'] for b in frame['bodies']},{'glass','oak','iron'})
+                self.assertLess(abs(momentum_residual),2e-6*sum(b['mass_kg'] for b in frame['bodies']))
+                print(f'\n  one CPU, zero rigid workers: glass/oak/iron momentum residual including gravity and 0.02 /s drag {momentum_residual:.3g} kg m/s at 1/240 s')
+            finally:
+                if process.poll() is None:process.kill();process.wait(timeout=5)
+                for pipe in (process.stdin,process.stdout,process.stderr):pipe.close()
+
+
 if __name__ == '__main__':
     unittest.main()

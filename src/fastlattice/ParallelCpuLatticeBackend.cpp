@@ -898,14 +898,17 @@ BANJO_AVX2_TARGET inline __m256 damageProgress8(const ElementCache<float> &C, st
     const __m256 zero = _mm256_setzero_ps(), one = _mm256_set1_ps(1.0f);
     const __m256 all = _mm256_castsi256_ps(_mm256_set1_epi32(-1));
     const __m256 start = _mm256_loadu_ps(C.threshold_of[2 * mode] + j);
-    const __m256 stop = _mm256_loadu_ps(C.threshold_of[2 * mode + 1] + j);
     const __m256i bit_start = _mm256_set1_epi32(1 << (2 * mode)), bit_stop = _mm256_set1_epi32(2 << (2 * mode));
     const __m256 start_finite =
         _mm256_castsi256_ps(_mm256_cmpeq_epi32(_mm256_and_si256(finite_bits, bit_start), bit_start));
-    const __m256 stop_finite =
-        _mm256_castsi256_ps(_mm256_cmpeq_epi32(_mm256_and_si256(finite_bits, bit_stop), bit_stop));
     // !start_finite || value <= start: 0
     const __m256 none = _mm256_or_ps(_mm256_andnot_ps(start_finite, all), _mm256_cmp_ps(value, start, _CMP_LE_OQ));
+    // Every lane is still below its start threshold: the scalar function
+    // returns zero here too. Avoid examining unused end thresholds.
+    if (_mm256_movemask_ps(none) == 0xff) return zero;
+    const __m256 stop = _mm256_loadu_ps(C.threshold_of[2 * mode + 1] + j);
+    const __m256 stop_finite =
+        _mm256_castsi256_ps(_mm256_cmpeq_epi32(_mm256_and_si256(finite_bits, bit_stop), bit_stop));
     // !end_finite || end <= start: value > start ? 1 : 0
     const __m256 step = _mm256_or_ps(_mm256_andnot_ps(stop_finite, all), _mm256_cmp_ps(stop, start, _CMP_LE_OQ));
     const __m256 stepped = _mm256_and_ps(_mm256_cmp_ps(value, start, _CMP_GT_OQ), one);
@@ -1979,6 +1982,8 @@ unsigned defaultLatticeThreadCount() {
     static const unsigned count = std::clamp(usableCores(), 2U, 9U) - 1U;
     return count;
 }
+
+unsigned availableCpuCount() { return usableCores(); }
 
 double measureParallelDispatchCost(unsigned threads, unsigned spins, unsigned dispatches) {
     PoolRegistry::Lease lease = PoolRegistry::instance().acquire(std::max(1U, threads), spins == 0 ? 100U : spins);

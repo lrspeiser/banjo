@@ -1662,6 +1662,9 @@ public:
     // section factors. It is not a fatigue law or a strength certificate.
     [[nodiscard]] std::string conditionJson(const std::vector<std::string> &names) const;
     [[nodiscard]] double cellSize() const;
+    // Scheduling diagnostics only: not a solver setting or physical property.
+    [[nodiscard]] unsigned cpuSlots() const;
+    [[nodiscard]] unsigned rigidWorkerThreads() const;
 
     // What happened in the step just taken. Cleared by the next step, so a host
     // reads it once per frame and narrates it. Contacts too gentle to be worth

@@ -645,6 +645,7 @@ struct LiveWorld::Impl {
     TileImpactRequest request{};
     std::unique_ptr<TileImpactSetup> setup;
     std::unique_ptr<JoltWorld> world;
+    unsigned cpu_slots{}, rigid_workers{};
     std::map<std::string, PreciseRigidBody> precise_bodies;
     void requireLatticeRoom(const char *operation) const {
         if (!precise_bodies.empty())
@@ -6049,8 +6050,15 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     const auto clampCapacity = [](std::size_t value, unsigned low, unsigned high) {
         return static_cast<unsigned>(std::clamp<std::size_t>(value, low, high));
     };
+    // Reserve the world caller and fracture lane before adding rigid workers.
+    // hardware_concurrency() describes the host, even inside a one-CPU
+    // container. Starting its full pool there makes the jobs fight for the
+    // same allocation. Jolt's zero-worker pool executes jobs on the caller.
+    impl.cpu_slots = availableCpuCount();
+    const unsigned reserved = defaultLatticeThreadCount() + 1U;
+    impl.rigid_workers = impl.cpu_slots > reserved ? std::min(7U, impl.cpu_slots - reserved) : 0U;
     impl.world = std::make_unique<JoltWorld>(
-        std::clamp(std::thread::hardware_concurrency(), 1U, 64U),
+        impl.rigid_workers,
         // Sized for what the world may GROW to, not for what it opened with.
         //
         // A live world starts with a few dozen bodies and reaches hundreds by
@@ -8411,6 +8419,8 @@ std::size_t LiveWorld::bodies() const {
 }
 
 double LiveWorld::cellSize() const { return impl_->request.cell_size_m; }
+unsigned LiveWorld::cpuSlots() const { return impl_->cpu_slots; }
+unsigned LiveWorld::rigidWorkerThreads() const { return impl_->rigid_workers; }
 
 namespace {
 // A quaternion's conjugate, which is its inverse for the unit quaternions a
