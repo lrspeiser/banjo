@@ -159,9 +159,8 @@
       "primary_controls": {
         "gear": [
           "teeth",
-          "x_m",
-          "height_m",
-          "phase_deg"
+          "module_m",
+          "height_m"
         ]
       },
       "chapter": "Level 1: Mechanics"

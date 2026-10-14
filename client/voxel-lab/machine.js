@@ -1931,6 +1931,7 @@ function render() {
     if (w.powerCable) w.line.visible=w.connected!==false && !hiddenPiece(w.name);
   }
   updateFlowPreview();
+  updateGearMotionFeedback();
   updateLaserPreview();
   updateWaterDisplay();
   positionLensGrip();
@@ -2342,9 +2343,11 @@ const editHandleLinks=document.createElementNS('http://www.w3.org/2000/svg','svg
 const valueChoices=document.createElement('div');valueChoices.id='piece-value-choices';valueChoices.setAttribute('popover','auto');view.append(valueChoices);
 function closeValueChoices(){if(valueChoices.matches(':popover-open'))valueChoices.hidePopover();}
 function choiceText(key,value){
+  if(key==='module_m'&&ghost?.p.piece==='gear')return `${((ghost.p.teeth/2+.7)*Number(value)*100).toFixed(1)} cm radius`;
   if(key==='preset'&&ghost?.p.piece==='ignition')return value==='hot'?'Hot · 0.12 Ω':'Warm · 12 Ω';
   return key==='teeth'?`${value} teeth`:key==='module_m'?`${Math.round(value*1000)} mm teeth`:String(value);
 }
+function knobDisplayValue(key,value){return key==='module_m'&&ghost?.p.piece==='gear'?choiceText(key,value):String(value);}
 function showValueChoices(key,rule,name,source){
   closeValueChoices();const selected=ghost;if(!selected)return;
   valueChoices.replaceChildren(Object.assign(document.createElement('strong'),{textContent:name}));
@@ -2458,7 +2461,7 @@ function updatePieceHandles() {
     for(const [key,value] of Object.entries({x1:(a.x+1)*rect.width/2,y1:(1-a.y)*rect.height/2,x2:point.x-rect.left,y2:point.y-rect.top}))h.link.setAttribute(key,String(value));
 
   });
-  for(const h of editHandles.children){h.removeAttribute('id');h.title=`${knobName(rule,key)}: ${ghost.p[key]}. Tap for one increment, or drag along the highlighted direction.`;}
+  for(const h of editHandles.children){h.removeAttribute('id');h.title=`${knobName(rule,key)}: ${knobDisplayValue(key,ghost.p[key])}. Tap for one increment, or drag along the highlighted direction.`;}
   const primary=[...editHandles.children].find(h=>!h.hidden);if(primary)primary.id='piece-grip';
 }
 
@@ -2497,7 +2500,7 @@ function drawEditGuide(parts) {
   const at = guide.marker || guide.arrows[0]?.at;
   editAnchor = at ? new THREE.Vector3(...at) : new THREE.Box3().setFromObject(ghostGroup).getCenter(new THREE.Vector3()).sub(ghostGroup.position);
   const label = knobName(trayItem(ghost.p.piece).knobs[guide.key], guide.key);
-  $('edit-guide-label').textContent = `${label}: ${ghost.p[guide.key]}${guide.rest_span?' m relaxed (dotted guide)':''}`;
+  $('edit-guide-label').textContent = `${label}: ${knobDisplayValue(guide.key,ghost.p[guide.key])}${guide.rest_span?' m relaxed (dotted guide)':''}`;
   updateEditGuide();
 }
 function updateEditGuide() {
@@ -2761,7 +2764,7 @@ function setGhostDown() {
 // of the side panel, kept in sight as the panel scrolls): on a phone the list
 // of pieces is a scroll away. One adjustment menu, a stepped flat slider
 // and an exact value keep the active setting beside Set down.
-function knobName(rule, key) { return (rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
+function knobName(rule, key) { return ghost?.p.piece==='gear'&&key==='module_m'?'Radius':(rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
 let sliderSerial=0;
 function addSliderTicks(input,rule){
   const list=document.createElement('datalist');list.id=`slider-ticks-${++sliderSerial}`;
@@ -2888,16 +2891,17 @@ function renderGhostBar() {
   // controls; ordinary cable editing exposes thickness/length instead.
   const connecting=['wire','power_cable'].includes(ghost.p.piece);
   const available=allKeys.filter(k=>!knobs[k].connection_target&&(!connecting||(!knobs[k].terminal&&!knobs[k].power_port)));
-  const keys=[...available]; // Every supported setting is reachable beside the piece.
+  const compactGear=ghost.p.piece==='gear'&&primary&&!precisionOpen;
+  const keys=compactGear?primary.filter(k=>available.includes(k)):[...available];
   if(editorMode==='turn')for(const k of available.filter(k=>knobs[k].turning))if(!keys.includes(k))keys.push(k);
   if(editorMode!=='turn'&&!precisionOpen)for(const k of heightKnobs(ghost.p))if(available.includes(k)&&!keys.includes(k))keys.push(k);
-  if(available.includes(ghost.card)&&!keys.includes(ghost.card))keys.push(ghost.card);
+  if(!compactGear&&available.includes(ghost.card)&&!keys.includes(ghost.card))keys.push(ghost.card);
   if(!keys.length)keys.push(allKeys[0]);
   if (!keys.includes(ghost.card)) ghost.card = keys[0];
   const chips = Object.assign(document.createElement('div'), {className: 'adjustment-picker'});
   const adjustment=document.createElement('select');adjustment.id='adjustment-choice';adjustment.setAttribute('aria-label','Adjustment');
   for (const key of keys) {
-    adjustment.append(new Option(ghost.p.piece==='lens'&&key==='radius_m'?'Focus / face radius (m)':knobs[key].label||knobName(knobs[key],key),key));
+    adjustment.append(new Option(ghost.p.piece==='gear'&&key==='module_m'?'Radius (cm)':ghost.p.piece==='lens'&&key==='radius_m'?'Focus / face radius (m)':knobs[key].label||knobName(knobs[key],key),key));
   }
   adjustment.value=ghost.card;adjustment.addEventListener('change',()=>selectGhostKnob(adjustment.value));
   chips.append(Object.assign(document.createElement('label'),{textContent:'Adjust',htmlFor:'adjustment-choice'}),adjustment);
@@ -2911,7 +2915,7 @@ function renderGhostBar() {
     row.append(select);
   } else if (rule.choices) {
     const select = document.createElement('select');
-    for (const c of rule.choices) select.append(Object.assign(document.createElement('option'), {value: c, textContent: c}));
+    for (const c of rule.choices) select.append(Object.assign(document.createElement('option'), {value: c, textContent: choiceText(key,c)}));
     select.value = ghost.p[key];
     select.setAttribute('aria-label', `Its ${name}`);
     select.addEventListener('change', () => {
@@ -3044,6 +3048,8 @@ function renderGhostBar() {
   if(rule.choices)editor.append(row);
   else if(rule.part||rule.hinge)editor.append(sceneReferenceControl(ghost.p,key,rule,()=>{renderGhostBar();showGhostKnobs();askGhost();}));
   editor.append(...connectionActions,...(unclipButton?[unclipButton]:[]),setting);
+  if(ghost.p.piece==='gear')editor.append(Object.assign(document.createElement('output'),{id:'gear-motion-feedback',className:'adjustment-feedback',textContent:'Checking gear motion…',
+    title:'This is a replay of the engine’s predicted motion for the current placement. Radius is measured to the tooth tips; it changes tooth spacing too.'}));
   if((connecting&&!ghost.was)||needsClip){throwAway.textContent=needsClip?'Cancel heater':'Cancel wire';fields.append(throwAway);}
   showGhostKnobs(); showGhostState();
 }
@@ -3147,7 +3153,9 @@ function showGhostKnobs() {
   const rating=electricalEditRating(),numeric=typeof ghost.p[ghost.card]==='number';
   const units=rule.turning?'°':(rule.label||'').match(/\(([^()]*)\)\s*$/)?.[1]||'';
   const shownValue=`${ghost.p[ghost.card]}${units?' '+units:''}`;
-  const feedback=$('adjustment-feedback');if(feedback)feedback.textContent=rating?(numeric?`${shownValue} · ${rating}`:rating):`${knobName(rule,ghost.card)}: ${shownValue}`;
+  const feedback=$('adjustment-feedback');if(feedback)feedback.textContent=ghost.p.piece==='gear'?
+    `${ghost.p.teeth} teeth · ${((ghost.p.teeth/2+.7)*ghost.p.module_m*100).toFixed(1)} cm radius · ${(ghost.p.height_m*100).toFixed(0)} cm height`:
+    rating?(numeric?`${shownValue} · ${rating}`:rating):`${knobName(rule,ghost.card)}: ${shownValue}`;
   const value = document.querySelector('#ghost-bar .knob-value');
   if (value) value.textContent = ` ${ghost.p[ghost.card]}${knobs[ghost.card].turning ? '°' : ''}`;
   for (const [key, [input, shown]] of Object.entries(ghost.inputs)) {
@@ -3768,6 +3776,14 @@ function syncFlowPlayButton() {
   $('flow-play').textContent=flowPlaying?'Pause preview':'Play preview';
   $('flow-play').setAttribute('aria-pressed',String(flowPlaying));
 }
+function updateGearMotionFeedback(){
+  const output=$('gear-motion-feedback');if(!output||ghost?.p.piece!=='gear')return;
+  const frame=flowGroup.visible?previewShown?.flow_frames?.[flowIndex]:null;
+  if(flowPending||!frame){output.textContent='Checking gear motion…';return;}
+  const target=level.goal?.station?.done_when?.turned_deg?.joint;
+  const joint=(frame.mechanism_joints||[]).find(j=>target?j.name===target:j.b===ghostName()+' wheel');
+  output.textContent=joint&&Number.isFinite(joint.turned_deg)?`Preview · ${target?'target wheel':'axle'} ${Math.abs(joint.turned_deg).toFixed(0)}°`:'Preview · gear motion';
+}
 function updateFlowPreview() {
   const frames=previewShown?.flow_frames || [];
   const visible=Boolean(frames.length) && !flowPending && !playing && !(world?.t>0) && previewOn && !inspectedCircuit && !document.body.matches('.on-sandbox,.on-levels');
@@ -3853,7 +3869,7 @@ function drawPreview(r) {
   flowPending=false;
   // Electrical rehearsals start at their initial state. Future current and
   // bulb light appear only if the player explicitly plays/scrubs the preview.
-  flowPlaying=!(r.flow_frames||[]).some(f=>f.wires?.some(w=>w.unit==='A'));
+  flowPlaying=ghost?.p.piece==='gear'||!(r.flow_frames||[]).some(f=>f.wires?.some(w=>w.unit==='A'));
   syncFlowPlayButton();
   const zone = level.goal && level.goal.station.done_when.in_zone;
   const inZone = p => Boolean(zone) && [0, 1, 2].every(i => Math.abs(p[i] - zone.at_m[i]) <= zone.size_m[i] / 2);

@@ -368,6 +368,14 @@ class Puzzles(unittest.TestCase):
         self.assertGreaterEqual(target['h'],44,(selector,target))
         self.mouse('mousePressed',target['x'],target['y']);self.mouse('mouseReleased',target['x'],target['y'])
 
+    def set_precision_controls(self, enabled):
+        if self.js("document.getElementById('precision-controls').open") != enabled:
+            self.click_summary('#precision-controls > summary')
+        self.wait(f"document.getElementById('precision-controls').open==={str(enabled).lower()}",10)
+        if self.ghost()['p']['piece']=='gear':
+            self.wait(f"[...document.getElementById('adjustment-choice').options].some(o=>o.value==='material')==={str(enabled).lower()}",10)
+        self.click_visible('Controls')
+
     def assert_power_layout(self):
         # A rebuild reframes the camera; the anchors follow it each frame.
         self.wait('window.machineCamera().settled', 30)
@@ -881,19 +889,30 @@ class Puzzles(unittest.TestCase):
                 self.open('easy-gears',width,height,phone=width!=1280)
                 self.assertIn('target gear wheel',self.js('Object.keys(window.machineBodies())'))
                 self.press('Add a gear');self.ghost()
+                self.set_precision_controls(False)
                 self.assertEqual(self.ghost()['p']['teeth'],18)
-                self.assertFalse(self.js("document.querySelector('[aria-label=\"Its Teeth / size\"]').checkVisibility()"))
+                self.assertFalse(self.js("document.querySelector('[aria-label=\"Its Teeth\"]').checkVisibility()"))
                 self.assertTrue(self.js("document.querySelector('#piece-editor .choice-cycle')!==null"))
-                self.click_visible('Choose Teeth / size');self.click_visible('Set Teeth / size to 12 teeth');self.ghost()
+                self.assertEqual(self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"),['teeth','module_m','height_m'])
+                self.click_visible('Choose Teeth');self.click_visible('Set Teeth to 12 teeth');self.ghost()
                 self.assertEqual(self.ghost()['p']['teeth'],12)
                 self.assertEqual(len(self.ghost()['editGuide']['arrows']),4)
                 self.assertEqual(self.ghost()['editGuide']['focus'],['your gear 1 wheel'])
+                self.set_precision_controls(True)
                 self.click_visible('Change its Tooth alignment');self.ghost()
+                self.wait("machineGhostState().editGuide?.key==='phase_deg'",10)
                 self.assertEqual(len(self.ghost()['editGuide']['arrows']),2)
-                self.click_visible('Change its Teeth / size');self.ghost()
+                self.click_visible('Change its Teeth');self.ghost()
                 self.wait('window.machineCamera().settled',30)
                 self.drag_ghost_to(0,0,touch=width!=1280)
                 self.assertTrue(self.ghost()['fits'],self.ghost())
+                self.wait("machineFlowPreviewState()?.visible&&!machineFlowPreviewState().pending&&machineFlowPreviewState().playing",30)
+                self.wait("machineFlowPreviewState().drawn?.mechanisms?.some(b=>b.name==='drive gear wheel'&&Math.abs(b.orientation_wxyz[3])>.01)",30)
+                self.assertIn('Preview',self.js("document.getElementById('gear-motion-feedback').textContent"))
+                sample=self.js("(()=>{const s=machineFlowPreviewState(),d=s.drawn.mechanisms.find(b=>b.name==='drive gear wheel'),p=s.sample.mechanisms.find(b=>b.name===d.name);return [d,p];})()")
+                self.assertEqual(sample[0]['position_m'],sample[1]['position_m'])
+                self.assertEqual(sample[0]['orientation_wxyz'],sample[1]['orientation_wxyz'])
+                self.assertRegex(self.js("document.getElementById('clock').textContent"),r'World 0\.00 s')
                 self.click_visible('Try It!')
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
@@ -903,6 +922,27 @@ class Puzzles(unittest.TestCase):
                         for i in range(101):
                             p=[a[k]+(b[k]-a[k])*i/100 for k in range(3)]
                             self.assertTrue(p[1]<.32 or p[2]<-.05,(cable,p))
+
+    def test_gear_radius_choices_show_real_size_and_keep_secondary_settings_in_help(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-gears',width,height,phone=width!=1280)
+                self.press('Add a gear');self.ghost()
+                self.set_precision_controls(False)
+                self.assertIn('23.3 cm radius',self.js("document.getElementById('adjustment-feedback').textContent"))
+                self.slide('Adjustment','module_m');self.ghost()
+                self.click_visible('Choose Radius')
+                self.click_visible('Set Radius to 15.5 cm radius');self.ghost()
+                self.assertEqual(self.ghost()['p']['module_m'],.016)
+                self.assertEqual(self.ghost()['p']['teeth'],18)
+                self.assertIn('15.5 cm radius',self.js("document.getElementById('adjustment-feedback').textContent"))
+                self.slide('Adjustment','teeth');self.ghost()
+                self.click_visible('Choose Teeth');self.click_visible('Set Teeth to 24 teeth');self.ghost()
+                self.assertIn('20.3 cm radius',self.js("document.getElementById('adjustment-feedback').textContent"))
+                self.set_precision_controls(True)
+                self.assertIn('material',self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"))
+                self.set_precision_controls(False)
+                self.assertEqual(self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"),['teeth','module_m','height_m'])
 
     def test_individual_gear_example_library_and_saved_version_reopen(self):
         self.anonymous_levels(width=390,height=844)
@@ -4872,6 +4912,7 @@ class Puzzles(unittest.TestCase):
                     label=self.js(f"[...document.querySelectorAll('#piece-picker button')].find(b=>b.dataset.piece==={json.dumps(item['piece'])})?.getAttribute('aria-label')")
                 self.assertIsNotNone(label,item['piece']);self.press(label);self.ghost()
                 self.assertTrue(self.js("document.getElementById('piece-editor').contains(document.getElementById('adjustment-choice'))"))
+                if item['piece']=='gear':self.set_precision_controls(True)
                 variants=[None]
                 for key in ('mount','mode','outlet_model','side','plane','placement'):
                     variants.extend((key,value) for value in item['knobs'].get(key,{}).get('choices',[]))
@@ -4981,11 +5022,12 @@ class Puzzles(unittest.TestCase):
                 self.assertGreaterEqual(handle['w'],56);self.assertGreaterEqual(handle['h'],56)
                 self.mouse('mousePressed',handle['x'],handle['y']);self.mouse('mouseReleased',handle['x'],handle['y'])
                 self.assertEqual(self.ghost()['p']['teeth'],12)
-                self.click_visible('Choose Teeth / size')
+                self.click_visible('Choose Teeth')
                 self.assertTrue(self.js("document.getElementById('piece-value-choices').matches(':popover-open')"))
                 self.assertTrue(self.js("(()=>{const b=document.getElementById('piece-value-choices'),r=b.getBoundingClientRect();return Number.isFinite(parseFloat(b.style.left))&&Number.isFinite(parseFloat(b.style.top))&&r.left>=0&&r.top>=document.getElementById('view').getBoundingClientRect().top&&r.right<=innerWidth&&r.bottom<=innerHeight;})()"))
-                self.click_visible('Set Teeth / size to 24 teeth');self.assertEqual(self.ghost()['p']['teeth'],24)
+                self.click_visible('Set Teeth to 24 teeth');self.assertEqual(self.ghost()['p']['teeth'],24)
                 self.assertFalse(self.js("document.getElementById('piece-value-choices').matches(':popover-open')"))
+                self.set_precision_controls(True)
                 self.choose_adjustment('Material');self.click_visible('Choose Material')
                 self.click_visible('Set Material to glass');self.assertEqual(self.ghost()['p']['material'],'glass')
                 self.assertFalse(self.js('machinePlacements().length'))

@@ -1007,6 +1007,34 @@ class FreeBuild(unittest.TestCase):
 
 class Engine(unittest.TestCase):
     @need_engine
+    def test_gear_motion_replay_observes_native_contact_without_changing_the_setup(self):
+        level=mg.level_by_id('easy-gears')
+        compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+        before=copy.deepcopy(compiled)
+        with tempfile.TemporaryDirectory() as logs:
+            replay=mw.rehearse(compiled,ENGINE,Path(logs),seconds=2,flows=True)
+            ordinary=mw.rehearse(compiled,ENGINE,Path(logs),seconds=2)
+            self.assertEqual(compiled,before)
+            self.assertIsNone(replay['error']);self.assertTrue(replay['complete'])
+            self.assertEqual(replay['stations'],ordinary['stations'])
+            self.assertEqual(replay['readouts'],ordinary['readouts'])
+            shapes={b['name']:b for b in replay['mechanism_shapes']}
+            self.assertTrue({'drive gear wheel','target gear wheel','your gear 1 wheel'} <= shapes.keys())
+            frames=replay['flow_frames']
+            self.assertEqual(frames[0]['t'],0)
+            target=[next(b for b in f['mechanisms'] if b['name']=='target gear wheel') for f in frames]
+            self.assertEqual(target[0]['orientation_wxyz'],shapes['target gear wheel']['orientation_wxyz'])
+            self.assertNotEqual(target[0]['orientation_wxyz'],target[-1]['orientation_wxyz'])
+            self.assertTrue(any(abs(j.get('turned_deg',0))>=180 for f in frames
+                for j in f.get('mechanism_joints',[]) if j['name']=='target gear axle'))
+            success=mg.trial(level,level['solution'],ENGINE,logs,runs=3)
+            self.assertEqual(success['worked'],3,success)
+            for placements in ([],level['wrong']):
+                self.assertEqual(mg.trial(level,placements,ENGINE,logs,runs=1)['worked'],0)
+        print('Gear replay / ordinary wall seconds:',replay['wall_s'],ordinary['wall_s'])
+        print('Gear native nudged goal seconds:',[r['goal_at_s'] for r in success['results']])
+
+    @need_engine
     def test_divert_water_auto_source_keeps_nudged_wins_and_physical_misses(self):
         level=mg.level_by_id('easy-divert-water')
         with tempfile.TemporaryDirectory() as logs:

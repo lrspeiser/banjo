@@ -2750,6 +2750,21 @@ class MachineSession:
             frame['mechanism_joints']=[copy.deepcopy(j) for j in r.get('joints',[])
                                       if j.get('a') in names or j.get('b') in names]
             self.flow_mechanism_names=names
+        # Hinged compound bodies (including individual toothed wheels) need
+        # their native poses in the placement replay too. This is observation
+        # only: no angle, velocity, torque or contact is assigned here.
+        parts={p['name']:p for p in self.compiled['parts']}
+        rotating={j['b'] for j in self.compiled['joints'] if j['kind']=='hinge'
+                  and parts[j['b']]['shape']=='compound' and not parts[j['b']]['fixed']}
+        if rotating:
+            names=set(sorted(set(getattr(self,'flow_mechanism_names',set()))|rotating)[:32])
+            frame['mechanisms']=[dict(name=name,position_m=self.bodies[name]['position_m'],
+                orientation_wxyz=self.bodies[name]['orientation_wxyz'],
+                initial_position_m=self.flow_starts[name]['position_m']) for name in sorted(names)
+                if name in self.bodies and name in self.flow_starts]
+            frame['mechanism_joints']=[copy.deepcopy(j) for j in r.get('joints',[])
+                                      if j.get('a') in names or j.get('b') in names]
+            self.flow_mechanism_names=names
         # Circuit previews carry the native switch poses alongside current.
         # Otherwise a future closed branch would be drawn over an open rocker.
         switch_names=set()

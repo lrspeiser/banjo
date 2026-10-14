@@ -1,5 +1,31 @@
 # Puzzles on the machine (/play)
 
+October 14 gear placement preview: selecting an individual gear automatically
+plays the native rehearsal, including the drive, proposed and target wheels.
+The beside-piece readout shows the target's measured cumulative `turned_deg`
+(or the selected axle in Sandbox), explicitly marked Preview. Editing remains
+at world time zero; replay poses never feed back into the engine. Ordinary
+gear controls are Teeth, Radius and Axle height. Help → Settings → Precision
+controls exposes tooth alignment, material and bearing friction. Radius is a
+display of the existing discrete module choices, not a new native property:
+`(teeth / 2 + 0.7) * module_m`, the radial distance to a tooth's outer face.
+Changing it also changes tooth spacing; teeth and radius therefore interact.
+Saved declarations and existing 16/24/32 mm module presets remain unchanged.
+
+The flow observer now includes native hinged compound-body poses, capped at
+32 bodies, with sampling interval `max(0.1, rehearsal_seconds / 180)` seconds.
+No contact, torque, drive, mass or energy law changed. Gear replay and ordinary
+run station and native readout records match exactly in regression (0.22 / 0.23
+wall seconds for a two-second rehearsal). Three nudged solutions still reach
+180° at 1.750/1.633/1.750 s; empty and axially misplaced controls fail. Native
+light/water/current preview regression also passes; the final gear regression
+passes in 2.498 s. Browser checks pass in 104.853 s for radius
+choices, three-layout native-pose replay and completion, the full 44-device
+control audit and river lift preview; large handles/named choices pass in
+4.974 s. No goal or tolerance changed. This adds no contact-driven seating while dragging, calibrated
+involute teeth or tooth failure model. Existing per-material measurements and
+full-pipeline conservation limits remain in the gear measurements below.
+
 October 14 Divert the water simplification: `water_controls: false` is public
 UI metadata for this lesson. It omits the optional source-valve card; Try It!
 starts the existing open finite supply automatically. The introduction and
