@@ -4811,6 +4811,18 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(self.js("document.getElementById('start').textContent"),'Try It!')
 
 
+    def test_adjustment_handle_keyboard_changes_one_step_without_moving_piece(self):
+        self.open('gap')
+        self.press('Add a plank');self.ghost()
+        for label in ('Drag selected adjustment','Drag Cut to length handle 1'):
+            before=self.ghost()['p'];self.click_visible(label)
+            for kind in ('keyDown','keyUp'):
+                self.page.send('Input.dispatchKeyEvent',{'type':kind,'key':'ArrowRight','code':'ArrowRight','windowsVirtualKeyCode':39})
+            after=self.ghost()['p']
+            self.assertAlmostEqual(after['length_m'],before['length_m']+.01,places=4)
+            self.assertEqual(after['x_m'],before['x_m']);self.assertEqual(after['z_m'],before['z_m'])
+
+
 if __name__ == '__main__':
     shard=next((a for a in sys.argv[1:] if a.startswith('--shard=')),None)
     if shard:

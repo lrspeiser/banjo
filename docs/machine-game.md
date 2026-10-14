@@ -21,7 +21,7 @@ Dragging along the indicated direction changes the declaration in its existing
 increments, including discrete numeric choices such as gear teeth. Keyboard
 arrows also change one increment. Grips yield to the toolbar and fixed camera
 controls and disappear when an anchor is off-screen; the toolbar grip remains.
-They preserve pointer capture during asynchronous preview replacement. Touch
+They preserve pointer capture and keyboard focus during asynchronous preview replacement. Keyboard arrow events stay with the handle and do not also invoke the scene movement shortcuts. The three-case keyboard/lens/gear follow-up passes in 35.81 s; the keyboard regression requires one declared increment and unchanged X/Z placement. Touch
 value editing disables browser scrolling on the grip. These are editor
 annotations and inputs, not extra forces or prescribed motion in the simulation.
 

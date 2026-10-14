@@ -2300,13 +2300,13 @@ function updatePieceHandles() {
     anchors.forEach((_,i)=>{
       const h=button('◆',()=>{},{ariaLabel:`Drag ${knobName(rule,key)} handle ${i+1}`,title:'Drag along the highlighted arrow to change this dimension'});
       h.className='piece-dimension-handle';
-      h.addEventListener('pointerdown',e=>{if(e.button!==0||!ghost)return;e.preventDefault();
+      h.addEventListener('pointerdown',e=>{if(e.button!==0||!ghost)return;e.preventDefault();h.focus({preventScroll:true});
         editorMode='adjust';looking=false;view.classList.remove('looking');
         handleDrag={id:e.pointerId,key,initial:Number(ghost.p[key]),x:e.clientX,y:e.clientY,dx:Number(h.dataset.dx),dy:Number(h.dataset.dy)};h.setPointerCapture(e.pointerId);
       });
       h.addEventListener('pointermove',e=>{if(handleDrag?.id===e.pointerId)editByDrag(handleDrag.key,handleDrag.initial,(e.clientX-handleDrag.x)*handleDrag.dx+(e.clientY-handleDrag.y)*handleDrag.dy);});
       for(const type of ['pointerup','pointercancel','lostpointercapture'])h.addEventListener(type,()=>{handleDrag=null;updatePieceHandles();});
-      h.addEventListener('keydown',e=>{if(!ghost||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();
+      h.addEventListener('keydown',e=>{if(!ghost||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();e.stopPropagation();
         editByDrag(key,Number(ghost.p[key]),(['ArrowRight','ArrowUp'].includes(e.key)?1:-1)*240*(rule.choices?1/(rule.choices.length-1):(rule.step||.01)/(rule.max-rule.min)));});
       editHandles.append(h);
     });
@@ -2334,7 +2334,7 @@ function clearEditGuide() {
     c.traverse(o => { if (o.geometry && !editShared.has(o.geometry)) o.geometry.dispose(); });
   }
   editArrows = []; editMarker = editAnchor = null;
-  if(!handleDrag)editHandles.replaceChildren();
+  if(!handleDrag&&!editHandles.contains(document.activeElement))editHandles.replaceChildren();
   $('edit-guide-label').hidden = true;
 }
 function drawEditGuide(parts) {
@@ -2871,7 +2871,7 @@ function renderGhostBar() {
   grip.title='Drag left or right to change this value; arrow keys change one step. Exact values are in Help → Settings.';
   let gripDrag=null;
   grip.addEventListener('pointerdown',e=>{
-    if(e.button!==0||!ghost)return;e.preventDefault();editorMode='adjust';looking=false;
+    if(e.button!==0||!ghost)return;e.preventDefault();grip.focus({preventScroll:true});editorMode='adjust';looking=false;
     move.setAttribute('aria-pressed','false');turn.setAttribute('aria-pressed','false');grip.setAttribute('aria-pressed','true');
     gripDrag={id:e.pointerId,x:e.clientX,initial:Number(ghost.p[ghost.card]),key:ghost.card};grip.setPointerCapture(e.pointerId);
   });
@@ -2879,7 +2879,7 @@ function renderGhostBar() {
   for(const type of ['pointerup','pointercancel','lostpointercapture'])grip.addEventListener(type,()=>{gripDrag=null;});
   grip.addEventListener('keydown',e=>{
     if(!ghost||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;
-    e.preventDefault();const sign=['ArrowRight','ArrowUp'].includes(e.key)?1:-1;
+    e.preventDefault();e.stopPropagation();const sign=['ArrowRight','ArrowUp'].includes(e.key)?1:-1;
     if(setKnob(ghost.p,key,Number(ghost.p[key])+sign*(rule.step||.01))){followGhost();showGhostKnobs();askGhost();}
   });
   chips.append(grip);
