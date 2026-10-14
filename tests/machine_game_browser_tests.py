@@ -997,13 +997,13 @@ class Puzzles(unittest.TestCase):
             self.click_visible('Connect rope to gate');self.ghost()
             self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
             return
-        self.press('Change its drum load')
-        self.slide('drum load (optional) of your water_wheel 1','')
+        self.press('Change its load to lift')
+        self.slide('load to lift (optional) of your water_wheel 1','')
         self.ghost()
-        self.assertEqual(self.js("document.querySelector('[aria-label=\"Its drum load\"]').value"),'')
-        self.slide('drum load (optional) of your water_wheel 1',self.river_solution['load_part'])
+        self.assertEqual(self.js("document.querySelector('[aria-label=\"Its load to lift\"]').value"),'')
+        self.slide('load to lift (optional) of your water_wheel 1',self.river_solution['load_part'])
         self.ghost()
-        self.assertEqual(self.js("document.querySelector('[aria-label=\"Its drum load\"]').value"),'river gate',
+        self.assertEqual(self.js("document.querySelector('[aria-label=\"Its load to lift\"]').value"),'river gate',
                          'Changing the full connection selector must update the compact control')
         self.assertTrue(self.ghost()['fits'])
         self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
@@ -1157,6 +1157,7 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js("Boolean(document.querySelector('[aria-label=\"along channel (m) of your water_wheel 1\"]'))"),self.js("[...document.querySelectorAll('#ghost-bar [aria-label]')].map(e=>e.getAttribute('aria-label'))"))
                 self.assertEqual(self.ghost()['p']['z_m'],1)
                 self.assertEqual(self.ghost()['p']['side'],'off')
+                self.assertFalse(self.js("[...document.getElementById('adjustment-choice').options].some(o=>o.value==='load_part')"),'The spin-only lesson has no load to connect')
                 self.assertFalse(self.js('window.machineWaterDisplay().length'))
                 self.drag_ghost_to(0,0,touch=width!=1280)
                 self.assertLess(abs(self.ghost()['p']['z_m']),.025)
@@ -1233,7 +1234,7 @@ class Puzzles(unittest.TestCase):
                 initial=self.js("window.machineBodies()['river gate'][1]")
                 self.press('Add a water wheel');self.ghost()
                 self.wait("/on bank/.test(document.getElementById('river-wheel-status').textContent)",10)
-                self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"Its drum load\"]'))"))
+                self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"Its load to lift\"]'))"))
                 self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"Its wheel radius\"]'))"))
                 self.assertTrue(self.js("(()=>{const b=document.querySelector('.connection-action'),r=b.getBoundingClientRect();return r.width>=200&&r.height>=44&&b.scrollWidth<=b.clientWidth})()"),'The connection label must fit a full-width touch target')
                 self.drag_ghost_to(0,0,touch=width!=1280)
@@ -4835,11 +4836,13 @@ class Puzzles(unittest.TestCase):
 
     def test_scene_reference_pick_and_live_tap_reach_the_engine(self):
         self.open('free')
+        self.js('window.confirm=()=>true');self.press('Clear the table');self.wait(READY,30)
         self.press('Add a gear');self.ghost();self.click_visible('Place');self.wait(READY,30)
         self.press('Add a motor');self.ghost()
         self.drag_ghost_to(1,0);self.ghost()
         self.slide('Adjustment','hinge');self.ghost()
         self.click_visible('Choose driven axle in scene')
+        self.click_visible('Pick in scene')
         self.wait('machineCamera().settled',30)
         for point in self.js("machineBodyHitPoints('your gear 1 wheel')"):
             if not self.js(f"document.elementFromPoint({point[0]},{point[1]})?.tagName==='CANVAS'"):continue
@@ -4860,6 +4863,34 @@ class Puzzles(unittest.TestCase):
         self.click_visible('Pause');self.click_visible('Reset');self.wait(READY,30)
         self.assertEqual(self.js('machinePlacements()'),[])
 
+
+    def test_named_wheel_load_picker_is_readable_and_connects_the_actual_gate(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('free',width,height,phone=width!=1280)
+                if width==1280:
+                    self.js('window.confirm=()=>true');self.press('Clear the table');self.wait(READY,30)
+                    self.press('Add a water wheel');self.ghost();self.choose_adjustment('load to lift')
+                    self.assertTrue(self.js("document.querySelector('#piece-editor .scene-reference button').disabled"))
+                    self.assertIn('Add a weight or loose box',self.js("document.querySelector('#piece-editor .reference-hint').textContent"))
+                    self.press('Cancel')
+                self.press('All designs');self.press('Start from Build beside a river');self.wait(READY,60)
+                self.press('Add a water wheel');self.ghost()
+                self.choose_adjustment('load to lift')
+                self.assertTrue(self.js("(()=>{const p=document.querySelector('#piece-editor .reference-hint');return getComputedStyle(p).whiteSpace==='normal'&&p.scrollHeight<=p.clientHeight+1;})()"))
+                self.click_visible('Choose load to lift in scene')
+                self.assertTrue(self.js("document.getElementById('piece-value-choices').matches(':popover-open')"))
+                if width==1280:
+                    for rw,rh in ((390,844),(844,390),(1280,860)):
+                        self.page.send('Emulation.setDeviceMetricsOverride',{'width':rw,'height':rh,'deviceScaleFactor':1,'mobile':False})
+                        self.wait("(()=>{const r=document.getElementById('piece-value-choices').getBoundingClientRect();return r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;})()",10)
+                self.assertFalse(self.js("[...document.querySelectorAll('#piece-value-choices button')].some(b=>b.textContent.startsWith('your water_wheel'))"),'A wheel cannot choose itself as its rope load')
+                self.click_visible('Connect load to lift to river gate');self.ghost()
+                self.assertEqual(self.ghost()['p']['load_part'],'river gate')
+                self.assertFalse(self.js("document.getElementById('piece-value-choices').matches(':popover-open')"))
+                self.click_visible('Place');self.wait(READY,60)
+                self.assertEqual(self.js('machinePlacements()[0].load_part'),'river gate')
+                self.wait("machineFlowPreviewState()?.sample?.mechanism_joints?.some(j=>j.kind==='drum')",30)
 
     def test_gold_gear_handle_changes_only_declared_tooth_sizes(self):
         self.open('free',1280,860)

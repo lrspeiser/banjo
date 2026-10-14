@@ -18,7 +18,7 @@ TRAY = [
         'z_m': knob(-1, 1, .02, 0, 'across river (m)'),
         'radius_m': knob(.25, .65, .05, .4, 'wheel radius (m)'),
         'side': dict(choices=['left', 'right', 'off'], default='left', label='pour onto'),
-        'load_part': dict(default='',part=True,label='drum load (optional)'),
+        'load_part': dict(default='',part=True,label='load to lift (optional)'),
         'discharge_l_s': knob(.5, 3, .5, 2, 'external supply (L/s)')}),
     dict(piece='water_tank', count=99, cost=0, across=False, turns=[], knobs={
         'x_m': knob(-1.5, 1.5, .02, 0, 'outlet along channel (m)'),
@@ -308,6 +308,7 @@ river_wheel['tray'][0]['frame_on_add']=True
 river_wheel['tray'][0]['knobs']['radius_m']['default']=.65
 river_wheel['tray'][0]['knobs']['z_m']['default']=1
 river_wheel['tray'][0]['knobs']['side'].update(default='off',choices=['off'])
+river_wheel['tray'][0]['knobs']['load_part']['hidden']=True
 river_wheel['wrong']=[dict(river_wheel['solution'][0],z_m=1)]
 river_wheel['par_energy_j']=593992292
 EASY_LEVELS.append(river_wheel)

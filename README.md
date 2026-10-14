@@ -129,6 +129,9 @@ Older saved gear pairs retain their original ideal coupling.
 There are 31 editable prebuilt designs, including a battery holder, a river workbench and a
 river-powered gate lift. The river's current pushes submerged wheel paddles;
 connect the wheel's drum rope to a load to lift it.
+In Sandbox, **Load to lift** lists available objects by name, with **Pick in
+scene** for direct selection. The spin-only **Wheel in the river** lesson hides
+this unused control. Connection instructions wrap fully beside the piece.
 Click prepared objects or use **Adjust a piece** to move them; **Remove** in
 the inspector removes the selected object and its dependent connections.
 Kits and bodies joined by a hinge, slide or weld move as assemblies.

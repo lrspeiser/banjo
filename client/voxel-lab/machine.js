@@ -2355,6 +2355,10 @@ function showValueChoices(key,rule,name,source){
     option.setAttribute('aria-pressed',String(selected.p[key]===value));options.append(option);
   }
   valueChoices.append(options);valueChoices.showPopover();
+  positionValueChoices(source);
+}
+function positionValueChoices(source){
+  valueChoices.source=source;
   const box=ghostScreenBox(),object=box?{left:box.x0,right:box.x1,top:box.y0,bottom:box.y1}:source.getBoundingClientRect(),rect=valueChoices.getBoundingClientRect();
   const sceneRect=view.getBoundingClientRect();
   const bounds=rect.height<=sceneRect.height-12&&rect.width<=sceneRect.width-12?sceneRect:
@@ -2362,7 +2366,8 @@ function showValueChoices(key,rule,name,source){
   const at=pieceToolbarPosition(bounds,object,rect,[source.getBoundingClientRect()]);
   valueChoices.style.left=at.x+'px';valueChoices.style.top=at.y+'px';
 }
-valueChoices.addEventListener('keydown',e=>{e.stopPropagation();});
+valueChoices.addEventListener('keydown',e=>{if(e.key==='Escape')pendingPieceReference=null;e.stopPropagation();});
+addEventListener('resize',()=>{if(valueChoices.matches(':popover-open')&&valueChoices.source?.isConnected)positionValueChoices(valueChoices.source);});
 let handleDrag=null;
 function updatePieceHandles() {
   if(handleDrag)return; // Preserve pointer capture while native previews are replaced.
@@ -2779,11 +2784,33 @@ function nudgeKnob(key, by) {
 let pendingPieceReference=null;
 function sceneReferenceControl(p,key,rule,changed){
   const row=document.createElement('div');row.className='scene-reference';
-  row.append(button(p[key]?`${knobName(rule,key)}: ${p[key]}`:`Choose ${knobName(rule,key)}`,()=>{
-    pendingPieceReference={p,key,rule,changed,allowed:[...referenceControl(p,key,rule,()=>{}).options].map(o=>o.value)};
-    $('adjustment-feedback').textContent=`Click the ${rule.hinge?'axle / hinged part':'object'} in the scene to attach ${knobName(rule,key)}. Escape cancels.`;
-  },{ariaLabel:`Choose ${knobName(rule,key)} in scene`}));
+  const allowed=[...referenceControl(p,key,rule,()=>{}).options].map(o=>o.value);
+  const available=allowed.filter(Boolean),load=key==='load_part';
+  const hint=Object.assign(document.createElement('p'),{className:'reference-hint',textContent:available.length?
+    (load?'Choose the separate object the wheel’s rope should lift.':'Choose a connection from the scene.'):
+    (load?'No movable load yet. Add a weight or loose box first.':'No compatible connection is available yet.')});
+  const choose=button(p[key]?`${knobName(rule,key)}: ${p[key]}`:`Choose ${knobName(rule,key)}`,()=>{
+    closeValueChoices();const selected=ghost;
+    pendingPieceReference={p,key,rule,changed,allowed};
+    $('adjustment-feedback').textContent='Click an object in the scene, or choose its name in the list. Escape cancels.';
+    valueChoices.replaceChildren(Object.assign(document.createElement('strong'),{textContent:knobName(rule,key)}),
+      Object.assign(document.createElement('p'),{textContent:load?'Choose the object to lift, or click it in the scene.':'Choose a connection, or click its object in the scene.'}));
+    const options=Object.assign(document.createElement('div'),{className:'value-choice-grid'});
+    for(const value of allowed){
+      const label=value||'No connection';
+      const option=button(label,()=>{
+        closeValueChoices();pendingPieceReference=null;if(ghost!==selected)return;
+        p[key]=value;changed();
+      },{ariaLabel:`Connect ${knobName(rule,key)} to ${label}`});
+      option.setAttribute('aria-pressed',String(p[key]===value));options.append(option);
+    }
+    valueChoices.append(options,button('Pick in scene',()=>{closeValueChoices();}),
+      button('Cancel',()=>{pendingPieceReference=null;closeValueChoices();showGhostKnobs();}));
+    valueChoices.showPopover();positionValueChoices(choose);
+  },{ariaLabel:`Choose ${knobName(rule,key)} in scene`,disabled:!available.length});
+  row.append(choose);
   if(rule.default&&rule.default!==p[key])row.append(button('Default',()=>{p[key]=rule.default;pendingPieceReference=null;changed();},{ariaLabel:`Use default ${knobName(rule,key)}`}));
+  row.append(hint);
   return row;
 }
 function selectGhostKnob(key) {
@@ -4163,7 +4190,7 @@ renderer.domElement.addEventListener('pointerup', e => {
     const name=object&&nameOf.get(object);
     const endpoint=ref.rule.hinge?(machine?.joints||[]).find(j=>j.kind==='hinge'&&(j.a===name||j.b===name)&&ref.allowed.includes(j.name))?.name:
       ref.key==='battery'?(machine?.batteries||[]).find(b=>b.in===name&&ref.allowed.includes(b.name))?.name:name;
-    if(endpoint&&ref.allowed.includes(endpoint)){ref.p[ref.key]=endpoint;pendingPieceReference=null;ref.changed();}
+    if(endpoint&&ref.allowed.includes(endpoint)){ref.p[ref.key]=endpoint;pendingPieceReference=null;closeValueChoices();ref.changed();}
     else $('adjustment-feedback').textContent='Choose a compatible object in the scene. Default connections and exact endpoints are in Help → Settings.';
   } else if (ghost && click) setLooking(true);
   else if (!ghost && click && !pullMode && !attachMode) {
@@ -5018,7 +5045,8 @@ function referenceControl(p, key, rule, changed) {
   } else if (key === 'battery') {
     for (const b of machine?.batteries || []) values.add(b.name);
   } else {
-    for (const part of machine?.parts || []) if(key!=='load_part'||!part.fixed)values.add(part.name);
+    const mine=ghost&&ghostName();
+    for (const part of machine?.parts || []) if(key!=='load_part'||(!part.fixed&&!(mine&&(part.name===mine||part.name.startsWith(mine+' ')))))values.add(part.name);
   }
   for (const value of values) input.append(new Option(value || 'Choose a connection', value));
   input.value = p[key] || ''; input.setAttribute('aria-label', `Its ${knobName(rule, key)}`);

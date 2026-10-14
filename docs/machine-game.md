@@ -1,5 +1,27 @@
 # Puzzles on the machine (/play)
 
+October 14 load-chooser follow-up: **Wheel in the river** hides its optional
+load reference because this spin-only lesson has no separate load. The knob
+remains in the schema for saved recipes; no default, native goal or law changes.
+Sandbox water wheels call it **Load to lift**. Generic scene reference controls
+open a named list of the same allowed connections, with **Pick in scene** to
+dismiss the list while retaining direct picking, and **Cancel**/Escape to exit.
+Choosing a name changes only the declared reference, using the existing native
+composition and validation. A wheel’s own bodies are excluded from load choices.
+If there is no movable load, the disabled chooser explains adding a weight or
+loose box. This does not add rope attachment or collision laws.
+
+Reference names, instructions and adjustment feedback now wrap rather than
+using ellipses. Named targets have 56 px hit areas; Pick in scene and Cancel
+are at least 44 px. Open pickers reposition on viewport changes. Browser checks
+cover the spin lesson on all three layouts, existing river workbench save/
+restore and gate lift, named gate selection with an engine-reported drum joint,
+empty-load guidance, self-exclusion, direct motor/gear picking and the live tap.
+The named/direct regression pair passes in 14.439 s, including viewport rotation.
+The direct-picker fixture now clears its inherited Sandbox first, so a
+prior water example cannot collide with its new gear. Native physics models,
+energy/goal tolerances and saved load identities are unchanged.
+
 October 13 Chain reaction follow-up: ramp X/Z placement now accepts −10…10 m
 instead of X −2…0.5 m and Z −0.3…0.3 m. The same 1 cm control increments,
 grid/object snaps and native overlap/support refusal remain. Mouse and touch
