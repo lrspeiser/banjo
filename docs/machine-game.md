@@ -2582,3 +2582,17 @@ with its Close button unobstructed. Screenshots are in ignored
 the tested binary hash above and `restart_pending: false`. Finite ropes,
 pulley/drum surfaces and mechanically colliding electrical wires identified
 in the connection audit remain unimplemented by this optimization.
+
+
+## Test build identity and saves — October 14
+
+A server configured with `BANJO_ENVIRONMENT=test` marks its header TEST, exposes
+its branch/environment in the checkpoint, and makes setup shares point to the
+test origin. Production shares retain banjo.is. The optional save bridge uses
+production's existing profile API, with separate test UUID identities by
+default, preserving native compare-and-swap profile revisions. It does not move
+or rebuild the database and never acknowledges a failed upstream save as durable.
+The configured `/test` entry redirects to the separate test origin without
+forwarding a private return credential. Hosted provisioning remains pending;
+see [deployment status and promotion](deploy.md#branch-testing-and-promotion).
+These are hosting/save changes, not new physics measurements.

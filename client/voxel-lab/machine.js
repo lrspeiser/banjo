@@ -6,6 +6,8 @@ import {renderLevelCards,createLevelMoreMenu} from '/level-library.mjs';
 import {renderDesignGallery} from '/design-gallery.mjs';
 import {levelIntroduction} from '/level-intro.mjs';
 
+const SHARE_SITE = document.documentElement.dataset.banjoEnvironment === 'test' ? location.origin : 'https://banjo.is';
+
 // The machine page. It asks the server to build a declaration, then shows
 // what the engine measures, frame by frame. It never moves a body itself.
 const $ = id => document.getElementById(id);
@@ -2032,7 +2034,8 @@ $('chat-form').addEventListener('submit', async e => {
 
 fetch('/api/checkpoint').then(r => r.ok ? r.json() : null).then(c => {
   if (!c) return;
-  $('build').textContent = `${(c.website_revision || 'unknown').slice(0, 7)}${c.local_changes ? ' + local edits' : ''}`;
+  $('build').textContent = `${c.environment === 'test' ? 'TEST · ' : ''}${(c.website_revision || 'unknown').slice(0, 7)}${c.local_changes ? ' + local edits' : ''}`;
+  $('build').title = c.branch ? `Branch: ${c.branch}` : '';
 }).catch(() => {});
 
 
@@ -5903,7 +5906,7 @@ async function chooseLevel(id, design = null) {
 }
 
 $('challenge-share').addEventListener('click', async () => {
-  const link = $('challenge-link'); link.value = 'https://banjo.is/play?level=' + encodeURIComponent(level.id);
+  const link = $('challenge-link'); link.value = SHARE_SITE + '/play?level=' + encodeURIComponent(level.id);
   link.hidden = false; link.focus(); link.select();
   try { await navigator.clipboard.writeText(link.value); } catch { /* visible link remains available */ }
 });
@@ -5981,7 +5984,7 @@ async function unpackBuild(packed) {
   return {base: draft.base || null, placements: list, name: typeof draft.name === 'string' ? draft.name.slice(0, 60) : 'Shared design'};
 }
 $('free-share').addEventListener('click', async () => {
-  const link = `https://banjo.is/machine#build=${await packBuild({name: activeDesign.name, base: activeDesign.draft.base, placements})}`;
+  const link = `${SHARE_SITE}/machine#build=${await packBuild({name: activeDesign.name, base: activeDesign.draft.base, placements})}`;
   const box = $('share-link');
   box.hidden = false; box.value = link; box.select();
   let copied = false;
@@ -6189,7 +6192,7 @@ $('feedback-form').addEventListener('submit', async e => {
     const base=level?.free?activeDesign?.draft.base||null:null;
     const fingerprint=JSON.stringify([text,level?.id,placements,base]);
     if(feedbackAttempt?.fingerprint!==fingerprint){
-      const replay=level?.free?`https://banjo.is/machine#build=${await packBuild({name:activeDesign.name,base,placements})}`:null;
+      const replay=level?.free?`${SHARE_SITE}/machine#build=${await packBuild({name:activeDesign.name,base,placements})}`:null;
       feedbackAttempt={fingerprint,request:{op:'feedback',report_id:crypto.randomUUID(),text,level:level?.id,
         placements:clone(placements),base:clone(base),last_run:clone(lastRun),world_t:world.t,replay_link:replay||'',
         screen:[innerWidth,innerHeight],touch:matchMedia('(pointer: coarse)').matches}};

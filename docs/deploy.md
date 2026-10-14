@@ -242,3 +242,114 @@ that Linear accepted it. Verify one report's confirmed issue URL and destination
 after configuring the key. Automated tests simulate provider success, failure,
 restart and timeout recovery; direct tests confirmed team access, UUID validation
 and the archived project's rejection. Live creation completes the release check.
+
+
+## Branch testing and promotion
+
+Requested October 14, 2026. **Provisioning is pending**: the branch-aware server,
+shared-storage bridge and promotion guard are implemented and locally tested;
+a separate Render test service and the production `/test` destination are not
+yet provisioned. Existing production remains on main.
+
+The intended entry is `https://banjo.is/test`, an operator-configured redirect
+to the separate test service's `/play`. It is not a second engine hidden inside
+the production process. Assets and APIs stay at their normal root paths on the
+test origin, so a branch can change the server, page and native engine together.
+Test builds carry a yellow TEST badge, a commit header and a branch tooltip.
+Their share links stay on the test origin; production shares still use banjo.is.
+The redirect does not forward private return credentials or arbitrary query
+parameters. Its destination is never taken from a visitor request.
+
+Create one Docker web service named **banjo-test**, from `lrspeiser/banjo`,
+tracking **codex/staging**, using the existing Dockerfile and its default command.
+Use **1c-2g** (1 CPU, 2 GB) to compare physics under the same compute allocation
+as production. Its displayed cost must be approved before creating it. Do not
+attach a second persistent disk or create a new Postgres database. Set:
+
+| Variable | Test service value |
+| --- | --- |
+| `BANJO_ENVIRONMENT` | `test` |
+| `BANJO_PROFILE_UPSTREAM` | `https://banjo.is/api/profile` |
+| `BANJO_PROFILE_NAMESPACE` | `test` |
+| `BANJO_PUBLIC_HOSTS` | `test.banjo.is` (optional future custom domain) |
+| `BANJO_MACHINE_SESSIONS` | `3` |
+
+Render's own `RENDER_EXTERNAL_HOSTNAME` is allowed automatically in test mode.
+Do not copy production's Linear credential to staging: the test outbox and
+machine logs are ephemeral without a disk. The test service needs its own
+configured model credential if LLM help is to be tested; no credential is
+embedded in code or a browser. Provider keys remain operator-managed secrets.
+After verifying the actual test URL, set **BANJO_TEST_URL** on the production
+service to that URL ending in `/play`; the validated server supports HTTPS
+only, without embedded credentials, query or fragment.
+
+SQLite remains on production's existing mounted disk. Render cannot mount that
+disk in two services. The test service uses the ordinary HTTPS profile API;
+only saves/restores use production compute, while rehearsals and live physics
+run entirely on the test service. Existing API limits and storage capacity
+apply to both. If the production save API is unavailable, testing retains local
+drafts and refuses remote acknowledgement; it never falls back to a disposable
+local SQLite store while claiming persistence.
+
+By default, test visitor UUIDs are deterministically mapped to distinct UUIDv4
+credentials before reaching the existing database. Production's UUID hashing,
+rows, revision checks, schema and backups are unchanged. Test saves and live
+saves are separate rows in **the same database**, with the same durability.
+The mapping prevents accidental live edits; it is not a security boundary
+against someone who already possesses a bearer credential. Cookies remain
+host-only; no domain-wide credential cookie is added. Restore a test profile
+with its test return link. To test a live design, open its shared machine setup
+on the test origin and save a test copy. Deliberately choosing the namespace
+`production` would edit live records and must be an explicit owner choice;
+do not change the default casually. No schema migrations run during promotion.
+
+Development flow:
+
+1. Start a feature branch from current main; preserve unrelated changes.
+2. Verify the changed scope, update Recent Changes, and integrate it into
+   `codex/staging`. Fetch first and preserve any other staging work.
+3. Push staging and wait for the test header and `/api/checkpoint` to report
+   the expected SHA, branch, environment and native binary; play ordinary flows
+   on desktop and phone. Validate saves and expected physics, not just page load.
+4. Review the test site with the owner. Run the guard below; it requires the
+   newest source-registration and build-and-test CI jobs to succeed on this SHA.
+5. With owner release authorization, repeat using `--push`. The ordinary
+   fast-forward push updates main to the **exact** tested SHA. A concurrent
+   main update rejects promotion and requires incorporating/retesting it.
+6. Check production's header/checkpoint and ordinary play after Render deploys.
+   Saved data is already in the existing store; promoting code does not copy or
+   replace the database. Retain independent backups for recovery.
+
+```sh
+python scripts/promote-test.py --site https://ACTUAL-TEST-HOST
+# Release only after review and explicit release authorization:
+python scripts/promote-test.py --site https://ACTUAL-TEST-HOST --push
+```
+
+The guard defaults to a dry run and does not reset local files or force-push.
+It refuses a stale/running-old server, a dirty build, a non-test site, a different
+branch, missing/failed/pending CI, and a staging history missing current main.
+
+Verification before provisioning: 39 HTTP tests pass (6.425 s), exercising
+both real servers against one SQLite store, isolated live/test rows, restore
+after recreating the proxy, stale-device conflicts, body limits, cookie and
+Origin handling, unavailable upstream and refusal to follow credential-bearing
+redirects. Eight SQLite tests, four identity-client tests, eleven profile-sync
+tests and two promotion guard tests pass. This changes no native physical laws;
+the previously verified native binary remains in use. Browser and hosted
+provisioning receipts follow when measured.
+
+Local browser receipt: ordinary level GO → add weight → Try It! starts the
+native simulation and displays the physical missed-goal result. A Sandbox
+marble was placed, the design renamed, and Version 1 saved and recovered after
+reload through the shared API at profile revision 8. Its setup share URL uses
+the test origin. The yellow badge and scene controls remain visible at
+390×844 and 844×390; screenshots are under ignored `build/ui-proof/test-site-*`.
+Final HTTP run: 39 tests in 6.147 s; the three registered CTest suites for
+profiles, promotion and HTTP pass in 7.38 s. Native SHA-256 remains
+`35230eb7ee76ee0209ff034558ea6110061babd072635561b98d988b92c3f67a`.
+An existing localhost cookie from another local server initially referred to
+an unknown test profile; explicitly opening the isolated QA return identity
+resolved it. Missing explicit/cookie identities remain refused instead of
+silently discarding old data. Hosted test cookies will be host-only on the
+separate test origin.

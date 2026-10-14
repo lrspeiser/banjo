@@ -31,6 +31,20 @@ ASSETS={'/play':'client/voxel-lab/machine.html','/machine':'client/voxel-lab/mac
 GAME_ROUTES=set(ASSETS)|{'/api/checkpoint'}
 GAME_POSTS={'/login','/api/machine','/api/profile'}
 
+def test_site_url(value):
+ if not value:return None
+ parsed=urlsplit(value)
+ if (parsed.scheme!='https' or not parsed.hostname or parsed.username or parsed.password or
+     parsed.query or parsed.fragment or any(c.isspace() for c in value)):
+  raise ValueError('Test site URL must be an HTTPS URL without credentials, query or fragment')
+ parsed.port
+ return value.rstrip('/')
+
+def repository_branch():
+ if os.environ.get('RENDER_GIT_BRANCH'):return os.environ['RENDER_GIT_BRANCH']
+ try:return subprocess.check_output(['git','-C',str(ROOT),'branch','--show-current'],text=True,timeout=3,stderr=subprocess.DEVNULL).strip() or None
+ except (OSError,subprocess.SubprocessError):return None
+
 def public_hostnames(*values):
  """Explicit hostnames only: the existing setting and additional aliases."""
  hosts=set()
@@ -73,7 +87,8 @@ def repository_state():
 class Server(ThreadingHTTPServer):
  request_queue_size=128
  daemon_threads=True
- def __init__(self,address,native,logs,password=None,public_host=None,site='all',public=False,public_hosts=None,profile_db=None):
+ def __init__(self,address,native,logs,password=None,public_host=None,site='all',public=False,public_hosts=None,profile_db=None,
+              environment=None,profile_upstream=None,profile_namespace=None,test_url=None):
   # Public: deliberately open to anyone, with no password -- only for the
   # game (--site game), where the chat and the trials are rationed instead.
   if public and site!='game':raise ValueError('only the game (--site game) may be public with no password')
@@ -81,6 +96,10 @@ class Server(ThreadingHTTPServer):
   refusal=None if public else access_gate.refusal(address[0],password)
   if refusal:raise ValueError(refusal)
   self.public=public
+  self.environment=environment or os.environ.get('BANJO_ENVIRONMENT') or ('production' if public else 'local')
+  if self.environment not in ('production','test','local'):raise ValueError('Environment is production, test or local')
+  if self.environment=='test':public_host=public_host or os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+  self.test_url=test_site_url(test_url or os.environ.get('BANJO_TEST_URL'))
   self.chat_allowance=Allowance(int(os.environ.get('BANJO_CHAT_PER_HOUR','12')),int(os.environ.get('BANJO_CHAT_PER_DAY','400')),'chat') if public else None
   self.trial_allowance=Allowance(int(os.environ.get('BANJO_TRIALS_PER_HOUR','30')),int(os.environ.get('BANJO_TRIALS_PER_DAY','2000')),'reliability check') if public else None
   self.feedback_allowance=Allowance(10,500,'feedback') if public else None
@@ -97,7 +116,11 @@ class Server(ThreadingHTTPServer):
   self.started_revision,_=repository_state()
   from machine_world import MachineHost,engine_path
   self.machines=MachineHost(engine_path(native),logs/'machines');self.chat_busy=threading.BoundedSemaphore(2)
-  self.profiles=anonymous_profiles.ProfileStore(profile_db or os.environ.get('BANJO_PROFILE_DB') or logs.parent/'profiles.sqlite3')
+  upstream=profile_upstream or os.environ.get('BANJO_PROFILE_UPSTREAM')
+  if upstream and self.environment!='test':raise ValueError('Remote profile storage is only for the test environment')
+  self.profiles=(anonymous_profiles.RemoteProfileStore(upstream,logs.parent/'profile-proxy.sqlite3',
+      namespace=profile_namespace or os.environ.get('BANJO_PROFILE_NAMESPACE') or 'test') if upstream else
+      anonymous_profiles.ProfileStore(profile_db or os.environ.get('BANJO_PROFILE_DB') or logs.parent/'profiles.sqlite3'))
   import bug_reports
   self.bug_reports=bug_reports.Reports(self.profiles.path.with_name('bug-reports.sqlite3'),
    os.environ.get('LINEAR_API_KEY',''),os.environ.get('BANJO_LINEAR_PROJECT_ID',bug_reports.DEFAULT_PROJECT_ID),os.environ.get('BANJO_LINEAR_TEAM_ID'))
@@ -110,7 +133,9 @@ class Server(ThreadingHTTPServer):
   revision,dirty=repository_state()
   return {'website_revision':revision,'local_changes':dirty,'server_revision':self.started_revision,
           'restart_pending':revision!=self.started_revision,'engine_sha256':hashlib.sha256(self.native.read_bytes()).hexdigest(),
-          'bug_reporting':self.bug_reports.summary()}
+          'bug_reporting':self.bug_reports.summary(),'environment':self.environment,'branch':repository_branch(),
+          'profiles':{'shared':isinstance(self.profiles,anonymous_profiles.RemoteProfileStore),
+                      'namespace':getattr(self.profiles,'namespace','production')},'test_url':self.test_url}
  def server_close(self):
   if hasattr(self,'bug_reports'):self.bug_reports.close()
   super().server_close()
@@ -141,6 +166,10 @@ class Handler(BaseHTTPRequestHandler):
   if not self.host_allowed():self.send(403,b'{"error":"Host refused"}');return
   if access_gate.answered(self,'GET'):return
   path=self.path.split('?')[0]
+  if path in ('/test','/test/'):
+   if self.server.test_url:self.send(303,b'',kind='text/plain',headers={'Location':self.server.test_url})
+   else:self.send(503,b'{"error":"The test site has not been connected yet"}')
+   return
   # The game is the whole site: its front door is the levels.
   if path in ('/','/index.html'):
    self.send_response(303);self.send_header('Location','/play');self.send_header('Referrer-Policy','no-referrer');self.end_headers();return
@@ -150,7 +179,11 @@ class Handler(BaseHTTPRequestHandler):
    except OSError:self.send(503,b'{"error":"Running native build cannot be inspected"}')
    return
   kind={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','mjs':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','json':'application/json','webmanifest':'application/manifest+json','png':'image/png','jpg':'image/jpeg'}[ASSETS[path].rsplit('.',1)[1]]
-  self.send(200,(ROOT/ASSETS[path]).read_bytes(),kind)
+  content=(ROOT/ASSETS[path]).read_bytes()
+  if path in ('/play','/machine'):
+   content=content.replace(b'<html lang="en">',f'<html lang="en" data-banjo-environment="{self.server.environment}">'.encode())
+   if self.server.environment=='test':content=content.replace(b'id="environment-badge" hidden',b'id="environment-badge"')
+  self.send(200,content,kind)
  def do_POST(self):
   try:
    # Consume the bounded body before any refusal. Closing a socket with an
@@ -197,7 +230,8 @@ class Handler(BaseHTTPRequestHandler):
    elif op=='create':reply=self.server.profiles.create(data.get('visitor'),data.get('profile'),before_create=lambda:rate(self.server.profile_creations))
    elif op=='save':reply=self.server.profiles.save(data.get('visitor'),data.get('revision'),data.get('profile'))
    else:raise ValueError('Profile operation is open, create or save')
-   reply.update(ok=True,storage={'persistent':anonymous_profiles.storage_persistent(self.server.profiles.path)})
+   reply.update(ok=True)
+   if 'storage' not in reply:reply['storage']={'persistent':anonymous_profiles.storage_persistent(self.server.profiles.path)}
    headers={}
    if op=='open':
     host=(urlsplit('//'+self.headers.get('Host','')).hostname or '').rstrip('.')

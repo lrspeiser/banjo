@@ -13,6 +13,9 @@ import re
 import sqlite3
 import threading
 import uuid
+import urllib.error
+import urllib.request
+from urllib.parse import urlsplit
 
 MAX_PROFILE_BYTES = 8_000_000
 MAX_REQUEST_BYTES = 8_100_000
@@ -42,6 +45,10 @@ class ProfileCapacity(ProfileError):
 
 class ProfileRateLimited(ProfileError):
     status = 429
+
+
+class ProfileUnavailable(ProfileError):
+    status = 503
 
 
 def visitor_id(value):
@@ -193,3 +200,122 @@ class ProfileStore:
             connection.execute('UPDATE profiles SET revision=?,profile_json=?,profile_bytes=?,updated_at=CURRENT_TIMESTAMP WHERE key_sha256=?',
                                (revision+1, text, size, self._key(selected)))
             return self._reply(selected, (revision+1, text))
+
+
+class _NoProfileRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        return None
+
+
+class RemoteProfileStore:
+    """Use the existing save API; keep test identities separate in its database.
+
+    No database file or provider secret crosses services. Namespaced UUIDs are
+    deterministic bearer credentials, not an authorization boundary against
+    someone who already knows the original bearer. The default namespace keeps
+    ordinary test edits from addressing production rows. CAS remains upstream.
+    """
+    def __init__(self, url, state_path, namespace='test'):
+        parsed = urlsplit(url)
+        if (parsed.scheme not in ('https', 'http') or not parsed.hostname or
+                parsed.username or parsed.password or parsed.query or parsed.fragment or
+                parsed.path != '/api/profile' or
+                (parsed.scheme == 'http' and parsed.hostname not in ('localhost', '127.0.0.1', '::1'))):
+            raise ValueError('Profile upstream must be an HTTPS /api/profile URL (HTTP only on loopback).')
+        parsed.port
+        if not re.fullmatch(r'[a-z][a-z0-9-]{0,47}', namespace):
+            raise ValueError('Profile namespace must be a short lowercase name.')
+        self.url, self.namespace = url, namespace
+        self.origin = f'{parsed.scheme}://{parsed.netloc}'
+        self.path = Path(state_path).resolve()  # local report outbox, never the remote database
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.opener = urllib.request.build_opener(_NoProfileRedirect())
+
+    def remote_id(self, visitor):
+        selected = visitor_id(visitor)
+        if self.namespace == 'production':
+            return selected
+        digest = hashlib.sha256(f'banjo-profile-namespace-v1:{self.namespace}:{selected}'.encode('ascii')).digest()
+        return str(uuid.UUID(bytes=digest[:16], version=4))
+
+    def _request(self, selected, op, **data):
+        remote = self.remote_id(selected)
+        cached = data.pop('_cached', False)
+        payload = dict(op=op, **data)
+        payload['cached_visitor' if cached else 'visitor'] = remote
+        request = urllib.request.Request(self.url, json.dumps(payload, ensure_ascii=False,
+            separators=(',', ':'), allow_nan=False).encode('utf-8'),
+            {'Content-Type': 'application/json', 'Origin': self.origin})
+        status = 200
+        try:
+            try:
+                response = self.opener.open(request, timeout=20)
+            except urllib.error.HTTPError as error:
+                response, status = error, error.code
+            with response:
+                body = response.read(MAX_REQUEST_BYTES + 1)
+            if len(body) > MAX_REQUEST_BYTES:
+                raise ValueError('Oversized upstream reply')
+            reply = json.loads(body, parse_constant=lambda value: (_ for _ in ()).throw(ValueError('Invalid JSON')))
+            if not isinstance(reply, dict) or reply.get('visitor') != remote:
+                # Capacity/rate errors need not echo an identity.
+                if status in (429, 507):
+                    error_type = ProfileRateLimited if status == 429 else ProfileCapacity
+                    raise error_type('Shared profile storage is busy or full; your previous save was kept.')
+                raise ValueError('Invalid upstream identity')
+            reply['visitor'] = selected
+            fields = {key: reply[key] for key in ('visitor', 'revision', 'profile', 'created', 'storage') if key in reply}
+            if status == 404:
+                raise ProfileMissing('That test profile was not found.', visitor=selected)
+            if status not in (200, 409) or type(reply.get('revision')) is not int or reply['revision'] < 0:
+                raise ValueError('Invalid upstream result')
+            try:
+                encoded_profile(reply.get('profile'))
+            except ProfileError:
+                raise ValueError('Invalid upstream profile') from None
+            if status == 409:
+                raise ProfileConflict('This profile changed on another device; your saved version was kept.', **fields)
+            if reply.get('ok') is not True:
+                raise ValueError('Unsuccessful upstream result')
+            storage = reply.get('storage')
+            if not isinstance(storage, dict):
+                raise ValueError('Invalid upstream storage metadata')
+            fields['storage'] = dict(persistent=storage.get('persistent') is True,
+                                     shared=True, namespace=self.namespace)
+            return fields
+        except ProfileError:
+            raise
+        except (OSError, ValueError, TypeError, KeyError, urllib.error.URLError):
+            raise ProfileUnavailable('Shared profile storage is unavailable; your local draft was kept.') from None
+
+    def open(self, visitor=None, cached_visitor=None, cookie_visitor=None, before_create=None):
+        identity = next((value for value in (visitor, cookie_visitor, cached_visitor) if value is not None), None)
+        selected = visitor_id(identity) if identity is not None else str(uuid.uuid4())
+        try:
+            return self._request(selected, 'open')
+        except ProfileMissing:
+            if visitor is not None or cookie_visitor is not None:
+                raise
+        if before_create:
+            before_create()
+        return self._request(selected, 'open', _cached=True)
+
+    def create(self, visitor, profile, before_create=None):
+        selected = visitor_id(visitor)
+        encoded_profile(profile)
+        try:
+            row = self._request(selected, 'open')
+        except ProfileMissing:
+            row = None
+        if row is not None:
+            raise ProfileConflict('That visitor profile already exists.', **row)
+        if before_create:
+            before_create()
+        return self._request(selected, 'create', profile=profile)
+
+    def save(self, visitor, revision, profile):
+        selected = visitor_id(visitor)
+        if type(revision) is not int or not 0 <= revision < 2**63-1:
+            raise ProfileError('Revision must be a nonnegative integer.')
+        encoded_profile(profile)
+        return self._request(selected, 'save', revision=revision, profile=profile)

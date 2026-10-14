@@ -23,6 +23,13 @@ ENGINE = Path(args.engine or os.environ.get('BANJO_LIVE_ENGINE', ''))
 
 
 class Configuration(unittest.TestCase):
+    def test_test_site_redirect_target_is_operator_configured_https_only(self):
+        self.assertIsNone(lab.test_site_url(None))
+        self.assertEqual(lab.test_site_url('https://banjo-test.onrender.com/play/'), 'https://banjo-test.onrender.com/play')
+        for value in ('http://other.example/play', 'https://secret@banjo.is/play',
+                      'https://banjo.is/play?visitor=private', 'https://banjo.is/#private', 'https://banjo.is/ bad'):
+            with self.assertRaises(ValueError):lab.test_site_url(value)
+
     def test_single_setting_and_aliases_are_combined_and_normalized(self):
         self.assertEqual(lab.public_hostnames('legacy.example', ' Banjo.is,WWW.BANJO.IS.,banjo.is '),
                          frozenset(('legacy.example', 'banjo.is', 'www.banjo.is')))
@@ -368,6 +375,99 @@ class Requests(unittest.TestCase):
                 status, body, _ = self.request([host], 'POST', '/api/machine', origin)
                 self.assertEqual(status, 400)
                 self.assertIn('refused', json.loads(body)['error'])
+
+
+class StagingRequests(Requests):
+    """Both real HTTP servers, one actual SQLite database, separate identities."""
+    @classmethod
+    def setUpClass(cls):
+        if not ENGINE.is_file():raise RuntimeError('pass --engine: the verified executable')
+        cls.logs=tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        folder=Path(cls.logs.name)
+        cls.upstream=lab.Server(('127.0.0.1',0),ENGINE,folder/'production',site='game',public=True,
+            profile_db=folder/'shared.sqlite3')
+        cls.upstream.profile_creations=lab.Allowance(1000,10000,'test profiles')
+        threading.Thread(target=cls.upstream.serve_forever,daemon=True).start()
+        cls.server=lab.Server(('127.0.0.1',0),ENGINE,folder/'test',site='game',public=True,
+            environment='test',profile_upstream=f'http://127.0.0.1:{cls.upstream.server_address[1]}/api/profile',
+            public_hosts='banjo.is,www.banjo.is,banjo-f1sv.onrender.com,banjo-test.onrender.com')
+        cls.server.profile_creations=lab.Allowance(1000,10000,'test profiles')
+        threading.Thread(target=cls.server.serve_forever,daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        for server in (cls.server,cls.upstream):
+            server.shutdown();server.machines.close_all();server.server_close()
+        cls.logs.cleanup()
+
+    def test_test_saves_live_in_the_same_database_without_overwriting_production_rows(self):
+        import anonymous_profiles
+        visitor=str(uuid.uuid4())
+        self.upstream.profiles.create(visitor,{'design':'Live design','wins':['cut']})
+        status,opened,_=self.profile({'op':'open','cached_visitor':visitor})
+        self.assertEqual((status,opened['profile']),(200,{}))
+        status,saved,_=self.profile({'op':'save','visitor':visitor,'revision':0,'profile':{'design':'Test design'}})
+        self.assertEqual(status,200)
+        self.assertEqual(self.upstream.profiles.open(visitor=visitor)['profile']['design'],'Live design')
+        mapped=self.server.profiles.remote_id(visitor)
+        self.assertNotEqual(mapped,visitor)
+        self.assertEqual(self.upstream.profiles.open(visitor=mapped)['profile'],{'design':'Test design'})
+        reopened=anonymous_profiles.RemoteProfileStore(self.server.profiles.url,Path(self.logs.name)/'restarted/proxy.sqlite3')
+        self.assertEqual(reopened.open(visitor=visitor)['profile'],saved['profile'])
+        self.assertEqual(reopened.open(visitor=visitor)['revision'],1)
+        self.assertEqual(saved['storage'],{'persistent':True,'shared':True,'namespace':'test'})
+
+    def test_test_badge_checkpoint_and_entry_route(self):
+        status,body,_=self.request(['banjo-test.onrender.com'])
+        self.assertEqual(status,200)
+        self.assertIn(b'data-banjo-environment="test"',body)
+        self.assertIn(b'id="environment-badge">TEST',body)
+        status,body,_=self.request(['127.0.0.1'],path='/api/checkpoint')
+        checkpoint=json.loads(body)
+        self.assertEqual(checkpoint['environment'],'test')
+        self.assertEqual(checkpoint['profiles'],{'shared':True,'namespace':'test'})
+        original=self.upstream.test_url
+        self.upstream.test_url='https://banjo-test.onrender.com/play'
+        try:
+            connection=http.client.HTTPConnection('127.0.0.1',self.upstream.server_address[1])
+            connection.request('GET','/test?next=https://evil.example&visitor=private')
+            response=connection.getresponse();response.read();connection.close()
+            self.assertEqual(response.status,303)
+            self.assertEqual(response.getheader('Location'),self.upstream.test_url)
+            self.assertNotIn('private',response.getheader('Location'))
+        finally:self.upstream.test_url=original
+        self.assertEqual(self.request(['127.0.0.1'],path='/test')[0],503)
+
+    def test_unavailable_storage_refuses_writes_and_never_falls_back_to_local_saves(self):
+        import urllib.error
+        status,opened,_=self.profile({'op':'open'})
+        with patch.object(self.server.profiles.opener,'open',side_effect=urllib.error.URLError('secret upstream detail')):
+            status,result,_=self.profile({'op':'save','visitor':opened['visitor'],'revision':0,'profile':{'lost':True}})
+        self.assertEqual(status,503)
+        self.assertNotIn('secret',json.dumps(result))
+        self.assertFalse(self.server.profiles.path.exists())
+        self.assertEqual(self.profile({'op':'open','visitor':opened['visitor']})[1]['profile'],{})
+
+    def test_remote_profile_redirects_do_not_forward_bearer_credentials(self):
+        from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+        arrivals=[]
+        class Trap(BaseHTTPRequestHandler):
+            def do_POST(self):arrivals.append(True);self.send_response(500);self.end_headers()
+            def log_message(self,*args):pass
+        trap=ThreadingHTTPServer(('127.0.0.1',0),Trap)
+        threading.Thread(target=trap.serve_forever,daemon=True).start()
+        original=lab.Handler.do_POST
+        upstream=self.upstream
+        def redirect(handler):
+            if handler.server is upstream:
+                handler.rfile.read(int(handler.headers.get('Content-Length','0')))
+                handler.send(307,b'{}',headers={'Location':f'http://127.0.0.1:{trap.server_address[1]}/api/profile'})
+            else:original(handler)
+        try:
+            with patch.object(lab.Handler,'do_POST',redirect):status,_,_=self.profile({'op':'open'})
+            self.assertEqual(status,503)
+            self.assertEqual(arrivals,[])
+        finally:trap.shutdown();trap.server_close()
 
 
 if __name__ == '__main__':

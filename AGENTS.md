@@ -17,7 +17,25 @@ reset or force-push over other work.
 
 ## Owner-authorized publishing cadence
 
-Push verified, coherent checkpoints to GitHub main regularly during development; do not accumulate long local-only runs. The owner authorized this on September 5, 2026. Fetch first, preserve concurrent changes, run checks appropriate to the outgoing scope, and use ordinary fast-forward pushes or the repository's required PR workflow. Never force-push main. Keep credentials and local build artifacts out of commits. Record the published revision and distinguish measured behavior from experimental or unfinished capabilities. A failed check must be fixed or explicitly resolved before publishing its affected code. This authorization covers repository updates, not separate production deployments or messages to other people.
+On October 14, 2026 the owner requested branch testing before production.
+Default new work to `codex/` feature branches, with coherent verified
+checkpoints pushed regularly to `codex/staging`, which the separate test
+service builds. Do not publish unfinished feature work straight to main.
+Promote a reviewed test revision to main when the owner requests release,
+after checking the running test revision and CI with
+`scripts/promote-test.py`. Its default is a dry run; `--push` releases to
+production. An explicitly authorized immediate production fix can bypass the
+staging cadence, but still requires appropriate verification.
+
+The September 5 authorization for repository publishing remains in effect.
+Fetch first, preserve concurrent changes, and use ordinary fast-forward
+pushes or the repository's required PR workflow. Never force-push main or
+staging. Keep credentials and local build artifacts out of commits. Record
+published revisions and distinguish measured behavior from experimental or
+unfinished capabilities. Fix or explicitly resolve failed checks before
+publishing affected code. Hosting purchases and messages to other people
+need their own authorization. See `docs/deploy.md` for test-site provisioning
+status; do not imply a configured test service exists before verifying it.
 
 Render deploys `main` automatically, so a push to main is a deploy of the game.
 After one, check that the site serves the new commit (the page's header shows
