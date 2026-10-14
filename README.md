@@ -4,7 +4,7 @@
 
 Choose an Adjustment beside a selected piece, then tap or drag the large gold
 handles in the 3D view. Numeric settings, including ratings and joint properties,
-use these controls; exact values remain in Help → Settings. A spring’s dotted
+use these controls; exact values remain in Controls → Settings. A spring’s dotted
 relaxed-length guide is an editing measurement, while its latch holds the actual
 compressed spring until release.
 
@@ -49,9 +49,12 @@ discrete sizes, such as gear teeth. Tap a current choice value to open large
 named options instead of cycling tiny arrows. Lens focus adjusts its actual face curvature
 and native beam preview; tank opening and live valve/release controls stay with
 their devices. **Level Complete!** appears over the scene. Exact sliders and snap preferences are in
-**Help → Settings**. Both snaps start on. Used tray cards disappear.
-After a missed goal, **Try again** restores the setup and selects the last
-edited piece. Proposed electrical ratings update beside
+**Controls → Settings**. Both snaps start on. Used tray cards disappear.
+**Try It!** is wider and centered below the scene. Help contains the question
+box, assistant response and a subdued **Report a bug** link. After a missed
+goal, **Ask for Help** opens a dismissible response about the measured attempt;
+**Try again** restores the setup and selects the last edited piece.
+Proposed electrical ratings update beside
 the part. Useful wiring and inspection actions appear directly in Controls;
 there is no Tools or Readings dropdown. **Recent Changes** in the top
 navigation opens dated player-friendly update notes over the current screen;

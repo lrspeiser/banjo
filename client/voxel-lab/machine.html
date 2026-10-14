@@ -10,6 +10,10 @@
 <dl><dt>You’ll place</dt><dd id="level-intro-place"></dd><dt>How it works</dt><dd id="level-intro-works"></dd><dt>Your goal</dt><dd id="level-intro-goal"></dd></dl>
 <form method="dialog"><button id="level-intro-go" type="submit" autofocus>GO</button></form>
 </dialog>
+<dialog id="run-help" class="reading-dialog" aria-labelledby="run-help-title">
+<div class="guide-head"><h2 id="run-help-title">Help with this attempt</h2><button id="run-help-dismiss" type="button">Dismiss</button></div>
+<div id="run-help-reply" class="guide-body" role="status" aria-live="polite"></div>
+</dialog>
 <div id="viewer-corner" class="viewer-corner" role="group" aria-label="Zoom and edit history">
 <div id="viewer-history"></div>
 <div id="viewer-perspective" role="group" aria-label="Turn and tilt the view"><button id="view-up" type="button" aria-label="Look from above" title="Look from above">↑</button><button id="view-down" type="button" aria-label="Look from the side" title="Look from the side">↓</button></div>
@@ -128,8 +132,8 @@
 <p class="lede">One world, one engine. Each station tests a different part of the physics, and each sets off the next. Nothing is animated: the engine calculates every contact, hinge, current, temperature and break as you watch.</p>
 <section class="chat" aria-label="Build with words">
 <h2>Build something</h2>
-<button id="coach-open" type="button">Show me what to do</button>
-<form id="chat-form"><textarea id="message" rows="3" maxlength="2000" placeholder="Describe what to build or change, e.g. “Add a second ramp with a rubber ball that knocks over a glass pane on a post.”"></textarea>
+<button id="coach-open" type="button" hidden>Show me what to do</button>
+<form id="chat-form"><textarea id="message" aria-label="Your question" rows="3" maxlength="2000" placeholder="Describe what to build or change, e.g. “Add a second ramp with a rubber ball that knocks over a glass pane on a post.”"></textarea>
 <div class="chat-actions"><button id="send" type="submit">Build it</button><button id="undo" type="button" disabled>Undo</button><button id="solve" type="button" hidden>Place it for me</button></div></form>
 <output id="chat-status" aria-live="polite"></output>
 <ol id="chat-log"></ol>
@@ -153,11 +157,11 @@
 <li><b>Read the task.</b> The name and goal stay beside the scene. Green boxes mark destinations.</li>
 <li><b>Add a piece.</b> Choose its pictured tray card. Once it is placed, click the actual piece to edit it. Used cards leave the tray. Sandbox has a full <b>Add a piece</b> library.</li>
 <li><b>Move or turn.</b> The small toolbar beside the selected piece has <b>Move</b> and <b>Turn</b>. Choose one, then drag the piece with your mouse or finger. A click does not relocate it. Drag empty space to change the view; two fingers or a right/middle drag also work.</li>
-<li><b>Change a property.</b> Choose the property in Controls beside the scene, then drag its <b>↔</b> handle left or right. You can also drag the piece when that adjustment is selected. The arrows and live preview show the proposed change. Non-numeric choices such as materials or wire thickness appear in Controls. Exact values and sliders are a fallback in <b>Help → Settings → Precision controls</b>.</li>
+<li><b>Change a property.</b> Choose the property beside the piece, then tap or drag its large gold handles. The arrows and live preview show the proposed change. Tap a choice to see its named options. Exact values and sliders are a fallback in <b>Controls → Settings → Precision controls</b>.</li>
 <li><b>Place and try.</b> <b>Place</b> beside the piece confirms it. <b>Try It!</b> also places it before starting. A red piece must be moved until it fits. If the machine misses its goal, choose <b>Try again</b>: your setup returns to time zero and the last edited piece is selected. <b>Reset</b> starts a challenge over; <b>Undo</b> can recover your pieces.</li>
 <li><b>Change the view.</b> Turn and tilt buttons sit above the zoom slider and magnifiers. Wheel or trackpad pinch zooms; two fingers turn and zoom on a phone. Undo and Redo stay in the scene corner.</li>
 <li><b>Draw wires.</b> Click one connection ring, then the other. Match positive and negative terminals and complete the return path. Click a placed wire to remove it, then draw a replacement; Undo recovers a mistake. Flow arrows appear only when the engine measures current.</li>
-<li><b>Help and settings.</b> Ask for a hint in Help. Below the help box, Settings contains exact controls and snap preferences. Grid and object snapping start on whenever you open a level or design. Alt-drag temporarily bypasses both. Sandbox Save version keeps a design you can reopen.</li>
+<li><b>Help and settings.</b> Ask your question in Help. After a missed goal, <b>Ask for Help</b> sends your attempt to the assistant and opens a reply you can dismiss. <b>Report a bug</b> is in Help. Controls → Settings contains exact controls, snap preferences, level instructions and Share. Both snaps start on; Alt-drag temporarily bypasses them. Sandbox Save version keeps a design you can reopen.</li>
 </ol>
 <p><b>Keyboard:</b> arrows move a piece; Page Up/Down change its height; Q/E turn, R/F tip and Z/C roll. Enter sets it down. Esc switches between moving and looking around. Ctrl+Z undoes a change.</p>
 </div>
@@ -167,7 +171,8 @@
 <div class="guide-head"><h2 id="recent-changes-title">Recent Changes</h2><button id="recent-changes-done" type="button">Close</button></div>
 <div class="guide-body changes-body" tabindex="0" aria-label="Game updates, newest first">
 <section aria-labelledby="changes-oct14"><h3 id="changes-oct14"><time datetime="2026-10-14">October 14, 2026</time></h3>
-<article><h4>Watch gears mesh while placing</h4><p>Select a gear to see the engine’s predicted motion play while you adjust it. The target wheel’s preview angle helps show whether the teeth engage. The main choices are now <b>Teeth</b>, <b>Radius</b> and <b>Axle height</b>, with the size shown in centimetres. Radius also changes tooth spacing. Tooth alignment, materials and bearing friction remain in <b>Help → Settings → Precision controls</b>.</p></article>
+<article><h4>A simpler way to try and get help</h4><p><b>Try It!</b> is wider and centered below the 3D view. Help now contains your question, the assistant’s response and a quieter <b>Report a bug</b> link. The extra clue and automatic-placement buttons are gone. After a missed goal, <b>Ask for Help</b> beside <b>Try again</b> asks about your actual attempt and opens a dismissible reply without changing your pieces. Settings, level instructions and Share are now in <b>Controls → Settings</b>.</p></article>
+<article><h4>Watch gears mesh while placing</h4><p>Select a gear to see the engine’s predicted motion play while you adjust it. The target wheel’s preview angle helps show whether the teeth engage. The main choices are now <b>Teeth</b>, <b>Radius</b> and <b>Axle height</b>, with the size shown in centimetres. Radius also changes tooth spacing. Tooth alignment, materials and bearing friction remain in <b>Controls → Settings → Precision controls</b>.</p></article>
 <article><h4>Divert the water needs only the chute</h4><p>Water starts automatically when you press <b>Try It!</b>. Aim the chute downhill into the receiving container; the extra source-valve button is gone. The introduction makes the automatic flow clear. Taps stay available in <b>Fill the receiver</b> and Sandbox, where controlling the flow is useful.</p></article>
 <article><h4>Adjust settings beside the object</h4><p>The tiny drag button beside <b>Adjustment</b> is gone. Choose a setting, then use the large gold <b>+</b> and <b>−</b> handles in the 3D view: tap for one increment or drag along the arrows. This now works for spring stiffness, electrical ratings, water flow and other numeric settings too. In <b>Spring lifts the load</b>, a dotted guide shows the spring’s relaxed length while its latch keeps it compressed; the proposed push and stored energy update as you adjust. Handles move to clear space on small screens, with a thin line back to their working point. Exact values remain in <b>Help → Settings</b>.</p></article>
 <article><h4>Choose a load you can see</h4><p><b>Wheel in the river</b> now offers just its relevant adjustments; that lesson asks you to spin the wheel and has no load to lift. In Sandbox, <b>Load to lift</b> replaces Drum Load: choose an available object by name, or use <b>Pick in scene</b>. Try the river gate in <b>Build beside a river</b>. Instructions wrap fully, and an empty scene explains that you need to add a weight or loose box first.</p></article>

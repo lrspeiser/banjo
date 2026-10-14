@@ -5511,7 +5511,12 @@ function watchGoal(frame) {
 async function score(row) {
   const ran=session,sourceLevel=level;
   lastRun = {goal_at_s: row && row.done ? row.at_s : null, world_t: world.t,
-             events: [...$('events').children].slice(0, 20).map(li => li.textContent)};
+             events: [...$('events').children].slice(0, 20).map(li => li.textContent),
+             measurements:clone({stations:(readouts.stations||[]).slice(0,16),joints:(readouts.joints||[]).slice(0,32),
+               electrical:readouts.electrical?{devices:(readouts.electrical.devices||[]).slice(0,32),wires:(readouts.electrical.wires||[]).slice(0,64)}:null,
+               pour:readouts.pour||null,machines:readouts.machines?{
+                 batteries:(readouts.machines.batteries||[]).slice(0,32),solar_panels:(readouts.machines.solar_panels||[]).slice(0,32),
+                 motors:(readouts.machines.motors||[]).slice(0,32)}:null})};
   const r = await api({op: 'level_score', session:ran});
   if(session!==ran || level!==sourceLevel)return;
   const v = $('verdict'); v.replaceChildren();
@@ -5640,7 +5645,8 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
       await startOver(true);
       if(placements[selected])pickUp(selected);
       else if(placements.length)pickUp(placements.length-1);
-    }, {className: 'primary'}));
+    }, {className: 'primary'}),button('Ask for Help',()=>askLevel('hint',{popup:true,
+      message:'My last attempt did not reach the goal. Explain why using my setup and measured last run, and suggest one clear change I can try myself.'})));
   }
   box.hidden = false;
   sceneIntoView();
@@ -5716,6 +5722,7 @@ renderer.domElement.addEventListener('pointerdown', () => {
 
 async function chooseLevel(id, design = null) {
   closeLevelIntroduction();
+  if($('run-help').open)$('run-help').close();
   closeCoach();
   if (!levels.some(l => l.id === id) && id.includes('--v')) {
     if (generatedLevel?.id !== id) {
@@ -5737,10 +5744,10 @@ async function chooseLevel(id, design = null) {
   $('phone-design-tab').textContent = 'Design';
   $('phone-design-tab').hidden = !level.free;
   $('sandbox-build-description').hidden = !level.free;
-  const sectionPanel = level.free ? $('phone-design-panel') : $('phone-help-panel');
+  const sectionPanel = $('phone-design-panel');
   sectionPanel.prepend($('title'), $('sandbox-controls'), $('game'));
-  $('phone-help-panel').prepend($('coach-open'));
-  $('phone-help-panel').prepend($('level-instructions'));$('level-instructions').hidden=Boolean(level.free);
+  $('help-settings').querySelector('summary').after($('level-instructions'));$('level-instructions').hidden=Boolean(level.free);
+  $('help-settings').append($('challenge-actions'),$('challenge-link'));
   $('phone-help-panel').append($('feedback'));
   $('level-details').hidden = Boolean(level.free);
   selectPhonePanel('controls');
@@ -5813,7 +5820,7 @@ async function chooseLevel(id, design = null) {
   // On a level the chat hints and places the tray's pieces; in a free build
   // it builds what it is asked.
   $('free-actions').hidden = !level.free;
-  $('solve').hidden = Boolean(level.free);
+  $('solve').hidden = true;
   $('send').textContent = level.free ? 'Build it' : 'Ask for a hint';
   document.querySelector('.chat h2').textContent = level.free ? 'Build with words' : 'Ask for help';
   $('message').placeholder = level.free
@@ -6058,8 +6065,11 @@ function paintCoachGuide() {
 $('coach-open').addEventListener('click',askCoach);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&coach&&!document.querySelector('dialog[open]'))closeCoach();});
 
-async function askLevel(mode) {
-  const message = $('message').value.trim() || (mode === 'hint' ? 'Give me a hint.' : 'Place the pieces for me.');
+async function askLevel(mode, {popup=false,message:requestedMessage}={}) {
+  if($('send').disabled)return;
+  const requestLevel=level;
+  const message = requestedMessage || $('message').value.trim() || (mode === 'hint' ? 'Give me a hint.' : 'Place the pieces for me.');
+  if(popup){$('run-help-reply').textContent='Thinking about your last attempt…';$('run-help').showModal();$('run-help-dismiss').focus();}
   $('send').disabled = $('solve').disabled = true;
   $('chat-status').textContent = mode === 'hint' ? 'Thinking about your last run…' : 'Placing pieces from your tray, then rehearsing them once in the engine…';
   say('you', message);
@@ -6067,7 +6077,9 @@ async function askLevel(mode) {
     const r = await api({op: 'chat', level: level.id, ...(level.free&&activeDesign?.draft.base?{base:activeDesign.draft.base}:{}), placements, mode, message, last_run: lastRun,
       ui:{targets:[...coachTargets().values()].filter(t=>t.box()).map(({box,...t})=>t),
         editing:ghost?{index:ghost.index,p:ghost.p,fits:ghost.fits,mode:editorMode,adjustment:ghost.card}:null}});
+    if(level!==requestLevel)return;
     say('model', r.reply);
+    if(popup)$('run-help-reply').textContent=r.reply;
     if (mode === 'build' && Array.isArray(r.placements)) {
       endGhost(); remember();
       placements = r.placements.map(p => { const q = {...p}; delete q.cost; return q; });
@@ -6079,10 +6091,11 @@ async function askLevel(mode) {
         : 'Rehearsed once in the engine: the goal did not happen. Try moving the pieces.');
       await rebuildLevel(false);
     }
-    $('message').value = '';
-  } catch (err) { say('refused', err.message); }
+    if(!requestedMessage)$('message').value = '';
+  } catch (err) { if(level===requestLevel){say('refused', err.message);if(popup)$('run-help-reply').textContent=err.message;} }
   finally { $('send').disabled = $('solve').disabled = false; $('chat-status').textContent = ''; }
 }
+$('run-help-dismiss').addEventListener('click',()=>$('run-help').close());
 
 // Reading overlays never navigate, rebuild a design or appear automatically.
 for (const id of ['guide', 'recent-changes']) {
@@ -6167,7 +6180,7 @@ function installPhonePanels() {
     const b=button(label,()=>{write(!read());b.setAttribute('aria-pressed',String(read()));showGridSnap();},{id});
     b.setAttribute('aria-pressed',String(read()));snapping.append(b);
   }
-  help.append(settings);
+  controls.append(settings);
   $('view').append($('panel-toggle'));
   controls.append($('scene-actions'),$('view-controls'));
   $('viewer-history').append($('undo-pieces'),$('redo-pieces'));
@@ -6233,7 +6246,7 @@ async function startGame() {
     ['view-in', () => { distance = Math.max(.4, distance / 1.2); }], ['view-out', () => { distance = Math.min(40, distance * 1.2); }]
   ]) $(id).addEventListener('click',()=>{follow=false;$('follow').setAttribute('aria-pressed','false');change();freshView();});
   $('scene-note').textContent = 'Drag a ghost to move · Drag empty space to turn · Wheel or trackpad pinch to zoom';
-  $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
+  $('game').hidden = false; $('solve').hidden = true; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;
   for (const d of document.querySelectorAll('aside details:not(#feedback):not(#solar-load-help):not(#help-settings)')) d.hidden = true;
   // The levels have their own screen, and the engine's readings are the

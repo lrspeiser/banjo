@@ -1,5 +1,37 @@
 # Puzzles on the machine (/play)
 
+October 14 Help and trial layout update: Try It! (and Pause during a run) is
+160–240 px wide and horizontally centered directly below the 3D view. Reset
+sits left; smaller tabs sit right. On narrow phones and phone Sandbox layouts,
+tabs use a second row to keep all touch targets clear. Help contains only the
+question/response area and a subdued Report a bug disclosure. Guided-clue and
+automatic-placement buttons are no longer presented. Controls → Settings now
+holds exact/snap controls, level instructions and Share. Opening Settings
+temporarily hides the dock's goal row, reserving room to reach the settings;
+the level introduction and scene remain available. This supersedes earlier
+Help → Settings locations and guided-clue UI descriptions in this document.
+
+A missed run presents Try again and Ask for Help. The latter makes an explicit
+hint request with the current placements, editing context and measured
+`last_run`, including bounded station, joint, circuit, pour and power-source
+readouts; it does not rerun the machine or apply model placements. A modal
+opens with a thinking state, then plain-text reply or provider error, and
+Dismiss/Escape closes it. The reply remains in Help. A pre-existing typed
+question and the retry selection are retained. Failed runs do not call the
+model automatically; no new scoring, native-law or tolerance changes occur.
+
+Browser verification passes the typed-help and failed-attempt provider fixture
+on desktop, phone portrait/landscape and 320×568, asserting one model call,
+measured failed-run context and unchanged placements. The unavailable-provider
+case preserves the setup and retry. Radius/settings and failed-help checks pass
+in 34.893 s; shared layout, Sandbox word building/sharing, plain Help and
+provider-error checks pass in 50.949 s; heater attachment/wiring/completion
+passes in 31.809 s. Final gear/radius/help checks pass in 51.189 s; measured-run
+context and retry-selection regressions pass in 58.783 s after adding the
+bounded readouts. The fixture verifies routing/behavior, not a real provider's
+answer quality. Intro, renderer and source-registration guards pass. Physical
+gear comparisons from the preceding checkpoint remain unchanged.
+
 October 14 gear placement preview: selecting an individual gear automatically
 plays the native rehearsal, including the drive, proposed and target wheels.
 The beside-piece readout shows the target's measured cumulative `turned_deg`

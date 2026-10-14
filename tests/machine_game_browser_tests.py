@@ -327,7 +327,7 @@ class Puzzles(unittest.TestCase):
         if self.js("location.pathname==='/machine'"):return self.click_visible('Reset')
         result=self.js("document.getElementById('level-done').hidden?null:document.getElementById('level-done').innerText")
         if result:
-            if result.strip()=='Try again':
+            if result.strip().startswith('Try again'):
                 self.click_visible('Try again');self.ghost();return self.press('Cancel')
             return self.click_visible('Play this level again')
         self.click_piece(self.js('machinePlacements().length-1'));self.ghost();self.press('Cancel')
@@ -364,7 +364,7 @@ class Puzzles(unittest.TestCase):
         self.reveal_control(f'document.querySelector({json.dumps(selector)})')
         target=self.js(f"(()=>{{const el=document.querySelector({json.dumps(selector)});if(!el)return null;el.scrollIntoView({{block:'nearest'}});const r=el.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return {{x,y,w:r.width,h:r.height,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,uncovered:el.contains(document.elementFromPoint(x,y))}};}})()")
         self.assertIsNotNone(target,selector)
-        self.assertTrue(target['visible'] and target['uncovered'],(selector,target))
+        self.assertTrue(target['visible'] and target['uncovered'],(selector,target,self.js("['control-panel','help-settings','help-settings-content','precision-controls'].map(id=>{const e=document.getElementById(id),r=e?.getBoundingClientRect();return {id,rect:r?.toJSON(),scroll:e?.scrollTop,client:e?.clientHeight,height:e?.scrollHeight};})")))
         self.assertGreaterEqual(target['h'],44,(selector,target))
         self.mouse('mousePressed',target['x'],target['y']);self.mouse('mouseReleased',target['x'],target['y'])
 
@@ -1551,7 +1551,8 @@ class Puzzles(unittest.TestCase):
                         # Help already contains the task; reserve the dock for
                         # its content rather than duplicating the goal row.
                         self.assertFalse(self.js("document.getElementById('scene-goal').checkVisibility()"))
-                        self.assertTrue(self.js("document.getElementById('brief').checkVisibility()&&document.getElementById('brief').textContent.length>0"))
+                        self.assertFalse(self.js("document.getElementById('brief').checkVisibility()"))
+                        self.assertTrue(self.js("document.getElementById('message').checkVisibility()"))
                 before=self.js('machinePlacements()')
                 self.click_visible('Collapse controls')
                 self.assertTrue(self.js("['control-panel','phone-design-panel','phone-help-panel'].every(id=>document.getElementById(id).hidden)"))
@@ -2764,29 +2765,21 @@ class Puzzles(unittest.TestCase):
                     self.js("document.getElementById('message').value='How do I attach this heater?' ")
                     self.click_visible('Ask for a hint')
                     self.wait("document.querySelector('#chat-log .model')?.textContent.includes('Click Clip to cord')",10)
-                    self.click_visible('Show me what to do')
-                    self.wait("!document.getElementById('coach-overlay').hasAttribute('hidden') && document.querySelector('#scene-goal > span').textContent.includes('Click Clip to cord')",10)
-                    self.assertIn('Clip to cord',self.js("document.querySelector('#scene-goal > span').textContent"))
+                    self.assertFalse(self.js("document.getElementById('coach-open').checkVisibility()"))
+                self.click_visible('Controls')
                 self.click_visible('Clip heater to hanging cord')
                 self.wait("window.machineGhostState()?.p.target==='weight rope' && "+SETTLED,30)
                 self.assertTrue(self.ghost()['fits'])
-                with patch('machine_chat.configuration',return_value=(None,'no-model')):
-                    self.click_visible('Next hint')
-                    self.wait("!document.getElementById('coach-overlay').hasAttribute('hidden') && document.querySelector('#scene-goal > span').textContent.includes('Click Warm')",10)
                 self.click_visible('Toggle coil preset');self.ghost()
                 self.assertEqual(self.ghost()['p']['preset'],'hot')
                 self.assertIn('Hot',self.js("document.getElementById('piece-choice-toggle').textContent"))
                 self.click_visible('Place');self.wait(READY,60)
                 self.assertEqual(len(self.js('window.machineWiringState().wires')),0,'attachment alone does not power the heater')
                 for a,b in [('supply:plus','your ignition 1:plus'),('your ignition 1:minus','supply:minus')]:
-                    with patch('machine_chat.configuration',return_value=(None,'no-model')):
-                        self.click_visible('Next hint')
-                        self.wait("Boolean(document.querySelector('#coach-overlay .coach-path')) && document.querySelector('#scene-goal > span').textContent.includes('draw the')",10)
                     self.click_scene_socket(a,touch=width<1000);self.ghost()
                     self.click_scene_socket(b,touch=width<1000)
                     self.wait('!window.machineGhostState() && '+READY,60)
                 self.assertEqual(len(self.js('window.machineWiringState().wires')),2)
-                self.click_visible('Close guided help')
                 self.click_visible('Try It!')
                 self.wait("document.getElementById('power-feedback-labels').textContent.includes('Material')",20)
                 self.wait("!document.getElementById('level-done').hidden",45)
@@ -3170,9 +3163,9 @@ class Puzzles(unittest.TestCase):
                 self.assertFalse(self.js("document.getElementById('pull-tool').checkVisibility()"))
                 self.assertFalse(self.js("Boolean(document.getElementById('challenge-fresh'))"))
                 self.click_visible('Help')
-                self.assertTrue(self.js("document.getElementById('phone-help-panel').contains(document.getElementById('game')) && document.getElementById('phone-help-panel').contains(document.getElementById('feedback'))"))
+                self.assertTrue(self.js("!document.getElementById('phone-help-panel').contains(document.getElementById('game')) && document.getElementById('phone-help-panel').contains(document.getElementById('feedback'))"))
                 self.assertEqual(self.js("document.querySelector('#level-details summary')"),None)
-                self.assertTrue(self.js("document.getElementById('brief').checkVisibility() && /par /.test(document.getElementById('goal-line').textContent)"))
+                self.assertFalse(self.js("document.getElementById('brief').checkVisibility()"))
                 self.press('Share')
                 self.assertEqual(self.js("document.getElementById('challenge-link').value"),'https://banjo.is/play?level=easy-cut')
                 self.click_summary('#feedback > summary')
@@ -3843,12 +3836,12 @@ class Puzzles(unittest.TestCase):
         self.press('Try It!')
         self.wait("!document.getElementById('level-done').hidden", 30)
         self.assertIn('Try again', self.js("document.getElementById('level-done').textContent"))
-        self.assertEqual(self.js("document.getElementById('level-done').innerText.trim()"),'Try again')
+        self.assertEqual(self.js("[...document.querySelectorAll('#level-done button')].map(b=>b.textContent)"),['Try again','Ask for Help'])
         self.press('Keep my pieces'); self.wait(READY, 60)
         self.assertEqual(len(self.js('machinePlacements()')), 1)
         self.press('Try It!'); self.wait("!document.getElementById('level-done').hidden", 30)
         self.assertIn('Try again', self.js("document.getElementById('level-done').textContent"))
-        self.assertEqual(self.js("document.getElementById('level-done').innerText.trim()"),'Try again')
+        self.assertEqual(self.js("[...document.querySelectorAll('#level-done button')].map(b=>b.textContent)"),['Try again','Ask for Help'])
         self.press('Start over')
         self.wait(READY, 60)
         self.assertEqual(self.js("document.querySelectorAll('#placed li').length"), 0)
@@ -4681,74 +4674,72 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Pause')
 
 
-    def test_guided_help_highlights_and_demonstrates_without_placing_for_the_player(self):
-        for width,height in ((1280,720),(390,844),(844,390)):
+    def test_plain_help_has_only_question_response_and_a_quiet_bug_report(self):
+        for width,height in ((1280,860),(390,844),(844,390),(320,568)):
             with self.subTest(viewport=(width,height)):
                 self.open('gap',width,height,phone=width<1000)
                 self.click_visible('Help')
-                self.js("document.getElementById('message').value='Keep my typed question'")
-                answers=iter([
-                    {'reply':'Click the plank to add it.','guide':{'target_id':'tray:plank','gesture':'click'}},
-                    {'reply':'Drag the plank toward the gap; you control the placement.','guide':{'target_id':'piece:0','gesture':'drag','to_m':[.3,.1,0]}},
-                    {'reply':'Choose Cut to length, then drag the adjustment handle.','guide':{'target_id':'control:piece-grip','gesture':'drag'}},
-                ])
+                self.assertFalse(self.js("document.getElementById('coach-open').checkVisibility()"))
+                self.assertFalse(self.js("document.getElementById('solve').checkVisibility()"))
+                self.assertFalse(self.js("document.getElementById('phone-help-panel').contains(document.getElementById('help-settings'))"))
+                before=self.js('machinePlacements()')
                 seen=[]
                 def call(api_key,model,messages,**kwargs):
-                    seen.append(messages);return next(answers),{}
+                    seen.append(messages);return {'reply':'Make the board longer to bridge the gap.'},{}
                 with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')),patch('machine_chat._call',side_effect=call):
-                    self.click_visible('Show me what to do')
-                    self.wait("!document.getElementById('coach-overlay').hasAttribute('hidden')",10)
-                    self.assertEqual(self.js('machinePlacements()'),[])
-                    self.assertIsNone(self.js('machineGhostState()'))
-                    self.assertEqual(self.js("document.getElementById('phone-controls-tab').getAttribute('aria-selected')"),'true')
-                    self.assertEqual(self.js("getComputedStyle(document.getElementById('coach-overlay')).pointerEvents"),'none')
-                    self.click_visible('Add a plank');before=self.ghost()['p']
-                    self.click_visible('Next hint')
-                    self.wait("Boolean(document.querySelector('#coach-overlay .coach-pointer'))",10)
-                    self.assertEqual(self.ghost()['p'],before)
-                    self.assertEqual(self.js('machinePlacements()'),[])
-                    self.wait('machineCamera().settled',30)
-                    path=self.js("document.querySelector('#coach-overlay .coach-path').getAttribute('d').slice(1).split(' L').map(s=>s.split(' ').map(Number))")
-                    self.drag(path[0],path[1],touch=width<1000)
-                    before=self.ghost()['p']
-                    self.assertAlmostEqual(before['x_m'],.3,delta=.02)
-                    self.assertAlmostEqual(before['z_m'],0,delta=.02)
-                    self.click_visible('Next hint')
-                    self.wait("/Choose Cut to length/.test(document.querySelector('#scene-goal > span').textContent)",10)
-                    self.assertEqual(self.js("document.querySelector('#scene-goal strong > span').textContent"),'Mind the gap')
-                    self.assertEqual(self.js("document.getElementById('message').value"),'Keep my typed question')
-                    self.assertTrue(self.js("(()=>{const b=document.getElementById('piece-grip'),r=b.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===b;})()"))
-                    self.wait("Boolean(document.querySelector('#coach-overlay .coach-pointer'))",10)
-                    progress=self.js("getComputedStyle(document.querySelector('#coach-overlay .coach-pointer')).offsetDistance")
-                    self.wait(f"getComputedStyle(document.querySelector('#coach-overlay .coach-pointer')).offsetDistance!=={json.dumps(progress)}",5)
-                    self.assertIn('editing',json.dumps(seen[1]))
-                    ui=json.loads(seen[1][-1]['content'])['ui']
-                    target_labels={t['id']:t['label'] for t in ui['targets']}
-                    self.assertIn('selected: Cut to length',target_labels['control:adjustment-choice'])
-                    self.assertIn('Tap or drag the on-object handle to change Cut to length',target_labels['control:piece-grip'])
-                proof=ROOT/'build'/'ui-proof';proof.mkdir(parents=True,exist_ok=True)
-                (proof/f'guided-help-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
-                self.click_visible('Close guided help')
+                    self.slide('Your question','Why does the marble fall short?')
+                    self.click_visible('Ask for a hint')
+                    self.wait("document.querySelector('#chat-log .model')?.textContent.includes('Make the board longer')",10)
+                self.assertEqual(len(seen),1)
+                self.assertEqual(self.js('machinePlacements()'),before)
                 self.assertTrue(self.js("document.getElementById('coach-overlay').hasAttribute('hidden')"))
-                self.assertIn('Bridge the gap',self.js("document.querySelector('#scene-goal > span').textContent"))
-                self.assertEqual(self.ghost()['p'],before)
+                self.click_summary('#feedback > summary')
+                self.assertTrue(self.js("document.getElementById('feedback-form').checkVisibility()"))
 
-    def test_guided_help_handles_unavailable_model_and_preserves_sandbox_base(self):
-        self.open('free');before=self.js('machinePlacements()');base=self.js('machineDesign().draft.base')
-        self.click_visible('Help')
+    def test_failed_attempt_llm_help_is_dismissible_and_preserves_retry_and_question(self):
+        for width,height in ((1280,860),(390,844),(844,390),(320,568)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width<1000)
+                self.press('Add a plank');self.ghost()
+                self.slide('Its Cut to length',.2);self.ghost()
+                self.js("document.getElementById('message').value='Keep my question'")
+                seen=[]
+                def call(api_key,model,messages,**kwargs):
+                    seen.append(messages)
+                    return {'reply':'Your board ends before the gap. Increase its length, then try again.','placements':[]},{}
+                with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')),patch('machine_chat._call',side_effect=call):
+                    self.click_visible('Try It!');self.wait("!document.getElementById('level-done').hidden",30)
+                    kept=self.js('machinePlacements()')
+                    self.assertEqual(seen,[],'A failed attempt must not call the model automatically')
+                    self.click_visible('Ask for Help')
+                    self.wait("document.getElementById('run-help').open&&document.getElementById('run-help-reply').textContent.includes('Your board ends')",10)
+                self.assertEqual(len(seen),1)
+                context=json.loads(seen[0][-1]['content'])
+                self.assertEqual(context['placements'],kept)
+                self.assertIsNone(context['last_run']['goal_at_s'])
+                self.assertGreater(context['last_run']['world_t'],0)
+                self.assertFalse(context['last_run']['measurements']['stations'][0]['done'])
+                self.assertEqual(self.js('machinePlacements()'),kept)
+                self.click_visible('Dismiss')
+                self.assertFalse(self.js("document.getElementById('run-help').open"))
+                self.assertEqual(self.js("document.getElementById('message').value"),'Keep my question')
+                self.click_visible('Try again');selected=self.ghost()
+                self.assertEqual(selected['index'],0);self.assertEqual(selected['p']['length_m'],.2)
+                self.assertEqual(self.js('machinePlacements()'),kept)
+                self.click_visible('Help')
+                self.assertIn('Your board ends',self.js("document.getElementById('chat-log').textContent"))
+
+    def test_failed_attempt_help_reports_unavailable_model_without_losing_the_setup(self):
+        self.open('gap');self.press('Add a plank');self.ghost()
+        self.slide('Its Cut to length',.2);self.ghost();self.click_visible('Try It!')
+        self.wait("!document.getElementById('level-done').hidden",30)
+        kept=self.js('machinePlacements()')
         with patch('machine_chat.configuration',return_value=(None,'fixture-model')):
-            self.click_visible('Show me what to do')
-            self.wait("/model connection/.test(document.querySelector('#scene-goal > span').textContent)",10)
-        self.assertEqual(self.js('machinePlacements()'),before)
-        self.assertTrue(self.js("document.getElementById('coach-overlay').hasAttribute('hidden')&&!document.getElementById('coach-next').disabled"))
-        answer={'reply':'Open the piece library and choose a piece to explore.','guide':{'target_id':'control:tray-library','gesture':'click'}}
-        with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')),patch('machine_chat._call',return_value=(answer,{})):
-            self.click_visible('Next hint')
-            self.wait("!document.getElementById('coach-overlay').hasAttribute('hidden')",10)
-        self.assertEqual(self.js('machinePlacements()'),before)
-        self.assertEqual(self.js('machineDesign().draft.base'),base)
-        self.click_visible('Close guided help')
-        self.assertIn('Build anything',self.js("document.querySelector('#scene-goal > span').textContent"))
+            self.click_visible('Ask for Help')
+            self.wait("/No model/.test(document.getElementById('run-help-reply').textContent)",10)
+        self.click_visible('Dismiss')
+        self.assertEqual(self.js('machinePlacements()'),kept)
+        self.click_visible('Try again');self.assertEqual(self.ghost()['p']['length_m'],.2)
 
     def test_scene_and_bottom_dock_share_one_layout_on_desktop_and_phones(self):
         for width,height in ((1440,900),(1280,720),(390,844),(844,390),(320,568)):
@@ -4764,7 +4755,7 @@ class Puzzles(unittest.TestCase):
                 self.assertLessEqual(layout['goal']['b'],height)
                 self.assertFalse(layout['overflow'])
                 self.assertEqual(self.js("document.getElementById('start').textContent"),'Try It!')
-                self.assertTrue(self.js("(()=>{const r=id=>document.getElementById(id).getBoundingClientRect();return r('start').right<r('phone-tabs').left&&r('phone-tabs').width<230;})()"))
+                self.assertTrue(self.js("(()=>{const r=id=>document.getElementById(id).getBoundingClientRect();return Math.abs((r('start').left+r('start').right)/2-innerWidth/2)<2&&r('start').width>=160&&r('phone-tabs').width<230;})()"))
                 self.click_visible('Help')
                 self.assertTrue(self.js("document.getElementById('phone-help-panel').checkVisibility()&&!document.getElementById('control-panel').checkVisibility()"))
                 self.click_visible('Collapse controls')
@@ -4820,7 +4811,7 @@ class Puzzles(unittest.TestCase):
                 self.slide('Its Cut to length',.2);self.ghost()
                 self.click_visible('Try It!')
                 self.wait("!document.getElementById('level-done').hidden",35)
-                self.assertEqual(self.js("document.getElementById('level-done').innerText.trim()"),'Try again')
+                self.assertEqual(self.js("[...document.querySelectorAll('#level-done button')].map(b=>b.textContent)"),['Try again','Ask for Help'])
                 self.wait("document.getElementById('start').hidden&&/run over/.test(document.getElementById('clock').textContent)",5)
                 kept=self.js('machinePlacements()')
                 self.click_visible('Try again');selected=self.ghost()
