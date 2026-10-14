@@ -768,6 +768,11 @@ body.playing-level #view>.level-done{top:50%;transform:translate(-50%,-50%);z-in
 #piece-editor .adjustment-picker{display:flex;align-items:center}
 #piece-editor .adjustment-picker select{width:0;flex:1;font-size:13px}
 #piece-editor .adjustment-feedback{font-size:12px;line-height:1.25;min-height:0;white-space:normal;overflow-wrap:anywhere}
+#piece-editor .gear-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+#piece-editor .gear-controls button{min-width:44px;min-height:44px;padding:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
+#piece-editor .gear-label{font:12px/14px system-ui;color:#cde3ef}
+#piece-editor .gear-value{font:600 15px/18px system-ui;white-space:nowrap}
+#piece-editor .gear-controls button[aria-pressed=true]{border-color:#ffdc72;background:#473c20}
 #piece-editor .knob-row{display:flex;gap:3px;margin:0;flex-wrap:wrap}
 #piece-editor .knob-row>button:only-child{width:100%}
 #piece-editor .choice-cycle{flex-wrap:nowrap;align-items:center}
@@ -845,4 +850,9 @@ body.panel-tabs aside:has(#phone-controls-tab[aria-selected=true]):has(#help-set
 @media(max-width:599px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 200px}}
 @media(max-height:500px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 160px}}
 @media(max-width:359px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 230px}}
+@media(max-width:359px){
+  body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#piece-editor.editing-gear:not([hidden])) main{grid-template-rows:minmax(0,1fr) 180px}
+  body.panel-tabs:has(#piece-editor.editing-gear:not([hidden])) #scene-goal span{display:none!important}
+  body.panel-tabs:has(#piece-editor.editing-gear:not([hidden])) #clock{top:auto;bottom:8px;left:8px;width:104px;font-size:11px;line-height:14px}
+}
 #view>.level-done.retry-result .actions{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}

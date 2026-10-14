@@ -2263,6 +2263,19 @@ function fitNewPieceInView() {
                     Math.abs(corner.y) / vertical + corner.z, eye.near + corner.z);
   }
   if (extra > 0) { distance = Math.min(40, distance + extra); freshView(); }
+  // A narrow phone also needs room for all three gear fields beside the
+  // complete selected assembly. Do this once on Add; later zooms stay manual.
+  if(ghost.p.piece==='gear'&&view.clientWidth<360){
+    const rect=view.getBoundingClientRect(),editor=$('piece-editor');
+    const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')]
+      .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
+    for(let i=0;i<20&&distance<40;i++){
+      const box=ghostScreenBox(),size=editor.getBoundingClientRect();if(!box)break;
+      const at=pieceToolbarPosition(rect,{left:box.x0,right:box.x1,top:box.y0,bottom:box.y1},size,obstacles);
+      if(!(at.x<box.x1&&at.x+size.width>box.x0&&at.y<box.y1&&at.y+size.height>box.y0))break;
+      distance=Math.min(40,distance*1.1);freshView();
+    }
+  }
 }
 function focusSelectedPiece() {
   if (!ghost?.drawnAt || !ghostGroup.children.length) return;
@@ -2852,14 +2865,33 @@ function sceneReferenceControl(p,key,rule,changed){
   row.append(hint);
   return row;
 }
-function selectGhostKnob(key) {
-  if (!ghost || ghost.card === key) return;
+function selectGhostKnob(key, force=false) {
+  if (!ghost || (ghost.card === key&&!force)) return;
   const rule=trayItem(ghost.p.piece).knobs[key];
   editorMode=rule?.turning?'turn':rule?.choices||rule?.part||rule?.hinge?'move':'adjust';looking=false;view.classList.remove('looking');
   ghost.card = key;
   clearEditGuide();
   renderGhostBar();
   askGhost();
+}
+
+function gearControls(knobs){
+  const group=Object.assign(document.createElement('div'),{className:'gear-controls',ariaLabel:'Gear size and height'});
+  group.setAttribute('role','group');
+  for(const [key,label] of [['teeth','Teeth'],['module_m','Radius'],['height_m','Height']]){
+    const rule=knobs[key],name=knobName(rule,key);
+    const field=button('',()=>{
+      selectGhostKnob(key,true);
+      if(rule.choices)showValueChoices(key,rule,name,$('piece-editor').querySelector(`[data-gear-key="${key}"]`));
+    },{ariaLabel:rule.choices?`Choose ${name}`:`Adjust ${name}`,
+      title:key==='height_m'?'Axle height: tap, then drag the gold vertical handles or tap + / −.':
+        key==='module_m'?'Radius to the tooth tips. Changing radius also changes tooth spacing.':'Number of teeth: tap to choose a size.'});
+    field.dataset.gearKey=key;
+    field.append(Object.assign(document.createElement('span'),{className:'gear-label',textContent:label}),
+      Object.assign(document.createElement('span'),{className:'gear-value'}));
+    group.append(field);
+  }
+  return group;
 }
 
 function renderGhostBar() {
@@ -3031,6 +3063,7 @@ function renderGhostBar() {
   const needsClip=ghost.p.piece==='ignition'&&ghost.p.attachment_version===2&&!ghost.p.target;
   view.classList.toggle('choosing-attachment',Boolean(needsClip));
   const editor=$('piece-editor');editor.hidden=(connecting&&!ghost.was)||needsClip;
+  const isGear=ghost.p.piece==='gear';editor.classList.toggle('editing-gear',isGear);
   const modes=Object.assign(document.createElement('div'),{className:'piece-modes'});
   const move=button('Move',()=>{editorMode='move';setLooking(false);},{ariaLabel:'Move selected piece'});
   const turn=button('Turn',()=>{
@@ -3044,10 +3077,12 @@ function renderGhostBar() {
   modes.append(move,turn);
   modes.hidden=move.disabled&&turn.hidden;
   const top=Object.assign(document.createElement('div'),{className:'piece-toolbar'});top.append(modes,actions);
-  editor.replaceChildren(top,chips);
-  if(rule.choices)editor.append(row);
+  editor.replaceChildren(top,...(isGear?[gearControls(knobs)]:[chips]));
+  if(isGear)precision.querySelector('summary').after(chips);
+  if(rule.choices&&(!isGear||!['teeth','module_m','height_m'].includes(key)))editor.append(row);
   else if(rule.part||rule.hinge)editor.append(sceneReferenceControl(ghost.p,key,rule,()=>{renderGhostBar();showGhostKnobs();askGhost();}));
   editor.append(...connectionActions,...(unclipButton?[unclipButton]:[]),setting);
+  setting.hidden=isGear; // The three visible fields already show these measurements.
   if(ghost.p.piece==='gear')editor.append(Object.assign(document.createElement('output'),{id:'gear-motion-feedback',className:'adjustment-feedback',textContent:'Checking gear motion…',
     title:'This is a replay of the engine’s predicted motion for the current placement. Radius is measured to the tooth tips; it changes tooth spacing too.'}));
   if((connecting&&!ghost.was)||needsClip){throwAway.textContent=needsClip?'Cancel heater':'Cancel wire';fields.append(throwAway);}
@@ -3149,6 +3184,13 @@ function showGhostKnobs() {
   const knobs = trayItem(ghost.p.piece).knobs;
   const rule=knobs[ghost.card];if(!rule)return; // Connecting ghosts have no selected setting until their editor is built.
   const choice=$('adjustment-choice');if(choice)choice.value=ghost.card;
+  for(const field of $('piece-editor').querySelectorAll('[data-gear-key]')){
+    const key=field.dataset.gearKey;
+    field.querySelector('.gear-value').textContent=key==='teeth'?String(ghost.p.teeth):
+      key==='module_m'?`${((ghost.p.teeth/2+.7)*ghost.p.module_m*100).toFixed(1)} cm`:`${Math.round(ghost.p.height_m*100)} cm`;
+    field.setAttribute('aria-description',`${key==='height_m'?'Axle height':knobName(knobs[key],key)}: ${field.querySelector('.gear-value').textContent}`);
+    field.setAttribute('aria-pressed',String(ghost.card===key));
+  }
   const cycle=$('piece-editor').querySelector('.choice-cycle button');if(cycle)cycle.textContent=choiceText(ghost.card,ghost.p[ghost.card]);
   const rating=electricalEditRating(),numeric=typeof ghost.p[ghost.card]==='number';
   const units=rule.turning?'°':(rule.label||'').match(/\(([^()]*)\)\s*$/)?.[1]||'';

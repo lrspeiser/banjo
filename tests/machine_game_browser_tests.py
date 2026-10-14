@@ -892,7 +892,8 @@ class Puzzles(unittest.TestCase):
                 self.set_precision_controls(False)
                 self.assertEqual(self.ghost()['p']['teeth'],18)
                 self.assertFalse(self.js("document.querySelector('[aria-label=\"Its Teeth\"]').checkVisibility()"))
-                self.assertTrue(self.js("document.querySelector('#piece-editor .choice-cycle')!==null"))
+                self.assertEqual(self.js("[...document.querySelectorAll('#piece-editor [data-gear-key]')].map(b=>b.dataset.gearKey)"),['teeth','module_m','height_m'])
+                self.assertFalse(self.js("document.getElementById('adjustment-choice').checkVisibility()"))
                 self.assertEqual(self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"),['teeth','module_m','height_m'])
                 self.click_visible('Choose Teeth');self.click_visible('Set Teeth to 12 teeth');self.ghost()
                 self.assertEqual(self.ghost()['p']['teeth'],12)
@@ -924,21 +925,36 @@ class Puzzles(unittest.TestCase):
                             self.assertTrue(p[1]<.32 or p[2]<-.05,(cable,p))
 
     def test_gear_radius_choices_show_real_size_and_keep_secondary_settings_in_help(self):
-        for width,height in ((1280,860),(390,844),(844,390)):
+        for width,height in ((1280,860),(390,844),(844,390),(320,568)):
             with self.subTest(viewport=(width,height)):
                 self.open('easy-gears',width,height,phone=width!=1280)
                 self.press('Add a gear');self.ghost()
                 self.set_precision_controls(False)
+                self.wait('machineCamera().settled',30)
+                geometry="""(() => {const v=document.getElementById('view').getBoundingClientRect(),body=machineGhostScreen();
+                  return [...document.querySelectorAll('#piece-editor [data-gear-key]')].map(b=>{const r=b.getBoundingClientRect();return {key:b.dataset.gearKey,
+                    value:b.querySelector('.gear-value').textContent,w:r.width,h:r.height,visible:r.left>=v.left&&r.right<=v.right&&r.top>=v.top&&r.bottom<=v.bottom,
+                    uncovered:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),
+                    coversGear:body&&r.left<body.x1&&r.right>body.x0&&r.top<body.y1&&r.bottom>body.y0};});})()"""
+                self.wait(f"({geometry}).every(b=>b.visible&&b.uncovered&&!b.coversGear)",10)
+                fields=self.js(geometry)
+                self.assertEqual([b['value'] for b in fields],['18','23.3 cm','65 cm'])
+                self.assertTrue(all(b['w']>=44 and b['h']>=44 for b in fields),fields)
+                self.assertFalse(self.js("document.querySelector('#piece-editor select')!==null"))
                 self.assertIn('23.3 cm radius',self.js("document.getElementById('adjustment-feedback').textContent"))
-                self.slide('Adjustment','module_m');self.ghost()
                 self.click_visible('Choose Radius')
                 self.click_visible('Set Radius to 15.5 cm radius');self.ghost()
                 self.assertEqual(self.ghost()['p']['module_m'],.016)
                 self.assertEqual(self.ghost()['p']['teeth'],18)
                 self.assertIn('15.5 cm radius',self.js("document.getElementById('adjustment-feedback').textContent"))
-                self.slide('Adjustment','teeth');self.ghost()
                 self.click_visible('Choose Teeth');self.click_visible('Set Teeth to 24 teeth');self.ghost()
                 self.assertIn('20.3 cm radius',self.js("document.getElementById('adjustment-feedback').textContent"))
+                self.assertEqual(self.js("document.querySelector('[data-gear-key=module_m] .gear-value').textContent"),'20.3 cm')
+                self.click_visible('Adjust Axle height');self.ghost()
+                self.wait("machineGhostState().editGuide?.key==='height_m'",10)
+                self.click_visible('Increase Axle height on object');self.ghost()
+                self.assertEqual(self.ghost()['p']['height_m'],.66)
+                self.assertEqual(self.js("document.querySelector('[data-gear-key=height_m] .gear-value').textContent"),'66 cm')
                 self.set_precision_controls(True)
                 self.assertIn('material',self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"))
                 self.set_precision_controls(False)
@@ -4902,8 +4918,11 @@ class Puzzles(unittest.TestCase):
                 if not label:
                     label=self.js(f"[...document.querySelectorAll('#piece-picker button')].find(b=>b.dataset.piece==={json.dumps(item['piece'])})?.getAttribute('aria-label')")
                 self.assertIsNotNone(label,item['piece']);self.press(label);self.ghost()
-                self.assertTrue(self.js("document.getElementById('piece-editor').contains(document.getElementById('adjustment-choice'))"))
-                if item['piece']=='gear':self.set_precision_controls(True)
+                if item['piece']=='gear':
+                    self.assertEqual(self.js("document.querySelectorAll('#piece-editor [data-gear-key]').length"),3)
+                    self.assertFalse(self.js("document.querySelector('#piece-editor select')!==null"))
+                    self.set_precision_controls(True)
+                else:self.assertTrue(self.js("document.getElementById('piece-editor').contains(document.getElementById('adjustment-choice'))"))
                 variants=[None]
                 for key in ('mount','mode','outlet_model','side','plane','placement'):
                     variants.extend((key,value) for value in item['knobs'].get(key,{}).get('choices',[]))
@@ -4999,7 +5018,7 @@ class Puzzles(unittest.TestCase):
         before=self.ghost()['p']['teeth']
         self.drag([handle['x'],handle['y']],[handle['x']+handle['dx']*96,handle['y']+handle['dy']*96])
         after=self.ghost()['p']['teeth'];self.assertIn(after,[12,18,24,36]);self.assertGreater(after,before)
-        self.assertIn(str(after)+' teeth',self.js("document.querySelector('#piece-editor .choice-cycle').textContent"))
+        self.assertEqual(str(after),self.js("document.querySelector('#piece-editor [data-gear-key=teeth] .gear-value').textContent"))
         self.assertEqual(self.js('machinePlacements()'),placed_before)
 
     def test_large_object_size_handles_and_named_choices_replace_cycle_arrows(self):

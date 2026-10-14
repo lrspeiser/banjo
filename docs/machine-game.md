@@ -1,5 +1,33 @@
 # Puzzles on the machine (/play)
 
+October 14 simultaneous gear controls: three 44 px minimum scene buttons show
+Teeth, Radius and Height together. Teeth/Radius select their property and open
+the existing named presets directly; Height activates the compiled vertical
+handles for drag or one-increment +/− taps. All displayed values, including
+Radius after a tooth-count change, update from the proposed declaration.
+Accessible descriptions include the current values. The generic adjustment
+selector moves into Controls → Settings → Precision controls for gears;
+secondary settings retain their existing editing paths. Native preview
+playback remains automatic. No declaration, preset, cost, material, physics
+law, goal, scoring or tolerance changed.
+
+For screens below 360 px wide, selected gear editing reserves more scene room
+by temporarily hiding the dock's repeated task sentence (the level name stays).
+The clock occupies the clear lower-left corner. The existing one-time Add
+camera fit also backs away, with the angle/look-at point preserved, checking
+up to 20 times for controls to clear the full assembly's projected bounds,
+capped at 40 m.
+Later manual zooms remain manual; this is camera placement, not mechanical
+seating or a force applied to a neighbouring wheel.
+
+Browser verification passes all three direct edits and visible, unobstructed
+44 px targets at 1280×860, 390×844, 844×390 and 320×568, in 6.880 s. Native
+lesson completion and the saved Sandbox example pass with the field check in
+28.160 s. The full 44-device catalogue/settings audit passes in 36.184 s;
+gold tooth handles and named/material choices also pass. Renderer/syntax and
+source registration pass. These UI measurements add no new physical calibration
+or conservation claim; existing gear measurements below still apply.
+
 October 14 hint prompt follow-up: a live local failed-gear request returned a
 dismissible model reply, but combined several adjustments and recommended the
 largest tooth module without evidence that it fits. Hint instructions now ask

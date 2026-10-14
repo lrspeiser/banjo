@@ -8,6 +8,10 @@ use these controls; exact values remain in Controls → Settings. A spring’s d
 relaxed-length guide is an editing measurement, while its latch holds the actual
 compressed spring until release.
 
+Gears show Teeth, Radius and Height together beside the piece. Tap a size to
+choose a preset, or Height to use the vertical handles, while the engine's
+predicted gear motion plays.
+
 Each level is a small machine you cannot change, a goal, and a tray of pieces.
 You add pieces, press **Try It!**, and the engine works out what every part
 does. A ball rolls on the true surface of a plank. A knife cuts an oak rope part
@@ -36,7 +40,7 @@ Levels share Controls / Help tabs; Sandbox also has Design,
 with Try It!/Pause/Reset kept beside the 3D view, even when the controls are
 collapsed. Each level opens with its name, what you’ll place, how the mechanism
 works and your goal. **GO** dismisses the introduction and leaves native time
-paused for building; **Help → Level instructions** reopens it. Goal markers
+paused for building; **Controls → Settings → Level instructions** reopens it. Goal markers
 remain without large instruction text over the working area. The dock keeps
 the level name and a one-line task. **Undo / Redo**
 are in the upper scene corner; a flat zoom slider and magnifiers are in the
