@@ -1,5 +1,36 @@
 # Puzzles on the machine (/play)
 
+October 13 guided help: **Show me what to do** is the first action in Help on
+challenges and Sandbox. A separate read-only model request sees the tray and its
+rules, compiled layout, current edit/mode, supplied target catalogue, previous
+hint and last measured run; it never receives the authored solution. It returns
+one brief action and a target, optionally a suggested scene drag or two sockets.
+The client outlines that target and animates a pointer along the proposed path.
+It does not dispatch input, change placements, rehearse a setup or assign success.
+Model-suggested geometry is advice, not a verified physical solution. **Next hint**
+refreshes the advice from the current state; **Close** and Escape remove it and
+restore the task. A level change invalidates pending answers. Typed drafts remain.
+
+The server returns only reply/guide/usage, dropping any model-proposed build or
+placement fields. Targets must belong to the supplied catalogue. Drag coordinates
+are finite numbers within the existing workspace bounds; controls use local
+bindings rather than model-generated selectors, HTML or code. The usual public
+chat quota and configured model apply, with an 1800-token output limit for this
+short response. Missing configuration reports an explicit unavailable message;
+it leaves Next hint, Close and ordinary play usable. Reduced-motion preferences
+replace pointer motion with a stationary marker.
+
+Measured with a deterministic provider fixture: the three-step add/drag/adjust
+flow at 1280×720, 390×844 and 844×390 highlights the actual target, advances the
+pointer animation, preserves typed text and every placement/edit value, and lets
+the user click through the overlay. The Sandbox/missing-provider test preserves
+its base and placements and recovers on retry. Both tests pass in 5.30 s; all 28
+catalogue/placement tests pass in 16.75 s, including the read-only coaching contract
+and existing glass/oak/iron geometry checks. The shared layout and existing typed
+Sandbox-builder regressions also pass. These fixture measurements validate the
+interface contract, not the quality or latency of live model advice. No engine,
+physics law, energy accounting, goal or tolerance changes are part of this update.
+
 October 13 shared layout follow-up: desktop, phone portrait and landscape now
 use a full-width scene above one bottom dock, without a desktop sidebar.
 Controls keeps the task and active adjustment together. Help already contains

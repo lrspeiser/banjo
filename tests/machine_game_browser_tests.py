@@ -61,6 +61,10 @@ class Puzzles(unittest.TestCase):
         # The game site as deployed: open to anyone, nothing else served.
         cls.server = lab.Server(('127.0.0.1', 0), ENGINE, Path(cls.logs.name), site='game', public=True,
                                 profile_db=Path(cls.logs.name)/'profiles.sqlite3')
+        # Provider-fixture guide steps share one test visitor across cases.
+        # Keep production's spending quota unchanged; test its limits in the
+        # host suite instead of exhausting it with mocked browser requests.
+        cls.server.chat_allowance = lab.Allowance(1000,1000,'fixture chat')
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
         cls.base = f'http://127.0.0.1:{cls.server.server_address[1]}'
         cls.chrome = chrome_driver.Chrome(1280, 860)
@@ -4517,6 +4521,65 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run it');self.wait("machineBodies()['loose board'][1]<.1",30)
                 self.click_visible('Pause')
 
+
+    def test_guided_help_highlights_and_demonstrates_without_placing_for_the_player(self):
+        for width,height in ((1280,720),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width<1000)
+                self.click_visible('Help')
+                self.js("document.getElementById('message').value='Keep my typed question'")
+                answers=iter([
+                    {'reply':'Click the plank to add it.','guide':{'target_id':'tray:plank','gesture':'click'}},
+                    {'reply':'Drag the plank toward the gap; you control the placement.','guide':{'target_id':'piece:0','gesture':'drag','to_m':[.3,.1,0]}},
+                    {'reply':'Choose Cut to length, then drag the adjustment handle.','guide':{'target_id':'control:piece-grip','gesture':'drag'}},
+                ])
+                seen=[]
+                def call(api_key,model,messages,**kwargs):
+                    seen.append(messages);return next(answers),{}
+                with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')),patch('machine_chat._call',side_effect=call):
+                    self.click_visible('Show me what to do')
+                    self.wait("!document.getElementById('coach-overlay').hasAttribute('hidden')",10)
+                    self.assertEqual(self.js('machinePlacements()'),[])
+                    self.assertIsNone(self.js('machineGhostState()'))
+                    self.assertEqual(self.js("document.getElementById('phone-controls-tab').getAttribute('aria-selected')"),'true')
+                    self.assertEqual(self.js("getComputedStyle(document.getElementById('coach-overlay')).pointerEvents"),'none')
+                    self.click_visible('Add a plank');before=self.ghost()['p']
+                    self.click_visible('Next hint')
+                    self.wait("Boolean(document.querySelector('#coach-overlay .coach-pointer'))",10)
+                    self.assertEqual(self.ghost()['p'],before)
+                    self.assertEqual(self.js('machinePlacements()'),[])
+                    self.click_visible('Next hint')
+                    self.wait("/Choose Cut to length/.test(document.querySelector('#scene-goal > span').textContent)",10)
+                    self.assertEqual(self.js("document.querySelector('#scene-goal strong > span').textContent"),'Mind the gap')
+                    self.assertEqual(self.js("document.getElementById('message').value"),'Keep my typed question')
+                    self.assertTrue(self.js("(()=>{const b=document.getElementById('piece-grip'),r=b.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===b;})()"))
+                    self.wait("Boolean(document.querySelector('#coach-overlay .coach-pointer'))",10)
+                    progress=self.js("getComputedStyle(document.querySelector('#coach-overlay .coach-pointer')).offsetDistance")
+                    self.wait(f"getComputedStyle(document.querySelector('#coach-overlay .coach-pointer')).offsetDistance!=={json.dumps(progress)}",5)
+                    self.assertIn('editing',json.dumps(seen[1]))
+                proof=ROOT/'build'/'ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'guided-help-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Close guided help')
+                self.assertTrue(self.js("document.getElementById('coach-overlay').hasAttribute('hidden')"))
+                self.assertIn('Bridge the gap',self.js("document.querySelector('#scene-goal > span').textContent"))
+                self.assertEqual(self.ghost()['p'],before)
+
+    def test_guided_help_handles_unavailable_model_and_preserves_sandbox_base(self):
+        self.open('free');before=self.js('machinePlacements()');base=self.js('machineDesign().draft.base')
+        self.click_visible('Help')
+        with patch('machine_chat.configuration',return_value=(None,'fixture-model')):
+            self.click_visible('Show me what to do')
+            self.wait("/model connection/.test(document.querySelector('#scene-goal > span').textContent)",10)
+        self.assertEqual(self.js('machinePlacements()'),before)
+        self.assertTrue(self.js("document.getElementById('coach-overlay').hasAttribute('hidden')&&!document.getElementById('coach-next').disabled"))
+        answer={'reply':'Open the piece library and choose a piece to explore.','guide':{'target_id':'control:tray-library','gesture':'click'}}
+        with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')),patch('machine_chat._call',return_value=(answer,{})):
+            self.click_visible('Next hint')
+            self.wait("!document.getElementById('coach-overlay').hasAttribute('hidden')",10)
+        self.assertEqual(self.js('machinePlacements()'),before)
+        self.assertEqual(self.js('machineDesign().draft.base'),base)
+        self.click_visible('Close guided help')
+        self.assertIn('Build anything',self.js("document.querySelector('#scene-goal > span').textContent"))
 
     def test_scene_and_bottom_dock_share_one_layout_on_desktop_and_phones(self):
         for width,height in ((1440,900),(1280,720),(390,844),(844,390),(320,568)):
