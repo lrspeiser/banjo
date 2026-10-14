@@ -13,6 +13,7 @@ the default machine; no part of it has a scripted outcome.
 from __future__ import annotations
 
 import copy
+from collections import OrderedDict
 import base64
 import json
 import math
@@ -2060,18 +2061,106 @@ def engine_path(native_hint=None):
     return None
 
 
+class PreviewJob:
+    """Cancellation owns only a disposable rehearsal process, never a live world."""
+    def __init__(self):
+        self.event = threading.Event()
+        self.lock = threading.Lock()
+        self.process = None
+
+    def cancelled(self):
+        return self.event.is_set()
+
+    def attach(self, process):
+        with self.lock:
+            self.process = process
+            if self.cancelled() and process.poll() is None:
+                process.terminate()
+
+    def detach(self, process):
+        with self.lock:
+            if self.process is process:
+                self.process = None
+
+    def cancel(self):
+        with self.lock:
+            self.event.set()
+            if self.process is not None and self.process.poll() is None:
+                self.process.terminate()
+
+
+class PreviewJobs:
+    """At most the currently admitted previews, scoped to visitor and page."""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.jobs = {}
+        self.epochs = OrderedDict()
+
+    def key(self, visitor, owner):
+        try:
+            return visitor, str(uuid.UUID(owner))
+        except (ValueError, TypeError, AttributeError):
+            return None
+
+    def remember(self, key, epoch):
+        if key is None or type(epoch) is not int or not 0 <= epoch <= 10**9:
+            return False
+        if epoch < self.epochs.get(key, -1):
+            return False
+        self.epochs[key] = epoch
+        self.epochs.move_to_end(key)
+        while len(self.epochs) > 512:
+            self.epochs.popitem(last=False)
+        return True
+
+    def begin(self, visitor, owner, epoch=0):
+        key = self.key(visitor, owner)
+        job = PreviewJob()
+        if key is not None:
+            with self.lock:
+                if not self.remember(key, epoch):
+                    job.cancel()
+                    return key, job
+                previous = self.jobs.get(key)
+                if previous is not None:
+                    previous.cancel()
+                self.jobs[key] = job
+        return key, job
+
+    def end(self, key, job):
+        with self.lock:
+            if key is not None and self.jobs.get(key) is job:
+                del self.jobs[key]
+
+    def cancel(self, visitor, owner, epoch=0):
+        key = self.key(visitor, owner)
+        with self.lock:
+            if key is not None and not self.remember(key, epoch):
+                return
+            job = self.jobs.get(key)
+            if job is not None:
+                job.cancel()
+
+
 class Engine:
     """One banjo_live_world_run process, spoken to a JSON line at a time."""
 
-    def __init__(self, exe, scene, cell, workdir):
+    def __init__(self, exe, scene, cell, workdir, preview_job=None):
         self.scene_path = Path(workdir) / 'scene.json'
         self.scene_path.write_text(json.dumps(scene), encoding='utf-8')
         self.proc = subprocess.Popen([str(exe), '--scene', str(self.scene_path), '--cell', str(cell)],
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      text=True, bufsize=1, cwd=str(workdir))
+        self.preview_job = preview_job
+        if preview_job is not None:
+            preview_job.attach(self.proc)
         self.lines = queue.Queue()
         threading.Thread(target=self._read, daemon=True).start()
-        self.first = self._next(60)
+        try:
+            self.first = self._next(60)
+        except Exception:
+            self.close()
+            raise
         if not self.first.get('ok', False):
             self.close()
             raise ValueError('the engine could not build this world: ' + str(self.first.get('error')))
@@ -2105,6 +2194,8 @@ class Engine:
         return reply
 
     def close(self):
+        if self.preview_job is not None:
+            self.preview_job.detach(self.proc)
         try:
             if self.proc.poll() is None:
                 self.proc.stdin.write('{"op":"quit"}\n')
@@ -2127,11 +2218,12 @@ class Engine:
                 pass
 
 
-def build_engine(exe, compiled, workdir):
+def build_engine(exe, compiled, workdir, preview_job=None):
     """Open the world and declare its joints, batteries, circuits and torches,
     in that order, through the engine's own ops. Returns the engine and the
     joint ids by name."""
-    engine = Engine(exe, scene_of(compiled), compiled['cell_m'], workdir)
+    engine = Engine(exe, scene_of(compiled), compiled['cell_m'], workdir,
+                    **({'preview_job': preview_job} if preview_job is not None else {}))
     joint_ids = {}
     try:
         for a in compiled.get('airflows',[]):
@@ -2275,7 +2367,9 @@ class MachineSession:
     """A machine running in real time. One engine process; one stepping
     thread; the page asks for what changed since its last frame."""
 
-    def __init__(self, compiled, exe, logs, paced=True):
+    def __init__(self, compiled, exe, logs, paced=True, preview_job=None):
+        if preview_job is not None and paced:
+            raise ValueError('a live machine cannot be cancelled as a preview')
         self.id = uuid.uuid4().hex
         # Paced: world time follows the wall clock times the speed. Unpaced
         # (a rehearsal): the engine runs as fast as it can; the physics is
@@ -2284,7 +2378,8 @@ class MachineSession:
         self.compiled = compiled
         self.workdir = Path(tempfile.mkdtemp(prefix='machine-', dir=str(logs)))
         started = time.perf_counter()
-        self.engine, self.joint_ids, self.circuit_ids = build_engine(exe, compiled, self.workdir)
+        self.engine, self.joint_ids, self.circuit_ids = build_engine(exe, compiled, self.workdir,
+            **({'preview_job': preview_job} if preview_job is not None else {}))
         self.build_s = time.perf_counter() - started
         self.lock = threading.Condition()
         self.closed = False
@@ -3194,7 +3289,7 @@ class MachineSession:
 
 
 def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, after_s=0.0, flows=False,
-             *, handle_inputs=None, release_inputs=None):
+             *, handle_inputs=None, release_inputs=None, preview_job=None):
     """Run a machine once, unpaced, and report what the engine measured: which
     stations happened, when, and the events. Nothing is kept and nothing is
     changed; a person still watches the real run afterwards. track: names of
@@ -3206,7 +3301,15 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
     release_inputs explicitly removes declared restraints for verification;
     ordinary previews keep them latched until a player releases them.
     """
-    session = MachineSession(compiled, exe, logs, paced=False)
+    if preview_job is not None and preview_job.cancelled():
+        return {'cancelled': True}
+    try:
+        session = MachineSession(compiled, exe, logs, paced=False,
+            **({'preview_job': preview_job} if preview_job is not None else {}))
+    except Exception:
+        if preview_job is not None and preview_job.cancelled():
+            return {'cancelled': True}
+        raise
     if track:
         # Each path starts where the body stands before anything moves.
         session.trail = {name: [[0.0] + [round(v, 4) for v in session.bodies[name]['position_m']]]
@@ -3229,6 +3332,8 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
         with session.lock:
             all_done_at = None
             while True:
+                if preview_job is not None and preview_job.cancelled():
+                    return {'cancelled': True}
                 rows = (session.readouts or {}).get('stations', [])
                 watched = [r for r, st in zip(rows, compiled['stations']) if st.get('done_when')]
                 if watched and all(r['done'] for r in watched) and all_done_at is None:
@@ -3238,6 +3343,8 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                         time.perf_counter() - started > wall_limit_s):
                     break
                 session.lock.wait(0.1)
+            if preview_job is not None and preview_job.cancelled():
+                return {'cancelled': True}
             done = getattr(session, '_done_at', {})
             out = {'world_time_s': round(session.t, 3), 'wall_s': round(time.perf_counter() - started, 2),
                    'error': session.error, 'stations': list(rows),

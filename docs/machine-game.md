@@ -2451,3 +2451,54 @@ automatic water ground, added river current, tray removal and the unfiltered
 gallery. An initial phone failure exposed the open ground disclosure reducing
 the inspector's scroll area; hiding it during editing fixes the actual layout
 without changing the 44 px touch-target checks.
+
+## Obsolete movement previews and the glass timing audit — October 14
+
+Starting a live run or rebuilding a setup cancels that page's unfinished
+movement rehearsal. The server terminates only the owned, disposable preview
+engine. A separate live session and other visitors/pages remain untouched.
+Cancelled rehearsals return no paths, goal result or claim of completion.
+Page-scoped UUIDs and monotonically increasing request epochs prevent an older
+HTTP request from restarting a preview after Try It. The registry retains at
+most 512 recent epoch markers and the currently admitted previews. Existing
+clients without these fields retain their previous API behavior.
+
+The **Chain reaction** example was profiled at its unchanged 20 mm cell size
+and 1/240 s rigid timestep. Its iron weight strikes the 480×20×280 mm glass
+plate at approximately 4.68 m/s and world time 20.462 s. Subsequent shard
+collisions require additional lattice runs; the rendering is not a shatter
+animation. On the existing Windows engine, a paced 25.0 s run stayed at real
+time with 1.289 s accumulated fracture-call waiting. A production API run took
+31.84 s to reach 25.2625 s and accumulated 5.480 s of fracture waiting. This
+was an ordinary engine run without a concurrent preview requested by the
+test; cancelling obsolete previews cannot remove that underlying compute cost.
+The earlier CPU/AVX2 optimizations and container CPU quota check are present.
+
+An isolated unpaced Windows comparison changed only the plate material: glass
+took 9.316 s wall time with 1.605 s fracture calls; oak took 6.662 s and iron
+6.473 s with no fracture calls. All reached at least 25 s world time without
+an engine error. Geometry, material-derived mass, contact/fracture criteria,
+lattice timestep and resolution were unchanged. This is a timing comparison,
+not new material calibration or a full-pipeline conservation proof. Existing
+energy/momentum limitations remain in the physics roadmap. A tested alternative
+SIMD row-loading kernel did not reduce fracture waiting and was discarded.
+
+Cancellation regressions cover visitor/page isolation, delayed requests,
+replacement cleanup, pre-cancelled jobs and native process termination while
+a separate live world remains playable. The initial native cancellation and
+subsequent live-play check together took 0.111 s. HTTP verification exercises
+the actual level-preview → play route and confirms that a delayed preview
+remains cancelled. The remaining public fracture delay still needs CPU
+capacity/per-phase measurements on the hosting instance; no faster fracture
+solver is claimed by this checkpoint.
+
+Delivery checks: 79 game tests pass in 140.912 s, including all authored
+solutions/negative cases/nudges and the nine-station Sandbox chain; 36 world
+tests pass in 23.373 s; 20 HTTP tests pass in 2.347 s. JavaScript/Python syntax
+and the source-registration guard pass. The browser's ordinary Reset →
+Try It! flow was exercised while a rehearsal process was active: the two
+owned setup/preview processes were replaced by one live process, and the
+glass broke and settled. The update dialog was inspected at 390×844 and
+the game at 844×390; the desktop and portrait screenshots are saved under
+the ignored `build/ui-proof` directory. Native binary SHA-256 remains
+`997b02d2b9f4594dbb575eeca38c17777a7ce6ec74e8832f97d265f8974464a9`.

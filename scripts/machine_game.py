@@ -1718,7 +1718,7 @@ def optical_preview(level, placements, exe, logs):
             engine.close()
 
 
-def preview(level, placements, exe, logs, wall_limit_s=30.0):
+def preview(level, placements, exe, logs, wall_limit_s=30.0, preview_job=None):
     """Where things will go when the level runs, as the engine works it out:
     the machine rehearsed once, unpaced, with every loose body's path, every
     hit one of them takes part in, and when the goal happens -- running on
@@ -1734,11 +1734,13 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0):
     loose.sort(key=lambda n: ' marble ' not in n + ' ')
     track = ([wanted] if wanted in loose else []) + [n for n in loose if n != wanted][:7]
     r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=wall_limit_s,
-                    track=track, after_s=0.5, flows=bool(compiled.get('light') or compiled.get('spouts') or
+                    preview_job=preview_job, track=track, after_s=0.5, flows=bool(compiled.get('light') or compiled.get('spouts') or
                         (compiled.get('ground') or {}).get('kind') == 'flume' or
                         compiled.get('circuits') or compiled.get('electrical', {}).get('wires') or
                         compiled.get('electrical', {}).get('contacts') or
                         compiled.get('electrical', {}).get('power_cables')))
+    if r.get('cancelled'):
+        return {'cancelled': True, 'complete': False, 'paths': [], 'hits': [], 'flow_frames': []}
     row = (r['stations'] or [{}])[0]
     goal_at = row.get('at_s') if row.get('done') and row.get('at_s') is not None and row['at_s'] <= level['time_s'] else None
     paths = []

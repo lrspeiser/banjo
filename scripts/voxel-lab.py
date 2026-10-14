@@ -86,6 +86,8 @@ class Server(ThreadingHTTPServer):
   self.feedback_allowance=Allowance(10,500,'feedback') if public else None
   self.preview_allowance=Allowance(int(os.environ.get('BANJO_PREVIEWS_PER_HOUR','300')),int(os.environ.get('BANJO_PREVIEWS_PER_DAY','6000')),'path preview') if public else None
   self.preview_busy=threading.BoundedSemaphore(2)
+  from machine_world import PreviewJobs
+  self.preview_jobs=PreviewJobs()
   self.optical_allowance=Allowance(3000,18000,'laser preview') if public else None
   if site not in ('all','game'):raise ValueError('site is all or game')
   self.site=site
@@ -224,7 +226,9 @@ class Handler(BaseHTTPRequestHandler):
     from machine_world import compile_spec
     declaration=machine_game.compose(machine_game.requested_level(data),data.get('placements') or [])[0] if data.get('level') else data.get('spec')
     c=compile_spec(declaration);r={'ok':True,'parts':len(c['parts']),'cells':c['cells'],'notes':c['notes']}
-   elif op=='play':r=host.get(data.get('session')).play(bool(data.get('running')),data.get('speed'))
+   elif op=='play':
+    if data.get('running'):self.server.preview_jobs.cancel(self.visitor(),data.get('preview_owner'),data.get('preview_epoch',0))
+    r=host.get(data.get('session')).play(bool(data.get('running')),data.get('speed'))
    elif op=='pull':r={'ok':True,**host.get(data.get('session')).pull(data.get('body'),data.get('at'),data.get('force'))}
    elif op=='mechanical_switch_pull':r={'ok':True,**host.get(data.get('session')).mechanical_switch_pull(data.get('name'),data.get('body'),data.get('at'),data.get('force'))}
    elif op=='electrical_switch':
@@ -240,7 +244,9 @@ class Handler(BaseHTTPRequestHandler):
     after,wait=data.get('after',0),data.get('wait_ms',0)
     if type(after) is not int or not 0<=after<=10**9 or type(wait) is not int or not 0<=wait<=250:raise ValueError('Invalid frame request')
     r=host.get(data.get('session')).frame(after,wait)
-   elif op=='close':r=host.close(data.get('session'))
+   elif op=='close':
+    self.server.preview_jobs.cancel(self.visitor(),data.get('preview_owner'),data.get('preview_epoch',0))
+    r=host.close(data.get('session'))
    elif op=='chat':
     if self.server.chat_allowance:self.server.chat_allowance.take(self.visitor())
     if not self.server.chat_busy.acquire(blocking=False):raise ValueError('Two chat requests are already being worked on; try again shortly')
@@ -266,6 +272,7 @@ class Handler(BaseHTTPRequestHandler):
      r={'ok':True,'level':machine_game.public(level)}
     finally:self.server.preview_busy.release()
    elif op=='level_open':
+    self.server.preview_jobs.cancel(self.visitor(),data.get('preview_owner'),data.get('preview_epoch',0))
     # The level's machine with the player's pieces in it, built in the engine.
     level=machine_game.requested_level(data)
     # Before the piece its goal is about is placed, the level is still shown,
@@ -302,9 +309,13 @@ class Handler(BaseHTTPRequestHandler):
     # rationed and two at a time; a busy server says so (503) and the page
     # asks again a moment later.
     if self.server.preview_allowance:self.server.preview_allowance.take(self.visitor())
+    self.server.preview_jobs.cancel(self.visitor(),data.get('preview_owner'),data.get('preview_epoch',0))
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is working out other previews; trying again in a moment')
-    try:r={'ok':True,**machine_game.preview(machine_game.requested_level(data),data.get('placements') or [],host.exe,host.logs)}
-    finally:self.server.preview_busy.release()
+    key,job=self.server.preview_jobs.begin(self.visitor(),data.get('preview_owner'),data.get('preview_epoch',0))
+    try:r={'ok':True,**machine_game.preview(machine_game.requested_level(data),data.get('placements') or [],host.exe,host.logs,preview_job=job)}
+    finally:
+     self.server.preview_jobs.end(key,job)
+     self.server.preview_busy.release()
    elif op=='level_sunlight':
     if self.server.optical_allowance:self.server.optical_allowance.take(self.visitor())
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is measuring other previews; trying again in a moment')

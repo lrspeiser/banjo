@@ -110,8 +110,11 @@ function material(hex, kind) {
   return materials.get(key);
 }
 
+const previewOwner = crypto.randomUUID();
+let previewEpoch = 0;
 function api(body) {
-  return fetch('/api/machine', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
+  if(body.op==='level_open'||body.op==='close'||body.op==='play'&&body.running)previewEpoch++;
+  return fetch('/api/machine', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...body,preview_owner:previewOwner,preview_epoch:previewEpoch})})
     .then(async r => {
       if (r.status === 401) { location.href = '/login'; throw Error('Log in first'); }
       const data = await r.json().catch(() => ({ok: false, error: 'The server answered with something that is not JSON'}));
@@ -3908,7 +3911,7 @@ async function askPreview() {
   const mine = ++previewAsk, list = ghost ? ghostPlacements() : placements;
   try {
     const r = await api({op: 'level_preview', level: level.id, ...sandboxRequest(), placements: list});
-    if (mine === previewAsk && !playing) drawPreview(r);
+    if (mine === previewAsk && !playing && !r.cancelled) drawPreview(r);
   } catch (e) {
     if (mine !== previewAsk) return;
     clearPreview();                     // a piece the goal needs is not placed yet, or it cannot be built

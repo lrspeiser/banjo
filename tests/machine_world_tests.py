@@ -12,6 +12,8 @@ import math
 import os
 import sys
 import tempfile
+import threading
+from unittest.mock import patch
 import time
 import unittest
 from pathlib import Path
@@ -877,6 +879,86 @@ class Host(unittest.TestCase):
                 self.assertTrue(made[2].closed)
         finally:
             mw.MachineSession = real
+
+
+class PreviewCancellation(unittest.TestCase):
+    def test_cancellation_is_scoped_to_one_visitor_and_one_page(self):
+        import uuid
+        jobs=mw.PreviewJobs();page=str(uuid.uuid4());other=str(uuid.uuid4())
+        a,first=jobs.begin('visitor-one',page,1)
+        b,second=jobs.begin('visitor-two',page,1)
+        c,third=jobs.begin('visitor-one',other,1)
+        jobs.cancel('visitor-one',page,2)
+        self.assertTrue(first.cancelled())
+        self.assertFalse(second.cancelled())
+        self.assertFalse(third.cancelled())
+        jobs.end(a,first);jobs.end(b,second);jobs.end(c,third)
+        self.assertFalse(jobs.jobs)
+
+    def test_a_delayed_preview_cannot_start_after_try_it(self):
+        import uuid
+        jobs=mw.PreviewJobs();page=str(uuid.uuid4())
+        jobs.cancel('visitor',page,8)
+        key,old=jobs.begin('visitor',page,7)
+        self.assertTrue(old.cancelled())
+        self.assertFalse(jobs.jobs)
+        key,new=jobs.begin('visitor',page,9)
+        jobs.cancel('visitor',page,8)
+        self.assertFalse(new.cancelled())
+        key,newest=jobs.begin('visitor',page,10)
+        self.assertTrue(new.cancelled())
+        jobs.end(key,new)
+        self.assertIs(jobs.jobs[key],newest)
+        jobs.end(key,newest)
+
+    def test_finished_process_is_detached_and_pre_cancelled_rehearsal_never_opens_an_engine(self):
+        class Process:
+            def __init__(self):self.stopped=False
+            def poll(self):return 0 if self.stopped else None
+            def terminate(self):self.stopped=True
+        job=mw.PreviewJob();process=Process();job.attach(process);job.detach(process);job.cancel()
+        self.assertFalse(process.stopped)
+        with patch.object(mw,'MachineSession',side_effect=AssertionError('should not start')):
+            self.assertEqual(mw.rehearse({},None,None,preview_job=job),{'cancelled':True})
+        other=Process();job.attach(other)
+        self.assertTrue(other.stopped)
+
+    @need_engine
+    def test_native_preview_stops_without_closing_a_live_world_or_returning_partial_paths(self):
+        import machine_game as mg
+        job=mw.PreviewJob();result={};failures=[]
+        spec=mg.sandbox_templates()[1]['base']
+        compiled=mw.compile_spec(spec)
+        with tempfile.TemporaryDirectory() as logs:
+            live=mw.MachineSession(compiled,ENGINE,Path(logs),paced=True)
+            def preview():
+                try:result.update(mg.preview(mg.requested_level({'level':'free','base':spec}),[],ENGINE,Path(logs),preview_job=job))
+                except Exception as error:failures.append(error)
+            worker=threading.Thread(target=preview)
+            worker.start()
+            try:
+                deadline=time.monotonic()+10
+                while job.process is None and worker.is_alive() and time.monotonic()<deadline:
+                    time.sleep(.01)
+                process=job.process
+                self.assertIsNotNone(process,'no native rehearsal was opened')
+                began=time.monotonic();job.cancel();worker.join(5)
+                self.assertFalse(worker.is_alive(),'the cancelled native process kept running')
+                self.assertFalse(failures,failures)
+                self.assertTrue(result['cancelled'])
+                self.assertFalse(result['complete'])
+                self.assertEqual(result['paths'],[])
+                self.assertIsNotNone(process.poll())
+                self.assertIsNone(live.engine.proc.poll(),'preview cancellation terminated the live world')
+                live.play(True)
+                with live.lock:
+                    deadline=time.monotonic()+5
+                    while live.t<.1 and not live.error and time.monotonic()<deadline:live.lock.wait(.1)
+                self.assertGreater(live.t,0)
+                self.assertIsNone(live.error)
+                print(f'\n  discarded native preview stopped in {time.monotonic()-began:.3f} s; live world remains playable')
+            finally:
+                job.cancel();worker.join(5);live.close()
 
 
 if __name__ == '__main__':

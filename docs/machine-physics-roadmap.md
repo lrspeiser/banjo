@@ -10,6 +10,30 @@ Some device laws remain lumped or ideal, and the coupling/calibration limits
 below matter. Heavy impacts or cuts can run slower than real time; the page's
 clock says when.
 
+October 14 connection audit: `syncRopes` and `updateRopes` in
+[`machine.js`](../client/voxel-lab/machine.js) still draw ties, pulley runs and
+drum ropes as lines. Their native constraints calculate endpoint forces and
+reactions; they do not provide a rope's distributed mass, solid collision
+surface, bending, wrap friction or material failure along its length. Spring
+coils now have a visible tube, but their native law remains an ideal axial
+spring. Older `circuits` drawings can still fall back to a line; newer power
+and electrical cables use tubes and clear-solid routing, but only their
+electrical connection/resistance is simulated. These cables have no mechanical
+mass, bending/contact response or retention model. Changing a line to a tube
+would not resolve those missing laws. This audit adds no new cable physics.
+Actual knife/heat-cut cords already have material cells and are a separate
+model from these ideal joints. Optical rays, paths, alignment guides and label
+leaders are annotations and should remain lines.
+
+The required physical replacement is an articulated or deformable connection
+with declared conductor/fibre and insulation properties, geometry-derived
+mass, collision/endpoint reactions, tensile and bending response, and
+connectivity changes on detachment. Pulley/drum versions additionally need
+contact with the wheel/drum and a measured wrap/slip law. Qualification must
+include full transfers and timestep/mass-ratio convergence, not just a thicker
+rendering or a constraint passing a pairwise force test. These replacements
+remain unfinished.
+
 ## In the machine now
 
 October 13 specialist-solver update: new builds use ngspice for circuit operating

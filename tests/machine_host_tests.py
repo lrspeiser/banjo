@@ -122,6 +122,36 @@ class BugReports(unittest.TestCase):
 
 
 class Requests(unittest.TestCase):
+    def test_try_it_stops_its_background_preview_and_late_requests_stay_cancelled(self):
+        import machine_game
+        from types import SimpleNamespace
+        owner=str(uuid.uuid4());entered=threading.Event()
+        def preview(*args,preview_job=None,**kwargs):
+            entered.set()
+            if not preview_job.event.wait(5):raise AssertionError('Try It did not cancel the rehearsal')
+            return {'cancelled':True,'complete':False,'paths':[]}
+        def post(body):
+            status,data,_=self.request(['127.0.0.1'],'POST','/api/machine',payload=body)
+            return status,json.loads(data)
+        request={'op':'level_preview','level':'cut','placements':[],
+                 'preview_owner':owner,'preview_epoch':1}
+        with patch.object(machine_game,'preview',side_effect=preview),concurrent.futures.ThreadPoolExecutor() as pool:
+            pending=pool.submit(post,request)
+            self.assertTrue(entered.wait(5),'the preview was not admitted')
+            with patch.object(self.server.machines,'get',return_value=SimpleNamespace(play=lambda *a:{'ok':True})):
+                status,result=post({'op':'play','running':True,'session':'test',
+                                    'preview_owner':owner,'preview_epoch':2})
+                self.assertEqual(status,200,result)
+            status,result=pending.result(timeout=5)
+            self.assertEqual(status,200,result)
+            self.assertTrue(result['cancelled'])
+            self.assertFalse(result['complete'])
+            # An older HTTP request arriving after Try It cannot restart work.
+            status,result=post(request)
+            self.assertEqual(status,200,result)
+            self.assertTrue(result['cancelled'])
+            self.assertFalse(self.server.preview_jobs.jobs)
+
     @classmethod
     def setUpClass(cls):
         if not ENGINE.is_file():
