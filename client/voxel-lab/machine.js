@@ -2313,6 +2313,29 @@ const editRing = new THREE.TorusGeometry(1, .09, 8, 40);
 const editShared = new Set([editShaft, editHead, editRing]);
 let editArrows = [], editMarker = null, editAnchor = null;
 const editHandles=document.createElement('div');editHandles.id='piece-handles';view.append(editHandles);
+const valueChoices=document.createElement('div');valueChoices.id='piece-value-choices';valueChoices.setAttribute('popover','auto');view.append(valueChoices);
+function closeValueChoices(){if(valueChoices.matches(':popover-open'))valueChoices.hidePopover();}
+function choiceText(key,value){return key==='teeth'?`${value} teeth`:key==='module_m'?`${Math.round(value*1000)} mm teeth`:String(value);}
+function showValueChoices(key,rule,name,source){
+  closeValueChoices();const selected=ghost;if(!selected)return;
+  valueChoices.replaceChildren(Object.assign(document.createElement('strong'),{textContent:name}));
+  const options=Object.assign(document.createElement('div'),{className:'value-choice-grid'});
+  for(const value of rule.choices){
+    const option=button(choiceText(key,value),()=>{
+      closeValueChoices();if(ghost!==selected)return;
+      if(setKnob(ghost.p,key,value)){renderGhostBar();showGhostKnobs();askGhost();}
+    },{ariaLabel:`Set ${name} to ${choiceText(key,value)}`});
+    option.setAttribute('aria-pressed',String(selected.p[key]===value));options.append(option);
+  }
+  valueChoices.append(options);valueChoices.showPopover();
+  const box=ghostScreenBox(),object=box?{left:box.x0,right:box.x1,top:box.y0,bottom:box.y1}:source.getBoundingClientRect(),rect=valueChoices.getBoundingClientRect();
+  const sceneRect=view.getBoundingClientRect();
+  const bounds=rect.height<=sceneRect.height-12&&rect.width<=sceneRect.width-12?sceneRect:
+    {left:12,top:Math.max(12,sceneRect.top),right:innerWidth-12,bottom:innerHeight-12};
+  const at=pieceToolbarPosition(bounds,object,rect,[source.getBoundingClientRect()]);
+  valueChoices.style.left=at.x+'px';valueChoices.style.top=at.y+'px';
+}
+valueChoices.addEventListener('keydown',e=>{e.stopPropagation();});
 let handleDrag=null;
 function updatePieceHandles() {
   if(handleDrag)return; // Preserve pointer capture while native previews are replaced.
@@ -2333,13 +2356,22 @@ function updatePieceHandles() {
   if(editHandles.dataset.key!==key||editHandles.childElementCount!==anchors.length){
     editHandles.replaceChildren();editHandles.dataset.key=key;
     anchors.forEach((_,i)=>{
-      const h=button('◆',()=>{},{ariaLabel:`Drag ${knobName(rule,key)} handle ${i+1}`,title:'Drag along the highlighted arrow to change this dimension'});
+      const direction=i===0?1:-1;
+      const h=button(numericChoices?(direction>0?'+':'−'):'◆',()=>{
+        if(h.suppressClick){h.suppressClick=false;return;}
+        if(numericChoices&&ghost)editByDrag(key,Number(ghost.p[key]),direction*240/(rule.choices.length-1));
+      },{ariaLabel:numericChoices?`${direction>0?'Increase':'Decrease'} ${knobName(rule,key)} on object`:`Drag ${knobName(rule,key)} handle ${i+1}`,
+        title:numericChoices?'Tap for the next size, or drag the highlighted edge.':'Drag along the highlighted arrow to change this dimension'});
       h.className='piece-dimension-handle';
       h.addEventListener('pointerdown',e=>{if(e.button!==0||!ghost)return;e.preventDefault();h.focus({preventScroll:true});
+        h.suppressClick=false;
         editorMode='adjust';looking=false;view.classList.remove('looking');
         handleDrag={id:e.pointerId,key,initial:Number(ghost.p[key]),x:e.clientX,y:e.clientY,dx:Number(h.dataset.dx),dy:Number(h.dataset.dy)};h.setPointerCapture(e.pointerId);
       });
-      h.addEventListener('pointermove',e=>{if(handleDrag?.id===e.pointerId)editByDrag(handleDrag.key,handleDrag.initial,(e.clientX-handleDrag.x)*handleDrag.dx+(e.clientY-handleDrag.y)*handleDrag.dy);});
+      h.addEventListener('pointermove',e=>{if(handleDrag?.id===e.pointerId){
+        if(Math.hypot(e.clientX-handleDrag.x,e.clientY-handleDrag.y)>5)h.suppressClick=true;
+        editByDrag(handleDrag.key,handleDrag.initial,(e.clientX-handleDrag.x)*handleDrag.dx+(e.clientY-handleDrag.y)*handleDrag.dy);
+      }});
       for(const type of ['pointerup','pointercancel','lostpointercapture'])h.addEventListener(type,()=>{handleDrag=null;updatePieceHandles();});
       h.addEventListener('keydown',e=>{if(!ghost||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();e.stopPropagation();
         editByDrag(key,Number(ghost.p[key]),(['ArrowRight','ArrowUp'].includes(e.key)?1:-1)*240*(rule.choices?1/(rule.choices.length-1):(rule.step||.01)/(rule.max-rule.min)));});
@@ -2352,12 +2384,17 @@ function updatePieceHandles() {
     dx/=l;dy/=l;const h=editHandles.children[i];
     const obstacles=[...view.querySelectorAll('#piece-editor,#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')].filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
     let point=null;
-    for(const distance of [48,72,96,120,-48,-72,-96]){
+    const half=28;
+    for(const distance of [56,80,104,128,-56,-80,-104,0]){
       const x=rect.left+(a.x+1)*rect.width/2+dx*distance,y=rect.top+(1-a.y)*rect.height/2+dy*distance;
-      if(Math.abs(a.z)<=1&&x>=rect.left+22&&x<=rect.right-22&&y>=rect.top+22&&y<=rect.bottom-22&&!obstacles.some(r=>x+22>r.left&&x-22<r.right&&y+22>r.top&&y-22<r.bottom)){point={x,y};break;}
+      if(Math.abs(a.z)<=1&&x>=rect.left+half&&x<=rect.right-half&&y>=rect.top+half&&y<=rect.bottom-half&&!obstacles.some(r=>x+half>r.left&&x-half<r.right&&y+half>r.top&&y-half<r.bottom)){point={x,y};break;}
     }
     h.hidden=!point;if(!point)return;
-    h.style.left=`${point.x-rect.left-22}px`;h.style.top=`${point.y-rect.top-22}px`;h.dataset.dx=dx;h.dataset.dy=dy;
+    if(numericChoices){
+      const limit=rule.choices.indexOf(ghost.p[key])===(i===0?rule.choices.length-1:0);
+      h.textContent=limit?(i===0?'MAX':'MIN'):(i===0?'+':'−');h.classList.toggle('at-limit',limit);
+    }
+    h.style.left=`${point.x-rect.left-half}px`;h.style.top=`${point.y-rect.top-half}px`;h.dataset.dx=dx;h.dataset.dy=dy;
 
   });
 }
@@ -2622,6 +2659,7 @@ function pickUp(i) {
 }
 
 function endGhost() {
+  closeValueChoices();
   $('socket-choices').hidden=true;
   clearTimeout(solarTimer);solarTimer=null;solarWanted='';solarStamp='';solarResult=null;solarVersion++;solarPending=false;solarError='';
   ghost = null; draggingGhost = null; pressedAt = null;pendingPieceReference=null;handleDrag=null;drawAirflows();
@@ -2810,10 +2848,8 @@ function renderGhostBar() {
         {ariaLabel:`Toggle ${name}`,title:`${name}: ${rule.choices.join(' or ')}`});
       toggle.setAttribute('aria-pressed',String(ghost.p[key]===rule.choices[1]));row.append(toggle);
     } else if(rule.choices.length>1) {
-      const next=direction=>applyChoice(rule.choices[(rule.choices.indexOf(ghost.p[key])+direction+rule.choices.length)%rule.choices.length]);
-      const text=key==='teeth'?`${ghost.p[key]} teeth`:key==='module_m'?`${Math.round(ghost.p[key]*1000)} mm teeth`:String(ghost.p[key]);
-      row.classList.add('choice-cycle');row.append(button('‹',()=>next(-1),{ariaLabel:`Previous ${name}`}),
-        Object.assign(document.createElement('output'),{textContent:text}),button('›',()=>next(1),{ariaLabel:`Next ${name}`}));
+      const choose=button(choiceText(key,ghost.p[key]),()=>showValueChoices(key,rule,name,choose),{ariaLabel:`Choose ${name}`});
+      row.classList.add('choice-cycle');row.append(choose);
     } else row.append(Object.assign(document.createElement('output'),{textContent:String(ghost.p[key])}));
     precisionChoice=select;
     ghost.cardInput = [select, null, key];
@@ -3032,7 +3068,7 @@ function showGhostKnobs() {
   showGridSnap();
   const knobs = trayItem(ghost.p.piece).knobs;
   const choice=$('adjustment-choice');if(choice)choice.value=ghost.card;
-  const cycle=$('piece-editor').querySelector('.choice-cycle output');if(cycle)cycle.textContent=ghost.card==='teeth'?`${ghost.p[ghost.card]} teeth`:ghost.card==='module_m'?`${Math.round(ghost.p[ghost.card]*1000)} mm teeth`:String(ghost.p[ghost.card]);
+  const cycle=$('piece-editor').querySelector('.choice-cycle button');if(cycle)cycle.textContent=choiceText(ghost.card,ghost.p[ghost.card]);
   const feedback=$('adjustment-feedback');if(feedback)feedback.textContent=electricalEditRating() || `${knobName(knobs[ghost.card],ghost.card)}: ${ghost.p[ghost.card]}${knobs[ghost.card].turning?'°':''}`;
   const grip=$('piece-grip');if(grip)grip.title=`${knobName(knobs[ghost.card],ghost.card)}: ${ghost.p[ghost.card]}. Drag left or right; exact values are in Help → Settings.`;
   const value = document.querySelector('#ghost-bar .knob-value');

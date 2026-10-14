@@ -876,7 +876,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.ghost()['p']['teeth'],18)
                 self.assertFalse(self.js("document.querySelector('[aria-label=\"Its Teeth / size\"]').checkVisibility()"))
                 self.assertTrue(self.js("document.querySelector('#piece-editor .choice-cycle')!==null"))
-                self.click_visible('Previous Teeth / size');self.ghost()
+                self.click_visible('Choose Teeth / size');self.click_visible('Set Teeth / size to 12 teeth');self.ghost()
                 self.assertEqual(self.ghost()['p']['teeth'],12)
                 self.assertEqual(len(self.ghost()['editGuide']['arrows']),4)
                 self.assertEqual(self.ghost()['editGuide']['focus'],['your gear 1 wheel'])
@@ -4836,6 +4836,26 @@ class Puzzles(unittest.TestCase):
         self.assertIn(str(after)+' teeth',self.js("document.querySelector('#piece-editor .choice-cycle').textContent"))
         self.assertEqual(self.js('machinePlacements()'),placed_before)
 
+    def test_large_object_size_handles_and_named_choices_replace_cycle_arrows(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-gears',width,height,phone=width<1000)
+                self.click_visible('Add a gear');self.ghost()
+                self.assertFalse(self.js("document.querySelector('#piece-editor [aria-label^=\"Previous \"]')!==null"))
+                self.wait("document.querySelector('#piece-handles [aria-label^=\"Decrease \"]:not([hidden])')!==null",10)
+                handle=self.js("(()=>{const b=document.querySelector('#piece-handles [aria-label^=\"Decrease \"]:not([hidden])'),r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height};})()")
+                self.assertGreaterEqual(handle['w'],56);self.assertGreaterEqual(handle['h'],56)
+                self.mouse('mousePressed',handle['x'],handle['y']);self.mouse('mouseReleased',handle['x'],handle['y'])
+                self.assertEqual(self.ghost()['p']['teeth'],12)
+                self.click_visible('Choose Teeth / size')
+                self.assertTrue(self.js("document.getElementById('piece-value-choices').matches(':popover-open')"))
+                self.assertTrue(self.js("(()=>{const b=document.getElementById('piece-value-choices'),r=b.getBoundingClientRect();return Number.isFinite(parseFloat(b.style.left))&&Number.isFinite(parseFloat(b.style.top))&&r.left>=0&&r.top>=document.getElementById('view').getBoundingClientRect().top&&r.right<=innerWidth&&r.bottom<=innerHeight;})()"))
+                self.click_visible('Set Teeth / size to 24 teeth');self.assertEqual(self.ghost()['p']['teeth'],24)
+                self.assertFalse(self.js("document.getElementById('piece-value-choices').matches(':popover-open')"))
+                self.choose_adjustment('Material');self.click_visible('Choose Material')
+                self.click_visible('Set Material to glass');self.assertEqual(self.ghost()['p']['material'],'glass')
+                self.assertFalse(self.js('machinePlacements().length'))
+
 
     def test_sandbox_trial_and_three_tabs_fit_small_phone(self):
         self.open('free',320,568,phone=True)
@@ -4848,7 +4868,11 @@ class Puzzles(unittest.TestCase):
         self.open('gap')
         self.press('Add a plank');self.ghost()
         for label in ('Drag selected adjustment','Drag Cut to length handle 1'):
-            before=self.ghost()['p'];self.click_visible(label)
+            before=self.ghost()['p']
+            if label.endswith('handle 1'):
+                self.wait("document.querySelector('#piece-handles button:not([hidden])')!==null",10)
+                label=self.js("document.querySelector('#piece-handles button:not([hidden])').getAttribute('aria-label')")
+            self.click_visible(label)
             for kind in ('keyDown','keyUp'):
                 self.page.send('Input.dispatchKeyEvent',{'type':kind,'key':'ArrowRight','code':'ArrowRight','windowsVirtualKeyCode':39})
             after=self.ghost()['p']

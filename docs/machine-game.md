@@ -1,5 +1,32 @@
 # Puzzles on the machine (/play)
 
+October 13 choice-control follow-up: previous/next value arrows have been
+replaced with named choices opened by tapping the current value beside the
+piece. Choice targets are at least 56 px high; selection updates the proposed
+declaration and closes the picker. Escape or clicking outside dismisses it.
+It stays associated with the selected piece and closes when selection ends.
+Material and other non-geometric choices use this picker; binary toggles and
+the three wire-gauge buttons keep their existing behavior.
+
+The gold geometry grips are now 56 × 56 px, with collision clearance adjusted
+to the larger hit area. Discrete numeric dimensions such as gear teeth also
+accept a tap: **+** chooses the next allowed size and **−** the preceding size,
+with MIN/MAX at the bounds. Dragging remains limited to the allowed presets;
+a drag does not add an extra tap step on release. Keyboard arrows still change
+one increment without moving the piece. Geometry and rays still come from
+the server/native engine; these controls assign no simulated force or success.
+
+Five scoped browser checks pass in 50.390 s for size taps and named material
+choices on desktop and both phone orientations, the unchanged gear win,
+allowed-size dragging, keyboard increments, lens editing and the receiver tap.
+The final picker-position regression passes in 4.612 s; picker coordinates
+must be finite, clear the header and remain within the viewport. Pickers stay
+inside the scene when their full size fits, using the viewport for short or
+crowded layouts. The keyboard fixture now chooses a visible geometry grip
+after the native guide refresh, rather than requiring an off-screen endpoint.
+Geometry helper, syntax, introduction-content and source-registration checks
+pass. No native law, scoring tolerance or physical calibration changed.
+
 October 13 level-introduction update: every challenge opens a dismissible
 overlay with its name, **You’ll place**, **How it works**, **Your goal** and one
 **GO** action. The three descriptions use the available tray and a reviewed

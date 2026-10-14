@@ -37,8 +37,10 @@ are in the upper scene corner; a flat zoom slider and magnifiers are in the
 scene corner, with turn/tilt buttons beside zoom. Click a piece to edit it;
 **Move**, **Turn** and **Place** follow the selection. Drag the piece or its
 selected adjustment handle. A compact property chooser, numeric grip, toggles
-and previous/next choices sit beside the object. Gold handles let you drag
-highlighted dimensions directly. Lens focus adjusts its actual face curvature
+and named choices sit beside the object. Gold handles let you drag
+highlighted dimensions directly. Larger 56 px handles also accept +/− taps for
+discrete sizes, such as gear teeth. Tap a current choice value to open large
+named options instead of cycling tiny arrows. Lens focus adjusts its actual face curvature
 and native beam preview; tank opening and live valve/release controls stay with
 their devices. **Level Complete!** appears over the scene. Exact sliders and snap preferences are in
 **Help → Settings**. Both snaps start on. Used tray cards disappear.
