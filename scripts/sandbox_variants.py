@@ -300,6 +300,26 @@ def construct(family_level, seed, *, attempt=0, version=None):
     result['variant'] = dict(_metadata(family, seed, attempt, version=version), parameter=parameter,
                              parameter_label=PARAMETER_LABELS[parameter],
                              kind=kind, value=value)
+    # Older shares use different apparatus. Retain the adjustments that those
+    # devices need without changing their declarations or recipe identities.
+    legacy_extras = {
+        'gears':['drive','teeth_a','teeth_b','height_m','x_m','z_m'],
+        'motor':['direction','throttle','hinge','x_m','z_m'], 'spring':['height_m'], 'tackle':['load_material'],
+        'water_wheel':['side','discharge_l_s','radius_m','load_part','x_m','z_m'],
+        'water_tank':['valve'], 'battery':['mount','height_m','x_m','z_m'],
+        'switch':['state','mode','threshold_deg'], 'bulb':['preset'],
+    }
+    canonical={t['piece']:t for t in family_level['tray']}
+    for tray in result['tray']:
+        source=canonical.get(tray['piece'],{})
+        keys=list(source.get('lesson_knobs',[]))
+        if version < FAMILY_VERSIONS.get(family,1):
+            keys.extend(k for k in legacy_extras.get(tray['piece'],[]) if k not in keys)
+        tray['lesson_knobs']=[k for k in keys if k in tray['knobs']]
+        primary=[k for k in source.get('primary_knobs',[]) if k in tray['lesson_knobs']]
+        if not primary:primary=tray['lesson_knobs'][:1]
+        tray['primary_knobs']=primary
+        if primary:tray['focus_knob']=primary[0]
     return result
 
 

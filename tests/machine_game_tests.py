@@ -48,6 +48,57 @@ EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):
+    def test_every_authored_tray_has_a_reviewed_lesson_control_set(self):
+        for level in LEVELS:
+            for tray in level['tray']:
+                with self.subTest(level=level['id'],piece=tray['piece']):
+                    keys=tray['lesson_knobs']
+                    self.assertTrue(keys)
+                    self.assertEqual(len(keys),len(set(keys)))
+                    self.assertTrue(set(keys)<=tray['knobs'].keys())
+                    self.assertTrue(set(tray['primary_knobs'])<=set(keys))
+        self.assertTrue(all('lesson_knobs' not in t for t in mg.free_build()['tray']))
+
+    def test_lesson_controls_keep_every_reference_machine_physically_identical(self):
+        for level in LEVELS:
+            trays={t['piece']:t for t in level['tray']}
+            # Start with the same declared defaults and change only the values
+            # offered in this lesson. Hidden construction versions stay default.
+            reachable=[]
+            for p in level['solution']:
+                tray=trays[p['piece']]
+                defaults={k:r.get('default',r.get('choices',[r.get('min','')])[0]) for k,r in tray['knobs'].items()}
+                defaults.update({k:v for k,v in p.items() if k=='piece' or k in tray['lesson_knobs']})
+                reachable.append(defaults)
+            with self.subTest(level=level['id']):
+                original=mg.compose(level,level['solution'])[0]
+                simplified=mg.compose(level,reachable)[0]
+                self.assertEqual(mw.compile_spec(original),mw.compile_spec(simplified))
+
+    def test_level_hint_lists_only_player_editable_properties(self):
+        for ident,kept,omitted in [('easy-spring','rest_m','damping_n_s_m'),
+                                  ('advanced-capacitor','capacitance_f','leakage_ohm'),
+                                  ('easy-gears','teeth','friction_n_m')]:
+            text=mc.level_prompt(mg.level_by_id(ident),'hint')
+            self.assertIn(kept+' (',text)
+            self.assertNotIn(omitted+' (',text)
+
+    def test_shared_recipe_controls_retain_current_and_legacy_reference_machines(self):
+        import sandbox_variants as variants
+        for family in mg.EASY_ORDER:
+            for version in range(1,variants.FAMILY_VERSIONS.get(family,1)+1):
+                level=variants.construct(mg.level_by_id(family),42,version=version)
+                trays={t['piece']:t for t in level['tray']};reachable=[]
+                for p in level['solution']:
+                    tray=trays[p['piece']]
+                    defaults={k:r.get('default',r.get('choices',[r.get('min','')])[0]) for k,r in tray['knobs'].items()}
+                    defaults.update({k:v for k,v in p.items() if k=='piece' or k in tray['lesson_knobs']})
+                    reachable.append(defaults)
+                with self.subTest(family=family,version=version):
+                    self.assertTrue(all(t['lesson_knobs'] for t in level['tray']))
+                    self.assertEqual(mw.compile_spec(mg.compose(level,level['solution'])[0]),
+                                     mw.compile_spec(mg.compose(level,reachable)[0]))
+
     def test_divert_water_hides_only_its_optional_source_controls(self):
         level=mg.level_by_id('easy-divert-water')
         self.assertFalse(mg.public(level)['water_controls'])

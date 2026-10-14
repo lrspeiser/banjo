@@ -122,6 +122,12 @@ def load_levels():
                              'estimate_basis':catalogue['estimate_basis'],'chapter':row['chapter']}
         if row.get('title'):level['title']=row['title']
         for tray in level['tray']:
+            # Presentation only: keep the full declaration/defaults for the
+            # engine and old saves, but require an audited lesson control set.
+            lesson = row['lesson_controls'][tray['piece']]
+            if not lesson or len(set(lesson)) != len(lesson) or any(k not in tray['knobs'] for k in lesson):
+                raise ValueError(f"Invalid lesson controls for {level['id']}/{tray['piece']}")
+            tray['lesson_knobs'] = list(lesson)
             controls=[k for k in row.get('primary_controls',{}).get(tray['piece'],[]) if k in tray['knobs']]
             if controls:
                 tray['primary_knobs']=controls

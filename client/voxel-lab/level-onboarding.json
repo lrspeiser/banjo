@@ -16,7 +16,14 @@
           "height_m"
         ]
       },
-      "chapter": "Level 1: Mechanics"
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "weight": [
+          "height_m",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-spring",
@@ -25,8 +32,19 @@
         2,
         5
       ],
-      "primary_controls": {},
-      "chapter": "Level 1: Mechanics"
+      "primary_controls": {
+        "spring": [
+          "rest_m"
+        ]
+      },
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "spring": [
+          "rest_m",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "gap",
@@ -40,7 +58,14 @@
           "length_m"
         ]
       },
-      "chapter": "Level 1: Mechanics"
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "plank": [
+          "length_m",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-tackle",
@@ -49,8 +74,23 @@
         3,
         7
       ],
-      "primary_controls": {},
-      "chapter": "Level 1: Mechanics"
+      "primary_controls": {
+        "tackle": [
+          "counterweight_kg",
+          "ratio",
+          "drop_from_m"
+        ]
+      },
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "tackle": [
+          "counterweight_kg",
+          "ratio",
+          "drop_from_m",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-lens",
@@ -61,13 +101,19 @@
       ],
       "primary_controls": {
         "lens": [
-          "x_m",
-          "shape",
           "radius_m",
           "diameter_m"
         ]
       },
-      "chapter": "Level 1: Mechanics"
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "lens": [
+          "radius_m",
+          "diameter_m",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-cut",
@@ -79,10 +125,20 @@
       "primary_controls": {
         "knife": [
           "pivot_height_m",
-          "arm_m"
+          "arm_m",
+          "yaw_deg"
         ]
       },
-      "chapter": "Level 1: Mechanics"
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "knife": [
+          "pivot_height_m",
+          "arm_m",
+          "yaw_deg",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-mirror",
@@ -93,12 +149,17 @@
       ],
       "primary_controls": {
         "mirror": [
-          "angle_deg",
-          "height_m",
-          "size_m"
+          "angle_deg"
         ]
       },
-      "chapter": "Level 1: Mechanics"
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "mirror": [
+          "angle_deg",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-catapult",
@@ -107,8 +168,23 @@
         3,
         8
       ],
-      "primary_controls": {},
-      "chapter": "Level 1: Mechanics"
+      "primary_controls": {
+        "catapult": [
+          "counterweight_m",
+          "cock_deg",
+          "yaw_deg"
+        ]
+      },
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "catapult": [
+          "counterweight_m",
+          "cock_deg",
+          "yaw_deg",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "cut",
@@ -120,10 +196,20 @@
       "primary_controls": {
         "knife": [
           "pivot_height_m",
-          "arm_m"
+          "arm_m",
+          "yaw_deg"
         ]
       },
-      "chapter": "Level 1: Mechanics"
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "knife": [
+          "pivot_height_m",
+          "arm_m",
+          "yaw_deg",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "tackle",
@@ -132,8 +218,22 @@
         6,
         15
       ],
-      "primary_controls": {},
-      "chapter": "Level 1: Mechanics"
+      "primary_controls": {
+        "tackle": [
+          "counterweight_kg",
+          "ratio",
+          "drop_from_m"
+        ]
+      },
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "tackle": [
+          "counterweight_kg",
+          "ratio",
+          "drop_from_m",
+          "x_m"
+        ]
+      }
     },
     {
       "id": "laser",
@@ -147,7 +247,14 @@
           "angle_deg"
         ]
       },
-      "chapter": "Level 1: Mechanics"
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "mirror": [
+          "angle_deg",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-gears",
@@ -163,7 +270,16 @@
           "height_m"
         ]
       },
-      "chapter": "Level 1: Mechanics"
+      "chapter": "Level 1: Mechanics",
+      "lesson_controls": {
+        "gear": [
+          "teeth",
+          "module_m",
+          "height_m",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-motor",
@@ -178,7 +294,15 @@
           "throttle"
         ]
       },
-      "chapter": "Level 2: Electricity"
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "motor": [
+          "direction",
+          "throttle",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-bulb",
@@ -187,8 +311,19 @@
         2,
         5
       ],
-      "primary_controls": {},
-      "chapter": "Level 2: Electricity"
+      "primary_controls": {
+        "bulb": [
+          "size"
+        ]
+      },
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "bulb": [
+          "size",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-loop",
@@ -197,8 +332,18 @@
         1,
         3
       ],
-      "primary_controls": {},
-      "chapter": "Level 2: Electricity"
+      "primary_controls": {
+        "wire": [
+          "a_terminal"
+        ]
+      },
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "wire": [
+          "a_terminal",
+          "b_terminal"
+        ]
+      }
     },
     {
       "id": "advanced-resistor",
@@ -207,8 +352,19 @@
         1,
         4
       ],
-      "primary_controls": {},
-      "chapter": "Level 2: Electricity"
+      "primary_controls": {
+        "resistor": [
+          "resistance_ohm"
+        ]
+      },
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "resistor": [
+          "resistance_ohm",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-switch",
@@ -217,8 +373,18 @@
         2,
         5
       ],
-      "primary_controls": {},
-      "chapter": "Level 2: Electricity"
+      "primary_controls": {
+        "switch": [
+          "x_m"
+        ]
+      },
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "switch": [
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-marble-light",
@@ -227,8 +393,18 @@
         2,
         6
       ],
-      "primary_controls": {},
-      "chapter": "Level 2: Electricity"
+      "primary_controls": {
+        "switch": [
+          "x_m"
+        ]
+      },
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "switch": [
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-power",
@@ -240,9 +416,22 @@
       "primary_controls": {
         "battery": [
           "voltage_v"
+        ],
+        "wire": [
+          "size"
         ]
       },
-      "chapter": "Level 2: Electricity"
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "battery": [
+          "voltage_v"
+        ],
+        "wire": [
+          "size",
+          "a_terminal",
+          "b_terminal"
+        ]
+      }
     },
     {
       "id": "advanced-parallel",
@@ -251,8 +440,18 @@
         4,
         9
       ],
-      "primary_controls": {},
-      "chapter": "Level 2: Electricity"
+      "primary_controls": {
+        "wire": [
+          "a_terminal"
+        ]
+      },
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "wire": [
+          "a_terminal",
+          "b_terminal"
+        ]
+      }
     },
     {
       "id": "advanced-capacitor",
@@ -261,8 +460,19 @@
         4,
         10
       ],
-      "primary_controls": {},
-      "chapter": "Level 2: Electricity"
+      "primary_controls": {
+        "capacitor": [
+          "capacitance_f"
+        ]
+      },
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "capacitor": [
+          "capacitance_f",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-solar",
@@ -277,9 +487,25 @@
           "pitch_deg",
           "yaw_deg",
           "height_m"
+        ],
+        "power_cable": [
+          "a_port"
         ]
       },
-      "chapter": "Level 2: Electricity"
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "solar": [
+          "pitch_deg",
+          "yaw_deg",
+          "height_m",
+          "x_m",
+          "z_m"
+        ],
+        "power_cable": [
+          "a_port",
+          "b_port"
+        ]
+      }
     },
     {
       "id": "easy-charge-lift",
@@ -293,9 +519,25 @@
           "pitch_deg",
           "yaw_deg",
           "height_m"
+        ],
+        "power_cable": [
+          "a_port"
         ]
       },
-      "chapter": "Level 2: Electricity"
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "solar": [
+          "pitch_deg",
+          "yaw_deg",
+          "height_m",
+          "x_m",
+          "z_m"
+        ],
+        "power_cable": [
+          "a_port",
+          "b_port"
+        ]
+      }
     },
     {
       "id": "sun",
@@ -309,9 +551,25 @@
           "pitch_deg",
           "yaw_deg",
           "height_m"
+        ],
+        "power_cable": [
+          "a_port"
         ]
       },
-      "chapter": "Level 2: Electricity"
+      "chapter": "Level 2: Electricity",
+      "lesson_controls": {
+        "solar": [
+          "pitch_deg",
+          "yaw_deg",
+          "height_m",
+          "x_m",
+          "z_m"
+        ],
+        "power_cable": [
+          "a_port",
+          "b_port"
+        ]
+      }
     },
     {
       "id": "easy-water-receiver",
@@ -322,12 +580,17 @@
       ],
       "primary_controls": {
         "water_tank": [
-          "opening_percent",
-          "x_m",
-          "height_m"
+          "opening_percent"
         ]
       },
-      "chapter": "Level 3: Water"
+      "chapter": "Level 3: Water",
+      "lesson_controls": {
+        "water_tank": [
+          "opening_percent",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-river-wheel",
@@ -338,11 +601,16 @@
       ],
       "primary_controls": {
         "water_wheel": [
-          "z_m",
-          "load_part"
+          "z_m"
         ]
       },
-      "chapter": "Level 3: Water"
+      "chapter": "Level 3: Water",
+      "lesson_controls": {
+        "water_wheel": [
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-water-wheel",
@@ -354,11 +622,18 @@
       "primary_controls": {
         "water_tank": [
           "opening_percent",
-          "x_m",
           "height_m"
         ]
       },
-      "chapter": "Level 3: Water"
+      "chapter": "Level 3: Water",
+      "lesson_controls": {
+        "water_tank": [
+          "opening_percent",
+          "height_m",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-river-lift",
@@ -373,7 +648,14 @@
           "load_part"
         ]
       },
-      "chapter": "Level 3: Water"
+      "chapter": "Level 3: Water",
+      "lesson_controls": {
+        "water_wheel": [
+          "load_part",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-water-gate",
@@ -385,15 +667,29 @@
       "primary_controls": {
         "water_wheel": [
           "z_m",
+          "radius_m",
           "load_part"
         ],
         "water_tank": [
           "opening_percent",
-          "x_m",
           "height_m"
         ]
       },
-      "chapter": "Level 3: Water"
+      "chapter": "Level 3: Water",
+      "lesson_controls": {
+        "water_wheel": [
+          "radius_m",
+          "load_part",
+          "x_m",
+          "z_m"
+        ],
+        "water_tank": [
+          "opening_percent",
+          "height_m",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-divert-water",
@@ -404,11 +700,17 @@
       ],
       "primary_controls": {
         "water_chute": [
-          "x_m",
           "yaw_deg"
         ]
       },
-      "chapter": "Level 3: Water"
+      "chapter": "Level 3: Water",
+      "lesson_controls": {
+        "water_chute": [
+          "yaw_deg",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "steam",
@@ -417,8 +719,19 @@
         3,
         7
       ],
-      "primary_controls": {},
-      "chapter": "Level 4: Heat and chain reactions"
+      "primary_controls": {
+        "steam": [
+          "heat_kw"
+        ]
+      },
+      "chapter": "Level 4: Heat and chain reactions",
+      "lesson_controls": {
+        "steam": [
+          "heat_kw",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "easy-heat",
@@ -430,9 +743,24 @@
       "primary_controls": {
         "ignition": [
           "preset"
+        ],
+        "wire": [
+          "a_terminal"
         ]
       },
-      "chapter": "Level 4: Heat and chain reactions"
+      "chapter": "Level 4: Heat and chain reactions",
+      "lesson_controls": {
+        "ignition": [
+          "preset",
+          "target",
+          "x_m",
+          "z_m"
+        ],
+        "wire": [
+          "a_terminal",
+          "b_terminal"
+        ]
+      }
     },
     {
       "id": "chain",
@@ -441,8 +769,23 @@
         5,
         12
       ],
-      "primary_controls": {},
-      "chapter": "Level 4: Heat and chain reactions"
+      "primary_controls": {
+        "ramp": [
+          "top_height_m",
+          "run_m",
+          "foot_height_m"
+        ]
+      },
+      "chapter": "Level 4: Heat and chain reactions",
+      "lesson_controls": {
+        "ramp": [
+          "top_height_m",
+          "run_m",
+          "foot_height_m",
+          "x_m",
+          "z_m"
+        ]
+      }
     },
     {
       "id": "fire",
@@ -451,8 +794,31 @@
         6,
         15
       ],
-      "primary_controls": {},
-      "chapter": "Level 4: Heat and chain reactions"
+      "primary_controls": {
+        "cannon": [
+          "bore_height_m",
+          "yaw_deg",
+          "pitch_deg"
+        ],
+        "wire": [
+          "a_terminal"
+        ]
+      },
+      "chapter": "Level 4: Heat and chain reactions",
+      "lesson_controls": {
+        "cannon": [
+          "bore_height_m",
+          "yaw_deg",
+          "pitch_deg",
+          "x_m",
+          "z_m"
+        ],
+        "wire": [
+          "a_terminal",
+          "b_terminal"
+        ]
+      }
     }
-  ]
+  ],
+  "controls_review_date": "2026-10-14"
 }

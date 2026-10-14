@@ -26,6 +26,10 @@ no login.
 Banjo is early, built in the open, and has no licence yet. It is developed on
 Windows, built and tested on Linux in CI, and not tested on macOS.
 
+Levels expose only the adjustments and connections needed for that puzzle,
+including in Controls → Settings. Sandbox keeps the complete device editor.
+Prepared materials, damping and unrelated electrical ratings stay out of lessons.
+
 ## What there is
 
 **Eight chain-reaction levels, twenty-three piece lessons and three advanced electronics activities.**

@@ -97,6 +97,10 @@ class Puzzles(unittest.TestCase):
         if failed: print('BROWSER_NETWORK_FAILURES',json.dumps(failed),flush=True)
         errors=[e['params'].get('exceptionDetails') for e in self.page.events if e['method']=='Runtime.exceptionThrown']
         if errors:print('BROWSER_SCRIPT_ERRORS',json.dumps(errors[-3:]),flush=True)
+        if 'machinePowerFeedbackState' in expression:
+            print('POWER_READING_DIAGNOSTIC',json.dumps(self.js("""(() => ({placements:machinePlacements(),
+                readings:[...document.querySelectorAll('.power-feedback-label')].map(e=>({device:e.dataset.device,wire:e.dataset.wire,hidden:e.hidden,text:e.innerText})),
+                view:document.getElementById('view').getBoundingClientRect().toJSON()}))()""")),flush=True)
         self.fail(f'waited {seconds:.0f} s for {expression}; the page says {said!r}')
 
     def open(self, level, width=1280, height=860, phone=False, dismiss_intro=True):
@@ -193,7 +197,14 @@ class Puzzles(unittest.TestCase):
         self.assertIsNotNone(candidate)
         selected=f"machineGhostState()?.p.object==={json.dumps(candidate['id'])}" if candidate.get('id') else f"machineGhostState()?.index==={index}&&!machineGhostState()?.p.object"
         if re.match(r'^your (wire|power_cable) ',candidate['name']):
-            self.click_visible('Adjust '+candidate['name']);self.ghost();return
+            label='Adjust '+candidate['name']
+            if not self.js(f"document.querySelector('[aria-label={json.dumps(label)}]')?.checkVisibility()"):
+                # Labels deliberately yield to objects/connection rings. Use
+                # the existing Controls entry when that callout cannot fit.
+                prefix=f"Adjust placed {'Wire' if candidate['name'].startswith('your wire ') else 'Power cable'} {index+1}"
+                label=self.js(f"[...document.querySelectorAll('#wire-adjustments button')].find(b=>b.getAttribute('aria-label').startsWith({json.dumps(prefix)}))?.getAttribute('aria-label')")
+                self.assertIsNotNone(label)
+            self.click_visible(label);self.ghost();return
         for framing in range(6):
             for part in candidate['parts']:
                 for point in self.js(f"machineBodyHitPoints({json.dumps(part)})"):
@@ -372,7 +383,7 @@ class Puzzles(unittest.TestCase):
         if self.js("document.getElementById('precision-controls').open") != enabled:
             self.click_summary('#precision-controls > summary')
         self.wait(f"document.getElementById('precision-controls').open==={str(enabled).lower()}",10)
-        if self.ghost()['p']['piece']=='gear':
+        if self.ghost()['p']['piece']=='gear' and self.js("location.pathname==='/machine'"):
             self.wait(f"[...document.getElementById('adjustment-choice').options].some(o=>o.value==='material')==={str(enabled).lower()}",10)
         self.click_visible('Controls')
 
@@ -543,7 +554,7 @@ class Puzzles(unittest.TestCase):
             self.assertEqual(self.js("document.getElementById('adjustment-choice').value"),'pitch_deg')
             self.assertFalse(self.js("[...document.getElementById('adjustment-choice').options].some(o=>o.value==='roll_deg')"))
             self.click_summary('#precision-controls > summary')
-            self.wait("[...document.getElementById('adjustment-choice').options].some(o=>o.value==='roll_deg')",5)
+            self.assertFalse(self.js("[...document.getElementById('adjustment-choice').options].some(o=>o.value==='roll_deg')"))
             self.press('Cancel')
 
     def test_edit_invalidates_power_feedback_before_a_delayed_placement_reply(self):
@@ -900,9 +911,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(len(self.ghost()['editGuide']['arrows']),4)
                 self.assertEqual(self.ghost()['editGuide']['focus'],['your gear 1 wheel'])
                 self.set_precision_controls(True)
-                self.click_visible('Change its Tooth alignment');self.ghost()
-                self.wait("machineGhostState().editGuide?.key==='phase_deg'",10)
-                self.assertEqual(len(self.ghost()['editGuide']['arrows']),2)
+                self.assertFalse(self.js("document.querySelector('[aria-label=\"Change its Tooth alignment\"]')!==null"))
                 self.click_visible('Change its Teeth');self.ghost()
                 self.wait('window.machineCamera().settled',30)
                 self.drag_ghost_to(0,0,touch=width!=1280)
@@ -956,7 +965,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.ghost()['p']['height_m'],.66)
                 self.assertEqual(self.js("document.querySelector('[data-gear-key=height_m] .gear-value').textContent"),'66 cm')
                 self.set_precision_controls(True)
-                self.assertIn('material',self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"))
+                self.assertNotIn('material',self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"))
                 self.set_precision_controls(False)
                 self.assertEqual(self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"),['teeth','module_m','height_m'])
 
@@ -4881,9 +4890,8 @@ class Puzzles(unittest.TestCase):
                 self.assertGreater(self.ghost()['p']['radius_m'],before)
                 self.wait(f"!machineLaserPreviewState().pending&&machineLaserPreviewState().stamp!=={json.dumps(stamp)}",30)
                 self.assertEqual(self.js('JSON.parse(machineLaserPreviewState().stamp).placements[0].radius_m'),self.ghost()['p']['radius_m'])
-                self.slide('Adjustment','shape');self.ghost()
-                self.assertTrue(self.js("document.querySelector('#piece-editor [aria-label=\"Toggle Lens shape\"]')!==null"))
-                self.click_visible('Toggle Lens shape');self.assertEqual(self.ghost()['p']['shape'],'concave')
+                self.assertNotIn('shape',self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"))
+                self.assertEqual(self.ghost()['p']['shape'],'convex','The focusing lesson keeps its prepared lens shape')
                 self.assertFalse(self.js("Boolean(document.querySelector('#piece-editor select:not(#adjustment-choice)'))"))
                 self.open('easy-water-receiver',width,height,phone=width<1000)
                 self.click_visible('Add a water tank');self.ghost()
@@ -4904,6 +4912,39 @@ class Puzzles(unittest.TestCase):
                 self.assertFalse(self.js("document.body.classList.contains('scene-win')"))
                 self.click_visible('Controls')
 
+
+    def test_lesson_control_audit_excludes_sandbox_settings_even_in_precision_controls(self):
+        import machine_game as game
+        levels=game.load_levels()
+        for width,height in ((1280,860),(390,844),(844,390)):
+            selected=levels if width==1280 else [l for l in levels if l['id'] in
+                ('easy-spring','easy-gears','easy-lens','advanced-capacitor','easy-water-wheel','easy-switch')]
+            for level in selected:
+                self.open(level['id'],width,height,phone=width!=1280)
+                for tray in level['tray']:
+                    if tray.get('attach') or tray['piece'] in ('wire','power_cable'):continue # Actual sockets have separate wiring regressions.
+                    with self.subTest(level=level['id'],piece=tray['piece'],viewport=(width,height)):
+                        for _ in level['tray']:
+                            if self.js("document.getElementById('tray-add')?.dataset.piece")==tray['piece']:break
+                            self.press('Next piece')
+                        label=self.js("document.getElementById('tray-add')?.getAttribute('aria-label')")
+                        self.assertIsNotNone(label);self.press(label);self.ghost()
+                        before=self.ghost()['p']
+                        self.set_precision_controls(True)
+                        state=self.js("""(() => {const s=document.getElementById('adjustment-choice');return {
+                            offered:[...s.options].map(o=>o.value),
+                            exact:[...document.querySelectorAll('#precision-controls [data-knob]')].map(e=>e.dataset.knob),
+                            turn:document.querySelector('[aria-label="Turn selected piece"]').checkVisibility(),
+                            editor:document.getElementById('piece-editor').getBoundingClientRect().toJSON()};})()""")
+                        self.assertTrue(set(state['offered'])<=set(tray['lesson_knobs']),state)
+                        self.assertTrue(set(state['exact'])<=set(tray['lesson_knobs']),state)
+                        self.assertEqual(state['turn'],any(tray['knobs'][k].get('turning') for k in tray['lesson_knobs']))
+                        self.assertEqual(self.ghost()['p'],before,'Opening exact controls cannot change prepared values')
+                        self.set_precision_controls(False)
+                        if tray['piece']!='ignition':
+                            self.wait("(()=>{const b=document.querySelector('#piece-editor .down'),r=b.getBoundingClientRect(),v=document.getElementById('view').getBoundingClientRect();return b.checkVisibility()&&r.width>=44&&r.height>=44&&r.left>=v.left&&r.right<=v.right&&r.top>=v.top&&r.bottom<=v.bottom&&b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})()",10)
+                        self.press('Cancel');self.wait(READY,30)
+                self.server.machines.close_all()
 
     def test_all_placeable_catalogue_properties_are_reachable_beside_the_piece(self):
         import machine_game
@@ -5038,8 +5079,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Set Teeth to 24 teeth');self.assertEqual(self.ghost()['p']['teeth'],24)
                 self.assertFalse(self.js("document.getElementById('piece-value-choices').matches(':popover-open')"))
                 self.set_precision_controls(True)
-                self.choose_adjustment('Material');self.click_visible('Choose Material')
-                self.click_visible('Set Material to glass');self.assertEqual(self.ghost()['p']['material'],'glass')
+                self.assertFalse(self.js("[...document.getElementById('adjustment-choice').options].some(o=>o.value==='material')"))
                 self.assertFalse(self.js('machinePlacements().length'))
 
 

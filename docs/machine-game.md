@@ -1,5 +1,94 @@
 # Puzzles on the machine (/play)
 
+October 14 lesson-control audit: all 34 authored levels now have explicit
+`lesson_controls` metadata for every tray piece in `level-onboarding.json`.
+The level loader validates coverage and unknown/duplicate keys. The client
+uses `lesson_knobs` in the common visibility predicate, so the scene chooser,
+exact fields, height handles, rotation buttons/shortcuts and Square it up all
+follow the same list. Opening Precision controls does not restore Sandbox
+properties. Fixed one-choice/prepared numeric values are not presented as
+adjustable. A single property needs no redundant property dropdown; its gold
+handles, toggle or named choices remain beside the piece. Move-only pieces
+retain placement and exact position controls. Gear Teeth/Radius/Height stay
+together. Sandbox has no lesson whitelist and retains the full editor.
+
+Physical switches, spring latches, heater clips, required wiring and water-wheel
+load connections retain their scene actions. Help's hint/coach property lists
+exclude unrelated controls and prepared constants; hints are instructed to
+teach only those controls. This is presentation metadata, not a restriction on
+saved declarations or a change to forces, materials, defaults, recipe identities,
+goals, deadlines, scoring or tolerances. Earlier shared recipes adapt the list
+to their original apparatus, including old gear pairs, contact batteries,
+starting switch state and integral water supplies.
+
+Placement across the available ground axes remains available unless a tray
+already lacks that axis. These are the remaining device adjustments/connections:
+
+| Level | Device controls |
+|---|---|
+| Tip the lever | weight: Starting height (m) |
+| Spring lifts the load | spring: Relaxed length (m) |
+| Mind the gap | plank: Cut to length |
+| Raise the crate | tackle: Counterweight preset (kg), Rope ratio, Counterweight height (m) |
+| Find the focus | lens: Focus / face radius, Diameter (m) |
+| Cut the cord | knife: Pivot height (m), Arm length (m), turn |
+| Bounce to the target | mirror: Mirror angle |
+| Gentle first launch | catapult: iron counterweight side (m), cocked angle, aim |
+| Cut it down | knife: Pivot height, Arm length, turn |
+| Lift with less | tackle: counterweight (kg), pulleys, hung at height |
+| Bounce the beam | mirror: turn |
+| Turn the big wheel | gear: Teeth, Radius, Axle height (m) |
+| Turn the axle | motor: direction, throttle |
+| Light the bulb | bulb: bulb size |
+| Finish the loop | wire: scene connection endpoints |
+| Limit the voltage drop | resistor: resistance (ohms) |
+| Close the switch | switch: placement only |
+| Marble turns on a light | switch: placement only |
+| Give it power | battery: voltage (V); wire: wire thickness, scene connection endpoints |
+| Series or parallel? | wire: scene connection endpoints |
+| Store the charge | capacitor: capacitance (F) |
+| Charge in the sun | solar: tip, turn, Post height (m); power_cable: scene connection endpoints |
+| Sun-powered lift | solar: tip, turn, Post height (m); power_cable: scene connection endpoints |
+| Catch the sun | solar: tip, turn, height; power_cable: scene connection endpoints |
+| Fill the receiver | water_tank: tap opening (%) |
+| Wheel in the river | water_wheel: placement only |
+| Pour onto the paddles | water_tank: tap opening (%), fixed outlet height (m) |
+| River-powered lift | water_wheel: rope to gate |
+| Water opens a gate | water_wheel: wheel radius (m), load to lift (optional); water_tank: tap opening (%), fixed outlet height (m) |
+| Divert the water | water_chute: aim |
+| Up she goes | steam: Firebox (kW) |
+| Heat to release | ignition: coil preset, attached target; wire: scene connection endpoints |
+| Chain reaction | ramp: Top height, Run, Foot height |
+| Knock it off | cannon: Bore height, turn, tip; wire: scene connection endpoints |
+
+Measured: all 34 reference setups compile to exactly the same native machines
+when initialized with Add's defaults and edited only through the lesson list.
+The same comparison passes for 47 current/legacy seed-42 recipes. Existing
+native goal checks pass all 34 levels in three runs each, with the empty setup
+checks where runnable, in 32.397 s. No new conservation or material law is
+claimed by this UI work. Browser audit covers all authored non-connection
+tray devices on desktop and six representative levels on phone portrait and
+landscape, including opening/closing Precision controls without changing values.
+The audit, ordinary gear completion on all three layouts, and full Sandbox
+catalogue property reachability pass together in 68.434 s. Connections have
+separate ordinary socket-drawing regressions. The final unit/declaration suites pass 50 tests in 19.112 s. The
+current/legacy seed-42 and authored machine-equivalence checks also pass in
+1.491 s. Ordinary capacitor/heater/shared-challenge flows pass; spring and
+lens/receiver scene edits pass including 320×568 after keeping only the title
+in that smallest dock (GO and Level instructions retain the full briefing).
+
+The wiring audit found that gauge choices were inside the hidden geometric
+editor while drawing a lead. They now stay in Controls before the second
+socket click, only for lessons with gauge in their control list. Short wide
+views allow wider edge callouts and put rated/goal power together, preserving
+all values so the bulb voltage fits below the scene-corner buttons. Full
+voltage/gauge wiring, unobstructed edge readings and the existing crowded-scene
+Controls fallback pass in 27.335 s, with the original 8.8/11.9 V and 1.6/3.0 W
+expectations unchanged. Wire test selection now uses that already-existing
+Controls button when a callout intentionally yields to the scene. Syntax,
+renderer, introductions and source registration (271 sources) pass. Final authored-control, full Sandbox catalogue and four-layout
+gear-field browser checks pass together in 59.024 s.
+
 October 14 simultaneous gear controls: three 44 px minimum scene buttons show
 Teeth, Radius and Height together. Teeth/Radius select their property and open
 the existing named presets directly; Height activates the compiled vertical

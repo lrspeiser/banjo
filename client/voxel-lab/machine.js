@@ -2120,8 +2120,8 @@ function drawPorts(list, joined) {
 // about the vertical a piece's own (a mirror's angle).
 function turnKnob(p, key) {
   const knobs = trayItem(p.piece).knobs;
-  if (knobs[key]) return key;
-  return key === 'yaw_deg' ? Object.keys(knobs).find(k => knobs[k].turning && k !== 'pitch_deg' && k !== 'roll_deg') : undefined;
+  if (knobs[key] && pieceKnobVisible(p,key)) return key;
+  return key === 'yaw_deg' ? Object.keys(knobs).find(k => knobs[k].turning && pieceKnobVisible(p,k) && k !== 'pitch_deg' && k !== 'roll_deg') : undefined;
 }
 
 function turnGhost(key, by) {
@@ -2809,6 +2809,12 @@ function electricalEditRating(){
   return rating?`Proposed ${rating}`:'';
 }
 function pieceKnobVisible(p,key) {
+  const tray=trayItem(p.piece),rule=tray?.knobs?.[key];
+  if(!level?.free&&tray?.lesson_knobs){
+    if(!tray.lesson_knobs.includes(key))return false;
+    // A prepared value is a reading, not a choice the player can change.
+    if(rule?.choices?.length===1||(!rule?.choices&&rule?.min!=null&&rule.min===rule.max))return false;
+  }
   if(p.piece==='spring'&&(p.mechanism_version??1)===1){
     if(['yaw_deg','pitch_deg','roll_deg','compressed_m'].includes(key))return false;
     if(key==='height_m'&&(!p.load||p.load==='included load'))return true;
@@ -2928,7 +2934,9 @@ function renderGhostBar() {
   if(editorMode==='turn')for(const k of available.filter(k=>knobs[k].turning))if(!keys.includes(k))keys.push(k);
   if(editorMode!=='turn'&&!precisionOpen)for(const k of heightKnobs(ghost.p))if(available.includes(k)&&!keys.includes(k))keys.push(k);
   if(!compactGear&&available.includes(ghost.card)&&!keys.includes(ghost.card))keys.push(ghost.card);
-  if(!keys.length)keys.push(allKeys[0]);
+  // Move-only lessons still need a valid editing key for placement feedback.
+  // Connections remain scene sockets even when there is no property to tune.
+  if(!keys.length)keys.push(allKeys[0]||Object.keys(knobs).find(k=>pieceKnobVisible(ghost.p,k)));
   if (!keys.includes(ghost.card)) ghost.card = keys[0];
   const chips = Object.assign(document.createElement('div'), {className: 'adjustment-picker'});
   const adjustment=document.createElement('select');adjustment.id='adjustment-choice';adjustment.setAttribute('aria-label','Adjustment');
@@ -2937,7 +2945,7 @@ function renderGhostBar() {
   }
   adjustment.value=ghost.card;adjustment.addEventListener('change',()=>selectGhostKnob(adjustment.value));
   chips.append(Object.assign(document.createElement('label'),{textContent:'Adjust',htmlFor:'adjustment-choice'}),adjustment);
-  chips.hidden=keys.length===1&&Boolean(knobs[keys[0]].connection_target);
+  chips.hidden=keys.length===1;
   const key = ghost.card, rule = knobs[key], name = knobName(rule, key);
   let precisionChoice=null;
   const row = Object.assign(document.createElement('div'), {className: 'knob-row'});
@@ -3068,12 +3076,12 @@ function renderGhostBar() {
   const move=button('Move',()=>{editorMode='move';setLooking(false);},{ariaLabel:'Move selected piece'});
   const turn=button('Turn',()=>{
     const rules=trayItem(ghost.p.piece).knobs;
-    const key=turnKnob(ghost.p,'yaw_deg')||Object.keys(rules).find(k=>rules[k].turning);
+    const key=turnKnob(ghost.p,'yaw_deg')||Object.keys(rules).find(k=>rules[k].turning&&pieceKnobVisible(ghost.p,k));
     if(key){ghost.card=key;editorMode='turn';setLooking(false);askGhost();}
   },{ariaLabel:'Turn selected piece'});
   move.setAttribute('aria-pressed',String(editorMode==='move'&&!looking));
   turn.setAttribute('aria-pressed',String(editorMode==='turn'&&!looking));
-  move.disabled=!movableGhost();turn.hidden=!Object.values(knobs).some(k=>k.turning);
+  move.disabled=!movableGhost();turn.hidden=!Object.entries(knobs).some(([k,r])=>r.turning&&pieceKnobVisible(ghost.p,k));
   modes.append(move,turn);
   modes.hidden=move.disabled&&turn.hidden;
   const top=Object.assign(document.createElement('div'),{className:'piece-toolbar'});top.append(modes,actions);
@@ -3085,6 +3093,9 @@ function renderGhostBar() {
   setting.hidden=isGear; // The three visible fields already show these measurements.
   if(ghost.p.piece==='gear')editor.append(Object.assign(document.createElement('output'),{id:'gear-motion-feedback',className:'adjustment-feedback',textContent:'Checking gear motion…',
     title:'This is a replay of the engine’s predicted motion for the current placement. Radius is measured to the tooth tips; it changes tooth spacing too.'}));
+  // The geometric piece editor is hidden while drawing a cable. A lesson
+  // that teaches gauge still needs its three choices before the second click.
+  if(connecting&&!ghost.was&&row.classList.contains('wire-gauge'))fields.append(row);
   if((connecting&&!ghost.was)||needsClip){throwAway.textContent=needsClip?'Cancel heater':'Cancel wire';fields.append(throwAway);}
   showGhostKnobs(); showGhostState();
 }
@@ -3469,7 +3480,7 @@ function updatePowerFeedback() {
       `Start ≈ ${d.required_w.toFixed(1)} W · ${d.required_torque_n_m.toFixed(1)} N·m`;
     else need=`Load varies · ${d.rated_torque_n_m.toFixed(1)} N·m stall`;
     if(Number.isFinite(d.rated_voltage_v))need=`Rated ${d.rated_voltage_v} V · ${d.rated_w.toFixed(1)} W`+
-      (d.requirement==='goal'?`\nGoal ≥ ${d.required_w.toFixed(1)} W`:'');
+      (d.requirement==='goal'?` · Goal ≥ ${d.required_w.toFixed(1)} W`:'');
     let actual=d.input_w<-.05?`${Math.abs(d.input_w).toFixed(1)} W returned`:`${Math.max(0,d.input_w).toFixed(1)} W in`;
     if(Number.isFinite(d.voltage_v))actual+=` · ${Math.abs(d.voltage_v).toFixed(1)} V`;
     if(Number.isFinite(d.torque_n_m))actual+=` · ${Math.abs(d.torque_n_m).toFixed(1)} N·m`;
@@ -5057,6 +5068,7 @@ function renderSceneTray() {
   const editIndex=!level.free&&left<=0?placements.findIndex(p=>p.piece===t.piece):-1;
   const card = button('', () => editIndex>=0?pickUp(editIndex):addTrayPiece(t), {id:'tray-add', ariaLabel:editIndex>=0?`Adjust ${pieceLabel(t.piece)}`:`Add a ${pieceLabel(t.piece)}`,
     disabled:left <= 0&&editIndex<0, title:editIndex>=0?'Click to adjust the piece you placed':left > 0 ? 'Click to place this piece' : 'All of these pieces are placed'});
+  card.dataset.piece=t.piece;
   const picture = Object.assign(document.createElement('span'), {className:'tray-picture'});
   const img = Object.assign(document.createElement('img'), {alt:'', hidden:true});
   picture.append(img); pictureInto(img,t);
@@ -5096,6 +5108,7 @@ function knobControl(p, key, rule, what, changed) {
     input.addEventListener('input', () => { p[key] = Number(input.value); shown.textContent = input.value + (rule.turning ? '°' : ''); changed(); });
   }
   input.setAttribute('aria-label', `${rule.label || key} of ${what}`);
+  input.dataset.knob=key;
   label.append(input, shown);
   return {label, input, shown};
 }
@@ -5239,7 +5252,7 @@ function ghostItem() {
   }
   if (turning.children.length > 1) {
     turning.append(button('Square it up', () => {
-      for (const [key, rule] of Object.entries(t.knobs)) if (rule.turning) setKnob(p, key, 0);
+      for (const [key, rule] of Object.entries(t.knobs)) if (rule.turning&&pieceKnobVisible(p,key)) setKnob(p, key, 0);
       showGhostKnobs(); askGhost();
     }));
     li.append(turning);

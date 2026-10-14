@@ -544,6 +544,9 @@ body.panel-tabs .scene-mode button{min-width:44px;padding:4px 6px;font-size:12px
 .power-feedback-label.object{white-space:normal;color:#e0f3ff;border-left:2px solid #83bbff}
 .power-feedback-label strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;font-weight:500;color:#c6d8e5}
 .power-feedback-label output{display:block;white-space:pre-line}
+/* A short, wide view has side space but little vertical space. Let readings
+   use that width so a lamp's rating and live voltage need fewer wrapped lines. */
+@media(max-height:500px) and (min-width:600px){.power-feedback-label{max-width:min(230px,30%)}}
 .power-feedback-label.low{border-left-color:#ffad66}
 .power-pin button,.terminal-control-pin button{pointer-events:auto;min-width:44px;min-height:44px;padding:4px;border:1px solid #e2bc63;border-radius:50%;background:#5d481df2;color:#fff;font:600 12px system-ui;cursor:pointer}
 .power-pin button[aria-pressed=true],.terminal-control-pin button[aria-pressed=true]{outline:3px solid #ffe29b;outline-offset:1px}
@@ -851,6 +854,9 @@ body.panel-tabs aside:has(#phone-controls-tab[aria-selected=true]):has(#help-set
 @media(max-height:500px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 160px}}
 @media(max-width:359px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 230px}}
 @media(max-width:359px){
+  /* GO already showed the full briefing. Keep its title and the tray reachable
+     in short portrait views rather than repeating a multi-line task here. */
+  body.panel-tabs #scene-goal span{display:none!important}
   body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#piece-editor.editing-gear:not([hidden])) main{grid-template-rows:minmax(0,1fr) 180px}
   body.panel-tabs:has(#piece-editor.editing-gear:not([hidden])) #scene-goal span{display:none!important}
   body.panel-tabs:has(#piece-editor.editing-gear:not([hidden])) #clock{top:auto;bottom:8px;left:8px;width:104px;font-size:11px;line-height:14px}
