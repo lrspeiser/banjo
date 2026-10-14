@@ -1,5 +1,18 @@
 # Puzzles on the machine (/play)
 
+October 14 hint prompt follow-up: a live local failed-gear request returned a
+dismissible model reply, but combined several adjustments and recommended the
+largest tooth module without evidence that it fits. Hint instructions now ask
+for one next action, adding a missing tray piece before prescribing settings,
+using player-visible labels and avoiding unsupported numeric recommendations.
+Gear context explains the Radius/module relation and actual contact requirements.
+Regression checks these instructions, forwarded measured run, unchanged level
+declaration, private-solution isolation and suppression of model placements in
+hint responses; four focused prompt/editor/heater tests pass in 0.078 s. A second
+live local request identifies the missing bridging gear and asks the player to
+add one. Dismiss works and the response remains in Help. This improves the supplied context; it does not validate model
+advice in the native engine or guarantee future answer quality.
+
 October 14 Help and trial layout update: Try It! (and Pause during a run) is
 160–240 px wide and horizontally centered directly below the 3D view. Reset
 sits left; smaller tabs sit right. On narrow phones and phone Sandbox layouts,

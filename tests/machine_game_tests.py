@@ -697,6 +697,21 @@ class Tray(unittest.TestCase):
         self.assertEqual(hint['reply'], 'Bridge the gap.')
         self.assertNotIn('placements', hint)
 
+    def test_failed_gear_hint_uses_visible_controls_and_one_action_without_a_private_solution(self):
+        level=mg.level_by_id('easy-gears');before=copy.deepcopy(level);seen=[]
+        last={'goal_at_s':None,'world_t':2.35,'measurements':{'stations':[{'done':False}]}}
+        def call(messages):
+            seen.extend(messages);return {'reply':'Add a gear from the tray first.','placements':level['solution']},{}
+        result=mc.respond_level('Help with my failed attempt',level,[],mode='hint',last_run=last,call=call)
+        self.assertEqual(result['reply'],'Add a gear from the tray first.')
+        self.assertNotIn('placements',result)
+        self.assertEqual(json.loads(seen[1]['content'])['last_run'],last)
+        self.assertIn('ONE next action',seen[0]['content'])
+        self.assertIn('Teeth, Radius and Axle height',seen[0]['content'])
+        self.assertIn('bigger is not automatically a better fit',seen[0]['content'])
+        self.assertNotIn(json.dumps(level['solution']),json.dumps(seen))
+        self.assertEqual(level,before)
+
     def test_coaching_is_read_only_names_current_targets_and_never_sees_the_solution(self):
         level=mg.level_by_id('gap');placed=[];seen=[]
         ui={'targets':[{'id':'tray:plank','label':'Add plank'},{'id':'piece:0','label':'Plank','at_m':[0,.1,0]}]}
