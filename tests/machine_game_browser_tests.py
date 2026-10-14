@@ -1440,7 +1440,13 @@ class Puzzles(unittest.TestCase):
                 for label,pane in [('Controls','control-panel'),('Help','phone-help-panel')]:
                     self.click_visible(label)
                     self.assertEqual(self.js("['control-panel','phone-design-panel','phone-help-panel'].filter(id=>!document.getElementById(id).hidden)"),[pane])
-                    self.assertTrue(self.js("(()=>{const r=document.getElementById('scene-goal').getBoundingClientRect();return r.height>0&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"))
+                    if label=='Controls':
+                        self.assertTrue(self.js("(()=>{const r=document.getElementById('scene-goal').getBoundingClientRect();return r.height>0&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"))
+                    else:
+                        # Help already contains the task; reserve the dock for
+                        # its content rather than duplicating the goal row.
+                        self.assertFalse(self.js("document.getElementById('scene-goal').checkVisibility()"))
+                        self.assertTrue(self.js("document.getElementById('brief').checkVisibility()&&document.getElementById('brief').textContent.length>0"))
                 before=self.js('machinePlacements()')
                 self.click_visible('Collapse controls')
                 self.assertTrue(self.js("['control-panel','phone-design-panel','phone-help-panel'].every(id=>document.getElementById(id).hidden)"))
@@ -4511,6 +4517,31 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run it');self.wait("machineBodies()['loose board'][1]<.1",30)
                 self.click_visible('Pause')
 
+
+    def test_scene_and_bottom_dock_share_one_layout_on_desktop_and_phones(self):
+        for width,height in ((1440,900),(1280,720),(390,844),(844,390),(320,568)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width<1000)
+                layout=self.js("""(() => {const box=id=>{const r=document.querySelector(id).getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,b:r.bottom};};return {view:box('#view'),dock:box('main>aside'),run:box('#start'),goal:box('#scene-goal'),overflow:document.documentElement.scrollWidth>innerWidth};})()""")
+                self.assertAlmostEqual(layout['view']['w'],width,delta=2)
+                self.assertAlmostEqual(layout['dock']['w'],width,delta=2)
+                self.assertGreaterEqual(layout['dock']['y'],layout['view']['b']-1)
+                self.assertGreaterEqual(layout['view']['h'],140)
+                self.assertGreaterEqual(layout['run']['h'],44)
+                self.assertLessEqual(layout['run']['b'],height)
+                self.assertLessEqual(layout['goal']['b'],height)
+                self.assertFalse(layout['overflow'])
+                self.click_visible('Help')
+                self.assertTrue(self.js("document.getElementById('phone-help-panel').checkVisibility()&&!document.getElementById('control-panel').checkVisibility()"))
+                self.click_visible('Collapse controls')
+                self.assertGreater(self.js("document.getElementById('view').getBoundingClientRect().height"),layout['view']['h'])
+                self.assertTrue(self.js("document.getElementById('start').checkVisibility()"))
+                self.click_visible('Expand controls');self.click_visible('Controls')
+                self.press('Add a plank');self.ghost()
+                self.assertTrue(self.js("(()=>{const b=document.getElementById('piece-grip'),r=b.getBoundingClientRect(),p=document.getElementById('control-panel').getBoundingClientRect();return b.checkVisibility()&&r.top>=p.top&&r.bottom<=p.bottom&&r.height>=44;})()"))
+                self.click_visible('Place');self.wait(READY,30)
+                self.click_visible('Run it');self.wait("!document.getElementById('level-done').hidden",20)
+                self.click_visible('Try again');self.assertEqual(self.ghost()['index'],0)
 
     def test_piece_toolbar_direct_adjustment_and_camera_buttons_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390),(320,568)):

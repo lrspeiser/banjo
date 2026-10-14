@@ -1034,8 +1034,13 @@ function positionPowerLabels() {
     let y = Math.max(top, Math.min(bottom - height, anchor.y - height - 10));
     const collides = (x, y) => occupied.some(r => x < r.x + r.w + 6 && x + width + 6 > r.x && y < r.y + r.h + 6 && y + height + 6 > r.y);
     if (collides(x, y)) {
-      const xs = readoutSideXs(anchor.x,width,rect.width).map(x=>Math.max(8,Math.min(rect.width-width-8,x)));
-      const ys = [y, bottom - height, top, ...occupied.map(r => r.y + r.h + 8)];
+      // A short, wide scene may have camera/history tools on both edges.
+      // Try beside those tools and near the port as well as the outer edges;
+      // keep the actual apparatus reserved rather than hiding a connection.
+      const xs = [...readoutSideXs(anchor.x,width,rect.width),anchor.x-width/2,
+        ...occupied.flatMap(r=>[r.x-width-8,r.x+r.w+8])]
+        .map(x=>Math.max(8,Math.min(rect.width-width-8,x)));
+      const ys = [y, bottom - height, top, ...occupied.flatMap(r=>[r.y-height-8,r.y+r.h+8])];
       const candidates = xs.flatMap(x => ys.map(y => ({x,y})));
       const free = candidates.find(c => c.x >= 8 && c.x + width <= rect.width - 8 && c.y >= top && c.y + height <= bottom && !collides(c.x,c.y));
       if (free) { x = free.x; y = free.y; }

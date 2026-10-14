@@ -1,5 +1,26 @@
 # Puzzles on the machine (/play)
 
+October 13 shared layout follow-up: desktop, phone portrait and landscape now
+use a full-width scene above one bottom dock, without a desktop sidebar.
+Controls keeps the task and active adjustment together. Help already contains
+the brief, so Help and Design use the space without a duplicate task row.
+Tabs and Run/Pause/Reset remain visible while the active pane scrolls. Collapsing
+the dock expands the scene and keeps its run bar. Short landscape views put the
+adjustment, proposed value and fit status on one row with a complete 44 px handle.
+Solar connection buttons can fit beside camera/history tools when both outer
+edges are occupied; their leaders still point to the actual port, and the body
+bounds stay reserved. This is layout only, with no engine or physics changes.
+
+Measured in Chrome at 1440×900, 1280×720, 390×844, 844×390 and 320×568:
+scene and dock both span the page width, remain within the viewport, and expose
+Run and the complete adjustment handle. Collapse, tab changes, failed-run retry,
+direct mouse/touch editing, reset/undo, Sandbox library, saved versions and tab
+rotation are checked by the focused browser regressions. Electrical and solar
+wiring still use scene endpoints. Source registration and client geometry checks
+pass. The former always-visible task assertion on Help now checks Help's actual
+brief instead, since duplicating that row would consume the landscape pane.
+Physics goals, tolerances, energy accounting and the verified binary are unchanged.
+
 October 13 beginner controls update (supersedes earlier interface descriptions):
 the goal uses larger, wrapping text beside the scene. Selecting a placed piece
 opens a small adjacent toolbar with Move, Turn, Place and cancel. The property

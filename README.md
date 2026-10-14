@@ -25,7 +25,8 @@ Level 3: Water, and Level 4: Heat and chain reactions, with all choices visible.
 Within each chapter they retain the [audited relative order](docs/level-onboarding-audit.md).
 Estimated player times remain historical estimates from blind LLM probes and
 interface review, not measurements of the new interface or a timed human study.
-Levels share Controls / Help tabs on desktop and phone; Sandbox also has Design,
+Desktop and phone use the same full-width scene with a compact bottom dock.
+Levels share Controls / Help tabs; Sandbox also has Design,
 with Run/Pause/Reset kept beside the 3D view, even when the controls are
 collapsed. Each level shows its name and a one-line task. **Undo / Redo**
 are in the upper scene corner; a flat zoom slider and magnifiers are in the
