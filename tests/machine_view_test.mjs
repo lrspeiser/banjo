@@ -3,7 +3,17 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition} from '../client/voxel-lab/machine-view.mjs';
+
+assert.equal(draggedKnobValue({min:0,max:2,step:.1},1,12),1.1);
+assert.equal(draggedKnobValue({min:0,max:2,step:.1},1,400),2);
+assert.equal(draggedKnobValue({min:-180,max:180,step:1,turning:true},175,10),-175);
+for(const scene of [{left:0,top:0,right:900,bottom:600},{left:0,top:0,right:390,bottom:450}]){
+  const piece={left:scene.right/2-25,right:scene.right/2+25,top:160,bottom:230};
+  const at=pieceToolbarPosition(scene,piece,{width:184,height:148},[{left:200,right:scene.right,top:350,bottom:450}]);
+  assert.ok(at.x>=scene.left&&at.y>=scene.top&&at.x+184<=scene.right&&at.y+148<=scene.bottom);
+  assert.ok(at.x>=piece.right||at.x+184<=piece.left||at.y>=piece.bottom||at.y+148<=piece.top,'toolbar leaves the selected solid clear');
+}
 
 const heated={body:'cord',at_m:[0,.5,1],local_m:[0,.02,0],cell_m:.02,temperature_k:573.15,how:'chars',cut_w:100,held_j:400,needed_j:1000};
 assert.equal(thermalCells({hot_cells:[heated]})[0].progress,.4);

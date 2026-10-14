@@ -654,3 +654,48 @@ body.panel-tabs .control-panel .ghost-bar .knob-row.numeric-slider{display:block
 .wire-adjustments{display:flex;flex-wrap:wrap;gap:4px;flex-basis:100%}
 .wire-adjustments:empty{display:none}
 .wire-adjustments button{min-height:44px;font-size:12px}
+#piece-editor{position:absolute;z-index:7;width:230px;box-sizing:border-box;padding:4px;background:#142836ed;border:1px solid #91bcd1;border-radius:8px;box-shadow:0 2px 8px #0005;display:flex;gap:3px}
+#piece-editor .piece-modes,#piece-editor .actions,#piece-editor .adjustment-picker{display:flex;gap:3px;margin:0;min-width:0}
+#piece-editor button,#piece-editor select{min-width:44px;min-height:44px;padding:4px 6px;font:14px system-ui;background:#294c60;color:#fff;border:1px solid #63899d;border-radius:5px;touch-action:manipulation}
+#piece-editor .piece-modes button,#piece-editor .down{flex:1}
+#piece-editor .piece-modes,#piece-editor .actions{flex:1}
+#piece-editor button[aria-pressed=true]{border-color:#b6e7ff;background:#38627a;box-shadow:inset 0 -2px #b6e7ff}
+#piece-editor .down{background:#226345;border-color:#78cea2}
+#piece-editor .adjustment-picker label{display:none}
+#piece-editor .adjustment-picker select{width:0;flex:1}
+#piece-grip{touch-action:none;cursor:ew-resize;font-size:22px;min-width:44px;min-height:44px}
+#piece-editor :focus-visible{outline:3px solid #fff;outline-offset:1px}
+#viewer-perspective{position:absolute;right:60px;bottom:56px;z-index:6;display:flex;gap:3px;background:#142836b8;border-radius:5px}
+#viewer-perspective button{min-width:44px;min-height:44px;background:#183442ed;color:#e7f2f8;border:1px solid #63899d;border-radius:5px;font:18px system-ui;cursor:pointer}
+.level-chapter{grid-column:1/-1;list-style:none;margin-top:14px}
+.level-chapter h2{font-size:24px;margin:8px 0}
+body.panel-tabs .scene-goal{white-space:normal;overflow:visible;font-size:20px;line-height:1.45;padding:6px 2px}
+body.panel-tabs .scene-goal strong{font-size:24px;line-height:1.2}
+body.panel-tabs .scene-goal span{display:block!important;color:#e1eef5}
+body.panel-tabs .control-panel .ghost-bar,body.panel-tabs .control-panel .ghost-bar>.ghost-fields{height:auto;min-height:0;flex:none;overflow:visible}
+body.panel-tabs .control-panel .ghost-bar>.ghost-fields{display:flex;flex-direction:column;gap:6px;padding:0}
+#help-settings{margin-top:16px;border-top:1px solid #63899d}
+#help-settings summary{min-height:44px;cursor:pointer;padding:10px 0;box-sizing:border-box}
+#help-settings button,#help-settings input,#help-settings select{min-height:44px;min-width:44px}
+#help-settings .numeric-slider input[type=range]{width:100%;touch-action:pan-y}
+#help-settings .exact-value{width:100%;box-sizing:border-box}
+#help-settings .scene-actions{position:static;display:flex;flex-wrap:wrap}
+#help-settings .move-pad{position:static;display:flex;flex-wrap:wrap}
+#help-settings .grid-snap-row{display:flex;flex-wrap:wrap}
+@media(max-width:820px){body.panel-tabs .scene-goal{font-size:17px;line-height:1.35;padding:2px}body.panel-tabs .scene-goal strong{font-size:20px}}
+@media(max-width:599px){body.panel-tabs:not(.panel-collapsed) main{grid-template-rows:min(60dvh,max(240px,calc(100dvh - var(--site-header-height,53px) - 230px))) minmax(0,1fr)}}
+@media(max-width:359px){body.phone-panels #phone-toolbar{flex-wrap:nowrap}#phone-tabs{flex-basis:auto}}
+@media(max-width:359px){#piece-editor{width:212px}}
+body.panel-tabs.run-complete .scene-goal span{display:none!important}
+body.panel-tabs #control-panel:has(.ghost-bar:not([hidden])){overflow:auto}
+body.panel-tabs .ghost-fields>.head{min-height:0}
+#control-panel .adjustment-picker{grid-template-columns:auto minmax(0,1fr) 44px}
+#control-panel .connection-action{width:100%;min-height:44px;white-space:normal}
+/* Keep the ground and low apparatus clear of the camera tools. */
+#viewer-zoom{right:8px;top:56px;bottom:auto}
+#viewer-perspective{right:8px;top:104px;bottom:auto}
+@media(max-width:359px){#viewer-zoom{right:60px;top:auto;bottom:8px}#viewer-perspective{right:60px;top:auto;bottom:56px}}
+body.panel-tabs .phone-pane{scroll-padding-block:8px}
+#control-panel .ghost-fields>button{min-height:44px;min-width:44px}
+#view.choosing-attachment #viewer-zoom{top:auto;bottom:8px;left:8px;right:auto}
+#view.choosing-attachment #viewer-perspective{top:auto;bottom:56px;left:8px;right:auto}

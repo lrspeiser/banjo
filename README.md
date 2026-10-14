@@ -10,7 +10,7 @@ heats a coil in its powder. A laser chars a cord until it parts. A solar panel
 gives as much power as it catches from the sun, so how it faces matters. Nothing
 in a level is scripted: the game only checks whether the goal happened.
 
-**Play it:** <https://banjo-f1sv.onrender.com/play>. It is open to anyone, with
+**Play it:** <https://banjo.is/play>. It is open to anyone, with
 no login.
 
 Banjo is early, built in the open, and has no licence yet. It is developed on
@@ -20,16 +20,21 @@ Windows, built and tested on Linux in CI, and not tested on macOS.
 
 **Eight chain-reaction levels, twenty-three piece lessons and three advanced electronics activities.**
 Every card shows its task count and stars; Help reveals level details and energy records.
-The 34 levels follow the [audited onboarding order](docs/level-onboarding-audit.md),
-with estimated player-time ranges on each card. These ranges are based on blind
-LLM probes and interface review, not a timed human study. Lesson controls put
-the relevant adjustments first; Precision controls restores the full menu.
+The 34 challenges are grouped as Level 1: Mechanics, Level 2: Electricity,
+Level 3: Water, and Level 4: Heat and chain reactions, with all choices visible.
+Within each chapter they retain the [audited relative order](docs/level-onboarding-audit.md).
+Estimated player times remain historical estimates from blind LLM probes and
+interface review, not measurements of the new interface or a timed human study.
 Levels share Controls / Help tabs on desktop and phone; Sandbox also has Design,
 with Run/Pause/Reset kept beside the 3D view, even when the controls are
 collapsed. Each level shows its name and a one-line task. **Undo / Redo**
 are in the upper scene corner; a flat zoom slider and magnifiers are in the
-lower corner. Click a piece to edit it, choose an **Adjustment**, then use
-its stepped slider or exact value. Proposed electrical ratings update beside
+scene corner, with turn/tilt buttons beside zoom. Click a piece to edit it;
+**Move**, **Turn** and **Place** follow the selection. Drag the piece or its
+selected adjustment handle. Exact sliders and snap preferences are in
+**Help → Settings**. Both snaps start on. Used tray cards disappear.
+After a missed goal, **Try again** restores the setup and selects the last
+edited piece. Proposed electrical ratings update beside
 the part. Useful wiring and inspection actions appear directly in Controls;
 there is no Tools or Readings dropdown. **Recent Changes** in the top
 navigation opens dated player-friendly update notes over the current screen;
@@ -38,8 +43,8 @@ notes in `client/voxel-lab/machine.html`, as required by `AGENTS.md`.
 Reset starts a challenge over with a fresh tray; Undo recovers its cleared
 pieces. Sandbox Reset rewinds the machine while keeping the design.
 Optical levels keep an engine-traced light path visible while editing. Lenses
-have a clear rim and a larger drag marker; focusing a lens or mirror keeps
-its source and receiver in view, and **Whole machine** restores the overview.
+have a clear rim and a larger drag marker; an optical inspection keeps
+its source and receiver in view. Corner buttons change perspective.
 Cables show measured power/current and moving flow dots while editing or
 running. Draw wires by clicking their actual connection rings in the 3D scene.
 A dashed guide follows the pointer between clicks; endpoint dropdowns remain

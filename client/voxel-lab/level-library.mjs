@@ -25,7 +25,12 @@ export function renderLevelCards(list, levels, {
   record, bestStars, energyText, pieceLabel, onChoose, nextUp
 }) {
   list.replaceChildren();
+  let chapter=null;
   for (const [index, level] of levels.entries()) {
+    if(level.onboarding?.chapter!==chapter){
+      chapter=level.onboarding?.chapter;
+      if(chapter){const heading=append(list,'li','level-chapter');append(heading,'h2','',chapter);}
+    }
     const row = record(level.id) || {};
     const stars = Math.max(0, Math.min(3, Math.trunc(Number(bestStars(level.id)) || 0)));
     const next = level === nextUp || level.id === nextUp?.id;
@@ -37,7 +42,7 @@ export function renderLevelCards(list, levels, {
     card.type = 'button';
     card.setAttribute('aria-label', `Play level ${index + 1}, ${level.title}`);
     card.addEventListener('click', () => onChoose(level));
-    append(card, 'strong', 'level-card-title', `${index + 1}. ${level.title}`);
+    append(card, 'strong', 'level-card-title', level.title);
     append(card, 'span', 'task-count', `${level.task_count} ${level.task_count === 1 ? 'thing' : 'things'} to do`);
     if(level.onboarding?.estimated_minutes?.length===2){
       const [lo,hi]=level.onboarding.estimated_minutes;
@@ -46,14 +51,7 @@ export function renderLevelCards(list, levels, {
     }
     const starText = append(card, 'span', 'stars', '★'.repeat(stars) + '☆'.repeat(3 - stars));
     starText.setAttribute('aria-label', `${stars} of 3 stars`);
-    const {content} = disclosure(item, 'Level details', 'level-card-details',
-      `Level details for level ${index + 1}, ${level.title}`);
-    append(content, 'p', 'teaches', pieceLabel(level.teaches));
-    append(content, 'p', 'status', row.energy_j != null
-      ? `Best win: ${energyText(row.energy_j)} (par ${energyText(level.par_energy_j)})`
-      : stars ? 'Won' : next ? 'Next up' : 'Not won yet');
-    if (row.energy_j == null && level.par_energy_j != null)
-      append(content, 'p', 'level-card-energy', `Energy par: ${energyText(level.par_energy_j)}`);
+    if(row.energy_j!=null)append(card,'span','level-card-best',`Best win: ${energyText(row.energy_j)} (par ${energyText(level.par_energy_j)})`);
   }
   return list;
 }

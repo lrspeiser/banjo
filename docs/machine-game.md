@@ -1,7 +1,64 @@
 # Puzzles on the machine (/play)
 
+October 13 beginner controls update (supersedes earlier interface descriptions):
+the goal uses larger, wrapping text beside the scene. Selecting a placed piece
+opens a small adjacent toolbar with Move, Turn, Place and cancel. The property
+selector and drag handle stay in Controls beside the task.
+Mouse/touch drags move the declaration on the ground, turn it, or change the
+selected numeric property in its declared increments. The separate ↔ handle
+changes the same property, including non-geometric electrical ratings; proposed
+ratings still update beside the device. Engine ownership of simulated bodies is
+unchanged. Sliders and exact values are a fallback in Help → Settings, alongside
+grid/object snap toggles. Both start enabled for each opened level/design.
+Camera turn/tilt buttons sit above zoom; Undo/Redo remain in the scene.
+
+After a failed run the engine pauses and the result contains only Try again.
+It rebuilds the retained setup at time zero, then selects the last edited piece.
+Reset still clears a challenge, with Undo available. Used challenge tray cards
+disappear; selecting a placed object uses its rendered solid. Whole machine,
+Restart with my pieces and the Puzzle details disclosure are removed from the
+ordinary game interface. Existing inspection-return controls remain separate.
+
+All 34 challenges stay visible in four chapters: Level 1: Mechanics (including
+spatial optics), Level 2: Electricity, Level 3: Water, Level 4: Heat and chain
+reactions. Chapter order supersedes the former global difficulty ranking;
+relative ranks within chapters retain that audit's ordering. The time estimates
+are historical estimates, not timings measured with this interface. Physics
+recipes, goals, tolerances and energy pars are unchanged.
+
+The layout assigns the adjacent toolbar before placing edge readouts, so
+mutual avoidance cannot make Place move under the pointer. Proposed numeric
+ratings use a compact edge badge; complete ratings remain in Controls. Objective
+meters get priority when labels compete for space. Both wire gauges remain
+available as touch targets in Controls if two edge badges cannot fit. Camera
+controls leave attachment points clear, and a click listener identifies the
+canvas to browser touch adjustment without performing a second action.
+Successful runs keep the camera view steady; the energy comparison stays
+visible, with achievement prose inside Energy details.
+
+Physics recipes, goals and tolerances are unchanged. The native binary is
+unchanged (Windows SHA-256 `997b02d2b9f4594dbb575eeca38c17777a7ce6ec74e8832f97d265f8974464a9`).
+The 27 catalogue/placement tests pass, including the existing glass/oak/iron
+geometry and mass checks, in 16.74 s. Client geometry tests, JavaScript syntax,
+source registration and changed documentation links pass. No new conservation
+or material-calibration claim is made for this interface change.
+
+Browser verification: all 120 Chrome scenarios passed across four 30-case
+batches and targeted reruns after fixes. Batches 0/1 passed in 270.52/215.43 s.
+Batches 2/3 initially found five failures: crowded wire-gauge placement, a
+solar-wire touch removal, heater attachment/terminal taps on two phone views,
+and a force-test fixture assuming no earlier saved win. The corrected affected
+scenarios pass; physical goals and numeric tolerances were not changed. Wire
+gauge checks now require either both edge badges or both readable adjacent
+controls, since the latter intentionally avoids covering the world. The
+force-test check preserves any pre-existing score and verifies it earns none.
+The expanded retry test preserves both leads while selecting a re-edited
+battery instead of the last-added wire. Mouse/touch manipulation and visible
+44 px controls are exercised at 1280×860, 390×844, 844×390 and 320×568.
+Proof images live in the ignored `build/ui-proof/` directory.
+
 October 13 Help and reporting: levels use **Controls / Help**; Help contains
-Puzzle details, Share, hints and Report a bug. Sandbox keeps its Design tab
+the task description, Share, hints and Report a bug. Sandbox keeps its Design tab
 and adds Describe a design to focus the existing word builder. Builder requests
 include the committed base machine; its proposals are compiled and rehearsed
 by the native engine. New challenge and general Pull are removed from player

@@ -306,7 +306,10 @@ class Tray(unittest.TestCase):
         self.assertLess(ids.index('easy-power'),ids.index('advanced-parallel'))
         self.assertLess(ids.index('easy-mirror'),ids.index('laser'))
         self.assertLess(ids.index('easy-river-wheel'),ids.index('easy-river-lift'))
-        self.assertEqual(ids[-1],'easy-gears','unresolved mesh-fitting probe belongs at the end')
+        chapters=[l['onboarding']['chapter'] for l in LEVELS]
+        self.assertEqual(chapters,sorted(chapters),'mechanics precedes electricity, water and mixed heat tasks')
+        self.assertEqual(mg.level_by_id('easy-gears')['onboarding']['chapter'],'Level 1: Mechanics')
+        self.assertEqual(mg.level_by_id('easy-power')['onboarding']['chapter'],'Level 2: Electricity')
         self.assertEqual([l['onboarding']['rank'] for l in LEVELS],list(range(1,len(LEVELS)+1)))
         self.assertEqual(len({l['id'] for l in LEVELS}), len(LEVELS))
         for level in LEVELS:

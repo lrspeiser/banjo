@@ -119,7 +119,7 @@ def load_levels():
         _with_free_knobs(level)
         row=onboarding[level['id']]
         level['onboarding']={'rank':row['rank'],'estimated_minutes':row['estimated_minutes'],
-                             'estimate_basis':catalogue['estimate_basis']}
+                             'estimate_basis':catalogue['estimate_basis'],'chapter':row['chapter']}
         if row.get('title'):level['title']=row['title']
         for tray in level['tray']:
             controls=[k for k in row.get('primary_controls',{}).get(tray['piece'],[]) if k in tray['knobs']]

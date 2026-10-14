@@ -15,81 +15,22 @@
           "z_m",
           "height_m"
         ]
-      }
-    },
-    {
-      "id": "easy-motor",
-      "rank": 2,
-      "estimated_minutes": [
-        1,
-        3
-      ],
-      "primary_controls": {
-        "motor": [
-          "direction",
-          "throttle"
-        ]
-      }
-    },
-    {
-      "id": "easy-bulb",
-      "rank": 3,
-      "estimated_minutes": [
-        2,
-        5
-      ],
-      "primary_controls": {}
-    },
-    {
-      "id": "easy-loop",
-      "rank": 4,
-      "estimated_minutes": [
-        1,
-        3
-      ],
-      "primary_controls": {}
-    },
-    {
-      "id": "easy-water-receiver",
-      "rank": 5,
-      "estimated_minutes": [
-        2,
-        5
-      ],
-      "primary_controls": {
-        "water_tank": [
-          "opening_percent",
-          "x_m",
-          "height_m"
-        ]
-      }
-    },
-    {
-      "id": "easy-river-wheel",
-      "rank": 6,
-      "estimated_minutes": [
-        2,
-        5
-      ],
-      "primary_controls": {
-        "water_wheel": [
-          "z_m",
-          "load_part"
-        ]
-      }
+      },
+      "chapter": "Level 1: Mechanics"
     },
     {
       "id": "easy-spring",
-      "rank": 7,
+      "rank": 2,
       "estimated_minutes": [
         2,
         5
       ],
-      "primary_controls": {}
+      "primary_controls": {},
+      "chapter": "Level 1: Mechanics"
     },
     {
       "id": "gap",
-      "rank": 8,
+      "rank": 3,
       "estimated_minutes": [
         2,
         5
@@ -98,71 +39,22 @@
         "plank": [
           "length_m"
         ]
-      }
-    },
-    {
-      "id": "advanced-resistor",
-      "rank": 9,
-      "estimated_minutes": [
-        1,
-        4
-      ],
-      "primary_controls": {}
-    },
-    {
-      "id": "easy-switch",
-      "rank": 10,
-      "estimated_minutes": [
-        2,
-        5
-      ],
-      "primary_controls": {}
-    },
-    {
-      "id": "easy-water-wheel",
-      "rank": 11,
-      "estimated_minutes": [
-        2,
-        6
-      ],
-      "primary_controls": {
-        "water_tank": [
-          "opening_percent",
-          "x_m",
-          "height_m"
-        ]
-      }
-    },
-    {
-      "id": "easy-marble-light",
-      "rank": 12,
-      "estimated_minutes": [
-        2,
-        6
-      ],
-      "primary_controls": {}
+      },
+      "chapter": "Level 1: Mechanics"
     },
     {
       "id": "easy-tackle",
-      "rank": 13,
+      "rank": 4,
       "estimated_minutes": [
         3,
         7
       ],
-      "primary_controls": {}
-    },
-    {
-      "id": "steam",
-      "rank": 14,
-      "estimated_minutes": [
-        3,
-        7
-      ],
-      "primary_controls": {}
+      "primary_controls": {},
+      "chapter": "Level 1: Mechanics"
     },
     {
       "id": "easy-lens",
-      "rank": 15,
+      "rank": 5,
       "estimated_minutes": [
         3,
         9
@@ -174,11 +66,12 @@
           "radius_m",
           "diameter_m"
         ]
-      }
+      },
+      "chapter": "Level 1: Mechanics"
     },
     {
       "id": "easy-cut",
-      "rank": 16,
+      "rank": 6,
       "estimated_minutes": [
         3,
         8
@@ -188,11 +81,12 @@
           "pivot_height_m",
           "arm_m"
         ]
-      }
+      },
+      "chapter": "Level 1: Mechanics"
     },
     {
       "id": "easy-mirror",
-      "rank": 17,
+      "rank": 7,
       "estimated_minutes": [
         3,
         8
@@ -203,11 +97,143 @@
           "height_m",
           "size_m"
         ]
-      }
+      },
+      "chapter": "Level 1: Mechanics"
+    },
+    {
+      "id": "easy-catapult",
+      "rank": 8,
+      "estimated_minutes": [
+        3,
+        8
+      ],
+      "primary_controls": {},
+      "chapter": "Level 1: Mechanics"
+    },
+    {
+      "id": "cut",
+      "rank": 9,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "primary_controls": {
+        "knife": [
+          "pivot_height_m",
+          "arm_m"
+        ]
+      },
+      "chapter": "Level 1: Mechanics"
+    },
+    {
+      "id": "tackle",
+      "rank": 10,
+      "estimated_minutes": [
+        6,
+        15
+      ],
+      "primary_controls": {},
+      "chapter": "Level 1: Mechanics"
+    },
+    {
+      "id": "laser",
+      "rank": 11,
+      "estimated_minutes": [
+        8,
+        18
+      ],
+      "primary_controls": {
+        "mirror": [
+          "angle_deg"
+        ]
+      },
+      "chapter": "Level 1: Mechanics"
+    },
+    {
+      "id": "easy-gears",
+      "rank": 12,
+      "estimated_minutes": [
+        8,
+        20
+      ],
+      "primary_controls": {
+        "gear": [
+          "teeth",
+          "x_m",
+          "height_m",
+          "phase_deg"
+        ]
+      },
+      "chapter": "Level 1: Mechanics"
+    },
+    {
+      "id": "easy-motor",
+      "rank": 13,
+      "estimated_minutes": [
+        1,
+        3
+      ],
+      "primary_controls": {
+        "motor": [
+          "direction",
+          "throttle"
+        ]
+      },
+      "chapter": "Level 2: Electricity"
+    },
+    {
+      "id": "easy-bulb",
+      "rank": 14,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "primary_controls": {},
+      "chapter": "Level 2: Electricity"
+    },
+    {
+      "id": "easy-loop",
+      "rank": 15,
+      "estimated_minutes": [
+        1,
+        3
+      ],
+      "primary_controls": {},
+      "chapter": "Level 2: Electricity"
+    },
+    {
+      "id": "advanced-resistor",
+      "rank": 16,
+      "estimated_minutes": [
+        1,
+        4
+      ],
+      "primary_controls": {},
+      "chapter": "Level 2: Electricity"
+    },
+    {
+      "id": "easy-switch",
+      "rank": 17,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "primary_controls": {},
+      "chapter": "Level 2: Electricity"
+    },
+    {
+      "id": "easy-marble-light",
+      "rank": 18,
+      "estimated_minutes": [
+        2,
+        6
+      ],
+      "primary_controls": {},
+      "chapter": "Level 2: Electricity"
     },
     {
       "id": "easy-power",
-      "rank": 18,
+      "rank": 19,
       "estimated_minutes": [
         3,
         8
@@ -216,20 +242,128 @@
         "battery": [
           "voltage_v"
         ]
-      }
+      },
+      "chapter": "Level 2: Electricity"
     },
     {
-      "id": "easy-catapult",
-      "rank": 19,
+      "id": "advanced-parallel",
+      "rank": 20,
       "estimated_minutes": [
-        3,
-        8
+        4,
+        9
       ],
-      "primary_controls": {}
+      "primary_controls": {},
+      "chapter": "Level 2: Electricity"
+    },
+    {
+      "id": "advanced-capacitor",
+      "rank": 21,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "primary_controls": {},
+      "chapter": "Level 2: Electricity"
+    },
+    {
+      "id": "easy-solar",
+      "rank": 22,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "title": "Charge in the sun",
+      "primary_controls": {
+        "solar": [
+          "pitch_deg",
+          "yaw_deg",
+          "height_m"
+        ]
+      },
+      "chapter": "Level 2: Electricity"
+    },
+    {
+      "id": "easy-charge-lift",
+      "rank": 23,
+      "estimated_minutes": [
+        5,
+        12
+      ],
+      "primary_controls": {
+        "solar": [
+          "pitch_deg",
+          "yaw_deg",
+          "height_m"
+        ]
+      },
+      "chapter": "Level 2: Electricity"
+    },
+    {
+      "id": "sun",
+      "rank": 24,
+      "estimated_minutes": [
+        8,
+        20
+      ],
+      "primary_controls": {
+        "solar": [
+          "pitch_deg",
+          "yaw_deg",
+          "height_m"
+        ]
+      },
+      "chapter": "Level 2: Electricity"
+    },
+    {
+      "id": "easy-water-receiver",
+      "rank": 25,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "primary_controls": {
+        "water_tank": [
+          "opening_percent",
+          "x_m",
+          "height_m"
+        ]
+      },
+      "chapter": "Level 3: Water"
+    },
+    {
+      "id": "easy-river-wheel",
+      "rank": 26,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "primary_controls": {
+        "water_wheel": [
+          "z_m",
+          "load_part"
+        ]
+      },
+      "chapter": "Level 3: Water"
+    },
+    {
+      "id": "easy-water-wheel",
+      "rank": 27,
+      "estimated_minutes": [
+        2,
+        6
+      ],
+      "primary_controls": {
+        "water_tank": [
+          "opening_percent",
+          "x_m",
+          "height_m"
+        ]
+      },
+      "chapter": "Level 3: Water"
     },
     {
       "id": "easy-river-lift",
-      "rank": 20,
+      "rank": 28,
       "estimated_minutes": [
         3,
         7
@@ -239,42 +373,12 @@
           "z_m",
           "load_part"
         ]
-      }
-    },
-    {
-      "id": "advanced-parallel",
-      "rank": 21,
-      "estimated_minutes": [
-        4,
-        9
-      ],
-      "primary_controls": {}
-    },
-    {
-      "id": "advanced-capacitor",
-      "rank": 22,
-      "estimated_minutes": [
-        4,
-        10
-      ],
-      "primary_controls": {}
-    },
-    {
-      "id": "easy-heat",
-      "rank": 23,
-      "estimated_minutes": [
-        4,
-        10
-      ],
-      "primary_controls": {
-        "ignition": [
-          "preset"
-        ]
-      }
+      },
+      "chapter": "Level 3: Water"
     },
     {
       "id": "easy-water-gate",
-      "rank": 24,
+      "rank": 29,
       "estimated_minutes": [
         4,
         10
@@ -289,65 +393,12 @@
           "x_m",
           "height_m"
         ]
-      }
-    },
-    {
-      "id": "easy-solar",
-      "rank": 25,
-      "estimated_minutes": [
-        4,
-        10
-      ],
-      "title": "Charge in the sun",
-      "primary_controls": {
-        "solar": [
-          "pitch_deg",
-          "yaw_deg",
-          "height_m"
-        ]
-      }
-    },
-    {
-      "id": "cut",
-      "rank": 26,
-      "estimated_minutes": [
-        4,
-        10
-      ],
-      "primary_controls": {
-        "knife": [
-          "pivot_height_m",
-          "arm_m"
-        ]
-      }
-    },
-    {
-      "id": "chain",
-      "rank": 27,
-      "estimated_minutes": [
-        5,
-        12
-      ],
-      "primary_controls": {}
-    },
-    {
-      "id": "easy-charge-lift",
-      "rank": 28,
-      "estimated_minutes": [
-        5,
-        12
-      ],
-      "primary_controls": {
-        "solar": [
-          "pitch_deg",
-          "yaw_deg",
-          "height_m"
-        ]
-      }
+      },
+      "chapter": "Level 3: Water"
     },
     {
       "id": "easy-divert-water",
-      "rank": 29,
+      "rank": 30,
       "estimated_minutes": [
         5,
         12
@@ -357,69 +408,52 @@
           "x_m",
           "yaw_deg"
         ]
-      }
+      },
+      "chapter": "Level 3: Water"
     },
     {
-      "id": "tackle",
-      "rank": 30,
+      "id": "steam",
+      "rank": 31,
       "estimated_minutes": [
-        6,
-        15
+        3,
+        7
       ],
-      "primary_controls": {}
+      "primary_controls": {},
+      "chapter": "Level 4: Heat and chain reactions"
+    },
+    {
+      "id": "easy-heat",
+      "rank": 32,
+      "estimated_minutes": [
+        4,
+        10
+      ],
+      "primary_controls": {
+        "ignition": [
+          "preset"
+        ]
+      },
+      "chapter": "Level 4: Heat and chain reactions"
+    },
+    {
+      "id": "chain",
+      "rank": 33,
+      "estimated_minutes": [
+        5,
+        12
+      ],
+      "primary_controls": {},
+      "chapter": "Level 4: Heat and chain reactions"
     },
     {
       "id": "fire",
-      "rank": 31,
+      "rank": 34,
       "estimated_minutes": [
         6,
         15
       ],
-      "primary_controls": {}
-    },
-    {
-      "id": "laser",
-      "rank": 32,
-      "estimated_minutes": [
-        8,
-        18
-      ],
-      "primary_controls": {
-        "mirror": [
-          "angle_deg"
-        ]
-      }
-    },
-    {
-      "id": "sun",
-      "rank": 33,
-      "estimated_minutes": [
-        8,
-        20
-      ],
-      "primary_controls": {
-        "solar": [
-          "pitch_deg",
-          "yaw_deg",
-          "height_m"
-        ]
-      }
-    },
-    {
-      "id": "easy-gears",
-      "rank": 34,
-      "estimated_minutes": [
-        8,
-        20
-      ],
-      "primary_controls": {
-        "gear": [
-          "teeth",
-          "x_m",
-          "height_m",
-          "phase_deg"
-        ]
-      }
+      "primary_controls": {},
+      "chapter": "Level 4: Heat and chain reactions"
     }
   ]
 }

@@ -1,5 +1,5 @@
 import * as THREE from '/three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells} from '/machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition} from '/machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from '/anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from '/profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from '/level-library.mjs';
@@ -11,6 +11,10 @@ const $ = id => document.getElementById(id);
 const view = $('view');
 const collapsedPanel = () => document.body.classList.contains('panel-collapsed') ? [document.querySelector('main>aside')] : [];
 const renderer = new THREE.WebGLRenderer({antialias: true});
+// Advertise the scene as a click target to touch browsers. Otherwise their
+// tap adjustment can redirect a nearby 3D socket tap to a camera button.
+// Pointer handlers below perform the action once; this listener is inert.
+renderer.domElement.addEventListener('click',()=>{});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 view.prepend(renderer.domElement);
 const scene = new THREE.Scene();
@@ -53,7 +57,6 @@ fineGrid.position.y=.0005; majorGrid.position.y=.001;
 grid.add(fineGrid,majorGrid);
 scene.add(grid);
 let gridSnapEnabled=true;
-try {gridSnapEnabled=localStorage.getItem('banjo-grid-snap')!=='off';} catch { /* private window */ }
 let objectSnapEnabled=true;
 const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 200);
 const target = new THREE.Vector3(1, 0.4, 0), goal = target.clone();
@@ -338,7 +341,7 @@ function inspectContactCircuit(name) {
   const half=Math.min(camera.fov*Math.PI/360,Math.atan(Math.tan(camera.fov*Math.PI/360)*camera.aspect));
   distance=Math.max(.6,box.getSize(new THREE.Vector3()).length()*.6/Math.sin(half));
   azimuth=-.65;elevation=.12;
-  $('inspect-switch').textContent='Whole machine';$('instrument-panel').open=true;
+  $('inspect-switch').textContent='Back to scene';
   selectPhonePanel('controls',true);
   if(!ghost){$('control-panel').prepend($('instrument-panel'));$('control-panel').scrollTop=0;}
   else $('instrument-panel').scrollIntoView({block:'start',inline:'nearest',behavior:'instant'});
@@ -496,7 +499,7 @@ function positionTerminalLabels() {
   const rect = renderer.domElement.getBoundingClientRect();
   const top = Math.max(8, $('clock').getBoundingClientRect().bottom - rect.top + 8);
   const bottom = Math.min(rect.height - 8, innerHeight - rect.top - 8);
-  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #clock, #viewer-zoom, #viewer-history, #panel-toggle, .power-pin')]
+  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #clock, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, #panel-toggle, .power-pin')]
     .filter(el => !el.hidden && el.style.visibility !== 'hidden' && el.offsetWidth && el.offsetHeight).map(el => {
       const r = el.getBoundingClientRect(); return {x:r.left-rect.left, y:r.top-rect.top, w:r.width, h:r.height};
     });
@@ -651,7 +654,10 @@ function finishSocketClick(x,y,touch) {
     const editIndex=!ghost&&!wiringMode&&!socketSelection()?placedAt(x,y):-1;
     if(editIndex>=0){const label=placements[editIndex]?`${pieceLabel(placements[editIndex].piece)} ${editIndex+1}`:sandboxObjects[editIndex-placements.length]?.name;
       const adjust=button(`Adjust ${label}`,()=>{choice.hidden=true;pickUp(editIndex);});adjust.dataset.pieceIndex=editIndex;choice.append(adjust);}
-    for(const row of rows.slice(0,4))choice.append(button(`${row.name.replace(/^your /,'').replace(':',' · ')} (${row.label})`,()=>chooseSceneSocket(row)));
+    for(const row of rows.slice(0,4)){
+      const option=button(`${row.name.replace(/^your /,'').replace(':',' · ')} (${row.label})`,()=>chooseSceneSocket(row));
+      option.dataset.socketName=row.name;choice.append(option);
+    }
     choice.append(button('Cancel',()=>{choice.hidden=true;}));choice.hidden=false;
     const rect=renderer.domElement.getBoundingClientRect();
     choice.style.left=`${Math.max(6,Math.min(rect.width-choice.offsetWidth-6,x-rect.left+12))}px`;
@@ -765,7 +771,6 @@ function solarSnapshot() {
 function powerMessage(text,reveal=true) {
   $('power-status').textContent = text;
   $('power-status').hidden = !text;
-  if (text && reveal) $('instrument-panel').open = true;
 }
 // Explain the graph that actually exists; this UI never connects or powers it
 // without the same two-port player action used in the sandbox.
@@ -820,12 +825,9 @@ function updateSunBearing(){
   bearing.setAttribute('aria-label',`Sun direction${behind?', behind view':''}; elevation ${machine.sun.elevation_deg} degrees`);
 }
 async function connectFromSolarGuide(kind){
-  const g=solarLiftGraph(),sourceLevel=level,wasOpen=$('instrument-panel').open;
+  const g=solarLiftGraph();
   if(!g?.[kind])return;
   await pickPowerPort(g[kind]);
-  // Keep secondary readings folded after a successful compact action.
-  // A rejected connection retains the original visible error disclosure.
-  if(level===sourceLevel&&(kind==='output'||solarLiftGraph()?.cable?.a===g.output?.name))$('instrument-panel').open=wasOpen;
 }
 $('solar-out-connect').addEventListener('click',()=>connectFromSolarGuide('output'));
 $('solar-in-connect').addEventListener('click',()=>connectFromSolarGuide('input'));
@@ -1009,7 +1011,7 @@ function positionPowerLabels() {
   const clock = $('clock').getBoundingClientRect();
   const top = Math.max(8, clock.bottom - rect.top + 8);
   const bottom = rect.height - 10;
-  const occupied = ['scene-mode','sun-bearing','viewer-zoom','viewer-history','panel-toggle']
+  const occupied = ['scene-mode','sun-bearing','viewer-zoom','viewer-perspective','piece-editor','viewer-history','panel-toggle']
     .map(id => $(id)).concat(collapsedPanel()).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
     .map(el => { const r = el.getBoundingClientRect(); return {x:r.left - rect.left,y:r.top - rect.top,w:r.width,h:r.height}; });
   occupied.push(...readoutBodyRects(rect));
@@ -1072,7 +1074,7 @@ $('inspect-heat').addEventListener('click',()=>{
   if(!heatingTarget)return;
   heatInspection={azimuth,elevation,distance,goal:goal.clone(),target:target.clone(),follow,
     collapsed:document.body.classList.contains('panel-collapsed')};
-  $('inspect-heat').textContent='Whole machine';
+  $('inspect-heat').textContent='Back to scene';
   follow=false;$('follow').setAttribute('aria-pressed','false');
   // Look from the incoming beam's side of the actual heated cell; a wall
   // should not obscure the face being inspected. This changes only camera.
@@ -1111,7 +1113,7 @@ function syncThermalSpots(light) {
   output.hidden=inspect.hidden=!heatingTarget;
   view.classList.toggle('has-thermal-spot',Boolean(heatingTarget));
   if(!heatingTarget){closeHeatInspection(false);return;}
-  inspect.textContent=heatInspection?'Whole machine':row?.charring||taken?.how==='chars'?'Inspect burn':'Inspect heat';
+  inspect.textContent=heatInspection?'Back to scene':row?.charring||taken?.how==='chars'?'Inspect burn':'Inspect heat';
   const bodyName=cutRope?.cord||(row&&ropeFor(row.body)?.cord)||family(row?.body||taken.body),celsius=row?row.temperature_k-273.15:null;
   if(row){
     output.textContent=`${bodyName} · ${cutRope?'Cut through · nearby heat':row.charring?'Charring':row.how==='melts'&&row.cut_w>0?'Melting':'Heating'} · ${celsius.toFixed(0)} °C\n`+
@@ -1581,6 +1583,7 @@ function renderClock(frame) {
     : LEVEL_MODE ? 'ready: press Run it' : 'ready: press Start');
   if (frame.playing && behind > .25) text += ` · ${behind.toFixed(1)} s behind real time while the engine works`;
   $('clock').textContent = text;
+  $('start').hidden=Boolean(LEVEL_MODE&&scored&&lastRun&&lastRun.goal_at_s==null);
   $('start').textContent = frame.playing ? 'Pause' : !LEVEL_MODE ? (frame.t > 0 ? 'Continue' : 'Start')
     : frame.t > 0 ? (scored ? 'Run again' : 'Continue') : 'Run it';
 }
@@ -1870,6 +1873,8 @@ function render() {
   updateContactGaps();
   updateContactCircuitReadings();
   renderer.render(scene, camera);
+  view.classList.toggle('choosing-attachment',Boolean(ghost?.p.attachment_version===2||machine?.electrical?.devices?.some(d=>d.attachment_version===2&&d.heats)));
+  positionPieceEditor();
   positionPowerLabels();
   positionTerminalLabels();
   drawSceneSockets();
@@ -2104,6 +2109,7 @@ let padAxes = '';
 // A click returns to View without changing placement. Deliberately dragging
 // the selected piece resumes Move; dragging empty space always turns the view.
 let looking = false;
+let editorMode = 'move', lastEdited = null;
 function setLooking(on) {
   looking = Boolean(on && ghost);
   draggingGhost = null;
@@ -2114,7 +2120,7 @@ function setLooking(on) {
 function renderMovePad() {
   const pad = $('move-pad');
   pad.hidden = !LEVEL_MODE || !movableGhost();
-  $('scene-mode').hidden = pad.hidden;
+  $('scene-mode').hidden = true;
   $('mode-view').setAttribute('aria-pressed', String(looking));
   $('mode-move').setAttribute('aria-pressed', String(!looking));
   padAxes = '';
@@ -2324,7 +2330,7 @@ function updateEditGuide() {
   const x = (screen.x + 1) * view.clientWidth / 2 + 14, y = (1 - screen.y) * view.clientHeight / 2 + 16;
   // A wrapped toolbar can fill a short phone scene. Try spaces beside the
   // piece and the controls, rather than forcing the caption below every row.
-  const obstacles = [...collapsedPanel(), ...view.querySelectorAll('#clock, #scene-mode, #viewer-zoom, #viewer-history, #panel-toggle, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
+  const obstacles = [...collapsedPanel(), ...view.querySelectorAll('#clock, #scene-mode, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, #panel-toggle, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend')]
     .filter(e => e.offsetWidth && e.offsetHeight).map(e => e.getBoundingClientRect());
   let best = null;
   for (const [cx, cy] of [[x, y], [x, y - height - 40], [x - width - 30, y], [8, maxY], [maxX, maxY], [maxX, minY]]) {
@@ -2442,6 +2448,7 @@ async function checkGhost(g) {
         const mine = wire.name === ghostName() || wire.name.startsWith(ghostName() + ' ');
         const tube = new THREE.Mesh(new THREE.TubeGeometry(routedCurve(a, b, lane), 64, wireDisplayRadius(wire), 6, false),
           mine ? ghostLook[r.fits ? 'fits' : 'refused'] : material(wireColor(wire), 'wire'));
+        tube.userData.wireName=wire.name;
         terminalGhostWires.add(tube);
       }
     }
@@ -2476,6 +2483,7 @@ async function checkGhost(g) {
 // the view meets the scene.
 function startGhost(p, index, keepPlace = false) {
   endGhost();
+  editorMode='move';lastEdited=index;
   // Prebuilt/saved placements may omit default-valued knobs. Resolve them
   // before editing so range controls and selectors show the compiled setup.
   for (const [key, rule] of Object.entries(trayItem(p.piece).knobs)) {
@@ -2530,6 +2538,7 @@ function endGhost() {
   view.classList.remove('placing', 'looking');
   looking = false;
   renderGhostBar();
+  positionTerminalLabels();updatePowerLabels();positionPowerLabels();
 }
 
 function cancelGhost() { if (!ghost) return; endGhost(); renderTray(); renderPlaced(); schedulePreview(200); }
@@ -2543,7 +2552,7 @@ function placeGhost() {
   return true;
 }
 function setGhostDown() {
-  if (placeGhost()) scheduleRebuild(0);
+  if (placeGhost()) {selectPhonePanel('controls');scheduleRebuild(0);}
 }
 
 // The ghost's own controls, just below the scene and out of its way (the top
@@ -2599,6 +2608,8 @@ function nudgeKnob(key, by) {
 
 function selectGhostKnob(key) {
   if (!ghost || ghost.card === key) return;
+  const rule=trayItem(ghost.p.piece).knobs[key];
+  editorMode=rule?.turning?'turn':rule?.choices||rule?.part||rule?.hinge?'move':'adjust';looking=false;view.classList.remove('looking');
   ghost.card = key;
   clearEditGuide();
   renderGhostBar();
@@ -2615,8 +2626,11 @@ function renderGhostBar() {
   ghost && (ghost.gaugeButtons = null);
   ghost && (ghost.choiceButtons = null);
   if (!ghost) {
-    for(const id of ['flow-preview','move-pad','preview-legend','instrument-panel','edit-guide-label','view-controls','scene-actions','laser-preview-status','water-status','river-wheel-status','solar-lift-guide']) if($(id)) $('control-panel').append($(id));
-    card.replaceChildren(); return;
+    view.classList.remove('choosing-attachment');
+    for(const id of ['instrument-panel','laser-preview-status','water-status','river-wheel-status','solar-lift-guide']) if($(id)) $('control-panel').append($(id));
+    for(const id of ['flow-preview','move-pad','preview-legend','edit-guide-label','view-controls','scene-actions'])if($(id))$('help-settings-content')?.append($(id));
+    card.replaceChildren();$('piece-editor').hidden=true;$('piece-editor').replaceChildren();
+    $('precision-controls')?.remove();return;
   }
   const throwAway = button('✕', cancelGhost, {ariaLabel: 'Throw the ghost away', title: 'Throw the ghost away'});
   const selectedName=ghost.baseObject?.name || pieceLabel(ghost.p.piece);
@@ -2629,8 +2643,11 @@ function renderGhostBar() {
   // Endpoints are chosen on the objects. Their selectors stay in Precision
   // controls; ordinary cable editing exposes thickness/length instead.
   const connecting=['wire','power_cable'].includes(ghost.p.piece);
-  const available=connecting?allKeys.filter(k=>!knobs[k].terminal&&!knobs[k].power_port):allKeys;
-  const keys=primary&&!precisionOpen?primary.filter(k=>available.includes(k)):available;
+  const available=allKeys.filter(k=>!knobs[k].connection_target&&(!connecting||(!knobs[k].terminal&&!knobs[k].power_port)));
+  const keys=primary&&!precisionOpen?primary.filter(k=>available.includes(k)):[...available];
+  if(editorMode==='turn')for(const k of available.filter(k=>knobs[k].turning))if(!keys.includes(k))keys.push(k);
+  if(editorMode!=='turn'&&!precisionOpen)for(const k of heightKnobs(ghost.p))if(available.includes(k)&&!keys.includes(k))keys.push(k);
+  if(available.includes(ghost.card)&&!keys.includes(ghost.card))keys.push(ghost.card);
   if(!keys.length)keys.push(allKeys[0]);
   if (!keys.includes(ghost.card)) ghost.card = keys[0];
   const chips = Object.assign(document.createElement('div'), {className: 'adjustment-picker'});
@@ -2700,12 +2717,12 @@ function renderGhostBar() {
     });
     row.append(input);
     row.append(input.tickList);
-    head.append(shown);
+    row.append(shown);
     ghost.cardInput = [input, shown, key];
   }
   const state = Object.assign(document.createElement('p'), {className: 'state'});
   const actions = Object.assign(document.createElement('div'), {className: 'actions'});
-  actions.append(button('✓ Set down', setGhostDown, {className: 'down', disabled: !ghost.fits || ghost.busy}), throwAway);
+  actions.append(button('Place', setGhostDown, {className: 'down', ariaLabel:'Place', disabled: !ghost.fits || ghost.busy}), throwAway);
   if(ghost.baseObject || ghost.was)actions.insertBefore(button('Delete piece',()=>removeSelectedObject(),{ariaLabel:'Delete selected piece'}),throwAway);
   if(ghost.rewireKey) actions.insertBefore(button('Disconnect wire',()=>{
     if(!ghost?.rewireKey || terminalBusy || powerBusy)return;
@@ -2731,25 +2748,85 @@ function renderGhostBar() {
     objectButton.setAttribute('aria-pressed',String(objectSnapEnabled));showGridSnap();
   },{id:'object-snap',title:'Align a knife with a nearby cord, center a marble on a board or join track and pipe ends. Pull away to release; Alt+drag bypasses both snaps. Green guides show alignment, not a predicted win.'});
   objectButton.setAttribute('aria-pressed',String(objectSnapEnabled));
-  gridRow.hidden=!movableGhost()||!grid.visible;
+  gridRow.hidden=false;
   gridRow.append(snapButton,objectButton,Object.assign(document.createElement('output'),{id:'grid-snap-status',ariaLive:'polite'}));
   const setting=Object.assign(document.createElement('output'),{id:'adjustment-feedback',className:'adjustment-feedback',ariaLive:'polite'});
-  fields.append(head,chips,row,setting,state,gridRow,precision,$('instrument-panel'),$('preview-legend'),$('flow-preview'));
+  if(row.classList.contains('numeric-slider'))precision.append(row);
+  else fields.append(row);
+  fields.append(head,chips,setting,state,$('instrument-panel'));
+  for(const key of allKeys.filter(k=>knobs[k].connection_target))fields.prepend(referenceControl(ghost.p,key,knobs[key],()=>{renderGhostBar();askGhost();}));
+  $('snap-settings').replaceChildren(gridRow);
+  // Keep these shared nodes connected before replacing the old inspector.
+  // Otherwise a second selection discards the controls with its old content.
+  precision.append($('scene-actions'),$('view-controls'));
+  $('help-settings-content').replaceChildren(precision,$('preview-legend'),$('flow-preview'));
   if(ghost.p.piece==='ignition'&&ghost.p.attachment_version===2) {
     const prompt=Object.assign(document.createElement('p'),{className:'wire-prompt',textContent:ghost.p.target?
       `Heater clipped to ${ghost.p.target}. Click a Clip ring to move the attachment.`:'Click a Clip ring on the material in the 3D scene. Then set the heater down and connect both power leads.'});
     head.after(prompt);
     if(ghost.p.target)prompt.after(button('Unclip heater',()=>{ghost.p.target='';renderGhostBar();askGhost();}));
   }
-  precision.append($('scene-actions'));
   for(const id of ['laser-preview-status','water-status','river-wheel-status','solar-lift-guide'])fields.append($(id));
   if(connecting&&!ghost.was){
     const prompt=Object.assign(document.createElement('p'),{className:'wire-prompt',textContent:ghost.rewireKey?'Click a new connection point for the detached end. Esc restores this wire.':'Click a connection point in the 3D scene, then click the other end.'});
     head.after(prompt);if(!keys.some(k=>!knobs[k].terminal&&!knobs[k].power_port)){row.hidden=true;chips.hidden=true;}
   }
-  fields.append($('view-controls'));
-  card.replaceChildren(fields,actions);
+  // Removal is an occasional action; keep it with the exact controls.
+  for(const b of [...actions.children])if(!b.classList.contains('down')&&b!==throwAway)precision.append(b);
+  card.replaceChildren(fields);
+  const needsClip=ghost.p.piece==='ignition'&&ghost.p.attachment_version===2&&!ghost.p.target;
+  view.classList.toggle('choosing-attachment',Boolean(needsClip));
+  const editor=$('piece-editor');editor.hidden=(connecting&&!ghost.was)||needsClip;
+  const modes=Object.assign(document.createElement('div'),{className:'piece-modes'});
+  const move=button('Move',()=>{editorMode='move';setLooking(false);},{ariaLabel:'Move selected piece'});
+  const turn=button('Turn',()=>{
+    const rules=trayItem(ghost.p.piece).knobs;
+    const key=turnKnob(ghost.p,'yaw_deg')||Object.keys(rules).find(k=>rules[k].turning);
+    if(key){ghost.card=key;editorMode='turn';setLooking(false);askGhost();}
+  },{ariaLabel:'Turn selected piece'});
+  move.setAttribute('aria-pressed',String(editorMode==='move'&&!looking));
+  turn.setAttribute('aria-pressed',String(editorMode==='turn'&&!looking));
+  move.disabled=!movableGhost();turn.hidden=!Object.values(knobs).some(k=>k.turning);
+  modes.append(move,turn);
+  modes.hidden=move.disabled&&turn.hidden;
+  const grip=button('↔',()=>{},{id:'piece-grip',ariaLabel:'Drag selected adjustment'});
+  grip.hidden=Boolean(rule.choices||rule.part||rule.hinge||rule.terminal||rule.power_port);
+  grip.title='Drag left or right to change this value; arrow keys change one step. Exact values are in Help → Settings.';
+  let gripDrag=null;
+  grip.addEventListener('pointerdown',e=>{
+    if(e.button!==0||!ghost)return;e.preventDefault();editorMode='adjust';looking=false;
+    move.setAttribute('aria-pressed','false');turn.setAttribute('aria-pressed','false');grip.setAttribute('aria-pressed','true');
+    gripDrag={id:e.pointerId,x:e.clientX,initial:Number(ghost.p[ghost.card]),key:ghost.card};grip.setPointerCapture(e.pointerId);
+  });
+  grip.addEventListener('pointermove',e=>{if(gripDrag?.id===e.pointerId&&ghost)editByDrag(gripDrag.key,gripDrag.initial,e.clientX-gripDrag.x);});
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])grip.addEventListener(type,()=>{gripDrag=null;});
+  grip.addEventListener('keydown',e=>{
+    if(!ghost||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;
+    e.preventDefault();const sign=['ArrowRight','ArrowUp'].includes(e.key)?1:-1;
+    if(setKnob(ghost.p,key,Number(ghost.p[key])+sign*(rule.step||.01))){followGhost();showGhostKnobs();askGhost();}
+  });
+  chips.append(grip);editor.replaceChildren(modes,actions);
+  if((connecting&&!ghost.was)||needsClip){throwAway.textContent=needsClip?'Cancel heater':'Cancel wire';fields.append(throwAway);}
   showGhostKnobs(); showGhostState();
+}
+
+function editByDrag(key,initial,pixels) {
+  if(!ghost)return;
+  const rule=trayItem(ghost.p.piece).knobs[key];
+  if(!rule||rule.choices||rule.min==null)return;
+  if(setKnob(ghost.p,key,draggedKnobValue(rule,initial,pixels))){followGhost();showGhostKnobs();askGhost();}
+}
+
+function positionPieceEditor() {
+  const editor=$('piece-editor');if(editor.hidden||!ghost||editor.matches(':active'))return;
+  const box=ghostScreenBox();if(!box)return;
+  const rect=view.getBoundingClientRect();
+  // The toolbar owns its position; readouts yield to it afterwards. Letting
+  // both avoid each other's last position makes the buttons oscillate.
+  const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')]
+    .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
+  const at=pieceToolbarPosition(rect,{left:box.x0,right:box.x1,top:box.y0,bottom:box.y1},editor.getBoundingClientRect(),obstacles);
+  editor.style.left=`${at.x-rect.left}px`;editor.style.top=`${at.y-rect.top}px`;
 }
 
 // What the pieces take to make with the ghost as it is, against the level's
@@ -2773,7 +2850,8 @@ function showGhostState() {
   const choosingTerminal=Boolean(cable && (ghost.p.piece==='wire'
     ?!ghost.p.a_terminal||!ghost.p.b_terminal:!ghost.p.a_port||!ghost.p.b_port));
   const checkingCable=Boolean(cable && !choosingTerminal && ghost.busy);
-  const bar = document.querySelector('#ghost-bar .down');
+  if(cable)$('piece-editor').hidden=!ghost.was&&(choosingTerminal||checkingCable);
+  const bar = document.querySelector('#piece-editor .down');
   if (bar && ghost) {
     bar.disabled = !ghost.fits || ghost.busy || !ghost.answered;
     // A scene click completes a rewire automatically; reserve this action
@@ -2803,6 +2881,7 @@ function showGhostKnobs() {
   const knobs = trayItem(ghost.p.piece).knobs;
   const choice=$('adjustment-choice');if(choice)choice.value=ghost.card;
   const feedback=$('adjustment-feedback');if(feedback)feedback.textContent=electricalEditRating() || `${knobName(knobs[ghost.card],ghost.card)}: ${ghost.p[ghost.card]}${knobs[ghost.card].turning?'°':''}`;
+  const grip=$('piece-grip');if(grip)grip.title=`${knobName(knobs[ghost.card],ghost.card)}: ${ghost.p[ghost.card]}. Drag left or right; exact values are in Help → Settings.`;
   const value = document.querySelector('#ghost-bar .knob-value');
   if (value) value.textContent = ` ${ghost.p[ghost.card]}${knobs[ghost.card].turning ? '°' : ''}`;
   for (const [key, [input, shown]] of Object.entries(ghost.inputs)) {
@@ -3042,7 +3121,11 @@ function updatePowerFeedback() {
     if(at)items.push({id:'route:'+wire.name,name:wire.name,kind:'wire',at,text:'Cable route blocked · move its endpoints',
       title:'No drawing route clears the solid parts. This is an electrical connection without a mechanical cable model.'});
   }
-  if(rating&&proposed)items.push({id:'proposed-setting',name:`Adjust ${pieceLabel(ghost.p.piece)}`,kind:'object',at:proposed.at_m,text:rating,title:'Proposed component rating. Measured voltage, current and power remain separate.'});
+  if(rating&&proposed){
+    const rule=trayItem(ghost.p.piece).knobs[ghost.card],unit=rule?.label?.match(/\(([^)]+)\)/)?.[1]||'';
+    const compact=Number.isFinite(ghost.p[ghost.card])?`Proposed ${ghost.p[ghost.card]}${unit?' '+unit:''}`:rating;
+    items.push({id:'proposed-setting',name:`Adjust ${pieceLabel(ghost.p.piece)}`,kind:'object',priority:-1,at:proposed.at_m,text:compact,title:rating+'. Measured voltage, current and power remain separate.'});
+  }
   for(const d of sample.devices) {
     const at=world.bodies.get(d.part)?.position_m||d.at_m;if(!at)continue;
     if(d.requirement==='heater') {
@@ -3054,7 +3137,7 @@ function updatePowerFeedback() {
     }
     if(d.requirement==='capacitor'||d.requirement==='resistor') {
       const storage=d.requirement==='capacitor';
-      items.push({id:'device:'+d.name,name:d.name.replace(/^your /,''),kind:'object',at,
+      items.push({id:'device:'+d.name,name:d.name.replace(/^your /,''),kind:'object',priority:d.required_j?0:1,at,
         text:storage?`${d.capacitance_f} F${d.required_j?` · Goal ≥ ${d.required_j} J`:''}\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${d.capacitor_voltage_v.toFixed(2)} V · ${d.stored_j.toFixed(2)} J · ${d.current_a.toFixed(3)} A`}`:
           `${d.resistance_ohm} Ω\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${Math.abs(d.voltage_v).toFixed(2)} V drop · ${Math.abs(d.current_a).toFixed(3)} A`}`,
         low:storage&&d.required_j&&d.stored_j<d.required_j,
@@ -3073,7 +3156,7 @@ function updatePowerFeedback() {
     let actual=d.input_w<-.05?`${Math.abs(d.input_w).toFixed(1)} W returned`:`${Math.max(0,d.input_w).toFixed(1)} W in`;
     if(Number.isFinite(d.voltage_v))actual+=` · ${Math.abs(d.voltage_v).toFixed(1)} V`;
     if(Number.isFinite(d.torque_n_m))actual+=` · ${Math.abs(d.torque_n_m).toFixed(1)} N·m`;
-    items.push({id:'device:'+d.name,name:d.name.replace(/^your /,''),kind:'object',at,
+    items.push({id:'device:'+d.name,name:d.name.replace(/^your /,''),kind:'object',priority:d.requirement==='goal'?0:1,at,
       displayName:solarLiftGraph()?.network.devices.some(n=>n.name===d.name&&n.kind==='bulb')?'Bulb · shared load':
         d.requirement==='start_estimate'?`${d.part.replace(/^your /,'')} · ${d.name.replace(/^your /,'')}`:d.name.replace(/^your /,''),
       text:`${need}\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${actual}`}`,
@@ -3126,10 +3209,14 @@ function updatePowerFeedback() {
         (pending?'Updating…':(sample.preview?'Preview · ':'')+text),title:'Wire cross-section is the declared copper area used by the engine to calculate resistance. Measured flow and shared supply limits include losses; dots show conventional-current direction. Return-wire watts depend on the battery-negative reference.'});
   }
   powerFlowDots.instanceMatrix.needsUpdate=true;
+  // Keep the current edit and the measured objective readable when edge
+  // labels compete for a small screen; optional wire readings come after.
+  const labelPriority=item=>item.priority??(item.kind==='object'?1:2);
+  items.sort((a,b)=>labelPriority(a)-labelPriority(b));
   const seen=new Set(items.map(i=>i.id));
   for(const [id,row] of powerFeedbackRows)if(!seen.has(id)){row.card.remove();row.leader.remove();powerFeedbackRows.delete(id);}
   const rect=renderer.domElement.getBoundingClientRect();
-  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#viewer-zoom, #viewer-history,#panel-toggle,#collector-status,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint')]
+  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#panel-toggle,#collector-status,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   // A power reading must not hide the connection the player is trying to
   // click, especially on a phone. Reserve the rings before placing labels.
@@ -3192,7 +3279,7 @@ function positionSceneReading(card,anchor) {
   if(!leader){leader=document.createElementNS(feedbackLeaders.namespaceURI,'line');leader.dataset.reading=card.id;feedbackLeaders.append(leader);sceneReadingLeaders.set(card.id,leader);}
   leader.setAttribute('visibility','hidden');if(card.hidden)return;
   const {width,height}=card.getBoundingClientRect(),top=$('clock').getBoundingClientRect().bottom-rect.top+6;
-  const occupied=[...view.querySelectorAll('#scene-mode,#viewer-zoom, #viewer-history,#panel-toggle,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint')]
+  const occupied=[...view.querySelectorAll('#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#panel-toggle,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   occupied.push(...readoutBodyRects(rect),{x:anchor.x-18,y:anchor.y-18,w:36,h:36});
   const ys=[anchor.y-height/2,top,rect.height-height-6,...occupied.flatMap(r=>[r.y-height-6,r.y+r.h+6])];
@@ -3599,9 +3686,13 @@ $('path-toggle').addEventListener('click', () => {
 // turn the camera without leaving the piece editor.
 const ghostBox = new THREE.Box3(), boxCorner = new THREE.Vector3(), slidePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function ghostScreenBox() {
-  if (!ghost || !ghostGroup.children.length) return null;
+  if (!ghost) return null;
   freshView();
-  ghostBox.setFromObject(ghostGroup);
+  if(ghostGroup.children.length)ghostBox.setFromObject(ghostGroup);
+  else {
+    ghostBox.makeEmpty();
+    for(const wire of terminalGhostWires.children)if(wire.userData.wireName===ghostName())ghostBox.expandByObject(wire);
+  }
   if (ghostBox.isEmpty()) return null;
   const rect = renderer.domElement.getBoundingClientRect();
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -3742,6 +3833,8 @@ window.machinePlacements = () => JSON.parse(JSON.stringify(placements));
 window.machineBodies = () => Object.fromEntries([...world.bodies].map(([name, b]) => [name, b.position_m]));
 // For tests: where the piece being placed is on the screen, and the view.
 window.machineGhostScreen = () => ghostScreenBox();
+// Read-only camera/plane projection for input regression fixtures.
+window.machineDragPoint=(x,y)=>slidePoint(x,y,ghostScreenBox()?.bottom||0)?.toArray();
 window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible, settled: target.distanceTo(goal) < 1e-3});
 window.machineScenePick=(x,y)=>{const sockets=socketsAt(x,y,true),pieces=placedOwnersAt(x,y);return {piece:pieces[0]??-1,pieces,wire:wireCandidates(x,y,true).length>0,socket:sockets.some(s=>s.gap<=9),ambiguous:sockets.length>1&&sockets[1].gap-sockets[0].gap<8};};
 window.machineWireScreen=(name,fraction=.5)=>{
@@ -3790,8 +3883,14 @@ renderer.domElement.addEventListener('pointerdown', e => {
   pressedAt = [e.clientX, e.clientY];
   sceneDragged = false;
   draggingGhost = null;
-  if (!movableGhost() || e.button !== 0 || e.ctrlKey) return;
+  if (!ghost || e.button !== 0 || e.ctrlKey) return;
   if (nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX)) {
+    if(editorMode!=='move'){
+      const key=ghost.card,rule=trayItem(ghost.p.piece).knobs[key];
+      if(rule&&!rule.choices&&rule.min!=null)draggingGhost={id:e.pointerId,kind:'adjust',key,initial:Number(ghost.p[key]),screenX:e.clientX,active:false};
+      return;
+    }
+    if(!movableGhost())return;
     const box = ghostScreenBox(), y = box ? box.bottom : 0, from = slidePoint(e.clientX, e.clientY, y);
     if (from) draggingGhost = {id: e.pointerId, y, from, x: ghost.p.x_m ?? 0, z: ghost.p.z_m ?? 0, active: false};
   }
@@ -3808,8 +3907,14 @@ renderer.domElement.addEventListener('pointermove', e => {
     if (!draggingGhost.active) {
       if (!pressedAt || Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6) return;
       const drag = draggingGhost;
-      setLooking(false); draggingGhost = drag; drag.active = true;
+      looking=false;view.classList.remove('looking');draggingGhost = drag; drag.active = true;
+      $('mode-view').setAttribute('aria-pressed','false');$('mode-move').setAttribute('aria-pressed','true');
+      $('piece-editor').querySelector('[aria-label="Move selected piece"]')?.setAttribute('aria-pressed',String(editorMode==='move'));
+      $('piece-editor').querySelector('[aria-label="Turn selected piece"]')?.setAttribute('aria-pressed',String(editorMode==='turn'));
       view.classList.add('grabbing');
+    }
+    if(draggingGhost.kind==='adjust'){
+      editByDrag(draggingGhost.key,draggingGhost.initial,e.clientX-draggingGhost.screenX);return;
     }
     const at = slidePoint(e.clientX, e.clientY, draggingGhost.y);
     if (!at) return;
@@ -4453,7 +4558,7 @@ function renderLevels() {
 
 function knobDefault(rule) { return rule.default ?? (rule.choices ? rule.choices[0] : rule.min); }
 function levelTitle(l) { return l.free ? (activeDesign?.name || 'Sandbox') : l.variant
-  ? `${l.title} · seed ${l.variant.seed.toString(16).padStart(8, '0')}` : `${levels.indexOf(l) + 1}. ${l.title}`; }
+  ? `${l.title} · seed ${l.variant.seed.toString(16).padStart(8, '0')}` : l.title; }
 const baseObjectTray={piece:'base_object',knobs:{
   x_m:{min:-10,max:10,step:.01,default:0,label:'along X (m)'},
   z_m:{min:-10,max:10,step:.01,default:0,label:'along Z (m)'},
@@ -4587,7 +4692,7 @@ $('piece-picker').addEventListener('keydown', e => {
 let trayLevel = null, trayDesign = null, trayPiece = null;
 function browseTray(direction) {
   if (!level || ghost) return;
-  const items = level.tray.filter(t => !t.attach && !t.legacy);
+  const items = level.tray.filter(t => !t.attach && !t.legacy && (level.free || piecesLeft(t)>0));
   if (items.length < 2) return;
   const index = Math.max(0, items.findIndex(t => t.piece === trayPiece));
   trayPiece = items[(index + direction + items.length) % items.length].piece;
@@ -4600,7 +4705,7 @@ function renderSceneTray() {
   const bar = $('scene-tray');
   bar.hidden = !LEVEL_MODE || !level || Boolean(ghost);
   if (bar.hidden) return;
-  const items = level.tray.filter(t => !t.attach && !t.legacy);
+  const items = level.tray.filter(t => !t.attach && !t.legacy && (level.free || piecesLeft(t)>0));
   if (trayLevel !== level || trayDesign !== activeDesign?.id || !items.some(t => t.piece === trayPiece)) {
     trayLevel = level; trayDesign = activeDesign?.id; trayPiece = items[0]?.piece;
   }
@@ -4785,7 +4890,7 @@ function renderPlaced() {
     : level.free ? `${placements.length} ${placements.length === 1 ? 'piece' : 'pieces'} on the table, ${energyText(made)} to make.`
     : `Your pieces take ${energyText(made)} to make. Par for the whole win, pieces and run: ${energyText(level.par_energy_j)}.`;
   $('placed-head').hidden = true;
-  $('restart-pieces').hidden=Boolean(level?.free)||!placements.length;
+  $('restart-pieces').hidden=true;
 }
 window.machineEditableObjects=()=>[
   ...placements.map((p,index)=>{const name=`your ${p.piece} ${index+1}`;return {index,name,parts:[...(machine?.parts||[]).filter(part=>part.name===name||part.name.startsWith(name+' ')).map(part=>part.name),...(machine?.joints||[]).filter(j=>j.name===name||j.name.startsWith(name+' ')).map(j=>j.name),...(machine?.joints||[]).filter(j=>j.kind==='pulley'&&j.name.startsWith(name+' ')).map(j=>j.b)]};}),
@@ -5095,7 +5200,7 @@ async function score(row) {
   showDone(r, kept);
   // The goal happened: let what follows settle for a moment, then stop.
   if (r.earned.goal) setTimeout(() => { if (session === ran && playing) setPlaying(false).catch(() => {}); }, 1500);
-  else if(level.goal?.station?.done_when?.water_in_zone_l && session===ran && playing)await setPlaying(false);
+  else if(session===ran && playing){await setPlaying(false);v.textContent='';}
 }
 
 // How the run went, over the scene: on the goal, congratulations and on to
@@ -5110,20 +5215,22 @@ function startOver(keep) {
   if (!keep && level.free && activeDesign) { activeDesign.draft.base = null; framedFree = false; }
   if (!keep) { placements = []; placedCost = []; placedEnergy = {}; helped = false; }
   renderTray(); renderPlaced();
-  rebuildLevel(false).then(() => {
+  return rebuildLevel(false).then(() => {
     if (!$('verdict').textContent) $('verdict').textContent = keep
       ? 'Back to the start, with your pieces: pick one up to move or change it, then Run it.'
       : 'Back to the start: add a piece from your tray.';
     sceneIntoView();
-  }).catch(() => {});
+  });
 }
 
 function closeDone() {
   clearInterval(advanceTimer); advanceTimer = null;
+  document.body.classList.remove('run-complete');
   $('level-done').hidden = true; $('level-done').replaceChildren();
 }
 function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   closeDone();
+  document.body.classList.toggle('run-complete',Boolean(r.earned.goal||r.tested));
   const box = $('level-done'), next = level.variant ? null : levels[levels.indexOf(level) + 1];
   const completedAll = levels.every(row=>bestStars(row.id)>0);
   // Every result belongs in Controls, so all machines remain clickable.
@@ -5154,11 +5261,7 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     // The win, and what it took: less energy is better.
     // A first win with a tool is an achievement; a win again is the level.
     const unlocked = (kept.unlocked || []).map(toolName);
-    if (unlocked.length) {
-      add('h2', {textContent: 'Achievement Unlocked'});
-      add('p', {className: 'unlocked', textContent: `Your first win with ${unlocked.map(t => (/^[aeiou]/.test(t) ? 'an ' : 'a ') + t)
-        .join(' and ')}!` + (completedAll && !level.variant ? ' And you finished every level!' : '')});
-    } else add('h2', {textContent: level.variant ? 'Challenge complete!' : completedAll ? 'You finished every level!' : 'Level complete!'});
+    add('h2', {textContent: level.variant ? 'Challenge complete!' : completedAll ? 'You finished every level!' : 'Level complete!'});
     add('p', {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)});
     compareScore();
     // Keep the score comparison visible; the fabrication/run breakdown is optional.
@@ -5170,6 +5273,10 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     box.appendChild(how);
     const details = add('div', {id: 'level-done-energy', className: 'how', hidden: true});
     const addHow = (tag, props) => details.appendChild(Object.assign(document.createElement(tag), props));
+    if(unlocked.length){
+      addHow('h3',{textContent:'Achievement Unlocked'});
+      addHow('p',{className:'unlocked',textContent:`Your first win with ${unlocked.map(t=>(/^[aeiou]/.test(t)?'an ':'a ')+t).join(' and ')}!`});
+    }
     const e = r.energy || {}, run = e.run || {};
     addHow('p', {className: 'breakdown', textContent: `${energyText(e.pieces_j)} to make your pieces, ` +
       (run.j ? `${energyText(run.j)} in the run` : 'nothing used in the run') + (run.j ? ` (${[['heat', run.heat_j], ['powder', run.powder_j],
@@ -5199,12 +5306,13 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
   } else {
     // Running the same pieces again does the same thing: start the level
     // over, with no pieces or with the same ones to change.
-    add('h2', {textContent: 'Not this time'});
-    add('p', {textContent: `The goal did not happen within ${level.time_s} s.`});
-    compareScore();
     const actions = add('div', {className: 'actions'});
-    actions.append(button('Start over', () => { closeDone(); startOver(false); }, {className: 'primary'}),
-                   button('Keep my pieces', () => { closeDone(); startOver(true); }), allLevels);
+    actions.append(button('Try again', async () => {
+      const selected=lastEdited;closeDone();
+      await startOver(true);
+      if(placements[selected])pickUp(selected);
+      else if(placements.length)pickUp(placements.length-1);
+    }, {className: 'primary'}));
   }
   box.hidden = false;
   sceneIntoView();
@@ -5319,7 +5427,8 @@ async function chooseLevel(id, design = null) {
     activeDesign = design || store.items.find(d => d.id === store.last) || store.items[0] || newDesign('Untitled design');
     store.last = activeDesign.id; persist();
   }
-  endGhost(); objectSnapEnabled=true; closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
+  endGhost(); gridSnapEnabled=true;objectSnapEnabled=true;lastEdited=null;closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
+  for(const id of ['grid-snap','object-snap'])$(id)?.setAttribute('aria-pressed','true');
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
   undone = []; redone = []; showUndo(); cancelAttach();
   $('attach-tool').hidden = !level.free;
@@ -5355,7 +5464,7 @@ async function chooseLevel(id, design = null) {
     'advanced-capacitor':'Increase capacitance to store enough energy before time runs out.'};
   const objective=objectives[level.variant?.family||level.id]||level.brief.split(/(?<=\.)\s+(?=[A-Z])/)[0];
   $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:level.free?'Build anything. Click a piece to adjust it.':objective}));
-  $('pull-tool').hidden=true;$('restart-pieces').hidden=level.free;
+  $('pull-tool').hidden=true;$('restart-pieces').hidden=true;
   $('scene-goal').title = level.free ? 'Build anything' : `Goal within ${level.time_s} s`;
   $('goal-line').textContent = level.free
     ? 'No goal: build anything and run it.'
@@ -5583,13 +5692,27 @@ function installPhonePanels() {
     (node.matches('.chat') ? help : design).append(node);
   }
   aside.append(design,help);
+  const settings=Object.assign(document.createElement('details'),{id:'help-settings'});
+  const content=Object.assign(document.createElement('div'),{id:'help-settings-content'});
+  const snapping=Object.assign(document.createElement('div'),{id:'snap-settings'});
+  settings.append(Object.assign(document.createElement('summary'),{textContent:'Settings'}),snapping,content);
+  for(const [id,label,read,write] of [
+    ['grid-snap','Snap to grid',()=>gridSnapEnabled,v=>{gridSnapEnabled=v;if(ghost)ghost.gridLocks=null;}],
+    ['object-snap','Snap to objects',()=>objectSnapEnabled,v=>{objectSnapEnabled=v;if(ghost){ghost.objectLock=null;ghost.joined=null;}}]
+  ]){
+    const b=button(label,()=>{write(!read());b.setAttribute('aria-pressed',String(read()));showGridSnap();},{id});
+    b.setAttribute('aria-pressed',String(read()));snapping.append(b);
+  }
+  help.append(settings);
   $('view').append($('panel-toggle'));
   controls.append($('scene-actions'),$('view-controls'));
   $('viewer-history').append($('undo-pieces'),$('redo-pieces'));
   $('viewer-zoom').prepend($('view-out'));$('viewer-zoom').append($('view-in'));
   for(const [id,plus] of [['view-out',false],['view-in',true]])$(id).innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M14 14L21 21M6 9H12${plus?'M9 6V12':''}"/></svg>`;
   $('redo-pieces').textContent='Redo';
-  $('view-left').hidden=true;$('view-right').hidden=true;
+  $('viewer-perspective').prepend($('view-left'),$('view-right'));
+  $('view-left').hidden=false;$('view-right').hidden=false;
+  $('view-overview').hidden=true;$('focus-piece').hidden=true;
   const update = () => {
     const mobile = phoneLayout.matches;
     document.body.classList.toggle('phone-panels',mobile);
@@ -5626,7 +5749,7 @@ async function startGame() {
   // A level plays at real time, the camera following what moves, its path
   // shown: the sandbox's switches for those are not on the game page.
   for (const id of ['follow', 'path-toggle']) $(id).hidden = true;
-  for (const id of ['undo-pieces', 'redo-pieces','restart-pieces']) $(id).hidden = false;
+  for (const id of ['undo-pieces', 'redo-pieces']) $(id).hidden = false;
   document.querySelector('#scene-actions .speed').hidden = true;
   // What the player works with, together at the top of the scene: the
   // Running, viewing and piece editing share the adjacent control panel.
@@ -5642,12 +5765,13 @@ async function startGame() {
   new ResizeObserver(() => controls.parentElement.style.setProperty('--control-height',`${controls.offsetHeight+8}px`)).observe(controls);
   for (const [id, change] of [
     ['view-left', () => { azimuth -= .2; }], ['view-right', () => { azimuth += .2; }],
+    ['view-up', () => { elevation=Math.min(1.45,elevation+.15); }], ['view-down', () => { elevation=Math.max(.08,elevation-.15); }],
     ['view-in', () => { distance = Math.max(.4, distance / 1.2); }], ['view-out', () => { distance = Math.min(40, distance * 1.2); }]
-  ]) $(id).addEventListener('click', change);
+  ]) $(id).addEventListener('click',()=>{follow=false;$('follow').setAttribute('aria-pressed','false');change();freshView();});
   $('scene-note').textContent = 'Drag a ghost to move · Drag empty space to turn · Wheel or trackpad pinch to zoom';
   $('game').hidden = false; $('solve').hidden = false; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;
-  for (const d of document.querySelectorAll('aside details:not(#feedback):not(#solar-load-help)')) d.hidden = true;
+  for (const d of document.querySelectorAll('aside details:not(#feedback):not(#solar-load-help):not(#help-settings)')) d.hidden = true;
   // The levels have their own screen, and the engine's readings are the
   // sandbox's: a player sees the scene, the goal and the result.
   $('levels').hidden = true;
@@ -5740,6 +5864,7 @@ new ResizeObserver(() => {
   document.documentElement.style.setProperty('--site-header-height', `${document.querySelector('header').offsetHeight}px`);
   resize();
 }).observe(document.querySelector('header'));
+new ResizeObserver(resize).observe(view);
 resize(); render();
 if (LEVEL_MODE) startGame().catch(e => {
   $('page-loading').hidden = false;
