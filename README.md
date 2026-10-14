@@ -71,7 +71,11 @@ Small object labels show a bulb's rating or power goal, and an estimated
 starting power/torque for simple motor lifts. Complex loads retain
 a variable-demand label rather than a guessed threshold.
 The lessons introduce cutting, optics, springs, gearing, wiring, water,
-heating and catapults one step at a time. **Share** uses banjo.is links; older
+heating and catapults one step at a time. **Heat to release** has a large
+**Clip to cord** button beside its cord, explicit Warm/Hot resistance labels,
+and guided attachment, placement and feed/return wiring steps that work without
+the model connection. Typed help includes the piece currently being edited.
+**Share** uses banjo.is links; older
 seeded challenges still reopen from their links and recent-challenges list.
 Sandbox **Describe a design** opens the existing builder in Help: it keeps your
 base machine and checks proposed additions in the native engine. **Report a bug**

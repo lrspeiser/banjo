@@ -1,5 +1,37 @@
 # Puzzles on the machine (/play)
 
+October 13 Heat to release usability follow-up: adding its coil shows one
+large **Clip to cord** action beside the declared goal cord. The unrelated
+box attachment rings no longer compete in this lesson. This action uses the
+same explicit target declaration and native fixed mount as the existing ring;
+it does not pre-place, power or heat the device. Sandbox retains its material
+attachment rings. The winding toggle now displays **Warm · 12 Ω** or
+**Hot · 0.12 Ω**. Its introduction names Clip, Hot, Place and the two supply/
+heater connections; legacy shared heaters retain their earlier explanation.
+
+**Show me what to do** provides the next attachment, winding, placement,
+feed/return or run interaction from the current editor and circuit declarations,
+without needing a provider connection for this simple heater setup. It draws
+the existing guide over a supplied visible control/socket and never performs
+the action. More complex circuits and shorts still use model diagnosis.
+Typed hints receive the unplaced editor state and the same heater instructions;
+basic setup hints also work without a provider. Visible two-choice toggles are
+now available as coach targets. No private solution is supplied to either help
+path. No native law, material, goal, deadline, timestep or energy par changed.
+
+The browser checks cover the actual Clip button (reachable, at least 56 px
+high), Warm/Hot toggle, guided feed/return connections and native completion
+on desktop 1280×860, phone 390×844 and landscape 844×390, with the provider
+disabled. General guided-help and unavailable-provider regressions also pass
+(three methods in 37.833 s). Four scoped help-context/isolation tests pass;
+the additional typed-help browser path passes all three layouts in 32.613 s.
+If a connection ring is outside the usable scene, setup help points to zoom
+out instead of guessing an inaccessible endpoint.
+The native heater regression confirms three nudged wins for the correct setup
+and zero for unattached, missing-feed, missing-return and warm setups
+(18.057 s). This is interface/help validation against the existing measured
+thermal model, not a new conservation or material calibration claim.
+
 October 13 choice-control follow-up: previous/next value arrows have been
 replaced with named choices opened by tapping the current value beside the
 piece. Choice targets are at least 56 px high; selection updates the proposed

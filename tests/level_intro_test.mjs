@@ -15,4 +15,8 @@ for(const level of levels){
 assert.equal(levelIntroduction({free:true}),null,'Sandbox has no forced level briefing');
 const legacy=levelIntroduction({id:'old-spring',variant:{family:'easy-spring',version:2},title:'Spring',brief:'Lift the load.',tray:[{piece:'spring',knobs:{mechanism_version:{default:1}}}]});
 assert.ok(!legacy.works.includes('latch'),'Old shared springs do not promise a release control');
+const heat=levelIntroduction(levels.find(l=>l.id==='easy-heat'));
+for(const instruction of ['Clip to cord','Hot','Place','supply +','heater +','heater −','supply −'])assert.ok(heat.works.includes(instruction),instruction);
+const oldHeat=levelIntroduction({id:'old-heat',variant:{family:'easy-heat',version:1},title:'Heat',brief:'Release the weight.',tray:[{piece:'ignition',knobs:{}}]});
+assert.ok(!oldHeat.works.includes('Clip to cord'),'Legacy heaters keep their automatic leads and attachment');
 console.log(`PASS introductions for ${levels.length} authored levels, private-answer isolation and retained spring descriptions`);

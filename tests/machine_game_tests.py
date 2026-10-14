@@ -652,6 +652,7 @@ class Tray(unittest.TestCase):
         for key in ['placements','spec','helped','rehearsal']:
             self.assertNotIn(key,result)
         self.assertNotIn(json.dumps(level['solution']),json.dumps(seen))
+
         for target in ['javascript:alert(1)',{'bad':'selector'},None]:
             r=mc.respond_coach(level,[],ui,call=lambda m: ({'reply':'Try it.','guide':{'target_id':target}},{}))
             self.assertIsNone(r['guide'])
@@ -661,6 +662,53 @@ class Tray(unittest.TestCase):
         r=mc.respond_coach(level,[],ui,call=lambda m: ({'reply':'Drag toward the gap.','guide':{'target_id':'piece:0','gesture':'drag','to_m':[.3,.1,0]}},{}))
         self.assertEqual(r['guide']['to_m'],[.3,.1,0])
         self.assertIn('Explore the Sandbox design',mc.level_prompt(mg.free_build(),'coach'))
+
+    def test_specific_heater_question_still_reaches_the_model(self):
+        level=mg.level_by_id('easy-heat');seen=[]
+        ui={'editing':{'p':{'piece':'ignition','attachment_version':2,'target':'','preset':'warm'}},
+            'targets':[{'id':'control:heater-attach'}]}
+        def call(messages):
+            seen.extend(messages);return {'reply':'At fixed voltage, lower resistance allows greater current.'},{}
+        answer=mc.respond_level('Why does lower resistance produce more heat?',level,[],ui=ui,call=call)
+        self.assertTrue(seen)
+        self.assertIn('lower resistance',answer['reply'])
+
+    def test_heater_help_knows_editor_attachment_choices_and_circuit_without_a_model(self):
+        level=copy.deepcopy(mg.level_by_id('easy-heat'))
+        level.pop('solution');level.pop('wrong')
+        def unavailable(messages):
+            self.fail('Basic heater assembly help must work without calling a model')
+        p={'piece':'ignition','attachment_version':2,'target':'','preset':'warm'}
+        ui={'editing':{'p':p},'targets':[{'id':'control:heater-attach','label':'Clip to cord'}]}
+        reply=mc.respond_coach(level,[],ui,call=unavailable)
+        self.assertEqual(reply['guide']['target_id'],'control:heater-attach')
+        self.assertIn('Clip to cord',mc.respond_level('What do I do?',level,[],ui=ui,call=unavailable)['reply'])
+        p['target']='weight rope';ui['targets']=[{'id':'control:piece-choice-toggle','label':'Warm'}]
+        reply=mc.respond_coach(level,[],ui,call=unavailable)
+        self.assertEqual(reply['guide']['target_id'],'control:piece-choice-toggle')
+        p['preset']='hot';ui['targets']=[{'id':'control:place','label':'Place'}]
+        self.assertEqual(mc.respond_coach(level,[],ui,call=unavailable)['guide']['target_id'],'control:place')
+        placed=[copy.deepcopy(p)]
+        self.assertEqual(mc.respond_coach(level,placed,{'targets':[{'id':'control:view-out'}]},call=unavailable)['guide']['target_id'],'control:view-out')
+        for terminal in ('plus','minus'):
+            a,b='supply:'+terminal,'your ignition 1:'+terminal
+            ui={'targets':[{'id':'socket:'+a},{'id':'socket:'+b}]}
+            guide=mc.respond_coach(level,placed,ui,call=unavailable)['guide']
+            self.assertEqual((guide['target_id'],guide['end_target_id']),('socket:'+a,'socket:'+b))
+            placed.append({'piece':'wire','a_terminal':a,'b_terminal':b})
+        ui={'targets':[{'id':'control:start'}]}
+        self.assertEqual(mc.respond_coach(level,placed,ui,call=unavailable)['guide']['target_id'],'control:start')
+
+    def test_typed_hint_receives_the_unplaced_editor_state(self):
+        level=mg.level_by_id('easy-heat');seen=[]
+        editing={'p':{'piece':'ignition','attachment_version':2,'target':'','preset':'warm'}}
+        def call(messages):
+            seen.extend(messages);return {'reply':'Clip the heater onto the cord.'},{}
+        mc.respond_level('How do I attach this?',level,[],ui={'editing':editing},call=call)
+        context=json.loads(seen[1]['content'])
+        self.assertEqual(context['editing'],editing)
+        self.assertIn('Clip to cord',seen[0]['content'])
+        self.assertNotIn(json.dumps(level['solution']),json.dumps(seen))
 
     def test_chat_delivers_manual_setup_without_searching_for_an_automatic_win(self):
         level=mg.level_by_id('fire')

@@ -37,7 +37,7 @@ export const LEVEL_MECHANISMS=Object.freeze({
   'easy-water-gate':'Water from the separate tank turns the paddles. The wheel winds a connected rope to lift the gate.',
   'easy-divert-water':'The chute redirects falling water. Gravity carries it downhill toward the receiving container.',
   steam:'Heat raises the pressure beneath the piston. That pressure pushes against the piston and moves it upward.',
-  'easy-heat':'A connected heating coil heats the cord. The heated cord weakens and can no longer hold the weight.',
+  'easy-heat':'Click Clip to cord to attach the coil, choose Hot, then Place. Connect supply + to heater + and heater − to supply −. Current heats and weakens the cord until the weight drops.',
   chain:'The marble tips the seesaw and closes its metal contacts. Current heats the cannon’s igniter, releasing the shot.',
   fire:'Closing the wired trigger heats the cannon’s powder. Expanding gas pushes the ball, which must strike the block.'
 });
@@ -73,6 +73,8 @@ export function levelIntroduction(level,{title,objective}={}) {
   let works=LEVEL_MECHANISMS[family]||'Place the available pieces so their movement reaches the level’s goal.';
   if(family==='easy-spring'&&level.tray?.[0]?.knobs?.mechanism_version?.default!==3)
     works='A spring pushes or pulls its attached load toward its relaxed length. Its guide keeps the load on one axis.';
+  if(family==='easy-heat'&&level.tray?.[0]?.knobs?.attachment_version?.default!==2)
+    works='The connected heating coil heats its attached cord. Choose the hotter winding to weaken the cord and release the weight.';
   const goal=goalDescription(level,level.variant&&level.variant.version<3 ? level.brief : objective||level.brief);
   return {title:title||level.title,place:joined.charAt(0).toUpperCase()+joined.slice(1)+'.',works,
     goal:level.time_s?`${goal.replace(/\.$/,'')} within ${level.time_s} ${level.time_s===1?'second':'seconds'} of starting.`:goal};

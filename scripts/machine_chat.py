@@ -15,6 +15,7 @@ import copy
 import json
 import math
 import os
+import re
 import time
 from pathlib import Path
 from urllib import error, request
@@ -225,6 +226,8 @@ def level_prompt(level, mode):
                   '"guide":{"target_id":"an exact id from ui.targets", "gesture":"click or drag", '
                   '"to_m":[x,y,z]}}. to_m is optional, only for a suggested scene drag in metres. '
                   'For wiring you may use "end_target_id" for the second socket instead. '
+                  'For a scene-attached heater, click its Clip button/socket before placing. '
+                  'Two-choice settings use control:piece-choice-toggle; click it, do not drag a hidden grip. '
                   'Choose only supplied targets; never provide code, selectors, placements or a complete solution. '
                   'Explain only the highlighted interaction, not later steps: never combine adding, resizing '
                   'and placing in one hint. Use names printed on the screen and visible physical landmarks. '
@@ -265,6 +268,15 @@ output and b_port for the receiver input. Base power ports: {json.dumps(level['m
 
 
 PIECE_HELP = {
+    'ignition': 'a hollow heating coil: first click the material’s Clip ring or Clip to cord button, '
+                'then choose its Warm (12 ohm) or Hot (0.12 ohm) winding and Place. '
+                'Draw supply + to heater + and heater - to supply - using the scene rings. '
+                'A clip alone supplies no current. Without attachment it heats its own housing. '
+                'Current, watts and the attached material temperature report native heating; '
+                'the warm winding may not weaken a cord within the deadline. There is no rope to add.',
+    'wire': 'click a scene terminal ring, then the other terminal to draw a lead; '
+            'a load needs a feed and a return. Click a placed lead to remove it; Undo restores it. '
+            'Crossing wire drawings do not connect. Thin/Standard/Thick set copper cross-section.',
     'power_cable': 'an ideal two-conductor power lead from a solar output to a finite battery input; no cable loss or mass is modeled',
     'plank': 'a loose oak plank 2 cm thick and 0.3 m wide, cut to length_m and set down with its middle at x_m: it '
              'is lowered onto the highest thing under it and rests there; gravity holds it, nothing bolts it',
@@ -486,6 +498,76 @@ def _placements_answer(answer):
     return answer
 
 
+def editing_context(ui):
+    editing = ui.get('editing') if isinstance(ui, dict) else None
+    return editing if isinstance(editing, dict) and len(json.dumps(editing)) <= 4000 else None
+
+
+def heater_setup_guide(level, spec, editing, targets):
+    """Teach the exposed heater assembly operations, without a private answer.
+
+    This observes declarations/topology, never assigns heat, motion or a win.
+    More complex circuits still use the model and native measured context.
+    """
+    if not (level.get('goal') or {}).get('station', {}).get('done_when', {}).get('parted'):
+        return None
+    ids = {t['id'] for t in targets}
+    def step(reply, target, end=None):
+        if target not in ids or end is not None and end not in ids:
+            return None
+        guide = {'target_id': target, 'gesture': 'click'}
+        if end: guide['end_target_id'] = end
+        return {'ok': True, 'reply': reply, 'guide': guide, 'usage': {}}
+    p = editing.get('p', {}) if editing else {}
+    if not isinstance(p, dict):
+        return None
+    row = next((t for t in level['tray'] if t['piece'] == p.get('piece')), {})
+    if row.get('knobs', {}).get('target', {}).get('scene_attach') and p.get('attachment_version') == 2:
+        if not p.get('target'):
+            return step('Click Clip to cord beside the hanging cord. It mounts the heater on the material you want to heat.', 'control:heater-attach')
+        if p.get('preset') == 'warm':
+            return step('Click Warm to change it to Hot. The lower-resistance winding draws more current and heats the cord faster.', 'control:piece-choice-toggle')
+        return step('Click Place to keep the clipped heater. Its two power connections will then be available.', 'control:place')
+    devices = spec.get('electrical', {}).get('devices', [])
+    coils = [d for d in devices if d['kind'] == 'coil' and d.get('attachment_version') == 2]
+    sources = [d for d in devices if d['kind'] == 'battery']
+    if not coils:
+        return step('Add the heating coil. You will clip it onto the hanging cord before connecting its power.', 'tray:ignition')
+    if len(coils) != 1 or len(sources) != 1 or len(devices) != 2:
+        return None
+    coil, source = coils[0], sources[0]
+    if not coil.get('clipped_to'):
+        return None
+    if coil['resistance_ohm'] >= 1:
+        # Player piece names retain their stable placement row in composed scenes.
+        match = re.fullmatch(r'your ignition (\d+)', coil['name'])
+        if match:
+            return step('Click your heater to adjust it. Its Warm winding supplies much less heat; choose Hot for a faster release.', 'piece:'+str(int(match.group(1))-1))
+    graph = {}
+    for wire in spec['electrical'].get('wires', []):
+        graph.setdefault(wire['a'], set()).add(wire['b'])
+        graph.setdefault(wire['b'], set()).add(wire['a'])
+    def connected(a, b):
+        seen, pending = set(), [a]
+        while pending:
+            node = pending.pop()
+            if node == b: return True
+            if node in seen: continue
+            seen.add(node); pending.extend(graph.get(node, ()))
+        return False
+    if connected(source['name']+':plus', source['name']+':minus'):
+        return None  # A short circuit needs the measured/model diagnosis, not "try it".
+    for terminal in ('plus', 'minus'):
+        a, b = source['name']+':'+terminal, coil['name']+':'+terminal
+        if not connected(a,b):
+            mark = '+' if terminal == 'plus' else '−'
+            if p.get('piece') == 'wire' and p.get('a_terminal') in (a,b):
+                return step(f'Click the other {mark} ring to finish this lead.', 'socket:'+(b if p['a_terminal']==a else a))
+            return step(f'Click supply {mark}, then heater {mark}, to draw the {"feed" if terminal=="plus" else "return"} wire.', 'socket:'+a, 'socket:'+b) or step(
+                'Zoom out to bring both wire connection rings into view, then choose Next hint.', 'control:view-out')
+    return step('Press Try It! Watch the heater’s watts and the cord’s temperature as current heats it.', 'control:start')
+
+
 def respond_coach(level, placements, ui=None, last_run=None, call=None):
     """Read-only next-step coaching. The model can name a visible target and
     draw a suggested pointer path; it cannot edit or rehearse a machine."""
@@ -509,10 +591,11 @@ def respond_coach(level, placements, ui=None, last_run=None, call=None):
         if point(row.get('at_m')) is not None:
             item['at_m'] = row['at_m']
         targets.append(item)
-    editing = ui.get('editing')
-    if not isinstance(editing, dict) or len(json.dumps(editing)) > 4000:
-        editing = None
+    editing = editing_context(ui)
     spec = mg.compose(level, placements)[0]
+    setup = heater_setup_guide(level, spec, editing, targets)
+    if setup:
+        return setup
     if call is None:
         api_key, model = configuration()
         if not api_key:
@@ -538,7 +621,7 @@ def respond_coach(level, placements, ui=None, last_run=None, call=None):
     return {'ok': True, 'reply': answer['reply'][:500], 'guide': guide, 'usage': usage}
 
 
-def respond_level(message, level, placements, mode='hint', last_run=None, call=None, rehearse=None):
+def respond_level(message, level, placements, mode='hint', last_run=None, call=None, rehearse=None, ui=None):
     """A hint, or the tray's pieces placed for the player ("build"), checked
     against the level and rehearsed in the engine like any chat build."""
     import machine_game as mg
@@ -548,20 +631,26 @@ def respond_level(message, level, placements, mode='hint', last_run=None, call=N
         raise ValueError(f'Keep a request under {MAX_MESSAGE} characters')
     if mode not in ('hint', 'build'):
         raise ValueError('mode is hint or build')
-    if call is None:
-        api_key, model = configuration()
-        if not api_key:
-            raise ChatUnavailable('No model is configured on this server (OPENAI_API_KEY)')
-        call = lambda messages: _call(api_key, model, messages, want='reply')
     spec = None
     try:
         spec = mg.compose(level, placements)[0]
     except (mg.LevelRefused, mw.MachineRefused):
         spec = level['machine']
+    if mode == 'hint' and re.search(r'\b(hint|help|what (?:do|should)|how (?:do|can|to)|next|attach|connect|place|doesn.t work)\b', message, re.I):
+        targets = ui.get('targets', []) if isinstance(ui, dict) else []
+        targets = [t for t in targets[:100] if isinstance(t, dict) and isinstance(t.get('id'), str)] if isinstance(targets, list) else []
+        setup = heater_setup_guide(level, spec, editing_context(ui), targets)
+        if setup:
+            return {'ok': True, 'reply': setup['reply'], 'usage': {}}
+    if call is None:
+        api_key, model = configuration()
+        if not api_key:
+            raise ChatUnavailable('No model is configured on this server (OPENAI_API_KEY)')
+        call = lambda messages: _call(api_key, model, messages, want='reply')
     messages = [{'role': 'system', 'content': level_prompt(level, mode)},
                 {'role': 'user', 'content': json.dumps({'request': message, 'placements': placements,
                                                         'fixed_layout': layout(spec) if spec else None,
-                                                        'last_run': last_run})}]
+                                                        'editing': editing_context(ui), 'last_run': last_run})}]
     answer, usage = call(messages)
     answer = _placements_answer(answer)
     if mode == 'hint':

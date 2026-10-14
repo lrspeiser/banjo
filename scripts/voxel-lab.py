@@ -254,7 +254,7 @@ class Handler(BaseHTTPRequestHandler):
      elif data.get('level'):
       # A puzzle: the chat hints, or places pieces from the tray -- nothing else.
       r=machine_chat.respond_level(data.get('message'),machine_game.level_by_id(data.get('level')),data.get('placements') or [],
-       mode=data.get('mode','hint'),last_run=data.get('last_run'),rehearse=host.rehearse)
+       mode=data.get('mode','hint'),last_run=data.get('last_run'),rehearse=host.rehearse,ui=data.get('ui'))
      else:r=machine_chat.respond(data.get('message'),data.get('spec'),data.get('history'),rehearse=host.rehearse if data.get('rehearse',True) else None)
     finally:self.server.chat_busy.release()
    elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build()),'sandbox':machine_game.sandbox_templates(),'sandbox_base':machine_game.free_build()['machine']}

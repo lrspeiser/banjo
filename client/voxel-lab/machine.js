@@ -614,6 +614,12 @@ window.machineWiringState = () => ({selected:terminalStart, busy:terminalBusy,
 let socketPointer = null, socketPress = null;
 const socketMarks = new Map();
 const socketSvg = $('scene-sockets'), socketNS = socketSvg.namespaceURI;
+const heaterAttachButton=button('Clip to cord',()=>{
+  const target=level?.goal?.station?.done_when?.parted;
+  const part=machine?.parts.find(p=>p.name===target);
+  if(part&&ghost?.p.piece==='ignition')chooseSceneSocket({kind:'heater',data:part});
+},{id:'heater-attach',ariaLabel:'Clip heater to hanging cord'});
+heaterAttachButton.hidden=true;view.append(heaterAttachButton);
 const socketTail = document.createElementNS(socketNS,'path');
 socketTail.classList.add('wire-tail'); socketSvg.append(socketTail);
 socketTail.style.display='none';
@@ -633,7 +639,8 @@ function sceneSockets() {
     rows.push({name,at,kind,label,data,x,y});
   };
   if(heater) {
-    for(const part of machine.parts.filter(p=>p.shape==='box'&&!p.name.startsWith(ghostName()))) {
+    const cord=level.goal?.station?.done_when?.parted;
+    for(const part of machine.parts.filter(p=>p.shape==='box'&&!p.name.startsWith(ghostName())&&(!cord||p.name===cord))) {
       project('heat:'+part.name,world.bodies.get(part.name)?.position_m||part.at_m,'heater','Clip',part);
     }
     return rows;
@@ -685,6 +692,23 @@ function finishSocketClick(x,y,touch) {
 }
 function drawSceneSockets() {
   const rows=sceneSockets(), rect=renderer.domElement.getBoundingClientRect(), selected=socketSelection();
+  const cord=level?.goal?.station?.done_when?.parted;
+  const attaching=ghost?.p.piece==='ignition'&&ghost.p.attachment_version===2&&!ghost.p.target;
+  const part=attaching&&machine?.parts.find(p=>p.name===cord);
+  heaterAttachButton.hidden=!part||playing;
+  if(part&&!heaterAttachButton.hidden){
+    const point=new THREE.Vector3(...(world.bodies.get(part.name)?.position_m||part.at_m)).project(camera);
+    heaterAttachButton.hidden=Math.abs(point.z)>1||Math.abs(point.x)>1||Math.abs(point.y)>1;
+    if(!heaterAttachButton.hidden){
+      const x=rect.left+(point.x+1)*rect.width/2,y=rect.top+(1-point.y)*rect.height/2;
+      const mesh=meshes.get(part.name),box=mesh&&coachObjectBox([mesh]);
+      const bounds=box?{left:box.x,right:box.x+box.width,top:box.y,bottom:box.y+box.height}:{left:x-12,right:x+12,top:y-12,bottom:y+12};
+      const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')]
+        .filter(e=>e.checkVisibility()).map(e=>e.getBoundingClientRect());
+      const at=pieceToolbarPosition(rect,bounds,heaterAttachButton.getBoundingClientRect(),obstacles);
+      heaterAttachButton.style.left=`${at.x-rect.left}px`;heaterAttachButton.style.top=`${at.y-rect.top}px`;
+    }
+  }
   const hover=socketPointer && !cameraGesture && !sceneDragged && !draggingGhost && !switchDragging
     ?rows.map(row=>({...row,gap:Math.hypot(row.x-socketPointer[0],row.y-socketPointer[1])})).filter(row=>row.gap<=22).sort((a,b)=>a.gap-b.gap)[0]:null;
   const names=new Set(rows.map(row=>row.name));
@@ -707,7 +731,7 @@ function drawSceneSockets() {
   const hint=$('scene-wire-hint');hint.hidden=!rows.length || (!selected&&!ghost&&!hover&&!wiringMode&&!learningWires);
   hint.hidden=hint.hidden&&ghost?.p.piece!=='ignition';
   hint.textContent=ghost?.p.piece==='ignition'&&ghost.p.attachment_version===2?
-    (hover?.kind==='heater'?`Clip heater to ${hover.data.name}`:'Click a Clip ring on the material to attach the heater'):selected?`${selected.replace(/^your /,'')} → click another connection point · Esc cancels`
+    (ghost.p.target?'Choose heating power, then Place and connect both wires':hover?.kind==='heater'?`Clip heater to ${hover.data.name}`:'Click a Clip ring on the material to attach the heater'):selected?`${selected.replace(/^your /,'')} → click another connection point · Esc cancels`
     :hover?`Click ${hover.name.replace(/^your /,'')} to start a wire`:learningWires?'Click a + or − ring to start a wire, then click its other end':'Click a connection point on a piece, then the other end';
 }
 window.machineSceneSockets=()=>{freshView();return {selected:socketSelection(),pending:socketTail.style.display!=='none',
@@ -2315,7 +2339,10 @@ let editArrows = [], editMarker = null, editAnchor = null;
 const editHandles=document.createElement('div');editHandles.id='piece-handles';view.append(editHandles);
 const valueChoices=document.createElement('div');valueChoices.id='piece-value-choices';valueChoices.setAttribute('popover','auto');view.append(valueChoices);
 function closeValueChoices(){if(valueChoices.matches(':popover-open'))valueChoices.hidePopover();}
-function choiceText(key,value){return key==='teeth'?`${value} teeth`:key==='module_m'?`${Math.round(value*1000)} mm teeth`:String(value);}
+function choiceText(key,value){
+  if(key==='preset'&&ghost?.p.piece==='ignition')return value==='hot'?'Hot · 0.12 Ω':'Warm · 12 Ω';
+  return key==='teeth'?`${value} teeth`:key==='module_m'?`${Math.round(value*1000)} mm teeth`:String(value);
+}
 function showValueChoices(key,rule,name,source){
   closeValueChoices();const selected=ghost;if(!selected)return;
   valueChoices.replaceChildren(Object.assign(document.createElement('strong'),{textContent:name}));
@@ -2844,8 +2871,9 @@ function renderGhostBar() {
         row.append(choice);return choice;
       });
     } else if(rule.choices.length===2) {
-      const toggle=button(`${ghost.p[key]} ⇄`,()=>applyChoice(rule.choices.find(v=>v!==ghost.p[key])),
+      const toggle=button(`${choiceText(key,ghost.p[key])} ⇄`,()=>applyChoice(rule.choices.find(v=>v!==ghost.p[key])),
         {ariaLabel:`Toggle ${name}`,title:`${name}: ${rule.choices.join(' or ')}`});
+      toggle.id='piece-choice-toggle';
       toggle.setAttribute('aria-pressed',String(ghost.p[key]===rule.choices[1]));row.append(toggle);
     } else if(rule.choices.length>1) {
       const choose=button(choiceText(key,ghost.p[key]),()=>showValueChoices(key,rule,name,choose),{ariaLabel:`Choose ${name}`});
@@ -5861,11 +5889,12 @@ function coachTargets() {
   const targets=new Map();
   const add=(id,label,box,at_m)=>targets.set(id,{id,label,box,...(at_m?{at_m}:{})});
   for(const id of ['start','reset','phone-controls-tab','tray-library','tray-prev','tray-next','adjustment-choice','piece-grip','wire-mode','undo-pieces',
-    'view-in','view-out','view-left','view-right','view-up','view-down']) {
+    'view-in','view-out','view-left','view-right','view-up','view-down','heater-attach','piece-choice-toggle']) {
     const el=$(id);if(el?.checkVisibility()&&!el.disabled){
       let label=el.getAttribute('aria-label')||el.textContent.trim();
       if(id==='adjustment-choice')label='Adjust property; selected: '+el.selectedOptions[0]?.textContent+'; options: '+[...el.options].map(o=>o.textContent).join(', ');
       if(id==='piece-grip')label='Drag ↔ to change '+$('adjustment-choice').selectedOptions[0]?.textContent+'; '+$('adjustment-feedback')?.textContent;
+      if(id==='piece-choice-toggle')label+='; current value: '+el.textContent;
       add('control:'+id,label,()=>el.getBoundingClientRect());
     }
   }
@@ -5880,7 +5909,7 @@ function coachTargets() {
   });
   if(ghost)add('piece:'+ghost.index,'Selected '+pieceLabel(ghost.p.piece),()=>coachObjectBox([ghostGroup]),
     [ghost.p.x_m||0,ghost.p.height_m||ghost.p.top_height_m||.1,ghost.p.z_m||0]);
-  for(const socket of sceneSockets())add('socket:'+socket.name,socket.name,()=>{
+  for(const socket of sceneSockets())add('socket:'+socket.name,`${socket.label}: ${socket.name}`,()=>{
     const p=sceneSockets().find(p=>p.name===socket.name);return p?{x:p.x-16,y:p.y-16,width:32,height:32}:null;
   },socket.at);
   for(const [name,mesh] of meshes)if(!name.startsWith('your ')&&mesh.visible&&targets.size<95)
@@ -5968,7 +5997,9 @@ async function askLevel(mode) {
   $('chat-status').textContent = mode === 'hint' ? 'Thinking about your last run…' : 'Placing pieces from your tray, then rehearsing them once in the engine…';
   say('you', message);
   try {
-    const r = await api({op: 'chat', level: level.id, ...(level.free&&activeDesign?.draft.base?{base:activeDesign.draft.base}:{}), placements, mode, message, last_run: lastRun});
+    const r = await api({op: 'chat', level: level.id, ...(level.free&&activeDesign?.draft.base?{base:activeDesign.draft.base}:{}), placements, mode, message, last_run: lastRun,
+      ui:{targets:[...coachTargets().values()].filter(t=>t.box()).map(({box,...t})=>t),
+        editing:ghost?{index:ghost.index,p:ghost.p,fits:ghost.fits,mode:editorMode,adjustment:ghost.card}:null}});
     say('model', r.reply);
     if (mode === 'build' && Array.isArray(r.placements)) {
       endGhost(); remember();
