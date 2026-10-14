@@ -7,6 +7,12 @@ the prompt is tightened to explain only the highlighted interaction, use visible
 landmarks instead of XYZ prose and request fewer than 180 characters. This is a
 model instruction rather than proof of universally correct teaching advice.
 The read-only guide contract regression still passes.
+Suggested Move gestures project the editor's grab plane with its retained grab
+offset, rather than projecting an arbitrary proposed body center. The browser
+fixture follows that actual annotation with mouse/touch and checks the resulting
+X/Z placement within the existing 2 cm input tolerance; no state is assigned by
+the guide and no physical win is implied.
+The expanded two-test guide/availability rerun passes in 6.58 s.
 
 Guided help is available on
 challenges and Sandbox. A separate read-only model request sees the tray and its

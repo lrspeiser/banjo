@@ -5692,7 +5692,14 @@ function paintCoachGuide() {
   const make=(name,attrs)=>{const e=document.createElementNS(coachSVG.namespaceURI,name);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));return e;};
   const outline=make('rect',{x:box.x-3,y:box.y-3,width:box.width+6,height:box.height+6,rx:8,class:'coach-outline'});
   let end=targets.get(coach.guide.end_target_id)?.box();
-  if(coach.guide.to_m){const r=view.getBoundingClientRect(),p=new THREE.Vector3(...coach.guide.to_m).project(camera);
+  if(coach.guide.to_m){const r=view.getBoundingClientRect(),suggested=new THREE.Vector3(...coach.guide.to_m);
+    // Demonstrate the editor's actual horizontal grab plane. Projecting the
+    // proposed body's center directly would misplace a drag under perspective.
+    if(ghost&&editorMode==='move'&&coach.guide.target_id==='piece:'+ghost.index) {
+      const grab=slidePoint(box.x+box.width/2,box.y+box.height/2,ghostScreenBox()?.bottom||0);
+      if(grab)suggested.copy(grab).add(new THREE.Vector3(coach.guide.to_m[0]-ghost.p.x_m,0,coach.guide.to_m[2]-(ghost.p.z_m||0)));
+    }
+    const p=suggested.project(camera);
     if(Math.abs(p.z)<=1){const x=r.left+(p.x+1)*r.width/2,y=r.top+(1-p.y)*r.height/2;
       if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)end={x,y,width:0,height:0};}}
   let x=box.x+box.width/2;const y=box.y+box.height/2;

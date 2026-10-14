@@ -4548,6 +4548,12 @@ class Puzzles(unittest.TestCase):
                     self.wait("Boolean(document.querySelector('#coach-overlay .coach-pointer'))",10)
                     self.assertEqual(self.ghost()['p'],before)
                     self.assertEqual(self.js('machinePlacements()'),[])
+                    self.wait('machineCamera().settled',30)
+                    path=self.js("document.querySelector('#coach-overlay .coach-path').getAttribute('d').slice(1).split(' L').map(s=>s.split(' ').map(Number))")
+                    self.drag(path[0],path[1],touch=width<1000)
+                    before=self.ghost()['p']
+                    self.assertAlmostEqual(before['x_m'],.3,delta=.02)
+                    self.assertAlmostEqual(before['z_m'],0,delta=.02)
                     self.click_visible('Next hint')
                     self.wait("/Choose Cut to length/.test(document.querySelector('#scene-goal > span').textContent)",10)
                     self.assertEqual(self.js("document.querySelector('#scene-goal strong > span').textContent"),'Mind the gap')
