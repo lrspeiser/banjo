@@ -2594,7 +2594,9 @@ existing database with distinct test UUID identities and unchanged revision
 conflict checks. It never acknowledges a failed upstream save as durable.
 Replacing a test build ends its test runs while production remains reachable
 and saved test versions persist. Routing and isolation are measured locally
-with the actual native executable; hosted activation remains pending.
+and against the installed Linux runtime package. All 79 authored game tests
+pass in that Linux build. The bootstrap release enables the public test route;
+its checkpoint identifies the available revision independently of production.
 Test simulations share host resources and have lower capacity/memory budgets;
 this is not hostile-code isolation. For deployment and promotion,
 see [deployment status and promotion](deploy.md#branch-testing-and-promotion).

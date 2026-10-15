@@ -249,8 +249,9 @@ and the archived project's rejection. Live creation completes the release check.
 Requested October 14, 2026: run the test branch at **https://banjo.is/test**
 inside the existing Render service, with **separate test saves in the same
 storage**. No second Render service, disk or database is required. The prepared
-paid-service form was canceled. Hosted activation is pending the verified
-bootstrap release; the same-server path is implemented and working locally.
+paid-service form was canceled. The bootstrap release enables the co-hosted
+route; check `/test/api/checkpoint` for the available branch revision after
+deployment. The same-server path is verified locally and in the Linux package.
 
 Production proxies `/test` to a separate loopback test process. Its source tree
 and native executable are an immutable package from `codex/staging`; replacing
@@ -359,7 +360,9 @@ Existing HTTP, profile and client sync regressions also pass. A Sandbox marble
 was placed and Version 1 saved/recovered through ordinary browser controls; its
 share link stays under `/test/machine`. No native C++ laws changed. Windows hash:
 `35230eb7ee76ee0209ff034558ea6110061babd072635561b98d988b92c3f67a`.
-Hosted package/update receipts follow actual deployment.
+Verify hosted availability through the public checkpoint and ordinary
+browser play after the bootstrap release. The test header identifies its exact
+branch revision independently of the production header.
 
 An actual Windows runtime package loaded its exact clean branch receipt and
 verified executable hash. Replacing its runner changed the test PID while an
@@ -371,3 +374,10 @@ take precedence over any parent checkout during local testing.
 The seven focused registered CTest suites pass in 12.58 s (profiles, promotion,
 co-hosting, HTTP, identity, synchronization and paths). All 271 native sources
 remain registered; Python/JavaScript syntax and diff whitespace checks pass.
+
+Linux package receipt: `f38281a45389509ab4bb546b576e7dabe18bb76d` passed
+40 HTTP tests, seven co-hosted process/package checks, all 79 authored game
+tests (155.749 s), then the same seven checks against the installed immutable
+runtime (2.547 s). The broader engine/browser CI remains a separate release
+gate for subsequent feature promotions; it is not claimed complete by these
+focused infrastructure checks. No native source or physics law changed.
