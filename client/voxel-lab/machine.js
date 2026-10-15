@@ -1647,6 +1647,15 @@ function addEvents(events) {
   while (ol.children.length > 80) ol.lastChild.remove();
 }
 
+function clockMessage(text) {
+  $('clock').hidden = false;
+  $('clock').textContent = text;
+}
+function sceneReadoutTop(rect) {
+  return Math.max(6, ...[$('clock'), $('viewer-corner')]
+    .filter(el => !el.hidden && el.getClientRects().length)
+    .map(el => el.getBoundingClientRect().bottom - rect.top + 6));
+}
 function renderClock(frame) {
   const behind = frame.pace.behind_s;
   // A level runs at real time, so its clock leaves the speed out.
@@ -1654,7 +1663,8 @@ function renderClock(frame) {
     frame.playing ? 'calculating live' : frame.t > 0 ? (LEVEL_MODE && scored ? 'run over' : 'paused')
     : LEVEL_MODE ? 'ready: press Try It!'+(level?.release_to_start&&machine?.joints.some(j=>j.name.endsWith(' restraint'))&&!ghost?' · Release spring to start':'') : 'ready: press Start');
   if (frame.playing && behind > .25) text += ` · ${behind.toFixed(1)} s behind real time while the engine works`;
-  $('clock').textContent = text;
+  clockMessage(text);
+  $('clock').hidden = !frame.error && !frame.playing && frame.t === 0;
   $('start').hidden=Boolean(LEVEL_MODE&&scored&&lastRun&&lastRun.goal_at_s==null);
   $('start').textContent = frame.playing ? 'Pause' : !LEVEL_MODE ? (frame.t > 0 ? 'Continue' : 'Start')
     : frame.t > 0 ? (scored ? 'Try It!' : 'Continue') : 'Try It!';
@@ -1683,7 +1693,7 @@ async function build(next, start, request) {
   const mine = ++polling;
   const released = releaseWorld();
   $('power-labels').replaceChildren(); powerLabels.clear(); powerMessage('');
-  $('clock').textContent = 'Building in the engine…';
+  clockMessage('Building in the engine…');
   for (const [, mesh] of meshes) { scene.remove(mesh); disposeBodyGeometry(mesh); }
   meshes.clear(); $('events').replaceChildren();
   try {
@@ -1724,9 +1734,9 @@ async function build(next, start, request) {
     return opened;
   } catch (e) {
     if (mine !== polling) return {};
-    $('clock').textContent = e.data?.code === 'site_busy'
+    clockMessage(e.data?.code === 'site_busy'
       ? 'Simulation busy. Close another game tab or wait a moment, then press Try It!.'
-      : 'Could not build: ' + e.message;
+      : 'Could not build: ' + e.message);
     if (e.data && e.data.problems) addEvents(e.data.problems.map(text => ({t: 0, text})));
     throw e;
   }
@@ -1786,11 +1796,11 @@ async function poll(mine) {
     } catch (e) {
       if (mine !== polling) return;
       if (e.status === 410) {
-        $('clock').textContent = LEVEL_MODE ? 'The server closed this level while it sat idle; press Try It! to build it again'
-          : 'This machine stopped running on the server; press Set up again';
+        clockMessage(LEVEL_MODE ? 'The server closed this level while it sat idle; press Try It! to build it again'
+          : 'This machine stopped running on the server; press Set up again');
         session = null; return;
       }
-      $('clock').textContent = 'Connection problem: ' + e.message;
+      clockMessage('Connection problem: ' + e.message);
       await new Promise(r => setTimeout(r, 1500));
     }
   }
@@ -1988,7 +1998,7 @@ function render() {
 // ---- controls -----------------------------------------------------------------
 $('start').addEventListener('click', () => {
   if (LEVEL_MODE && level) { runLevel(); return; }
-  setPlaying(!playing).catch(e => { $('clock').textContent = e.message; });
+  setPlaying(!playing).catch(e => { clockMessage(e.message); });
 });
 // Reset a challenge to its authored beginning; sandbox resets its built machine.
 function resetGame(keep) {
@@ -2014,7 +2024,7 @@ $('stations').addEventListener('pointerdown', e => {
 });
 $('build-json').addEventListener('click', async () => {
   let next;
-  try { next = JSON.parse($('spec').value); } catch (e) { $('clock').textContent = 'That is not valid JSON: ' + e.message; return; }
+  try { next = JSON.parse($('spec').value); } catch (e) { clockMessage('That is not valid JSON: ' + e.message); return; }
   try {
     // Check the complete overlay before changing the stored design. A bad
     // declaration leaves the last working setup available to reopen.
@@ -3630,7 +3640,7 @@ function updatePowerFeedback() {
   // click, especially on a phone. Reserve the rings before placing labels.
   occupied.push(...sceneSockets().map(p=>({x:p.x-rect.left-14,y:p.y-rect.top-14,w:28,h:28})));
   occupied.push(...readoutBodyRects(rect,sample.devices));
-  const top=Math.max(8,$('clock').getBoundingClientRect().bottom-rect.top+6),bottom=rect.height-26;
+  const top=sceneReadoutTop(rect),bottom=rect.height-26;
   for(const item of items) {
     let row=powerFeedbackRows.get(item.id);
     if(!row) {
@@ -3686,7 +3696,7 @@ function positionSceneReading(card,anchor) {
   let leader=sceneReadingLeaders.get(card.id);
   if(!leader){leader=document.createElementNS(feedbackLeaders.namespaceURI,'line');leader.dataset.reading=card.id;feedbackLeaders.append(leader);sceneReadingLeaders.set(card.id,leader);}
   leader.setAttribute('visibility','hidden');if(card.hidden)return;
-  const {width,height}=card.getBoundingClientRect(),top=$('clock').getBoundingClientRect().bottom-rect.top+6;
+  const {width,height}=card.getBoundingClientRect(),top=sceneReadoutTop(rect);
   const occupied=[...view.querySelectorAll('#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#panel-toggle,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint,#piece-handles button:not([hidden])')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   occupied.push(...readoutBodyRects(rect),{x:anchor.x-18,y:anchor.y-18,w:36,h:36});
@@ -5094,7 +5104,7 @@ function renderPiecePicker() {
       $('piece-picker').close(); parkDesign();
       const design = newDesign(example.name, {base: example.base, placements: example.placements});
       checkpointDesign(design); persist();
-      chooseLevel('free', design).catch(e => { $('clock').textContent = e.message; });
+      chooseLevel('free', design).catch(e => { clockMessage(e.message); });
     }));
     return wrapper;
   }));
@@ -5237,7 +5247,7 @@ function frameNewConnections(){
   connectionFramingPending=false;
   const points=[...terminalMap(machine?.electrical).values()].map(at=>new THREE.Vector3(...at));
   if(!points.length)return;
-  const rect=view.getBoundingClientRect(),top=$('clock').getBoundingClientRect().bottom+18;
+  const rect=view.getBoundingClientRect(),top=rect.top+sceneReadoutTop(rect)+12;
   for(let i=0;i<12;i++){
     freshView();
     if(points.every(at=>{const p=at.clone().project(camera),x=rect.left+(p.x+1)*rect.width/2,y=rect.top+(1-p.y)*rect.height/2;
@@ -5622,7 +5632,7 @@ async function rebuildLevel(start) {
     renderDesignControls();
     // Its goal is about a piece not placed yet: shown, not run.
     if (opened.needs) $('verdict').textContent = opened.needs;
-    else if (start && level.release_to_start) $('clock').textContent='Ready · press Release spring beside the spring';
+    else if (start && level.release_to_start) clockMessage('Ready · press Release spring beside the spring');
     else if (start) await setPlaying(true);
     if (!start) schedulePreview(200);
   } catch (e) {
@@ -6431,7 +6441,7 @@ function ghostInTheWay() {
 // the run, Try It!.
 let startingRun = false;
 async function runLevel() {
-  const failed = e => { $('clock').textContent = e.message; };
+  const failed = e => { clockMessage(e.message); };
   if (startingRun || rewiringBusy) return;
   startingRun = true;
   try {
@@ -6485,4 +6495,4 @@ if (LEVEL_MODE) startGame().catch(e => {
   $('page-loading').hidden = false;
   $('page-loading').textContent = 'Could not load Banjo: ' + e.message + '. Reload to try again.';
 });
-else fetch(appPath('/machine-default.json')).then(r => r.json()).then(d => build(d)).catch(e => { $('clock').textContent = 'Could not load the machine: ' + e.message; });
+else fetch(appPath('/machine-default.json')).then(r => r.json()).then(d => build(d)).catch(e => { clockMessage('Could not load the machine: ' + e.message); });

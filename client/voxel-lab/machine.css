@@ -881,3 +881,36 @@ body.panel-tabs aside:has(#phone-controls-tab[aria-selected=true]):has(#help-set
   body.panel-tabs:has(#piece-editor.editing-gear:not([hidden])) #clock{top:auto;bottom:8px;left:8px;width:104px;font-size:11px;line-height:14px}
 }
 #view>.level-done.retry-result .actions{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+
+/* Keep navigation and camera actions in two shallow rows above the workspace. */
+header{flex-wrap:nowrap}
+header nav{flex-basis:auto;flex-wrap:nowrap;white-space:nowrap}
+header nav span{margin:0;color:inherit;font:inherit}
+header nav .nav-compact{display:none}
+#viewer-corner{position:absolute;top:2px;left:2px;right:2px;z-index:8;display:flex;align-items:center;justify-content:flex-start;gap:1px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;pointer-events:none}
+#viewer-corner::-webkit-scrollbar{display:none}
+#view #viewer-corner>div{position:static;display:flex;flex:none;align-items:center;gap:1px;pointer-events:auto;background:transparent}
+#viewer-corner #viewer-history{margin-right:auto}
+#viewer-corner #viewer-history button:disabled{display:none}
+#viewer-corner #viewer-zoom{width:180px}
+#viewer-corner #view-zoom{width:0;min-width:44px;flex:1;margin:0}
+#viewer-corner button{width:44px;height:44px;min-width:44px;min-height:44px;padding:2px;flex:none}
+#viewer-corner #undo-pieces,#viewer-corner #redo-pieces{font-size:12px}
+body.panel-tabs #view #clock{top:50px;bottom:auto;left:6px;width:auto;max-width:calc(100% - 12px)}
+@media(max-width:599px){
+  header{min-height:48px;padding:2px 4px;gap:4px;flex-wrap:nowrap}
+  header .brand{gap:3px;font-size:14px}
+  header .brand-mark{width:20px;height:20px}
+  header #environment-badge{display:inline-block;font-size:9px;padding:1px 3px}
+  header nav{flex-basis:auto;gap:2px;font-size:12px;overflow-x:auto;flex-wrap:nowrap}
+  header nav a{justify-content:center;min-width:44px;min-height:44px}
+  header nav .nav-full{display:none}
+  header nav .nav-compact{display:inline}
+  #viewer-corner #viewer-zoom{width:150px}
+  #viewer-corner:has(#redo-pieces:not(:disabled)) #view-zoom{display:none}
+  #viewer-corner:has(#redo-pieces:not(:disabled)) #viewer-zoom{width:89px}
+}
+@media(max-width:374px){
+  #viewer-corner #view-zoom{display:none}
+  #viewer-corner #viewer-zoom{width:89px}
+}

@@ -1,5 +1,22 @@
 # Puzzles on the machine (/play)
 
+October 15 compact chrome update: Banjo and navigation share one header row;
+phones show the shorter Help and Changes labels with the original accessible
+names. The TEST badge still fits on a 320 px screen. History, camera arrows
+and zoom occupy one 44 px touch row at the top of the scene. Unavailable
+Undo/Redo buttons stay hidden. Zoom +/- remain available when the slider is
+omitted on narrow phones; the row can scroll horizontally if both history
+actions fill a very narrow view. Idle time-zero status is hidden, while
+building, running, connection and capacity errors remain visible. Meters and
+terminal framing reserve the top row even when the status banner is hidden.
+No physics, goals or scoring changed. The new real-engine browser regression
+checks 320/390 px portrait, 844 px landscape and desktop: one-row header
+including TEST, 44 px unobstructed controls, Undo/Redo and visible running
+status. Existing phone placement, direct-editing, wire-callout, capacity/retry,
+Recent Changes and How to play scenarios pass. Recent Changes now checks
+accessible navigation names because phones intentionally use shorter labels.
+Broader CI failures recorded below remain separate from these focused checks.
+
 October 15 session cleanup: opening Levels or the Sandbox library saves the
 current draft and releases its native world. Back to a level rebuilds its
 placed setup at time zero. World opens and closes are serialized per page;

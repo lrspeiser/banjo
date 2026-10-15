@@ -47,6 +47,8 @@ Within each chapter they retain the [audited relative order](docs/level-onboardi
 Estimated player times remain historical estimates from blind LLM probes and
 interface review, not measurements of the new interface or a timed human study.
 Desktop and phone use the same full-width scene with a compact bottom dock.
+Banjo and navigation share one header row; camera and history controls share
+one row along the top of the scene. The idle time-zero banner stays hidden.
 Levels share Controls / Help tabs; Sandbox also has Design,
 with Try It!/Pause/Reset kept beside the 3D view, even when the controls are
 collapsed. Each level opens with its name, what you’ll place, how the mechanism

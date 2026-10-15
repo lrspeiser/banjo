@@ -82,6 +82,40 @@ class Puzzles(unittest.TestCase):
         cls.logs.cleanup()
 
     # ---- what a person does -------------------------------------------------------
+    def test_header_and_camera_share_single_rows_without_an_idle_banner(self):
+        for width, height in ((390,844),(320,568),(844,390),(1280,860)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-weight',width,height,phone=width<600 or height<500)
+                self.assertTrue(self.js("document.getElementById('clock').hidden"))
+                for test_badge in (False,True):
+                    self.js(f"document.getElementById('environment-badge').hidden={str(not test_badge).lower()}")
+                    header=self.js("""(()=>{const h=document.querySelector('header').getBoundingClientRect(),b=document.querySelector('.brand').getBoundingClientRect();
+                        return {height:h.height,links:[...document.querySelectorAll('header nav a')].map(e=>{const r=e.getBoundingClientRect();return {w:r.width,h:r.height,inside:r.left>=0&&r.right<=innerWidth,sameRow:Math.abs(r.top+r.height/2-b.top-b.height/2)<2,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})};})()""")
+                    self.assertLessEqual(header['height'],54,header)
+                    for link in header['links']:
+                        self.assertTrue(link['inside'] and link['sameRow'] and link['hit'],header)
+                        self.assertGreaterEqual(link['w'],44);self.assertGreaterEqual(link['h'],44)
+                self.js("document.getElementById('environment-badge').hidden=true")
+                def check_row():
+                    row=self.js("""(()=>{const v=document.getElementById('view').getBoundingClientRect(),t=document.getElementById('viewer-corner').getBoundingClientRect();
+                        return {top:t.top-v.top,height:t.height,buttons:[...document.querySelectorAll('#viewer-corner button')].filter(b=>b.checkVisibility()).map(b=>{const r=b.getBoundingClientRect();return {w:r.width,h:r.height,top:r.top-t.top,inside:r.left>=v.left&&r.right<=v.right,hit:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})};})()""")
+                    self.assertLessEqual(row['top'],4,row);self.assertLessEqual(row['height'],46,row)
+                    for b in row['buttons']:
+                        self.assertGreaterEqual(b['w'],44);self.assertGreaterEqual(b['h'],44)
+                        self.assertLess(abs(b['top']),2,row);self.assertTrue(b['hit'] and b['inside'],row)
+                check_row()
+                self.click_visible('Add a weight');self.ghost();self.click_visible('Place')
+                self.wait(READY,15);check_row()
+                self.click_visible('Undo');self.wait('machinePlacements().length===0 && '+READY,15)
+                check_row()
+                self.click_visible('Redo');self.wait('machinePlacements().length===1 && '+READY,15)
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'compact-toolbar-ready-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Try It!')
+                self.wait("!document.getElementById('clock').hidden && document.getElementById('clock').textContent.startsWith('World ')",15)
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'compact-toolbar-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
     def test_one_slot_rebuild_waits_for_close_and_levels_release_the_world(self):
         host = self.server.machines
         host.close_all()
@@ -161,6 +195,7 @@ class Puzzles(unittest.TestCase):
             other = host.open(machine_game.compose(machine_game.level_by_id('easy-weight'), [])[0])
             self.page.send('Page.navigate', {'url':self.base+'/play?level=easy-weight'})
             self.wait("document.getElementById('clock')?.textContent.startsWith('Simulation busy.')", 15)
+            self.assertFalse(self.js("document.getElementById('clock').hidden"))
             self.assertEqual(list(host.sessions), [other['session']])
             self.assertFalse(self.js("document.getElementById('level-intro').open"))
             host.close(other['session'])
@@ -3211,7 +3246,7 @@ class Puzzles(unittest.TestCase):
             self.anonymous_cloud_saved()
             self.assertFalse(self.js("document.getElementById('recent-changes').open"))
             before = self.js("({url:location.href,setup:window.machinePlacements(),ghost:window.machineGhostState(),save:localStorage.getItem('banjo-play-save'),scroll:scrollY})")
-            navigation = self.js("[...document.querySelectorAll('header nav a')].map(e=>{const r=e.getBoundingClientRect();return {label:e.textContent,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})")
+            navigation = self.js("[...document.querySelectorAll('header nav a')].map(e=>{const r=e.getBoundingClientRect();return {label:e.getAttribute('aria-label')||e.textContent,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})")
             self.assertEqual([r['label'] for r in navigation], ['Levels','Sandbox','How to play','Recent Changes'])
             for target in navigation:
                 self.assertTrue(target['visible'] and target['hit'], target)
