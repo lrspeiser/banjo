@@ -1,5 +1,23 @@
 # Puzzles on the machine (/play)
 
+October 15 final meter sizing correction: candidate `6210faae` passed all 158
+native CTest groups and 145 of 146 browser scenarios on Linux; its remaining
+failure was the capacitor meter in phone landscape. A pending label could be
+positioned close to the right edge, then measure longer text against that old
+position. Its automatic width stayed at 75.7 px and wrapped to 113.9 px tall,
+so no clear placement fit. Power and water edge meters now use intrinsic text
+width, still bounded by their existing maximum width and collision checks.
+The regression forces that old narrow position, waits for repaint, and keeps
+the same visibility, native 4 J storage, win and reset assertions. The forced
+Linux reproduction fails before the correction (34.093 s) and passes after
+(19.553 s); the committed regression also passes on Windows (16.129 s).
+All eight focused Ubuntu/SwiftShader readout scenarios pass (170.399 s),
+covering the capacitor regression, wire gauges/edge leaders, bulb sizing,
+live cable power, solar/winch readings and connections, timed receiver fill
+and diverted-water collection. JavaScript syntax, the view-module test and
+the 271-source registration guard pass. Exact-revision CI remains required.
+No physics model, target, deadline or numerical tolerance changed.
+
 October 15 Linux qualification follow-up: the first parallel run passed the
 native regression job and browser batch 4, but exposed a hidden capacitor
 meter on Linux landscape, immediate post-click reading races, and accumulated

@@ -665,6 +665,12 @@ class Puzzles(unittest.TestCase):
                 # edge readings on short screens. Close it to inspect the meter.
                 self.click_visible('Close level complete')
                 self.wait("/run over/.test(document.getElementById('clock').textContent)",15)
+                if (width,height)==(844,390):
+                    # A short pending reading can be positioned near the right
+                    # edge. Its measured text must grow and relocate instead
+                    # of staying wrapped into a tall, permanently hidden card.
+                    self.js("document.querySelector('[data-device=\"capacitor 1\"].power-feedback-label').style.left='790px';window.meterRepainted=false;requestAnimationFrame(()=>requestAnimationFrame(()=>window.meterRepainted=true))")
+                    self.wait('window.meterRepainted',5)
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='capacitor 1'&&/Now .* V.* J/.test(r.text)&&!r.text.includes('Updating'))",15)
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='capacitor 1'&&!r.hidden)",10)
                 self.assertTrue(self.js("(()=>{const el=document.querySelector('[data-device=\"capacitor 1\"].power-feedback-label'),r=el.getBoundingClientRect(),view=document.getElementById('view').getBoundingClientRect(),run=document.getElementById('start').getBoundingClientRect();return r.left>=view.left&&r.right<=view.right&&r.top>=view.top&&r.bottom<=view.bottom&&!(r.left<run.right&&r.right>run.left&&r.top<run.bottom&&r.bottom>run.top);})()"))
