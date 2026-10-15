@@ -393,12 +393,14 @@ class Puzzles(unittest.TestCase):
                 label=self.js(f"[...document.querySelectorAll('#wire-adjustments button')].find(b=>b.getAttribute('aria-label').startsWith({json.dumps(prefix)}))?.getAttribute('aria-label')")
                 self.assertIsNotNone(label)
             self.click_visible(label);self.ghost();return
+        if self.js("document.getElementById('wire-mode').getAttribute('aria-pressed')==='true'"):
+            self.click_visible('Connect wires')
         for framing in range(6):
             for part in candidate['parts']:
                 for point in self.js(f"machineBodyHitPoints({json.dumps(part)})"):
                     if not self.js(f"document.elementFromPoint({point[0]},{point[1]})?.tagName==='CANVAS'"):continue
                     pick=self.js(f"machineScenePick({point[0]},{point[1]})")
-                    if index not in pick['pieces'] or pick['wire'] or (pick['socket'] and not pick['ambiguous']):continue
+                    if index not in pick['pieces'] or ((pick['wire'] or pick['socket']) and not pick['ambiguous']):continue
                     self.mouse('mousePressed',*point);self.mouse('mouseReleased',*point)
                     option=self.js(f"document.querySelector('#socket-choices:not([hidden]) [data-piece-index=\"{index}\"]')?.textContent")
                     if option:self.click_visible(option)
@@ -1547,7 +1549,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("/on bank/.test(document.getElementById('river-wheel-status').textContent)",10)
                 self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"Its load to lift\"]'))"))
                 self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"Its wheel radius\"]'))"))
-                self.assertTrue(self.js("(()=>{const b=document.querySelector('.connection-action'),r=b.getBoundingClientRect();return r.width>=200&&r.height>=44&&b.scrollWidth<=b.clientWidth})()"),'The connection label must fit a full-width touch target')
+                self.assertTrue(self.js("(()=>{const b=document.querySelector('.connection-action'),r=b.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.left>=0&&r.right<=innerWidth&&b.scrollWidth<=b.clientWidth})()"),'The complete connection label must fit the edge card with a 44 px touch target')
                 self.drag_ghost_to(0,0,touch=width!=1280)
                 self.wait("window.machineFlowPreviewState()?.sample?.mechanism_joints?.some(j=>j.kind==='hinge'&&Math.abs(j.turned_deg)>30)",20)
                 self.assertEqual(self.js("window.machineGhostState().p.load_part"),'')
@@ -4301,6 +4303,7 @@ class Puzzles(unittest.TestCase):
                 direction=self.js('machineWorkingGuide().primary.dir')
                 self.assertAlmostEqual(abs(direction[0]),3**.5/2,places=5)
                 self.assertAlmostEqual(abs(direction[2]),.5,places=5)
+                self.reveal_control("document.getElementById('object-snap')")
                 self.assertTrue(self.js("(()=>{const b=document.getElementById('object-snap'),r=b.getBoundingClientRect();return r.height>=44&&r.right<=innerWidth;})()"))
                 self.press('Cancel')
 

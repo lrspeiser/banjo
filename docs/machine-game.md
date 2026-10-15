@@ -1,5 +1,21 @@
 # Puzzles on the machine (/play)
 
+October 15 final local browser qualification: all 146 distinct scenarios pass
+across measured batches and affected-case reruns, with the unchanged Windows
+engine SHA-256 `35230eb7ee76ee0209ff034558ea6110061babd072635561b98d988b92c3f67a`.
+This includes all 34 level pages at desktop, portrait and landscape sizes.
+The last three fixture corrections reveal snapping in Changes, use the
+labelled object choice beside overlapping terminals with wiring mode off,
+and check the complete river connection text in its narrower edge card.
+The former 200 px full-width button expectation is now the required 44 px
+touch target plus unclipped text and viewport bounds; physical deadlines,
+goals and tolerances remain unchanged. The 42 HTTP checks, two host admission
+checks, source guard and view-module test pass. Exact-revision Linux CI and
+the clean running test checkpoint remain required by the promotion guard.
+The dated notes below record earlier checkpoint status, including failures
+subsequently resolved by this qualification; interrupted runs are not counted
+as successful full-suite runs.
+
 October 15 release qualification: the compact camera row no longer covers
 Expand controls or Inspect switch/heat. Socket choices open above scene tools;
 dimension handles avoid the editor's current position. Switch inspection keeps
