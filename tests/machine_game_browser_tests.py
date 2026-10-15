@@ -66,6 +66,10 @@ class Puzzles(unittest.TestCase):
         # Keep production's spending quota unchanged; test its limits in the
         # host suite instead of exhausting it with mocked browser requests.
         cls.server.chat_allowance = lab.Allowance(1000,1000,'fixture chat')
+        # Fresh browser cases create independent visitors. Keep the public
+        # 20/hour creation limit in production; this isolated suite needs one
+        # per scenario plus its explicit recovery/namespace cases.
+        cls.server.profile_creations = lab.Allowance(1000,1000,'fixture visitors')
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
         cls.base = f'http://127.0.0.1:{cls.server.server_address[1]}'
         cls.chrome = chrome_driver.Chrome(1280, 860)
@@ -272,6 +276,9 @@ class Puzzles(unittest.TestCase):
         if failed: print('BROWSER_NETWORK_FAILURES',json.dumps(failed),flush=True)
         errors=[e['params'].get('exceptionDetails') for e in self.page.events if e['method']=='Runtime.exceptionThrown']
         if errors:print('BROWSER_SCRIPT_ERRORS',json.dumps(errors[-3:]),flush=True)
+        http_errors=[{'path':urlsplit(e['params']['response']['url']).path,'status':e['params']['response']['status']}
+                     for e in self.page.events if e['method']=='Network.responseReceived' and e['params']['response']['status']>=400]
+        if http_errors:print('BROWSER_HTTP_ERRORS',json.dumps(http_errors[-5:]),flush=True)
         if 'machinePowerFeedbackState' in expression:
             print('POWER_READING_DIAGNOSTIC',json.dumps(self.js("""(() => ({placements:machinePlacements(),
                 readings:[...document.querySelectorAll('.power-feedback-label')].map(e=>({device:e.dataset.device,wire:e.dataset.wire,hidden:e.hidden,text:e.innerText})),

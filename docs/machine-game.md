@@ -9,14 +9,18 @@ fit; optional wire readings still yield to objects and required controls.
 The real-engine chain inspection, bulb supply/size, live power/current, empty
 Sandbox battery, lens focus and manual cannon cases pass on desktop and phones.
 The 42 HTTP checks and two host admission checks pass. Browser scenarios now
-use a fresh owned Chrome profile for each case (also avoiding resources left
-by the long catalogue sweep), reveal Settings in Changes, wait for the next paint
+use a fresh owned Chrome profile for each case, reveal Settings in Changes, wait for the next paint
 before hit testing, and close result overlays before operating scene controls.
 Legacy fixtures use Sandbox for unrestricted rotation/charge settings instead
 of expecting those unrelated controls in a lesson. Physics assertions, physical
 deadlines and numerical tolerances are unchanged. Full CI must pass on the
 published candidate before promotion; the interrupted parallel Windows run
-exhausted loopback connections and is not a successful full-suite result.
+reported exhausted loopback connections and is not a successful full-suite result.
+The later stall at visitor 21 was the isolated HTTP fixture's 20/hour creation
+allowance: fresh scenarios intentionally need separate visitors. The browser
+fixture now permits 1000 creations while production retains its existing
+20/hour limit. HTTP error diagnostics include status and path without query
+credentials. Fresh profiles also bound graphics/module state between cases.
 
 October 15 release-candidate controls: selected-piece and live device cards
 dock at scene edges with dotted leaders at desktop widths too. Undo remains
