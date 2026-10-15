@@ -919,6 +919,9 @@ if(BANJO_BUILD_TESTS)
                 add_test(NAME banjo_test_promotion_tests COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_promotion_tests.py)
                 set_tests_properties(banjo_test_promotion_tests PROPERTIES TIMEOUT 10 LABELS "machine;http")
+                add_test(NAME banjo_test_site_tests COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_site_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
+                set_tests_properties(banjo_test_site_tests PROPERTIES TIMEOUT 60 LABELS "machine;http")
                 add_test(NAME banjo_machine_host_tests COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_host_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                 set_tests_properties(banjo_machine_host_tests PROPERTIES TIMEOUT 30 LABELS "machine;http")
@@ -1202,6 +1205,9 @@ if(BANJO_BUILD_TESTS)
         add_test(NAME banjo_profile_sync_tests COMMAND ${BANJO_NODE_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/profile_sync_tests.mjs)
         set_tests_properties(banjo_profile_sync_tests PROPERTIES TIMEOUT 10 LABELS "client;machine")
+        add_test(NAME banjo_site_paths_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/site_paths_tests.mjs)
+        set_tests_properties(banjo_site_paths_tests PROPERTIES TIMEOUT 10 LABELS "client;machine")
         add_test(NAME banjo_machine_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_view_test.mjs)
         set_tests_properties(banjo_machine_view_tests PROPERTIES TIMEOUT 10 LABELS "client;machine")

@@ -24,7 +24,8 @@ in a level is scripted: the game only checks whether the goal happened.
 no login.
 
 New changes are developed on branches and tested on `codex/staging` before
-promotion to `main`. The test build has a yellow **TEST** badge and uses
+promotion to `main`. The test branch runs at `/test` on the existing server,
+with its own source package and engine process. It has a yellow **TEST** badge and uses
 separate save identities through the same production profile API/database.
 See [the branch testing workflow](docs/deploy.md#branch-testing-and-promotion)
 for provisioning status, the `/test` entry point and promotion checks.

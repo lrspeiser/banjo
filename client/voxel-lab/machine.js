@@ -1,12 +1,16 @@
-import * as THREE from '/three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints} from '/machine-view.mjs';
-import {anonymousSave, validVisitor, returnURL} from '/anonymous-profile.mjs';
-import {ProfileSync, mergeProfiles} from '/profile-sync.mjs';
-import {renderLevelCards,createLevelMoreMenu} from '/level-library.mjs';
-import {renderDesignGallery} from '/design-gallery.mjs';
-import {levelIntroduction} from '/level-intro.mjs';
+import * as THREE from './three.module.js';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints} from './machine-view.mjs';
+import {anonymousSave, validVisitor, returnURL} from './anonymous-profile.mjs';
+import {ProfileSync, mergeProfiles} from './profile-sync.mjs';
+import {renderLevelCards,createLevelMoreMenu} from './level-library.mjs';
+import {renderDesignGallery} from './design-gallery.mjs';
+import {levelIntroduction} from './level-intro.mjs';
+import {sitePath} from './site-paths.mjs';
 
-const SHARE_SITE = document.documentElement.dataset.banjoEnvironment === 'test' ? location.origin : 'https://banjo.is';
+const APP_BASE = document.documentElement.dataset.banjoBase || '';
+const TEST_BUILD = document.documentElement.dataset.banjoEnvironment === 'test';
+const appPath = path => sitePath(APP_BASE, path);
+const SHARE_SITE = TEST_BUILD ? location.origin + APP_BASE : 'https://banjo.is';
 
 // The machine page. It asks the server to build a declaration, then shows
 // what the engine measures, frame by frame. It never moves a body itself.
@@ -116,7 +120,7 @@ const previewOwner = crypto.randomUUID();
 let previewEpoch = 0;
 function api(body) {
   if(body.op==='level_open'||body.op==='close'||body.op==='play'&&body.running)previewEpoch++;
-  return fetch('/api/machine', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...body,preview_owner:previewOwner,preview_epoch:previewEpoch})})
+  return fetch(appPath('/api/machine'), {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...body,preview_owner:previewOwner,preview_epoch:previewEpoch})})
     .then(async r => {
       if (r.status === 401) { location.href = '/login'; throw Error('Log in first'); }
       const data = await r.json().catch(() => ({ok: false, error: 'The server answered with something that is not JSON'}));
@@ -2032,7 +2036,7 @@ $('chat-form').addEventListener('submit', async e => {
   } finally { $('send').disabled = false; }
 });
 
-fetch('/api/checkpoint').then(r => r.ok ? r.json() : null).then(c => {
+fetch(appPath('/api/checkpoint')).then(r => r.ok ? r.json() : null).then(c => {
   if (!c) return;
   $('build').textContent = `${c.environment === 'test' ? 'TEST · ' : ''}${(c.website_revision || 'unknown').slice(0, 7)}${c.local_changes ? ' + local edits' : ''}`;
   $('build').title = c.branch ? `Branch: ${c.branch}` : '';
@@ -3038,7 +3042,7 @@ function renderGhostBar() {
   const gridRow=Object.assign(document.createElement('div'),{className:'grid-snap-row'});
   const snapButton=button('Snap to grid',()=>{
     gridSnapEnabled=!gridSnapEnabled;if (ghost) ghost.gridLocks=null;
-    try {localStorage.setItem('banjo-grid-snap',gridSnapEnabled?'on':'off');} catch { /* private window */ }
+    try {localStorage.setItem(TEST_BUILD?'banjo-test-grid-snap':'banjo-grid-snap',gridSnapEnabled?'on':'off');} catch { /* private window */ }
     snapButton.setAttribute('aria-pressed',String(gridSnapEnabled));showGridSnap();
   },{id:'grid-snap',title:'Gently align to nearby 5 cm grid lines while dragging. Exact controls stay free. Snap to objects separately aligns nearby surfaces and connectors. Alt+drag bypasses both.'});
   snapButton.setAttribute('aria-pressed',String(gridSnapEnabled));
@@ -4694,14 +4698,14 @@ document.addEventListener('keydown', e => {
 
 // ---- anonymous return links and server saves ---------------------------------------
 // The HttpOnly cookie remembers an opaque ID; the browser caches unsent edits.
-const SAVE_KEY = 'banjo-play-save';
+const SAVE_KEY = TEST_BUILD ? 'banjo-test-play-save' : 'banjo-play-save';
 let provisionalVisitor = null;
 function loadSave() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch { /* private window */ }
-  const importOldStars = s?.format !== 2 && !validVisitor(params.get('visitor'));
+  const importOldStars = !TEST_BUILD && s?.format !== 2 && !validVisitor(params.get('visitor'));
   const cachedIds = Object.keys(s?.players || {});
-  s = anonymousSave(s, {visitor:params.get('visitor'), cookie:document.cookie});
+  s = anonymousSave(s, {visitor:params.get('visitor'), cookie:TEST_BUILD ? '' : document.cookie});
   if (!cachedIds.includes(s.current) && !s.migratedProfiles.includes(s.current) && !validVisitor(params.get('visitor')))
     provisionalVisitor = s.current;
   try {
@@ -4721,7 +4725,7 @@ let profileStoragePersistent = false;
 function cacheSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); return true; } catch { return false; } }
 async function profileRequest(body) {
   const encoded = JSON.stringify(body);
-  const response = await fetch('/api/profile', {method:'POST', headers:{'Content-Type':'application/json'},
+  const response = await fetch(appPath('/api/profile'), {method:'POST', headers:{'Content-Type':'application/json'},
     body:encoded, keepalive:new TextEncoder().encode(encoded).byteLength < 60000});
   const data = await response.json();
   if (!response.ok) { const error = new Error(data.error || 'Could not save your profile.'); error.status = response.status; error.data = data; throw error; }
@@ -4812,7 +4816,7 @@ const profileSync = new ProfileSync({request:profileRequest, read:() => me(),
       activeDesign = profile.sandbox?.items?.find(d => d.id === (remappedDesignIds[selected] || selected)) || null;
       if (activeDesign) {
         $('title').textContent = activeDesign.name; renderDesignControls();
-        history_.replaceState(null, '', '/machine?design=' + encodeURIComponent(activeDesign.id));
+        history_.replaceState(null, '', appPath('/machine') + '?design=' + encodeURIComponent(activeDesign.id));
       }
     }
     cacheSave();
@@ -5448,7 +5452,7 @@ function showSandboxScreen(show = true) {
   document.body.classList.toggle('on-sandbox', show);
   if (!show) { resize(); return; }
   parkDesign(); showLevelsScreen(false);
-  history_.replaceState(null, '', '/machine');
+  history_.replaceState(null, '', appPath('/machine'));
   box.replaceChildren();
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});
@@ -5717,7 +5721,7 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
 function renderReturnLink(box) {
   for (const old of document.querySelectorAll('.visitor-return,.previous-saves')) old.remove();
   const line = document.createElement('div'); line.className = 'visitor-return';
-  const link = document.createElement('a'); link.id = 'visitor-return-link'; link.href = returnURL(location.origin, save.current); link.textContent = 'Your return link';
+  const link = document.createElement('a'); link.id = 'visitor-return-link'; link.href = returnURL(location.origin, save.current, APP_BASE); link.textContent = 'Your return link';
   const copy = button('Copy return link', async () => {
     try { await navigator.clipboard.writeText(link.href); status.textContent = 'Return link copied.'; }
     catch { status.textContent = 'Open the return link to copy its address.'; }
@@ -5728,7 +5732,7 @@ function renderReturnLink(box) {
   const others = Object.keys(save.players).filter(id => id !== save.current);
   if (others.length) {
     const previous = document.createElement('details'), summary = document.createElement('summary'); previous.className = 'previous-saves'; summary.textContent = 'Previous saves'; previous.append(summary);
-    others.forEach((id, index) => { const a = document.createElement('a'); a.href = returnURL(location.origin, id); a.textContent = `Saved profile ${index + 1}`; a.className = 'previous-save'; previous.append(a); });
+    others.forEach((id, index) => { const a = document.createElement('a'); a.href = returnURL(location.origin, id, APP_BASE); a.textContent = `Saved profile ${index + 1}`; a.className = 'previous-save'; previous.append(a); });
     box.append(previous);
   }
 }
@@ -5747,7 +5751,7 @@ function showLevelsScreen(show) {
   if (level) head.append(button(`Back to ${levelTitle(level)}`, () => showLevelsScreen(false)));
   const more = createLevelMoreMenu(box,{id:'level-more'}).content;
   renderReturnLink(more);
-  history_.replaceState(null, '', returnURL(location.origin, save.current));
+  history_.replaceState(null, '', returnURL(location.origin, save.current, APP_BASE));
   const won = levels.filter(l => bestStars(l.id) > 0).length, starsAll = levels.reduce((s, l) => s + bestStars(l.id), 0);
   const nextUp = levels.find(l => !bestStars(l.id));
   add(box, 'p', {className: 'ls-summary', textContent: `${won}/${levels.length} levels · ${starsAll} stars`});
@@ -5833,7 +5837,7 @@ async function chooseLevel(id, design = null) {
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
   undone = []; redone = []; showUndo(); cancelAttach();
   $('attach-tool').hidden = !level.free;
-  history_.replaceState(null, '', level.free ? '/machine?design=' + encodeURIComponent(activeDesign.id) : '/play?level=' + level.id);
+  history_.replaceState(null, '', level.free ? appPath('/machine') + '?design=' + encodeURIComponent(activeDesign.id) : appPath('/play') + '?level=' + level.id);
   $('title').textContent = levelTitle(level);
   $('brief').textContent = level.brief;
   const objectives={
@@ -6323,7 +6327,7 @@ async function startGame() {
   // Browse first. A landing page does not build a world or replace /play
   // with the last puzzle's URL before the player chooses a level.
   $('page-loading').hidden = true;
-  if (location.pathname === '/machine') {
+  if (location.pathname === appPath('/machine')) {
     if (params.has('design') || sharedBuild) {
       const d = designStore().items.find(d => d.id === params.get('design'));
       await chooseLevel('free', d);
@@ -6392,7 +6396,7 @@ $('solve').addEventListener('click', () => askLevel('build'));
 addEventListener('pagehide', () => {
   keepBuild();
   if (profileSync.state().ready) profileSync.flush().catch(() => {});
-  if (session) navigator.sendBeacon('/api/machine', new Blob([JSON.stringify({op: 'close', session})], {type: 'application/json'}));
+  if (session) navigator.sendBeacon(appPath('/api/machine'), new Blob([JSON.stringify({op: 'close', session})], {type: 'application/json'}));
 });
 
 const history_ = window.history;
@@ -6408,4 +6412,4 @@ if (LEVEL_MODE) startGame().catch(e => {
   $('page-loading').hidden = false;
   $('page-loading').textContent = 'Could not load Banjo: ' + e.message + '. Reload to try again.';
 });
-else fetch('/machine-default.json').then(r => r.json()).then(d => build(d)).catch(e => { $('clock').textContent = 'Could not load the machine: ' + e.message; });
+else fetch(appPath('/machine-default.json')).then(r => r.json()).then(d => build(d)).catch(e => { $('clock').textContent = 'Could not load the machine: ' + e.message; });

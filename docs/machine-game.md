@@ -2586,13 +2586,16 @@ in the connection audit remain unimplemented by this optimization.
 
 ## Test build identity and saves — October 14
 
-A server configured with `BANJO_ENVIRONMENT=test` marks its header TEST, exposes
-its branch/environment in the checkpoint, and makes setup shares point to the
-test origin. Production shares retain banjo.is. The optional save bridge uses
-production's existing profile API, with separate test UUID identities by
-default, preserving native compare-and-swap profile revisions. It does not move
-or rebuild the database and never acknowledges a failed upstream save as durable.
-The configured `/test` entry redirects to the separate test origin without
-forwarding a private return credential. Hosted provisioning remains pending;
+The test branch runs under `/test` on the existing server, using a separate
+source package, native executable and machine process. Its header shows TEST;
+navigation, APIs, setup shares and return URLs stay under `/test`. Test cookies
+and browser progress are separate from live play. The profile bridge uses the
+existing database with distinct test UUID identities and unchanged revision
+conflict checks. It never acknowledges a failed upstream save as durable.
+Replacing a test build ends its test runs while production remains reachable
+and saved test versions persist. Routing and isolation are measured locally
+with the actual native executable; hosted activation remains pending.
+Test simulations share host resources and have lower capacity/memory budgets;
+this is not hostile-code isolation. For deployment and promotion,
 see [deployment status and promotion](deploy.md#branch-testing-and-promotion).
 These are hosting/save changes, not new physics measurements.

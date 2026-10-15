@@ -22,6 +22,7 @@ ASSETS={'/play':'client/voxel-lab/machine.html','/machine':'client/voxel-lab/mac
  '/level-library.mjs':'client/voxel-lab/level-library.mjs',
  '/design-gallery.mjs':'client/voxel-lab/design-gallery.mjs',
  '/level-intro.mjs':'client/voxel-lab/level-intro.mjs',
+ '/site-paths.mjs':'client/voxel-lab/site-paths.mjs',
  '/banjo-mark.png':'client/voxel-lab/brand/banjo-mark.png',
  '/banjo-app-icon.jpg':'client/voxel-lab/brand/banjo-app-icon.jpg',
  '/banjo-app-icon.png':'client/voxel-lab/brand/banjo-app-icon.png',
@@ -88,7 +89,8 @@ class Server(ThreadingHTTPServer):
  request_queue_size=128
  daemon_threads=True
  def __init__(self,address,native,logs,password=None,public_host=None,site='all',public=False,public_hosts=None,profile_db=None,
-              environment=None,profile_upstream=None,profile_namespace=None,test_url=None):
+              environment=None,profile_upstream=None,profile_namespace=None,test_url=None,base_path=None,
+              test_builds=None,test_auto=None,test_source=None):
   # Public: deliberately open to anyone, with no password -- only for the
   # game (--site game), where the chat and the trials are rationed instead.
   if public and site!='game':raise ValueError('only the game (--site game) may be public with no password')
@@ -98,6 +100,8 @@ class Server(ThreadingHTTPServer):
   self.public=public
   self.environment=environment or os.environ.get('BANJO_ENVIRONMENT') or ('production' if public else 'local')
   if self.environment not in ('production','test','local'):raise ValueError('Environment is production, test or local')
+  self.base_path=base_path if base_path is not None else os.environ.get('BANJO_BASE_PATH','')
+  if self.base_path not in ('','/test') or (self.base_path and self.environment!='test'):raise ValueError('Only test builds may use /test')
   self.profile_cookie_name=anonymous_profiles.TEST_COOKIE_NAME if self.environment=='test' else anonymous_profiles.COOKIE_NAME
   if self.environment=='test':public_host=public_host or os.environ.get('RENDER_EXTERNAL_HOSTNAME')
   self.test_url=test_site_url(test_url or os.environ.get('BANJO_TEST_URL'))
@@ -105,7 +109,7 @@ class Server(ThreadingHTTPServer):
   self.trial_allowance=Allowance(int(os.environ.get('BANJO_TRIALS_PER_HOUR','30')),int(os.environ.get('BANJO_TRIALS_PER_DAY','2000')),'reliability check') if public else None
   self.feedback_allowance=Allowance(10,500,'feedback') if public else None
   self.preview_allowance=Allowance(int(os.environ.get('BANJO_PREVIEWS_PER_HOUR','300')),int(os.environ.get('BANJO_PREVIEWS_PER_DAY','6000')),'path preview') if public else None
-  self.preview_busy=threading.BoundedSemaphore(2)
+  self.preview_busy=threading.BoundedSemaphore(1 if self.base_path else 2)
   from machine_world import PreviewJobs
   self.preview_jobs=PreviewJobs()
   self.optical_allowance=Allowance(3000,18000,'laser preview') if public else None
@@ -128,6 +132,14 @@ class Server(ThreadingHTTPServer):
   self.bug_reports.start()
   self.profile_creations=Allowance(20,2000,'new visitor profiles')
   self.profile_requests=Allowance(6000,100000,'profile requests')
+  self.test_site=None
+  if test_builds is not None or os.environ.get('BANJO_TEST_SITE')=='1':
+   from test_site import TestSite
+   self.test_site=TestSite(Path(test_builds or logs.parent/'test-builds'),
+       f'http://127.0.0.1:{self.server_address[1]}/api/profile',
+       ','.join(self.app.public_hosts),auto=test_auto if test_auto is not None else True,
+       source=test_source,native=self.native)
+   self.test_site.start()
  def checkpoint_status(self):
   # What the page's header shows: the code's revision, and whether this
   # server is still running an older one.
@@ -136,14 +148,27 @@ class Server(ThreadingHTTPServer):
           'restart_pending':revision!=self.started_revision,'engine_sha256':hashlib.sha256(self.native.read_bytes()).hexdigest(),
           'bug_reporting':self.bug_reports.summary(),'environment':self.environment,'branch':repository_branch(),
           'profiles':{'shared':isinstance(self.profiles,anonymous_profiles.RemoteProfileStore),
-                      'namespace':getattr(self.profiles,'namespace','production')},'test_url':self.test_url}
+                      'namespace':getattr(self.profiles,'namespace','production')},'test_url':'/test' if self.test_site else self.test_url,
+          'base_path':self.base_path,'test_site':self.test_site.status() if self.test_site else None}
  def server_close(self):
+  if getattr(self,'test_site',None):self.test_site.close()
   if hasattr(self,'bug_reports'):self.bug_reports.close()
   super().server_close()
 class Handler(BaseHTTPRequestHandler):
+ def route_path(self):
+  path=self.path.split('?')[0]
+  base=self.server.base_path
+  if not base:return path
+  if path==base:return '/'
+  return path[len(base):] if path.startswith(base+'/') else None
  def send(self,status,body,kind='application/json',headers=None):
   try:
-   self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; frame-ancestors 'none'")
+   csp="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; frame-ancestors 'none'"
+   if self.server.base_path or (self.server.test_site and self.path.split('?')[0].startswith('/test/')):
+    host=self.headers.get('Host','');local=(urlsplit('//'+host).hostname or '') in access_gate.LOOPBACK
+    prefix=('https' if self.server.public and not local or self.headers.get('X-Forwarded-Proto')=='https' else 'http')+'://'+host+'/test/'
+    csp=f"default-src 'none'; script-src {prefix}; style-src {prefix}; connect-src {prefix}; img-src {prefix} blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action {prefix}"
+   self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Content-Security-Policy',csp)
    for key,value in (headers or {}).items():self.send_header(key,value)
    self.end_headers();self.wfile.write(body)
   except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):
@@ -166,14 +191,16 @@ class Handler(BaseHTTPRequestHandler):
  def do_GET(self):
   if not self.host_allowed():self.send(403,b'{"error":"Host refused"}');return
   if access_gate.answered(self,'GET'):return
-  path=self.path.split('?')[0]
+  path=self.route_path()
+  if not self.server.base_path and self.server.test_site and (path=='/test' or path.startswith('/test/')):
+   self.server.test_site.proxy(self,'GET');return
   if path in ('/test','/test/'):
    if self.server.test_url:self.send(303,b'',kind='text/plain',headers={'Location':self.server.test_url})
    else:self.send(503,b'{"error":"The test site has not been connected yet"}')
    return
   # The game is the whole site: its front door is the levels.
   if path in ('/','/index.html'):
-   self.send_response(303);self.send_header('Location','/play');self.send_header('Referrer-Policy','no-referrer');self.end_headers();return
+   self.send(303,b'',kind='text/plain',headers={'Location':self.server.base_path+'/play'});return
   if path not in GAME_ROUTES:self.send(404,b'{}');return
   if path=='/api/checkpoint':
    try:self.send(200,json.dumps(self.server.checkpoint_status()).encode())
@@ -182,27 +209,36 @@ class Handler(BaseHTTPRequestHandler):
   kind={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','mjs':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','json':'application/json','webmanifest':'application/manifest+json','png':'image/png','jpg':'image/jpeg'}[ASSETS[path].rsplit('.',1)[1]]
   content=(ROOT/ASSETS[path]).read_bytes()
   if path in ('/play','/machine'):
-   content=content.replace(b'<html lang="en">',f'<html lang="en" data-banjo-environment="{self.server.environment}">'.encode())
+   content=content.replace(b'<html lang="en">',f'<html lang="en" data-banjo-environment="{self.server.environment}" data-banjo-base="{self.server.base_path}">'.encode())
    if self.server.environment=='test':content=content.replace(b'id="environment-badge" hidden',b'id="environment-badge"')
+   if self.server.base_path:
+    content=content.replace(b'href="/',b'href="/test/').replace(b'src="/',b'src="/test/').replace(b'action="/',b'action="/test/')
+  elif path=='/manifest.webmanifest' and self.server.base_path:
+   manifest=json.loads(content);manifest.update(name='Banjo Test',short_name='Banjo Test',start_url='/test/play',scope='/test/')
+   for icon in manifest.get('icons',[]):icon['src']='/test'+icon['src']
+   content=json.dumps(manifest).encode()
   self.send(200,content,kind)
  def do_POST(self):
   try:
    # Consume the bounded body before any refusal. Closing a socket with an
    # unread POST can reset the client connection instead of delivering 401/400.
    length=int(self.headers.get('Content-Length','0'))
-   limit=anonymous_profiles.MAX_REQUEST_BYTES if self.path=='/api/profile' else 2_010_000
+   path=self.route_path()
+   limit=anonymous_profiles.MAX_REQUEST_BYTES if path in ('/api/profile','/test/api/profile') else 2_010_000
    if not 0<=length<=limit:
     self.close_connection=True;self.send(413,b'{"ok":false,"error":"Request size invalid"}');return
    self.connection.settimeout(30.)
    body=self.rfile.read(length)
    if not self.host_allowed() or not self.origin_allowed():raise ValueError('Host or cross-origin request refused')
-   if self.path=='/login':
+   if not self.server.base_path and self.server.test_site and path.startswith('/test/'):
+    self.server.test_site.proxy(self,'POST',body);return
+   if path=='/login':
     if not 0<length<=4096:raise ValueError('Login request size invalid')
     if access_gate.answered(self,'POST',body):return
    elif access_gate.answered(self,'POST'):return
-   if self.path not in GAME_POSTS:self.send(404,b'{}');return
-   if self.path=='/api/machine':self.machine(body);return
-   if self.path=='/api/profile':self.profile(body);return
+   if path not in GAME_POSTS:self.send(404,b'{}');return
+   if path=='/api/machine':self.machine(body);return
+   if path=='/api/profile':self.profile(body);return
    raise ValueError('Unknown endpoint')
   except (ValueError,TypeError,KeyError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def visitor(self):
@@ -237,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
    if op=='open':
     host=(urlsplit('//'+self.headers.get('Host','')).hostname or '').rstrip('.')
     secure=(self.server.public and host not in access_gate.LOOPBACK) or self.headers.get('X-Forwarded-Proto','').split(',')[0].strip().lower()=='https'
-    headers['Set-Cookie']=f'{self.server.profile_cookie_name}={reply["visitor"]}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly'+('; Secure' if secure else '')
+    headers['Set-Cookie']=f'{self.server.profile_cookie_name}={reply["visitor"]}; Path={self.server.base_path+"/"}; Max-Age=31536000; SameSite=Lax; HttpOnly'+('; Secure' if secure else '')
    self.send(200,json.dumps(reply,separators=(',',':'),allow_nan=False,ensure_ascii=False).encode(),headers=headers)
   except anonymous_profiles.ProfileError as error:
    self.send(error.status,json.dumps(dict(ok=False,error=str(error),**error.data),separators=(',',':'),ensure_ascii=False).encode())
@@ -412,8 +448,10 @@ if __name__=='__main__':
  p.add_argument('--host',default='127.0.0.1');p.add_argument('--logs',type=Path,default=ROOT/'build/machine-logs');p.add_argument('--port',type=int,default=18893)
  p.add_argument('--site',choices=['all','game'],default='all',help='game: as deployed')
  p.add_argument('--public',action='store_true',help='the game open to anyone with no password (needs --site game); its chat and trials are rationed')
+ p.add_argument('--test-source',type=Path,help='local development checkout for the co-hosted test app; disables automatic downloads')
  a=p.parse_args()
- server=Server((a.host,a.port),a.native.resolve(strict=True),a.logs,password=os.environ.get('BANJO_PASSWORD'),public_host=os.environ.get('BANJO_PUBLIC_HOST'),public_hosts=os.environ.get('BANJO_PUBLIC_HOSTS'),site=a.site,public=a.public)
+ server=Server((a.host,a.port),a.native.resolve(strict=True),a.logs,password=os.environ.get('BANJO_PASSWORD'),public_host=os.environ.get('BANJO_PUBLIC_HOST'),public_hosts=os.environ.get('BANJO_PUBLIC_HOSTS'),site=a.site,public=a.public,
+    test_builds=a.logs.parent/'test-builds' if a.test_source else None,test_source=a.test_source,test_auto=False if a.test_source else None)
  print(f'Banjo http://127.0.0.1:{a.port}/play',flush=True)
  try:server.serve_forever()
  finally:

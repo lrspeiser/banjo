@@ -8,9 +8,10 @@ export function cookieVisitor(cookie) {
   const value = String(cookie || '').split(';').map(row => row.trim()).find(row => row.startsWith(VISITOR_COOKIE + '='))?.slice(VISITOR_COOKIE.length + 1);
   return validVisitor(value) ? value.toLowerCase() : null;
 }
-export function returnURL(origin, id) {
+export function returnURL(origin, id, base = '') {
   if (!validVisitor(id)) throw new Error('Invalid anonymous save ID');
-  const url = new URL('/play', origin);
+  if (!['', '/test'].includes(base)) throw new Error('Invalid application path');
+  const url = new URL(base + '/play', origin);
   url.searchParams.set('visitor', id.toLowerCase());
   return url.href;
 }

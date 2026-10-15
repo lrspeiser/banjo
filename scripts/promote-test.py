@@ -37,14 +37,14 @@ def run(*args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--site', required=True, help='the HTTPS test origin, without a private return URL')
+    parser.add_argument('--site', default='https://banjo.is/test', help='the HTTPS test site, without a private return URL')
     parser.add_argument('--branch', default='codex/staging')
     parser.add_argument('--push', action='store_true', help='release the verified revision to main')
     args = parser.parse_args()
     site = urlsplit(args.site)
     if (site.scheme != 'https' or not site.hostname or site.username or site.password or
-            site.query or site.fragment or site.path not in ('', '/')):
-        parser.error('--site must be an HTTPS origin without credentials, path, query or fragment')
+            site.query or site.fragment or site.path.rstrip('/') not in ('', '/test')):
+        parser.error('--site must be an HTTPS origin or /test URL without credentials, query or fragment')
     if run('git', 'status', '--porcelain'):
         parser.error('Commit or preserve local changes before promoting.')
     run('git', 'check-ref-format', '--branch', args.branch)

@@ -33,6 +33,7 @@ RUN python3 -c "import json,sys; json.dump({'revision': sys.argv[1] or None}, op
 ENV PYTHONUNBUFFERED=1 \
     BANJO_PROFILE_DB=/data/banjo/profiles.sqlite3 \
     BANJO_MACHINE_SESSIONS=10 \
+    BANJO_TEST_SITE=1 \
     BANJO_PUBLIC_HOSTS=banjo.is,www.banjo.is,banjo-f1sv.onrender.com
 EXPOSE 8080
 # On the port a host hands it in PORT -- Render sets one -- or else 8080.

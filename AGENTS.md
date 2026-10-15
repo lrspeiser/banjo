@@ -19,8 +19,8 @@ reset or force-push over other work.
 
 On October 14, 2026 the owner requested branch testing before production.
 Default new work to `codex/` feature branches, with coherent verified
-checkpoints pushed regularly to `codex/staging`, which the separate test
-service builds. Do not publish unfinished feature work straight to main.
+checkpoints pushed regularly to `codex/staging`, which GitHub Actions packages
+for the existing server at `/test`. Do not publish unfinished feature work straight to main.
 Promote a reviewed test revision to main when the owner requests release,
 after checking the running test revision and CI with
 `scripts/promote-test.py`. Its default is a dry run; `--push` releases to
@@ -35,7 +35,7 @@ published revisions and distinguish measured behavior from experimental or
 unfinished capabilities. Fix or explicitly resolve failed checks before
 publishing affected code. Hosting purchases and messages to other people
 need their own authorization. See `docs/deploy.md` for test-site provisioning
-status; do not imply a configured test service exists before verifying it.
+status; do not imply the hosted test path is available before verifying it.
 
 Render deploys `main` automatically, so a push to main is a deploy of the game.
 After one, check that the site serves the new commit (the page's header shows

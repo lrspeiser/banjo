@@ -1,0 +1,149 @@
+"""Real co-hosted routing/process isolation plus bounded runtime-package checks."""
+import argparse
+import hashlib
+import http.client
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import sys
+import tarfile
+import tempfile
+import threading
+import time
+import unittest
+import uuid
+
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'scripts'))
+import test_site
+parser=argparse.ArgumentParser(add_help=False);parser.add_argument('--engine')
+args,remaining=parser.parse_known_args();ENGINE=Path(args.engine or os.environ.get('BANJO_LIVE_ENGINE',''))
+
+
+class Bundles(unittest.TestCase):
+    def test_redirects_cannot_leave_the_test_mount(self):
+        for value in ('/test/play', '/test/machine?design=example'):
+            self.assertTrue(test_site.scoped_redirect(value))
+        for value in ('/play', '//banjo.is/play', 'https://banjo.is/test/play', '/test\\play',
+                      '/test/../api/profile', '/test/%2e%2e/api/profile'):
+            self.assertFalse(test_site.scoped_redirect(value))
+
+    def archive(self,path,files,revision='a'*40,extra=None):
+        manifest=dict(schema=test_site.SCHEMA,revision=revision,branch=test_site.BRANCH,
+            platform=sys.platform,native='bin/banjo_live_world_run'+('.exe' if os.name=='nt' else ''),
+            files={name:hashlib.sha256(data).hexdigest() for name,data in files.items()})
+        files=dict(files,**{'test-build.json':json.dumps(manifest).encode()})
+        with tarfile.open(path,'w:gz') as out:
+            for name,data in files.items():
+                info=tarfile.TarInfo(name);info.size=len(data);out.addfile(info,io.BytesIO(data))
+            if extra:out.addfile(extra)
+
+    def test_checksums_identity_and_expected_files_are_required_before_install(self):
+        native='bin/banjo_live_world_run'+('.exe' if os.name=='nt' else '')
+        with tempfile.TemporaryDirectory() as folder:
+            cache=Path(folder)/'cache';archive=Path(folder)/'bundle.tar.gz'
+            self.archive(archive,{native:b'unit fixture','scripts/voxel-lab.py':b'fixture'})
+            root=test_site.install_archive(archive,cache,'a'*40)
+            self.assertEqual(test_site.checked_build(root)['revision'],'a'*40)
+            (root/native).write_bytes(b'tampered')
+            with self.assertRaises(ValueError):test_site.checked_build(root)
+            with self.assertRaises(ValueError):test_site.install_archive(archive,cache,'b'*40)
+
+    def test_archive_paths_links_and_duplicates_never_escape_the_managed_cache(self):
+        native='bin/banjo_live_world_run'+('.exe' if os.name=='nt' else '')
+        with tempfile.TemporaryDirectory() as folder:
+            for name,kind in (('../outside',tarfile.REGTYPE),('/absolute',tarfile.REGTYPE),
+                              ('bad\\..\\outside',tarfile.REGTYPE),('linked',tarfile.SYMTYPE),
+                              ('linked',tarfile.LNKTYPE),(native,tarfile.REGTYPE)):
+                cache=Path(folder)/uuid.uuid4().hex;archive=Path(folder)/'bundle.tar.gz'
+                member=tarfile.TarInfo(name);member.type=kind;member.linkname='../../outside'
+                self.archive(archive,{native:b'fixture'},extra=member)
+                with self.subTest(name=name,kind=kind),self.assertRaises(ValueError):
+                    test_site.install_archive(archive,cache,'a'*40)
+                self.assertFalse((Path(folder)/'outside').exists())
+                self.assertEqual(list(cache.iterdir()),[])
+            with self.assertRaises(ValueError):test_site.remove_owned(Path(folder)/'cache',Path(folder))
+
+
+class CoHosted(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if not ENGINE.is_file():raise RuntimeError('pass --engine: the verified native executable')
+        spec=importlib.util.spec_from_file_location('cohost_server',ROOT/'scripts/voxel-lab.py')
+        lab=importlib.util.module_from_spec(spec);spec.loader.exec_module(lab)
+        cls.folder=tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        cls.server=lab.Server(('127.0.0.1',0),ENGINE.resolve(),Path(cls.folder.name)/'live-logs',site='game',public=True,
+            public_hosts='banjo.is',test_builds=Path(cls.folder.name)/'cache',test_auto=False,test_source=ROOT)
+        threading.Thread(target=cls.server.serve_forever,daemon=True).start()
+        deadline=time.monotonic()+25
+        while not cls.server.test_site.status()['ready'] and time.monotonic()<deadline:time.sleep(.1)
+        if not cls.server.test_site.status()['ready']:
+            status=cls.server.test_site.status()
+            cls.server.shutdown();cls.server.server_close();cls.folder.cleanup()
+            raise RuntimeError(status)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown();cls.server.machines.close_all();cls.server.server_close();cls.folder.cleanup()
+
+    def request(self,path,body=None,headers=None):
+        connection=http.client.HTTPConnection('127.0.0.1',self.server.server_address[1],timeout=15)
+        connection.request('POST' if body is not None else 'GET',path,
+            body=json.dumps(body).encode() if body is not None else None,
+            headers={'Host':'banjo.is','Content-Type':'application/json',**(headers or {})})
+        response=connection.getresponse();result=(response.status,response.read(),dict(response.getheaders()))
+        connection.close();return result
+
+    def post(self,path,body,headers=None):
+        status,data,out=self.request(path,body,headers);return status,json.loads(data),out
+
+    def test_html_modules_navigation_manifest_and_cookie_stay_under_test(self):
+        status,html,headers=self.request('/test/play')
+        self.assertEqual(status,200)
+        self.assertIn(b'data-banjo-base="/test"',html)
+        self.assertIn(b'src="/test/machine.js"',html)
+        self.assertIn(b'href="/test/machine"',html)
+        self.assertIn('connect-src https://banjo.is/test/',headers['Content-Security-Policy'])
+        status,html,_=self.request('/play')
+        self.assertEqual(status,200);self.assertNotIn(b'id="environment-badge">TEST',html)
+        for name in ('machine.js','three.module.js','site-paths.mjs','machine-view.mjs'):
+            self.assertEqual(self.request('/test/'+name)[0],200)
+        status,manifest,_=self.request('/test/manifest.webmanifest')
+        manifest=json.loads(manifest)
+        self.assertEqual((status,manifest['start_url'],manifest['scope']),(200,'/test/play','/test/'))
+        self.assertEqual(self.request('/test')[2]['Location'],'/test/play')
+        self.assertEqual(self.request('/test/../../api/profile')[0],404)
+
+    def test_test_saves_are_separate_in_the_same_database_and_restore(self):
+        visitor=str(uuid.uuid4())
+        self.post('/api/profile',dict(op='create',visitor=visitor,profile={'design':'Live'}))
+        status,opened,headers=self.post('/test/api/profile',dict(op='open',cached_visitor=visitor),
+            {'Cookie':'banjo-visitor='+visitor,'Origin':'https://banjo.is'})
+        self.assertEqual((status,opened['profile']),(200,{}))
+        self.assertIn('banjo-test-visitor=',headers['Set-Cookie']);self.assertIn('Path=/test/',headers['Set-Cookie'])
+        status,saved,_=self.post('/test/api/profile',dict(op='save',visitor=visitor,revision=0,profile={'design':'Test'}))
+        self.assertEqual(status,200)
+        self.assertEqual(self.post('/api/profile',dict(op='open',visitor=visitor))[1]['profile'],{'design':'Live'})
+        self.assertEqual(self.post('/test/api/profile',dict(op='open',visitor=visitor))[1]['profile'],{'design':'Test'})
+        self.assertEqual(self.post('/test/api/profile',dict(op='save',visitor=visitor,revision=0,profile={}))[0],409)
+        self.assertTrue(saved['storage']['shared'])
+        self.assertEqual(self.post('/test/api/profile',dict(op='open'),{'Origin':'https://evil.example'})[0],400)
+
+    def test_test_session_cannot_control_production_engine_and_test_stop_keeps_live_available(self):
+        status,opened,_=self.post('/api/machine',dict(op='level_open',level='easy-weight',placements=[]))
+        self.assertEqual(status,200);session=opened['session']
+        try:
+            self.assertEqual(self.post('/test/api/machine',dict(op='play',session=session,running=True))[0],410)
+            self.assertEqual(self.post('/api/machine',dict(op='frame',session=session,after=0))[0],200)
+            manager=self.server.test_site
+            manager._close_process(manager.process)
+            self.assertEqual(self.request('/test/play')[0],503)
+            self.assertEqual(self.request('/play')[0],200)
+            self.assertEqual(self.post('/api/machine',dict(op='frame',session=session,after=0))[0],200)
+            manager.activate(ROOT,development=True)
+        finally:self.post('/api/machine',dict(op='close',session=session))
+
+
+if __name__=='__main__':unittest.main(argv=[__file__,*remaining],verbosity=2)

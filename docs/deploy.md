@@ -246,112 +246,121 @@ and the archived project's rejection. Live creation completes the release check.
 
 ## Branch testing and promotion
 
-Requested October 14, 2026. **Provisioning is pending**: the branch-aware server,
-shared-storage bridge and promotion guard are implemented and locally tested;
-a separate Render test service and the production `/test` destination are not
-yet provisioned. Existing production remains on main.
+Requested October 14, 2026: run the test branch at **https://banjo.is/test**
+inside the existing Render service, with **separate test saves in the same
+storage**. No second Render service, disk or database is required. The prepared
+paid-service form was canceled. Hosted activation is pending the verified
+bootstrap release; the same-server path is implemented and working locally.
 
-The intended entry is `https://banjo.is/test`, an operator-configured redirect
-to the separate test service's `/play`. It is not a second engine hidden inside
-the production process. Assets and APIs stay at their normal root paths on the
-test origin, so a branch can change the server, page and native engine together.
-Test builds carry a yellow TEST badge, a commit header and a branch tooltip.
-Their share links stay on the test origin; production shares still use banjo.is.
-The redirect does not forward private return credentials or arbitrary query
-parameters. Its destination is never taken from a visitor request.
+Production proxies `/test` to a separate loopback test process. Its source tree
+and native executable are an immutable package from `codex/staging`; replacing
+that process does not restart production or its live machines. The header shows
+TEST and the branch revision. Test navigation, modules, APIs, manifest, return
+URLs and setup shares remain under `/test`; production keeps its usual paths.
+Scoped Content Security Policy and redirect checks catch accidental escapes.
+These are trusted repository builds, **not a security sandbox for hostile code**:
+both builds have the same host and filesystem.
 
-Create one Docker web service named **banjo-test**, from `lrspeiser/banjo`,
-tracking **codex/staging**, using the existing Dockerfile and its default command.
-Use **1c-2g** (1 CPU, 2 GB) to compare physics under the same compute allocation
-as production. Its displayed cost must be approved before creating it. Do not
-attach a second persistent disk or create a new Postgres database. Set:
+### Installing branch revisions
 
-| Variable | Test service value |
-| --- | --- |
-| `BANJO_ENVIRONMENT` | `test` |
-| `BANJO_PROFILE_UPSTREAM` | `https://banjo.is/api/profile` |
-| `BANJO_PROFILE_NAMESPACE` | `test` |
-| `BANJO_PUBLIC_HOSTS` | `test.banjo.is` (optional future custom domain) |
-| `BANJO_MACHINE_SESSIONS` | `3` |
+The `test-site-package` GitHub Actions workflow builds the engine on a standard
+Ubuntu 24.04 runner, runs source registration, HTTP/co-host isolation and authored
+machine tests, and publishes the immutable prerelease asset
+`banjo-test-<40-character-SHA>/banjo-test.tar.gz`. It packages committed runtime
+sources, client files, documentation, the engine and checksummed build receipts.
+It includes no database, logs, local drafts or credentials. This repository is
+public; standard hosted runners are free under
+[GitHub's runner policy](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+No compiler or Git checkout is added to the production runtime.
 
-Render's own `RENDER_EXTERNAL_HOSTNAME` is allowed automatically in test mode.
-Do not copy production's Linear credential to staging: the test outbox and
-machine logs are ephemeral without a disk. The test service needs its own
-configured model credential if LLM help is to be tested; no credential is
-embedded in code or a browser. Provider keys remain operator-managed secrets.
-After verifying the actual test URL, set **BANJO_TEST_URL** on the production
-service to that URL ending in `/play`; the validated server supports HTTPS
-only, without embedded credentials, query or fragment.
+The Docker image enables `BANJO_TEST_SITE=1`. The supervisor polls staging every
+five minutes, verifies archive limits, paths and file hashes, starts a candidate
+and checks its revision and executable hash before switching test traffic.
+Unavailable or invalid updates keep the previous build. Current and preceding
+packages live under `/data/test-builds`; cached builds can boot without a download.
+Test machine logs and its separate bug outbox live under `/data/test-logs`.
+Updates end old **test** runs; saved test versions persist. New OS dependencies
+still need a reviewed update to the production Docker image.
 
-SQLite remains on production's existing mounted disk. Render cannot mount that
-disk in two services. The test service uses the ordinary HTTPS profile API;
-only saves/restores use production compute, while rehearsals and live physics
-run entirely on the test service. Existing API limits and storage capacity
-apply to both. If the production save API is unavailable, testing retains local
-drafts and refuses remote acknowledgement; it never falls back to a disposable
-local SQLite store while claiming persistence.
+This shares production's CPU, memory and disk. Tests get one live machine and
+one preview lane, Linux nice priority 10, an inherited 768 MiB virtual-address
+limit per process, and a 512 MiB aggregate resident-memory stop sampled every
+two seconds. Sampling is not cgroup isolation or a guarantee against all
+resource contention. Preview/trial/chat budgets are lower for tests. Heavy
+testing can still slow live play; a separate service remains an option later.
+Physics detail, timestep and winning conditions are unchanged. Windows local
+development does not apply the Linux limits.
 
-By default, test visitor UUIDs are deterministically mapped to distinct UUIDv4
-credentials before reaching the existing database. Production's UUID hashing,
-rows, revision checks, schema and backups are unchanged. Test saves and live
-saves are separate rows in **the same database**, with the same durability.
-The mapping prevents accidental live edits; it is not a security boundary
-against someone who already possesses a bearer credential. Cookies remain
-host-only, with `banjo-test-visitor` for tests and `banjo-visitor` for live
-builds; no domain-wide credential cookie is added. Restore a test profile
-with its test return link. To test a live design, open its shared machine setup
-on the test origin and save a test copy. Deliberately choosing the namespace
-`production` would edit live records and must be an explicit owner choice;
-do not change the default casually. No schema migrations run during promotion.
+### Shared storage with separate saves
 
-Development flow:
+SQLite remains on the existing mounted disk. The test process calls production's
+profile API over loopback; it never opens or migrates live SQLite. Test UUIDs
+map to distinct UUIDv4 credentials, so live/test profiles occupy different rows
+with the same revision-conflict checks and durability. An unavailable save API
+retains local drafts and refuses remote acknowledgement; it never reports a
+failed upstream save as durable.
 
-1. Start a feature branch from current main; preserve unrelated changes.
-2. Verify the changed scope, update Recent Changes, and integrate it into
-   `codex/staging`. Fetch first and preserve any other staging work.
-3. Push staging and wait for the test header and `/api/checkpoint` to report
-   the expected SHA, branch, environment and native binary; play ordinary flows
-   on desktop and phone. Validate saves and expected physics, not just page load.
-4. Review the test site with the owner. Run the guard below; it requires the
-   newest source-registration and build-and-test CI jobs to succeed on this SHA.
-5. With owner release authorization, repeat using `--push`. The ordinary
-   fast-forward push updates main to the **exact** tested SHA. A concurrent
-   main update rejects promotion and requires incorporating/retesting it.
-6. Check production's header/checkpoint and ordinary play after Render deploys.
-   Saved data is already in the existing store; promoting code does not copy or
-   replace the database. Retain independent backups for recovery.
+Test cookies use `banjo-test-visitor` with Path `/test/`, and browser progress uses
+a distinct test storage key. Live cookies and progress are unchanged. Restore
+test profiles on another device with their test return URL. To test a live
+machine, open its shared setup under `/test/machine` and save a test copy. Tests
+do not import live browser progress. Namespace mapping prevents ordinary
+accidental edits, not access by someone who already possesses a bearer
+credential. Promotion neither migrates nor copies the database. Keep backups.
+
+Hosted test AI help can use the existing server's model configuration under
+lower request budgets. The child does not inherit the Linear credential or
+drain the live outbox. Test bug reports remain pending in its separate outbox;
+confirmed Linear delivery remains a production check. Provider credentials are
+never packaged or sent to the browser.
+
+### Development and promotion
+
+1. Start a feature branch from current main, preserving unrelated changes.
+2. Verify its scope, update Recent Changes and integrate into `codex/staging`.
+   Fetch first and preserve concurrent staging work.
+3. Push staging. Wait for the package and `/test/api/checkpoint` to show the
+   exact SHA, branch, environment and native hash. Play ordinary desktop/phone
+   flows and check saves and physical behavior.
+4. Review with the owner. The guard requires the newest `source-registration`
+   and `build-and-test` CI jobs to succeed on this exact SHA.
+5. With release authorization, use `--push`. An ordinary fast-forward updates
+   main to the tested SHA. Concurrent main work must be incorporated/retested.
+6. Verify production after Render deploys. Code does not replace the database.
 
 ```sh
-python scripts/promote-test.py --site https://ACTUAL-TEST-HOST
-# Release only after review and explicit release authorization:
-python scripts/promote-test.py --site https://ACTUAL-TEST-HOST --push
+python scripts/promote-test.py
+# Release only after review and release authorization:
+python scripts/promote-test.py --push
 ```
 
-The guard defaults to a dry run and does not reset local files or force-push.
-It refuses a stale/running-old server, a dirty build, a non-test site, a different
-branch, missing/failed/pending CI, and a staging history missing current main.
+The guard defaults to a dry run against `https://banjo.is/test`. It refuses stale
+or dirty builds, a non-test site, wrong branch, missing/failed/pending CI and
+staging history missing current main. It never resets or force-pushes.
+The one-time routing/supervisor bootstrap must reach main before public `/test`
+can host its first branch; verify the infrastructure locally and in the Linux
+package workflow before enabling it. Subsequent changes use the review cadence.
 
-Verification before provisioning: 39 HTTP tests pass (6.425 s), exercising
-both real servers against one SQLite store, isolated live/test rows, restore
-after recreating the proxy, stale-device conflicts, body limits, cookie and
-Origin handling, unavailable upstream and refusal to follow credential-bearing
-redirects. Eight SQLite tests, four identity-client tests, eleven profile-sync
-tests and two promotion guard tests pass. This changes no native physical laws;
-the previously verified native binary remains in use. Browser and hosted
-provisioning receipts follow when measured.
+For local development with the current checkout on both sides:
 
-Local browser receipt: ordinary level GO → add weight → Try It! starts the
-native simulation and displays the physical missed-goal result. A Sandbox
-marble was placed, the design renamed, and Version 1 saved and recovered after
-reload through the shared API at profile revision 8. Its setup share URL uses
-the test origin. The yellow badge and scene controls remain visible at
-390×844 and 844×390; screenshots are under ignored `build/ui-proof/test-site-*`.
-Final HTTP run: 39 tests in 6.147 s; the three registered CTest suites for
-profiles, promotion and HTTP pass in 7.38 s. Native SHA-256 remains
+```sh
+python scripts/voxel-lab.py --native <verified-build>/banjo_live_world_run.exe --port 18893 --test-source .
+```
+
+Local edits are marked honestly and cannot serve as a clean promotion receipt.
+Published packages contain committed files and their own engine/build receipt.
+
+Measured locally: real co-hosted tests cover scoped HTML/modules/manifest/
+cookies, separate saves through one SQLite database, restore and stale-device
+conflicts, origin rejection, inability to control a live machine through the
+test API, and continued production play after the test process stops. Archive
+tests reject traversal, links, duplicates, tampering and unexpected identity.
+Existing HTTP, profile and client sync regressions also pass. A Sandbox marble
+was placed and Version 1 saved/recovered through ordinary browser controls; its
+share link stays under `/test/machine`. No native C++ laws changed. Windows hash:
 `35230eb7ee76ee0209ff034558ea6110061babd072635561b98d988b92c3f67a`.
-An initial local run exposed a production cookie being consulted on a test
-port. Distinct test/live cookie names fix this, and a real two-server regression
-proves that a production cookie cannot choose or overwrite a test profile.
-Missing explicit/test-cookie identities remain refused instead of silently
-discarding old data. The final cookie-aware HTTP suite has 40 passing tests;
-production cookie behavior is unchanged.
+Hosted package/update receipts follow actual deployment.
+
+The seven focused registered CTest suites pass in 12.58 s (profiles, promotion,
+co-hosting, HTTP, identity, synchronization and paths). All 271 native sources
+remain registered; Python/JavaScript syntax and diff whitespace checks pass.
