@@ -40,7 +40,7 @@ jobs:
         run: cmake --build build/ci --parallel 2
 
       - name: Test the engine and non-browser game checks
-        # The four browser batches run on their own runners below. Every
+        # Browser batches run on their own runners below. Every
         # other CTest group and the existing label exclusions stay here.
         env:
           BANJO_CHROME: /usr/bin/google-chrome
@@ -71,7 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v5
       - name: Install the electrical solver
@@ -82,7 +82,7 @@ jobs:
         run: |
           cmake -S . -B build/browser-engine -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=OFF
           cmake --build build/browser-engine --parallel 2 --target banjo_live_world_run
-      - name: Play browser batch ${{ matrix.shard }} of 4
+      - name: Play browser batch ${{ matrix.shard }} of 8
         env:
           BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/browser-engine/banjo_live_world_run
           BANJO_CHROME: /usr/bin/google-chrome
@@ -90,14 +90,22 @@ jobs:
           BANJO_BROWSER_TESTS: required
         # Retain CMake's 1200-second batch deadline and every Python scenario.
         # Unbuffered output makes progress visible before a batch finishes.
-        run: timeout 1200s python3 -u tests/machine_game_browser_tests.py --shard=${{ matrix.shard }}/4
+        run: timeout 1200s python3 -u tests/machine_game_browser_tests.py --shard=${{ matrix.shard }}/8
+
+      - name: Keep browser failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failures-${{ matrix.shard }}-${{ github.sha }}
+          path: build/ui-proof/browser-failure-*.png
+          if-no-files-found: ignore
 
   build-and-test:
     if: ${{ always() }}
     needs: [source-registration, native-tests, browser-tests]
     runs-on: ubuntu-24.04
     steps:
-      - name: Require every native check and all four browser batches
+      - name: Require every native check and every browser batch
         env:
           SOURCE_RESULT: ${{ needs['source-registration'].result }}
           NATIVE_RESULT: ${{ needs['native-tests'].result }}

@@ -38,6 +38,31 @@ SETTLED = "(() => { const g = window.machineGhostState(); return Boolean(g && g.
 READY = "/ready: press Try It!/.test(document.getElementById('clock')?.textContent || '')"
 
 
+class LiveBrowserResult(unittest.TextTestResult):
+    """Keep failures available even when a later case reaches the batch deadline."""
+    def report_now(self, test, err):
+        self.stream.write('\n'+self._exc_info_to_string(err,test)+'\n');self.stream.flush()
+        try:
+            proof=ROOT/'build'/'ui-proof';proof.mkdir(parents=True,exist_ok=True)
+            name=re.sub('[^a-zA-Z0-9_-]','_',test.id())
+            count=len(self.failures)+len(self.errors)
+            (proof/f'browser-failure-{name}-{count}.png').write_bytes(base64.b64decode(
+                test.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+        except Exception as diagnostic_error:
+            self.stream.write('Failure screenshot unavailable: '+type(diagnostic_error).__name__+'\n')
+            self.stream.flush()
+
+    def addFailure(self,test,err):
+        super().addFailure(test,err);self.report_now(test,err)
+
+    def addError(self,test,err):
+        super().addError(test,err);self.report_now(test,err)
+
+    def addSubTest(self,test,subtest,err):
+        super().addSubTest(test,subtest,err)
+        if err:self.report_now(test,err)
+
+
 class Puzzles(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -92,6 +117,14 @@ class Puzzles(unittest.TestCase):
         # another scenario must not inherit its parts or an open dialog.
         type(self).chrome.close()
         self.server.machines.close_all()
+        # Independent scenarios share a loopback IP, but must not inherit
+        # another scenario's request history. Production quotas are covered
+        # in machine_host_tests; keep the existing limits within each case.
+        for name in ('preview_allowance','optical_allowance'):
+            allowance=getattr(self.server,name)
+            if allowance:
+                with allowance.lock:
+                    allowance.recent.clear();allowance.day.clear()
         type(self).chrome=chrome_driver.Chrome(1280,860)
         type(self).page=type(self).chrome.page
         self.page.send('Network.enable');self.page.send('Runtime.enable')
@@ -279,6 +312,9 @@ class Puzzles(unittest.TestCase):
         http_errors=[{'path':urlsplit(e['params']['response']['url']).path,'status':e['params']['response']['status']}
                      for e in self.page.events if e['method']=='Network.responseReceived' and e['params']['response']['status']>=400]
         if http_errors:print('BROWSER_HTTP_ERRORS',json.dumps(http_errors[-5:]),flush=True)
+        print('FIXTURE_REQUEST_COUNTS',json.dumps({name:{'used':len(getattr(self.server,name).day),
+            'hour_limit':getattr(self.server,name).per_hour} for name in ('preview_allowance','optical_allowance')
+            if getattr(self.server,name)}),flush=True)
         if 'machinePowerFeedbackState' in expression:
             print('POWER_READING_DIAGNOSTIC',json.dumps(self.js("""(() => ({placements:machinePlacements(),
                 readings:[...document.querySelectorAll('.power-feedback-label')].map(e=>({device:e.dataset.device,wire:e.dataset.wire,hidden:e.hidden,text:e.innerText})),
@@ -984,7 +1020,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js("document.querySelectorAll('#power-labels .power-label').length"),0)
                 self.assertTrue(self.js("[...document.querySelectorAll('#terminal-pins .terminal-buttons button')].every(b=>b.disabled)"))
                 self.click_visible('Try It!')
-                self.assertTrue(self.js("document.getElementById('preview-legend').hidden"))
+                self.wait("document.getElementById('preview-legend').hidden",5)
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertTrue(self.js("document.getElementById('preview-legend').hidden"))
                 state = self.js('window.machineContactState()')
@@ -3051,7 +3087,7 @@ class Puzzles(unittest.TestCase):
                 self.assertIn('your switch 1 contact leaf',[p['name'] for p in preview['drawn']['mechanisms']])
                 self.click_visible('Try It!')
                 self.wait('window.machineWiringState().wires.every(w=>w.color===0xffd34d)',10)
-                self.assertGreater(self.js('window.machinePowerFeedbackState().dots'),0)
+                self.wait('window.machinePowerFeedbackState().dots>0',5)
                 self.assertFalse(self.js('Boolean(window.machineFlowPreviewState()?.visible)'))
                 self.assertTrue(self.js("window.machineContactState().liveDevices.find(d=>d.kind==='switch').closed"))
                 self.wait("!document.getElementById('level-done').hidden",30)
@@ -5077,7 +5113,7 @@ class Puzzles(unittest.TestCase):
                 changed=self.js(check);self.assertTrue(changed['edge']);self.assertTrue(changed['leader'])
                 self.wait("(()=>{const p=machineGhostScreen(),v=document.getElementById('view').getBoundingClientRect(),l=document.querySelector('#object-control-leaders [data-for=\"piece-editor\"]');return Math.abs(Number(l.getAttribute('x1'))-((p.x0+p.x1)/2-v.left))<1&&Math.abs(Number(l.getAttribute('y1'))-((p.y0+p.y1)/2-v.top))<1;})()",10)
                 self.click_visible('Place');self.wait(READY,30)
-                self.assertTrue(self.js("document.querySelector('#object-control-leaders [data-for=\"piece-editor\"]').style.display==='none'"))
+                self.wait("document.querySelector('#object-control-leaders [data-for=\"piece-editor\"]').style.display==='none'",5)
 
     def test_failed_run_has_one_retry_and_restores_last_selected_piece(self):
         for width,height in ((1280,860),(390,844),(844,390)):
@@ -5389,6 +5425,6 @@ if __name__ == '__main__':
         tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Puzzles))
         suite=unittest.TestSuite(test for i,test in enumerate(tests) if i%count==index)
         print(f'Browser batch {index+1}/{count}: {suite.countTestCases()} of {len(tests)} cases',flush=True)
-        result=unittest.TextTestRunner(verbosity=2).run(suite)
+        result=unittest.TextTestRunner(verbosity=2,resultclass=LiveBrowserResult).run(suite)
         raise SystemExit(0 if result.wasSuccessful() else 1)
-    unittest.main(verbosity=2)
+    unittest.main(verbosity=2,testRunner=unittest.TextTestRunner(verbosity=2,resultclass=LiveBrowserResult))

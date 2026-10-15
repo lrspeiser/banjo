@@ -1,5 +1,23 @@
 # Puzzles on the machine (/play)
 
+October 15 Linux qualification follow-up: the first parallel run passed the
+native regression job and browser batch 4, but exposed a hidden capacitor
+meter on Linux landscape, immediate post-click reading races, and accumulated
+loopback preview quotas. The capacitor edge meter now shows voltage and
+stored energy, with current retained in its tooltip and electrical readings.
+Independent browser scenarios reset their preview/optical request history;
+the public limits and each scenario's limits stay unchanged. Explicit waits
+check the hidden preview legend, flowing-current dots and removed placement
+leader after the browser paints them. All physical thresholds stay unchanged.
+Failure traces stream immediately and screenshots are retained in CI. Eight
+smaller browser batches cover the same 146 scenarios with the same 1200-second
+deadline, keeping the two catalogue sweeps from crowding out later cases.
+All seven affected scenarios pass locally with SwiftShader (88.410 s), including
+capacitor storage/reset, contact battery, marble-switch current, named wheel
+load, edge callouts, solar lift and water diversion. Source registration,
+JavaScript syntax, the view-module test and two promotion-guard tests pass.
+The candidate still requires all exact-revision checks before promotion.
+
 October 15 Linux release follow-up: software-rendered CI found four failures
 in three browser cases after their Windows runs passed. The capacitor case
 now closes the completion overlay before inspecting its edge meter; the wire
@@ -11,11 +29,11 @@ The first complete local CI batch also passes, and its measured request
 counts remain below the fixture's preview allowance.
 
 CI now compiles and runs all non-browser CTest checks in `native-tests`, while
-the same four complete browser batches run on independent Ubuntu runners.
+the complete browser scenarios run on independent Ubuntu runners.
 Each builds this revision's engine; no shared Render CPU or runtime artifact
 is involved. The existing 1200-second browser-batch deadline is retained.
 The required `build-and-test` check is a fail-closed aggregate of source
-registration, native tests and all four matrix results. Its gate was checked
+registration, native tests and every matrix result. Its gate was checked
 against success/failure/cancelled/skipped dependency outcomes. The promotion
 script's required check names and exact-revision rules are unchanged. A full
 green run of this candidate remains required before production promotion.

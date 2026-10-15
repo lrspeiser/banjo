@@ -3570,10 +3570,10 @@ function updatePowerFeedback() {
     if(d.requirement==='capacitor'||d.requirement==='resistor') {
       const storage=d.requirement==='capacitor';
       items.push({id:'device:'+d.name,name:d.name.replace(/^your /,''),kind:'object',priority:d.required_j?0:1,at,
-        text:storage?`${d.capacitance_f} F${d.required_j?` · Goal ≥ ${d.required_j} J`:''}\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${d.capacitor_voltage_v.toFixed(2)} V · ${d.stored_j.toFixed(2)} J · ${d.current_a.toFixed(3)} A`}`:
+        text:storage?`${d.capacitance_f} F${d.required_j?` · Goal ≥ ${d.required_j} J`:''}\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${d.capacitor_voltage_v.toFixed(2)} V · ${d.stored_j.toFixed(2)} J`}`:
           `${d.resistance_ohm} Ω\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${Math.abs(d.voltage_v).toFixed(2)} V drop · ${Math.abs(d.current_a).toFixed(3)} A`}`,
         low:storage&&d.required_j&&d.stored_j<d.required_j,
-        title:storage?'Nonpolar rated capacitor. Signed current charges (+) or discharges (−) the A-to-B voltage. Stored energy is measured by the native solver.':'Rated resistance; measured voltage drop and current determine Joule heat.'});
+        title:storage?`Measured current ${d.current_a.toFixed(3)} A. Nonpolar rated capacitor. Signed current charges (+) or discharges (−) the A-to-B voltage. Stored energy is measured by the native solver.`:'Rated resistance; measured voltage drop and current determine Joule heat.'});
       continue;
     }
     let need;
