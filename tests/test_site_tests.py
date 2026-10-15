@@ -13,16 +13,29 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 import uuid
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import test_site
-parser=argparse.ArgumentParser(add_help=False);parser.add_argument('--engine')
+parser=argparse.ArgumentParser(add_help=False);parser.add_argument('--engine');parser.add_argument('--bundle',type=Path)
 args,remaining=parser.parse_known_args();ENGINE=Path(args.engine or os.environ.get('BANJO_LIVE_ENGINE',''))
 
 
 class Bundles(unittest.TestCase):
+    def test_packaged_revision_does_not_consult_a_parent_checkout(self):
+        spec=importlib.util.spec_from_file_location('receipt_server',ROOT/'scripts/voxel-lab.py')
+        lab=importlib.util.module_from_spec(spec);spec.loader.exec_module(lab)
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'bin').mkdir()
+            (root/'test-build.json').write_text('{}')
+            (root/'bin/build-receipt.json').write_text(json.dumps(dict(revision='a'*40,branch='codex/staging')))
+            with patch.object(lab,'ROOT',root),patch.dict(os.environ,{},clear=True),patch.object(lab.subprocess,'check_output') as git:
+                self.assertEqual(lab.repository_state(),('a'*40,False))
+                self.assertEqual(lab.repository_branch(),'codex/staging')
+                git.assert_not_called()
+
     def test_redirects_cannot_leave_the_test_mount(self):
         for value in ('/test/play', '/test/machine?design=example'):
             self.assertTrue(test_site.scoped_redirect(value))
@@ -74,8 +87,13 @@ class CoHosted(unittest.TestCase):
         spec=importlib.util.spec_from_file_location('cohost_server',ROOT/'scripts/voxel-lab.py')
         lab=importlib.util.module_from_spec(spec);spec.loader.exec_module(lab)
         cls.folder=tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        cache=Path(cls.folder.name)/'cache';cls.bundle=None
+        if args.bundle:
+            with tarfile.open(args.bundle,'r:gz') as archive:
+                manifest=json.load(archive.extractfile('test-build.json'))
+            cls.bundle=test_site.install_archive(args.bundle,cache,manifest['revision'])
         cls.server=lab.Server(('127.0.0.1',0),ENGINE.resolve(),Path(cls.folder.name)/'live-logs',site='game',public=True,
-            public_hosts='banjo.is',test_builds=Path(cls.folder.name)/'cache',test_auto=False,test_source=ROOT)
+            public_hosts='banjo.is',test_builds=cache,test_auto=False,test_source=None if cls.bundle else ROOT)
         threading.Thread(target=cls.server.serve_forever,daemon=True).start()
         deadline=time.monotonic()+25
         while not cls.server.test_site.status()['ready'] and time.monotonic()<deadline:time.sleep(.1)
@@ -100,6 +118,10 @@ class CoHosted(unittest.TestCase):
         status,data,out=self.request(path,body,headers);return status,json.loads(data),out
 
     def test_html_modules_navigation_manifest_and_cookie_stay_under_test(self):
+        if self.bundle:
+            status,checkpoint,_=self.request('/test/api/checkpoint');checkpoint=json.loads(checkpoint)
+            self.assertEqual(checkpoint['website_revision'],test_site.checked_build(self.bundle)['revision'])
+            self.assertFalse(checkpoint['local_changes']);self.assertFalse(checkpoint['restart_pending'])
         status,html,headers=self.request('/test/play')
         self.assertEqual(status,200)
         self.assertIn(b'data-banjo-base="/test"',html)
@@ -142,7 +164,7 @@ class CoHosted(unittest.TestCase):
             self.assertEqual(self.request('/test/play')[0],503)
             self.assertEqual(self.request('/play')[0],200)
             self.assertEqual(self.post('/api/machine',dict(op='frame',session=session,after=0))[0],200)
-            manager.activate(ROOT,development=True)
+            manager.activate(self.bundle or ROOT,development=self.bundle is None)
         finally:self.post('/api/machine',dict(op='close',session=session))
 
 

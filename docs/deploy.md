@@ -361,6 +361,13 @@ share link stays under `/test/machine`. No native C++ laws changed. Windows hash
 `35230eb7ee76ee0209ff034558ea6110061babd072635561b98d988b92c3f67a`.
 Hosted package/update receipts follow actual deployment.
 
+An actual Windows runtime package loaded its exact clean branch receipt and
+verified executable hash. Replacing its runner changed the test PID while an
+existing production machine session still returned native frames. Version 1
+recovered after installation through ordinary Sandbox controls. The pipeline
+also runs the installed Linux package before publishing it. Packaged receipts
+take precedence over any parent checkout during local testing.
+
 The seven focused registered CTest suites pass in 12.58 s (profiles, promotion,
 co-hosting, HTTP, identity, synchronization and paths). All 271 native sources
 remain registered; Python/JavaScript syntax and diff whitespace checks pass.

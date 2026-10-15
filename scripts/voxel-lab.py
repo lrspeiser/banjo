@@ -43,6 +43,9 @@ def test_site_url(value):
 
 def repository_branch():
  if os.environ.get('RENDER_GIT_BRANCH'):return os.environ['RENDER_GIT_BRANCH']
+ if (ROOT/'test-build.json').is_file():
+  try:return json.loads((ROOT/'bin/build-receipt.json').read_text()).get('branch')
+  except (OSError,ValueError):return None
  try:return subprocess.check_output(['git','-C',str(ROOT),'branch','--show-current'],text=True,timeout=3,stderr=subprocess.DEVNULL).strip() or None
  except (OSError,subprocess.SubprocessError):return None
 
@@ -76,6 +79,11 @@ class Allowance:
    if len(self.recent)>10000:self.recent={k:v for k,v in self.recent.items() if v and now-v[-1]<3600}
 
 def repository_state():
+ # An installed runtime is immutable even when its cache lives below a local
+ # checkout. Do not let git walk up into the production/parent repository.
+ if (ROOT/'test-build.json').is_file():
+  try:return json.loads((ROOT/'bin/build-receipt.json').read_text()).get('revision'),False
+  except (OSError,ValueError):return None,None
  try:
   # Outside a checkout (the image) git says so on stderr; the receipt answers.
   revision=subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],text=True,timeout=3,stderr=subprocess.DEVNULL).strip()
