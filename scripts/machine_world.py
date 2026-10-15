@@ -3420,6 +3420,8 @@ class MachineHost:
                 elif now - idlest.last_action >= self.IDLE_S:
                     making_room = idlest
                 else:
+                    if self.limit == 1:
+                        raise SiteBusy("This site's simulation slot is in use. Close another game tab or wait a moment, then try again.")
                     raise SiteBusy(f'All {self.limit} of this site\'s worlds are in use by people playing right now. '
                                    'Try again in a minute or two.')
                 making_room.close()

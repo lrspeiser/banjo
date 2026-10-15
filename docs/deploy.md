@@ -44,6 +44,11 @@ It starts:
 - The server runs at most `BANJO_MACHINE_SESSIONS` live levels at once (10 in
   the image). When it is full, a newcomer takes the place of a level whose page
   has closed or gone quiet, or else is told to try again in a minute or two.
+  The co-hosted `/test` runner has one slot to limit its share of the server's
+  CPU/RAM. Browsing Levels or the Sandbox library releases a page's world;
+  returning rebuilds the placed setup. Close/open requests from one page wait
+  for each other, so rebuilding does not consume a second slot. A genuinely
+  busy slot asks players to close another game tab or retry shortly.
 
 Anonymous profiles save progress, sandbox drafts and saved versions in SQLite
 through `/api/profile`; the browser also keeps its local copy. Profile revisions

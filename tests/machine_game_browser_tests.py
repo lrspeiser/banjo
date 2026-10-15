@@ -82,6 +82,95 @@ class Puzzles(unittest.TestCase):
         cls.logs.cleanup()
 
     # ---- what a person does -------------------------------------------------------
+    def test_one_slot_rebuild_waits_for_close_and_levels_release_the_world(self):
+        host = self.server.machines
+        host.close_all()
+        previous_limit = host.limit
+        host.limit = 1
+        close = host.close
+        def slow_close(key):
+            time.sleep(.3)
+            return close(key)
+        try:
+            with patch.object(host, 'close', side_effect=slow_close):
+                self.open('easy-weight')
+                original = next(iter(host.sessions))
+                self.press('Add a weight'); self.ghost()
+                self.click_visible('Place')
+                self.wait('machinePlacements().length === 1 && '+READY, 15)
+                deadline = time.monotonic() + 5
+                while original in host.sessions and time.monotonic() < deadline: time.sleep(.05)
+                self.assertNotIn(original, host.sessions)
+                self.assertEqual(len(host.sessions), 1)
+                self.js("document.getElementById('levels-open').click()")
+                self.wait("document.body.classList.contains('on-levels')")
+                deadline = time.monotonic() + 5
+                while host.sessions and time.monotonic() < deadline: time.sleep(.05)
+                self.assertFalse(host.sessions)
+                self.click_visible('Back to Tip the lever')
+                self.wait(READY, 15)
+                self.assertEqual(len(host.sessions), 1)
+                self.assertEqual(self.js('machinePlacements().length'), 1)
+                self.assertNotIn('Could not build', self.js("document.getElementById('clock').textContent"))
+                self.js("document.getElementById('sandbox-open').click()")
+                self.wait("document.body.classList.contains('on-sandbox')")
+                deadline = time.monotonic() + 5
+                while host.sessions and time.monotonic() < deadline: time.sleep(.05)
+                self.assertFalse(host.sessions)
+        finally:
+            host.close_all()
+            host.limit = previous_limit
+
+    def test_leaving_during_an_open_closes_the_abandoned_world(self):
+        host = self.server.machines
+        host.close_all()
+        entered = threading.Event()
+        proceed = threading.Event()
+        closed = threading.Event()
+        open_world = host.open
+        close_world = host.close
+        def delayed_open(spec):
+            entered.set()
+            if not proceed.wait(10): raise RuntimeError('test did not release open')
+            return open_world(spec)
+        def record_close(key):
+            result = close_world(key)
+            closed.set()
+            return result
+        try:
+            with patch.object(host, 'open', side_effect=delayed_open), patch.object(host, 'close', side_effect=record_close):
+                self.page.send('Page.navigate', {'url':self.base+'/play?level=easy-weight'})
+                self.assertTrue(entered.wait(10))
+                self.js("document.getElementById('levels-open').click()")
+                proceed.set()
+                self.wait("document.body.classList.contains('on-levels')")
+                self.assertTrue(closed.wait(10))
+                self.assertFalse(host.sessions)
+                self.assertFalse(self.js("document.getElementById('level-intro').open"))
+        finally:
+            proceed.set()
+            host.close_all()
+
+    def test_a_busy_slot_does_not_close_another_players_world_and_can_retry(self):
+        import machine_game
+        host = self.server.machines
+        host.close_all()
+        previous_limit = host.limit
+        host.limit = 1
+        try:
+            other = host.open(machine_game.compose(machine_game.level_by_id('easy-weight'), [])[0])
+            self.page.send('Page.navigate', {'url':self.base+'/play?level=easy-weight'})
+            self.wait("document.getElementById('clock')?.textContent.startsWith('Simulation busy.')", 15)
+            self.assertEqual(list(host.sessions), [other['session']])
+            self.assertFalse(self.js("document.getElementById('level-intro').open"))
+            host.close(other['session'])
+            self.click_visible('Try It!')
+            self.wait("document.getElementById('clock').textContent.startsWith('World ')", 15)
+            self.assertEqual(len(host.sessions), 1)
+        finally:
+            host.close_all()
+            host.limit = previous_limit
+
     def js(self, expression):
         return self.page.evaluate(expression)
 

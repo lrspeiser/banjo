@@ -1,5 +1,23 @@
 # Puzzles on the machine (/play)
 
+October 15 session cleanup: opening Levels or the Sandbox library saves the
+current draft and releases its native world. Back to a level rebuilds its
+placed setup at time zero. World opens and closes are serialized per page;
+an open abandoned during navigation is closed before a later one can start.
+An old polling response cannot overwrite the new screen. This prevents a
+page's own rebuild from competing for the test host's single simulation slot.
+Other active players still receive the host's capacity protection. Busy
+messages distinguish capacity from invalid geometry and name Try It! as the
+retry action. No physics, goals or capacity limits changed.
+Verification: three new real-engine browser regressions pass, including a
+deliberately delayed close, navigation during an open, preserved placements
+on return, and busy/retry without closing another player's world. The existing
+retry test passes at desktop/phone sizes; the phone callout test also passes.
+The host capacity unit test and source registration guard pass. Broader CI
+on the preceding staged revision has unrelated browser failures (including
+outdated property fixtures and covered placement controls); those remain
+unresolved and production promotion remains blocked by the CI guard.
+
 October 14 phone callout update: selected-piece editors and live device control
 cards dock to a left/right scene edge on phone portrait and short landscape
 views. Portrait editors use a 136 px card, with Move/Place on separate rows and

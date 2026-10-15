@@ -1661,20 +1661,44 @@ function renderClock(frame) {
 }
 
 // ---- building and running --------------------------------------------------------
+// Close and open in order, including an open still awaiting its response.
+// Otherwise a rebuild competes with its own previous world on a one-slot host.
+let worldTask = Promise.resolve();
+function queueWorldTask(task) {
+  const result = worldTask.then(task);
+  worldTask = result.catch(() => {});
+  return result;
+}
+function releaseWorld() {
+  const closing = session;
+  session = null; playing = false;
+  return queueWorldTask(async () => {
+    if (closing) await api({op: 'close', session: closing});
+  });
+}
 async function build(next, start, request) {
   await stopSwitchDrag();
   closeHeatInspection();
   syncThermalSpots(null);
   const mine = ++polling;
-  if (session) api({op: 'close', session}).catch(() => {});
-  session = null; playing = false;
+  const released = releaseWorld();
   $('power-labels').replaceChildren(); powerLabels.clear(); powerMessage('');
   $('clock').textContent = 'Building in the engine…';
   for (const [, mesh] of meshes) { scene.remove(mesh); disposeBodyGeometry(mesh); }
   meshes.clear(); $('events').replaceChildren();
   try {
-    const opened = await api(request || {op: 'open', spec: next});
-    if (mine !== polling) { api({op: 'close', session: opened.session}).catch(() => {}); return opened; }
+    await released;
+    const opened = await queueWorldTask(async () => {
+      if (mine !== polling) return null;
+      const reply = await api(request || {op: 'open', spec: next});
+      if (mine !== polling) {
+        await api({op: 'close', session: reply.session});
+        return null;
+      }
+      session = reply.session;
+      return reply;
+    });
+    if (!opened || mine !== polling) return {};
     spec = request ? opened.machine : next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
     drawAirflows();
     world = mergeFrame({seq: 0, t: 0, bodies: new Map()}, opened);
@@ -1699,7 +1723,10 @@ async function build(next, start, request) {
     poll(mine);
     return opened;
   } catch (e) {
-    $('clock').textContent = 'Could not build: ' + e.message;
+    if (mine !== polling) return {};
+    $('clock').textContent = e.data?.code === 'site_busy'
+      ? 'Simulation busy. Close another game tab or wait a moment, then press Try It!.'
+      : 'Could not build: ' + e.message;
     if (e.data && e.data.problems) addEvents(e.data.problems.map(text => ({t: 0, text})));
     throw e;
   }
@@ -1757,6 +1784,7 @@ async function poll(mine) {
       updateWires(); syncLight(); addEvents(frame.events); renderStations(); renderReadings(frame); renderClock(frame);
       watchGoal(frame);
     } catch (e) {
+      if (mine !== polling) return;
       if (e.status === 410) {
         $('clock').textContent = LEVEL_MODE ? 'The server closed this level while it sat idle; press Try It! to build it again'
           : 'This machine stopped running on the server; press Set up again';
@@ -5485,8 +5513,7 @@ function parkDesign() {
   if ($('piece-picker').open) $('piece-picker').close();
   keepBuild(); clearTimeout(rebuildTimer); clearTimeout(previewTimer); endGhost(); cancelAttach(); closeDone();
   previewAsk++; clearPreview(); resetLaserPreview(); polling++;
-  if (session) api({op: 'close', session}).catch(() => {});
-  session = null; playing = false;
+  releaseWorld().catch(() => {});
 }
 function showSandboxScreen(show = true) {
   const box = $('sandbox-screen'); box.hidden = !show;
@@ -5779,7 +5806,7 @@ function renderReturnLink(box) {
   }
 }
 function showLevelsScreen(show) {
-  if(show)closeLevelIntroduction();
+  if(show)parkDesign();
   const box = $('levels-screen');
   box.hidden = !show;
   if (!show) for (const panel of box.querySelectorAll('.save-help-panel:popover-open')) panel.hidePopover();
@@ -5790,7 +5817,11 @@ function showLevelsScreen(show) {
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Levels'});
-  if (level) head.append(button(`Back to ${levelTitle(level)}`, () => showLevelsScreen(false)));
+  if (level) head.append(button(`Back to ${levelTitle(level)}`, async () => {
+    showLevelsScreen(false);
+    history_.replaceState(null, '', level.free ? appPath('/machine') + '?design=' + encodeURIComponent(activeDesign.id) : appPath('/play') + '?level=' + level.id);
+    await rebuildLevel(false);
+  }));
   const more = createLevelMoreMenu(box,{id:'level-more'}).content;
   renderReturnLink(more);
   history_.replaceState(null, '', returnURL(location.origin, save.current, APP_BASE));
@@ -5948,7 +5979,7 @@ async function chooseLevel(id, design = null) {
   renderLevels(); renderTray(); renderPlaced();
   const openingLevel=level;
   await rebuildLevel(false);
-  if(level===openingLevel)showLevelIntroduction();
+  if(level===openingLevel && session && !document.body.classList.contains('on-levels') && !document.body.classList.contains('on-sandbox'))showLevelIntroduction();
 }
 
 $('challenge-share').addEventListener('click', async () => {
