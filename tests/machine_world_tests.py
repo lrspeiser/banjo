@@ -832,6 +832,31 @@ class Chat(unittest.TestCase):
 
 
 class Host(unittest.TestCase):
+    def test_pending_opens_use_capacity_and_explicit_takeover_closes_the_old_world(self):
+        entered=threading.Event();release=threading.Event();made=[];errors=[]
+        class Pending:
+            def __init__(self, compiled, exe, logs):
+                self.id=str(len(made));self.closed=False
+                self.last_used=self.last_action=time.monotonic();made.append(self)
+                entered.set();release.wait(5)
+            def frame(self,after,wait_ms):return {'ok':True}
+            def close(self):self.closed=True
+        with tempfile.TemporaryDirectory() as logs, patch.object(mw,'MachineSession',Pending):
+            host=mw.MachineHost(Path('engine'),logs,limit=1)
+            def open_world():
+                try:host.open(mw.default_spec())
+                except Exception as error:errors.append(error)
+            first=threading.Thread(target=open_world);second=threading.Thread(target=open_world)
+            first.start();self.assertTrue(entered.wait(2));second.start()
+            time.sleep(.1);release.set();first.join(5);second.join(5)
+            self.assertFalse(first.is_alive() or second.is_alive())
+            self.assertEqual(len(made),1);self.assertEqual(len(host.sessions),1)
+            self.assertEqual(len(errors),1);self.assertIsInstance(errors[0],mw.SiteBusy)
+            host.open(mw.default_spec(),take_over=True)
+            self.assertTrue(made[0].closed);self.assertEqual(len(host.sessions),1)
+            with self.assertRaises(mw.MachineRefused):host.open({'schema':'invalid'},take_over=True)
+            self.assertFalse(made[1].closed)
+
     def test_a_full_site_says_busy_and_takes_only_an_idle_players_world(self):
         """Nobody's game is ended while they play it: with every world in use,
         a newcomer is told the site is busy; a world whose player has done

@@ -3398,6 +3398,7 @@ class MachineHost:
         self.limit = limit or int(os.environ.get('BANJO_MACHINE_SESSIONS', '4'))
         self.sessions = {}
         self.lock = threading.Lock()
+        self.open_lock = threading.Lock()
 
     def _sweep(self):
         for key, s in list(self.sessions.items()):
@@ -3405,12 +3406,22 @@ class MachineHost:
                 s.close()
                 del self.sessions[key]
 
-    def open(self, spec):
+    def open(self, spec, *, take_over=False):
         if self.exe is None:
             raise ValueError('The live world engine (banjo_live_world_run) is not built; no substitute is run')
         compiled = compile_spec(spec)
+        # Serialize admission, not frame reads. An opening native process also
+        # occupies capacity, and an explicit test takeover must follow it.
+        with self.open_lock:
+            return self._open(compiled, take_over=take_over)
+
+    def _open(self, compiled, *, take_over=False):
         with self.lock:
             self._sweep()
+            if take_over:
+                for active in self.sessions.values():
+                    active.close()
+                self.sessions.clear()
             if len(self.sessions) >= self.limit:
                 now = time.monotonic()
                 quietest = min(self.sessions.values(), key=lambda s: s.last_used)

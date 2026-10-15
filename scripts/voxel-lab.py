@@ -351,6 +351,9 @@ class Handler(BaseHTTPRequestHandler):
      r={'ok':True,'level':machine_game.public(level)}
     finally:self.server.preview_busy.release()
    elif op=='level_open':
+    if type(data.get('take_over',False)) is not bool:raise ValueError('Browser switch must be true or false')
+    take_over=data.get('take_over',False)
+    if take_over and self.server.environment!='test':raise ValueError('Switching browsers is only available on the test site')
     self.server.preview_jobs.cancel(self.visitor(),data.get('preview_owner'),data.get('preview_epoch',0))
     # The level's machine with the player's pieces in it, built in the engine.
     level=machine_game.requested_level(data)
@@ -358,7 +361,8 @@ class Handler(BaseHTTPRequestHandler):
     # without its goal, and the page is told what it needs.
     spec,checked,cost=machine_game.compose(level,data.get('placements') or [],leave_out_goal=True)
     needs=spec.pop('_needs',None)
-    r=host.open(spec);r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost;r['energy']=machine_game.pieces_energy(r['machine'])
+    r=host.open(spec,take_over=True) if take_over else host.open(spec)
+    r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost;r['energy']=machine_game.pieces_energy(r['machine'])
     if level.get('free'):
      import sandbox_edit
      r['sandbox_objects']=sandbox_edit.objects(level['machine'])

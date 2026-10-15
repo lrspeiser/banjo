@@ -4,7 +4,7 @@
 
 Choose an Adjustment beside a selected piece, then tap or drag the large gold
 handles in the 3D view. Numeric settings, including ratings and joint properties,
-use these controls; exact values remain in Controls → Settings. A spring’s dotted
+use these controls; exact values remain in Changes → Settings. A spring’s dotted
 relaxed-length guide is an editing measurement, while its latch holds the actual
 compressed spring until release.
 
@@ -34,7 +34,7 @@ Banjo is early, built in the open, and has no licence yet. It is developed on
 Windows, built and tested on Linux in CI, and not tested on macOS.
 
 Levels expose only the adjustments and connections needed for that puzzle,
-including in Controls → Settings. Sandbox keeps the complete device editor.
+including in Changes → Settings. Sandbox keeps the complete device editor.
 Prepared materials, damping and unrelated electrical ratings stay out of lessons.
 
 ## What there is
@@ -53,7 +53,7 @@ Levels share Controls / Help tabs; Sandbox also has Design,
 with Try It!/Pause/Reset kept beside the 3D view, even when the controls are
 collapsed. Each level opens with its name, what you’ll place, how the mechanism
 works and your goal. **GO** dismisses the introduction and leaves native time
-paused for building; **Controls → Settings → Level instructions** reopens it. Goal markers
+paused for building; **Changes → Settings → Level instructions** reopens it. Goal markers
 remain without large instruction text over the working area. The dock keeps
 the level name and a one-line task. **Undo / Redo**
 are in the upper scene corner; a flat zoom slider and magnifiers are in the
@@ -66,7 +66,7 @@ discrete sizes, such as gear teeth. Tap a current choice value to open large
 named options instead of cycling tiny arrows. Lens focus adjusts its actual face curvature
 and native beam preview; tank opening and live valve/release controls stay with
 their devices. **Level Complete!** appears over the scene. Exact sliders and snap preferences are in
-**Controls → Settings**. Both snaps start on. Used tray cards disappear.
+**Changes → Settings**. Both snaps start on. Used tray cards disappear.
 **Try It!** is wider and centered below the scene. Help contains the question
 box, assistant response and a subdued **Report a bug** link. After a missed
 goal, **Ask for Help** opens a dismissible response about the measured attempt;

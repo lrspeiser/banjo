@@ -200,6 +200,28 @@ class Requests(unittest.TestCase):
         self.assertEqual(dict(headers)['Referrer-Policy'], 'no-referrer')
         return status, json.loads(body), dict(headers)
 
+    def test_switch_browser_is_test_only_and_validates_before_replacing(self):
+        host=self.server.machines;host.close_all();previous_limit=host.limit;host.limit=1
+        def command(data):
+            status,body,_=self.request(['127.0.0.1'],'POST','/api/machine',payload=data)
+            return status,json.loads(body)
+        try:
+            status,opened=command(dict(op='level_open',level='easy-weight',placements=[]))
+            self.assertEqual(status,200)
+            self.assertEqual(command(dict(op='level_open',level='easy-weight',placements=[]))[0],503)
+            take=dict(op='level_open',level='easy-weight',placements=[],take_over=True)
+            if self.server.environment=='test':
+                self.assertEqual(command(dict(take,placements=[{'piece':'not-a-piece'}]))[0],422)
+                self.assertEqual(command(dict(op='frame',session=opened['session'],after=0))[0],200)
+                status,replaced=command(take);self.assertEqual(status,200)
+                self.assertEqual(command(dict(op='frame',session=opened['session'],after=0))[0],410)
+                self.assertEqual(command(dict(op='frame',session=replaced['session'],after=0))[0],200)
+            else:
+                self.assertEqual(command(take)[0],400)
+                self.assertEqual(command(dict(op='frame',session=opened['session'],after=0))[0],200)
+            self.assertEqual(len(host.sessions),1)
+        finally:host.close_all();host.limit=previous_limit
+
     def test_profile_reopen_and_stale_device_do_not_overwrite(self):
         status, opened, headers = self.profile({'op': 'open'})
         self.assertEqual(status, 200)

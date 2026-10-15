@@ -1,5 +1,30 @@
 # Puzzles on the machine (/play)
 
+October 15 release-candidate controls: selected-piece and live device cards
+dock at scene edges with dotted leaders at desktop widths too. Undo remains
+visible when disabled; only unavailable Redo is hidden. Completion cards start
+54 px below the top of the scene, beneath the camera row, leaving the lower
+machine visible. Changes contains Settings (snapping, precision and level
+instructions), and the following Share header link copies a canonical level
+or serialized Sandbox setup URL. Its real href also supports normal link
+actions. Narrow headers retain the Banjo logo and TEST badge while shortening
+the text brand when needed. Actions such as Attach close Settings so the
+player can operate the scene.
+
+The test-only busy panel offers Use this browser, explicitly ending the other
+test run and opening the current setup; it never changes saved profiles. The
+button stays in the first row so short landscape views cannot clip it below
+the explanation. A displaced page offers the same action. The production API
+rejects takeover, and invalid placements are checked before any run is closed.
+Host admission serializes pending opens, preventing concurrent requests from
+exceeding the pool limit. Frame reads use the existing independent lock.
+Focused browser checks cover desktop edge callouts (1280/1920 px), persistent
+Undo, Settings/Share, precision editing, native receiver wins with raised
+completion cards, and busy/takeover including short landscape. The 42 HTTP
+checks cover test-only takeover and invalid-request preservation. Broad
+browser release qualification is in progress; the prior failures remain a
+production-promotion blocker until fixed. No native laws/goals/tolerances changed.
+
 October 15 compact chrome update: Banjo and navigation share one header row;
 phones show the shorter Help and Changes labels with the original accessible
 names. The TEST badge still fits on a 320 px screen. History, camera arrows

@@ -1651,6 +1651,17 @@ function clockMessage(text) {
   $('clock').hidden = false;
   $('clock').textContent = text;
 }
+function showTestBusy(message='Test simulation is busy') {
+  if(!TEST_BUILD)return;
+  $('test-busy').querySelector('strong').textContent=message;
+  $('test-busy').hidden=false;
+  $('clock').hidden=true;
+}
+$('test-takeover').addEventListener('click',async()=>{
+  const button=$('test-takeover');button.disabled=true;
+  try {await rebuildLevel(false,{takeOver:true});}
+  finally {button.disabled=false;}
+});
 function sceneReadoutTop(rect) {
   return Math.max(6, ...[$('clock'), $('viewer-corner')]
     .filter(el => !el.hidden && el.getClientRects().length)
@@ -1691,6 +1702,7 @@ async function build(next, start, request) {
   closeHeatInspection();
   syncThermalSpots(null);
   const mine = ++polling;
+  $('test-busy').hidden=true;
   const released = releaseWorld();
   $('power-labels').replaceChildren(); powerLabels.clear(); powerMessage('');
   clockMessage('Building in the engine…');
@@ -1737,6 +1749,7 @@ async function build(next, start, request) {
     clockMessage(e.data?.code === 'site_busy'
       ? 'Simulation busy. Close another game tab or wait a moment, then press Try It!.'
       : 'Could not build: ' + e.message);
+    if(e.data?.code==='site_busy')showTestBusy();
     if (e.data && e.data.problems) addEvents(e.data.problems.map(text => ({t: 0, text})));
     throw e;
   }
@@ -1798,6 +1811,7 @@ async function poll(mine) {
       if (e.status === 410) {
         clockMessage(LEVEL_MODE ? 'The server closed this level while it sat idle; press Try It! to build it again'
           : 'This machine stopped running on the server; press Set up again');
+        showTestBusy('Test simulation moved');
         session = null; return;
       }
       clockMessage('Connection problem: ' + e.message);
@@ -2496,7 +2510,7 @@ function updatePieceHandles() {
     let dx=(b.x-a.x)*rect.width/2,dy=-(b.y-a.y)*rect.height/2,l=Math.hypot(dx,dy);if(l<1){dx=1;dy=0;l=1;}
     dx/=l;dy/=l;const h=editHandles.children[i];
     const obstacles=[...view.querySelectorAll('#piece-editor,#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')].filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
-    obstacles.push(...mobileControlObstacles(rect));
+    obstacles.push(...sceneControlObstacles(rect));
     const box=ghostScreenBox();if(box)obstacles.push({left:box.x0,right:box.x1,top:box.y0,bottom:box.y1});
     for(let j=0;j<i;j++){const previous=editHandles.children[j];if(!previous.hidden)obstacles.push(previous.getBoundingClientRect());}
     let point=null;
@@ -3171,15 +3185,14 @@ const liveControlLeaders=new Map();
 function mobileEdgeControls(){return view.clientWidth<600 || innerHeight<=500;}
 function controlLeader(line,card,anchor) {
   line.style.display='none';
-  if(!mobileEdgeControls()||card.hidden)return;
+  if(card.hidden)return;
   const rect=view.getBoundingClientRect(),box=card.getBoundingClientRect();
   const to={x:Math.max(box.left,Math.min(box.right,anchor.x)),y:Math.max(box.top,Math.min(box.bottom,anchor.y))};
   line.setAttribute('x1',String(anchor.x-rect.left));line.setAttribute('y1',String(anchor.y-rect.top));
   line.setAttribute('x2',String(to.x-rect.left));line.setAttribute('y2',String(to.y-rect.top));
   line.style.display='';
 }
-function mobileControlObstacles(rect) {
-  if(!mobileEdgeControls())return [];
+function sceneControlObstacles(rect) {
   const boxes=[];
   // Reserve the apparatus, not every fracture fragment each animation frame.
   for(const part of machine?.parts||[]) {
@@ -3210,7 +3223,7 @@ function positionLiveControls(){
     const objects=[...meshes].filter(([name,m])=>m.visible&&(name===card.deviceName||name.startsWith(card.deviceName+' '))).map(([,m])=>m);
     const body=objects.length?coachObjectBox(objects):null;
     const bounds=body?{left:body.x,right:body.x+body.width,top:body.y,bottom:body.y+body.height}:{left:x-20,right:x+20,top:y-20,bottom:y+20};
-    const at=pieceToolbarPosition(rect,bounds,card.getBoundingClientRect(),[...occupied,...mobileControlObstacles(rect)],{edgeOnly:mobileEdgeControls()});
+    const at=pieceToolbarPosition(rect,bounds,card.getBoundingClientRect(),[...occupied,...sceneControlObstacles(rect)],{edgeOnly:true});
     card.style.left=`${at.x-rect.left}px`;card.style.top=`${at.y-rect.top}px`;occupied.push(card.getBoundingClientRect());
     controlLeader(leader,card,{x,y});
   }
@@ -3228,7 +3241,7 @@ function positionPieceEditor() {
   const obstacles=[...collapsedPanel(),...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')]
     .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
   const at=pieceToolbarPosition(rect,{left:box.x0,right:box.x1,top:box.y0,bottom:box.y1},editor.getBoundingClientRect(),
-    [...obstacles,...mobileControlObstacles(rect)],{edgeOnly:mobileEdgeControls()});
+    [...obstacles,...sceneControlObstacles(rect)],{edgeOnly:true});
   editor.style.left=`${at.x-rect.left}px`;editor.style.top=`${at.y-rect.top}px`;
   controlLeader(editorLeader,editor,{x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2});
 }
@@ -5416,6 +5429,7 @@ function remember() {
 }
 function showUndo() {
   $('undo-pieces').disabled = !undone.length; $('redo-pieces').disabled = !redone.length;
+  $('undo-pieces').title=undone.length?'Take back the last change (Ctrl+Z)':'No changes to undo yet';
 }
 function travel(from, to) {
   if (!from.length) return;
@@ -5456,6 +5470,7 @@ document.addEventListener('keydown', e => {
 
 // A free build's setup is synced as it changes, separately from the live world.
 function keepBuild() {
+  updateHeaderShare();
   if (!level?.free || !activeDesign) return;
   activeDesign.draft.placements = clone(placements);
   activeDesign.at = new Date().toISOString();
@@ -5532,6 +5547,7 @@ function showSandboxScreen(show = true) {
   if (!show) { resize(); return; }
   parkDesign(); showLevelsScreen(false);
   history_.replaceState(null, '', appPath('/machine'));
+  updateHeaderShare();
   box.replaceChildren();
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});
@@ -5608,7 +5624,7 @@ $('restore-version').addEventListener('click', async () => {
 });
 window.machineDesign = () => activeDesign ? clone(activeDesign) : null;
 
-async function rebuildLevel(start) {
+async function rebuildLevel(start, {takeOver=false}={}) {
   const runInspection = start ? inspectedCircuit : null;
   // A rebuild still waiting to start would come after this one and undo it
   // (a Run pressed just after setting a piece down stayed unstarted).
@@ -5616,7 +5632,7 @@ async function rebuildLevel(start) {
   keepBuild();
   scored = false; $('verdict').replaceChildren(); closeDone();
   try {
-    const opened = await build(null, false, {op: 'level_open', level: level.id, ...sandboxRequest(), placements, helped});
+    const opened = await build(null, false, {op: 'level_open', level: level.id, ...sandboxRequest(), placements, helped,...(takeOver?{take_over:true}:{})});
     if (opened.session !== session) return;
     if(runInspection && contactCircuitRows.has(runInspection)) inspectContactCircuit(runInspection);
     // The chosen sandbox environment can supply appropriate tray defaults:
@@ -5816,7 +5832,7 @@ function renderReturnLink(box) {
   }
 }
 function showLevelsScreen(show) {
-  if(show)parkDesign();
+  if(show){parkDesign();$('test-busy').hidden=true;}
   const box = $('levels-screen');
   box.hidden = !show;
   if (!show) for (const panel of box.querySelectorAll('.save-help-panel:popover-open')) panel.hidePopover();
@@ -5835,6 +5851,7 @@ function showLevelsScreen(show) {
   const more = createLevelMoreMenu(box,{id:'level-more'}).content;
   renderReturnLink(more);
   history_.replaceState(null, '', returnURL(location.origin, save.current, APP_BASE));
+  updateHeaderShare();
   const won = levels.filter(l => bestStars(l.id) > 0).length, starsAll = levels.reduce((s, l) => s + bestStars(l.id), 0);
   const nextUp = levels.find(l => !bestStars(l.id));
   add(box, 'p', {className: 'ls-summary', textContent: `${won}/${levels.length} levels · ${starsAll} stars`});
@@ -5988,6 +6005,7 @@ async function chooseLevel(id, design = null) {
   if (!level.free) { $('speed').value = '1'; follow = true; $('follow').setAttribute('aria-pressed', 'true'); }
   renderLevels(); renderTray(); renderPlaced();
   const openingLevel=level;
+  updateHeaderShare();
   await rebuildLevel(false);
   if(level===openingLevel && session && !document.body.classList.contains('on-levels') && !document.body.classList.contains('on-sandbox'))showLevelIntroduction();
 }
@@ -6042,6 +6060,28 @@ async function askFree() {
 }
 
 // ---- sharing a build: all of it in a link ------------------------------------------
+let headerShareEpoch=0;
+async function headerShareURL() {
+  if(document.body.classList.contains('on-levels'))return SHARE_SITE+'/play';
+  if(document.body.classList.contains('on-sandbox'))return SHARE_SITE+'/machine';
+  if(level?.free && activeDesign)return SHARE_SITE+'/machine#build='+await packBuild({name:activeDesign.name,base:activeDesign.draft.base,placements});
+  return SHARE_SITE+'/play'+(level?'?level='+encodeURIComponent(level.id):'');
+}
+function updateHeaderShare() {
+  const epoch=++headerShareEpoch;
+  headerShareURL().then(url=>{if(epoch===headerShareEpoch)$('header-share').href=url;}).catch(()=>{});
+}
+$('header-share').addEventListener('click',async e=>{
+  if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey||e.button!==0)return;
+  e.preventDefault();
+  const link=$('header-share');
+  try {
+    const url=await headerShareURL();link.href=url;
+    await navigator.clipboard.writeText(url);
+    link.textContent='Copied';link.title='Share link copied';
+    setTimeout(()=>{link.textContent='Share';link.title='Copy a link to this setup';},2000);
+  } catch {window.prompt('Copy this share link',link.href);}
+});
 // The pieces, squeezed (deflate) and written in the link's #build= -- which
 // the browser never sends to a server. Opening the link sets them out.
 let sharedBuild = (location.hash.match(/^#build=([A-Za-z0-9_-]+)$/) || [])[1] || null;
@@ -6079,7 +6119,7 @@ $('free-share').addEventListener('click', async () => {
   $('verdict').textContent = copied ? 'Design link copied. Opening it creates a separate copy, including the base machine.'
     : 'Copy this design link. Opening it creates a separate copy, including the base machine.';
 });
-window.machineShareLink = () => $('share-link').value;
+window.machineShareLink = () => $('header-share').href;
 // A shared link opened in a tab already on the page changes only its #: the
 // page is not loaded again, so the build is read from it here.
 addEventListener('hashchange', () => {
@@ -6328,7 +6368,12 @@ function installPhonePanels() {
     const b=button(label,()=>{write(!read());b.setAttribute('aria-pressed',String(read()));showGridSnap();},{id});
     b.setAttribute('aria-pressed',String(read()));snapping.append(b);
   }
-  controls.append(settings);
+  document.querySelector('#recent-changes .guide-body').prepend(settings);
+  settings.addEventListener('click',e=>{
+    const action=e.target.closest('button');
+    if(action && (['attach-tool','pull-tool','focus-piece','view-overview','level-instructions'].includes(action.id)||action.closest('.move-pad')||action.textContent==='Square it up'))$('recent-changes').close();
+  });
+  $('challenge-share').hidden=true;$('free-share').hidden=true;
   $('view').append($('panel-toggle'));
   controls.append($('scene-actions'),$('view-controls'));
   $('viewer-history').append($('undo-pieces'),$('redo-pieces'));

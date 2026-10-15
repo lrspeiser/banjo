@@ -887,11 +887,12 @@ header{flex-wrap:nowrap}
 header nav{flex-basis:auto;flex-wrap:nowrap;white-space:nowrap}
 header nav span{margin:0;color:inherit;font:inherit}
 header nav .nav-compact{display:none}
+header .brand .brand-name{display:inline;color:inherit;font:inherit;margin:0}
 #viewer-corner{position:absolute;top:2px;left:2px;right:2px;z-index:8;display:flex;align-items:center;justify-content:flex-start;gap:1px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;pointer-events:none}
 #viewer-corner::-webkit-scrollbar{display:none}
 #view #viewer-corner>div{position:static;display:flex;flex:none;align-items:center;gap:1px;pointer-events:auto;background:transparent}
 #viewer-corner #viewer-history{margin-right:auto}
-#viewer-corner #viewer-history button:disabled{display:none}
+#viewer-corner #redo-pieces:disabled{display:none}
 #viewer-corner #viewer-zoom{width:180px}
 #viewer-corner #view-zoom{width:0;min-width:44px;flex:1;margin:0}
 #viewer-corner button{width:44px;height:44px;min-width:44px;min-height:44px;padding:2px;flex:none}
@@ -911,6 +912,16 @@ body.panel-tabs #view #clock{top:50px;bottom:auto;left:6px;width:auto;max-width:
   #viewer-corner:has(#redo-pieces:not(:disabled)) #viewer-zoom{width:89px}
 }
 @media(max-width:374px){
+  header .brand .brand-name{display:none}
   #viewer-corner #view-zoom{display:none}
   #viewer-corner #viewer-zoom{width:89px}
 }
+body.playing-level #view>.level-done:not(.retry-result){top:54px;bottom:auto;transform:translateX(-50%);max-height:calc(100% - 66px)}
+#test-busy{position:absolute;z-index:9;top:54px;left:50%;transform:translateX(-50%);width:min(390px,calc(100% - 16px));max-height:calc(100% - 66px);overflow:auto;padding:8px;background:#25303af5;border:1px solid #e0bb68;border-radius:8px}
+.test-busy-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}
+#test-busy strong{font-size:16px;line-height:1.2}
+#test-busy p{font-size:13px;line-height:1.3;margin:6px 0 0}
+#test-takeover{min-height:44px;min-width:150px;padding:8px 12px;border:1px solid #91d6ac;background:#236948;color:#fff;border-radius:6px;font:600 16px system-ui}
+#recent-changes #help-settings{margin:0 0 16px;border-top:0;border-bottom:1px solid #63899d;padding-bottom:8px}
+#recent-changes #help-settings button{padding:6px 10px;background:#294c60;border:1px solid #63899d;border-radius:6px;color:#fff;font:14px system-ui}
+#recent-changes #help-settings input,#recent-changes #help-settings select{max-width:100%}
