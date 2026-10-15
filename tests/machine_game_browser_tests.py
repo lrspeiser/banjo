@@ -82,13 +82,15 @@ class Puzzles(unittest.TestCase):
         cls.logs.cleanup()
 
     def setUp(self):
-        # Each scenario owns a visitor in this test-only Chrome profile.
+        # Each scenario owns a fresh browser and visitor. Long catalogue
+        # sweeps otherwise leave WebGL/module resources in the next case.
         # Reopening a design within one scenario still exercises persistence;
         # another scenario must not inherit its parts or an open dialog.
-        self.page.send('Page.navigate',{'url':'about:blank'})
-        self.page.send('Network.clearBrowserCookies')
-        self.page.send('Storage.clearDataForOrigin',{'origin':self.base,'storageTypes':'all'})
+        type(self).chrome.close()
         self.server.machines.close_all()
+        type(self).chrome=chrome_driver.Chrome(1280,860)
+        type(self).page=type(self).chrome.page
+        self.page.send('Network.enable');self.page.send('Runtime.enable')
 
     # ---- what a person does -------------------------------------------------------
     def test_header_and_camera_share_single_rows_without_an_idle_banner(self):
@@ -703,7 +705,7 @@ class Puzzles(unittest.TestCase):
             # class-owned handles current for subsequent methods and cleanup.
             type(self).chrome.close()
             type(self).chrome=chrome_driver.Chrome(width,height)
-            type(self).page=type(self).chrome.page;self.page.send('Network.enable')
+            type(self).page=type(self).chrome.page;self.page.send('Network.enable');self.page.send('Runtime.enable')
             for level in game.load_levels():
                 with self.subTest(level=level['id'],viewport=(width,height)):
                     opened_at=time.perf_counter()

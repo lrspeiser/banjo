@@ -9,7 +9,8 @@ fit; optional wire readings still yield to objects and required controls.
 The real-engine chain inspection, bulb supply/size, live power/current, empty
 Sandbox battery, lens focus and manual cannon cases pass on desktop and phones.
 The 42 HTTP checks and two host admission checks pass. Browser scenarios now
-isolate their test visitor, reveal Settings in Changes, wait for the next paint
+use a fresh owned Chrome profile for each case (also avoiding resources left
+by the long catalogue sweep), reveal Settings in Changes, wait for the next paint
 before hit testing, and close result overlays before operating scene controls.
 Legacy fixtures use Sandbox for unrestricted rotation/charge settings instead
 of expecting those unrelated controls in a lesson. Physics assertions, physical
