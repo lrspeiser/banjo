@@ -1,5 +1,22 @@
 # Puzzles on the machine (/play)
 
+October 15 release qualification: the compact camera row no longer covers
+Expand controls or Inspect switch/heat. Socket choices open above scene tools;
+dimension handles avoid the editor's current position. Switch inspection keeps
+the completion card in the scene when returning to the overview. The bulb's
+goal label includes its shared supply limit when a separate wire card cannot
+fit; optional wire readings still yield to objects and required controls.
+The real-engine chain inspection, bulb supply/size, live power/current, empty
+Sandbox battery, lens focus and manual cannon cases pass on desktop and phones.
+The 42 HTTP checks and two host admission checks pass. Browser scenarios now
+isolate their test visitor, reveal Settings in Changes, wait for the next paint
+before hit testing, and close result overlays before operating scene controls.
+Legacy fixtures use Sandbox for unrestricted rotation/charge settings instead
+of expecting those unrelated controls in a lesson. Physics assertions, physical
+deadlines and numerical tolerances are unchanged. Full CI must pass on the
+published candidate before promotion; the interrupted parallel Windows run
+exhausted loopback connections and is not a successful full-suite result.
+
 October 15 release-candidate controls: selected-piece and live device cards
 dock at scene edges with dotted leaders at desktop widths too. Undo remains
 visible when disabled; only unavailable Redo is hidden. Completion cards start

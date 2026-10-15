@@ -925,3 +925,5 @@ body.playing-level #view>.level-done:not(.retry-result){top:54px;bottom:auto;tra
 #recent-changes #help-settings{margin:0 0 16px;border-top:0;border-bottom:1px solid #63899d;padding-bottom:8px}
 #recent-changes #help-settings button{padding:6px 10px;background:#294c60;border:1px solid #63899d;border-radius:6px;color:#fff;font:14px system-ui}
 #recent-changes #help-settings input,#recent-changes #help-settings select{max-width:100%}
+body.panel-collapsed #panel-toggle,.inspect-switch{top:54px}
+.socket-choices{z-index:11}

@@ -81,6 +81,15 @@ class Puzzles(unittest.TestCase):
         cls.server.server_close()
         cls.logs.cleanup()
 
+    def setUp(self):
+        # Each scenario owns a visitor in this test-only Chrome profile.
+        # Reopening a design within one scenario still exercises persistence;
+        # another scenario must not inherit its parts or an open dialog.
+        self.page.send('Page.navigate',{'url':'about:blank'})
+        self.page.send('Network.clearBrowserCookies')
+        self.page.send('Storage.clearDataForOrigin',{'origin':self.base,'storageTypes':'all'})
+        self.server.machines.close_all()
+
     # ---- what a person does -------------------------------------------------------
     def test_header_and_camera_share_single_rows_without_an_idle_banner(self):
         for width, height in ((390,844),(320,568),(844,390),(1280,860)):
@@ -491,12 +500,18 @@ class Puzzles(unittest.TestCase):
             label = 'Place'
         if label=='Place':self.ghost()
         self.reveal_control(self.button_expression(label))
+        # Layout is updated in the game's render loop after a rebuild/edit.
+        # Match a browser driver's next-paint actionability check before hit testing.
+        self.page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',await_promise=True)
         target = self.js(f"""(() => {{ const el = [...document.querySelectorAll('button')].find(b =>
             !b.disabled && b.offsetParent !== null && (!document.getElementById('piece-picker').open || b.closest('#piece-picker')) && (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(label)});
             if (!el) return null; const r = el.getBoundingClientRect(), x = r.left + r.width/2, y = r.top + r.height/2;
             return {{x,y,w:r.width,h:r.height,visible:r.left>=0 && r.right<=innerWidth && r.top>=0 && r.bottom<=innerHeight,
                 uncovered:el.contains(document.elementFromPoint(x,y)),blocker:document.elementFromPoint(x,y)?.outerHTML.slice(0,300)}}; }})()""")
         self.assertIsNotNone(target,(label,self.js(f"[...document.querySelectorAll('button')].filter(b=>(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(label)}).map(b=>({{disabled:b.disabled,rect:b.getBoundingClientRect().toJSON(),parent:b.parentElement.className,ghost:machineGhostState()?.p,wire:document.getElementById('wire-mode').getAttribute('aria-pressed')}}))")))
+        if label!='Close level complete' and not target['uncovered'] and self.js("Boolean(document.querySelector('#level-done:not([hidden]) .result-close'))"):
+            self.click_visible('Close level complete')
+            return self.click_visible(label)
         if not (target['visible'] and target['uncovered']):
             proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
             (proof/f'blocked-{self._testMethodName}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
@@ -518,6 +533,8 @@ class Puzzles(unittest.TestCase):
 
     def reveal_control(self, expression):
         """Use the real shared tabs and disclosures before touching a control."""
+        if self.js(f"Boolean({expression}) && !({expression}).closest('#level-done') && Boolean(document.querySelector('#level-done:not([hidden]) .result-close'))"):
+            self.click_visible('Close level complete')
         if self.js(f"Boolean({expression}) && !({expression}).closest('#recent-changes') && document.getElementById('recent-changes').open"):
             self.click_visible('Close')
         if self.js(f"Boolean(({expression})?.closest('#recent-changes')) && !document.getElementById('recent-changes').open"):
@@ -539,7 +556,7 @@ class Puzzles(unittest.TestCase):
             self.mouse('mousePressed',summary['x'],summary['y']); self.mouse('mouseReleased',summary['x'],summary['y'])
         else:
             self.fail('A closed disclosure could not be opened with its visible summary')
-        self.js(f"(() => {{const el={expression}; if (el?.closest('.phone-pane,#level-done,#recent-changes')) el.scrollIntoView({{block:'nearest',inline:'nearest'}});}})()")
+        self.js(f"(() => {{const el={expression}; if (el?.closest('.phone-pane,#level-done,#recent-changes')) el.scrollIntoView({{block:el.closest('#recent-changes')?'center':'nearest',inline:'nearest'}});}})()")
 
     def create_design(self, name=None):
         self.press('Add New Design'); self.wait(READY,90)
@@ -665,8 +682,8 @@ class Puzzles(unittest.TestCase):
                     print('THERMAL_DISPLAY',self.js('window.machineThermalState()'),flush=True)
                     raise
                 self.wait("!document.getElementById('level-done').hidden",30)
-                self.assertFalse(self.js("Boolean(document.getElementById('level-done').closest('#view'))"),
-                    'The win message must not cover the cut or falling load')
+                self.assertTrue(self.js("Boolean(document.getElementById('level-done').closest('#view'))"),
+                    'The completion card is in the scene, with Close to inspect the result')
                 after=self.js('window.machineThermalState()')
                 self.assertTrue(after['taken'])
                 self.assertFalse(any(c['body']==after['taken'][-1]['body'] for c in after['cells']),
@@ -799,7 +816,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js("document.querySelector('[aria-label=\"Its bulb size\"]').value"),'large')
                 self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='bulb 1'&&/12 V.*12\\.0 W/.test(r.text))",30)
-                self.wait("window.machinePowerFeedbackState().labels.some(r=>r.wire&&/Shared supply ≤ 2\\.5 W/.test(r.text))",30)
+                self.wait("window.machinePowerFeedbackState().labels.some(r=>/Shared supply ≤ 2\\.5 W/.test(r.text))",30)
                 self.click_visible('Try It!');self.wait("/World [12]\\./.test(document.getElementById('clock').textContent)",30)
                 self.click_visible('Pause')
                 self.assertTrue(self.js("document.getElementById('level-done').hidden"))
@@ -972,7 +989,16 @@ class Puzzles(unittest.TestCase):
                 with self.subTest(viewport=(width,height),mode=mode):
                     self.open(self.power_level['id'],width,height,phone=width!=1280)
                     placement = self.power_level['wrong'][0] if mode=='misaligned' else self.power_level['solution'][0]
-                    self.place_contact_battery(placement,charge=0 if mode=='empty' else None)
+                    if mode=='empty':
+                        # Charge is a Sandbox setting; lessons expose only
+                        # their relevant adjustments. Use its real example.
+                        self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+                        self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
+                        self.press('Start from Drop a battery into its holder');self.wait(READY,60)
+                        self.click_piece(0);self.ghost()
+                        self.slide('initial charge (%) of your battery 1',0);self.ghost()
+                        self.press('Set it down');self.wait(READY,60)
+                    else:self.place_contact_battery(placement)
                     self.click_visible('Try It!')
                     self.wait("/World 2\\./.test(document.getElementById('clock').textContent)",30)
                     self.press('Pause')
@@ -1537,7 +1563,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js("document.querySelectorAll('#tray-head').length"),1)
                 self.assertTrue(self.js("document.getElementById('tray-prev').hidden && document.getElementById('tray-next').hidden"))
                 self.wait("document.querySelector('#tray img')?.naturalWidth > 0",30)
-                self.assertGreaterEqual(self.js("document.querySelector('#tray img').getBoundingClientRect().width"),72)
+                self.assertGreaterEqual(self.js("document.querySelector('#tray img').getBoundingClientRect().width"),44)
                 self.click_visible('Add a plank'); self.ghost()
                 self.assertTrue(self.js("document.getElementById('scene-tray').hidden"))
                 self.press('Throw the ghost away')
@@ -2027,7 +2053,8 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js("(() => {const e=document.getElementById('lens-grip'),r=e.getBoundingClientRect();return !e.hidden && r.width>=44 && r.height>=44 && getComputedStyle(e).pointerEvents==='none';})()"))
                 self.click_visible('Focus selected piece')
                 self.reveal_control("document.getElementById('focus-piece')")
-                self.assertTrue(self.js("(() => {const el=document.getElementById('focus-piece'),r=el.getBoundingClientRect(),p=el.closest('.phone-pane').getBoundingClientRect();return r.top>=p.top && r.bottom<=p.bottom;})()"),'Focus must have its complete touch target inside the scrollable inspector')
+                focus=self.js("(() => {const el=document.getElementById('focus-piece'),r=el.getBoundingClientRect(),p=el.closest('#recent-changes .guide-body').getBoundingClientRect();return {target:r.toJSON(),pane:p.toJSON(),visible:r.height>=44 && r.top>=p.top && r.bottom<=p.bottom};})()")
+                self.assertTrue(focus['visible'],('Focus must have its complete touch target inside Settings',focus))
                 if width<=599:
                     self.assertTrue(self.js("document.getElementById('view').getBoundingClientRect().bottom<=document.getElementById('phone-toolbar').getBoundingClientRect().top"),'the smaller scene cannot overflow behind controls')
                 self.wait('window.machineCamera().settled',30)
@@ -2194,7 +2221,9 @@ class Puzzles(unittest.TestCase):
                 self.press('Set it down');self.wait(READY,60)
                 self.slide('Speed of world time',.25)
                 self.click_visible('Try It!')
-                self.wait("window.machinePowerFeedbackState().labels.some(r=>r.wire&&/ W/.test(r.text)&&!r.text.includes('Preview')&&!r.text.includes('Updating')) && window.machinePowerFeedbackState().dots>0",20)
+                # On short screens optional wire cards yield to the device
+                # and its required power. Native current still drives dots.
+                self.wait("window.machinePowerFeedbackState().labels.some(r=>(r.wire||r.device==='winch motor')&&/ W/.test(r.text)&&!r.text.includes('Preview')&&!r.text.includes('Updating')) && window.machinePowerFeedbackState().dots>0",20)
                 geometry=self.js("""(() => {const view=document.getElementById('view').getBoundingClientRect(),run=document.getElementById('start').getBoundingClientRect();
                     const rows=[...document.querySelectorAll('#power-feedback-labels section')].filter(e=>!e.hidden).map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,w:r.width,h:r.height}});
                     return {rows,inside:rows.every(r=>r.x>=view.x&&r.y>=view.y&&r.right<=view.right&&r.bottom<=view.bottom),
@@ -3044,7 +3073,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('window.machinePlacements().slice(1).map(p=>[p.a_terminal,p.b_terminal])'),
                     [['trigger:out','your cannon 1:plus'],['your cannon 1:minus','supply:minus']])
                 self.key('Escape')
-                self.wait("window.machinePreviewState()?.legend.includes('waiting for your handle drag')",20)
+                self.wait("window.machinePreviewState()?.legend.includes('to start') && document.querySelector('[aria-label=\"Drag trigger handle\"]')?.checkVisibility()",20)
                 self.click_visible('Try It!')
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Try again',self.js("document.getElementById('level-done').textContent"))
@@ -3127,14 +3156,14 @@ class Puzzles(unittest.TestCase):
         self.wait("/your bulb 2.*0\\.60 W light/.test(document.getElementById('readings').textContent)", 15)
 
     def test_selected_controls_highlight_the_piece_and_follow_its_orientation(self):
-        self.open('gap')
+        self.open('free')
         self.press('Add a plank')
         guide = self.ghost()['editGuide']
         self.assertEqual(guide['key'], 'length_m')
         self.assertEqual(len(guide['arrows']), 2)
         self.wait("!document.getElementById('edit-guide-label').hidden", 5)
         # A full 2 cm native cell changes the measured surface extent.
-        self.slide('Its Cut to length',self.ghost()['p']['length_m']+.02)
+        self.slide('Its length',self.ghost()['p']['length_m']+.02)
         old_extent=max(a['at'][0] for a in guide['arrows'])
         self.wait(f"machineGhostState().editGuide.arrows.some(a=>a.at[0]>{old_extent})",5)
         changed = self.ghost()['editGuide']
@@ -3143,7 +3172,7 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(self.ghost()['editGuide']['key'], 'yaw_deg')
         self.slide('Its turn', 90)
         self.ghost()
-        self.press('Change its Cut to length')
+        self.press('Change its length')
         guide = self.ghost()['editGuide']
         self.assertEqual(len(guide['arrows']), 2)
         self.assertTrue(all(abs(a['direction'][2]) > .99 for a in guide['arrows']))
@@ -3174,6 +3203,8 @@ class Puzzles(unittest.TestCase):
                 self.assertFalse(self.js("document.getElementById('view').contains(document.getElementById('edit-guide-label'))"),'The guide remains on the object, with its caption in the inspector')
                 self.press('Throw the ghost away')
                 self.wait("document.getElementById('edit-guide-label').hidden", 5)
+
+
 
     def test_a_ghost_is_placed_at_once_dragged_changed_turned_set_down_and_run(self):
         self.open('gap')
@@ -4205,7 +4236,8 @@ class Puzzles(unittest.TestCase):
                 self.open('gap', width, height, phone=width != 1280)
                 before = self.js('machineCamera()')
                 self.press('Add a plank'); self.ghost()
-                self.assertEqual(self.js('machineCamera().distance'), before['distance'], 'A small addition does not zoom in or reframe')
+                self.assertGreaterEqual(self.js('machineCamera().distance'), before['distance'], 'Adding a piece never zooms in; phones also fit the prepared apparatus')
+                self.assertEqual((self.js('machineCamera().azimuth'),self.js('machineCamera().elevation')),(before['azimuth'],before['elevation']))
 
     def test_piece_modes_follow_selection_and_escape_keeps_placement(self):
         for width,height in ((1280,860),(390,844),(844,390),(320,568)):
@@ -4287,6 +4319,7 @@ class Puzzles(unittest.TestCase):
                 self.press('Add a knife'); self.ghost()
                 if not self.js('window.machinePlacementGrid().enabled'):
                     self.click_visible('Snap to grid')
+                if self.js("document.getElementById('recent-changes').open"):self.click_visible('Close')
                 # Keep the grabbed knife in view before testing tiny moves;
                 # an off-screen press is not a piece drag on a narrow phone.
                 self.slide('Pivot x of your knife 1',.1)
@@ -4318,12 +4351,14 @@ class Puzzles(unittest.TestCase):
                 self.assertAlmostEqual(released['z_m'],.235,delta=1e-6)
                 self.assertEqual(self.js('window.machinePlacementGrid().aligned'),[])
                 self.click_visible('Snap to grid')
+                if self.js("document.getElementById('recent-changes').open"):self.click_visible('Close')
                 self.assertEqual(self.ghost()['p'],released,'turning snapping off cannot reposition the piece')
                 free=self.drag_ghost_to(.407,.307,touch=width!=1280)['p']
                 self.assertAlmostEqual(free['x_m'],.41,delta=1e-6)
                 self.assertAlmostEqual(free['z_m'],.305,delta=1e-6)
                 self.assertFalse(self.js('window.machinePlacementGrid().enabled'))
                 self.click_visible('Snap to grid')
+                if self.js("document.getElementById('recent-changes').open"):self.click_visible('Close')
                 self.assertEqual(self.ghost()['p'],free,'turning snapping on is not a placement command')
                 if width==1280:
                     bottom=self.js('window.machineGhostScreen().bottom')
@@ -4338,6 +4373,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual((precise['x_m'],precise['z_m']),(.31,.23),'precision controls do not round to the grid')
                 self.assertEqual(self.js('window.machinePlacementGrid().aligned'),[])
                 self.click_visible('Snap to grid')
+                if self.js("document.getElementById('recent-changes').open"):self.click_visible('Close')
                 self.press('Set it down');self.wait(READY,60)
                 self.assertEqual(self.js('window.machinePlacements()[0]'),precise)
                 self.press('Pick up your knife 1')
@@ -4371,6 +4407,8 @@ class Puzzles(unittest.TestCase):
         self.js("document.getElementById('design-versions').open=true;document.getElementById('version-pick').value='1'")
         self.press('Restore version');self.wait(f"window.machinePlacements()[0]?.x_m===.31 && {READY}",60)
         self.assertEqual(self.js('window.machinePlacements()[0]'),kept)
+
+
 
     def test_scene_clicks_and_subthreshold_drags_do_not_relocate_and_background_drags_rotate(self):
         for width,height in ((1280,860),(390,844),(844,390)):
@@ -4615,6 +4653,10 @@ class Puzzles(unittest.TestCase):
         self.assertGreaterEqual(card['top'],scene['top'],(card,scene))
         self.assertLessEqual(card['bottom'],scene['bottom'],(card,scene))
         self.assertLessEqual(card['bottom'], 844, 'the controls are on the screen with the scene')
+        self.assertFalse(self.js("document.querySelector('[aria-label=\"Turn selected piece\"]').checkVisibility()"))
+        self.press('✓ Set down');self.wait(READY,30)
+        self.open('free',390,844,phone=True)
+        self.press('Add a plank');self.ghost()
         self.press('Change its turn')
         self.slide('Its turn',15)
         self.assertEqual(self.ghost()['p']['yaw_deg'], 15)

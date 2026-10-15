@@ -320,7 +320,7 @@ function syncContactCircuits() {
   contactCircuitOutlines.length=0;contactCircuitRows.clear();
   if(inspectedCircuit){follow=inspectionFollow;$('follow').setAttribute('aria-pressed',String(follow));if(!ghost)$('control-panel').append($('instrument-panel'));}
   inspectedCircuit=null;
-  if($('level-done').hidden)$('control-panel').append($('level-done'));
+  if($('level-done').hidden)view.append($('level-done'));
   const labels=$('contact-switch-labels');labels.replaceChildren();labels.hidden=true;
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');labels.append(svg);
   for(const text of ['Moving contact','Fixed pad']) {
@@ -372,11 +372,11 @@ function inspectContactCircuit(name) {
   selectPhonePanel('controls',true);
   if(!ghost){$('control-panel').prepend($('instrument-panel'));$('control-panel').scrollTop=0;}
   else $('instrument-panel').scrollIntoView({block:'start',inline:'nearest',behavior:'instant'});
-  if($('level-done').hidden)$('instrument-panel').after($('level-done'));
+  if($('level-done').hidden)view.append($('level-done'));
   flowGroup.visible=false;freshView();updateContactCircuitReadings();
 }
 $('inspect-switch').addEventListener('click',()=>{
-  if(inspectedCircuit){inspectedCircuit=null;follow=inspectionFollow;$('follow').setAttribute('aria-pressed',String(follow));frameCamera();$('inspect-switch').textContent='Inspect switch';if($('level-done').hidden)$('control-panel').append($('level-done'));if(!ghost){$('control-panel').append($('instrument-panel'));$('control-panel').scrollTop=0;}}
+  if(inspectedCircuit){inspectedCircuit=null;follow=inspectionFollow;$('follow').setAttribute('aria-pressed',String(follow));frameCamera();$('inspect-switch').textContent='Inspect switch';if($('level-done').hidden)view.append($('level-done'));if(!ghost){$('control-panel').append($('instrument-panel'));$('control-panel').scrollTop=0;}}
   else inspectContactCircuit(contactCircuitRows.keys().next().value);
 });
 function updateContactCircuitReadings() {
@@ -2002,6 +2002,7 @@ function render() {
   view.classList.toggle('choosing-attachment',Boolean(ghost?.p.attachment_version===2||machine?.electrical?.devices?.some(d=>d.attachment_version===2&&d.heats)));
   frameNewConnections();
   positionPieceEditor();
+  updatePieceHandles();
   positionPowerLabels();
   positionTerminalLabels();
   drawSceneSockets();
@@ -2487,7 +2488,7 @@ function updatePieceHandles() {
         if(h.suppressClick){h.suppressClick=false;return;}
         if(ghost)editByDrag(key,Number(ghost.p[key]),direction*240*(numericChoices?1/(rule.choices.length-1):(rule.step||.01)/(rule.max-rule.min)));
       },{ariaLabel:`${direction>0?'Increase':'Decrease'} ${knobName(rule,key)} on object`,
-        title:'Tap for one increment, or drag along the highlighted direction. Exact values are in Help → Settings.'});
+        title:'Tap for one increment, or drag along the highlighted direction. Exact values are in Changes → Settings.'});
       h.className='piece-dimension-handle';
       h.link=document.createElementNS('http://www.w3.org/2000/svg','line');editHandleLinks.append(h.link);
       h.addEventListener('pointerdown',e=>{if(e.button!==0||!ghost)return;e.preventDefault();h.focus({preventScroll:true});
@@ -3584,6 +3585,10 @@ function updatePowerFeedback() {
     else need=`Load varies · ${d.rated_torque_n_m.toFixed(1)} N·m stall`;
     if(Number.isFinite(d.rated_voltage_v))need=`Rated ${d.rated_voltage_v} V · ${d.rated_w.toFixed(1)} W`+
       (d.requirement==='goal'?` · Goal ≥ ${d.required_w.toFixed(1)} W`:'');
+    // Keep a lesson's supply limit with its objective when a short screen
+    // cannot also fit a separate wire reading at the edge.
+    const supply=sample.wires.find(w=>w.show_supply_limit&&Number.isFinite(w.supply_max_power_w));
+    if(d.requirement==='goal'&&supply)need+=`\nShared supply ≤ ${supply.supply_max_power_w.toFixed(1)} W · ${supply.supply_voltage_v} V`;
     let actual=d.input_w<-.05?`${Math.abs(d.input_w).toFixed(1)} W returned`:`${Math.max(0,d.input_w).toFixed(1)} W in`;
     if(Number.isFinite(d.voltage_v))actual+=` · ${Math.abs(d.voltage_v).toFixed(1)} V`;
     if(Number.isFinite(d.torque_n_m))actual+=` · ${Math.abs(d.torque_n_m).toFixed(1)} N·m`;
@@ -4385,7 +4390,7 @@ renderer.domElement.addEventListener('pointerup', e => {
     const endpoint=ref.rule.hinge?(machine?.joints||[]).find(j=>j.kind==='hinge'&&(j.a===name||j.b===name)&&ref.allowed.includes(j.name))?.name:
       ref.key==='battery'?(machine?.batteries||[]).find(b=>b.in===name&&ref.allowed.includes(b.name))?.name:name;
     if(endpoint&&ref.allowed.includes(endpoint)){ref.p[ref.key]=endpoint;pendingPieceReference=null;closeValueChoices();ref.changed();}
-    else $('adjustment-feedback').textContent='Choose a compatible object in the scene. Default connections and exact endpoints are in Help → Settings.';
+    else $('adjustment-feedback').textContent='Choose a compatible object in the scene. Default connections and exact endpoints are in Changes → Settings.';
   } else if (ghost && click) setLooking(true);
   else if (!ghost && click && !pullMode && !attachMode) {
     const choices=placedOwnersAt(e.clientX,e.clientY);
