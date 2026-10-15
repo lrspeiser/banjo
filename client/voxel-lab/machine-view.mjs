@@ -318,15 +318,20 @@ export function draggedKnobValue(rule, initial, pixels) {
 
 // Prefer a nearby clear side of the selected solid. When space is tight,
 // dock to a clear scene edge and keep the solid uncovered.
-export function pieceToolbarPosition(scene, piece, size, obstacles=[]) {
+export function pieceToolbarPosition(scene, piece, size, obstacles=[], {edgeOnly=false}={}) {
   const gap=10, w=size.width,h=size.height;
   const clamp=(v,lo,hi)=>Math.max(lo,Math.min(Math.max(lo,hi),v));
   const bound=([x,y])=>({x:clamp(x,scene.left+6,scene.right-w-6),y:clamp(y,scene.top+6,scene.bottom-h-6)});
   const overlaps=(a,b)=>a.x<b.right&&a.x+w>b.left&&a.y<b.bottom&&a.y+h>b.top;
-  const candidates=[[piece.right+gap,(piece.top+piece.bottom-h)/2],[piece.left-w-gap,(piece.top+piece.bottom-h)/2],
+  let candidates=[[piece.right+gap,(piece.top+piece.bottom-h)/2],[piece.left-w-gap,(piece.top+piece.bottom-h)/2],
     [(piece.left+piece.right-w)/2,piece.bottom+gap],[(piece.left+piece.right-w)/2,piece.top-h-gap],
     [scene.left+6,scene.top+54],[scene.right-w-6,scene.top+54],[scene.left+6,scene.bottom-h-60]];
   for(const o of obstacles)for(const x of [scene.left+6,scene.right-w-6,o.right+gap,o.left-w-gap])candidates.push([x,o.bottom+gap],[x,o.top-h-gap],[x,piece.top-h-gap],[x,piece.bottom+gap]);
+  if(edgeOnly) {
+    const ys=[(piece.top+piece.bottom-h)/2,scene.top+6,scene.bottom-h-6,
+      piece.top-h-gap,piece.bottom+gap,...obstacles.flatMap(o=>[o.bottom+gap,o.top-h-gap])];
+    candidates=[scene.left+6,scene.right-w-6].flatMap(x=>ys.map(y=>[x,y]));
+  }
   const ranked=candidates.map(bound).map(at=>({...at,penalty:(overlaps(at,piece)?100000:0)+obstacles.filter(o=>overlaps(at,o)).length*10000,
     distance:Math.hypot(at.x+w/2-(piece.left+piece.right)/2,at.y+h/2-(piece.top+piece.bottom)/2)}));
   return ranked.sort((a,b)=>a.penalty-b.penalty||a.distance-b.distance)[0];

@@ -2252,6 +2252,9 @@ function followGhost() {
 }
 function fitNewPieceInView() {
   const bounds = new THREE.Box3().setFromObject(ghostGroup);
+  // On short phone views, the addition alone can fit while its target falls
+  // below the canvas. Keep the lesson apparatus in this one-time Add framing.
+  if(mobileEdgeControls()&&!level?.free)for(const mesh of meshes.values())if(mesh.visible)bounds.expandByObject(mesh);
   if (bounds.isEmpty() || ![...bounds.min.toArray(), ...bounds.max.toArray()].every(Number.isFinite)) return;
   freshView();
   // Keep the player's angle and look-at point. Moving the camera backwards
@@ -2455,10 +2458,11 @@ function updatePieceHandles() {
     let dx=(b.x-a.x)*rect.width/2,dy=-(b.y-a.y)*rect.height/2,l=Math.hypot(dx,dy);if(l<1){dx=1;dy=0;l=1;}
     dx/=l;dy/=l;const h=editHandles.children[i];
     const obstacles=[...view.querySelectorAll('#piece-editor,#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')].filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
+    obstacles.push(...mobileControlObstacles(rect));
     const box=ghostScreenBox();if(box)obstacles.push({left:box.x0,right:box.x1,top:box.y0,bottom:box.y1});
     for(let j=0;j<i;j++){const previous=editHandles.children[j];if(!previous.hidden)obstacles.push(previous.getBoundingClientRect());}
     let point=null;
-    const half=28;
+    const half=view.clientWidth<360?22:28;
     for(const distance of [56,80,104,128,160,192,224,-56,-80,-104,-128,-160,-192,-224,0].map(v=>v*(anchor.side||1))){
       const x=rect.left+(a.x+1)*rect.width/2+dx*distance,y=rect.top+(1-a.y)*rect.height/2+dy*distance;
       if(Math.abs(a.z)<=1&&x>=rect.left+half&&x<=rect.right-half&&y>=rect.top+half&&y<=rect.bottom-half&&!obstacles.some(r=>x+half>r.left&&x-half<r.right&&y+half>r.top&&y-half<r.bottom)){point={x,y};break;}
@@ -3121,10 +3125,42 @@ function editByDrag(key,initial,pixels) {
 }
 
 const liveCards=document.createElement('div');liveCards.id='device-live-controls';view.append(liveCards);
+const controlLeaders=document.createElementNS('http://www.w3.org/2000/svg','svg');
+controlLeaders.id='object-control-leaders';controlLeaders.setAttribute('aria-hidden','true');view.append(controlLeaders);
+const editorLeader=document.createElementNS(controlLeaders.namespaceURI,'line');
+editorLeader.dataset.for='piece-editor';controlLeaders.append(editorLeader);
+const liveControlLeaders=new Map();
+function mobileEdgeControls(){return view.clientWidth<600 || innerHeight<=500;}
+function controlLeader(line,card,anchor) {
+  line.style.display='none';
+  if(!mobileEdgeControls()||card.hidden)return;
+  const rect=view.getBoundingClientRect(),box=card.getBoundingClientRect();
+  const to={x:Math.max(box.left,Math.min(box.right,anchor.x)),y:Math.max(box.top,Math.min(box.bottom,anchor.y))};
+  line.setAttribute('x1',String(anchor.x-rect.left));line.setAttribute('y1',String(anchor.y-rect.top));
+  line.setAttribute('x2',String(to.x-rect.left));line.setAttribute('y2',String(to.y-rect.top));
+  line.style.display='';
+}
+function mobileControlObstacles(rect) {
+  if(!mobileEdgeControls())return [];
+  const boxes=[];
+  // Reserve the apparatus, not every fracture fragment each animation frame.
+  for(const part of machine?.parts||[]) {
+    const mesh=meshes.get(part.name);if(!mesh?.visible)continue;
+    const box=coachObjectBox([mesh]);
+    // Large background surfaces are not editing targets. Reserving the
+    // entire projected floor would leave no place for an edge callout.
+    if(!box||box.width*box.height>rect.width*rect.height*.7)continue;
+    boxes.push({left:box.x-4,right:box.x+box.width+4,top:box.y-4,bottom:box.y+box.height+4});
+  }
+  return boxes;
+}
 function positionLiveControls(){
   const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#piece-editor,#panel-toggle,#level-done')]
     .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
   for(const card of liveCards.children){
+    let leader=liveControlLeaders.get(card);
+    if(!leader){leader=document.createElementNS(controlLeaders.namespaceURI,'line');controlLeaders.append(leader);liveControlLeaders.set(card,leader);}
+    leader.style.display='none';
     if(card.dataset.restraint && readouts.joints?.some(j=>j.name===card.dataset.restraint&&j.attached===false)) {
       const button=card.querySelector('button');button.textContent='Latch released';button.disabled=true;
       card.querySelector('output').textContent='The restrained part is free to move.';
@@ -3136,21 +3172,27 @@ function positionLiveControls(){
     const objects=[...meshes].filter(([name,m])=>m.visible&&(name===card.deviceName||name.startsWith(card.deviceName+' '))).map(([,m])=>m);
     const body=objects.length?coachObjectBox(objects):null;
     const bounds=body?{left:body.x,right:body.x+body.width,top:body.y,bottom:body.y+body.height}:{left:x-20,right:x+20,top:y-20,bottom:y+20};
-    const at=pieceToolbarPosition(rect,bounds,card.getBoundingClientRect(),occupied);
+    const at=pieceToolbarPosition(rect,bounds,card.getBoundingClientRect(),[...occupied,...mobileControlObstacles(rect)],{edgeOnly:mobileEdgeControls()});
     card.style.left=`${at.x-rect.left}px`;card.style.top=`${at.y-rect.top}px`;occupied.push(card.getBoundingClientRect());
+    controlLeader(leader,card,{x,y});
   }
+  for(const [card,leader] of liveControlLeaders)if(!card.isConnected){leader.remove();liveControlLeaders.delete(card);}
 }
 function positionPieceEditor() {
   positionLiveControls();
-  const editor=$('piece-editor');if(editor.hidden||!ghost||editor.matches(':active'))return;
+  editorLeader.style.display='none';
+  const editor=$('piece-editor');if(editor.hidden||!ghost)return;
   const box=ghostScreenBox();if(!box)return;
+  if(editor.matches(':active')){controlLeader(editorLeader,editor,{x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2});return;}
   const rect=view.getBoundingClientRect();
   // The toolbar owns its position; readouts yield to it afterwards. Letting
   // both avoid each other's last position makes the buttons oscillate.
   const obstacles=[...collapsedPanel(),...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')]
     .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
-  const at=pieceToolbarPosition(rect,{left:box.x0,right:box.x1,top:box.y0,bottom:box.y1},editor.getBoundingClientRect(),obstacles);
+  const at=pieceToolbarPosition(rect,{left:box.x0,right:box.x1,top:box.y0,bottom:box.y1},editor.getBoundingClientRect(),
+    [...obstacles,...mobileControlObstacles(rect)],{edgeOnly:mobileEdgeControls()});
   editor.style.left=`${at.x-rect.left}px`;editor.style.top=`${at.y-rect.top}px`;
+  controlLeader(editorLeader,editor,{x:(box.x0+box.x1)/2,y:(box.y0+box.y1)/2});
 }
 
 // What the pieces take to make with the ghost as it is, against the level's

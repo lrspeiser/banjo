@@ -4798,11 +4798,11 @@ class Puzzles(unittest.TestCase):
             with self.subTest(viewport=(width,height)):
                 self.open('gap',width,height,phone=width!=1280)
                 self.press('Add a plank');before=self.ghost()['p']
-                self.assertTrue(self.js("document.getElementById('help-settings').closest('#phone-help-panel')!==null"))
+                self.assertTrue(self.js("document.getElementById('help-settings').closest('#control-panel')!==null"))
                 self.assertFalse(self.js("document.getElementById('help-settings').open"))
                 self.assertTrue(self.js("document.getElementById('restart-pieces').hidden&&document.getElementById('view-overview').hidden&&document.getElementById('scene-mode').hidden"))
                 self.assertEqual(self.js("document.querySelector('#level-details summary')"),None)
-                self.assertFalse(self.js("Boolean(document.querySelector('#control-panel input[type=range]'))"))
+                self.assertFalse(self.js("[...document.querySelectorAll('#control-panel input[type=range]')].some(e=>e.checkVisibility())"))
                 self.wait("(()=>{const b=machineGhostScreen(),r=document.getElementById('piece-editor').getBoundingClientRect();return r.right<=b.x0||r.left>=b.x1||r.bottom<=b.y0||r.top>=b.y1;})()",10)
                 self.click_visible('Move selected piece')
                 point=self.js("(()=>{const b=machineGhostScreen();return [(b.x0+b.x1)/2,(b.y0+b.y1)/2];})()")
@@ -4812,11 +4812,10 @@ class Puzzles(unittest.TestCase):
                 handle=self.js("(()=>{const b=document.getElementById('piece-grip'),r=b.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,Number(b.dataset.dx),Number(b.dataset.dy)];})()")
                 self.drag(handle[:2],[handle[0]+24*handle[2],handle[1]+24*handle[3]],touch=width!=1280)
                 edited=self.ghost()['p'];self.assertGreater(edited['length_m'],before['length_m'])
-                self.click_visible('Turn selected piece')
-                point=self.js("(()=>{const b=machineGhostScreen();return [(b.x0+b.x1)/2,(b.y0+b.y1)/2];})()")
-                self.assertTrue(self.js(f"document.elementFromPoint({point[0]},{point[1]})?.tagName==='CANVAS'"))
-                self.drag(point,[point[0]+20,point[1]],touch=width!=1280)
-                turned=self.ghost()['p'];self.assertNotEqual(turned['yaw_deg'],edited['yaw_deg'])
+                # Mind the gap teaches length with a prepared orientation;
+                # the October 14 lesson whitelist intentionally hides Turn.
+                self.assertFalse(self.js("document.querySelector('[aria-label=\"Turn selected piece\"]').checkVisibility()"))
+                turned=self.ghost()['p']
                 before_camera=self.js('machineCamera()')
                 self.click_visible('Turn the view left');self.click_visible('Look from above')
                 self.assertLess(self.js('machineCamera().azimuth'),before_camera['azimuth'])
@@ -4827,6 +4826,29 @@ class Puzzles(unittest.TestCase):
                 self.click_piece(0);self.assertEqual(self.ghost()['p'],turned)
                 proof=ROOT/'build'/'ui-proof';proof.mkdir(parents=True,exist_ok=True)
                 (proof/f'piece-toolbar-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
+    def test_phone_piece_callouts_leave_the_seesaw_and_placement_guides_clear(self):
+        for width,height in ((390,844),(320,568),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-weight',width,height,phone=True)
+                self.click_visible('Add a weight');self.ghost()
+                check="""(()=>{const view=document.getElementById('view').getBoundingClientRect(),
+                    card=document.getElementById('piece-editor').getBoundingClientRect(),
+                    line=document.querySelector('#object-control-leaders [data-for="piece-editor"]'),
+                    piece=machineGhostScreen(),target=machineBodyScreen('lever');
+                    return {edge:Math.abs(card.left-view.left-6)<1||Math.abs(view.right-card.right-6)<1,
+                        inside:card.top>=view.top&&card.bottom<=view.bottom,
+                        selectedClear:card.right<=piece.x0||card.left>=piece.x1||card.bottom<=piece.y0||card.top>=piece.y1,
+                        targetClear:document.elementFromPoint(...target)?.tagName==='CANVAS',
+                        leader:line?.style.display!== 'none',
+                        from:[Number(line?.getAttribute('x1')),Number(line?.getAttribute('y1'))]};})()"""
+                self.wait(f'({check}).edge&&({check}).inside&&({check}).selectedClear&&({check}).targetClear',10)
+                first=self.js(check);self.assertTrue(first['leader'])
+                self.click_visible('Turn the view left');self.wait('machineCamera().settled',10)
+                changed=self.js(check);self.assertTrue(changed['edge']);self.assertTrue(changed['leader'])
+                self.wait("(()=>{const p=machineGhostScreen(),v=document.getElementById('view').getBoundingClientRect(),l=document.querySelector('#object-control-leaders [data-for=\"piece-editor\"]');return Math.abs(Number(l.getAttribute('x1'))-((p.x0+p.x1)/2-v.left))<1&&Math.abs(Number(l.getAttribute('y1'))-((p.y0+p.y1)/2-v.top))<1;})()",10)
+                self.click_visible('Place');self.wait(READY,30)
+                self.assertTrue(self.js("document.querySelector('#object-control-leaders [data-for=\"piece-editor\"]').style.display==='none'"))
 
     def test_failed_run_has_one_retry_and_restores_last_selected_piece(self):
         for width,height in ((1280,860),(390,844),(844,390)):

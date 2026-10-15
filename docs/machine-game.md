@@ -1,5 +1,29 @@
 # Puzzles on the machine (/play)
 
+October 14 phone callout update: selected-piece editors and live device control
+cards dock to a left/right scene edge on phone portrait and short landscape
+views. Portrait editors use a 136 px card, with Move/Place on separate rows and
+all three gear measurements visible. Thin dotted, noninteractive SVG leaders
+connect cards to projected objects. Editors and dimension handles reserve the
+prepared apparatus; electrical readings keep their existing edge callouts.
+Narrow phones use two rows of perspective buttons and a smaller bottom dock
+while editing. The one-time Add framing includes the lesson apparatus so a new
+piece can be lined up with its target; manual zoom and camera gestures remain
+available. Sandbox does not zoom out to include its whole machine on Add.
+This changes presentation only: native physics, placements, goals and scores
+are unchanged. The small-screen callout regression checks edge docking, clear
+ghost/seesaw hit targets, leader anchoring after turning the view, and hiding
+the leader after Place at 390×844, 320×568 and 844×390. Existing control fixtures
+now reflect the already-published Controls → Settings location, hidden exact
+sliders and Mind the gap’s length-only lesson controls.
+Verification: seven focused Chrome scenarios pass in 69.221 s, exercising
+desktop, phone portrait/landscape, direct dimension gestures, gear sizing,
+lens/receiver edits and the spring latch/native lift. The registered client
+geometry test, JavaScript/Python syntax, diff check and all 271 source
+registrations pass. Native Windows SHA-256 remains
+`35230eb7ee76ee0209ff034558ea6110061babd072635561b98d988b92c3f67a`;
+no new physical calibration or conservation claim is made.
+
 October 14 lesson-control audit: all 34 authored levels now have explicit
 `lesson_controls` metadata for every tray piece in `level-onboarding.json`.
 The level loader validates coverage and unknown/duplicate keys. The client

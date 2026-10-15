@@ -811,6 +811,24 @@ body.panel-tabs .scene-tray .tray-picture,body.panel-tabs .scene-tray #tray img{
 
 .device-control-status{font-size:12px;line-height:1.3;color:#cde3ef}.device-control-status:empty{display:none}
 
+/* Phone callouts leave the central placement guides and target apparatus clear. */
+#object-control-leaders{position:absolute;inset:0;width:100%;height:100%;z-index:6;pointer-events:none;overflow:hidden}
+#object-control-leaders line{stroke:#b9d9e9;stroke-width:1;stroke-dasharray:3 3;opacity:.75}
+@media(max-width:599px){
+  #piece-editor{width:136px}
+  #piece-editor .piece-toolbar{flex-direction:column}
+  #piece-editor .piece-modes,#piece-editor .actions{flex:none;width:100%}
+  #piece-editor .adjustment-picker select{font-size:12px}
+  #piece-editor .gear-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #piece-editor .gear-controls button:last-child{grid-column:1/-1}
+  .device-live-card{width:140px}
+}
+@media(max-width:359px){
+  #viewer-zoom{right:8px;top:56px;bottom:auto}
+  #viewer-perspective{right:8px;top:104px;bottom:auto;display:grid;grid-template-columns:repeat(2,44px)}
+  .piece-dimension-handle{width:44px;height:44px;font-size:26px}
+}
+
 body.panel-tabs:has(#phone-controls-tab[aria-selected=false]) #piece-editor>:not(.piece-toolbar),body.panel-tabs:has(#phone-controls-tab[aria-selected=false]) #piece-handles,body.panel-tabs:has(#phone-controls-tab[aria-selected=false]) #piece-handle-links{display:none!important}
 
 body.playing-level #view>.level-done.retry-result{top:auto;bottom:12px;transform:translateX(-50%);width:auto;max-width:calc(100% - 24px);padding:6px;border-radius:8px}
@@ -853,7 +871,7 @@ body.panel-tabs aside:has(#phone-controls-tab[aria-selected=true]):has(#help-set
 body.panel-tabs aside:has(#phone-controls-tab[aria-selected=true]):has(#help-settings[open]) #scene-goal{display:none}
 @media(max-width:599px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 200px}}
 @media(max-height:500px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 160px}}
-@media(max-width:359px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 230px}}
+@media(max-width:359px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 180px}}
 @media(max-width:359px){
   /* GO already showed the full briefing. Keep its title and the tray reachable
      in short portrait views rather than repeating a multi-line task here. */

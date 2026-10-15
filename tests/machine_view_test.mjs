@@ -14,6 +14,17 @@ for(const scene of [{left:0,top:0,right:900,bottom:600},{left:0,top:0,right:390,
   assert.ok(at.x>=scene.left&&at.y>=scene.top&&at.x+184<=scene.right&&at.y+148<=scene.bottom);
   assert.ok(at.x>=piece.right||at.x+184<=piece.left||at.y>=piece.bottom||at.y+148<=piece.top,'toolbar leaves the selected solid clear');
 }
+for(const [width,height] of [[390,554],[320,310],[844,207]]){
+  const scene={left:0,top:80,right:width,bottom:80+height};
+  const piece={left:width/2-15,right:width/2+15,top:150,bottom:185};
+  const size={width:width<600?136:250,height:width<600?166:118};
+  const target={left:width/2-90,right:width/2+90,top:280,bottom:310};
+  const corner={left:width-(width<360?144:180),right:width,top:130,bottom:230};
+  const at=pieceToolbarPosition(scene,piece,size,[target,corner],{edgeOnly:true});
+  assert.ok(at.x===6||at.x+size.width===width-6,'phone callouts dock to an edge');
+  assert.ok(at.y>=scene.top&&at.y+size.height<=scene.bottom,'the complete control fits');
+  for(const b of [piece,target,corner])assert.ok(at.x>=b.right||at.x+size.width<=b.left||at.y>=b.bottom||at.y+size.height<=b.top,'callout leaves the piece, target and camera clear');
+}
 
 const heated={body:'cord',at_m:[0,.5,1],local_m:[0,.02,0],cell_m:.02,temperature_k:573.15,how:'chars',cut_w:100,held_j:400,needed_j:1000};
 assert.equal(thermalCells({hot_cells:[heated]})[0].progress,.4);
