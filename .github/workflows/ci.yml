@@ -19,7 +19,8 @@ jobs:
       - name: Check every source under src/ and tests/ is in a CMake target
         run: python3 scripts/check-source-registration.py
 
-  build-and-test:
+  native-tests:
+    needs: source-registration
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -38,8 +39,9 @@ jobs:
       - name: Build
         run: cmake --build build/ci --parallel 2
 
-      - name: Test the engine and the game
-        # The game's page is driven in Chrome (tests/machine_game_browser_tests.py).
+      - name: Test the engine and non-browser game checks
+        # The four browser batches run on their own runners below. Every
+        # other CTest group and the existing label exclusions stay here.
         env:
           BANJO_CHROME: /usr/bin/google-chrome
           BANJO_CHROME_ARGS: "--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader"
@@ -49,6 +51,7 @@ jobs:
           --output-junit ${{ github.workspace }}/ctest-results.xml
           --test-output-size-passed 20000000 --test-output-size-failed 20000000
           -LE "long|performance"
+          -E "^banjo_machine_game_browser_tests_[0-3]$"
 
       - name: Keep the test and floating-point evidence
         if: always()
@@ -60,3 +63,48 @@ jobs:
             build/ci/banjo-fp-profile.json
             build/ci/fp-model-audit-Release.json
           if-no-files-found: warn
+
+  browser-tests:
+    needs: source-registration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the electrical solver
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libngspice0-dev
+      - name: Build this revision's game engine
+        # Independent runners keep software rendering and native simulations
+        # from competing for the same CPU. No runtime artifact is shared.
+        run: |
+          cmake -S . -B build/browser-engine -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=OFF
+          cmake --build build/browser-engine --parallel 2 --target banjo_live_world_run
+      - name: Play browser batch ${{ matrix.shard }} of 4
+        env:
+          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/browser-engine/banjo_live_world_run
+          BANJO_CHROME: /usr/bin/google-chrome
+          BANJO_CHROME_ARGS: "--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader"
+          BANJO_BROWSER_TESTS: required
+        # Retain CMake's 1200-second batch deadline and every Python scenario.
+        # Unbuffered output makes progress visible before a batch finishes.
+        run: timeout 1200s python3 -u tests/machine_game_browser_tests.py --shard=${{ matrix.shard }}/4
+
+  build-and-test:
+    if: ${{ always() }}
+    needs: [source-registration, native-tests, browser-tests]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every native check and all four browser batches
+        env:
+          SOURCE_RESULT: ${{ needs['source-registration'].result }}
+          NATIVE_RESULT: ${{ needs['native-tests'].result }}
+          BROWSER_RESULT: ${{ needs['browser-tests'].result }}
+        run: |
+          set -euo pipefail
+          test "$SOURCE_RESULT" = success
+          test "$NATIVE_RESULT" = success
+          test "$BROWSER_RESULT" = success
+          echo "Source registration, native checks and all four browser batches passed."

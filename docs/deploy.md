@@ -322,6 +322,14 @@ never packaged or sent to the browser.
 
 ### Development and promotion
 
+CI runs the four browser batches on separate Ubuntu runners alongside the
+native test job. Each browser runner builds the checked-out engine and keeps
+the existing 1200-second batch deadline. The `build-and-test` check succeeds
+only when source registration, every non-browser native check and all four
+browser batches succeed; failed, skipped or cancelled dependencies fail the
+gate. Native JUnit/floating-point evidence remains attached to the run, and
+browser progress streams in the four job logs. This adds no Render service.
+
 1. Start a feature branch from current main, preserving unrelated changes.
 2. Verify its scope, update Recent Changes and integrate into `codex/staging`.
    Fetch first and preserve concurrent staging work.

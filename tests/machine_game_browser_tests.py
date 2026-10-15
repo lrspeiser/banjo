@@ -625,6 +625,9 @@ class Puzzles(unittest.TestCase):
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertTrue(self.js("document.getElementById('level-done').closest('#view')!==null"))
                 self.assertNotIn('finished every level',self.js("document.getElementById('level-done').textContent"))
+                # The result card intentionally takes priority over optional
+                # edge readings on short screens. Close it to inspect the meter.
+                self.click_visible('Close level complete')
                 self.wait("/run over/.test(document.getElementById('clock').textContent)",15)
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='capacitor 1'&&/Now .* V.* J/.test(r.text)&&!r.text.includes('Updating'))",15)
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='capacitor 1'&&!r.hidden)",10)
@@ -925,6 +928,7 @@ class Puzzles(unittest.TestCase):
                     self.wait(f'!machineGhostState() && {READY}',30)
                     # Connection picking keeps the view clear. Change gauge
                     # through the existing placed-wire control afterwards.
+                    self.wait(f"[...document.querySelectorAll('#wire-adjustments button')].some(b=>b.textContent.startsWith('Wire {count} '))",5)
                     label=self.js(f"[...document.querySelectorAll('#wire-adjustments button')].find(b=>b.textContent.startsWith('Wire {count} ')).getAttribute('aria-label')")
                     self.click_visible(label);self.ghost();self.click_visible('Standard wire');self.ghost()
                     self.click_visible('Place');self.wait(READY,30)
@@ -2079,7 +2083,7 @@ class Puzzles(unittest.TestCase):
                 self.slide('Position across (m) of your lens 1',0)
                 self.slide('Diameter (m) of your lens 1',.12)
                 self.ghost()
-                self.wait('!window.machineLaserPreviewState().pending && window.machineLaserPreviewState().photocells[0]?.power_w>2',30)
+                self.wait("!window.machineLaserPreviewState().pending && window.machineLaserPreviewState().photocells[0]?.power_w>2 && document.getElementById('laser-preview-status').textContent.includes('7.31 W')",30)
                 self.assertIn('7.31 W',self.js("document.getElementById('laser-preview-status').textContent"))
                 self.slide('Position across (m) of your lens 1',.3)
                 self.assertTrue(self.js('window.machineLaserPreviewState().visible'),'previous trace stays visible while the new one is requested')

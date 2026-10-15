@@ -1,5 +1,25 @@
 # Puzzles on the machine (/play)
 
+October 15 Linux release follow-up: software-rendered CI found four failures
+in three browser cases after their Windows runs passed. The capacitor case
+now closes the completion overlay before inspecting its edge meter; the wire
+case waits for its adjustment button to be painted; the lens case waits for
+both native power and the matching visible reading instead of accepting the
+previous trace while the replacement is scheduled. All three pass locally
+with SwiftShader enabled. No physical assertion, goal or timeout was loosened.
+The first complete local CI batch also passes, and its measured request
+counts remain below the fixture's preview allowance.
+
+CI now compiles and runs all non-browser CTest checks in `native-tests`, while
+the same four complete browser batches run on independent Ubuntu runners.
+Each builds this revision's engine; no shared Render CPU or runtime artifact
+is involved. The existing 1200-second browser-batch deadline is retained.
+The required `build-and-test` check is a fail-closed aggregate of source
+registration, native tests and all four matrix results. Its gate was checked
+against success/failure/cancelled/skipped dependency outcomes. The promotion
+script's required check names and exact-revision rules are unchanged. A full
+green run of this candidate remains required before production promotion.
+
 October 15 final local browser qualification: all 146 distinct scenarios pass
 across measured batches and affected-case reruns, with the unchanged Windows
 engine SHA-256 `35230eb7ee76ee0209ff034558ea6110061babd072635561b98d988b92c3f67a`.
