@@ -1,5 +1,13 @@
 # Puzzles on the machine (/play)
 
+October 15 phone gear-card follow-up: Move, Place and cancel share one row
+with 44 px touch targets on a 156 px card. This removes a row of height so
+the editor can clear the target wheel while showing the alignment feedback.
+The four-viewport size/height/control check passes in 14.724 s. The gear-win
+regression additionally checks that the card leaves both wheel centres visible;
+it passes on desktop, phone portrait and landscape in 27.256 s, including the
+original native win. No engine or physics thresholds change.
+
 October 15 gear alignment and held adjustments: compound toothed wheels now
 expose their compiled cylinder centre and hinge axis as the primary working
 point, rather than a post's upper face. Nearby wheel rings turn green for

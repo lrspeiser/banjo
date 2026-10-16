@@ -1238,6 +1238,8 @@ class Puzzles(unittest.TestCase):
                 self.wait("machineFlowPreviewState()?.visible&&!machineFlowPreviewState().pending&&machineFlowPreviewState().playing",30)
                 self.wait("machineFlowPreviewState().drawn?.mechanisms?.some(b=>b.name==='drive gear wheel'&&Math.abs(b.orientation_wxyz[3])>.01)",30)
                 self.assertIn('Preview',self.js("document.getElementById('gear-motion-feedback').textContent"))
+                self.paint()
+                self.assertTrue(self.js("['drive gear wheel','target gear wheel'].every(name=>{const p=machineBodyScreen(name);return p&&!document.elementFromPoint(...p)?.closest('#piece-editor');})"),'The editor must leave both wheel centres visible')
                 sample=self.js("(()=>{const s=machineFlowPreviewState(),d=s.drawn.mechanisms.find(b=>b.name==='drive gear wheel'),p=s.sample.mechanisms.find(b=>b.name===d.name);return [d,p];})()")
                 self.assertEqual(sample[0]['position_m'],sample[1]['position_m'])
                 self.assertEqual(sample[0]['orientation_wxyz'],sample[1]['orientation_wxyz'])
