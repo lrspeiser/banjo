@@ -119,8 +119,6 @@ def press_paddle(spec, device):
         dict(shape='box', at_m=[0,.08,-.10], size_m=[.04,.14,.04]),
         dict(shape='box', at_m=[-.08,.08,-.10], size_m=[.04,.14,.04])])
     housing.pop('size_m', None)
-    # Surface solder points rather than cable ends buried in the conductor.
-    for at in device['terminals'].values(): at[2] += .033
 
 
 def add_switch_contacts(spec, device):
@@ -163,7 +161,11 @@ def add_switch_contacts(spec, device):
                               at_m=[x, y, z]))
     device['touch'] = [leaf, pad]
     device['terminal_parts'] = {'in':leaf, 'out':pad}
-    device['terminals'] = {'in': [x-r*math.cos(math.radians(initial)), y-r*math.sin(math.radians(initial)), zi], 'out': pad_at}
+    # Put the flexible inlet at the conductive pivot rather than at the
+    # counterweight tip. Its weight must not operate an unloaded press deck.
+    # Surface solder pads stay accessible in both historical paddle versions.
+    device['terminals'] = {'in': [x,y,zi+.033], 'out': [pad_at[0],pad_at[1],pad_at[2]+.033]}
+    device['terminal_normals'] = {'in':[0,0,1],'out':[0,0,1]}
 
 
 def legacy_manual_switch(name, k, ctx):
@@ -251,16 +253,15 @@ def capacitor(name, k, ctx):
 
 def wire(name, k, ctx):
     row = {'name': name, 'a': k.get('a_terminal', ''), 'b': k.get('b_terminal', '')}
-    # Missing fields retain the original saved-wire model. Length includes
-    # slack; the floor route is a connection drawing, not a cable-length ruler.
-    if k.get('size','low resistance') != 'low resistance':
-        row.update(length_m=k.get('length_m', 5),
-                   area_mm2={'thin': .01, 'standard': .5, 'thick': 2.5}[k.get('size', 'standard')])
+    # Manufactured stock includes real service-coil slack. Every centimetre
+    # contributes native mass, contact and copper resistance.
+    row.update(length_m=k.get('length_m', 5),
+               area_mm2={'low resistance':2.5,'thin': .01, 'standard': .5, 'thick': 2.5}[k.get('size', 'low resistance')])
     return {'electrical': {'wires': [row]}}
 
 
 def power_cable(name, k, ctx):
-    """An ideal two-conductor charging lead; no cable loss or mass is modeled."""
+    """A native two-core charging lead with material mass and copper loss."""
     return {'electrical': {'power_cables': [{'name': name, 'a': k.get('a_port', ''),
                                             'b': k.get('b_port', '')}]}}
 
@@ -283,7 +284,7 @@ def motor(name, k, ctx):
         pass
     return {'parts': parts, 'joints': joints, 'electrical': {'devices': [{
         # Fixed rear housing connections, clear of the rotor's swept volume.
-        # The cable model is electrical; it does not supply mechanical snagging.
+        # Native cable rods attach here, clear of the rotor's swept volume.
         'name': name, 'kind': 'motor', 'part': part, 'terminals': motor_terminals(parts[0]),
         'hinge': hinge, 'stall_torque_n_m': 2, 'no_load_rad_s': 8,
         'command': k.get('throttle', 1) * (1 if k.get('direction', 'forward') == 'forward' else -1),
@@ -302,6 +303,7 @@ def ignition(name, k, ctx):
     return {'parts': parts, 'electrical': {'devices': [{
         'name': name, 'kind': 'coil', 'part': name + ' housing', 'heats': target,
         'terminals': terminal_rows(name, x, .12, z),
+        'terminal_normals':{'plus':[0,1,0],'minus':[0,1,0]},
         'resistance_ohm': {'warm': 12, 'hot': .12}.get(k.get('preset', 'warm'), 12)}]}}
 
 
@@ -342,6 +344,9 @@ def clipped_heater(name,k,ctx):
     names=[part,name+' opposite bar',name+' front bridge',name+' back bridge']
     parts=[dict(box(n,world(p['at_m']),p['size_m'],fixed=False),turn_deg=turn) for n,p in zip(names,pieces)]
     device['mechanical_parts']=names
+    device['terminal_parts']={'plus':names[0],'minus':names[1]}
+    direction=[world([0,0,.1])[i]-at[i] for i in range(3)]
+    device['terminal_normals']={'plus':direction,'minus':direction}
     joints=[dict(name=name+' '+label,kind='fix',a=names[a],b=names[b],at_m=world(point))
         for label,a,b,point in [('front bond',0,2,[-dx/2,0,dz/2+.01]),
             ('back bond',0,3,[-dx/2,0,-dz/2-.01]),('right bond',2,1,[dx/2,0,dz/2+.01])]]
@@ -410,9 +415,9 @@ TRAY = [
      'knobs': {**POS, 'a_terminal': {'default': '', 'terminal': True, 'label': 'from terminal'},
                'b_terminal': {'default': '', 'terminal': True, 'label': 'to terminal'},
                'size': {'default':'low resistance','choices':['low resistance','thin','standard','thick'],'label':'wire thickness'},
-               'length_m': knob(5,.1,100,.1,'cable length including slack (m)')}},
+               'length_m':knob(5,.1,10,.1,'stock length including slack (m)')}},
     {'piece': 'power_cable', 'label': 'Power cable', 'count': 20, 'cost': 0, 'turning': False,
-     'description': 'An ideal two-conductor lead from a solar output to a battery input. Cable losses and mass are not modeled.',
+     'description': 'A two-core charging cord from a solar output to a battery input. It falls, contacts solids and loses power in its copper.',
      'knobs': {**POS, 'a_port': {'default': '', 'power_port': 'output', 'label': 'from solar output'},
                'b_port': {'default': '', 'power_port': 'input', 'label': 'to power input'}}},
     {'piece': 'motor', 'label': 'Motor', 'count': 8, 'cost': 1, 'turning': False,
@@ -427,12 +432,13 @@ TRAY = [
 ]
 
 
-def compile_power(spec, names, battery_names, problems):
+def compile_power(spec, names, battery_names, problems, parts=None,occupied=()):
     """Resolve explicit charging destinations without mutating saved declarations.
 
     A source may charge one store, and a store accepts one source. Parallel
-    charging electronics, cable heating, sag and transmission loss are outside
-    this model. Collection, saturation and consumption remain native laws.
+    charging electronics are outside this model. Native two-core leads supply
+    mass, contact, sag, terminal pullout and resistive loss. Collection,
+    saturation and consumption remain native laws.
     """
     raw = spec.get('electrical', {}) or {}
     if not isinstance(raw, dict):
@@ -470,8 +476,14 @@ def compile_power(spec, names, battery_names, problems):
     for panel, p in panels.items():
         if isinstance(p.get('part'), str) and p['part'] in names:
             name = panel + ':power'
+            body=names[p['part']]
+            normal=p.get('normal',[0,1,0])
+            if not valid_point(normal):normal=[0,1,0]
+            norm=math.hypot(*normal) or 1
+            normal=[v/norm for v in normal]
+            reach=max(sum((q[i]-body['at_m'][i])*normal[i] for i in range(3)) for q in mechanical_cables.shape_points(body))
             ports.setdefault(name, {'name': name, 'kind': 'output', 'solar_panel': panel,
-                                    'part': p['part'], 'at_m': list(names[p['part']]['at_m'])})
+                                    'part': p['part'], 'at_m': [body['at_m'][i]-(reach+.004)*normal[i] for i in range(3)]})
     for device in raw.get('devices', []) if isinstance(raw.get('devices', []), list) else []:
         if not isinstance(device, dict) or device.get('kind') != 'battery' or device.get('part') not in names:
             continue
@@ -500,7 +512,19 @@ def compile_power(spec, names, battery_names, problems):
             problems.append(f'power cable {name}: each solar output and battery input accepts one cable'); continue
         used_sources.add(source); used_stores.add(store)
         overrides[source] = store
-        cables.append({'name': name, 'a': a['name'], 'b': b['name']})
+        row={'name': name, 'a': a['name'], 'b': b['name']}
+        try:
+            normal=panels[source].get('normal',[0,1,0])
+            if not valid_point(normal):normal=[0,1,0]
+            norm=math.hypot(*normal) or 1
+            exits=dict(exit_a_m=[a['at_m'][i]-.15*normal[i]/norm for i in range(3)],
+                       conductor_count=2,solar_panel=source)
+            physical,span,area=mechanical_cables.connection(name,a['part'],a['at_m'],b['part'],b['at_m'],
+                parts or [],len(cables),exits,
+                occupied=list(occupied)+[w['mechanical'] for w in cables if 'mechanical' in w])
+            row.update(mechanical=physical,length_m=span,area_mm2=area,resistance_ohm=.0172*2*span/area)
+        except (ValueError,KeyError,TypeError) as exc:problems.append(f'power cable {name}: {exc}')
+        cables.append(row)
     # Refuse implicit and explicit multi-source charging as well: otherwise a
     # second panel could bypass the unsupported parallel-source restriction.
     stores = {}
@@ -603,7 +627,30 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
                                           ('command', 1, -1, 1), ('gear_ratio', 1, .01, 1e4), ('brake_torque_n_m', 0, 0, 1e5)]:
                 d[key] = number(d, key, default, low, high)
         devices.append(d)
-    for w in raw.get('wires', []):
+    counts={};seated={}
+    for item in raw.get('wires',[]):
+        if not isinstance(item,dict):continue
+        for end in ('a','b'):
+            key=item.get(end)
+            if isinstance(key,str):counts[key]=counts.get(key,0)+1
+    layouts={};reservations=[]
+    for index,item in enumerate(raw.get('wires',[])):
+        if not isinstance(item,dict) or not all(isinstance(item.get(k),str) and item[k] in terminals for k in ('a','b')):continue
+        seats={}
+        for end in ('a','b'):
+            key=item[end];slot=seated.get(key,0);seated[key]=slot+1
+            seats[end]=(slot-(counts[key]-1)/2)*.012
+        layouts[index]=seats
+        try:
+            _,pa,_,pb,settings=mechanical_cables.terminal_layout(item,devices,parts or [],seats)
+            radius=float(settings.get('radius_m',.003))
+            if not math.isfinite(radius) or not .001<=radius<=.03:continue
+            for field,point in (('exit_a_m',pa),('exit_b_m',pb)):
+                exit_=settings.get(field)
+                if exit_ is not None:
+                    reservations.append((index,dict(name='reserved socket',path_m=[point,exit_],radius_m=radius)))
+        except (ValueError,KeyError,TypeError):pass  # main validation reports it
+    for index,w in enumerate(raw.get('wires', [])):
         if not isinstance(w, dict) or not isinstance(w.get('name'), str) or not w['name'] or w['name'] in ids:
             problems.append('electrical wire names must be nonempty and unique'); continue
         ids.add(w['name'])
@@ -616,13 +663,17 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
             # Copper at 20 C: rho = 0.0172 ohm mm^2 / m. The native
             # branch books I^2 R heat and the battery supplies every joule.
             row['resistance_ohm'] = .0172 * row['length_m'] / row['area_mm2']
-        motor_names={d['name'] for d in devices if d['kind']=='motor'}
-        if w.get('mechanical') or any(w[t].rsplit(':',1)[0] in motor_names for t in ('a','b')):
-            row['mechanical']=copy.deepcopy(w.get('mechanical',{}))
-            try:
-                cable,span,area=mechanical_cables.prepare(row,devices,parts or [],len(wires))
-                row.update(mechanical=cable,length_m=span,area_mm2=area,resistance_ohm=.0172*span/area)
-            except (ValueError,KeyError,TypeError) as exc:problems.append(f'electrical {w["name"]}: {exc}')
+        row['mechanical']=copy.deepcopy(w.get('mechanical',{}))
+        try:
+            seats=layouts.get(index,{})
+            prior=[old['mechanical'] for old in wires if isinstance(old.get('mechanical'),dict) and 'path_m' in old['mechanical']]
+            # Keep future plug corridors clear while fitting earlier cords.
+            # These are construction reservations, never phantom rigid bodies.
+            prior.extend(c for owner,c in reservations if owner!=index)
+            cable,span,area=mechanical_cables.prepare(row,devices,parts or [],len(wires),
+                prior,seats)
+            row.update(mechanical=cable,length_m=span,area_mm2=area,resistance_ohm=.0172*span/area)
+        except (ValueError,KeyError,TypeError) as exc:problems.append(f'electrical {w["name"]}: {exc}')
         wires.append(row)
     for item in raw.get('contacts', []):
         if not isinstance(item,dict) or not isinstance(item.get('name'),str) or not item['name'] or item['name'] in ids:
@@ -735,6 +786,8 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
     for w in compiled.get('electrical',{}).get('wires',[]):
         if 'mechanical' in w and w['name'] not in physical:
             engine.op(op='mechanical_cable',cable=dict(w['mechanical'],circuit=0))
+    for w in compiled.get('electrical',{}).get('power_cables',[]):
+        engine.op(op='mechanical_cable',cable=dict(w['mechanical'],circuit=0))
     return circuits
 
 
@@ -1005,7 +1058,7 @@ def easy_levels():
                        s, tray('bulb', connect_to={'plus': 'control:out', 'minus': 'supply:minus'}),
                        {'piece': 'bulb', 'x_m': .6}, {'load_power_w': {'device': 'your bulb 1', 'at_least_w': 2, 'for_s': .5}},
                        {'piece': 'bulb', 'x_m': .6, 'preset': 'small'}, seconds=4))
-    # A wrong bulb location is harmless in an ideal explicit wire graph. Its
+    # A wrong bulb location alone does not open an explicit wire graph. Its
     # wrong control is an open supply in the copied scenario, tested separately.
     levels[-1]['wrong'] = []
     global LEGACY_BULB_LEVEL
@@ -1101,9 +1154,9 @@ _marble_lesson['tray'][0]['description'] = 'Press the broad deck with the marble
 _marble_lesson['tray'][0]['knobs']['mechanism_version'] = copy.deepcopy(_switch_tray['knobs']['mechanism_version'])
 for _placement in _marble_lesson['solution'] + _marble_lesson['wrong']:
     _placement['mechanism_version'] = 3
-# The longer counterbalance would intersect the battery at the old -30 cm
-# miss. +30 cm instead puts the broad deck clear of the marble without overlap.
-_marble_lesson['wrong'][0]['x_m'] = .3
+# A lateral miss stays clear of the battery and lamp. With physical cords and
+# the wider deck, the old +30 cm placement can catch the bouncing marble.
+_marble_lesson['wrong'][0].update(x_m=0,z_m=.6)
 _marble_lesson['par_energy_j'] = 575000000  # Measured new deck/frame/curb construction, rounded up.
 _marble_lesson['brief'] = 'Place the broad press deck beneath the marble. Pressing it lowers the metal leaf onto the output pad and completes the lamp circuit.'
 _marble_lesson['hints'][0] = _marble_lesson['brief']
@@ -1135,7 +1188,7 @@ _burn_template['base']['electrical']['devices']=[d for d in _burn_template['base
 _burn_template['base']['electrical']['wires']=[]
 _burn_template['placements']=copy.deepcopy(_heat_lesson['solution'])
 _burn_template['pieces']=['ignition','battery','wire']
-_burn_template['description']='A visible heater clip surrounds the hanging cord. Two drawn power leads supply Joule heat until the cord weakens and drops the load.'
+_burn_template['description']='A visible heater clip surrounds the hanging cord. Two physical power leads supply Joule heat until the cord weakens and drops the load.'
 
 
 def advanced_electronics():

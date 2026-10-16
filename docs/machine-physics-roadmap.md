@@ -10,16 +10,15 @@ Some device laws remain lumped or ideal, and the coupling/calibration limits
 below matter. Heavy impacts or cuts can run slower than real time; the page's
 clock says when.
 
-October 16: motor supply/return leads now use Jolt rigid rods, inextensible
-translation constraints and passive bending/twist springs. They have material
-mass, rigid contact and endpoint reactions; terminal overload opens their
-electrical branch. This supersedes the cable-drawing limitation below for
-**motor leads only**, including Turn the axle and Sandbox motors. Old non-motor
-electrical leads, solar charging leads, ties and ideal pulley/drum ropes still
-need migration. No motor magnetic interior, conductor fracture, wire thermal
-failure or strand-resolved constitutive law was added. The
-[cable qualification](mechanical-cables.md) records model assumptions,
-numerical residuals, material comparisons and the staged rollout scope.
+October 16: visible graph wires, solar charging cords and legacy circuit
+leads now use native Jolt rods, mass, contact and passive bending/twist.
+Their actual stock length sets resistance; terminal overload disconnects the
+electrical path. Cords settle during setup without advancing puzzle time or
+electrical consumption. This supersedes the old drawing-only limitation for
+these visible electrical families. Ties and pulley/drum ropes, implicit
+optical-source feeders, detailed motor interiors, strand fracture, insulation
+and conductor thermal failure remain work to do. See the
+[cable qualification](mechanical-cables.md) for model limits and measurements.
 
 October 14 connection audit: `syncRopes` and `updateRopes` in
 [`machine.js`](../client/voxel-lab/machine.js) still draw ties, pulley runs and
@@ -27,7 +26,8 @@ drum ropes as lines. Their native constraints calculate endpoint forces and
 reactions; they do not provide a rope's distributed mass, solid collision
 surface, bending, wrap friction or material failure along its length. Spring
 coils now have a visible tube, but their native law remains an ideal axial
-spring. Older `circuits` drawings can still fall back to a line; newer power
+spring. Historical state before the October 16 migration: older `circuits` drawings
+could fall back to a line; newer power
 and electrical cables use tubes and clear-solid routing, but only their
 electrical connection/resistance is simulated. These cables have no mechanical
 mass, bending/contact response or retention model. Changing a line to a tube

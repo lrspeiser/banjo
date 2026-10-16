@@ -28,7 +28,7 @@ class Graph(unittest.TestCase):
         spec=mg.compose(level,[dict(piece='solar',x_m=-.16,z_m=-.6,yaw_deg=-90,pitch_deg=70)])[0]
         compiled=mw.compile_spec(spec)
         leads=[w for w in compiled['electrical']['wires'] if 'mechanical' in w]
-        self.assertEqual(len(leads),2)
+        self.assertEqual(len(leads),4)
         self.assertTrue(all(len(w['mechanical']['path_m'])>=2 for w in leads))
         for p in compiled['parts']:
             if not p['name'].startswith('your solar'):continue
@@ -110,7 +110,9 @@ class Graph(unittest.TestCase):
                 with self.assertRaises(mw.MachineRefused):mw.compile_spec(bad)
         free=mg.requested_level({'level':'free','base':spec})
         old=mw.compile_spec(mg.compose(free,[dict(piece='wire',a_terminal='supply:plus',b_terminal='lamp:plus')])[0])
-        self.assertNotIn('resistance_ohm',old['electrical']['wires'][0])
+        wire=old['electrical']['wires'][0]
+        self.assertAlmostEqual(wire['resistance_ohm'],.0172*wire['length_m']/wire['area_mm2'])
+        self.assertIn('mechanical',wire)
 
     def test_wire_watts_use_the_native_voltage_reference_and_are_not_wire_heat(self):
         graph={'wires':[dict(name='feed',a='battery:plus',b='motor:plus')]}
@@ -143,7 +145,8 @@ class Graph(unittest.TestCase):
                     compiled = mw.compile_spec(spec)
                     self.assertEqual(json.dumps(spec, sort_keys=True), saved_json)
                     self.assertEqual([d['name'] for d in compiled['electrical']['devices']], names)
-                    self.assertEqual(compiled['electrical']['wires'], wires)
+                    self.assertEqual([{k:w[k] for k in ('name','a','b')} for w in compiled['electrical']['wires']],wires)
+                    self.assertTrue(all('mechanical' in w for w in compiled['electrical']['wires']))
                     control = next(d for d in compiled['electrical']['devices'] if d['name'] == 'control')
                     self.assertEqual(control.get('closed', False), initial is True)
                     self.assertEqual(control['terminals'], legacy['electrical']['devices'][0]['terminals'])
@@ -288,7 +291,8 @@ class Graph(unittest.TestCase):
         self.assertEqual(spec, before)
         self.assertEqual(len(c['electrical']['networks']), 1)
         self.assertEqual(len(c['electrical']['networks'][0]['devices']), 4)
-        self.assertEqual(c['electrical']['wires'], spec['electrical']['wires'])
+        self.assertEqual([{k:w[k] for k in ('name','a','b')} for w in c['electrical']['wires']], spec['electrical']['wires'])
+        self.assertTrue(all('mechanical' in w for w in c['electrical']['wires']))
         spec['electrical']['wires'][0]['a'] = 'missing:plus'
         with self.assertRaises(mw.MachineRefused): mw.compile_spec(spec)
 
@@ -305,6 +309,48 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_two_core_solar_cord_mass_loss_and_pullout_stop_charging(self):
+        free=mg.free_build()
+        placements=[{'piece':'solar','x_m':-.7},
+                    {'piece':'battery','x_m':.7,'capacity_j':1000,'charge_percent':0},
+                    {'piece':'power_cable','a_port':'your solar 1:power','b_port':'your battery 2:power'}]
+        spec=mg.compose(free,placements)[0]
+        spec['sun']['irradiance_w_m2']=1000
+        compiled=mw.compile_spec(spec)
+        for weak in (False,True):
+            current=copy.deepcopy(compiled)
+            declaration=current['electrical']['power_cables'][0]['mechanical']
+            self.assertEqual(declaration['conductor_count'],2)
+            if weak:declaration['retention_n']=.001
+            with tempfile.TemporaryDirectory() as logs:
+                engine,_,_=mw.build_engine(ENGINE,current,Path(logs))
+                try:
+                    cable=engine.op(op='mechanical_cables')['cables'][0]
+                    expected_r=.0172*cable['length_m']*2/declaration['area_mm2']
+                    expected_mass=cable['length_m']*(2*declaration['area_mm2']*1e-6*8960+
+                        (math.pi*cable['radius_m']**2-2*declaration['area_mm2']*1e-6)*1200)
+                    self.assertAlmostEqual(cable['resistance_ohm'],expected_r,places=10)
+                    self.assertAlmostEqual(cable['mass_kg'],expected_mass,places=7)
+                    first=engine.op(op='step',dt=1/240,n=240)
+                    report=engine.op(op='mechanical_cables')['cables'][0]
+                    p=first['machines']['panels'][0]
+                    self.assertAlmostEqual(p['sunlight_j'],p['collected_j']+p['spilled_j']+p['heat_j'],delta=1e-7)
+                    if weak:
+                        self.assertFalse(report['connected'])
+                        second=engine.op(op='step',dt=1/240,n=240)['machines']['panels'][0]
+                        self.assertAlmostEqual(second['collected_j'],p['collected_j'],delta=1e-10)
+                        self.assertEqual(second['power_w'],0)
+                        self.assertEqual(engine.op(op='mechanical_cables')['cables'][0]['charging_current_a'],0)
+                    else:
+                        self.assertTrue(report['connected'])
+                        self.assertGreater(report['charging_loss_j'],0)
+                        self.assertGreater(p['collected_j'],0)
+                        self.assertAlmostEqual(p['collected_j'],p['sunlight_j']*current['solar_panels'][0]['efficiency']-
+                                               report['charging_loss_j'],delta=1e-7)
+                        self.assertAlmostEqual(p['heat_j'],p['sunlight_j']*(1-current['solar_panels'][0]['efficiency'])+
+                                               report['charging_loss_j'],delta=1e-7)
+                finally:engine.close()
+
     def test_setup_gravity_keeps_puzzle_clock_and_power_at_zero_and_preserves_cables(self):
         level=mg.level_by_id('easy-motor')
         compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
@@ -689,7 +735,8 @@ class Native(unittest.TestCase):
                 self.assertEqual(report['worked'],3 if size=='small' else 0,report)
             compiled=mw.compile_spec(mg.compose(level,placed)[0])
             resistance=12**2/rating
-            current=min(12/(resistance+.081),2.5/12)
+            series=.05+.001+sum(w['resistance_ohm'] for w in compiled['electrical']['wires'])
+            current=min(12/(resistance+series),2.5/12)
             for dt in (1/240,1/480):
                 with self.subTest(size=size,dt=dt),tempfile.TemporaryDirectory() as logs:
                     engine,_,_=mw.build_engine(ENGINE,compiled,Path(logs))
@@ -896,7 +943,12 @@ class Native(unittest.TestCase):
         self.assertLess(abs(ledger['electrical_residual_j']), 1e-8)
         self.assertLess(abs(ledger['thermal_residual_j']), 1e-6)
         bulbs = [d['power_w'] for d in result['readouts']['electrical']['devices'] if d['kind'] == 'bulb']
-        self.assertAlmostEqual(*bulbs, places=9)
+        # Parallel branches share voltage at the split, but their actual
+        # copper routes have different lengths/resistances.
+        resistances={w['name']:w['resistance_ohm'] for w in mw.compile_spec(spec)['electrical']['wires']}
+        first=48+resistances['switched wire']+resistances['return wire']
+        second=48+resistances['second feed']+resistances['second return']
+        self.assertAlmostEqual(bulbs[0]/bulbs[1],(second/first)**2,places=9)
         print('shared bulbs:', ledger)
 
     def test_material_heating_glass_oak_iron_same_coil_energy(self):

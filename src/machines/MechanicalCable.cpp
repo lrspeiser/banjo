@@ -26,7 +26,9 @@ MechanicalCable::MechanicalCable(JoltWorld &world,const json &input,MatterBodyId
     world_(&world),declaration_(input),ends_{a,b},first_(first) {
     if(!world.contains(a)||!world.contains(b)||input.at("name").get<std::string>().empty())
         throw std::invalid_argument("cable needs existing terminal bodies");
-    const double area=positive(input,"area_mm2",2.5,.001,100)*1e-6;
+    const double conductors=positive(input,"conductor_count",1,1,2);
+    if(conductors!=1&&conductors!=2)throw std::invalid_argument("cable supports one or two conductors");
+    const double area=positive(input,"area_mm2",2.5,.001,100)*1e-6*conductors;
     radius_=positive(input,"radius_m",.003,.001,.03);
     if(area>=std::numbers::pi*radius_*radius_)throw std::invalid_argument("conductor exceeds cable envelope");
     const double copper=positive(input,"conductor_density_kg_m3",8960,100,30000);
@@ -53,7 +55,15 @@ MechanicalCable::MechanicalCable(JoltWorld &world,const json &input,MatterBodyId
             RigidSnapshot s{};s.center_of_mass_world_m=(nodes[i]+nodes[i-1])*.5;s.orientation_world=along(nodes[i]-nodes[i-1]);
             const auto id=first+MatterBodyId(i-1);world.addCableRod(id,s,span,radius_,span*line_mass_,friction);
             rods_.push_back(id);spans_.push_back(span);
-            if(i>1)world.setPairContactOwner(rods_[i-2],id,PairContactOwner::External);
+            // Capsule caps overlap a continuous strand's immediate material
+            // neighbourhood. Tiny construction legs can put more than one
+            // previous rod inside that same cap; making those caps collide
+            // generates an impossible local contact and a spurious plug load.
+            double material_gap=0;
+            for(std::size_t j=rods_.size()-1;j>0&&material_gap<2*radius_;--j){
+                world.setPairContactOwner(rods_[j-1],id,PairContactOwner::External);
+                material_gap+=spans_[j-1];
+            }
         }
         for(std::size_t i=0;i<=rods_.size();++i){
             const double span=i==0?spans_.front():i==rods_.size()?spans_.back():(spans_[i-1]+spans_[i])*.5;
@@ -79,6 +89,8 @@ MechanicalCable::MechanicalCable(JoltWorld &world,const json &input,MatterBodyId
                 if(!attached_[e]){world.removeJoint(e?joints_.back():joints_.front());
                     world.setPairContactOwner(ends_[e],e?rods_.back():rods_.front(),PairContactOwner::Jolt);}}
             released_j_=input.value("_released_j",0.0);
+            charging_current_a_=input.value("_charging_current_a",0.0);
+            charging_loss_j_=input.value("_charging_loss_j",0.0);
         }
     }catch(...){for(auto j:joints_)if(world.hasJoint(j))world.removeJoint(j);
         for(auto id:rods_)world.removeAndDestroy(id);
@@ -92,6 +104,7 @@ double MechanicalCable::elasticEnergy(std::size_t i) const {
     return energy(d.rotation_stiffness_n_m_rad,s.rotation_cs_rad);
 }
 void MechanicalCable::settle(double dt){
+    if(!std::isfinite(dt)||dt<=0)throw std::invalid_argument("cable settling needs a positive finite timestep");
     for(unsigned e=0;e<2;++e){const auto i=e?joints_.size()-1:0;if(!attached_[e])continue;
         if(!world_->contains(ends_[e])||!world_->hasJoint(joints_[i])){attached_[e]=false;continue;}
         const double force=length(world_->faceSpringObservation(joints_[i]).linear_impulse_cs_n_s)/dt;
@@ -100,6 +113,13 @@ void MechanicalCable::settle(double dt){
             world_->setPairContactOwner(ends_[e],e?rods_.back():rods_.front(),PairContactOwner::Jolt);
             world_->wake(e?rods_.back():rods_.front());}
     }
+}
+double MechanicalCable::resistanceOhm() const {
+    double span=0;for(double s:spans_)span+=s;
+    return .0172*span*declaration_.value("conductor_count",1.)/declaration_.value("area_mm2",2.5);
+}
+void MechanicalCable::chargeFlow(double current_a,double dt_s) {
+    charging_current_a_=current_a;charging_loss_j_+=current_a*current_a*resistanceOhm()*dt_s;
 }
 nlohmann::json MechanicalCable::report() const {
     json segments=json::array();double span=0,mass=0,kinetic=0,potential=0,stored=0,gap=0;
@@ -115,6 +135,9 @@ nlohmann::json MechanicalCable::report() const {
         if(world_->hasJoint(joints_[i]))gap=std::max(gap,length(world_->faceSpringObservation(joints_[i]).displacement_cs_m));}
     return {{"name",branch()},{"connected",connected()},{"attached",{attached_[0],attached_[1]}},
         {"radius_m",radius_},{"length_m",span},{"mass_kg",mass},{"segments_m",segments},
+        {"resistance_ohm",resistanceOhm()},{"charging_current_a",charging_current_a_},
+        {"charging_loss_w",charging_current_a_*charging_current_a_*resistanceOhm()},
+        {"charging_loss_j",charging_loss_j_},
         {"retention_n",retention_},{"peak_terminal_force_n",{peak_[0],peak_[1]}},
         {"max_joint_gap_m",gap},
         {"kinetic_j",kinetic},{"gravity_potential_j",potential},{"elastic_j",stored},
@@ -123,6 +146,7 @@ nlohmann::json MechanicalCable::report() const {
 nlohmann::json MechanicalCable::saved() const {
     json out=declaration_;out["_first"]=first_;out["_states"]=json::array();
     for(auto id:rods_)out["_states"].push_back(pose(world_->snapshot(id)));
-    out["_attached"]={attached_[0],attached_[1]};out["_peak"]={peak_[0],peak_[1]};out["_released_j"]=released_j_;return out;
+    out["_attached"]={attached_[0],attached_[1]};out["_peak"]={peak_[0],peak_[1]};out["_released_j"]=released_j_;
+    out["_charging_current_a"]=charging_current_a_;out["_charging_loss_j"]=charging_loss_j_;return out;
 }
 }

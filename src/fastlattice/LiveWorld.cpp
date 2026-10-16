@@ -2009,6 +2009,9 @@ struct LiveWorld::Impl {
         constexpr double kOffFaceM = 0.01;
         constexpr double kReachM = 1000.0;
         for (LiveSolarPanel &panel : panels) {
+            machines::MechanicalCable *lead=nullptr;
+            for(auto &c:mechanical_cables)if(c.chargingPanel()==panel.name){lead=&c;break;}
+            if(lead)lead->chargeFlow(0,0);
             panel.cos_incidence = panel.sunlight_w = panel.power_w = 0.0;
             panel.shaded = false;
             panel.shaded_by.clear();
@@ -2041,6 +2044,7 @@ struct LiveWorld::Impl {
                 if (hit.named)
                     for (std::size_t i = 0; i < body_of.size(); ++i)
                         if (body_of[i] == hit.body_id) panel.shaded_by = described[i].name;
+                for(const auto &c:mechanical_cables)if(c.ownsBody(hit.body_id))panel.shaded_by="cable "+c.branch();
                 continue;
             }
             panel.sunlight_w = sun.irradiance_w_m2 * panel.area_m2 * panel.cos_incidence;
@@ -2049,23 +2053,39 @@ struct LiveWorld::Impl {
                 // It reports the instantaneous power the store could accept,
                 // with a full store spilling all converted sunlight.
                 const LiveEnergyStore *store = energyStoreById(panel.store);
-                panel.power_w = store && store->charge_j < store->capacity_j ?
+                panel.power_w = store && store->charge_j < store->capacity_j && (!lead||lead->connected()) ?
                     panel.sunlight_w * panel.efficiency : 0.0;
+                if(lead&&panel.power_w>0){
+                    const double v=store->voltage_v,r=lead->resistanceOhm(),p=panel.power_w;
+                    panel.power_w=v>0?v*2*p/(v+std::sqrt(v*v+4*r*p)):0.;
+                }
                 continue;
             }
             const double sunlight = panel.sunlight_w * dt_s;
             const double made = sunlight * panel.efficiency;
-            double taken = 0.0;
+            double taken = 0.0,wire_heat=0.0,spilled=made;
             if (LiveEnergyStore *store = energyStoreById(panel.store); store != nullptr) {
-                taken = std::clamp(store->capacity_j - store->charge_j, 0.0, made);
+                double available=made;
+                if(lead) {
+                    const double v=store->voltage_v,r=lead->resistanceOhm(),p=made/dt_s;
+                    const double current=lead->connected()&&v>0&&p>0?2*p/(v+std::sqrt(v*v+4*r*p)):0.;
+                    available=v*current*dt_s;
+                }
+                taken = std::clamp(store->capacity_j - store->charge_j, 0.0, available);
+                if(lead) {
+                    const double current=store->voltage_v>0?taken/(store->voltage_v*dt_s):0.;
+                    wire_heat=current*current*lead->resistanceOhm()*dt_s;
+                    lead->chargeFlow(current,dt_s);
+                }
+                spilled=taken==available&&available>0?0.:std::max(0.,made-taken-wire_heat);
                 store->charge_j += taken;
                 store->taken_j += taken;
             }
             panel.power_w = taken / dt_s;
             panel.sunlight_j += sunlight;
             panel.collected_j += taken;
-            panel.spilled_j += made - taken;
-            panel.heat_j += sunlight - made;
+            panel.spilled_j += spilled;
+            panel.heat_j += sunlight - made + wire_heat;
         }
     }
 
@@ -9213,7 +9233,7 @@ std::string LiveWorld::circuits() const {
 void LiveWorld::mechanicalCable(const std::string &declaration) {
     const auto d=nlohmann::json::parse(declaration);
     const auto circuit=d.at("circuit").get<unsigned>();
-    if(circuit>impl_->circuits.size()||impl_->mechanical_cables.size()>=32)throw std::invalid_argument("cable circuit/budget invalid");
+    if(circuit>impl_->circuits.size()||impl_->mechanical_cables.size()>=256)throw std::invalid_argument("cable circuit/budget invalid");
     for(const auto &old:impl_->mechanical_cables)if(old.branch()==d.at("name").get<std::string>())throw std::invalid_argument("duplicate cable");
     if(circuit)impl_->circuits[circuit-1].setCablePresent(d.at("name").get<std::string>(),true);
     const auto a=impl_->index_of.at(d.at("a_body").get<std::string>()),b=impl_->index_of.at(d.at("b_body").get<std::string>());

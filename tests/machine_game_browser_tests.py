@@ -78,6 +78,8 @@ class Puzzles(unittest.TestCase):
         import machine_game
         cls.level_count = len(machine_game.load_levels())
         cls.template_count = len(machine_game.sandbox_templates())
+        cls.archived_templates = {row['name']:row for row in machine_game.archived_sandbox_templates()}
+        cls.showcase_names = {row['name'] for row in machine_game.sandbox_templates()}
         cls.piece_count = len([row for row in machine_game.free_build()['tray'] if not row.get('attach') and not row.get('legacy')])
         cls.river_solution = dict(machine_game.sandbox_water_launch.RIVER_SOLUTION)
         import sandbox_variants
@@ -382,6 +384,16 @@ class Puzzles(unittest.TestCase):
           return buttons.find(b=>b.getClientRects().length && !b.disabled) || buttons.find(b=>!b.closest('main[hidden],#levels-screen[hidden],#sandbox-screen[hidden],#piece-picker:not([open]),.save-help-panel:not(:popover-open)'));}})()"""
 
     def press(self, name):
+        if name.startswith('Start from ') and name[11:] not in self.showcase_names:
+            # Removed cards remain covered as historical shared designs. This
+            # uses the public import flow and never restores them to the gallery.
+            row=self.archived_templates[name[11:]]
+            draft={key:row[key] for key in ('name','base','placements')}
+            packed='j'+base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
+            self.navigate(self.base+'/machine#build='+packed)
+            self.wait(f"window.machineDesign()?.name==={json.dumps(row['name'])} && {READY}",90)
+            self.click_visible('Save version');self.anonymous_cloud_saved()
+            return
         if name!='GO' and self.js("Boolean(document.getElementById('level-intro')?.open)"):self.click_visible('GO')
         if name in ('Share','Share this design'):
             point=self.js("(()=>{const a=document.getElementById('header-share');a.scrollIntoView({block:'nearest',inline:'nearest'});const r=a.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()")

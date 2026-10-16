@@ -48,6 +48,16 @@ EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):
+    def test_sandbox_has_five_curated_multi_component_examples(self):
+        examples=mg.sandbox_templates()
+        self.assertEqual(len(examples),5)
+        self.assertEqual(len({r['name'] for r in examples}),5)
+        self.assertEqual(examples[1]['name'],'Chain reaction')
+        for row in examples:
+            level=mg.requested_level(dict(level='free',base=row['base']))
+            compiled=mw.compile_spec(mg.compose(level,row['placements'])[0])
+            self.assertGreater(len(compiled['parts']),3,row['name'])
+
     def test_every_authored_tray_has_a_reviewed_lesson_control_set(self):
         for level in LEVELS:
             for tray in level['tray']:
@@ -312,7 +322,9 @@ class Tray(unittest.TestCase):
                 self.assertFalse(set(selected['parts']) & {p['name'] for p in after['parts']})
                 self.assertEqual(base,before,'Editing must not mutate a shared template')
                 count+=1
-        self.assertGreater(count,80)
+        # The owner's five-showcase gallery has 35 independently editable
+        # apparatus groups; the old 80+ floor covered the removed demo list.
+        self.assertEqual(count,35)
 
     def test_sandbox_kit_translation_preserves_glass_oak_iron_mass_geometry_and_pivots(self):
         import sandbox_edit
@@ -1807,7 +1819,12 @@ class Engine(unittest.TestCase):
                 last = {w['name']: w for w in rows[-1]['wires']}
                 native = {w['name']: w['current_a'] for w in result['readouts']['electrical']['wires']}
                 self.assertEqual({name:w['value'] for name,w in last.items()}, native)
-                self.assertEqual(last['supply wire']['points_m'][0], [-.68,.18,.07])
+                self.assertEqual(last['supply wire']['points_m'],
+                                 [p for segment in last['supply wire']['mechanical']['segments_m'] for p in segment])
+                # Frame zero uses the manufactured native terminal. Later
+                # frames carry actual rod poses, including socket reaction.
+                start=next(w for w in rows[0]['wires'] if w['name']=='supply wire')['points_m'][0]
+                self.assertLess(math.dist(start,[-.68,.18,.07]),1e-6)
                 runs.append(max(abs(w['value']) for w in last.values()))
             self.assertGreater(runs[0], .24)
             self.assertLess(runs[1], 1e-8, 'an open circuit must not predict flowing current')

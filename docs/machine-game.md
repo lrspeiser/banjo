@@ -1,19 +1,24 @@
 # Puzzles on the machine (/play)
 
-October 16 physical motor leads: **Turn the axle**, the prepared gear motor and
-Sandbox motor connections now build native articulated cables. Construction
-routes go around conservative solid bounds once; Jolt then owns sag, contact,
-bending and terminal reactions. Overloading a terminal removes its connector
-and opens the matching electrical branch. Copper resistance uses the actual
-manufactured path length and conductor area. The renderer draws the native
-capsules in live and flow-preview frames, without runtime rerouting or curve
-smoothing through solids. Edge readings show connector state and retention.
-Older non-motor wires and ideal solar charging leads retain their previous
-models. General electrical wires may explicitly declare `mechanical` settings.
-This is a bounded first rollout, not a migration of every old schematic wire.
-See [the cable model, measurements and limits](mechanical-cables.md).
+October 16 electrical cord rollout: visible graph wires, solar charging cords
+and legacy heater/cannon circuit leads now use native articulated Jolt cables
+in levels and Sandbox. They sag and contact solids during placed setup, retain
+that state on Try It!, and unplug electrically under their declared load limit.
+Stock length and copper area affect actual mass and resistance; excess wire
+forms a physical service coil. Shared sockets have separate plug seats.
+The scene's cable selection/deletion follows the native cord, including solar
+leads, rather than the old schematic curve.
 
-Motor cords also advance under native gravity during the placed setup, before
+**Knock it off** and **Chain reaction** use 32 V heater supplies to account for
+their real wire loss. Their target zones and deadlines are unchanged.
+Sandbox now shows five combined examples: **Sun powers the flag**, **Chain
+reaction**, **River powers a lift**, **Charge and release**, and **Light, heat
+and gravity**. User designs remain at the top; the full piece library remains
+available. Historical designs and shared links retain their component support.
+See [the cable model and qualification](mechanical-cables.md) and
+[the release level audit](level-release-audit-2026-10-16.md).
+
+Placed cords also advance under native gravity during the placed setup, before
 Try It!, at 1/240 s steps in 30 Hz batches. The puzzle clock, electrical solve
 and battery consumption remain paused. Editor fixtures hold the machinery;
 Try It! removes them and keeps the cables' native poses and velocities in the

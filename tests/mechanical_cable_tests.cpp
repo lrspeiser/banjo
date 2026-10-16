@@ -19,7 +19,7 @@ json declaration(double step=.04,double retention=15){return {{"name","lead"},{"
 double lowest(const json &r){double y=1e10;for(const auto &s:r.at("segments_m"))for(const auto &p:s)y=std::min(y,p[1].get<double>());return y;}
 void sagAndContact(){
     for(auto material:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}){
-        for(double segment:{.04,.02})for(double dt:{1./240,1./480}){
+        for(double segment:{.08,.04,.02})for(double dt:{1./240,1./480}){
             JoltWorld w(0);box(w,1,{-.45,.8,0},{.1,.1,.1},MaterialPreset::Iron);
             box(w,2,{.45,.8,0},{.1,.1,.1},MaterialPreset::Iron);
             box(w,3,{0,.55,0},{.24,.4,.3},material);
@@ -36,6 +36,7 @@ void sagAndContact(){
                 }
             }
             const auto end=cable.report();
+            if(!cable.connected())std::cerr<<"unexpected pullout "<<end.dump()<<'\n';
             check(cable.connected(),"normal hanging lead pulled out");
             check(lowest(end)<lowest(initial)-.03,"lead did not sag under gravity");
             check(contacted,"cable never reached the support");

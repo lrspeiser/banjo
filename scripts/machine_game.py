@@ -246,8 +246,8 @@ def requested_level(data):
     return level
 
 
-def sandbox_templates():
-    """Starting designs, copied by the browser; the originals stay unchanged."""
+def archived_sandbox_templates():
+    """Historical examples retained for saved-design compatibility tests."""
     templates = [
         {'name': 'Gate and split', 'description': 'Release three marbles through a gate and flip-flop; topple six dominoes.',
          'base': None, 'placements': free_build()['example']},
@@ -257,6 +257,24 @@ def sandbox_templates():
     for module in SANDBOX_MODULES:
         templates.extend(copy.deepcopy(module.templates() if hasattr(module, 'templates') else module.TEMPLATES))
     return templates
+
+
+def sandbox_templates():
+    """Five complete examples; copying one never edits a player's own saves."""
+    archive={row['name']:row for row in archived_sandbox_templates()}
+    laser=level_by_id('laser')
+    optical=compose(laser,laser['solution'])[0]
+    def prepared(value):
+        if isinstance(value,dict):return {k:prepared(v) for k,v in value.items()}
+        if isinstance(value,list):return [prepared(v) for v in value]
+        if isinstance(value,str) and value.startswith('your '):return 'prepared '+value[5:]
+        return value
+    optical=prepared(optical)
+    return [archive['Sun powers the flag'],archive['Chain reaction'],
+            archive['River powers a lift'],archive['Charge and release'],
+            dict(name='Light, heat and gravity',
+                 description='Two mirrors carry the laser around an obstacle. Its heat burns through an oak cord and releases the hanging load.',
+                 base=optical,placements=[],pieces=['mirror'])]
 
 
 # ---- the pieces ---------------------------------------------------------------
@@ -1654,7 +1672,7 @@ def nudged(compiled, seed, metres=0.0015):
     return out
 
 
-def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None, release_inputs=None):
+def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None, release_inputs=None,setup_s=0):
     """Run the machine `runs` times, nudged, and say in how many the goal
     happened in time. Unpaced: as fast as the engine goes."""
     spec, checked, cost = compose(level, placements)
@@ -1662,7 +1680,7 @@ def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None, release_i
     results = []
     for seed in range(runs):
         r = mw.rehearse(nudged(compiled, seed + 1) if seed else compiled, exe, logs,
-                        seconds=level['time_s'] + 0.5, wall_limit_s=120, handle_inputs=handle_inputs, release_inputs=release_inputs)
+                        seconds=level['time_s'] + 0.5, wall_limit_s=120, handle_inputs=handle_inputs, release_inputs=release_inputs,setup_s=setup_s)
         row = r['stations'][0] if r['stations'] else {}
         at = row.get('at_s') if row.get('done') else None
         results.append({'goal_at_s': at, 'error': r.get('error'),

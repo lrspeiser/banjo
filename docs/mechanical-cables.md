@@ -1,12 +1,17 @@
-# Physical motor leads — October 16, 2026
+# Physical electrical leads — October 16, 2026
 
 ## Delivered scope
 
-Motor leads in Turn the axle, the prepared gear motor and Sandbox motor setups
-are native mechanical bodies. Electrical wires can also opt in with a
-`mechanical` object. Old non-motor wires and ideal solar charging leads remain
-electrical graphs/drawings; ties and ideal pulley/drum ropes are not replaced.
-The motor itself retains its existing lumped torque/back-EMF model.
+All explicit electrical graph wires, solar charging cords and the old
+supply/contact/heater circuit leads now build native articulated cables. This
+covers motors, bulbs, batteries, switches, resistors, capacitors and ignition
+clips in levels and Sandbox. It also includes unpowered islands and incorrect
+connections: a wire has mass even when its circuit is open.
+
+This does **not** replace ties, pulley/drum ropes or implicit/internal connections.
+The separate low-power optical sources and the laser still draw directly from
+their declared store without an external feeder. Motor interiors retain the
+lumped torque/back-EMF model. These are explicit remaining model gaps.
 
 The authoring compiler calculates a conservative clear construction path and
 adds manufactured slack. Its arc length sets copper resistance, using
@@ -19,7 +24,7 @@ including in predicted flow frames. It does not smooth a line through solids.
 
 ### Setup gravity
 
-Placed live motor setups advance Jolt's cable world at 1/240 s in eight-step
+Placed live wired setups advance Jolt's cable world at 1/240 s in eight-step
 batches (30 Hz), even while the puzzle's time is zero. Existing machinery is
 held by temporary native fixed constraints to the world. This is an editor
 fixture boundary condition: gravity reactions can go into the fixed supports;
@@ -40,7 +45,7 @@ settle again. Ordinary pause after a run freezes the entire simulation.
 Unpaced rehearsals take only their explicit steps. An unwatched setup stops
 spending CPU after five seconds without frame requests, and resumes on return.
 
-Measured on Turn the axle: after one second of setup, the two leads reached
+Historical motor checkpoint 0160b77, measured on Turn the axle: after one second of setup, the two leads reached
 minimum heights 2.82 mm / 6.30 mm; both connectors remained attached (peak
 loads 4.06–7.27 N). The first running step moved any sampled cable endpoint
 by at most 1.60 mm, rather than reconstructing the elevated construction path.
@@ -60,21 +65,23 @@ The default is 2.5 mm² conductor, 3 mm outer radius, 8960 kg/m³ conductor and
 1200 kg/m³ insulation. Density values are explicit model parameters, not a
 calibrated commercial cable specification. Rod inertia homogenizes that mass
 over the cylindrical section; overlapping collision caps add no extra mass.
-Only adjacent rods and each terminal's immediately embedded rod exclude their
+Only the immediate material neighbourhood (including overlapping capsule caps
+on tiny construction legs) and each terminal's embedded rod exclude their
 own overlapping contact envelopes. Other rods, other wires and obstacles retain
 Jolt contact. There is no assigned sag trajectory or velocity.
 
 The translation rows are inextensible constraints, with passive rotational
-springs for effective bending/twist. Default maximum rod length is 4 cm;
+springs for effective bending/twist. The factory uses maximum rod lengths of 4 cm for motor leads and 8 cm for
+other leads;
 effective rigidity is 0.00002 N m² and viscous loss time is 0.002 s. The
 construction path is a **preformed stress-free shape**. It is not a straight
 wire constitutive rest configuration, nor an analytical catenary. Effective
-rigidity, insulation friction (0.5) and connector rating (15 N) are declared
+rigidity, insulation friction (0.5) and connector ratings are declared
 prototype parameters, not measured calibration. Internal spring damping is
 separate from environmental drag; native linear/angular drag is zero.
 
 Cable joints request 128 velocity and 16 position iterations; rod contact uses
-32/8. Bounds are 256 rods per lead and 32 leads per world, subject also to Jolt's
+32/8. Bounds are 256 rods per lead and 256 leads per world, subject also to Jolt's
 existing joint/body budgets. Default game steps are 1/240 s. Contact tolerances
 and finite segment resolution remain relevant for thin objects and fast impacts.
 
@@ -91,14 +98,66 @@ disconnection. Full native snapshots preserve cable poses and detached ends.
 Unpowered electrical islands also build physical leads, including a cable whose
 two ports belong to the same housing. A missing supply never removes their mass.
 
+## Factory fitting and electrical coupling
+
+Standard game power plugs declare 50 N resultant retention. The low-level
+native cable default remains 15 N, which is also the falling-load qualification
+rating. Neither is commercial calibration. The instantaneous solved connector
+force still decides pullout; there is no grace timer, force suppression or
+per-level exemption. The attempted elastic connector variants were rejected
+for energy gain/unstable seating and are not part of this implementation.
+
+Chosen wire stock length is actual manufactured material: excess stock forms
+an initially clear service coil. A wire piece defaults to 5 m; its area controls
+copper resistance and mass. Prepared auto-fitted wires use the fitted arc
+length. Legacy circuit service loops try 1 m, 0.5 m and 0.25 m extra, then the
+clear slack arch, when space is limited. This choice is made only at build
+and sets real mass and resistance. The runtime never reroutes wires.
+
+The fitting graph avoids conservative solid bounds and previously fitted
+cords. Shared plugs occupy separate seats across the pad, with straight
+strain reliefs. Reserved future plug corridors keep earlier cords from
+blocking the next socket. These reservations are construction constraints,
+not invisible runtime collision bodies. Compound bounds remain conservative;
+they do not exploit arbitrary holes. A short stock or an inaccessible pad
+returns a fitting error instead of putting material through a solid.
+
+PV charging cords contain two declared copper cores. Resistance is
+`2 * 0.0172 * length_m / area_mm2`. For available converted sunlight P,
+destination voltage V and cord resistance R, the regulated lumped input uses
+`I = 2P / (V + sqrt(V² + 4RP))`: delivery is VI and cord loss is I²R.
+Store saturation reduces current; a detached plug stops delivery. The solar
+ledger separates delivered energy, spilled conversion and conversion/cord
+heat. This is not a switching-converter or MPPT circuit model. Copper heat is
+booked energy; no conductor temperature, insulation failure or wet short was
+added. A native integration regression checks two-core mass, resistance,
+charge/loss closure and zero charging after physical pullout.
+
+Real wire resistance reduced the cannon heaters' power relative to the old
+ideal wiring. **Knock it off** and **Chain reaction** now declare 32 V supplies,
+restoring useful heating with the physical stock. Their powder, target zones,
+deadlines and goal tolerances are unchanged. Wires on the press deck attach
+at its conductive pivot, so hanging inlet weight does not operate an empty
+switch. Heater polarities bind to opposite clip jaws; solar cords leave the
+panel's rear face.
+
 ## Qualification
+
+Release verification on the current engine: native cable qualification passes
+in 3.892 s on Windows and 3.530 s on Ubuntu 24.04; the circuit target also
+passes on both. The level audit passes all 34 solutions in three nudged runs,
+plus three settled-setup runs for wired levels, physical negatives and all five
+Sandbox demonstrations. See the [full receipt and review notes](level-release-audit-2026-10-16.md).
+The detailed 4/2 cm table below is the original motor checkpoint's record;
+the current target additionally covers 8 cm rods without changing its bounds.
+
 
 `banjo_mechanical_cable_tests` is a compiled CMake/CTest target. Its support test
 uses the same 0.854400 m lead (0.0455645 kg) over the same 24 × 40 × 30 cm support
 with top at 0.75 m, comparing glass, oak and iron. It verifies actual contact,
 samples every rod for entry into solid interiors, checks sag, material mass,
 constraint gaps and absence of unexplained energy gain. Each material runs at
-4 cm and 2 cm segment maxima, at 1/240 and 1/480 s.
+8 cm, 4 cm and 2 cm segment maxima, at 1/240 and 1/480 s.
 
 | Support | Lowest point after 2 s, 4 cm, 240/480 Hz | Maximum joint gap, 4 cm, 240/480 Hz |
 |---|---|---|
@@ -159,8 +218,8 @@ change or visible tube can establish those capabilities by itself.
 
 Native measurements and performance receipts are kept under ignored
 `build/cable-native-final.log` and `build/cable-linux-native.log`; browser and
-integration logs use the same prefix. Recent Changes describes the delivered
-motor behavior without claiming that all old connections have been migrated.
+integration logs use the same prefix. Recent Changes describes the visible electrical wire families migrated by
+this checkpoint; it does not claim distributed rope or internal-device physics.
 
 The native qualification runs in 2.993 s on Windows and 2.644 s on local Ubuntu
 24.04, covering twelve sag/contact scenarios, three falling materials, six

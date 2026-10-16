@@ -14,6 +14,10 @@ public:
     [[nodiscard]] unsigned circuit() const { return declaration_.at("circuit").get<unsigned>(); }
     [[nodiscard]] std::string branch() const { return declaration_.at("name").get<std::string>(); }
     [[nodiscard]] std::size_t bodyCount() const { return rods_.size(); }
+    [[nodiscard]] std::string chargingPanel() const { return declaration_.value("solar_panel",std::string{}); }
+    [[nodiscard]] double resistanceOhm() const;
+    [[nodiscard]] bool ownsBody(MatterBodyId id) const { return id>=first_ && id-first_<rods_.size(); }
+    void chargeFlow(double current_a,double dt_s);
     [[nodiscard]] nlohmann::json report() const;
     [[nodiscard]] nlohmann::json saved() const;
 private:
@@ -26,6 +30,7 @@ private:
     std::vector<JoltWorld::FaceSpringDescription> laws_;
     bool attached_[2]{true,true};
     double radius_{},line_mass_{},retention_{},peak_[2]{},released_j_{};
+    double charging_current_a_{},charging_loss_j_{};
     [[nodiscard]] double elasticEnergy(std::size_t) const;
 };
 }

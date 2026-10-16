@@ -1742,7 +1742,8 @@ def compile_spec(spec, lenient=False):
                'irradiance_w_m2': _num(sun_spec, 'irradiance_w_m2', 'sun', problems, 1000, 0, 1400)}
     light = compile_light(spec, sun, names, battery_names, problems, light_extra)
     electrical = electrics.compile_electrical(spec, names, joint_rows, battery_names, problems, parts=parts)
-    power, panel_batteries = electrics.compile_power(spec, names, battery_names, problems)
+    power, panel_batteries = electrics.compile_power(spec, names, battery_names, problems,parts=parts,
+        occupied=[w['mechanical'] for w in electrical.get('wires',[]) if isinstance(w.get('mechanical'),dict) and 'path_m' in w['mechanical']])
     electrical.update(power)
     circuits = []
     for c in spec.get('circuits', []) or []:
@@ -1991,6 +1992,13 @@ def compile_spec(spec, lenient=False):
         for b in airflows[i+1:]:
             if all(abs(a['center_m'][j]-b['center_m'][j])<(a['size_m'][j]+b['size_m'][j])/2 for j in range(3)):
                 problems.append(f'{a["name"]} and {b["name"]}: open-air fields cannot overlap')
+    occupied=[w['mechanical'] for key in ('wires','power_cables') for w in electrical.get(key,[]) if isinstance(w.get('mechanical'),dict) and 'path_m' in w['mechanical']]
+    for c in circuits:
+        if 'coil' in c or 'motor' in c:
+            try:
+                c['leads']=electrics.mechanical_cables.legacy_leads(c,checked,joint_rows,batteries,occupied)
+                occupied.extend(w['mechanical'] for w in c['leads'])
+            except (ValueError,KeyError,TypeError,StopIteration) as exc:problems.append(f'circuit {c["name"]}: cable construction: {exc}')
     if problems and not lenient:
         raise MachineRefused(problems)
     return ({'problems': problems} if lenient else {}) | {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
@@ -2309,6 +2317,13 @@ def build_engine(exe, compiled, workdir, preview_job=None):
                 branches.append({'id': 'motor', 'kind': 'motor', 'component': c['name'] + ' motor', 'a': coil_in,
                                  'b': 'minus', 'motor': motor_id, 'gear_ratio': m['gear_ratio'],
                                  'thermal': 'windings'})
+            leads=c.get('leads',[])
+            if leads:
+                for branch in branches:
+                    if branch['id']=='switch' and (c.get('switch') or {}).get('touch'):branch['a']='contact feed'
+                    elif branch['id'] in ('coil','motor'):branch.update(a='load feed',b='load return')
+                branches.extend(dict(id=w['name'],component=w['name'],kind='wire',a=w['a'],b=w['b'],
+                    resistance_ohm=w['resistance_ohm'],thermal='battery') for w in leads)
             network = {'schema': 'banjo.circuit.v1', 'id': c['name'],
                        'nodes': ['plus', 'minus'] + (['switched'] if 'switch' in c else []),
                        'source': {'store': store_ids[c['battery']], 'positive': 'plus', 'negative': 'minus',
@@ -2318,7 +2333,9 @@ def build_engine(exe, compiled, workdir, preview_job=None):
                                         ([{'id': 'windings', 'component': c['name'] + ' motor', 'capacity_j_k': 400,
                                            'ambient_w_k': 2}] if 'motor' in c else []),
                        'branches': branches}
+            network['nodes']=list(dict.fromkeys(network['nodes']+[w[k] for w in leads for k in ('a','b')]))
             circuit_ids[c['name']] = engine.op(op='circuit', network=network)['circuit']
+            for w in leads:engine.op(op='mechanical_cable',cable=dict(w['mechanical'],circuit=circuit_ids[c['name']]))
         circuit_ids.update(electrics.build_electrical(engine, compiled, store_ids, joint_ids))
         for t in compiled['torches']:
             engine.op(op='heat', target=t['target'], power_w=t['power_w'], seconds=t['seconds'])
@@ -2385,7 +2402,8 @@ class MachineSession:
         self.closed = False
         self.playing = False
         self.cable_setup_s = 0.0
-        self.has_mechanical_cables = any('mechanical' in w for w in compiled.get('electrical', {}).get('wires', []))
+        self.has_mechanical_cables = bool(compiled.get('electrical', {}).get('wires') or
+            compiled.get('electrical', {}).get('power_cables') or any(c.get('leads') for c in compiled['circuits']))
         self.speed = 1.0
         self.t = 0.0
         self.seq = 0
@@ -2723,7 +2741,8 @@ class MachineSession:
                 self._switches[c['id']] = bool(sw and sw.get('closed'))
         out['circuits'] = circuits
         out['electrical'] = electrics.readouts(self.compiled.get('electrical', {}), native_circuits,self.compiled['batteries'])
-        physical={c['name']:c for c in self.engine.op(op='mechanical_cables')['cables']} if any('mechanical' in w for w in self.compiled.get('electrical',{}).get('wires',[])) else {}
+        physical={c['name']:c for c in self.engine.op(op='mechanical_cables')['cables']} if self.has_mechanical_cables else {}
+        out['mechanical_cables']=list(physical.values())
         for w in out['electrical']['wires']:
             if w['name'] in physical:
                 w['mechanical']=physical[w['name']]
@@ -2979,6 +2998,19 @@ class MachineSession:
             # their separate 512-cell sampling budget.
             stride=max(1,math.ceil(len(samples)/96))
             frame['surface']['flow_samples']=samples[::stride]
+        physical={c['name']:c for c in r.get('mechanical_cables',[])}
+        for c in self.compiled['circuits']:
+            if not c.get('leads'):continue
+            frame['wires']=[w for w in frame['wires'] if not (w.get('legacy') and (w['name']==c['name'] or w['name'].startswith(c['name']+'/')))]
+            reading=next((x for x in r.get('circuits',[]) if x['name']==c['name']),{})
+            frame['wires'].extend(dict(name=w['name'],circuit=c['name'],legacy=True,legacy_leg=w['leg'],
+                unit='A',value=reading.get('current_a',0),through_w=reading.get('power_w',0),
+                points_m=[w['mechanical']['path_m'][0],w['mechanical']['path_m'][-1]],return_path=w['leg']=='return') for w in c['leads'])
+        for w in frame['wires']:
+            if w['name'] in physical:
+                w['mechanical']=physical[w['name']]
+                w['points_m']=[p for s in w['mechanical']['segments_m'] for p in s]
+                if not w['mechanical']['connected']:w['value']=0
         if self.flow_trail and abs(self.flow_trail[-1]['t']-frame['t']) < 1e-6:
             self.flow_trail[-1] = frame
         else:
@@ -3132,6 +3164,7 @@ class MachineSession:
                             self.cable_setup_s += DT_S*8
                             self.seq += 1
                             physical = {c['name']: c for c in reply['cables']}
+                            self.readouts['mechanical_cables']=list(physical.values())
                             for w in self.readouts.get('electrical', {}).get('wires', []):
                                 if w['name'] in physical:
                                     w['mechanical'] = physical[w['name']]
@@ -3324,7 +3357,7 @@ class MachineSession:
 
 
 def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, after_s=0.0, flows=False,
-             *, handle_inputs=None, release_inputs=None, preview_job=None):
+             *, handle_inputs=None, release_inputs=None, preview_job=None,setup_s=0):
     """Run a machine once, unpaced, and report what the engine measured: which
     stations happened, when, and the events. Nothing is kept and nothing is
     changed; a person still watches the real run afterwards. track: names of
@@ -3345,6 +3378,16 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
         if preview_job is not None and preview_job.cancelled():
             return {'cancelled': True}
         raise
+    if setup_s:
+        try:
+            if not math.isfinite(setup_s) or not 0<=setup_s<=60:raise ValueError('setup_s must be 0..60 seconds')
+            with session.lock:
+                remaining=round(setup_s/DT_S)
+                while remaining:
+                    n=min(240,remaining);session.engine.op(op='cable_setup_step',dt=DT_S,n=n);remaining-=n
+                session._probe()
+        except Exception:
+            session.close();raise
     if track:
         # Each path starts where the body stands before anything moves.
         session.trail = {name: [[0.0] + [round(v, 4) for v in session.bodies[name]['position_m']]]
@@ -3388,7 +3431,7 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                    'closest_approach': [c for i, c in sorted(getattr(session, 'closest', {}).items()) if i not in done],
                    'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]],
                    # What went in, as it stood at the end: heat, chemistry, batteries.
-                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits', 'electrical', 'pour', 'water_regions', 'pulls', 'airflow', 'test_pulled')
+                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits', 'electrical', 'mechanical_cables', 'pour', 'water_regions', 'pulls', 'airflow', 'test_pulled')
                                 if (session.readouts or {}).get(k) is not None}}
             if track:
                 out['paths'] = {name: {'points': points, 'turn_wxyz': session.trail_turn.get(name)}

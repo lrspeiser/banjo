@@ -272,11 +272,21 @@ function powerPortAt(port) {
 function wireDisplayRadius(wire) {
   return wire?.area_mm2 == null ? .009 : Math.max(.004,Math.min(.018,.009*Math.sqrt(wire.area_mm2/.5)));
 }
+const nativeCable = name => readouts.mechanical_cables?.find(c=>c.name===name) || readouts.electrical?.wires?.find(w=>w.name===name)?.mechanical;
 function syncWires() {
   for (const w of wires) { scene.remove(w.line); w.line.geometry.dispose(); w.line.material.dispose(); }
   wires.length = 0;
   if (!machine) return;
   for (const c of machine.circuits) {
+    if(c.leads?.length){
+      for(const [lane,lead] of c.leads.entries()){
+        const geometry=new THREE.BufferGeometry();
+        const color=lead.leg==='return'?0x83bbff:0xff8a78;
+        const line=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color}));
+        scene.add(line);wires.push({line,name:c.name,mechanicalName:lead.name,leg:lead.leg,lane,color});
+      }
+      continue;
+    }
     const diagram = contactCircuitDiagram(c,machine,world.bodies);
     if (diagram) {
       for (const [lane,leg] of diagram.legs.entries()) {
@@ -1520,6 +1530,16 @@ function updateWires() {
       w.line.material.color.setHex(Math.abs(live?.current_a||0)>1e-4?0xffd34d:w.color);
       continue;
     }
+    if(w.mechanicalName || w.powerCable && nativeCable(w.name)) {
+      const cable=nativeCable(w.mechanicalName||w.name);
+      if(cable){
+        if(w.mechanicalSample!==cable){w.line.geometry.dispose();w.line.geometry=mechanicalCableGeometry(cable);w.route=cable.segments_m.flat();w.mechanicalSample=cable;}
+        w.connected=cable.connected;w.line.visible=!flowGroup.visible||(cableSetupActive&&!ghost);
+        const value=w.powerCable?cable.charging_current_a:readouts.circuits?.find(c=>c.name===w.name)?.current_a||0;
+        w.line.material.color.setHex(Math.abs(value)>1e-4?0xffd34d:w.color||0x83bbff);
+      }
+      continue;
+    }
     if (w.powerCable) {
       const a=powerPortAt(w.fromPort),b=powerPortAt(w.toPort);
       const route=a&&b?wireRoute(a,b,0):[];
@@ -2022,7 +2042,8 @@ function render() {
   for (const w of wires) {
     if (w.terminalWire) w.line.visible = (w.mechanicalSample || w.connected!==false) && !hiddenPiece(w.name) && !ghost?.electrical &&
       (!w.mechanicalSample || !flowGroup.visible || (cableSetupActive&&!ghost));
-    if (w.powerCable) w.line.visible=w.connected!==false && !hiddenPiece(w.name);
+    if (w.powerCable || w.mechanicalName) w.line.visible=(w.mechanicalSample || w.connected!==false) && !hiddenPiece(w.name) &&
+      (!w.mechanicalSample || !flowGroup.visible || (cableSetupActive&&!ghost));
   }
   updateFlowPreview();
   updateGearMotionFeedback();
@@ -2931,7 +2952,7 @@ function electricalEditRating(){
   else if(p.piece==='resistor')rating=`${p.resistance_ohm} Ω resistance`;
   else if(p.piece==='capacitor')rating=`${p.capacitance_f} F · ${p.esr_ohm??.1} Ω internal · ${p.leakage_ohm??1000000} Ω leakage`;
   else if(p.piece==='motor')rating=`${Math.round((p.throttle??1)*100)}% throttle · ${p.direction||'forward'}`;
-  else if(p.piece==='wire')rating=`${p.size||'standard'} wire · ${p.length_m??5} m`;
+  else if(p.piece==='wire')rating=`${p.size||'standard'} wire · ${(p.length_m??5)+' m stock'}`;
   else if(p.piece==='ignition')rating=`${p.preset==='hot'?'.12':'12'} Ω heater · ${p.target?'clipped to '+p.target:'not attached'}`;
   else if(p.piece==='switch')rating=p.mode==='paddle'?`Contact closes at ${p.threshold_deg}°`:`Starting switch: ${p.state||'open'}`;
   else if(p.piece==='spring'&&p.mechanism_version===3){
@@ -3603,13 +3624,13 @@ powerFlowDots.count=0;powerFlowDots.frustumCulled=false;scene.add(powerFlowDots)
 function powerFeedbackSnapshot() {
   const preview=flowGroup.visible&&flowIndex>=0?previewShown?.flow_frames?.[flowIndex]:null;
   if(preview) return {preview:true,wires:(preview.wires||[]).map(w=>{
-    const live=cableSetupActive&&!ghost&&readouts.electrical?.wires?.find(row=>row.name===w.name)?.mechanical;
+    const live=cableSetupActive&&!ghost&&nativeCable(w.name);
     return live?{...w,mechanical:live,points_m:live.segments_m.flat()}:w;
   }),devices:preview.power_devices||[]};
   const samples=[];
   for(const w of wires) {
     if(w.powerCable) {
-      samples.push({name:w.name,points_m:w.route,unit:'W',routed:true,
+      samples.push({name:w.name,points_m:w.route,unit:'W',routed:true,mechanical:nativeCable(w.name),
         value:readouts.machines?.solar_panels?.find(p=>p.name===w.panel)?.power_w||0});
     } else if(w.terminalWire) {
       const live=readouts.electrical?.wires?.find(r=>r.name===w.name);
@@ -3619,7 +3640,7 @@ function powerFeedbackSnapshot() {
       const points=w.route||[world.bodies.get(w.from)?.position_m,w.via,
         w.to?world.bodies.get(w.to)?.position_m:w.toPoint].filter(Boolean);
       if(points.length>1) samples.push({name:w.name+(w.leg?'/'+w.leg:''),points_m:points,
-        unit:'A',value:live?.current_a||0,through_w:live?.power_w||0,return_path:w.leg==='return',routed:Boolean(w.route)});
+        unit:'A',value:live?.current_a||0,through_w:live?.power_w||0,return_path:w.leg==='return',routed:Boolean(w.route),mechanical:nativeCable(w.mechanicalName)});
     }
   }
   return {preview:false,wires:samples,devices:readouts.power_devices||[]};
@@ -3981,8 +4002,8 @@ function drawFlowFrame(frame) {
     const curve = w.mechanical?.segments_m ? mechanicalCableCurve(w.mechanical) : pts.length===2 ? routedCurve(ends[0],ends[1],legLane>=0?legLane:Math.max(0,lane))
       : new THREE.CatmullRomCurve3(pts);
     const active = Math.abs(w.value)>1e-4;
-    const line = routed || leg ? new THREE.Mesh(w.mechanical?.segments_m?mechanicalCableGeometry(w.mechanical):new THREE.TubeGeometry(curve, 64, routed?wireDisplayRadius(electrical.wires[lane]):.010, 6, false),
-      new THREE.MeshBasicMaterial({color:active?0xffe066:leg?leg.color:wireColor(electrical.wires[lane]),depthWrite:false}))
+    const line = w.mechanical?.segments_m || routed || leg ? new THREE.Mesh(w.mechanical?.segments_m?mechanicalCableGeometry(w.mechanical):new THREE.TubeGeometry(curve, 64, routed?wireDisplayRadius(electrical.wires[lane]):.010, 6, false),
+      new THREE.MeshBasicMaterial({color:active?0xffe066:leg?leg.color:lane>=0?wireColor(electrical.wires[lane]):0x83bbff,depthWrite:false}))
       : new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(32)),
       new THREE.LineBasicMaterial({color:active?0xffe066:0x788994,transparent:true,opacity:active?.9:.35,depthWrite:false}));
     line.userData.physicalCable=Boolean(w.mechanical?.segments_m);
@@ -4287,7 +4308,9 @@ function wireCandidates(clientX,clientY,touch=false) {
     if(index<0 || placements[index]?.piece!==m[1])continue; // prepared puzzle apparatus stays fixed
     if(wire.pickGeometry!==wire.line.geometry) {
       wire.pickGeometry=wire.line.geometry;
-      wire.pickPoints=wire.line.geometry.parameters.path.getPoints(24);
+      wire.pickPoints=wire.mechanicalSample?.segments_m
+        ? wire.mechanicalSample.segments_m.flat().map(p=>new THREE.Vector3(...p))
+        : wire.line.geometry.parameters.path.getPoints(24);
     }
     const pts=wire.pickPoints.map(at=>{const p=at.clone().project(camera);return {at,x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2,z:p.z};});
     let best=null;
@@ -4398,8 +4421,10 @@ window.machineDragPoint=(x,y)=>slidePoint(x,y,ghostScreenBox()?.bottom||0)?.toAr
 window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible, settled: target.distanceTo(goal) < 1e-3});
 window.machineScenePick=(x,y)=>{const sockets=socketsAt(x,y,true),pieces=placedOwnersAt(x,y);return {piece:pieces[0]??-1,pieces,wire:wireCandidates(x,y,true).length>0,socket:sockets.some(s=>s.gap<=9),ambiguous:sockets.length>1&&sockets[1].gap-sockets[0].gap<8};};
 window.machineWireScreen=(name,fraction=.5)=>{
-  const wire=wires.find(w=>w.name===name);if(!wire?.line.visible || !wire.line.geometry.parameters?.path)return null;
-  freshView();const at=wire.line.geometry.parameters.path.getPoint(fraction).project(camera),rect=renderer.domElement.getBoundingClientRect();
+  const wire=wires.find(w=>w.name===name);if(!wire?.line.visible)return null;
+  const curve=wire.mechanicalSample?.segments_m?mechanicalCableCurve(wire.mechanicalSample):wire.line.geometry.parameters?.path;
+  if(!curve)return null;
+  freshView();const at=curve.getPoint(fraction).project(camera),rect=renderer.domElement.getBoundingClientRect();
   return [rect.left+(at.x+1)*rect.width/2,rect.top+(1-at.y)*rect.height/2];
 };
 function alignedGridAxes() {

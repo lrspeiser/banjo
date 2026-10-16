@@ -534,7 +534,7 @@
       "in": "supply housing",
       "capacity_j": 100000,
       "charge_j": 100000.0,
-      "voltage_v": 24,
+      "voltage_v": 32,
       "max_power_w": 10000
      }
     ],
@@ -1011,7 +1011,7 @@
       "name": "battery",
       "in": "battery box",
       "capacity_j": 100000,
-      "voltage_v": 24
+      "voltage_v": 32
      }
     ],
     "circuits": [

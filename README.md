@@ -2,8 +2,8 @@
 
 **A Rube Goldberg game where the physics decides what happens.**
 
-Motor supply leads now have native Jolt mass, bending, contact and terminal
-pull-out. See [the cable model and qualification](docs/mechanical-cables.md)
+Visible electrical wires and charging cords now have native Jolt mass,
+bending, contact and terminal pull-out, including during placement. See [the cable model and qualification](docs/mechanical-cables.md)
 for its rollout scope, measurements and remaining limits.
 
 Choose an Adjustment beside a selected piece, then tap or drag the large gold

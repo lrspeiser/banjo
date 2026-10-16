@@ -63,8 +63,8 @@ def edit(base, object_id, delta=None, remove=False):
                     if key == 'parts' or not isinstance(values, list): continue
                     kept = []
                     for row in values:
-                        if isinstance(row, dict) and references(row, names):
-                            if row.get('name'):
+                        if (isinstance(row, dict) or key=='mirrors' and isinstance(row,str)) and references(row, names):
+                            if isinstance(row,dict) and row.get('name'):
                                 names.add(row['name'])
                                 if key == 'kits':
                                     names.update(p['name'] for p in compiled['parts'] if p.get('kit') == row['name'])

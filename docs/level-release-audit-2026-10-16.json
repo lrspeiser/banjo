@@ -1,0 +1,2104 @@
+{
+  "engine_sha256": "794e494e8d5aac0dd6bc6095ebe236b6c20119ec5a97310a371afc790701918d",
+  "method": "Authored solutions, two 1.5 mm nudges, physical negative controls, and 1 s of setup gravity.",
+  "limitation": "Not a timed human study or a solution-blind assessment.",
+  "levels": [
+    {
+      "id": "easy-weight",
+      "title": "Tip the lever",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.233,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.233,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.233,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 0.212
+    },
+    {
+      "id": "easy-spring",
+      "title": "Spring lifts the load",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.1,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.1,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.1,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 0.237
+    },
+    {
+      "id": "gap",
+      "title": "Mind the gap",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 1.9,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.917,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.917,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 21.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 0.922
+    },
+    {
+      "id": "easy-tackle",
+      "title": "Raise the crate",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.733,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.733,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.733,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 0.384
+    },
+    {
+      "id": "easy-lens",
+      "title": "Find the focus",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.017,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.017,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.017,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 0.269
+    },
+    {
+      "id": "easy-cut",
+      "title": "Cut the cord",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.683,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.683,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.683,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 0.486
+    },
+    {
+      "id": "easy-mirror",
+      "title": "Bounce to the target",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.017,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.017,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.017,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 0.252
+    },
+    {
+      "id": "easy-catapult",
+      "title": "Gentle first launch",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 1.083,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.1,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.1,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "worked": 0,
+        "refused_missing_goal_piece": "the goal is about your catapult 1 marble, which is not here yet"
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 0.893
+    },
+    {
+      "id": "cut",
+      "title": "Cut it down",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.683,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.683,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.683,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 21.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 0.359
+    },
+    {
+      "id": "tackle",
+      "title": "Lift with less",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 3.7,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 3.75,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 3.733,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 11.4
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 0.639
+    },
+    {
+      "id": "laser",
+      "title": "Bounce the beam",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 5.433,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 4.867,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 5.3,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 12.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 2.041
+    },
+    {
+      "id": "easy-gears",
+      "title": "Turn the big wheel",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 1.75,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.633,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.75,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 1.75,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.633,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.75,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 3.885
+    },
+    {
+      "id": "easy-motor",
+      "title": "Turn the axle",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.7,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.817,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "empty": {
+        "worked": 0,
+        "refused_missing_goal_piece": "the goal is about your motor 1 axle, which is not here yet"
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.7,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.817,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "passed": true,
+      "automated_wall_s": 2.258
+    },
+    {
+      "id": "easy-bulb",
+      "title": "Light the bulb",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "empty": {
+        "worked": 0,
+        "refused_missing_goal_piece": "the goal is about your bulb 1, which is not here yet"
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "passed": true,
+      "automated_wall_s": 3.237
+    },
+    {
+      "id": "easy-loop",
+      "title": "Finish the loop",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 5.817
+    },
+    {
+      "id": "advanced-resistor",
+      "title": "Limit the voltage drop",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "passed": true,
+      "automated_wall_s": 3.777
+    },
+    {
+      "id": "easy-switch",
+      "title": "Close the switch",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.7,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.7,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.7,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "negative_action": "No manual activation of the switch/latch.",
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.7,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.7,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.7,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "passed": true,
+      "automated_wall_s": 3.933
+    },
+    {
+      "id": "easy-marble-light",
+      "title": "Marble turns on a light",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "passed": true,
+      "automated_wall_s": 3.556
+    },
+    {
+      "id": "easy-power",
+      "title": "Give it power",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "passed": true,
+      "automated_wall_s": 9.004
+    },
+    {
+      "id": "advanced-parallel",
+      "title": "Series or parallel?",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 12.016
+    },
+    {
+      "id": "advanced-capacitor",
+      "title": "Store the charge",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 1.867,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.867,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.867,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "empty": {
+        "worked": 0,
+        "refused_missing_goal_piece": "the goal is about your capacitor 1, which is not here yet"
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 1.867,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.867,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.867,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "passed": true,
+      "automated_wall_s": 4.064
+    },
+    {
+      "id": "easy-solar",
+      "title": "Charge in the sun",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": 1.283,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.467,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 2.69
+    },
+    {
+      "id": "easy-charge-lift",
+      "title": "Sun-powered lift",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.567,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.55,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.567,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.55,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 16.946
+    },
+    {
+      "id": "sun",
+      "title": "Catch the sun",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 2.433,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 2.5,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 2.417,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 10.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 2.45,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 2.5,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 2.417,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 10.0
+      },
+      "passed": true,
+      "automated_wall_s": 19.667
+    },
+    {
+      "id": "easy-water-receiver",
+      "title": "Fill the receiver",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 3.483,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 3.483,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 3.483,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 1.21
+    },
+    {
+      "id": "easy-river-wheel",
+      "title": "Wheel in the river",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 3.983,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 4.1,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 3.883,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "worked": 0,
+        "refused_missing_goal_piece": "the goal is about your water_wheel 1 hinge, which is not here yet"
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 1.06
+    },
+    {
+      "id": "easy-water-wheel",
+      "title": "Pour onto the paddles",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 1.517,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.867,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.4,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 0.888
+    },
+    {
+      "id": "easy-river-lift",
+      "title": "River-powered lift",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 4.083,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 4.267,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 4.033,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 1.413
+    },
+    {
+      "id": "easy-water-gate",
+      "title": "Water opens a gate",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 3.183,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 4.417,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 2.733,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 1.651
+    },
+    {
+      "id": "easy-divert-water",
+      "title": "Divert the water",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 4.567,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 4.567,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 4.567,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "passed": true,
+      "automated_wall_s": 1.606
+    },
+    {
+      "id": "steam",
+      "title": "Up she goes",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 3.367,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 3.35,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 3.35,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 22.0
+      },
+      "empty": {
+        "worked": 0,
+        "refused_missing_goal_piece": "Place a steam engine: the goal is its piston"
+      },
+      "passed": true,
+      "automated_wall_s": 0.439
+    },
+    {
+      "id": "easy-heat",
+      "title": "Heat to release",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 8.617,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 8.617,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 8.617,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "misplaced": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 8.617,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 8.617,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 8.617,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 1.0
+      },
+      "passed": true,
+      "automated_wall_s": 54.792
+    },
+    {
+      "id": "chain",
+      "title": "Chain reaction",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 1.596,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.567,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 18.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 1.596,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.583,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 1.567,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 18.0
+      },
+      "passed": true,
+      "automated_wall_s": 25.665
+    },
+    {
+      "id": "fire",
+      "title": "Knock it off",
+      "solution": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.871,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.875,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.804,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 18.0
+      },
+      "empty": {
+        "runs": 1,
+        "worked": 0,
+        "results": [
+          {
+            "goal_at_s": null,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 0.0
+      },
+      "after_setup_gravity": {
+        "runs": 3,
+        "worked": 3,
+        "results": [
+          {
+            "goal_at_s": 0.871,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.875,
+            "error": null,
+            "closest": null
+          },
+          {
+            "goal_at_s": 0.808,
+            "error": null,
+            "closest": null
+          }
+        ],
+        "cost": 18.0
+      },
+      "passed": true,
+      "automated_wall_s": 7.079
+    }
+  ],
+  "wall_s": 229.045,
+  "passed": true,
+  "examples": [
+    {
+      "name": "Sun powers the flag",
+      "error": null,
+      "stations": [],
+      "movement_m": {
+        "flag": 0.1499999999999999
+      },
+      "capacitors": [],
+      "passed": true,
+      "automated_wall_s": 8.63
+    },
+    {
+      "name": "Chain reaction",
+      "error": null,
+      "stations": [
+        {
+          "title": "Pouring water",
+          "maturity": "experimental",
+          "done": true,
+          "at_s": 1.867
+        },
+        {
+          "title": "Rope and gate",
+          "maturity": "calculated",
+          "done": true,
+          "at_s": 2.383
+        },
+        {
+          "title": "Marble run",
+          "maturity": "calculated",
+          "done": true,
+          "at_s": 4.483
+        },
+        {
+          "title": "Dominoes",
+          "maturity": "calculated",
+          "done": true,
+          "at_s": 5.383
+        },
+        {
+          "title": "Lever",
+          "maturity": "calculated",
+          "done": true,
+          "at_s": 5.5
+        },
+        {
+          "title": "Electric switch",
+          "maturity": "calculated",
+          "done": true,
+          "at_s": 5.5
+        },
+        {
+          "title": "Burning rope",
+          "maturity": "experimental",
+          "done": true,
+          "at_s": 21.317
+        },
+        {
+          "title": "Falling weight",
+          "maturity": "calculated",
+          "done": true,
+          "at_s": 21.779
+        },
+        {
+          "title": "Glass plate",
+          "maturity": "experimental",
+          "done": true,
+          "at_s": 21.779
+        }
+      ],
+      "movement_m": {},
+      "capacitors": [],
+      "passed": true,
+      "automated_wall_s": 22.095
+    },
+    {
+      "name": "River powers a lift",
+      "error": null,
+      "stations": [],
+      "movement_m": {
+        "river gate": 0.1068
+      },
+      "capacitors": [],
+      "passed": true,
+      "automated_wall_s": 0.531
+    },
+    {
+      "name": "Charge and release",
+      "error": null,
+      "stations": [],
+      "movement_m": {},
+      "capacitors": [
+        {
+          "name": "storage",
+          "stored_j": 4.57623772166413
+        }
+      ],
+      "passed": true,
+      "automated_wall_s": 3.84
+    },
+    {
+      "name": "Light, heat and gravity",
+      "error": null,
+      "stations": [
+        {
+          "title": "The weight is in the bin",
+          "maturity": null,
+          "done": true,
+          "at_s": 5.433
+        }
+      ],
+      "movement_m": {},
+      "capacitors": [],
+      "passed": true,
+      "automated_wall_s": 0.551
+    }
+  ]
+}
