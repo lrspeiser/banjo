@@ -807,6 +807,8 @@ body.playing-level #view>.level-done{top:50%;transform:translate(-50%,-50%);z-in
 .device-live-card label{display:grid;grid-template-columns:1fr auto;align-items:center;font-size:12px}
 .device-live-card input[type=range]{grid-column:1;width:100%;margin:0}
 .device-live-card button{min-width:44px;min-height:44px;background:#294c60;color:#fff;border:1px solid #63899d;border-radius:5px;font:13px system-ui}
+.spring-live-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px}
+#viewer-corner .hold-repeat{touch-action:pan-x}
 @media(max-width:359px){#piece-editor{width:224px}}
 
 /* With controls beside the piece, a selected edit needs less bottom-dock space. */

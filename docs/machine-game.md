@@ -1,5 +1,32 @@
 # Puzzles on the machine (/play)
 
+October 16 spring access: a placed spring now has **Adjust spring** beside
+**Release spring**. This uses the same selection/editor path as clicking the
+coil, retains its setup and opens the length buttons with proposed force and
+stored energy. It remains available after Try It! readies the paused latch;
+it cannot actuate the latch, and disables once the machine runs or is released.
+The lesson changes relaxed length/preload at a fixed held length and 200 N/m
+stiffness. It does not add an independent tension/stiffness setting; Sandbox
+retains its full editor. No native model, goal, tolerance or solution changes.
+
+The public test site at e4fa9d9 was manually played in ordinary Chrome: visible
+length buttons changed 20 cm / 0 N / 0 J to 70 cm / 100 N / 25 J proposed push
+and storage; selecting the placed coil reopened the controls, and Try It! then
+Release spring completed the actual lift with three stars. Screenshots record
+the buttons/values and completed result. At verification, production remained
+0017397 and did not contain these explicit spring-length buttons.
+
+The inherited e4fa9d9 CI failure was the 320 px camera-row swipe: held zoom
+buttons disabled native touch panning. They now allow horizontal panning while
+the existing pointer-cancel path stops repetition. Its native-tests and seven
+other browser batches had passed; the aggregate job correctly failed alongside
+that browser batch. Complete new-checkpoint CI is still required for promotion.
+Three focused Ubuntu/SwiftShader browser scenarios pass in 51.170 s: direct
+spring reopening on four layouts, unchanged compression/placement and the native
+lift; the formerly failing camera-row swipe; and held adjustments, zoom, drag
+cancellation and limits. Source registration and JavaScript/Python syntax pass.
+The native binary is unchanged.
+
 October 15 phone gear-card follow-up: Move, Place and cancel share one row
 with 44 px touch targets on a 156 px card. This removes a row of height so
 the editor can clear the target wheel while showing the alignment feedback.

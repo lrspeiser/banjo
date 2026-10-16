@@ -7,6 +7,8 @@ handles in the 3D view. Numeric settings, including ratings and joint properties
 use these controls; exact values remain in Changes → Settings. A spring’s dotted
 relaxed-length guide is an editing measurement, while its latch holds the actual
 compressed spring until release.
+After placing a spring, **Adjust spring** beside **Release spring** reopens
+its length and stored-push controls without firing the latch.
 
 Gears show Teeth, Radius and Height together beside the piece. Tap a size to
 choose a preset, or Height to use the vertical handles, while the engine's
