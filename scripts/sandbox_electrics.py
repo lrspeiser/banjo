@@ -64,6 +64,11 @@ def switch(name, k, ctx):
                        'lower_deg': -35, 'upper_deg': 35, 'friction_n_m': .002})
         device['hinge'] = hinge
         device['closed_at_or_below_deg'] = -k.get('threshold_deg', 8)
+        # Fixed housing jacks clear the underside of the legacy paddle's
+        # swept volume. The newer metal-contact versions override these pads.
+        device['terminals'] = {key:[x+side*.08,.07,z+.09]
+                               for key,side in [('in',-1),('out',1)]}
+        device['terminal_normals'] = {'in':[0,0,1],'out':[0,0,1]}
     else:
         # The rocker is an ordinary body, held by its own frictional hinge.
         # Its centre of mass is on the axle: gravity does not choose a state.
@@ -1132,6 +1137,9 @@ TEMPLATES.append({'name':'Drop a battery into its holder',
 LEGACY_SWITCH_LEVELS = {row['id']:copy.deepcopy(row) for row in EASY_LEVELS
                        if row['id']=='easy-marble-light'}
 for _row in LEGACY_SWITCH_LEVELS.values():
+    # The old near-side miss can rebound from a physical lead into the deck.
+    # Use a clear lateral miss for the negative rehearsal, with the same goal.
+    _row['wrong']=[dict(piece='switch',mode='paddle',z_m=.5,threshold_deg=5)]
     for _tray in _row['tray']:
         if _tray['piece']=='switch': _tray['legacy_contacts']=True
 CONTACT_SWITCHES = True

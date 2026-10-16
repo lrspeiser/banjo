@@ -1221,6 +1221,10 @@ class Puzzles(unittest.TestCase):
                 before=self.js("window.machineWiringState().powerPorts['your battery 1:power']")
                 self.click_visible('Try It!')
                 self.wait("window.machineContactState().liveDevices.some(d=>d.kind==='bulb' && d.power_w>2)",30)
+                # First electrical contact precedes the pack settling. Wait
+                # for its actual input port to fall the declared distance,
+                # instead of pausing at whichever contact frame arrived first.
+                self.wait(f"machineWiringState().powerPorts['your battery 1:power'][1]<{before[1]-.1}",10)
                 self.press('Pause')
                 state=self.js('window.machineWiringState()')
                 after=state['powerPorts']['your battery 1:power']
@@ -2922,8 +2926,22 @@ class Puzzles(unittest.TestCase):
                 self.assertIn('Goal at',self.js("document.getElementById('level-done').textContent"))
 
     def click_existing_wire(self,name,touch=False,fraction=.5):
+        self.wait('machineCamera().settled',30)
         self.wait(f'Boolean(window.machineWireScreen({json.dumps(name)},{fraction}))',10)
-        point=self.js(f"[{fraction},.25,.75,.15,.85].map(f=>machineWireScreen({json.dumps(name)},f)).find(p=>p&&document.elementFromPoint(...p)?.tagName==='CANVAS')")
+        # Native cords sag during setup. A projected point can be behind a
+        # case or inside a terminal's touch area; canvas ownership alone does
+        # not mean the visible wire can receive that click.
+        removable=f'machineScenePick(...p).wires.includes({json.dumps(name)})' if name.startswith('your ') else 'true'
+        expression=f"[{fraction},...Array.from({{length:39}},(_,i)=>(i+1)/40)].map(f=>machineWireScreen({json.dumps(name)},f)).find(p=>p&&document.elementFromPoint(...p)?.tagName==='CANVAS'&&{removable}&&!machineScenePick(...p).socket)"
+        point=None;deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            # A fast live run can finish while we find a moving cord. Dismiss
+            # the ordinary result overlay before trying to touch the scene.
+            if self.js("Boolean(document.querySelector('#level-done:not([hidden]) .result-close'))"):
+                self.click_visible('Close level complete')
+            point=self.js(expression)
+            if point:break
+            time.sleep(.05)
         self.assertIsNotNone(point,'A visible wire segment must remain clickable')
         x,y=point
         self.assertEqual(self.js(f'document.elementFromPoint({x},{y})?.tagName'),'CANVAS')

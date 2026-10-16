@@ -162,8 +162,9 @@ mesh their teeth. A separate wired battery/motor supplies power. **Turn the big
 wheel** teaches bridging a gap between a powered gear and a larger target;
 the **Fast wheel slow wheel** example uses the same contact-driven apparatus.
 Older saved gear pairs retain their original ideal coupling.
-There are 31 editable prebuilt designs, including a battery holder, a river workbench and a
-river-powered gate lift. The river's current pushes submerged wheel paddles;
+The gallery has five editable combined examples: Sun powers the flag, Chain
+reaction, River powers a lift, Charge and release, and Light, heat and gravity.
+Older saved examples and shared designs remain supported. The river's current pushes submerged wheel paddles;
 connect the wheel's drum rope to a load to lift it.
 In Sandbox, **Load to lift** lists available objects by name, with **Pick in
 scene** for direct selection. The spin-only **Wheel in the river** lesson hides

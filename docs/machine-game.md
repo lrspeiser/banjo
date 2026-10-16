@@ -8,6 +8,21 @@ Stock length and copper area affect actual mass and resistance; excess wire
 forms a physical service coil. Shared sockets have separate plug seats.
 The scene's cable selection/deletion follows the native cord, including solar
 leads, rather than the old schematic curve.
+Outside a connection ring, an exposed placed cord takes precedence over a
+socket's enlarged touch halo. Tapping the ring or explicitly starting a new
+connection still chooses wiring. The browser probe now checks actual cord
+visibility and socket overlap before choosing a deletion point.
+Cable fitting rejects pairs whose axis intervals are already farther apart
+than the required clearance before computing exact segment distance. All 39
+authored/example compiled declarations matched the previous implementation;
+one sequential local construction sample fell from 4.59 s to 1.49 s.
+This affects construction only, not native contact or timestep behavior.
+Archived v1 paddle switches put fixed jacks at y=7 cm, z=9 cm to clear the
+moving deck. Glass/oak/iron deck comparisons at 240/480 Hz completed the same
+lamp goal in 0.433–0.467 s; electrical residuals were below 1.8e-13 J.
+Their old near-side negative could rebound off a real lead into the paddle;
+the negative rehearsal now uses a clear 50 cm lateral miss. The goal, time
+limit, friction, and successful placement remain unchanged.
 Wire proximity picking yields to solid cases unless the actual visible cable
 mesh is in front. The older falling battery holder puts its wire jacks on the
 front of its metal pads, leaving the top contact faces clear. Six native checks

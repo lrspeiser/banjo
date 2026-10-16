@@ -32,6 +32,14 @@ The release audit knows the authored solutions; it does not call those blind.
   marble. Its replacement is a clear lateral miss; the goal is unchanged.
 * Cable picking/deletion uses the actual native shape, including charging
   cords. Removing a prepared mirror also removes its optical reference.
+* Exposed cord taps yield only to actual socket rings or an explicitly started
+  connection, rather than enlarged socket touch halos. Construction rejects
+  distant cable pairs before exact clearance checks: all 39 compiled
+  declarations matched, at 1.49 s versus 4.59 s for one local sample.
+* Archived v1 paddle jacks clear the moving deck. Glass/oak/iron at 240/480 Hz
+  reach the lamp goal in 0.433–0.467 s with electrical residual below 1.8e-13 J.
+  Its old near-side negative could bounce off a physical lead into the deck;
+  a clear lateral miss now fails all three nudges. No goal or tolerance changes.
 * Picking a solid case no longer deletes a nearby wire through its touch
   padding. Older battery holders move wire jacks to the front of the pads,
   away from the falling pack's landing face. Glass/oak/iron housing checks at

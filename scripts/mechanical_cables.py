@@ -27,15 +27,25 @@ def segment_distance(a,b,c,d):
     return gap
 
 
+def segments_close(a,b,c,d,limit):
+    # Separated axis intervals imply a Euclidean separation at least this
+    # large. Reject those pairs before the exact closest-point calculation;
+    # keep a rounding margin and the same strict distance test at the edge.
+    for i in range(3):
+        if max(a[i],b[i])+limit+1e-12<min(c[i],d[i]) or max(c[i],d[i])+limit+1e-12<min(a[i],b[i]):
+            return False
+    return segment_distance(a,b,c,d)<limit
+
+
 def clear_stock(path,radius,occupied=()):
     legs=list(zip(path,path[1:]));lengths=[length(a,b) for a,b in legs]
     for i,(a,b) in enumerate(legs):
         gap=0
         for j in range(i+1,len(legs)):
-            if gap>2*radius+.001 and segment_distance(a,b,*legs[j])<2*radius+.001:return False
+            if gap>2*radius+.001 and segments_close(a,b,*legs[j],2*radius+.001):return False
             gap+=lengths[j]
         for old in occupied:
-            if any(segment_distance(a,b,c,d)<radius+old['radius_m']+.002 for c,d in zip(old['path_m'],old['path_m'][1:])):return False
+            if any(segments_close(a,b,c,d,radius+old['radius_m']+.002) for c,d in zip(old['path_m'],old['path_m'][1:])):return False
     return True
 
 
@@ -74,7 +84,7 @@ def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupie
             for i in range(3):
                 for side in (0,1):
                     q=list(p);q[i]=o[side][i]
-                    blocked=any(segment_distance(p,q,c,d)<radius+old['radius_m']+.002
+                    blocked=any(segments_close(p,q,c,d,radius+old['radius_m']+.002)
                         for old in occupied for c,d in zip(old['path_m'],old['path_m'][1:]))
                     if not any(inside(q,z) for z in boxes) and not blocked:options.append(q)
         if not options:raise ValueError('Cable terminal is buried inside overlapping solids')
@@ -108,7 +118,7 @@ def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupie
             for j,q in enumerate(nodes):
                 trial=cost+length(nodes[i],q)
                 if j==i or trial>=costs[j] or any(intersects(nodes[i],q,o) for o in boxes):continue
-                if any(segment_distance(nodes[i],q,c,d)<radius+old['radius_m']+.002
+                if any(segments_close(nodes[i],q,c,d,radius+old['radius_m']+.002)
                        for old in occupied for c,d in zip(old['path_m'],old['path_m'][1:])):continue
                 if trial<costs[j]:costs[j]=trial;parents[j]=i;heapq.heappush(heap,(trial,j))
         if not math.isfinite(costs[1]):raise ValueError('No clear construction route for cable')

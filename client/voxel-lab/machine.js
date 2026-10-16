@@ -4428,7 +4428,7 @@ window.machineGhostScreen = () => ghostScreenBox();
 // Read-only camera/plane projection for input regression fixtures.
 window.machineDragPoint=(x,y)=>slidePoint(x,y,ghostScreenBox()?.bottom||0)?.toArray();
 window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible, settled: target.distanceTo(goal) < 1e-3});
-window.machineScenePick=(x,y)=>{const sockets=socketsAt(x,y,true),pieces=placedOwnersAt(x,y);return {piece:pieces[0]??-1,pieces,wire:wireCandidates(x,y,true).length>0,socket:sockets.some(s=>s.gap<=9),ambiguous:sockets.length>1&&sockets[1].gap-sockets[0].gap<8};};
+window.machineScenePick=(x,y)=>{const sockets=socketsAt(x,y,true),pieces=placedOwnersAt(x,y),wireHits=wireCandidates(x,y,true);return {piece:pieces[0]??-1,pieces,wire:wireHits.length>0,wires:wireHits.map(w=>w.name),socket:sockets.some(s=>s.gap<=9),ambiguous:sockets.length>1&&sockets[1].gap-sockets[0].gap<8};};
 window.machineWireScreen=(name,fraction=.5)=>{
   const wire=wires.find(w=>w.name===name);if(!wire?.line.visible)return null;
   const curve=wire.mechanicalSample?.segments_m?mechanicalCableCurve(wire.mechanicalSample):wire.line.geometry.parameters?.path;
@@ -4469,7 +4469,12 @@ renderer.domElement.addEventListener('pointerdown', e => {
   // Actual rings (9 px radius), or an explicitly started wire, still connect.
   const caseClick=!ghost&&!wiringMode&&!terminalStart&&!pickedPowerPort&&
     nearbySockets[0]?.gap>9&&placedAt(e.clientX,e.clientY)>=0;
-  if(e.button===0&&!e.ctrlKey && nearbySockets.length&&!caseClick) {
+  // A cord passing near a socket remains removable. Keep the actual ring
+  // and an explicitly started connection first, but do not let the enlarged
+  // touch halo turn a visible cable tap into a new, unfinished wire.
+  const wireClick=!ghost&&!wiringMode&&!terminalStart&&!pickedPowerPort&&
+    nearbySockets[0]?.gap>9&&wireCandidates(e.clientX,e.clientY,e.pointerType==='touch').length>0;
+  if(e.button===0&&!e.ctrlKey && nearbySockets.length&&!caseClick&&!wireClick) {
     socketPress=e.pointerId;pressedAt=[e.clientX,e.clientY];sceneDragged=false;draggingGhost=null;return;
   }
   if (!ghost&&!pullMode&&!attachMode&&e.button===0&&!e.ctrlKey) {

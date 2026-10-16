@@ -21,6 +21,20 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_cable_clearance_broad_phase_preserves_exact_distance_decisions(self):
+        import random
+        rng=random.Random(16328)
+        cases=[([0,0,0],[1,0,0],[.5,-1,0],[.5,1,0],.001),
+               ([0,0,0],[0,0,0],[0,0,.01],[0,0,.01],.01),
+               ([0,0,0],[1,0,0],[0,.01,0],[1,.01,0],.010000000001)]
+        cases.extend(([rng.uniform(-2,2) for _ in range(3)],
+                      [rng.uniform(-2,2) for _ in range(3)],
+                      [rng.uniform(-2,2) for _ in range(3)],
+                      [rng.uniform(-2,2) for _ in range(3)],rng.uniform(.001,.5)) for _ in range(2000))
+        for a,b,c,d,limit in cases:
+            self.assertEqual(e.mechanical_cables.segments_close(a,b,c,d,limit),
+                             e.mechanical_cables.segment_distance(a,b,c,d)<limit)
+
     def test_tilted_solar_panel_does_not_enclose_the_motor_lead_in_empty_space(self):
         level=mg.level_by_id('easy-charge-lift')
         # The ordinary editor's clear starting location, distinct from the
@@ -677,6 +691,28 @@ class Native(unittest.TestCase):
             ledger=out['readouts']['electrical']['networks'][0]['ledger']
             self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
             self.assertIn('your switch 1 contact leaf',{p['name'] for p in out['mechanism_shapes']})
+
+    def test_legacy_paddle_fixed_jacks_clear_its_travel_across_materials(self):
+        import sandbox_variants as variants
+        from unittest.mock import patch
+        level=variants.construct(mg.level_by_id('easy-marble-light'),42,version=1)
+        for material in ('glass','oak','iron'):
+            for dt in (1/240,1/480):
+                spec=mg.compose(level,level['solution'])[0]
+                next(p for p in spec['parts'] if p['name']=='your switch 1 paddle')['material']=material
+                compiled=mw.compile_spec(spec)
+                device=next(d for d in compiled['electrical']['devices'] if d['kind']=='switch')
+                self.assertTrue(all(at[1]==.07 and at[2]==.09 for at in device['terminals'].values()))
+                # The archived switch's angle law is owned by Session, unlike
+                # the newer native metal-contact paddle. Exercise that adapter
+                # as well as rigid cable contact, not just raw engine steps.
+                with tempfile.TemporaryDirectory() as logs,patch.object(mw,'DT_S',dt):
+                    out=mw.rehearse(compiled,ENGINE,Path(logs),seconds=3,flows=True)
+                self.assertIsNone(out['error'])
+                self.assertTrue(out['stations'][0]['done'],(material,dt,out['stations']))
+                residual=out['readouts']['electrical']['networks'][0]['ledger']['electrical_residual_j']
+                self.assertLess(abs(residual),1e-8)
+                print('LEGACY_PADDLE_JACKS',material,dt,out['stations'],residual)
 
     def test_paddle_material_comparison_and_timestep_contact_receipts(self):
         for material in ('glass','oak','iron'):
