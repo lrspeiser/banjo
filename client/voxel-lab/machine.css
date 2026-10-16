@@ -780,6 +780,10 @@ body.playing-level #view>.level-done{top:50%;transform:translate(-50%,-50%);z-in
 #piece-editor .gear-label{font:12px/14px system-ui;color:#cde3ef}
 #piece-editor .gear-value{font:600 15px/18px system-ui;white-space:nowrap}
 #piece-editor .gear-controls button[aria-pressed=true]{border-color:#ffdc72;background:#473c20}
+#piece-editor .spring-length-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px}
+#piece-editor .spring-length-heading{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:3px;font:12px/16px system-ui;flex-wrap:wrap}
+#piece-editor .spring-length-value{font-weight:600;font-size:16px;white-space:nowrap;color:#ffdc72}
+#piece-editor .spring-length-controls button{min-width:44px;min-height:44px;padding:3px;font-size:13px;white-space:nowrap}
 #piece-editor .knob-row{display:flex;gap:3px;margin:0;flex-wrap:wrap}
 #piece-editor .knob-row>button:only-child{width:100%}
 #piece-editor .choice-cycle{flex-wrap:nowrap;align-items:center}
@@ -832,7 +836,7 @@ body.panel-tabs .scene-tray .tray-picture,body.panel-tabs .scene-tray #tray img{
   .piece-dimension-handle{width:44px;height:44px;font-size:26px}
 }
 
-body.panel-tabs:has(#phone-controls-tab[aria-selected=false]) #piece-editor>:not(.piece-toolbar),body.panel-tabs:has(#phone-controls-tab[aria-selected=false]) #piece-handles,body.panel-tabs:has(#phone-controls-tab[aria-selected=false]) #piece-handle-links{display:none!important}
+body.panel-tabs:has(#phone-controls-tab[aria-selected=false]) #piece-editor>:not(.piece-toolbar):not(.spring-length-controls),body.panel-tabs:has(#phone-controls-tab[aria-selected=false]) #piece-handles,body.panel-tabs:has(#phone-controls-tab[aria-selected=false]) #piece-handle-links{display:none!important}
 
 body.playing-level #view>.level-done.retry-result{top:auto;bottom:12px;transform:translateX(-50%);width:auto;max-width:calc(100% - 24px);padding:6px;border-radius:8px}
 #view>.level-done.retry-result .actions{margin:0}

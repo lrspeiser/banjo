@@ -2967,6 +2967,24 @@ function gearControls(knobs){
   return group;
 }
 
+function springLengthControls(rule){
+  const group=Object.assign(document.createElement('div'),{className:'spring-length-controls'});
+  group.setAttribute('role','group');group.setAttribute('aria-label','Spring length');
+  const heading=Object.assign(document.createElement('div'),{className:'spring-length-heading'});
+  heading.append(Object.assign(document.createElement('span'),{textContent:'Spring length',title:'Relaxed length before compression. The latch holds the compressed spring until release.'}),
+    Object.assign(document.createElement('output'),{className:'spring-length-value',ariaLive:'polite'}));
+  const step=rule.step||.01,increment=step*Math.max(1,Math.round(.05/step));
+  const amount=`${Number((increment*100).toFixed(3))} cm`;
+  group.append(heading);
+  for(const [direction,label] of [[-1,'Shorten spring'],[1,'Lengthen spring']]){
+    const control=button(`${direction<0?'−':'+'} ${amount}`,()=>{
+      selectGhostKnob('rest_m',true);nudgeKnob('rest_m',direction*increment);
+    },{ariaLabel:label,title:`${label} by ${amount}. Drag the gold handles for finer changes.`});
+    control.dataset.springDirection=direction;group.append(control);
+  }
+  return group;
+}
+
 function renderGhostBar() {
   pendingPieceReference=null;
   const precisionOpen = Boolean($('precision-controls')?.open);
@@ -3153,6 +3171,7 @@ function renderGhostBar() {
   modes.hidden=move.disabled&&turn.hidden;
   const top=Object.assign(document.createElement('div'),{className:'piece-toolbar'});top.append(modes,actions);
   editor.replaceChildren(top,...(isGear?[gearControls(knobs)]:[chips]));
+  if(ghost.p.piece==='spring'&&knobs.rest_m&&pieceKnobVisible(ghost.p,'rest_m'))editor.append(springLengthControls(knobs.rest_m));
   if(isGear)precision.querySelector('summary').after(chips);
   if(rule.choices&&(!isGear||!['teeth','module_m','height_m'].includes(key)))editor.append(row);
   else if(rule.part||rule.hinge)editor.append(sceneReferenceControl(ghost.p,key,rule,()=>{renderGhostBar();showGhostKnobs();askGhost();}));
@@ -3299,6 +3318,12 @@ function showGhostKnobs() {
   const knobs = trayItem(ghost.p.piece).knobs;
   const rule=knobs[ghost.card];if(!rule)return; // Connecting ghosts have no selected setting until their editor is built.
   const choice=$('adjustment-choice');if(choice)choice.value=ghost.card;
+  const springLength=$('piece-editor').querySelector('.spring-length-controls');
+  if(springLength){
+    springLength.querySelector('output').textContent=`${Number((ghost.p.rest_m*100).toFixed(2))} cm`;
+    for(const control of springLength.querySelectorAll('button'))control.disabled=Number(control.dataset.springDirection)<0?
+      ghost.p.rest_m<=knobs.rest_m.min+1e-9:ghost.p.rest_m>=knobs.rest_m.max-1e-9;
+  }
   for(const field of $('piece-editor').querySelectorAll('[data-gear-key]')){
     const key=field.dataset.gearKey;
     field.querySelector('.gear-value').textContent=key==='teeth'?String(ghost.p.teeth):
@@ -3312,6 +3337,7 @@ function showGhostKnobs() {
   const shownValue=`${ghost.p[ghost.card]}${units?' '+units:''}`;
   const feedback=$('adjustment-feedback');if(feedback)feedback.textContent=ghost.p.piece==='gear'?
     `${ghost.p.teeth} teeth · ${((ghost.p.teeth/2+.7)*ghost.p.module_m*100).toFixed(1)} cm radius · ${(ghost.p.height_m*100).toFixed(0)} cm height`:
+    springLength&&ghost.card==='rest_m'?rating:
     rating?(numeric?`${shownValue} · ${rating}`:rating):`${knobName(rule,ghost.card)}: ${shownValue}`;
   const value = document.querySelector('#ghost-bar .knob-value');
   if (value) value.textContent = ` ${ghost.p[ghost.card]}${knobs[ghost.card].turning ? '°' : ''}`;

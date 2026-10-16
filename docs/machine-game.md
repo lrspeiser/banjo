@@ -1,5 +1,22 @@
 # Puzzles on the machine (/play)
 
+October 15 spring-control discoverability: selected springs show a labelled
+**Spring length** value in centimetres and direct **− 5 cm / + 5 cm** buttons
+in their edge editor. These change the declared relaxed length; the latch
+still holds the compressed plate, and the existing gold handles give finer
+changes. Buttons disable at the declared limits. The length controls remain
+available when a placed spring is selected again. The length buttons also
+stay visible and usable with the Help tab selected. Lesson filtering still
+hides unrelated stiffness, materials and orientation; Sandbox retains its
+full editor. The model, latch, goal and energy scoring are unchanged.
+The browser regression exercises both buttons, limits, unchanged placement
+and compression, reselection, fine dragging and the native five-centimetre
+lift at desktop, phone portrait/landscape and 320×568. The updated test passes
+on Ubuntu/SwiftShader in 21.296 s, using the previously verified native
+engine. JavaScript/Python syntax and the 271-source registration guard pass.
+Ordinary Windows-browser clicking updates the visible length and stored-energy
+reading. No new physical law or conservation result is claimed by this UI fix.
+
 October 15 navigation qualification: `c156ac6c` passed seven browser batches,
 including the corrected wire audit. Its solar lift check read the hidden
 guide while entering the Sandbox example. All 52 browser navigation call
