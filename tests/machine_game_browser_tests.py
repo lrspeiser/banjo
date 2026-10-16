@@ -5577,7 +5577,16 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Lengthen spring');self.assertAlmostEqual(self.ghost()['p']['rest_m'],.7)
                 self.click_visible('Place');self.wait(READY,30)
                 load=self.js("machineBodies()['spring load']")
-                self.click_visible('Try It!');self.wait("document.getElementById('clock').textContent.includes('Release spring')",30)
+                host=self.server.machines;original_open=host.open;allow_open=threading.Event()
+                def pending_open(spec):
+                    allow_open.wait(10)
+                    return original_open(spec)
+                with patch.object(host,'open',side_effect=pending_open):
+                    try:
+                        self.click_visible('Try It!')
+                        self.wait("document.getElementById('clock').textContent.includes('Building')&&document.querySelector('.spring-adjust')?.disabled",5)
+                    finally:allow_open.set()
+                    self.wait("document.getElementById('clock').textContent.includes('Release spring')",30)
                 self.click_visible('Adjust spring');self.ghost()
                 self.assertEqual(self.js("document.querySelector('#piece-editor .spring-length-value').textContent"),'70 cm')
                 self.click_visible('Place');self.wait(READY,30)

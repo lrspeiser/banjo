@@ -26,6 +26,13 @@ spring reopening on four layouts, unchanged compression/placement and the native
 lift; the formerly failing camera-row swipe; and held adjustments, zoom, drag
 cancellation and limits. Source registration and JavaScript/Python syntax pass.
 The native binary is unchanged.
+The ready-state follow-up disables Adjust spring while a replacement native
+session is opening. A deliberately gated open verifies the disabled state
+before allowing construction to finish, then reopens the editor and completes
+the lift on all four layouts (25.638 s). This prevents an immediate adjustment
+from being replaced by the still-finishing Try It! setup. Manual Chrome checks
+also verify the placed Adjust/Release buttons and reopening from 100 N to 90 N
+and back, with the latch held; phone screenshots record both states.
 
 October 15 phone gear-card follow-up: Move, Place and cancel share one row
 with 44 px touch targets on a 156 px card. This removes a row of height so

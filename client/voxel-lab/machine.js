@@ -3272,7 +3272,7 @@ function positionLiveControls(){
       card.querySelector('output').textContent='The restrained part is free to move.';
     }
     const adjust=card.querySelector('.spring-adjust');
-    if(adjust)adjust.disabled=playing||world.t>0||liveControlPending||released||release.dataset.queuedRelease==='true';
+    if(adjust)adjust.disabled=!session||playing||world.t>0||liveControlPending||released||release.dataset.queuedRelease==='true';
     card.hidden=Boolean(ghost)||document.body.matches('.on-levels,.on-sandbox,.scene-win');if(card.hidden)continue;
     const anchor=card.anchor.clone().project(camera);card.hidden=Math.abs(anchor.z)>1||Math.abs(anchor.x)>1||Math.abs(anchor.y)>1;if(card.hidden)continue;
     if(card.matches(':active')){occupied.push(card.getBoundingClientRect());continue;}
@@ -5434,7 +5434,7 @@ function renderMachineControls() {
     const index=placements.findIndex((p,i)=>`your ${p.piece} ${i+1} restraint`===joint.name);
     if(spring&&index>=0){
       const adjust=button('Adjust spring',()=>{
-        if(!playing&&world.t===0&&!liveControlPending)pickUp(index);
+        if(session&&!playing&&world.t===0&&!liveControlPending)pickUp(index);
       },{className:'spring-adjust',title:'Change the stored push before releasing the latch'});
       const actions=Object.assign(document.createElement('div'),{className:'spring-live-actions'});
       release.replaceWith(actions);actions.append(adjust,release);
