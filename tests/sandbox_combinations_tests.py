@@ -45,10 +45,12 @@ def audit(spec, dt, material='oak', seconds=.75):
             ledger = engine.op(op='circuits')['circuits'][0]['ledger']
             stores = reply['machines']['stores']
             supply = next(s for s in stores if s['name'] == 'supply battery')
+            cables=[{key:c[key] for key in ('name','connected','retention_n','peak_terminal_force_n')}
+                    for c in engine.op(op='mechanical_cables')['cables']]
             return {'dt': dt, 'material': material, 'mass_kg': mass,
                     'kinetic_j': kinetic, 'potential_j': potential, 'bearing_heat_j': bearing_heat,
                     'mechanical_residual_j': potential + kinetic + bearing_heat - ledger['shaft_j'],
-                    'ledger': ledger, 'supply': supply, 'lift_m': p[1] - start_y}
+                    'ledger': ledger, 'supply': supply, 'lift_m': p[1] - start_y,'cables':cables}
         finally:
             engine.close()
 
@@ -124,10 +126,12 @@ class SolarLift(unittest.TestCase):
                     # conservation proof or hidden inside a new heat term.
                     exported = ledger['shaft_j'] + ledger['heat_j'] + ledger['emitted_j'] + ledger['exported_j']
                     self.assertAlmostEqual(ledger['source_j'] + ledger['coupling_residual_j'], exported, delta=1e-7)
-                    # Whole physical assembly, at 0.75s, has no floor contact;
-                    # its fixed support does no work. The native solver's
-                    # correction and pose rounding leave <0.01J unaccounted.
+                    # This is the raised load/hinge ledger, not the cable
+                    # assembly's full-pipeline conservation qualification.
+                    # Its fixed mount does no work; pose rounding and native
+                    # correction leave <0.01 J unaccounted for this load.
                     self.assertLess(abs(result['mechanical_residual_j']), .01)
+                    self.assertTrue(all(c['connected'] for c in result['cables']),result['cables'])
                     if material == 'oak':
                         self.assertGreater(result['lift_m'], .05)
                         self.assertLess(abs(ledger['coupling_residual_j']), .02 * ledger['shaft_j'])

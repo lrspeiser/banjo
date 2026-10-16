@@ -53,7 +53,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 0.212
+      "automated_wall_s": 0.233
     },
     {
       "id": "easy-spring",
@@ -105,7 +105,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 0.237
+      "automated_wall_s": 0.241
     },
     {
       "id": "gap",
@@ -145,7 +145,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 0.922
+      "automated_wall_s": 0.967
     },
     {
       "id": "easy-tackle",
@@ -197,7 +197,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 0.384
+      "automated_wall_s": 0.401
     },
     {
       "id": "easy-lens",
@@ -249,7 +249,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 0.269
+      "automated_wall_s": 0.266
     },
     {
       "id": "easy-cut",
@@ -301,7 +301,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 0.486
+      "automated_wall_s": 0.48
     },
     {
       "id": "easy-mirror",
@@ -353,7 +353,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 0.252
+      "automated_wall_s": 0.257
     },
     {
       "id": "easy-catapult",
@@ -397,7 +397,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 0.893
+      "automated_wall_s": 0.917
     },
     {
       "id": "cut",
@@ -437,7 +437,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 0.359
+      "automated_wall_s": 0.371
     },
     {
       "id": "tackle",
@@ -477,7 +477,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 0.639
+      "automated_wall_s": 0.648
     },
     {
       "id": "laser",
@@ -517,7 +517,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 2.041
+      "automated_wall_s": 2.036
     },
     {
       "id": "easy-gears",
@@ -591,7 +591,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 3.885
+      "automated_wall_s": 3.796
     },
     {
       "id": "easy-motor",
@@ -657,7 +657,7 @@
         "cost": 1.0
       },
       "passed": true,
-      "automated_wall_s": 2.258
+      "automated_wall_s": 2.177
     },
     {
       "id": "easy-bulb",
@@ -723,7 +723,7 @@
         "cost": 1.0
       },
       "passed": true,
-      "automated_wall_s": 3.237
+      "automated_wall_s": 3.14
     },
     {
       "id": "easy-loop",
@@ -797,7 +797,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 5.817
+      "automated_wall_s": 5.724
     },
     {
       "id": "advanced-resistor",
@@ -871,7 +871,7 @@
         "cost": 1.0
       },
       "passed": true,
-      "automated_wall_s": 3.777
+      "automated_wall_s": 3.658
     },
     {
       "id": "easy-switch",
@@ -946,7 +946,7 @@
         "cost": 1.0
       },
       "passed": true,
-      "automated_wall_s": 3.933
+      "automated_wall_s": 3.777
     },
     {
       "id": "easy-marble-light",
@@ -1020,7 +1020,7 @@
         "cost": 1.0
       },
       "passed": true,
-      "automated_wall_s": 3.556
+      "automated_wall_s": 3.577
     },
     {
       "id": "easy-power",
@@ -1094,7 +1094,7 @@
         "cost": 1.0
       },
       "passed": true,
-      "automated_wall_s": 9.004
+      "automated_wall_s": 9.18
     },
     {
       "id": "advanced-parallel",
@@ -1168,7 +1168,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 12.016
+      "automated_wall_s": 11.703
     },
     {
       "id": "advanced-capacitor",
@@ -1234,7 +1234,7 @@
         "cost": 1.0
       },
       "passed": true,
-      "automated_wall_s": 4.064
+      "automated_wall_s": 4.199
     },
     {
       "id": "easy-solar",
@@ -1382,7 +1382,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 16.946
+      "automated_wall_s": 11.498
     },
     {
       "id": "sun",
@@ -1444,7 +1444,7 @@
         "cost": 10.0
       },
       "passed": true,
-      "automated_wall_s": 19.667
+      "automated_wall_s": 18.767
     },
     {
       "id": "easy-water-receiver",
@@ -1496,7 +1496,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 1.21
+      "automated_wall_s": 1.276
     },
     {
       "id": "easy-river-wheel",
@@ -1540,7 +1540,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 1.06
+      "automated_wall_s": 1.081
     },
     {
       "id": "easy-water-wheel",
@@ -1592,7 +1592,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 0.888
+      "automated_wall_s": 0.943
     },
     {
       "id": "easy-river-lift",
@@ -1644,7 +1644,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 1.413
+      "automated_wall_s": 1.476
     },
     {
       "id": "easy-water-gate",
@@ -1696,7 +1696,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 1.651
+      "automated_wall_s": 1.745
     },
     {
       "id": "easy-divert-water",
@@ -1748,7 +1748,7 @@
         "cost": 0.0
       },
       "passed": true,
-      "automated_wall_s": 1.606
+      "automated_wall_s": 1.699
     },
     {
       "id": "steam",
@@ -1780,7 +1780,7 @@
         "refused_missing_goal_piece": "Place a steam engine: the goal is its piston"
       },
       "passed": true,
-      "automated_wall_s": 0.439
+      "automated_wall_s": 0.468
     },
     {
       "id": "easy-heat",
@@ -1854,7 +1854,7 @@
         "cost": 1.0
       },
       "passed": true,
-      "automated_wall_s": 54.792
+      "automated_wall_s": 50.766
     },
     {
       "id": "chain",
@@ -1916,7 +1916,7 @@
         "cost": 18.0
       },
       "passed": true,
-      "automated_wall_s": 25.665
+      "automated_wall_s": 18.851
     },
     {
       "id": "fire",
@@ -1978,10 +1978,10 @@
         "cost": 18.0
       },
       "passed": true,
-      "automated_wall_s": 7.079
+      "automated_wall_s": 5.82
     }
   ],
-  "wall_s": 229.045,
+  "wall_s": 205.321,
   "passed": true,
   "examples": [
     {
@@ -1993,7 +1993,7 @@
       },
       "capacitors": [],
       "passed": true,
-      "automated_wall_s": 8.63
+      "automated_wall_s": 5.58
     },
     {
       "name": "Chain reaction",
@@ -2057,7 +2057,7 @@
       "movement_m": {},
       "capacitors": [],
       "passed": true,
-      "automated_wall_s": 22.095
+      "automated_wall_s": 20.07
     },
     {
       "name": "River powers a lift",
@@ -2068,7 +2068,7 @@
       },
       "capacitors": [],
       "passed": true,
-      "automated_wall_s": 0.531
+      "automated_wall_s": 0.539
     },
     {
       "name": "Charge and release",
@@ -2082,7 +2082,7 @@
         }
       ],
       "passed": true,
-      "automated_wall_s": 3.84
+      "automated_wall_s": 3.7
     },
     {
       "name": "Light, heat and gravity",
@@ -2098,7 +2098,7 @@
       "movement_m": {},
       "capacitors": [],
       "passed": true,
-      "automated_wall_s": 0.551
+      "automated_wall_s": 0.55
     }
   ]
 }

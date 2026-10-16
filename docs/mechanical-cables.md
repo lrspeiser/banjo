@@ -100,7 +100,8 @@ two ports belong to the same housing. A missing supply never removes their mass.
 
 ## Factory fitting and electrical coupling
 
-Standard game power plugs declare 50 N resultant retention. The low-level
+Standard game power plugs declare 50 N resultant retention; the solar lift
+bench's four prepared load leads declare 200 N locking plugs. The low-level
 native cable default remains 15 N, which is also the falling-load qualification
 rating. Neither is commercial calibration. The instantaneous solved connector
 force still decides pullout; there is no grace timer, force suppression or
@@ -206,6 +207,18 @@ error. Native fixed translation rows and explicit joint iteration budgets
 substantially reduce gaps and energy residuals; the remaining losses are above.
 
 ## Remaining limits
+
+October 16 solar-bench qualification: its four prepared leads now declare
+200 N locking-plug retention; the separate solar charging cord retains 50 N.
+On two CPU slots with no Jolt workers, Linux at dt=0.0005 s previously pulled
+out a 50 N motor return during its floor impact, stopping the oak load at
+0.01509 m. With the declared locking connectors it rises 0.08396 m and the
+largest measured plug force is 106.31 N over 0.75 s. The goal and tolerances
+are unchanged. Windows and Linux compare oak/glass/iron at 240/480/1000/2000 Hz;
+the load/hinge energy ledger is distinct from cable whole-pipeline conservation.
+These are prototype connector ratings, not calibrated hardware geometry.
+Impact peak forces in this inextensible model remain timestep-sensitive; this
+fixture change does not establish a converged connector-damage or axial-strain law.
 
 This is a discrete, inextensible, preformed cable approximation. It does not
 resolve copper strands, axial stretch/yield, plastic kinks, insulation wear,

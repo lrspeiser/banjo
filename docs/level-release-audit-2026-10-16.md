@@ -36,6 +36,11 @@ The release audit knows the authored solutions; it does not call those blind.
   padding. Older battery holders move wire jacks to the front of the pads,
   away from the falling pack's landing face. Glass/oak/iron housing checks at
   240/480 Hz all powered the lamp; electrical residuals were below 4.4e-12 J.
+* The solar lift bench uses declared 200 N locking connectors on its four
+  prepared load leads. At 2000 Hz the earlier 50 N return pulled out during
+  floor impact. The stronger connectors retain the same native pullout law,
+  goal and tolerances; the separate panel cord remains rated 50 N. See the
+  [qualification and timestep limits](mechanical-cables.md#remaining-limits).
 * Sandbox shows five combined examples instead of the long component-demo
   list. Saved designs remain first and all placeable components remain usable.
 
@@ -48,6 +53,7 @@ The release audit knows the authored solutions; it does not call those blind.
 | High | Optical power sources | The prepared optical lamps/laser still draw from a declared store without an external physical feeder. Give those their own visible, electrically gated supply cords before claiming every power connection is physically wired. |
 | Medium | Heat to release | The correct setup takes about 8.6 simulation seconds to burn the cord. Keep the temperature/charring feedback prominent; time the complete interaction with new players before reducing the wait through physical apparatus changes. |
 | Medium | Cable clutter and fitting | Five-metre stock can make large service coils. Dense scenes and conservative compound bounds can still refuse a valid real-world route. Offer a clearly measured cut-to-length tool or an explicit routing waypoint, rather than silently changing copper length. |
+| Medium | Impact and connector calibration | Inextensible rods can produce timestep-sensitive impact peaks at their plugs. The solar bench now uses declared locking connectors; qualify axial compliance and real connector geometry before making hardware-strength claims. |
 | Medium | Water-driven mechanisms | Water opens a gate varies noticeably under the small initial perturbations. Check novice placement margins and source-opening feedback; retain actual paddle contact and the original goal. |
 | Medium | Pulley/drum ropes | These still use ideal endpoint constraints rather than distributed colliding ropes. Do not describe the wire migration as replacement of every thin mechanical connection. |
 | Medium | Device internals | Motor torque/back-EMF, regulated solar charging, ideal spring laws and some switch laws remain lumped models. Wire insulation damage, conductor heating/failure and strand deformation are not implemented. See [the model limits](mechanical-cables.md). |
@@ -95,11 +101,11 @@ The release audit knows the authored solutions; it does not call those blind.
 
 ## Five Sandbox demonstrations
 
-* **Sun powers the flag** — flag rises 0.1500 m. Automated wall time 8.630 s.
-* **Chain reaction** — 9/9 stations; last at 21.779 s. Automated wall time 22.095 s.
-* **River powers a lift** — river gate rises 0.1068 m. Automated wall time 0.531 s.
-* **Charge and release** — storage retains 4.5762 J. Automated wall time 3.840 s.
-* **Light, heat and gravity** — 1/1 stations; last at 5.433 s. Automated wall time 0.551 s.
+* **Sun powers the flag** — flag rises 0.1500 m. Automated wall time 5.580 s.
+* **Chain reaction** — 9/9 stations; last at 21.779 s. Automated wall time 20.070 s.
+* **River powers a lift** — river gate rises 0.1068 m. Automated wall time 0.539 s.
+* **Charge and release** — storage retains 4.5762 J. Automated wall time 3.700 s.
+* **Light, heat and gravity** — 1/1 stations; last at 5.433 s. Automated wall time 0.550 s.
 
 ## Reproduction and evidence
 

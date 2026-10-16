@@ -29,6 +29,11 @@ def charge_and_lift():
     next(d for d in base['electrical']['devices'] if d['name'] == 'charge light')['watts'] = 30
     electrics.link(base, 'light feed', 'supply:plus', 'charge light:plus')
     electrics.link(base, 'light return', 'charge light:minus', 'supply:minus')
+    # Locking bench connectors hold the floor-supported service leads while
+    # they settle. Their declared 200 N rating is still enforced by native
+    # terminal reaction forces; it is not an electrical-connectivity override.
+    for wire in base['electrical']['wires']:
+        wire['mechanical'] = {'retention_n':200}
     base['title'] = 'Charge then lift'
     base['sun'] = {'azimuth_deg': 180, 'elevation_deg': 20, 'irradiance_w_m2': 1000}
     row = copy.deepcopy(next(t for t in mechanics.TRAY if t['piece'] == 'solar'))
