@@ -30,6 +30,17 @@ and phone orientations in 74.047 s. This mirrors the CI CPU/rendering budget;
 it does not claim bit-identical Windows/Linux trajectories. The connected-wire
 length test waits for completed placement and native readiness before using
 the placed-wire button, retaining its hit target and exact 10 cm increment.
+The follow-up precision-tap probe waits two native setup seconds after
+rebuilding/Undo, while its early held tap retains a 0.35-second minimum.
+One hit test per candidate replaces repeated whole-scene raycasts that could
+delay a dispatched press while the cord moved. The read-only setup probe exposes
+the existing server setup-time measurement; gravity, retention, clocks and
+electrical consumption are unchanged. All three removal/Undo/camera flows pass
+under two-core Windows affinity with SwiftShader in 123.000 s, including stronger
+endpoint assertions after the repeated removal.
+The solar-cord remove/Undo/live-edit flow also passes under the same two-core
+software-rendering budget in 78.186 s with the setup-time wait and single-hit
+probe. No cord is frozen to make these interaction checks pass.
 Cable fitting rejects pairs whose axis intervals are already farther apart
 than the required clearance before computing exact segment distance. All 39
 authored/example compiled declarations matched the previous implementation;

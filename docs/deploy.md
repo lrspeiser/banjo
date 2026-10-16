@@ -322,10 +322,10 @@ never packaged or sent to the browser.
 
 ### Development and promotion
 
-CI runs eight browser batches on separate Ubuntu runners alongside the
+CI runs sixteen browser batches on separate Ubuntu runners alongside the
 native test job. Each browser runner builds the checked-out engine and keeps
 the existing 1200-second batch deadline. The `build-and-test` check succeeds
-only when source registration, every non-browser native check and all eight
+only when source registration, every non-browser native check and all sixteen
 browser batches succeed; failed, skipped or cancelled dependencies fail the
 gate. Native JUnit/floating-point evidence remains attached to the run, and
 browser progress and failure traces stream in the job logs. Failure screenshots
@@ -342,13 +342,17 @@ The final unbatched local run passes all 22 methods in 961.844 s. The partition
 check covers every method and all 23 native families exactly once; two native
 family batches additionally pass in 143.871 s and 60.018 s.
 
-CI runs those six recipe batches, eight browser batches and three game
+CI runs those six recipe batches, sixteen browser batches and three game
 integration groups on independent runners. The native CTest job excludes only
 those explicitly named groups; the aggregate release gate requires every group
 to succeed. Game integration keeps each suite's original 600-second deadline.
 The remaining C++/API/client checks stay in CTest, and ordinary local CTest still
 registers the complete suite. This changes verification scheduling, not the
 game's CPU allocation or Render hosting.
+The 149 browser scenarios retain all layouts and assertions. Sixteen disjoint
+batches replace eight because the earlier batch 2 reached its 1200-second total
+deadline after fifteen passing scenarios, before the remaining scenarios could
+finish. The per-batch 1200-second deadline and required release gate remain.
 
 1. Start a feature branch from current main, preserving unrelated changes.
 2. Verify its scope, update Recent Changes and integrate into `codex/staging`.

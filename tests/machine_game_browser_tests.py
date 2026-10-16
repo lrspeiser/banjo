@@ -1006,6 +1006,8 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Undo');self.wait(f'machinePlacements().length===3 && {READY}',60)
                 self.click_existing_wire('your wire 2',touch=width!=1280)
                 self.wait(f'machinePlacements().length===2 && {READY}',60)
+                self.assertEqual(self.js('machinePlacements()[1].a_terminal'),'lamp:minus')
+                self.assertEqual(self.js('machinePlacements()[1].b_terminal'),'your battery 1:minus')
                 self.click_existing_wire('your wire 2',touch=width!=1280)
                 self.wait(f'machinePlacements().length===1 && {READY}',60)
                 for a,b in [('your battery 1:plus','lamp:plus'),('lamp:minus','your battery 1:minus')]:
@@ -2930,12 +2932,24 @@ class Puzzles(unittest.TestCase):
 
     def click_existing_wire(self,name,touch=False,fraction=.5,hold=0):
         self.wait('machineCamera().settled',30)
+        # Setup gravity remains active. Give precise repeated taps after Undo
+        # two native seconds to settle; retain an early held tap to exercise
+        # press-time selection while a newly placed cord is still falling.
+        settling=.35 if hold else 2
+        self.wait(f'!machineCableSetupState().active || machineCableSetupState().setup_s>={settling}',15)
         self.wait(f'Boolean(window.machineWireScreen({json.dumps(name)},{fraction}))',10)
         # Native cords sag during setup. A projected point can be behind a
         # case or inside a terminal's touch area; canvas ownership alone does
         # not mean the visible wire can receive that click.
-        removable=f'machineScenePick(...p).wires[0]==={json.dumps(name)}' if name.startswith('your ') else 'true'
-        expression=f"[{fraction},...Array.from({{length:39}},(_,i)=>(i+1)/40)].map(f=>machineWireScreen({json.dumps(name)},f)).find(p=>p&&document.elementFromPoint(...p)?.tagName==='CANVAS'&&{removable}&&!machineScenePick(...p).socket&&!machineScenePick(...p).pieces.length)"
+        removable=f'pick.wires[0]==={json.dumps(name)}' if name.startswith('your ') else 'true'
+        # One hit test per candidate, stopping at the first exposed segment.
+        # Repeated whole-scene raycasts delayed input on software renderers,
+        # letting the native cord move away before the dispatched press.
+        expression=f"""(()=>{{for(const f of [{fraction},.25,.75,.15,.85,...Array.from({{length:39}},(_,i)=>(i+1)/40)]){{
+          const p=machineWireScreen({json.dumps(name)},f);
+          if(!p||document.elementFromPoint(...p)?.tagName!=='CANVAS')continue;
+          const pick=machineScenePick(...p);if({removable}&&!pick.socket&&!pick.pieces.length)return p;
+        }}return null;}})()"""
         point=None;deadline=time.monotonic()+10
         while time.monotonic()<deadline:
             # A fast live run can finish while we find a moving cord. Dismiss
@@ -2947,7 +2961,6 @@ class Puzzles(unittest.TestCase):
             time.sleep(.05)
         self.assertIsNotNone(point,'A visible wire segment must remain clickable')
         x,y=point
-        self.assertEqual(self.js(f'document.elementFromPoint({x},{y})?.tagName'),'CANVAS')
         if touch:
             self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y,'id':1}]})
             if hold:time.sleep(hold)

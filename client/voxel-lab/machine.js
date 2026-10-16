@@ -1774,6 +1774,7 @@ async function build(next, start, request) {
     meshes.clear(); $('events').replaceChildren();
     spec = request ? opened.machine : next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
     cableSetupActive = Boolean(opened.cable_setup);
+    cableSetupSeconds = opened.cable_setup_s || 0;
     drawAirflows();
     world = mergeFrame({seq: 0, t: 0, bodies: new Map()}, opened);
     electricalStartPoses.clear();
@@ -1837,7 +1838,8 @@ async function setPlaying(run) {
 // fast as frames arrive exhausted the machine's sockets.
 const RUNNING_MS = 50, PAUSED_MS = 1000;
 let cableSetupActive = false;
-window.machineCableSetupState = () => ({session,t:world.t,active:cableSetupActive});
+let cableSetupSeconds = 0;
+window.machineCableSetupState = () => ({session,t:world.t,active:cableSetupActive,setup_s:cableSetupSeconds});
 let wake = null;
 let liveControlPending = false;
 let liveControlRequest = null;
@@ -1856,6 +1858,7 @@ async function poll(mine) {
       world = mergeFrame(world, frame);
       readouts = frame.readouts || readouts; playing = frame.playing; lastFrame = frame;
       cableSetupActive = Boolean(frame.cable_setup);
+      cableSetupSeconds = frame.cable_setup_s || 0;
       syncMeshes(changed.map(b => world.bodies.get(b.name)));
       if (frame.water) syncWater(frame.water);
       if (frame.parcels) syncParcels(frame.parcels);
