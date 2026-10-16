@@ -1,5 +1,17 @@
 # Puzzles on the machine (/play)
 
+October 15 rendered-frame qualification: the follow-up exposed two more
+fixture races, a touch aimed before connection framing finished and a layout
+snapshot mixing the last DOM label position with the next camera position.
+Ghost inspection and completed drags now await two rendered frames. Scene
+socket taps await framing before aiming and paint before reading a choice.
+The label audit samples its geometry together in a render callback; its
+zero-overlap and leader-position assertions are unchanged. Navigation waits
+require the destination element to exist. The five affected Ubuntu/SwiftShader
+cases pass (101.763 s), including the strict 8 cm river-lift assertion.
+These are browser-harness changes; the application simulation and controls
+are unchanged. Complete checkpoint qualification is still required.
+
 October 15 duplicate-PR qualification: the exact staged `f249755e` source
 passed all 146 browser scenarios and 158 native groups before promotion.
 Its parallel PR merge build exposed three timing-sensitive fixture cases:

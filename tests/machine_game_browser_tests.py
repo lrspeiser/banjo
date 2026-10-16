@@ -343,7 +343,13 @@ class Puzzles(unittest.TestCase):
 
     def ghost(self):
         self.wait(SETTLED, 20)
+        self.paint()
         return self.js('window.machineGhostState()')
+
+    def paint(self):
+        # Native replies and camera edits precede the next rendered scene.
+        # A person acts on that scene, not the intermediate message state.
+        self.page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',await_promise=True)
 
     def assert_wire_gauges_readable(self,gauge,area):
         text=json.dumps(gauge);unit=json.dumps(area)
@@ -488,6 +494,7 @@ class Puzzles(unittest.TestCase):
         else:
             self.page.send('Input.dispatchMouseEvent', {'type':'mouseReleased','x':end[0],'y':end[1],
                                                        'button':button,'buttons':0,'clickCount':1,'modifiers':modifiers})
+        self.paint()
 
     def drag_ghost_to(self, x, z, touch=False):
         self.click_visible('Move selected piece')
@@ -985,7 +992,9 @@ class Puzzles(unittest.TestCase):
                         self.drag(start,[start[0]-35,start[1]+10],touch=width!=1280)
                         self.wait('machineCamera().settled',30)
                     self.wait('machineReadoutCallouts().labels.length===3',10)
-                    layout=self.js('machineReadoutCallouts()')
+                    # Sample geometry and DOM labels immediately after the
+                    # same render, rather than between a camera edit and paint.
+                    layout=self.page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>resolve(machineReadoutCallouts())))',await_promise=True)
                     for label in layout['labels']:
                         self.assertTrue(label['x']<=8 or label['x']+label['w']>=layout['width']-8,(label,layout))
                         self.assertTrue(label['leader'],label)
@@ -2608,7 +2617,7 @@ class Puzzles(unittest.TestCase):
             with self.subTest(viewport=(width, height)):
                 self.page.send('Emulation.setDeviceMetricsOverride', {'width':width,'height':height,'deviceScaleFactor':1,'mobile':width != 1280})
                 self.page.send('Page.navigate', {'url': f'{self.base}/play'})
-                self.wait("!document.getElementById('levels-screen').hidden", 60)
+                self.wait("document.getElementById('levels-screen')?.hidden===false", 60)
                 self.assertLessEqual(self.js('document.body.scrollWidth'), width)
                 self.open('easy-loop--v2--0000002a--0',width,height,phone=width!=1280)
                 self.wait(f"/easy-loop--v2--/.test(location.search) && {READY}", 60)
@@ -2640,6 +2649,8 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('location.href'), link)
 
     def click_scene_socket(self,name,touch=False):
+        if self.js(READY):self.wait('machineCamera().settled',30)
+        self.paint()
         self.wait(f"window.machineSceneSockets().points.some(p=>p.name==={json.dumps(name)})",15)
         point=self.js(f"window.machineSceneSockets().points.find(p=>p.name==={json.dumps(name)})")
         self.assertTrue(self.js(f"document.elementFromPoint({point['x']},{point['y']})===document.querySelector('#view canvas')"),point)
@@ -2648,6 +2659,7 @@ class Puzzles(unittest.TestCase):
             self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
         else:
             self.mouse('mousePressed',point['x'],point['y']);self.mouse('mouseReleased',point['x'],point['y'])
+        self.paint()
         option=self.js(f"document.querySelector('#socket-choices:not([hidden]) [data-socket-name={json.dumps(name)}]')?.textContent")
         if option:self.click_visible(option)
 
