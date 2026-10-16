@@ -883,6 +883,13 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Try It!');self.wait("!document.getElementById('level-done').hidden",30)
                 cables=self.js('machineWiringState().wires')
                 self.assertEqual(len(cables),2)
+                for cable in cables:
+                    physical=cable['mechanical']
+                    self.assertTrue(physical['connected'])
+                    self.assertGreater(physical['mass_kg'],.01)
+                    self.assertGreater(len(physical['segments_m']),8)
+                    self.assertLess(physical['max_joint_gap_m'],.003)
+                    self.assertGreater(cable['vertices'],len(physical['segments_m'])*12)
                 # The swept rotor box is y=.1246..5554, z=±.06.
                 # Read the actual rendered polylines: no segment may enter it.
                 for cable in cables:
@@ -5564,8 +5571,11 @@ class Puzzles(unittest.TestCase):
                 proof=ROOT/'build'/'ui-proof';proof.mkdir(parents=True,exist_ok=True)
                 (proof/f'spring-length-handles-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
                 self.click_visible('Place');self.wait(READY,30)
-                self.wait("document.querySelector('.spring-adjust')?.checkVisibility()",10)
-                self.assertTrue(self.js("(()=>{const b=document.querySelector('.spring-adjust'),r=b.getBoundingClientRect(),v=document.getElementById('view').getBoundingClientRect();return !b.disabled&&r.width>=44&&r.height>=44&&r.left>=v.left&&r.right<=v.right&&r.top>=v.top&&r.bottom<=v.bottom&&b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})()"))
+                adjust_hit="(()=>{const b=document.querySelector('.spring-adjust');if(!b||!b.checkVisibility())return false;const r=b.getBoundingClientRect(),v=document.getElementById('view').getBoundingClientRect();return !b.disabled&&r.width>=44&&r.height>=44&&r.left>=v.left&&r.right<=v.right&&r.top>=v.top&&r.bottom<=v.bottom&&b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));})()"
+                # Visibility precedes session readiness and the next layout frame.
+                # Keep every touch-target/hit-test condition, and wait for it.
+                self.wait(adjust_hit,10)
+                self.assertTrue(self.js(adjust_hit))
                 self.click_visible('Adjust spring');self.ghost()
                 self.assertEqual(self.js("document.querySelector('#piece-editor .spring-length-value').textContent"),'70 cm')
                 self.click_visible('Shorten spring');self.assertAlmostEqual(self.ghost()['p']['rest_m'],.65)

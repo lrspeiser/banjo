@@ -1,5 +1,11 @@
 # Specialist solvers and device fidelity
 
+October 16 follow-up: [mechanical motor cables](mechanical-cables.md) now use
+Jolt's native rigid contacts and articulated six-axis constraints. No additional
+physics dependency was introduced. Chrono remains a candidate for more detailed
+wire/rope constitutive laws; motor magnetics and other unimplemented device
+interiors below remain unchanged. The original October 13 audit follows.
+
 October 13, 2026. Implementation audit: a physical equation can be real while
 its material model, boundary conditions or geometry remain simplified. This
 checkpoint does not make every device interior accurate.

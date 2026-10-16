@@ -308,6 +308,7 @@ public:
     // Host-thread observation for bounded convex v2 admission, <=1024 bodies.
     [[nodiscard]] unsigned contactPairUpperBound() const;
     void setGravity(const Vec3 &gravity_m_s2);
+    [[nodiscard]] Vec3 gravity() const;
     void addFloor();
     void addSupportSurface(const RigidSurfaceDescription &description);
     // Static, single-sided triangle support; winding points into free space.
@@ -509,6 +510,10 @@ public:
     void twistBody(MatterBodyId body_id, const Vec3 &torque_n_m);
     void addBall(const RigidBallDescription &description);
     void addBox(const RigidBoxDescription &description);
+    // A rod's contact envelope is a capsule; mass/inertia belong to its
+    // conductor/insulation cross section, not to overlapping collision caps.
+    void addCableRod(MatterBodyId id, const RigidSnapshot &state, double length_m,
+                     double radius_m, double mass_kg, double friction);
     // Bounded compound collision proxy with independent matter-derived inertia.
     void addCompound(const RigidCompoundDescription &description);
     // Whether two parts of one compound, placed in its own frame, meet:
@@ -535,6 +540,9 @@ public:
         // Opt-in energy-gradient SO(3) law; the default retains the native motor.
         bool log_rotation_gradient{};
         bool centered_integration{};
+        // Inextensible articulated rods: native fixed translation rows,
+        // with the same passive rotational springs. No axial spring energy.
+        bool inextensible_translation{};
     };
     struct FaceSpringObservation {
         Vec3 displacement_cs_m{},rotation_cs_rad{};

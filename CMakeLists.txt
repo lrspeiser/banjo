@@ -378,6 +378,7 @@ add_library(banjo_optics src/optics/OpticalProperties.cpp src/optics/RayOptics.c
 target_link_libraries(banjo_optics PUBLIC banjo_core)
 banjo_enable_warnings(banjo_optics)
 add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
+                                   src/machines/MechanicalCable.cpp
                                    src/fastlattice/LiveWorld.cpp
                                    src/fastlattice/ToolTerrain.cpp
                                    src/fastlattice/NativeToolUse.cpp
@@ -906,6 +907,10 @@ if(BANJO_BUILD_TESTS)
             # line and the energy it takes (docs/machine-world.md).
             add_executable(banjo_motor_tests tests/motor_tests.cpp)
             add_executable(banjo_circuit_tests tests/circuit_tests.cpp)
+            add_executable(banjo_mechanical_cable_tests tests/mechanical_cable_tests.cpp)
+            target_link_libraries(banjo_mechanical_cable_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_mechanical_cable_tests)
+            add_test(NAME banjo_mechanical_cable_tests COMMAND banjo_mechanical_cable_tests)
             target_link_libraries(banjo_circuit_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_circuit_tests)
             add_test(NAME banjo_circuit_tests COMMAND banjo_circuit_tests)

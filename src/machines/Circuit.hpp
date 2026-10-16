@@ -93,6 +93,7 @@ public:
     void addFrictionHeat(CircuitStep &step, std::size_t branch, double joules) const;
     void setSwitch(const std::string &id, bool closed);
     void setPresent(std::size_t branch, bool present);
+    void setCablePresent(const std::string &branch, bool present);
     [[nodiscard]] unsigned store() const { return store_; }
     [[nodiscard]] std::vector<unsigned> motors() const;
     [[nodiscard]] unsigned motor(std::size_t branch) const;

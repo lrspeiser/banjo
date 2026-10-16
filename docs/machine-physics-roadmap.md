@@ -10,6 +10,17 @@ Some device laws remain lumped or ideal, and the coupling/calibration limits
 below matter. Heavy impacts or cuts can run slower than real time; the page's
 clock says when.
 
+October 16: motor supply/return leads now use Jolt rigid rods, inextensible
+translation constraints and passive bending/twist springs. They have material
+mass, rigid contact and endpoint reactions; terminal overload opens their
+electrical branch. This supersedes the cable-drawing limitation below for
+**motor leads only**, including Turn the axle and Sandbox motors. Old non-motor
+electrical leads, solar charging leads, ties and ideal pulley/drum ropes still
+need migration. No motor magnetic interior, conductor fracture, wire thermal
+failure or strand-resolved constitutive law was added. The
+[cable qualification](mechanical-cables.md) records model assumptions,
+numerical residuals, material comparisons and the staged rollout scope.
+
 October 14 connection audit: `syncRopes` and `updateRopes` in
 [`machine.js`](../client/voxel-lab/machine.js) still draw ties, pulley runs and
 drum ropes as lines. Their native constraints calculate endpoint forces and

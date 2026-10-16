@@ -2745,6 +2745,11 @@ int main(int argc, char **argv) {
                     std::cout << nlohmann::json{{"ok", true},
                         {"circuits", nlohmann::json::parse(world->circuits())}}.dump() << std::endl;
                     continue;
+                } else if (op == "mechanical_cable") {
+                    world->mechanicalCable(command.at("cable").dump());
+                } else if (op == "mechanical_cables") {
+                    std::cout << nlohmann::json{{"ok",true},{"cables",nlohmann::json::parse(world->mechanicalCables())}}.dump()<<std::endl;
+                    continue;
                 } else if (op == "draw") {
                     // Energy taken from a store for work the world does not
                     // otherwise account for (LiveWorld::drawEnergy): {store,

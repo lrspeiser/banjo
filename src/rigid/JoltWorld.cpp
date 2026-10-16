@@ -48,6 +48,7 @@
 #include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/CollisionDispatch.h>
 #include <Jolt/Physics/Body/BodyLockMulti.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
@@ -1477,6 +1478,7 @@ public:
         // reports its load along its own axes (addFixing, jointLoad).
         bool one_way{false};
         bool log_face{false};
+        bool fixed_translation{false};
     };
     // How long the last step was. Only jointTension() needs it: Jolt reports a
     // constraint's IMPULSE over the step, and an impulse divided by the step it
@@ -1637,6 +1639,7 @@ JoltWorld::JoltWorld(unsigned workers,RigidContactCapacity capacity,RigidJobExec
     impl_=std::make_unique<Impl>(int(workers),capacity,execution);
 }
 JoltWorld::~JoltWorld() = default;
+Vec3 JoltWorld::gravity() const { return impl_->gravity_m_s2_; }
 JoltWorld::JoltWorld(JoltWorld &&) noexcept = default;
 JoltWorld &JoltWorld::operator=(JoltWorld &&) noexcept = default;
 
@@ -1883,6 +1886,33 @@ void JoltWorld::addBox(const RigidBoxDescription &description) {
         impl_->bodies_.erase(description.body_id);impl_->contact_states_.erase(description.body_id);
         bodies.RemoveBody(id);bodies.DestroyBody(id);throw;
     }
+}
+
+void JoltWorld::addCableRod(MatterBodyId id,const RigidSnapshot &s,double span,double radius,double mass,double friction) {
+    impl_->requireConfigurationMutable();
+    const auto q=s.orientation_world;
+    if(!id||contains(id)||!(span>0&&radius>0&&mass>0&&friction>=0)||
+       !std::isfinite(span+radius+mass+friction+lengthSquared(s.center_of_mass_world_m))||
+       !std::isfinite(q.w+q.x+q.y+q.z)||std::abs(q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z-1)>1e-6)
+        throw std::invalid_argument("invalid cable rod");
+    // The capsule's hemispheres are contact overlap, not extra material.
+    JPH::BodyCreationSettings settings(new JPH::CapsuleShape(float(span/2),float(radius)),
+        toJoltPosition(s.center_of_mass_world_m),JPH::Quat(float(q.x),float(q.y),float(q.z),float(q.w)),
+        JPH::EMotionType::Dynamic,Layers::kMoving);
+    settings.mUserData=id;settings.mFriction=float(friction);settings.mRestitution=0;
+    settings.mLinearDamping=0;settings.mAngularDamping=0;settings.mAllowSleeping=false;
+    settings.mApplyGyroscopicForce=true;settings.mMotionQuality=JPH::EMotionQuality::LinearCast;
+    settings.mNumVelocityStepsOverride=32;settings.mNumPositionStepsOverride=8;
+    settings.mOverrideMassProperties=JPH::EOverrideMassProperties::MassAndInertiaProvided;
+    settings.mMassPropertiesOverride.mMass=float(mass);
+    const double transverse=mass*(span*span/12+radius*radius/4),axial=mass*radius*radius/2;
+    Mat3 inertia{};inertia.m[0][0]=inertia.m[2][2]=transverse;inertia.m[1][1]=axial;
+    settings.mMassPropertiesOverride.mInertia=toJoltInertia(inertia);
+    auto &bodies=impl_->physics_->GetBodyInterface();
+    const auto body=bodies.CreateAndAddBody(settings,JPH::EActivation::Activate);
+    if(body.IsInvalid())throw std::runtime_error("cannot create cable rod");
+    impl_->bodies_.emplace(id,body);
+    bodies.SetLinearAndAngularVelocity(body,toJolt(s.linear_velocity_m_s),toJolt(s.angular_velocity_rad_s));
 }
 
 void JoltWorld::setDetailedImpactObservations(bool enabled){impl_->requireConfigurationMutable();impl_->impact_collector_.detailed_observations=enabled;}
@@ -3059,6 +3089,7 @@ unsigned JoltWorld::addFaceSpring(const FaceSpringDescription &d) {
     impl_->requireConfigurationMutable();
     const auto valid=[](Vec3 v,bool positive){return std::isfinite(v.x+v.y+v.z)&&std::min({v.x,v.y,v.z})>=(positive?1e-12:0);};
     if(d.a==d.b||!contains(d.a)||!contains(d.b)||impl_->joints_.size()>=4096||
+       (d.inextensible_translation&&(d.log_rotation_gradient||d.centered_integration))||
        !valid(d.translation_stiffness_n_m,true)||!valid(d.rotation_stiffness_n_m_rad,true)||
        !valid(d.translation_damping_n_s_m,false)||!valid(d.rotation_damping_n_m_s_rad,false)||
        !std::isfinite(lengthSquared(d.anchor_world_m))||std::abs(length(d.normal_world)-1)>1e-8||
@@ -3080,11 +3111,15 @@ unsigned JoltWorld::addFaceSpring(const FaceSpringDescription &d) {
     const double c[]{d.translation_damping_n_s_m.x,d.translation_damping_n_s_m.y,d.translation_damping_n_s_m.z,
         d.rotation_damping_n_m_s_rad.x,d.rotation_damping_n_m_s_rad.y,d.rotation_damping_n_m_s_rad.z};
     for(unsigned i=0;i<6;++i)s.mMotorSettings[i].mSpringSettings={JPH::ESpringMode::StiffnessAndDamping,float(k[i]),float(c[i])};
+    if(d.inextensible_translation){
+        s.mNumVelocityStepsOverride=128;s.mNumPositionStepsOverride=16;
+        for(unsigned i=0;i<3;++i)s.MakeFixedAxis(static_cast<JPH::SixDOFConstraint::EAxis>(i));
+    }
     auto *raw=static_cast<JPH::SixDOFConstraint*>(impl_->physics_->GetBodyInterface().CreateConstraint(&s,impl_->bodies_.at(d.a),impl_->bodies_.at(d.b)));
     if(!raw)throw std::runtime_error("face spring creation failed");
-    for(unsigned i=0;i<6;++i)raw->SetMotorState(static_cast<JPH::SixDOFConstraint::EAxis>(i),JPH::EMotorState::Position);
+    for(unsigned i=d.inextensible_translation?3:0;i<6;++i)raw->SetMotorState(static_cast<JPH::SixDOFConstraint::EAxis>(i),JPH::EMotorState::Position);
     raw->SetTargetPositionCS(JPH::Vec3::sZero());raw->SetTargetOrientationCS(JPH::Quat::sIdentity());
-    const auto id=impl_->next_joint_++;impl_->joints_.emplace(id,Impl::Joint{d.a,d.b,JointKind::FaceSpring,raw});
+    const auto id=impl_->next_joint_++;impl_->joints_.emplace(id,Impl::Joint{d.a,d.b,JointKind::FaceSpring,raw,false,false,d.inextensible_translation});
     impl_->physics_->AddConstraint(raw);return id;
 }
 JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) const {
@@ -3115,7 +3150,7 @@ JoltWorld::FaceSpringObservation JoltWorld::faceSpringObservation(unsigned id) c
     const double angle=2*std::atan2(std::sqrt(double(q.GetX())*q.GetX()+double(q.GetY())*q.GetY()+double(q.GetZ())*q.GetZ()),std::abs(double(q.GetW())));
     const auto axis=Vec3{q.GetX(),q.GetY(),q.GetZ()}*(q.GetW()<0?-1.:1.);
     const auto rotation=length(axis)>1e-12?axis*(angle/length(axis)):Vec3{};
-    return observed({{dot(delta,x),dot(delta,y),dot(delta,z)},rotation,fromJoltVector(c->GetTotalLambdaMotorTranslation()),fromJoltVector(c->GetTotalLambdaMotorRotation()),
+    return observed({{dot(delta,x),dot(delta,y),dot(delta,z)},rotation,fromJoltVector(j.fixed_translation?c->GetTotalLambdaPosition():c->GetTotalLambdaMotorTranslation()),fromJoltVector(c->GetTotalLambdaMotorRotation()),
         pb,Vec3{q.GetX(),q.GetY(),q.GetZ()}*(q.GetW()>0?2.:-2.),{x,y,z},
         {fromJoltVector(b.GetAxisX()),fromJoltVector(b.GetAxisY()),fromJoltVector(b.GetAxisZ())}});
 }

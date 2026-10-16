@@ -441,6 +441,11 @@ void Circuit::setSwitch(const std::string &id, bool closed) {
     it->closed = closed;
 }
 void Circuit::setPresent(std::size_t branch, bool present) { branches_.at(branch).present = present; }
+void Circuit::setCablePresent(const std::string &id,bool present) {
+    const auto b=std::find_if(branches_.begin(),branches_.end(),[&](const Branch &v){return v.id==id;});
+    require(b!=branches_.end()&&b->kind=="wire","mechanical cable must bind an existing wire branch");
+    b->present=present;
+}
 void Circuit::addFrictionHeat(CircuitStep &s, std::size_t branch, double joules) const {
     require(std::isfinite(joules) && joules >= 0.0, "invalid friction heat");
     s.heat_j.at(branches_.at(branch).thermal) += joules;

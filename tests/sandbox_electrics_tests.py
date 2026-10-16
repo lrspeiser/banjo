@@ -287,6 +287,71 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_unpowered_motor_lead_on_the_same_housing_still_has_mass(self):
+        spec=e.empty('Unpowered cable')
+        e.merge(spec,e.motor('motor',{},{}))
+        e.link(spec,'loose loop','motor:plus','motor:minus')
+        compiled=mw.compile_spec(spec)
+        with tempfile.TemporaryDirectory() as logs:
+            engine,_,_=mw.build_engine(ENGINE,compiled,Path(logs))
+            try:
+                self.assertEqual(engine.op(op='circuits')['circuits'],[])
+                before=engine.op(op='mechanical_cables')['cables'][0]
+                self.assertGreater(before['mass_kg'],.001)
+                engine.op(op='step',dt=1/240,n=120)
+                after=engine.op(op='mechanical_cables')['cables'][0]
+                self.assertNotEqual(before['segments_m'],after['segments_m'])
+                self.assertTrue(after['connected'])
+            finally:engine.close()
+
+    def test_physical_motor_leads_sag_and_open_on_terminal_pullout(self):
+        level=mg.level_by_id('easy-motor')
+        compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+        self.assertTrue(all('mechanical' in w for w in compiled['electrical']['wires']))
+        for weak in (False,True):
+            current=copy.deepcopy(compiled)
+            if weak:
+                for w in current['electrical']['wires']:w['mechanical']['retention_n']=.01
+                for n in current['electrical']['networks']:
+                    for w in n['wires']:w['mechanical']['retention_n']=.01
+            with tempfile.TemporaryDirectory() as logs:
+                engine,_,_=mw.build_engine(ENGINE,current,Path(logs))
+                try:
+                    initial=engine.op(op='mechanical_cables')['cables']
+                    engine.op(op='step',dt=1/240,n=240)
+                    final=engine.op(op='mechanical_cables')['cables']
+                    currents=engine.op(op='circuits')['circuits'][0]['branches']
+                    leads=[b for b in currents if b['kind']=='wire']
+                    if weak:
+                        self.assertTrue(all(not c['connected'] for c in final))
+                        self.assertTrue(all(abs(b['current_a'])<1e-10 for b in leads))
+                        print('PHYSICAL_CABLE_PULLOUT',[(c['name'],c['peak_terminal_force_n']) for c in final])
+                    else:
+                        self.assertTrue(all(c['connected'] for c in final))
+                        self.assertTrue(all(abs(b['current_a'])>.01 for b in leads))
+                        low=lambda c:min(p[1] for s in c['segments_m'] for p in s)
+                        self.assertTrue(any(low(f)<low(i)-.04 for i,f in zip(initial,final)))
+                        self.assertTrue(all(c['max_joint_gap_m']<.003 for c in final))
+                    snapshot=engine.op(op='snapshot')['snapshot']
+                    self.assertEqual(len(snapshot['mechanical_cables']),2)
+                    # A full native restart must preserve detached connectivity,
+                    # mass, position and a physically loose cable end.
+                    import json,subprocess
+                    path=Path(logs)/'cable-snapshot.json';path.write_text(json.dumps(snapshot),encoding='utf-8')
+                    args=list(engine.proc.args)+['--snapshot',str(path)]
+                    child=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=logs)
+                    try:
+                        opened=json.loads(child.stdout.readline());self.assertTrue(opened.get('ok'),opened)
+                        child.stdin.write(json.dumps({'op':'mechanical_cables'})+'\n');child.stdin.flush()
+                        restored=json.loads(child.stdout.readline())['cables']
+                        self.assertEqual([c['connected'] for c in restored],[c['connected'] for c in final])
+                        for a,b in zip(restored,final):
+                            self.assertAlmostEqual(a['mass_kg'],b['mass_kg'],places=7)
+                            self.assertEqual(a['segments_m'],b['segments_m'])
+                    finally:
+                        child.stdin.close();child.wait(timeout=15);child.stdout.close();child.stderr.close()
+                finally:engine.close()
+
     def test_visible_heater_clip_requires_attachment_and_both_leads(self):
         level=mg.level_by_id('easy-heat')
         for mode in ('correct','unattached','missing feed','missing return','warm'):

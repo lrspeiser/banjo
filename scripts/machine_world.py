@@ -2721,6 +2721,11 @@ class MachineSession:
                 self._switches[c['id']] = bool(sw and sw.get('closed'))
         out['circuits'] = circuits
         out['electrical'] = electrics.readouts(self.compiled.get('electrical', {}), native_circuits,self.compiled['batteries'])
+        physical={c['name']:c for c in self.engine.op(op='mechanical_cables')['cables']} if any('mechanical' in w for w in self.compiled.get('electrical',{}).get('wires',[])) else {}
+        for w in out['electrical']['wires']:
+            if w['name'] in physical:
+                w['mechanical']=physical[w['name']]
+                if not w['mechanical']['connected']:w.update(current_a=0,through_w=0,loss_w=0)
         heat = self.engine.op(op='thermo').get('thermo', {})
         hot = []
         for b in heat.get('bodies', []) or []:
@@ -2898,6 +2903,7 @@ class MachineSession:
             a, b = terminals.get(w['a']), terminals.get(w['b'])
             if a and b:
                 frame['wires'].append({'name': w['name'], 'points_m': [a, b], 'value': w['current_a'], 'unit': 'A',
+                    **({'mechanical':copy.deepcopy(w['mechanical'])} if 'mechanical' in w else {}),
                     **{key:w.get(key,0) for key in ('through_w','loss_w','return_path')},
                     **{key:w[key] for key in ('supply_voltage_v','supply_max_power_w','show_supply_limit') if key in w}})
         ports = {p['name']: p for p in graph.get('power_ports', [])}

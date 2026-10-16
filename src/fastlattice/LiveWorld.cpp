@@ -1,5 +1,6 @@
 #include "fastlattice/LiveWorld.hpp"
 #include "machines/Circuit.hpp"
+#include "machines/MechanicalCable.hpp"
 #include "fastlattice/ToolTerrain.hpp"
 #include "fastlattice/NativeToolUse.hpp"
 #include "fastlattice/PreciseRigidScene.hpp"
@@ -1057,6 +1058,7 @@ struct LiveWorld::Impl {
     std::vector<Motor> motors;
     std::vector<machines::Circuit> circuits;
     std::vector<machines::CircuitStep> circuit_steps;
+    std::vector<machines::MechanicalCable> mechanical_cables;
     unsigned next_energy_store{1}, next_motor{1};
     // A machine's controller (LiveControl), and what it keeps between steps.
     struct Control {
@@ -1468,6 +1470,7 @@ struct LiveWorld::Impl {
         }
     }
     void prepareCircuits(double dt) {
+        for(const auto &cable:mechanical_cables)if(cable.circuit())circuits.at(cable.circuit()-1).setCablePresent(cable.branch(),cable.connected());
         circuit_steps.clear();
         for (auto &c : circuits) {
             // A switch worked by a pin is where the pin has got to at the start
@@ -7220,6 +7223,13 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
     impl.next_lamp = doc.value("next_lamp", 1U);
     for (const auto &c : doc.value("circuits", nlohmann::json::array()))
         impl.attachCircuit(machines::Circuit::read(c, true));
+    for(const auto &c:doc.value("mechanical_cables",nlohmann::json::array())) {
+        if(carrying)throw std::invalid_argument("mechanical cables need an unchanged-world restore");
+        const auto a=impl.index_of.at(c.at("a_body").get<std::string>()),b=impl.index_of.at(c.at("b_body").get<std::string>());
+        const auto first=c.at("_first").get<MatterBodyId>();
+        impl.mechanical_cables.emplace_back(*impl.world,c,impl.body_of[a],impl.body_of[b],first);
+        impl.next_body_id=std::max(impl.next_body_id,first+MatterBodyId(impl.mechanical_cables.back().bodyCount()));
+    }
     for (const nlohmann::json &o : doc.value("breakers", nlohmann::json::array())) {
         LiveBreaker breaker;
         breaker.id = o.at("id").get<unsigned>();
@@ -8120,6 +8130,7 @@ void LiveWorld::step(double dt_s) {
         // nothing from a store.
         if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
         if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
+        for(auto &cable:impl_->mechanical_cables)cable.settle(dt_s);
         if (!impl_->panels.empty()) impl_->settlePanels(dt_s);
         if (!impl_->lamps.empty()) impl_->settleLights(dt_s);
         if (impl_->light_report.declared) impl_->settleLight(dt_s);
@@ -8189,6 +8200,7 @@ void LiveWorld::step(double dt_s) {
     }
     if (!impl_->motors.empty()) impl_->settleMotors(dt_s);
     if (!impl_->circuits.empty()) impl_->settleCircuits(dt_s);
+    for(auto &cable:impl_->mechanical_cables)cable.settle(dt_s);
     if (!impl_->panels.empty()) impl_->settlePanels(dt_s);
     if (!impl_->lamps.empty()) impl_->settleLights(dt_s);
     if (impl_->light_report.declared) impl_->settleLight(dt_s);
@@ -9186,6 +9198,19 @@ std::string LiveWorld::circuits() const {
     auto out = nlohmann::json::array();
     for (const auto &c : impl_->circuits) out.push_back(c.saved());
     return out.dump();
+}
+void LiveWorld::mechanicalCable(const std::string &declaration) {
+    const auto d=nlohmann::json::parse(declaration);
+    const auto circuit=d.at("circuit").get<unsigned>();
+    if(circuit>impl_->circuits.size()||impl_->mechanical_cables.size()>=32)throw std::invalid_argument("cable circuit/budget invalid");
+    for(const auto &old:impl_->mechanical_cables)if(old.branch()==d.at("name").get<std::string>())throw std::invalid_argument("duplicate cable");
+    if(circuit)impl_->circuits[circuit-1].setCablePresent(d.at("name").get<std::string>(),true);
+    const auto a=impl_->index_of.at(d.at("a_body").get<std::string>()),b=impl_->index_of.at(d.at("b_body").get<std::string>());
+    impl_->mechanical_cables.emplace_back(*impl_->world,d,impl_->body_of[a],impl_->body_of[b],impl_->next_body_id);
+    impl_->next_body_id+=MatterBodyId(impl_->mechanical_cables.back().bodyCount());
+}
+std::string LiveWorld::mechanicalCables() const {
+    auto out=nlohmann::json::array();for(const auto &c:impl_->mechanical_cables)out.push_back(c.report());return out.dump();
 }
 
 std::vector<LiveMotor> LiveWorld::motors() const {
@@ -19630,6 +19655,7 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
                           {"friction_heat_j", savedNumber(m.said.friction_heat_j)}});
     doc["motors"] = std::move(motors);
     doc["circuits"] = nlohmann::json::parse(circuits());
+    doc["mechanical_cables"]=nlohmann::json::array();for(const auto &c:I.mechanical_cables)doc["mechanical_cables"].push_back(c.saved());
     // And each machine's controller: what it was told and by whom, the counts
     // it has applied, and a stall it stopped for.
     nlohmann::json controls = nlohmann::json::array();

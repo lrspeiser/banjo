@@ -7,6 +7,7 @@ One finite supply owns all loads in its component.
 import copy
 import math
 import sandbox_battery_socket as socket
+import mechanical_cables
 
 # Build the archived recipes first; new pieces below use measured metal contact.
 CONTACT_SWITCHES = False
@@ -615,6 +616,13 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
             # Copper at 20 C: rho = 0.0172 ohm mm^2 / m. The native
             # branch books I^2 R heat and the battery supplies every joule.
             row['resistance_ohm'] = .0172 * row['length_m'] / row['area_mm2']
+        motor_names={d['name'] for d in devices if d['kind']=='motor'}
+        if w.get('mechanical') or any(w[t].rsplit(':',1)[0] in motor_names for t in ('a','b')):
+            row['mechanical']=copy.deepcopy(w.get('mechanical',{}))
+            try:
+                cable,span,area=mechanical_cables.prepare(row,devices,parts or [],len(wires))
+                row.update(mechanical=cable,length_m=span,area_mm2=area,resistance_ohm=.0172*span/area)
+            except (ValueError,KeyError,TypeError) as exc:problems.append(f'electrical {w["name"]}: {exc}')
         wires.append(row)
     for item in raw.get('contacts', []):
         if not isinstance(item,dict) or not isinstance(item.get('name'),str) or not item['name'] or item['name'] in ids:
@@ -668,6 +676,7 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
 
 def build_electrical(engine, compiled, store_ids, joint_ids):
     circuits = {}
+    physical=set()
     for n in compiled.get('electrical', {}).get('networks', []):
         source = n['source']; branches = []; heats = []
         nodes = [d['name'] + ':' + t for d in n['devices'] for t in d['terminals']]
@@ -717,6 +726,15 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
                               'negative': source['name'] + ':minus', 'resistance_ohm': .05, 'thermal': 'supply'},
                    'thermal_nodes': heats, 'branches': branches}
         circuits[n['name']] = engine.op(op='circuit', network=network)['circuit']
+        for w in n['wires']:
+            if 'mechanical' in w:
+                engine.op(op='mechanical_cable',cable=dict(w['mechanical'],circuit=circuits[n['name']]))
+                physical.add(w['name'])
+    # A lead still weighs something when no supply is connected. Geometry and
+    # contact are independent of membership in a powered electrical island.
+    for w in compiled.get('electrical',{}).get('wires',[]):
+        if 'mechanical' in w and w['name'] not in physical:
+            engine.op(op='mechanical_cable',cable=dict(w['mechanical'],circuit=0))
     return circuits
 
 

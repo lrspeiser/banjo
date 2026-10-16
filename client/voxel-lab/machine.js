@@ -226,6 +226,25 @@ function routedCurve(a, b, lane) {
   for (let i = 1; i < points.length; i++) curve.add(new THREE.LineCurve3(points[i - 1], points[i]));
   return curve;
 }
+function mechanicalCableGeometry(cable) {
+  // Draw the exact native capsule envelope. Smoothing a centreline can cut
+  // corners through solids even when every simulated rod is clear of them.
+  const vertices=[];
+  for(const [a,b] of cable.segments_m||[]) {
+    const start=new THREE.Vector3(...a),end=new THREE.Vector3(...b),delta=end.clone().sub(start);
+    const g=new THREE.CapsuleGeometry(cable.radius_m,delta.length(),2,6).toNonIndexed();
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize()));
+    g.translate(...start.add(end).multiplyScalar(.5).toArray());
+    vertices.push(...g.getAttribute('position').array);g.dispose();
+  }
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+  return geometry;
+}
+function mechanicalCableCurve(cable) {
+  const curve=new THREE.CurvePath();
+  for(const [a,b] of cable.segments_m||[])curve.add(new THREE.LineCurve3(new THREE.Vector3(...a),new THREE.Vector3(...b)));
+  return curve;
+}
 function wireColor(wire) { return wire.a.endsWith(':minus') || wire.b.endsWith(':minus') ? 0x83bbff : 0xf19076; }
 const electricalStartPoses = new Map();
 function terminalAt(device, key, at) {
@@ -610,7 +629,9 @@ function positionTerminalLabels() {
   }
 }
 window.machineWiringState = () => ({selected:terminalStart, busy:terminalBusy,
-  wires:wires.filter(w => w.terminalWire).map(w => ({name:w.name, route:w.route, visible:w.line.visible, color:w.line.material.color.getHex()})),
+  wires:wires.filter(w => w.terminalWire).map(w => ({name:w.name, route:w.route, visible:w.line.visible, color:w.line.material.color.getHex(),
+    mechanical:readouts.electrical?.wires?.find(r=>r.name===w.name)?.mechanical,
+    vertices:w.line.geometry.getAttribute('position')?.count||0})),
   ghostWires:terminalGhostWires.children.length,
   terminals:Object.fromEntries([...terminalLabels.values()].flatMap(({rows})=>rows.filter(r=>r.at).map(r=>[r.name,r.at]))),
   powerPorts:Object.fromEntries((machine?.electrical?.power_ports||[]).map(p=>[p.name,powerPortAt(p)])),
@@ -1512,6 +1533,17 @@ function updateWires() {
     }
     if (w.terminalWire) {
       const a = terminals.get(w.a), b = terminals.get(w.b);
+      const live = readouts.electrical?.wires?.find(row => row.name === w.name);
+      if(live?.mechanical?.segments_m) {
+        if(w.mechanicalSample!==live.mechanical){
+          w.line.geometry.dispose();w.line.geometry=mechanicalCableGeometry(live.mechanical);
+          w.route=live.mechanical.segments_m.flat();w.mechanicalSample=live.mechanical;
+        }
+        w.connected=live.mechanical.connected;
+        w.line.visible=!flowGroup.visible;
+        w.line.material.color.setHex(Math.abs(live.current_a||0)>1e-4?0xffd34d:w.color);
+        continue;
+      }
       if (a && b) {
         const route = wireRoute(a,b,w.lane);
         if (JSON.stringify(route)!==JSON.stringify(w.route)) {
@@ -1521,7 +1553,6 @@ function updateWires() {
         }
       }
       w.connected=Boolean(a&&b); w.line.visible=w.connected&&w.route?.length>1;
-      const live = readouts.electrical?.wires?.find(row => row.name === w.name);
       w.line.material.color.setHex(Math.abs(live?.current_a || 0) > 1e-4 ? 0xffd34d : w.color);
       continue;
     }
@@ -3587,6 +3618,7 @@ function powerFeedbackSnapshot() {
 }
 
 function feedbackCurve(w) {
+  if(w.mechanical?.segments_m)return mechanicalCableCurve(w.mechanical);
   const drawn=wires.find(row=>row.name===w.name&&row.route?.length>1);
   const pts=(drawn?.route||w.points_m).map(p=>new THREE.Vector3(...p));
   const lane=(shownElectrical().wires||[]).findIndex(row=>row.name===w.name);
@@ -3705,7 +3737,10 @@ function updatePowerFeedback() {
     const labelCurve=drawnWire?.line.geometry.parameters?.path||curve;
     items.push({id:'wire:'+w.name,name:w.name,kind:'wire',at:labelCurve.getPoint(.5).toArray(),
       text:(gauge?((ghost?.p.piece==='wire'&&ghost.busy)?'Gauge updating…':gauge)+'\n':'')+
-        (pending?'Updating…':(sample.preview?'Preview · ':'')+text),title:'Wire cross-section is the declared copper area used by the engine to calculate resistance. Measured flow and shared supply limits include losses; dots show conventional-current direction. Return-wire watts depend on the battery-negative reference.'});
+        (pending?'Updating…':(sample.preview?'Preview · ':'')+text)+
+        (w.mechanical?.segments_m?`\n${w.mechanical.connected?'Connected': 'Terminal pulled out'} · ${w.mechanical.retention_n} N hold`:''),
+      title:'Wire cross-section is the declared copper area used by the engine to calculate resistance. Measured flow and shared supply limits include losses; dots show conventional-current direction. Return-wire watts depend on the battery-negative reference.'+
+        (w.mechanical?.segments_m?' This cable has native mass, gravity, bending and contact. A terminal opens when its measured force exceeds its retention.':'' )});
   }
   powerFlowDots.instanceMatrix.needsUpdate=true;
   // Keep the current edit and the measured objective readable when edge
@@ -3934,11 +3969,11 @@ function drawFlowFrame(frame) {
     const lane = (electrical.wires || []).findIndex(wire => wire.name === w.name);
     const routed = w.unit === 'A' && pts.length === 2 && lane >= 0;
     const route=pts.length===2?wireRoute(ends[0],ends[1],legLane>=0?legLane:Math.max(0,lane)):null;
-    if(route?.length===0)continue;
-    const curve = pts.length===2 ? routedCurve(ends[0],ends[1],legLane>=0?legLane:Math.max(0,lane))
+    if(route?.length===0&&!w.mechanical?.segments_m)continue;
+    const curve = w.mechanical?.segments_m ? mechanicalCableCurve(w.mechanical) : pts.length===2 ? routedCurve(ends[0],ends[1],legLane>=0?legLane:Math.max(0,lane))
       : new THREE.CatmullRomCurve3(pts);
     const active = Math.abs(w.value)>1e-4;
-    const line = routed || leg ? new THREE.Mesh(new THREE.TubeGeometry(curve, 64, routed?wireDisplayRadius(electrical.wires[lane]):.010, 6, false),
+    const line = routed || leg ? new THREE.Mesh(w.mechanical?.segments_m?mechanicalCableGeometry(w.mechanical):new THREE.TubeGeometry(curve, 64, routed?wireDisplayRadius(electrical.wires[lane]):.010, 6, false),
       new THREE.MeshBasicMaterial({color:active?0xffe066:leg?leg.color:wireColor(electrical.wires[lane]),depthWrite:false}))
       : new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(32)),
       new THREE.LineBasicMaterial({color:active?0xffe066:0x788994,transparent:true,opacity:active?.9:.35,depthWrite:false}));

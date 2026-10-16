@@ -1,5 +1,18 @@
 # Puzzles on the machine (/play)
 
+October 16 physical motor leads: **Turn the axle**, the prepared gear motor and
+Sandbox motor connections now build native articulated cables. Construction
+routes go around conservative solid bounds once; Jolt then owns sag, contact,
+bending and terminal reactions. Overloading a terminal removes its connector
+and opens the matching electrical branch. Copper resistance uses the actual
+manufactured path length and conductor area. The renderer draws the native
+capsules in live and flow-preview frames, without runtime rerouting or curve
+smoothing through solids. Edge readings show connector state and retention.
+Older non-motor wires and ideal solar charging leads retain their previous
+models. General electrical wires may explicitly declare `mechanical` settings.
+This is a bounded first rollout, not a migration of every old schematic wire.
+See [the cable model, measurements and limits](mechanical-cables.md).
+
 October 16 spring access: a placed spring now has **Adjust spring** beside
 **Release spring**. This uses the same selection/editor path as clicking the
 coil, retains its setup and opens the length buttons with proposed force and

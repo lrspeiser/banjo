@@ -2092,6 +2092,8 @@ public:
     unsigned circuit(const std::string &declaration);
     void circuitSwitch(unsigned circuit, const std::string &branch, bool closed);
     [[nodiscard]] std::string circuits() const;
+    void mechanicalCable(const std::string &declaration);
+    [[nodiscard]] std::string mechanicalCables() const;
     // A controller for a motor (LiveControl): a hoist's when `rope` is a rope
     // on a drum that the motor's pin turns -- `top_out_m` and `bottom_out_m`
     // the rope out at the two ends of its travel, the top the less -- and a
