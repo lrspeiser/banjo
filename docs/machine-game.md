@@ -1,5 +1,18 @@
 # Puzzles on the machine (/play)
 
+October 15 moving-wire snapshot correction: `f8c5e955` CI caught another
+cross-frame audit read: the portrait label endpoint and its wire midpoint,
+read in separate CDP requests, differed by 6.647 pixels while the preview
+advanced. The audit now captures labels, body bounds, view bounds and every
+compared wire midpoint in one render callback. All assertions then use that
+single snapshot. The two-pixel endpoint tolerance and zero-overlap checks
+are unchanged. No application or physics behavior changes in this correction.
+The corrected audit passes three consecutive Ubuntu/SwiftShader runs in
+40.449 s, each covering desktop, portrait, landscape and changed perspective.
+The redundant four-batch local audit was stopped after CI exposed this
+remaining measurement race; it is not reported as a complete passing run.
+The next exact checkpoint must pass the complete CI suite before promotion.
+
 October 15 rendered-frame qualification: the follow-up exposed two more
 fixture races, a touch aimed before connection framing finished and a layout
 snapshot mixing the last DOM label position with the next camera position.

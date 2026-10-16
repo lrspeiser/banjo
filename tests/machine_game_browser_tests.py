@@ -992,9 +992,17 @@ class Puzzles(unittest.TestCase):
                         self.drag(start,[start[0]-35,start[1]+10],touch=width!=1280)
                         self.wait('machineCamera().settled',30)
                     self.wait('machineReadoutCallouts().labels.length===3',10)
-                    # Sample geometry and DOM labels immediately after the
-                    # same render, rather than between a camera edit and paint.
-                    layout=self.page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>resolve(machineReadoutCallouts())))',await_promise=True)
+                    # Preview wires can move between CDP requests even after
+                    # the camera settles. Capture every compared coordinate in
+                    # one frame; the Python assertions must not resample it.
+                    snapshot=self.page.evaluate('''new Promise(resolve=>requestAnimationFrame(()=>{
+                        const layout=machineReadoutCallouts();
+                        const view=document.getElementById('view').getBoundingClientRect().toJSON();
+                        const anchors=Object.fromEntries(layout.labels.filter(label=>label.wire)
+                            .map(label=>[label.wire,machineWireScreen(label.wire)]));
+                        resolve({layout,view,anchors});
+                    }))''',await_promise=True)
+                    layout=snapshot['layout']
                     for label in layout['labels']:
                         self.assertTrue(label['x']<=8 or label['x']+label['w']>=layout['width']-8,(label,layout))
                         self.assertTrue(label['leader'],label)
@@ -1006,8 +1014,8 @@ class Puzzles(unittest.TestCase):
                         self.assertTrue(label['x']<=label['to'][0]<=label['x']+label['w'] and
                                         label['y']<=label['to'][1]<=label['y']+label['h'],label)
                         if label.get('wire'):
-                            anchor=self.js(f'machineWireScreen({json.dumps(label["wire"])})')
-                            view=self.js("document.getElementById('view').getBoundingClientRect().toJSON()")
+                            anchor=snapshot['anchors'][label['wire']]
+                            view=snapshot['view']
                             self.assertAlmostEqual(label['from'][0]+view['x'],anchor[0],delta=2)
                             self.assertAlmostEqual(label['from'][1]+view['y'],anchor[1],delta=2)
 
