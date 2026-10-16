@@ -33,7 +33,6 @@ function showLevelIntroduction(){
 function closeLevelIntroduction(){if($('level-intro').open)$('level-intro').close();}
 $('level-intro').addEventListener('close',()=>view.focus({preventScroll:true}));
 $('level-instructions').addEventListener('click',showLevelIntroduction);
-const collapsedPanel = () => document.body.classList.contains('panel-collapsed') ? [document.querySelector('main>aside')] : [];
 const renderer = new THREE.WebGLRenderer({antialias: true});
 // Advertise the scene as a click target to touch browsers. Otherwise their
 // tap adjustment can redirect a nearby 3D socket tap to a camera button.
@@ -526,7 +525,7 @@ function positionTerminalLabels() {
   const rect = renderer.domElement.getBoundingClientRect();
   const top = Math.max(8, $('clock').getBoundingClientRect().bottom - rect.top + 8);
   const bottom = Math.min(rect.height - 8, innerHeight - rect.top - 8);
-  const occupied = [...collapsedPanel(), ...view.querySelectorAll('#scene-mode, #clock, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, #panel-toggle, .power-pin, #piece-handles button:not([hidden])')]
+  const occupied = [...view.querySelectorAll('#scene-mode, #clock, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, .power-pin, #piece-handles button:not([hidden])')]
     .filter(el => !el.hidden && el.style.visibility !== 'hidden' && el.offsetWidth && el.offsetHeight).map(el => {
       const r = el.getBoundingClientRect(); return {x:r.left-rect.left, y:r.top-rect.top, w:r.width, h:r.height};
     });
@@ -712,7 +711,7 @@ function drawSceneSockets() {
       const x=rect.left+(point.x+1)*rect.width/2,y=rect.top+(1-point.y)*rect.height/2;
       const mesh=meshes.get(part.name),box=mesh&&coachObjectBox([mesh]);
       const bounds=box?{left:box.x,right:box.x+box.width,top:box.y,bottom:box.y+box.height}:{left:x-12,right:x+12,top:y-12,bottom:y+12};
-      const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')]
+      const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history')]
         .filter(e=>e.checkVisibility()).map(e=>e.getBoundingClientRect());
       const at=pieceToolbarPosition(rect,bounds,heaterAttachButton.getBoundingClientRect(),obstacles);
       heaterAttachButton.style.left=`${at.x-rect.left}px`;heaterAttachButton.style.top=`${at.y-rect.top}px`;
@@ -1062,8 +1061,8 @@ function positionPowerLabels() {
   const clock = $('clock').getBoundingClientRect();
   const top = Math.max(8, clock.bottom - rect.top + 8);
   const bottom = rect.height - 10;
-  const occupied = ['scene-mode','sun-bearing','viewer-zoom','viewer-perspective','piece-editor','viewer-history','panel-toggle']
-    .map(id => $(id)).concat(collapsedPanel(),[...view.querySelectorAll('#piece-handles button:not([hidden])')]).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
+  const occupied = ['scene-mode','sun-bearing','viewer-zoom','viewer-perspective','piece-editor','viewer-history']
+    .map(id => $(id)).concat([...view.querySelectorAll('#piece-handles button:not([hidden])')]).filter(el => el && !el.hidden && el.offsetWidth && el.offsetHeight && !((pickedPowerPort || terminalStart) && el.id === 'preview-legend'))
     .map(el => { const r = el.getBoundingClientRect(); return {x:r.left - rect.left,y:r.top - rect.top,w:r.width,h:r.height}; });
   occupied.push(...readoutBodyRects(rect));
   // Place the larger meters first, then fit receiver buttons beside them.
@@ -1122,14 +1121,13 @@ function closeHeatInspection(restore=true) {
   $('inspect-heat').textContent=heatingTarget?.how==='chars'?'Inspect burn':'Inspect heat';
   if(restore){azimuth=old.azimuth;elevation=old.elevation;distance=old.distance;goal.copy(old.goal);target.copy(old.target);follow=old.follow;
     $('follow').setAttribute('aria-pressed',String(follow));
-    if(document.body.classList.contains('panel-collapsed')!==old.collapsed)$('panel-toggle').click();}
+  }
   if(restore)syncLight();
 }
 $('inspect-heat').addEventListener('click',()=>{
   if(heatInspection){closeHeatInspection();return;}
   if(!heatingTarget)return;
-  heatInspection={azimuth,elevation,distance,goal:goal.clone(),target:target.clone(),follow,
-    collapsed:document.body.classList.contains('panel-collapsed')};
+  heatInspection={azimuth,elevation,distance,goal:goal.clone(),target:target.clone(),follow};
   $('inspect-heat').textContent='Back to scene';
   follow=false;$('follow').setAttribute('aria-pressed','false');
   // Look from the incoming beam's side of the actual heated cell; a wall
@@ -1142,7 +1140,6 @@ $('inspect-heat').addEventListener('click',()=>{
   }
   if(nearest){const dx=nearest.a[0]-nearest.b[0],dz=nearest.a[2]-nearest.b[2];if(Math.hypot(dx,dz)>.01)azimuth=Math.atan2(dx,dz)+.3;}
   elevation=.25;distance=.65;goal.set(...heatingTarget.at_m);target.copy(goal);
-  if(innerWidth<1000&&!document.body.classList.contains('panel-collapsed'))$('panel-toggle').click();
   freshView();
   syncLight();
 });
@@ -1890,7 +1887,7 @@ function resize() {
   const oldHalf = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
   renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
   const half = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
-  // Preserve the framing when controls collapse or the phone rotates.
+  // Preserve the framing when the phone rotates.
   distance = Math.min(40, distance * Math.sin(oldHalf) / Math.sin(half));
   positionLevelIntroduction();
 }
@@ -2333,7 +2330,7 @@ function fitNewPieceInView() {
   // complete selected assembly. Do this once on Add; later zooms stay manual.
   if(ghost.p.piece==='gear'&&view.clientWidth<360){
     const rect=view.getBoundingClientRect(),editor=$('piece-editor');
-    const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')]
+    const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history')]
       .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
     for(let i=0;i<20&&distance<40;i++){
       const box=ghostScreenBox(),size=editor.getBoundingClientRect();if(!box)break;
@@ -2510,7 +2507,7 @@ function updatePieceHandles() {
     const a=anchor.at.clone().project(camera),b=anchor.at.clone().add(anchor.direction.clone().multiplyScalar(.2)).project(camera);
     let dx=(b.x-a.x)*rect.width/2,dy=-(b.y-a.y)*rect.height/2,l=Math.hypot(dx,dy);if(l<1){dx=1;dy=0;l=1;}
     dx/=l;dy/=l;const h=editHandles.children[i];
-    const obstacles=[...view.querySelectorAll('#piece-editor,#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')].filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
+    const obstacles=[...view.querySelectorAll('#piece-editor,#clock,#viewer-zoom,#viewer-perspective,#viewer-history')].filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
     obstacles.push(...sceneControlObstacles(rect));
     const box=ghostScreenBox();if(box)obstacles.push({left:box.x0,right:box.x1,top:box.y0,bottom:box.y1});
     for(let j=0;j<i;j++){const previous=editHandles.children[j];if(!previous.hidden)obstacles.push(previous.getBoundingClientRect());}
@@ -2612,7 +2609,7 @@ function updateEditGuide() {
   const x = (screen.x + 1) * view.clientWidth / 2 + 14, y = (1 - screen.y) * view.clientHeight / 2 + 16;
   // A wrapped toolbar can fill a short phone scene. Try spaces beside the
   // piece and the controls, rather than forcing the caption below every row.
-  const obstacles = [...collapsedPanel(), ...view.querySelectorAll('#clock, #scene-mode, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, #panel-toggle, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend, #piece-handles button:not([hidden])')]
+  const obstacles = [...view.querySelectorAll('#clock, #scene-mode, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend, #piece-handles button:not([hidden])')]
     .filter(e => e.offsetWidth && e.offsetHeight).map(e => e.getBoundingClientRect());
   let best = null;
   for (const [cx, cy] of [[x, y], [x, y - height - 40], [x - width - 30, y], [8, maxY], [maxX, maxY], [maxX, minY]]) {
@@ -2773,7 +2770,6 @@ function startGhost(p, index, keepPlace = false) {
   for (const [key, rule] of Object.entries(trayItem(p.piece).knobs)) {
     if (p[key] == null) p[key] = index < placements.length && rule.legacy_default != null ? rule.legacy_default : knobDefault(rule);
   }
-  if(document.body.classList.contains('panel-collapsed')) $('panel-toggle').click();
   selectPhonePanel('controls');
   ghost = {p, index, was: index < placements.length ? placements[index] : null, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {},card:trayItem(p.piece).focus_knob,
@@ -3226,7 +3222,7 @@ function sceneControlObstacles(rect) {
   return boxes;
 }
 function positionLiveControls(){
-  const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#piece-editor,#panel-toggle,#level-done')]
+  const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#piece-editor,#level-done')]
     .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
   for(const card of liveCards.children){
     let leader=liveControlLeaders.get(card);
@@ -3258,7 +3254,7 @@ function positionPieceEditor() {
   const rect=view.getBoundingClientRect();
   // The toolbar owns its position; readouts yield to it afterwards. Letting
   // both avoid each other's last position makes the buttons oscillate.
-  const obstacles=[...collapsedPanel(),...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#panel-toggle')]
+  const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history')]
     .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
   const at=pieceToolbarPosition(rect,{left:box.x0,right:box.x1,top:box.y0,bottom:box.y1},editor.getBoundingClientRect(),
     [...obstacles,...sceneControlObstacles(rect)],{edgeOnly:true});
@@ -3678,7 +3674,7 @@ function updatePowerFeedback() {
   const seen=new Set(items.map(i=>i.id));
   for(const [id,row] of powerFeedbackRows)if(!seen.has(id)){row.card.remove();row.leader.remove();powerFeedbackRows.delete(id);}
   const rect=renderer.domElement.getBoundingClientRect();
-  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#panel-toggle,#collector-status,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint,#piece-handles button:not([hidden])')]
+  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#collector-status,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint,#piece-handles button:not([hidden])')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   // A power reading must not hide the connection the player is trying to
   // click, especially on a phone. Reserve the rings before placing labels.
@@ -3741,7 +3737,7 @@ function positionSceneReading(card,anchor) {
   if(!leader){leader=document.createElementNS(feedbackLeaders.namespaceURI,'line');leader.dataset.reading=card.id;feedbackLeaders.append(leader);sceneReadingLeaders.set(card.id,leader);}
   leader.setAttribute('visibility','hidden');if(card.hidden)return;
   const {width,height}=card.getBoundingClientRect(),top=sceneReadoutTop(rect);
-  const occupied=[...view.querySelectorAll('#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#panel-toggle,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint,#piece-handles button:not([hidden])')]
+  const occupied=[...view.querySelectorAll('#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint,#piece-handles button:not([hidden])')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   occupied.push(...readoutBodyRects(rect),{x:anchor.x-18,y:anchor.y-18,w:36,h:36});
   const ys=[anchor.y-height/2,top,rect.height-height-6,...occupied.flatMap(r=>[r.y-height-6,r.y+r.h+6])];
@@ -3995,7 +3991,7 @@ function updateFlowPreview() {
   $('flow-time').max=String(end); $('flow-time').value=String(flowTime);
   syncFlowPlayButton();
   const scale=distance*2*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/view.clientHeight;
-  const rect=view.getBoundingClientRect(), occupied=[...collapsedPanel(), ...view.querySelectorAll('.power-label, .terminal-label, #clock, #preview-legend')]
+  const rect=view.getBoundingClientRect(), occupied=[...view.querySelectorAll('.power-label, .terminal-label, #clock, #preview-legend')]
     .filter(e=>!e.hidden).map(e=>{const r=e.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   for (const sprite of flowLabels) {
     sprite.scale.set(scale*76,scale*19,1);
@@ -6370,11 +6366,10 @@ function selectPhonePanel(name, focus = false) {
   if (name === 'design' && !level?.free) name = 'help';
   phonePanel = name;
   if (!$('phone-design-panel')) return;
-  if(focus && document.body.classList.contains('panel-collapsed')) $('panel-toggle').click();
   for (const [key,id] of [['controls','control-panel'],['design','phone-design-panel'],['help','phone-help-panel']]) {
     const tab = $('phone-'+key+'-tab'), pane = $(id), selected = key === name && !tab.hidden;
     tab.setAttribute('aria-selected',String(selected)); tab.tabIndex = selected ? 0 : -1;
-    pane.hidden = !selected || document.body.classList.contains('panel-collapsed');
+    pane.hidden = !selected;
     if (selected && focus) tab.focus();
   }
 }
@@ -6405,7 +6400,6 @@ function installPhonePanels() {
     if(action && (['attach-tool','pull-tool','focus-piece','view-overview','level-instructions'].includes(action.id)||action.closest('.move-pad')||action.textContent==='Square it up'))$('recent-changes').close();
   });
   $('challenge-share').hidden=true;$('free-share').hidden=true;
-  $('view').append($('panel-toggle'));
   controls.append($('scene-actions'),$('view-controls'));
   $('viewer-history').append($('undo-pieces'),$('redo-pieces'));
   $('viewer-zoom').prepend($('view-out'));$('viewer-zoom').append($('view-in'));
@@ -6428,15 +6422,7 @@ function installPhonePanels() {
     }
     selectPhonePanel(phonePanel);
   };
-  const expand = expanded => {
-    document.body.classList.toggle('panel-collapsed',!expanded);
-    $('panel-toggle').setAttribute('aria-expanded',String(expanded));
-    $('panel-toggle').setAttribute('aria-label',expanded?'Collapse controls':'Expand controls');
-    $('panel-toggle').textContent=expanded?'⌄':'⌃';
-    selectPhonePanel(phonePanel); resize();
-  };
-  $('panel-toggle').addEventListener('click',()=>expand(document.body.classList.contains('panel-collapsed')));
-  for (const key of ['controls','design','help']) $('phone-'+key+'-tab').addEventListener('click',()=>{if(document.body.classList.contains('scene-win'))closeDone();expand(true);selectPhonePanel(key);});
+  for (const key of ['controls','design','help']) $('phone-'+key+'-tab').addEventListener('click',()=>{if(document.body.classList.contains('scene-win'))closeDone();selectPhonePanel(key);});
   $('phone-tabs').addEventListener('keydown',e=>{
     const names=level?.free?['controls','design','help']:['controls','help'], index=names.indexOf(phonePanel);
     const next=e.key==='Home'?0:e.key==='End'?names.length-1:e.key==='ArrowRight'?(index+1)%names.length:e.key==='ArrowLeft'?(index+names.length-1)%names.length:null;

@@ -50,8 +50,9 @@ Desktop and phone use the same full-width scene with a compact bottom dock.
 Banjo and navigation share one header row; camera and history controls share
 one row along the top of the scene. The idle time-zero banner stays hidden.
 Levels share Controls / Help tabs; Sandbox also has Design,
-with Try It!/Pause/Reset kept beside the 3D view, even when the controls are
-collapsed. Each level opens with its name, what you’ll place, how the mechanism
+with Try It!/Pause/Reset kept beside the 3D view. The controls dock stays open;
+Controls and Help switch its content without a collapse arrow. Each level opens
+with its name, what you’ll place, how the mechanism
 works and your goal. **GO** dismisses the introduction and leaves native time
 paused for building; **Changes → Settings → Level instructions** reopens it. Goal markers
 remain without large instruction text over the working area. The dock keeps

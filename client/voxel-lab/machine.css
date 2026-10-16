@@ -418,8 +418,6 @@ body.panel-tabs #phone-toolbar{display:flex;align-items:center;gap:4px;min-width
 #phone-tabs button{flex:1}
 #phone-tabs button[aria-selected=true]{background:#142836;border-color:#9fdcff;box-shadow:inset 0 -3px #9fdcff}
 #phone-runbar{display:flex;gap:4px}
-#panel-toggle{position:absolute;bottom:8px;right:8px;z-index:6;min-width:44px;min-height:44px;font:20px system-ui;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer}
-body.panel-collapsed #panel-toggle{bottom:auto;top:8px}
 #phone-toolbar button:disabled{opacity:.45;cursor:default}
 #phone-runbar #start{background:#2f6b4f;border-color:#6fc39a;min-width:68px}
 #phone-toolbar :focus-visible{outline:3px solid #9fdcff;outline-offset:1px}
@@ -459,13 +457,9 @@ body.panel-tabs .control-panel .ghost-bar>.ghost-fields>.wire-gauge{grid-templat
 #precision-controls .ghost-piece{list-style:none}
 .scene-goal{margin:0;padding:2px 4px;font-size:13px;color:#d9ebf4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 main{position:relative}
-body.panel-collapsed main{grid-template-columns:1fr;grid-template-rows:1fr}
-body.panel-collapsed aside{position:absolute;bottom:0;right:0;width:min(100%,420px);height:auto;z-index:5;grid-template-rows:auto auto;border:1px solid #4e7287;border-radius:8px 0 0 0;box-shadow:0 -3px 16px #0006}
-body.panel-collapsed #view{min-height:0}
 .preview-legend>details>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;font-size:12px}
 .preview-legend .head{margin:0;font-size:12px}
 @media(max-width:359px){body.panel-tabs .control-panel .ghost-bar>.move-pad{grid-template-columns:repeat(4,44px);grid-template-rows:repeat(2,44px)}}
-body.panel-collapsed #scene-mode{bottom:108px}
 .levels-screen .ls-summary{margin:8px 0;font-size:14px}
 .levels-screen .ls-free{min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:12px}
 .level-library-more{margin:8px 0 12px;border:1px solid #3d5b6d;border-radius:8px;padding:0 10px}
@@ -612,8 +606,8 @@ body.panel-tabs #precision-controls .move-pad button{grid-area:auto}
 #machine-control-rows input{grid-column:1;min-height:44px;width:100%;min-width:0}
 #machine-control-rows output{grid-column:2;grid-row:2}
 /* Reserve enough inspector space to expose a complete touch target even when
-   the narrow toolbar and header wrap; collapsing controls restores the scene. */
-@media(max-width:599px){body.panel-tabs:not(.panel-collapsed) main{grid-template-rows:min(42dvh,max(140px,calc(100dvh - var(--site-header-height,53px) - 300px))) minmax(0,1fr)}body.panel-tabs #view{min-height:0}}
+   the narrow toolbar and header wrap. */
+@media(max-width:599px){body.panel-tabs main{grid-template-rows:min(42dvh,max(140px,calc(100dvh - var(--site-header-height,53px) - 300px))) minmax(0,1fr)}body.panel-tabs #view{min-height:0}}
 
 /* One object editor, with scene tools kept in the viewport corners. */
 .viewer-corner{display:contents}
@@ -692,7 +686,7 @@ body.panel-tabs .control-panel .ghost-bar>.ghost-fields{display:flex;flex-direct
 #help-settings .move-pad{position:static;display:flex;flex-wrap:wrap}
 #help-settings .grid-snap-row{display:flex;flex-wrap:wrap}
 @media(max-width:820px){body.panel-tabs .scene-goal{font-size:17px;line-height:1.35;padding:2px}body.panel-tabs .scene-goal strong{font-size:20px}}
-@media(max-width:599px){body.panel-tabs:not(.panel-collapsed) main{grid-template-rows:min(60dvh,max(240px,calc(100dvh - var(--site-header-height,53px) - 230px))) minmax(0,1fr)}}
+@media(max-width:599px){body.panel-tabs main{grid-template-rows:min(60dvh,max(240px,calc(100dvh - var(--site-header-height,53px) - 230px))) minmax(0,1fr)}}
 @media(max-width:359px){body.phone-panels #phone-toolbar{flex-wrap:nowrap}#phone-tabs{flex-basis:auto}}
 @media(max-width:359px){#piece-editor{width:212px}}
 body.panel-tabs.run-complete .scene-goal span{display:none!important}
@@ -717,16 +711,15 @@ body.panel-tabs #phone-runbar #start{min-width:110px;font:600 16px system-ui;pad
 @media(max-width:359px){body.panel-tabs #phone-runbar #start{min-width:84px;padding:6px 9px;font-size:15px}body.panel-tabs #phone-tabs button{padding:4px 6px}}
 
 /* One scene and one bottom dock on every screen, with no desktop sidebar. */
-body.panel-tabs:not(.panel-collapsed) main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) clamp(260px,28dvh,280px);height:calc(100dvh - var(--site-header-height,53px))}
+body.panel-tabs main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) clamp(260px,28dvh,280px);height:calc(100dvh - var(--site-header-height,53px))}
 body.panel-tabs #view{height:100%;min-height:0}
 body.panel-tabs aside{border-left:0;border-top:1px solid #314451;padding:6px max(8px,calc((100% - 900px)/2));min-width:0}
 body.panel-tabs #phone-toolbar,body.panel-tabs #scene-goal,body.panel-tabs .phone-pane{width:100%;min-width:0}
 body.panel-tabs aside:has(#phone-controls-tab[aria-selected=false]){grid-template-rows:auto minmax(0,1fr)}
 body.panel-tabs aside:has(#phone-controls-tab[aria-selected=false]) #scene-goal{display:none}
-body.panel-collapsed aside{width:100%;border-radius:0;max-height:40dvh}
-@media(max-width:599px){body.panel-tabs:not(.panel-collapsed) main{grid-template-rows:minmax(0,1fr) 230px}}
+@media(max-width:599px){body.panel-tabs main{grid-template-rows:minmax(0,1fr) 230px}}
 @media(max-height:500px){
-  body.panel-tabs:not(.panel-collapsed) main{grid-template-rows:minmax(0,1fr) 170px}
+  body.panel-tabs main{grid-template-rows:minmax(0,1fr) 170px}
   body.panel-tabs .scene-goal{font-size:15px;line-height:1.25;padding:0 2px}
   body.panel-tabs .scene-goal strong{font-size:18px;margin-bottom:0}
   body.panel-tabs #scene-note{display:none}
@@ -755,13 +748,13 @@ body.coaching .tray-heading,body.coaching .tray-left{display:none}
 body.coaching .scene-tray #tray-add{min-height:44px;padding:4px}
 body.coaching .scene-tray .tray-picture,body.coaching .scene-tray #tray img{width:32px;height:32px}
 @media(max-width:500px){body.coaching .scene-goal strong{font-size:18px}.coach-actions button{font-size:12px;padding:4px 6px}}
-@media(max-width:599px){body.coaching.panel-tabs:not(.panel-collapsed) main{grid-template-rows:minmax(0,1fr) 290px}}
-@media(max-height:500px){body.coaching.panel-tabs:not(.panel-collapsed) main{grid-template-rows:minmax(0,1fr) 190px}body.coaching #viewer-zoom{top:48px}body.coaching #viewer-perspective{top:96px}}
+@media(max-width:599px){body.coaching.panel-tabs main{grid-template-rows:minmax(0,1fr) 290px}}
+@media(max-height:500px){body.coaching.panel-tabs main{grid-template-rows:minmax(0,1fr) 190px}body.coaching #viewer-zoom{top:48px}body.coaching #viewer-perspective{top:96px}}
 
 /* A win belongs over the scene, with a compact dock beneath it. */
 body.panel-tabs.scene-win main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) 56px}
 body.scene-win aside{position:static;width:100%;height:auto;grid-template-rows:minmax(0,1fr);gap:0;border-radius:0}
-body.scene-win #scene-goal,body.scene-win .phone-pane,body.scene-win #panel-toggle{display:none!important}
+body.scene-win #scene-goal,body.scene-win .phone-pane{display:none!important}
 body.playing-level #view>.level-done{top:50%;transform:translate(-50%,-50%);z-index:10;max-height:calc(100% - 24px);overflow:auto;width:min(420px,calc(100% - 24px));padding:16px 14px}
 #view>.level-done h2{padding:0 36px}
 #view>.level-done button{min-height:44px}
@@ -808,8 +801,8 @@ body.playing-level #view>.level-done{top:50%;transform:translate(-50%,-50%);z-in
 @media(max-width:359px){#piece-editor{width:224px}}
 
 /* With controls beside the piece, a selected edit needs less bottom-dock space. */
-@media(max-width:599px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 180px}}
-@media(max-height:500px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 130px}}
+@media(max-width:599px){body.panel-tabs:not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 180px}}
+@media(max-height:500px){body.panel-tabs:not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 130px}}
 
 body.panel-tabs .scene-tray .tray-heading{display:none}
 body.panel-tabs .scene-tray #tray-add{min-height:54px;padding:4px}
@@ -876,14 +869,14 @@ body.panel-tabs #phone-tabs{grid-column:3;grid-row:1;justify-self:end;margin:0;f
 body.panel-tabs #control-panel{margin-bottom:0;padding-bottom:12px}
 body.panel-tabs aside:has(#phone-controls-tab[aria-selected=true]):has(#help-settings[open]){grid-template-rows:auto minmax(0,1fr)}
 body.panel-tabs aside:has(#phone-controls-tab[aria-selected=true]):has(#help-settings[open]) #scene-goal{display:none}
-@media(max-width:599px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 200px}}
-@media(max-height:500px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 160px}}
-@media(max-width:359px){body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 180px}}
+@media(max-width:599px){body.panel-tabs:not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 200px}}
+@media(max-height:500px){body.panel-tabs:not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 160px}}
+@media(max-width:359px){body.panel-tabs:not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#ghost-bar:not([hidden])) main{grid-template-rows:minmax(0,1fr) 180px}}
 @media(max-width:359px){
   /* GO already showed the full briefing. Keep its title and the tray reachable
      in short portrait views rather than repeating a multi-line task here. */
   body.panel-tabs #scene-goal span{display:none!important}
-  body.panel-tabs:not(.panel-collapsed):not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#piece-editor.editing-gear:not([hidden])) main{grid-template-rows:minmax(0,1fr) 180px}
+  body.panel-tabs:not(.coaching):not(.scene-win):has(#phone-controls-tab[aria-selected=true]):has(#piece-editor.editing-gear:not([hidden])) main{grid-template-rows:minmax(0,1fr) 180px}
   body.panel-tabs:has(#piece-editor.editing-gear:not([hidden])) #scene-goal span{display:none!important}
   body.panel-tabs:has(#piece-editor.editing-gear:not([hidden])) #clock{top:auto;bottom:8px;left:8px;width:104px;font-size:11px;line-height:14px}
 }
@@ -932,5 +925,5 @@ body.playing-level #view>.level-done:not(.retry-result){top:54px;bottom:auto;tra
 #recent-changes #help-settings{margin:0 0 16px;border-top:0;border-bottom:1px solid #63899d;padding-bottom:8px}
 #recent-changes #help-settings button{padding:6px 10px;background:#294c60;border:1px solid #63899d;border-radius:6px;color:#fff;font:14px system-ui}
 #recent-changes #help-settings input,#recent-changes #help-settings select{max-width:100%}
-body.panel-collapsed #panel-toggle,.inspect-switch{top:54px}
+.inspect-switch{top:54px}
 .socket-choices{z-index:11}

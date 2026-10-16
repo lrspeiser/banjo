@@ -1,5 +1,22 @@
 # Puzzles on the machine (/play)
 
+October 15 controls simplification: the bottom-right collapse caret and its
+hidden-panel mode are removed on desktop and phones. Controls, Help and the
+Sandbox Design tab switch the always-open dock; Try It!, Reset and the scene's
+Undo remain reachable. Heat inspection keeps the dock available too. Browser
+checks now exercise those ordinary tabs rather than the removed toggle.
+In short landscape views optional wire callouts may yield to the lamp rating;
+every displayed callout retains the same edge, leader and non-overlap checks.
+No physics, goals or numerical tolerances change.
+Eight focused Ubuntu/SwiftShader browser checks pass in 181.143 s across desktop,
+phone portrait/landscape and the 320 px layout, covering tabs, dock layout,
+Reset/Undo, wire leaders, switch inspection, solar wiring and the spring lift.
+The laser-burn inspection check also passes on all three layouts (38.742 s).
+JavaScript/Python syntax and the 271-source registration guard pass. Ordinary
+Windows Chrome checks confirm the cleared corner and working spring buttons;
+screenshots cover desktop and phone portrait/landscape. The verified engine
+binary is unchanged; complete checkpoint CI still runs before promotion.
+
 October 15 spring-control discoverability: selected springs show a labelled
 **Spring length** value in centimetres and direct **− 5 cm / + 5 cm** buttons
 in their edge editor. These change the declared relaxed length; the latch

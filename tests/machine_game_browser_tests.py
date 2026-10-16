@@ -1001,17 +1001,18 @@ class Puzzles(unittest.TestCase):
                     label=self.js(f"[...document.querySelectorAll('#wire-adjustments button')].find(b=>b.textContent.startsWith('Wire {count} ')).getAttribute('aria-label')")
                     self.click_visible(label);self.ghost();self.click_visible('Standard wire');self.ghost()
                     self.click_visible('Place');self.wait(READY,30)
-                # A 167 px landscape canvas cannot hold three 44+ px labels
-                # beside its corner tools. Expand it with the ordinary toggle.
-                if height<500:self.click_visible('Collapse controls')
-                self.wait('machineReadoutCallouts().labels.length===3',30)
+                # The always-open dock leaves less space in landscape. Optional
+                # wire cards may yield; the lamp rating must stay readable.
+                label_count='machineReadoutCallouts().labels.length'+('>=1' if height<500 else '===3')
+                self.wait(label_count,30)
+                self.assertIsNone(self.js("document.getElementById('panel-toggle')"))
                 self.wait('machineCamera().settled',30)
                 for moved in (False,True):
                     if moved:
                         start=self.empty_scene_point()
                         self.drag(start,[start[0]-35,start[1]+10],touch=width!=1280)
                         self.wait('machineCamera().settled',30)
-                    self.wait('machineReadoutCallouts().labels.length===3',10)
+                    self.wait(label_count,10)
                     # Preview wires can move between CDP requests even after
                     # the camera settles. Capture every compared coordinate in
                     # one frame; the Python assertions must not resample it.
@@ -1023,6 +1024,7 @@ class Puzzles(unittest.TestCase):
                         resolve({layout,view,anchors});
                     }))''',await_promise=True)
                     layout=snapshot['layout']
+                    self.assertTrue(any(label.get('device')=='lamp' for label in layout['labels']),layout)
                     for label in layout['labels']:
                         self.assertTrue(label['x']<=8 or label['x']+label['w']>=layout['width']-8,(label,layout))
                         self.assertTrue(label['leader'],label)
@@ -1859,7 +1861,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js("document.getElementById('phone-controls-tab').getAttribute('aria-selected')"),'true')
 
 
-    def test_shared_tabs_collapse_and_run_toolbar_work_on_desktop_and_phones(self):
+    def test_shared_tabs_and_run_toolbar_work_without_a_collapse_button(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.open('gap',width,height,phone=width!=1280)
@@ -1879,12 +1881,11 @@ class Puzzles(unittest.TestCase):
                         self.assertFalse(self.js("document.getElementById('brief').checkVisibility()"))
                         self.assertTrue(self.js("document.getElementById('message').checkVisibility()"))
                 before=self.js('machinePlacements()')
-                self.click_visible('Collapse controls')
-                self.assertTrue(self.js("['control-panel','phone-design-panel','phone-help-panel'].every(id=>document.getElementById(id).hidden)"))
+                self.assertIsNone(self.js("document.getElementById('panel-toggle')"))
+                self.assertTrue(self.js("document.getElementById('phone-help-panel').checkVisibility()"))
                 self.click_visible('Try It!')
                 self.wait("/World (?!0\\.00)[0-9.]+ s/.test(document.getElementById('clock').textContent)",30)
                 self.click_visible('Pause');self.click_visible('Reset');self.wait(READY,30)
-                self.click_visible('Expand controls')
                 self.assertFalse(self.js("document.getElementById('phone-help-panel').hidden"))
                 self.assertEqual(self.js('machinePlacements()'),before)
 
@@ -1900,7 +1901,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
                 kept=self.js('machinePlacements()')
-                self.click_visible('Help');self.click_visible('Collapse controls')
+                self.click_visible('Help')
                 self.click_visible('Reset');self.wait(READY,30)
                 self.assertEqual(self.js('machinePlacements()'),[])
                 self.assertIsNone(self.js('machineGhostState()'))
@@ -1909,7 +1910,7 @@ class Puzzles(unittest.TestCase):
                 self.assertIn('World 0.00 s',self.js("document.getElementById('clock').textContent"))
                 self.click_visible('Undo');self.wait(READY,30)
                 self.assertEqual(self.js('machinePlacements()'),kept)
-                self.click_visible('Expand controls');self.press('Pick up your plank 1');self.ghost()
+                self.click_visible('Controls');self.press('Pick up your plank 1');self.ghost()
                 self.slide('Cut to length of your plank 1',.66);self.ghost()
                 self.click_visible('Reset');self.wait(READY,30)
                 self.assertIsNone(self.js('machineGhostState()'))
@@ -1938,7 +1939,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('machinePlacements()'),kept)
                 self.assertEqual(self.js('machineDesign().draft.placements'),kept)
 
-    def test_undo_is_visible_on_every_tab_and_collapsed_and_restores_setup(self):
+    def test_undo_is_visible_on_every_tab_and_restores_setup(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             for level in ('gap','free'):
                 with self.subTest(viewport=(width,height),level=level):
@@ -1960,11 +1961,11 @@ class Puzzles(unittest.TestCase):
                         self.assertEqual(visible['parent'],'viewer-history',visible)
                         self.assertIn('Undo',visible['text'])
                         self.assertTrue(visible['visible'] and visible['uncovered'] and not visible['disabled'],visible)
-                    self.click_visible('Collapse controls');self.click_visible('Undo')
+                    self.click_visible('Undo')
                     self.wait(f'machinePlacements().length===0 && {READY}',30)
-                    self.assertTrue(self.js("document.body.classList.contains('panel-collapsed')"))
+                    self.assertTrue(self.js("document.getElementById('phone-help-panel').checkVisibility()"))
                     self.assertTrue(self.js("document.getElementById('undo-pieces').disabled"))
-                    self.click_visible('Expand controls');self.click_visible('Controls');self.press('Redo')
+                    self.click_visible('Controls');self.press('Redo')
                     self.wait(READY,30);self.assertEqual(self.js('machinePlacements()'),placed)
                     self.press('Pick up your plank 1');self.ghost()
                     self.slide(('Cut to length' if level=='gap' else 'length')+' of your plank 1',.66)
@@ -2391,9 +2392,9 @@ class Puzzles(unittest.TestCase):
             with self.subTest(viewport=(width,height)):
                 self.open('chain',width,height,phone=width!=1280)
                 before=self.js('machineCamera().distance')
-                self.click_visible('Collapse controls')
+                self.click_visible('Help')
                 self.click_visible('Inspect switch')
-                self.assertFalse(self.js("document.body.classList.contains('panel-collapsed')"),'Inspection reveals its readings module')
+                self.assertTrue(self.js("document.getElementById('control-panel').checkVisibility()"),'Inspection reveals its readings module')
                 self.assertEqual(self.js('machineContactCircuitState().inspected'),'firing circuit')
                 self.assertLess(self.js('machineCamera().distance'),before)
                 self.assertTrue(self.js(READY),'Inspecting must not run or actuate the machine')
@@ -2484,7 +2485,7 @@ class Puzzles(unittest.TestCase):
                 self.press('Set it down');self.wait(f'!machineGhostState() && {READY}',60)
                 self.wait("document.getElementById('power-labels').textContent.includes('50.0 W charging')",20)
                 assert_wall_in_view()
-                self.press('Collapse controls');assert_wall_in_view();self.press('Expand controls')
+                self.click_visible('Help');assert_wall_in_view();self.click_visible('Controls')
                 self.assertNotIn('In shadow',self.js("document.getElementById('power-labels').textContent"))
                 self.assertEqual(self.js('machinePlacements()[1].b_port'),'battery:power')
                 self.click_visible('Try It!');self.wait("!document.getElementById('level-done').hidden",30)
@@ -5095,10 +5096,10 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js("(()=>{const r=id=>document.getElementById(id).getBoundingClientRect();return Math.abs((r('start').left+r('start').right)/2-innerWidth/2)<2&&r('start').width>=160&&r('phone-tabs').width<230;})()"))
                 self.click_visible('Help')
                 self.assertTrue(self.js("document.getElementById('phone-help-panel').checkVisibility()&&!document.getElementById('control-panel').checkVisibility()"))
-                self.click_visible('Collapse controls')
-                self.assertGreater(self.js("document.getElementById('view').getBoundingClientRect().height"),layout['view']['h'])
+                self.assertIsNone(self.js("document.getElementById('panel-toggle')"))
+                self.assertTrue(self.js("document.getElementById('phone-help-panel').checkVisibility()"))
                 self.assertTrue(self.js("document.getElementById('start').checkVisibility()"))
-                self.click_visible('Expand controls');self.click_visible('Controls')
+                self.click_visible('Controls')
                 self.press('Add a plank');self.ghost()
                 self.assertTrue(self.js("(()=>{const b=document.getElementById('piece-grip'),r=b.getBoundingClientRect(),p=document.getElementById('view').getBoundingClientRect();return b.checkVisibility()&&r.top>=p.top&&r.bottom<=p.bottom&&r.height>=44;})()"))
                 self.click_visible('Place');self.wait(READY,30)
