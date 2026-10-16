@@ -309,6 +309,30 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_holder_front_jacks_leave_the_pack_landing_faces_clear(self):
+        # Physical leads must not be pinched between the falling caps and
+        # pads. Compare all supported pack materials at both native steps.
+        for material in ('glass','oak','iron'):
+            for dt in (1/240,1/480):
+                level=copy.deepcopy(e.LEGACY_CONTACT_POWER)
+                placements=copy.deepcopy(level['solution'])
+                placements[0]['housing_material']=material
+                compiled=mw.compile_spec(mg.compose(level,placements)[0])
+                with self.subTest(material=material,dt=dt),tempfile.TemporaryDirectory() as logs:
+                    engine,_,_=mw.build_engine(ENGINE,compiled,Path(logs))
+                    try:
+                        powered=0
+                        for _ in range(40):
+                            engine.op(op='step',dt=dt,n=round(.05/dt))
+                            networks=engine.op(op='circuits')['circuits']
+                            rows=e.readouts(compiled['electrical'],networks,compiled['batteries'])
+                            powered+=next(d for d in rows['devices'] if d['kind']=='bulb')['power_w']>2
+                            self.assertLess(abs(networks[0]['ledger']['electrical_residual_j']),1e-8)
+                        self.assertGreaterEqual(powered,10,(material,dt,rows))
+                        print('HOLDER_FRONT_JACKS',dict(material=material,dt_s=dt,powered_samples=powered,
+                            electrical_residual_j=networks[0]['ledger']['electrical_residual_j']))
+                    finally:engine.close()
+
     def test_two_core_solar_cord_mass_loss_and_pullout_stop_charging(self):
         free=mg.free_build()
         placements=[{'piece':'solar','x_m':-.7},

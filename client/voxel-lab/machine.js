@@ -281,7 +281,7 @@ function syncWires() {
     if(c.leads?.length){
       for(const [lane,lead] of c.leads.entries()){
         const geometry=new THREE.BufferGeometry();
-        const color=lead.leg==='return'?0x83bbff:0xff8a78;
+        const color=lead.leg==='return'?0x83bbff:0xf19076;
         const line=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color}));
         scene.add(line);wires.push({line,name:c.name,mechanicalName:lead.name,leg:lead.leg,lane,color});
       }
@@ -442,7 +442,7 @@ function updateContactCircuitReadings() {
 }
 window.machineContactCircuitState=()=>({inspected:inspectedCircuit,
   circuits:[...contactCircuitRows.entries()].map(([name,row])=>({diagram:switchDiagram(row),reading:switchReading(name,row)})),
-  wires:wires.filter(w=>w.contactCircuit).map(w=>({name:w.name,leg:w.leg,route:w.route,color:w.line.material.color.getHex(),visible:w.line.visible})),
+  wires:wires.filter(w=>w.contactCircuit||w.mechanicalName).map(w=>({name:w.name,leg:w.leg,route:w.route,color:w.line.material.color.getHex(),visible:w.line.visible,mechanical:w.mechanicalSample})),
   outlines:contactCircuitOutlines.map(o=>({part:o.userData.part,color:o.material.color.getHex(),visible:o.visible}))});
 
 // Terminal clicks save the same wire placements as the existing selectors.
@@ -1535,6 +1535,7 @@ function updateWires() {
       if(cable){
         if(w.mechanicalSample!==cable){w.line.geometry.dispose();w.line.geometry=mechanicalCableGeometry(cable);w.route=cable.segments_m.flat();w.mechanicalSample=cable;}
         w.connected=cable.connected;w.line.visible=!flowGroup.visible||(cableSetupActive&&!ghost);
+        if(w.powerCable)w.points_m=[powerPortAt(w.fromPort),powerPortAt(w.toPort)];
         const value=w.powerCable?cable.charging_current_a:readouts.circuits?.find(c=>c.name===w.name)?.current_a||0;
         w.line.material.color.setHex(Math.abs(value)>1e-4?0xffd34d:w.color||0x83bbff);
       }
@@ -1754,8 +1755,8 @@ async function build(next, start, request) {
   const released = releaseWorld();
   $('power-labels').replaceChildren(); powerLabels.clear(); powerMessage('');
   clockMessage('Building in the engine…');
-  for (const [, mesh] of meshes) { scene.remove(mesh); disposeBodyGeometry(mesh); }
-  meshes.clear(); $('events').replaceChildren();
+  // Keep the last scene visible while the old world closes and the new
+  // setup compiles. Selecting a piece after a run must not blank the view.
   try {
     await released;
     const opened = await queueWorldTask(async () => {
@@ -1769,6 +1770,8 @@ async function build(next, start, request) {
       return reply;
     });
     if (!opened || mine !== polling) return {};
+    for (const [, mesh] of meshes) { scene.remove(mesh); disposeBodyGeometry(mesh); }
+    meshes.clear(); $('events').replaceChildren();
     spec = request ? opened.machine : next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
     cableSetupActive = Boolean(opened.cable_setup);
     drawAirflows();
@@ -2723,11 +2726,9 @@ function trayPicture(t) {
   if (!pictures.has(key)) pictures.set(key, (async () => {
     const p = {piece: t.piece};
     for (const [knob, rule] of Object.entries(t.knobs)) p[knob] = knobDefault(rule);
-    const context = sandboxRequest();
-    if (level.free && ['water_wheel', 'water_tank', 'water_chute', 'water_collector'].includes(t.piece)) {
-      const example = sandboxTemplates.find(example => example.placements?.some(placement => placement.piece === t.piece));
-      if (example?.base) context.base = example.base;
-    }
+    // Library thumbnails are isolated construction previews. They must not
+    // depend on which five gallery examples happen to contain this piece.
+    const context = level.free ? {thumbnail:true} : sandboxRequest();
     const r = await api({op: 'level_ghost', level: level.id, ...context, placements: [p], index: 0});
     const shot = new THREE.Scene(), piece = new THREE.Group();
     buildParts(piece, r.parts, kind => material(materialColor(kind), kind), null);
@@ -4306,6 +4307,13 @@ function wireCandidates(clientX,clientY,touch=false) {
     if(!(wire.terminalWire||wire.powerCable)||!wire.line.visible)continue;
     const m=wire.name?.match(/^your (wire|power_cable) (\d+)$/),index=m?Number(m[2])-1:-1;
     if(index<0 || placements[index]?.piece!==m[1])continue; // prepared puzzle apparatus stays fixed
+    // A generous wire touch radius must not delete a nearby cable when the
+    // player actually clicks a solid case. Over a solid, require a visible
+    // hit on the cable's real mesh in front of that solid.
+    if(obstruction){
+      const hit=raycaster.intersectObject(wire.line,true)[0];
+      if(!hit||hit.distance>obstruction.distance+.002)continue;
+    }
     if(wire.pickGeometry!==wire.line.geometry) {
       wire.pickGeometry=wire.line.geometry;
       wire.pickPoints=wire.mechanicalSample?.segments_m
@@ -4414,6 +4422,7 @@ window.machineBodyScreen = name => {
 window.machinePlacements = () => JSON.parse(JSON.stringify(placements));
 // For tests: where each body is in the world now.
 window.machineBodies = () => Object.fromEntries([...world.bodies].map(([name, b]) => [name, b.position_m]));
+window.machineRenderedBodies = () => [...meshes].filter(([,mesh])=>mesh.parent===scene).map(([name])=>name);
 // For tests: where the piece being placed is on the screen, and the view.
 window.machineGhostScreen = () => ghostScreenBox();
 // Read-only camera/plane projection for input regression fixtures.

@@ -25,7 +25,10 @@ def holder_metadata(x=-.5, z=0, name=HOLDER_NAME):
 def holder(x=-.5, z=0):
     """Grounded insulating seat; its pads are independent iron collision bodies."""
     meta = holder_metadata(x, z)
-    terminals = {p: [x + sign * .08, .12, z] for p, sign in (('plus', -1), ('minus', 1))}
+    # Wire jacks leave the front of each metal pad. The top face must remain
+    # clear for the falling pack's metal caps to touch it; a cord across that
+    # landing face would be crushed/pulled out by the pack.
+    terminals = {p: [x + sign * .08, .10, z + .055] for p, sign in (('plus', -1), ('minus', 1))}
     return {'parts': [box(HOLDER_NAME + ' base', [x, .04, z], [.40, .08, .28], 'concrete', True)] +
                      [box(meta['terminal_parts'][p], [at[0], .10, z], [.06, .04, .10], 'iron', True)
                       for p, at in terminals.items()],

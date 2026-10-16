@@ -32,6 +32,10 @@ The release audit knows the authored solutions; it does not call those blind.
   marble. Its replacement is a clear lateral miss; the goal is unchanged.
 * Cable picking/deletion uses the actual native shape, including charging
   cords. Removing a prepared mirror also removes its optical reference.
+* Picking a solid case no longer deletes a nearby wire through its touch
+  padding. Older battery holders move wire jacks to the front of the pads,
+  away from the falling pack's landing face. Glass/oak/iron housing checks at
+  240/480 Hz all powered the lamp; electrical residuals were below 4.4e-12 J.
 * Sandbox shows five combined examples instead of the long component-demo
   list. Saved designs remain first and all placeable components remain usable.
 

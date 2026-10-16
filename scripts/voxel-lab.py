@@ -426,7 +426,14 @@ class Handler(BaseHTTPRequestHandler):
    elif op=='level_ghost':
     # A piece before it is set down: what it would be and where, and why it
     # could not go there. Compiled only, never run, so it is not rationed.
-    r={'ok':True,**machine_game.ghost(machine_game.requested_level(data),data.get('placements'),data.get('index'),snapping=bool(data.get('snap')),edit_key=data.get('edit_key'),nearby=bool(data.get('nearby_snap')),snap_hold=data.get('snap_hold'))}
+    level=machine_game.requested_level(data)
+    if data.get('thumbnail') and level.get('free'):
+     # Only the picture's construction context changes, never the saved
+     # design or running world. Water apparatus needs its declared flume.
+     import copy,sandbox_water_launch
+     level=copy.deepcopy(level)
+     level['machine']=copy.deepcopy(sandbox_water_launch.CHANNEL_BASE)
+    r={'ok':True,**machine_game.ghost(level,data.get('placements'),data.get('index'),snapping=bool(data.get('snap')),edit_key=data.get('edit_key'),nearby=bool(data.get('nearby_snap')),snap_hold=data.get('snap_hold'))}
    elif op=='level_score':
     # Stars from what the engine measured in this session's run.
     s=host.get(data.get('session'));game=getattr(s,'game',None)

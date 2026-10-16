@@ -56,7 +56,7 @@ def shape_points(part):
     return [[at[i]+v for i,v in enumerate(rotate(point,turn))] for point in local]
 
 
-def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupied=(),lift=0,side_shift=0,point_budget=64):
+def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupied=(),lift=0,side_shift=0,point_budget=64,route_cache=None):
     # Different leads must not be manufactured on the exact same obstacle
     # corner. The native simulation may bring them back together later.
     clearance=radius+.008+lane*.012
@@ -91,29 +91,41 @@ def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupie
                 if hi-lo<1e-8:return False
         return hi>1e-8 and lo<1-1e-8
     start,end=escape(a),escape(b)
-    nodes=[start,end]
-    # Separate initial lead lanes; gravity/contact subsequently decide routing.
-    top=max(start[1],end[1])+.10+lane*.03+lift
-    nodes.extend(([start[0],top,start[2]],[end[0],top,end[2]]))
-    for low,high in boxes:
-        for mask in range(8):
-            q=[(high if mask&(1<<i) else low)[i] for i in range(3)]
-            if q[1]>=radius and not any(inside(q,z) for z in boxes):nodes.append(q)
-    costs=[math.inf]*len(nodes);costs[0]=0;parents={};heap=[(0,0)]
-    while heap:
-        cost,i=heapq.heappop(heap)
-        if cost!=costs[i]:continue
-        if i==1:break
-        for j,q in enumerate(nodes):
-            trial=cost+length(nodes[i],q)
-            if j==i or trial>=costs[j] or any(intersects(nodes[i],q,o) for o in boxes):continue
-            if any(segment_distance(nodes[i],q,c,d)<radius+old['radius_m']+.002
-                   for old in occupied for c,d in zip(old['path_m'],old['path_m'][1:])):continue
-            if trial<costs[j]:costs[j]=trial;parents[j]=i;heapq.heappush(heap,(trial,j))
-    if not math.isfinite(costs[1]):raise ValueError('No clear construction route for cable')
-    path=[end];i=1
-    while i:i=parents[i];path.append(nodes[i])
-    path=list(reversed(path))
+    def route():
+        nodes=[start,end]
+        # Separate initial lead lanes; gravity/contact subsequently decide routing.
+        top=max(start[1],end[1])+.10+lane*.03+lift
+        nodes.extend(([start[0],top,start[2]],[end[0],top,end[2]]))
+        for low,high in boxes:
+            for mask in range(8):
+                q=[(high if mask&(1<<i) else low)[i] for i in range(3)]
+                if q[1]>=radius and not any(inside(q,z) for z in boxes):nodes.append(q)
+        costs=[math.inf]*len(nodes);costs[0]=0;parents={};heap=[(0,0)]
+        while heap:
+            cost,i=heapq.heappop(heap)
+            if cost!=costs[i]:continue
+            if i==1:break
+            for j,q in enumerate(nodes):
+                trial=cost+length(nodes[i],q)
+                if j==i or trial>=costs[j] or any(intersects(nodes[i],q,o) for o in boxes):continue
+                if any(segment_distance(nodes[i],q,c,d)<radius+old['radius_m']+.002
+                       for old in occupied for c,d in zip(old['path_m'],old['path_m'][1:])):continue
+                if trial<costs[j]:costs[j]=trial;parents[j]=i;heapq.heappush(heap,(trial,j))
+        if not math.isfinite(costs[1]):raise ValueError('No clear construction route for cable')
+        path=[end];i=1
+        while i:i=parents[i];path.append(nodes[i])
+        return list(reversed(path))
+    # Side shifts only change the slack coil, not this visibility graph.
+    # Reuse its identical answer within this one fitting operation. Never
+    # cache across machines, endpoint edits, lanes or occupied-cord changes.
+    if route_cache is None:path=route()
+    else:
+        if lift not in route_cache:
+            try:route_cache[lift]=route()
+            except ValueError as exc:route_cache[lift]=str(exc)
+        cached=route_cache[lift]
+        if isinstance(cached,str):raise ValueError(cached)
+        path=cached
     # Add real manufactured slack on clear spans. This adds material, not force.
     roomy=[]
     for p,q in zip(path,path[1:]):
@@ -219,12 +231,13 @@ def connection(name,a,pa,b,pb,parts,lane=0,settings=None,area=2.5,stock_length=N
     path=settings.get('path_m')
     if not path:
         problem=None
+        route_cache={}
         for lift in (0,.03,.08,.15,.3,.5):
             for side_shift in (0,.04,-.04,.1,-.1,.2,-.2,.4,-.4,.7,-.7,1.1,-1.1):
                 try:
                     path=construction_path(start,end,parts,lane,radius,
                         None if stock_length is None else stock_length-tails,occupied,lift,side_shift,
-                        64-int(length(pa,start)>1e-8)-int(length(pb,end)>1e-8))
+                        64-int(length(pa,start)>1e-8)-int(length(pb,end)>1e-8),route_cache)
                     break
                 except ValueError as exc:problem=exc
             if path:break

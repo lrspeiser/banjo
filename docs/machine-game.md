@@ -8,6 +8,24 @@ Stock length and copper area affect actual mass and resistance; excess wire
 forms a physical service coil. Shared sockets have separate plug seats.
 The scene's cable selection/deletion follows the native cord, including solar
 leads, rather than the old schematic curve.
+Wire proximity picking yields to solid cases unless the actual visible cable
+mesh is in front. The older falling battery holder puts its wire jacks on the
+front of its metal pads, leaving the top contact faces clear. Six native checks
+(glass/oak/iron pack housings at 240/480 Hz) powered the lamp for at least 34 of
+40 sampled intervals; electrical residuals stayed below 4.4e-12 J over two
+seconds. This is a fixture routing fix, not a change to contact or pullout laws.
+Sandbox library thumbnails use an isolated construction context rather than
+depending on removed gallery cards.
+Rebuilding a setup keeps the last drawn scene until the new engine session
+has returned successfully. Picking up the solar panel after a run no longer
+clears every body while waiting for its replacement world. Browser regression
+holds that response to check the retained geometry across all three viewports.
+Cable fitting reuses an identical visibility graph while trying different
+slack-coil sides within one connection. It never reuses answers across edited
+machines or endpoints. Comparing all 34 authored solutions plus the five
+examples produced identical compiled declarations before/after this cache;
+the local comparison took 11.21 s before and 4.96 s after (one sequential
+construction sample, not a hosted runtime benchmark).
 
 **Knock it off** and **Chain reaction** use 32 V heater supplies to account for
 their real wire loss. Their target zones and deadlines are unchanged.

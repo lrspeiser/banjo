@@ -325,6 +325,17 @@ class Puzzles(unittest.TestCase):
         http_errors=[{'path':urlsplit(e['params']['response']['url']).path,'status':e['params']['response']['status']}
                      for e in self.page.events if e['method']=='Network.responseReceived' and e['params']['response']['status']>=400]
         if http_errors:print('BROWSER_HTTP_ERRORS',json.dumps(http_errors[-5:]),flush=True)
+        if 'piece-grid img' in expression:
+            print('MISSING_PIECE_IMAGES',json.dumps(self.js("[...document.querySelectorAll('#piece-grid .piece-card')].filter(b=>!b.querySelector('img').naturalWidth).map(b=>b.dataset.piece)")),flush=True)
+        if 'machinePlacements' in expression or 'machineContactState' in expression or expression==SETTLED:
+            print('MACHINE_WAIT_STATE',json.dumps(self.js("({placements:machinePlacements(),ghost:machineGhostState(),design:machineDesign(),status:document.getElementById('design-status').textContent,wiring:machineWiringState().busy,contact:machineContactState().liveDevices})")),flush=True)
+        if http_errors:
+            failures=[]
+            for event in self.page.events:
+                if event['method']=='Network.responseReceived' and event['params']['response']['status']>=400:
+                    try:failures.append(self.page.send('Network.getResponseBody',{'requestId':event['params']['requestId']})['body'])
+                    except Exception:pass
+            print('HTTP_FAILURE_DETAILS',json.dumps(failures[-5:]),flush=True)
         print('FIXTURE_REQUEST_COUNTS',json.dumps({name:{'used':len(getattr(self.server,name).day),
             'hour_limit':getattr(self.server,name).per_hour} for name in ('preview_allowance','optical_allowance')
             if getattr(self.server,name)}),flush=True)
@@ -393,6 +404,8 @@ class Puzzles(unittest.TestCase):
             self.navigate(self.base+'/machine#build='+packed)
             self.wait(f"window.machineDesign()?.name==={json.dumps(row['name'])} && {READY}",90)
             self.click_visible('Save version');self.anonymous_cloud_saved()
+            self.wait("machineDesign().versions.length===1 && !document.getElementById('save-design').disabled",30)
+            self.wait('machineCamera().settled',30);self.paint()
             return
         if name!='GO' and self.js("Boolean(document.getElementById('level-intro')?.open)"):self.click_visible('GO')
         if name in ('Share','Share this design'):
@@ -2161,8 +2174,10 @@ class Puzzles(unittest.TestCase):
                 self.press('Start from Chain reaction');self.wait(READY,90)
                 before=self.js('machineDesign().draft.base')
                 self.wait('machineCamera().settled',30)
-                point=self.js("machineBodyScreen('battery box')")
-                self.mouse('mousePressed',*point);self.mouse('mouseReleased',*point)
+                # Native cables can cover the former case-centre pick. Use
+                # an exposed solid hit or the ordinary overlap chooser.
+                index=self.js("machineEditableObjects().find(o=>o.id==='part:battery box').index")
+                self.click_piece(index)
                 self.assertEqual(self.ghost()['p']['object'],'part:battery box')
                 self.click_visible('Throw the ghost away')
                 # Choose a prepared kit via the ordinary inspector, not JSON.
@@ -2684,7 +2699,13 @@ class Puzzles(unittest.TestCase):
         self.press('All designs');self.press('Start from Motor and finite supply');self.wait(READY,60)
         self.assertTrue(self.js("document.getElementById('solar-lift-guide').hidden"),'An unrelated motor example must keep its own controls')
         self.open('easy-charge-lift--v1--0000002a--0')
-        self.press('Add a solar panel');self.assertTrue(self.ghost()['fits'])
+        self.press('Add a solar panel');self.ghost()
+        # This archived recipe predates today's explicit charging cord.
+        # Keep its panel clear of the now physical motor leads rather than
+        # assuming the camera-centre drop is a valid manufactured layout.
+        for label,value in [('Position along (m)',.8),('Position across (m)',0),('turn',-90),('tip',74)]:
+            self.slide(f'{label} of your solar 1',value)
+        self.assertTrue(self.ghost()['fits'])
         self.press('Set it down');self.wait(f'!machineGhostState() && {READY}',60)
         self.wait("document.getElementById('solar-lift-connection').textContent.includes('already connected')",10)
         self.assertTrue(self.js("document.getElementById('solar-out-connect').disabled&&document.getElementById('solar-in-connect').disabled"))
@@ -2956,6 +2977,36 @@ class Puzzles(unittest.TestCase):
                 self.key('Escape');self.wait('!window.machineGhostState()',5)
                 self.assertEqual(self.js('window.machinePlacements()'),[])
 
+    def test_reopening_solar_after_a_run_keeps_the_scene_during_rebuild(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything')
+                self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
+                self.press('Start from Sun powers the flag')
+                initial=set(self.js('machineRenderedBodies()'))
+                self.assertGreaterEqual(len(initial),9)
+                self.click_visible('Try It!')
+                self.wait("/World [1-9]/.test(document.getElementById('clock').textContent)",30)
+                self.click_visible('Pause')
+                self.js("""window.solarRebuildFetch=window.fetch;
+                    window.solarRebuildGate=new Promise(resolve=>window.releaseSolarRebuild=resolve);
+                    window.fetch=async (...args)=>{const response=await window.solarRebuildFetch(...args);
+                      if(JSON.parse(args[1]?.body||'null')?.op==='level_open'){
+                        window.solarRebuildHeld=true;await window.solarRebuildGate;
+                      }return response;};""")
+                try:
+                    self.click_piece(0)
+                    self.wait('window.solarRebuildHeld===true',30)
+                    self.assertEqual(set(self.js('machineRenderedBodies()')),initial,
+                        'The old scene must remain present until the replacement is ready')
+                finally:self.js('window.releaseSolarRebuild();window.fetch=window.solarRebuildFetch')
+                self.wait(READY,30);self.ghost()
+                self.assertEqual(set(self.js('machineRenderedBodies()')),initial)
+                self.assertEqual(self.ghost()['p']['piece'],'solar')
+                self.click_visible('Place');self.wait(READY,30)
+                self.assertEqual(set(self.js('machineRenderedBodies()')),initial)
+
     def test_solar_cable_click_removes_from_either_end_and_undo_restores_it_even_live(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
@@ -2993,7 +3044,7 @@ class Puzzles(unittest.TestCase):
         self.click_scene_socket('lamp:minus');self.ghost();self.click_scene_socket('supply:minus')
         self.wait(f'!window.machineGhostState() && {READY}',60)
         kept=self.js('window.machinePlacements()')
-        x,y=self.js("window.machineWireScreen('your wire 1')")
+        x,y=self.js("[.5,.25,.75,.15,.85].map(f=>machineWireScreen('your wire 1',f)).find(p=>p&&document.elementFromPoint(...p)?.tagName==='CANVAS'&&!machineScenePick(...p).socket)")
         angle=self.js('window.machineCamera().azimuth')
         self.drag([x,y],[x+50,y])
         self.assertNotEqual(self.js('window.machineCamera().azimuth'),angle)
@@ -3031,7 +3082,9 @@ class Puzzles(unittest.TestCase):
                                  [['wire','lamp:minus','supply:minus']])
                 wires = self.js('window.machineWiringState().wires')
                 self.assertEqual(len(wires),3)
-                self.assertTrue(all(any(abs(p[1]-.012)<1e-9 for p in w['route']) for w in wires))
+                # Routes are now native sagging cables, not a fixed-height
+                # schematic. All three leads must expose real rod geometry.
+                self.assertTrue(all(w['mechanical'] and w['mechanical']['segments_m'] and w['vertices']>0 for w in wires),wires)
                 self.click_visible('Try It!')
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.wait('window.machineWiringState().wires.every(w=>w.color===0xffd34d)',10)
@@ -5115,7 +5168,7 @@ class Puzzles(unittest.TestCase):
         self.click_visible(label);self.ghost();self.click_visible('Thick wire');self.ghost()
         self.slide('Adjustment','length_m');before=self.ghost()['p']['length_m']
         self.wait("Boolean(document.querySelector('#piece-handles button:not([hidden])'))",10)
-        self.click_visible('Increase cable length including slack on object')
+        self.click_visible('Increase stock length including slack on object')
         self.assertAlmostEqual(self.ghost()['p']['length_m'],before+.1)
         self.assertFalse(self.js("Boolean(document.querySelector('#piece-editor #piece-grip'))"))
         self.press('Place');self.wait(READY,30)
