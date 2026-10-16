@@ -13,6 +13,13 @@ models. General electrical wires may explicitly declare `mechanical` settings.
 This is a bounded first rollout, not a migration of every old schematic wire.
 See [the cable model, measurements and limits](mechanical-cables.md).
 
+Motor cords also advance under native gravity during the placed setup, before
+Try It!, at 1/240 s steps in 30 Hz batches. The puzzle clock, electrical solve
+and battery consumption remain paused. Editor fixtures hold the machinery;
+Try It! removes them and keeps the cables' native poses and velocities in the
+same session. Editing a placement rebuilds its construction, then the new cords
+settle again. Live setup cords remain visible over prediction overlays.
+
 October 16 spring access: a placed spring now has **Adjust spring** beside
 **Release spring**. This uses the same selection/editor path as clicking the
 coil, retains its setup and opens the length buttons with proposed force and

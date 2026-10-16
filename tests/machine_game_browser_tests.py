@@ -898,6 +898,30 @@ class Puzzles(unittest.TestCase):
                             p=[a[k]+(b[k]-a[k])*i/100 for k in range(3)]
                             self.assertTrue(p[1]<.12 or abs(p[2])>.08 or abs(p[0])>.24,(cable,p))
 
+    def test_motor_leads_fall_after_placing_before_try_it_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-motor',width,height,phone=width!=1280)
+                self.press('Add a motor');self.ghost()
+                self.slide('direction of your motor 1','forward');self.ghost()
+                self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.wait('machineWiringState().wires.length===2 && machineWiringState().wires.every(w=>w.mechanical)',10)
+                first=self.js('machineWiringState().wires.map(w=>w.mechanical)')
+                # Sample actual native endpoints while the user has not run.
+                self.wait('machineWiringState().wires.some(w=>w.mechanical.kinetic_j>0.00001)',10)
+                import time
+                time.sleep(.6)
+                settled=self.js('machineWiringState().wires.map(w=>w.mechanical)')
+                self.assertNotEqual([c['segments_m'] for c in first],[c['segments_m'] for c in settled])
+                self.assertTrue(self.js('machineWiringState().wires.every(w=>w.visible)'))
+                self.assertTrue(self.js("document.getElementById('start').textContent.includes('Try It')"))
+                setup=self.js('window.machineCableSetupState()')
+                self.assertTrue(setup['active'])
+                self.assertEqual(setup['t'],0)
+                self.click_visible('Try It!');self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertEqual(self.js('window.machineCableSetupState().session'),setup['session'])
+                self.assertTrue(all(w['mechanical']['connected'] for w in self.js('machineWiringState().wires')))
+
     def test_bulb_shrinks_to_match_visible_supply_limit_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

@@ -1059,6 +1059,16 @@ struct LiveWorld::Impl {
     std::vector<machines::Circuit> circuits;
     std::vector<machines::CircuitStep> circuit_steps;
     std::vector<machines::MechanicalCable> mechanical_cables;
+    std::vector<std::pair<MatterBodyId,RigidSnapshot>> cable_setup_fixtures;
+    void releaseCableSetup() {
+        for(const auto &[id,state]:cable_setup_fixtures) {
+            world->releaseFromWorld(id);
+            // Removing an editor fixture restores the declared initial state
+            // of the held machine, never the cable's settled state.
+            world->applyRigidState(id,state);
+        }
+        cable_setup_fixtures.clear();
+    }
     unsigned next_energy_store{1}, next_motor{1};
     // A machine's controller (LiveControl), and what it keeps between steps.
     struct Control {
@@ -7718,6 +7728,7 @@ bool LiveWorld::judgeStep() {
 }
 
 void LiveWorld::step(double dt_s) {
+    impl_->releaseCableSetup();
     if (!(dt_s > 0.0)) throw std::invalid_argument("a live step needs a positive dt");
     if (!impl_->circuits.empty()) impl_->validateCircuitStep(dt_s);
 
@@ -9211,6 +9222,28 @@ void LiveWorld::mechanicalCable(const std::string &declaration) {
 }
 std::string LiveWorld::mechanicalCables() const {
     auto out=nlohmann::json::array();for(const auto &c:impl_->mechanical_cables)out.push_back(c.report());return out.dump();
+}
+void LiveWorld::settleMechanicalCables(double dt_s) {
+    if(!std::isfinite(dt_s)||dt_s<=0||dt_s>1./120)
+        throw std::invalid_argument("cable setup step must be in (0, 1/120] seconds");
+    auto &I=*impl_;
+    if(I.time_s!=0)throw std::invalid_argument("cable setup is only available before a run");
+    if(I.mechanical_cables.empty())return;
+    if(I.cable_setup_fixtures.empty()) {
+        try {
+            for(std::size_t k=0;k<I.described.size();++k) {
+                const auto id=I.body_of[k];
+                if(I.described[k].anchored||!I.world->contains(id))continue;
+                const auto state=I.world->snapshot(id);
+                I.world->pinToWorld(id);
+                I.cable_setup_fixtures.emplace_back(id,state);
+                auto held=state;held.linear_velocity_m_s={};held.angular_velocity_rad_s={};
+                I.world->applyRigidState(id,held);
+            }
+        } catch(...) {I.releaseCableSetup();throw;}
+    }
+    I.world->step(dt_s);
+    for(auto &c:I.mechanical_cables)c.settle(dt_s);
 }
 
 std::vector<LiveMotor> LiveWorld::motors() const {
@@ -19515,7 +19548,9 @@ std::string LiveWorld::snapshot(std::string &why, const std::string &spec_digest
             b["parked"] = {{"pose", savedRigid(away->second.pose)}, {"mass_kg", savedNumber(away->second.mass_kg)},
                            {"actor", away->second.actor}};
         } else if (I.world->contains(id)) {
-            b["pose"] = savedRigid(I.world->snapshot(id));
+            const auto fixture=std::find_if(I.cable_setup_fixtures.begin(),I.cable_setup_fixtures.end(),
+                [id](const auto &held){return held.first==id;});
+            b["pose"] = savedRigid(fixture!=I.cable_setup_fixtures.end()?fixture->second:I.world->snapshot(id));
             b["awake"] = I.world->isAwake(id);
         } else {
             return refuse("the " + d.name + " is neither in the world nor set aside");

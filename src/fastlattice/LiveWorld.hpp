@@ -2094,6 +2094,9 @@ public:
     [[nodiscard]] std::string circuits() const;
     void mechanicalCable(const std::string &declaration);
     [[nodiscard]] std::string mechanicalCables() const;
+    // Editor fixtures hold the machinery while native cable gravity/contact
+    // advances, without advancing the puzzle, circuits or material clocks.
+    void settleMechanicalCables(double dt_s);
     // A controller for a motor (LiveControl): a hoist's when `rope` is a rope
     // on a drum that the motor's pin turns -- `top_out_m` and `bottom_out_m`
     // the rope out at the two ends of its travel, the top the less -- and a

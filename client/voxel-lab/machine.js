@@ -1540,7 +1540,7 @@ function updateWires() {
           w.route=live.mechanical.segments_m.flat();w.mechanicalSample=live.mechanical;
         }
         w.connected=live.mechanical.connected;
-        w.line.visible=!flowGroup.visible;
+        w.line.visible=!flowGroup.visible || (cableSetupActive && !ghost);
         w.line.material.color.setHex(Math.abs(live.current_a||0)>1e-4?0xffd34d:w.color);
         continue;
       }
@@ -1750,6 +1750,7 @@ async function build(next, start, request) {
     });
     if (!opened || mine !== polling) return {};
     spec = request ? opened.machine : next; machine = opened.machine; session = opened.session; readouts = opened.readouts || {};
+    cableSetupActive = Boolean(opened.cable_setup);
     drawAirflows();
     world = mergeFrame({seq: 0, t: 0, bodies: new Map()}, opened);
     electricalStartPoses.clear();
@@ -1812,23 +1813,26 @@ async function setPlaying(run) {
 // paused: each request is its own connection to this server, and asking as
 // fast as frames arrive exhausted the machine's sockets.
 const RUNNING_MS = 50, PAUSED_MS = 1000;
+let cableSetupActive = false;
+window.machineCableSetupState = () => ({session,t:world.t,active:cableSetupActive});
 let wake = null;
 let liveControlPending = false;
 let liveControlRequest = null;
 async function poll(mine) {
   let last = 0;
   while (mine === polling && session) {
-    const gap = (playing ? RUNNING_MS : PAUSED_MS) - (performance.now() - last);
+    const gap = (playing || cableSetupActive ? RUNNING_MS : PAUSED_MS) - (performance.now() - last);
     if (gap > 0) await new Promise(r => { wake = r; setTimeout(r, gap); });
     wake = null;
     if (mine !== polling || !session) return;
     last = performance.now();
     try {
-      const frame = await api({op: 'frame', session, after: world.seq, wait_ms: playing ? 120 : 0});
+      const frame = await api({op: 'frame', session, after: world.seq, wait_ms: playing || cableSetupActive ? 120 : 0});
       if (mine !== polling) return;
       const changed = frame.bodies;
       world = mergeFrame(world, frame);
       readouts = frame.readouts || readouts; playing = frame.playing; lastFrame = frame;
+      cableSetupActive = Boolean(frame.cable_setup);
       syncMeshes(changed.map(b => world.bodies.get(b.name)));
       if (frame.water) syncWater(frame.water);
       if (frame.parcels) syncParcels(frame.parcels);
@@ -2016,7 +2020,8 @@ function render() {
   drawPull();
   drawSwitchPull();
   for (const w of wires) {
-    if (w.terminalWire) w.line.visible = w.connected!==false && !hiddenPiece(w.name) && !ghost?.electrical;
+    if (w.terminalWire) w.line.visible = (w.mechanicalSample || w.connected!==false) && !hiddenPiece(w.name) && !ghost?.electrical &&
+      (!w.mechanicalSample || !flowGroup.visible || (cableSetupActive&&!ghost));
     if (w.powerCable) w.line.visible=w.connected!==false && !hiddenPiece(w.name);
   }
   updateFlowPreview();
@@ -3597,7 +3602,10 @@ powerFlowDots.count=0;powerFlowDots.frustumCulled=false;scene.add(powerFlowDots)
 
 function powerFeedbackSnapshot() {
   const preview=flowGroup.visible&&flowIndex>=0?previewShown?.flow_frames?.[flowIndex]:null;
-  if(preview) return {preview:true,wires:preview.wires||[],devices:preview.power_devices||[]};
+  if(preview) return {preview:true,wires:(preview.wires||[]).map(w=>{
+    const live=cableSetupActive&&!ghost&&readouts.electrical?.wires?.find(row=>row.name===w.name)?.mechanical;
+    return live?{...w,mechanical:live,points_m:live.segments_m.flat()}:w;
+  }),devices:preview.power_devices||[]};
   const samples=[];
   for(const w of wires) {
     if(w.powerCable) {
@@ -3977,11 +3985,14 @@ function drawFlowFrame(frame) {
       new THREE.MeshBasicMaterial({color:active?0xffe066:leg?leg.color:wireColor(electrical.wires[lane]),depthWrite:false}))
       : new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(32)),
       new THREE.LineBasicMaterial({color:active?0xffe066:0x788994,transparent:true,opacity:active?.9:.35,depthWrite:false}));
+    line.userData.physicalCable=Boolean(w.mechanical?.segments_m);
     flowGroup.add(line);
     if (active) {
       for (const t of [.3,.7]) {
         const direction=curve.getTangent(t).normalize().multiplyScalar(Math.sign(w.value));
-        flowGroup.add(new THREE.ArrowHelper(direction,curve.getPoint(t),.07,0xffe066,.035,.025));
+        const arrow=new THREE.ArrowHelper(direction,curve.getPoint(t),.07,0xffe066,.035,.025);
+        arrow.userData.physicalCable=line.userData.physicalCable;
+        flowGroup.add(arrow);
         arrows++;
       }
     }
@@ -4052,6 +4063,8 @@ function updateFlowPreview() {
   const frames=previewShown?.flow_frames || [];
   const visible=Boolean(frames.length) && !flowPending && !playing && !(world?.t>0) && previewOn && !inspectedCircuit && !document.body.matches('.on-sandbox,.on-levels');
   flowGroup.visible=visible; $('flow-preview').hidden=!visible;
+  // Prediction must not cover the live cable settling in the placed setup.
+  for(const child of flowGroup.children)if(child.userData.physicalCable)child.visible=!(cableSetupActive&&!ghost);
   syncFlowMechanismVisibility();
   for(const [name,line] of drumLines)line.visible=!visible && (readouts.joints||[]).some(j=>j.name===name&&j.attached!==false);
   if (beams) beams.visible=visible?false:Boolean(readouts.light?.paths?.length);
@@ -5781,6 +5794,9 @@ $('restore-version').addEventListener('click', async () => {
 });
 window.machineDesign = () => activeDesign ? clone(activeDesign) : null;
 
+let builtSetupKey = null;
+let builtCanRun = false;
+const currentSetupKey = () => JSON.stringify({level:level?.id,placements,...sandboxRequest()});
 async function rebuildLevel(start, {takeOver=false}={}) {
   const runInspection = start ? inspectedCircuit : null;
   // A rebuild still waiting to start would come after this one and undo it
@@ -5789,8 +5805,11 @@ async function rebuildLevel(start, {takeOver=false}={}) {
   keepBuild();
   scored = false; $('verdict').replaceChildren(); closeDone();
   try {
+    const setupKey = currentSetupKey();
     const opened = await build(null, false, {op: 'level_open', level: level.id, ...sandboxRequest(), placements, helped,...(takeOver?{take_over:true}:{})});
     if (opened.session !== session) return;
+    builtSetupKey = setupKey;
+    builtCanRun = !opened.needs;
     if(runInspection && contactCircuitRows.has(runInspection)) inspectContactCircuit(runInspection);
     // The chosen sandbox environment can supply appropriate tray defaults:
     // a river wheel starts without the separate falling-water feed.
@@ -6659,6 +6678,10 @@ async function runLevel() {
       return;
     }
     if (session && world.t > 0 && !scored) { await setPlaying(true); return; }
+    if (session && cableSetupActive && builtCanRun && world.t === 0 && !scored && builtSetupKey === currentSetupKey() && !level.release_to_start) {
+      clearTimeout(rebuildTimer);
+      sceneIntoView(); await setPlaying(true); return;
+    }
     sceneIntoView(); await rebuildLevel(true);
   } catch (e) { failed(e); }
   finally {

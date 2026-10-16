@@ -17,6 +17,39 @@ including in predicted flow frames. It does not smooth a line through solids.
 
 ## Mechanical model and units
 
+### Setup gravity
+
+Placed live motor setups advance Jolt's cable world at 1/240 s in eight-step
+batches (30 Hz), even while the puzzle's time is zero. Existing machinery is
+held by temporary native fixed constraints to the world. This is an editor
+fixture boundary condition: gravity reactions can go into the fixed supports;
+it is not a closed free-machine conservation experiment. On entering setup,
+the machinery's declared velocity is stored and held at zero. On starting,
+fixtures are removed and the machinery's declared initial state is restored
+once, including any chosen initial spin. No cable pose or velocity is reset.
+Finite solver fixture drift is therefore corrected at the setup/run boundary;
+its work is not reported as puzzle energy or as material heat. No per-step
+assigned sag or cable velocity is used.
+
+Puzzle clocks, circuits, motors, water and material evolution do not advance
+in this phase. Thus waiting on the setup cannot drain a battery or fire an
+igniter. The renderer shows the native rods over prediction drawings. Try It!
+reuses an unchanged, ready setup session, so cables do not spring back to the
+manufactured route. Editing/undo/reset still rebuilds a setup and its cords
+settle again. Ordinary pause after a run freezes the entire simulation.
+Unpaced rehearsals take only their explicit steps. An unwatched setup stops
+spending CPU after five seconds without frame requests, and resumes on return.
+
+Measured on Turn the axle: after one second of setup, the two leads reached
+minimum heights 2.82 mm / 6.30 mm; both connectors remained attached (peak
+loads 4.06–7.27 N). The first running step moved any sampled cable endpoint
+by at most 1.60 mm, rather than reconstructing the elevated construction path.
+The native snapshot's puzzle time, step count and circuit state were unchanged
+by those 240 setup steps. Live-session regression also checks continued setup
+updates and unchanged rendered machine poses before play. Browser regression
+uses Place then Try It! on desktop and phone portrait/landscape, checks visible
+moving native leads at puzzle time zero and verifies the same session wins.
+
 `MechanicalCable` builds rods in the same Jolt world as the machinery. Jolt is
 the single owner of their rigid contacts and connector response. Each rod has
 a capsule collision envelope and material-derived mass:

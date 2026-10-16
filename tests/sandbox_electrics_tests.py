@@ -1,5 +1,6 @@
 """Electrical graph, saved device and native energy transfer regressions."""
 import copy
+import math
 import os
 from pathlib import Path
 import sys
@@ -304,6 +305,100 @@ class Graph(unittest.TestCase):
 
 @unittest.skipUnless(ENGINE.is_file(), 'requires native engine')
 class Native(unittest.TestCase):
+    def test_setup_gravity_keeps_puzzle_clock_and_power_at_zero_and_preserves_cables(self):
+        level=mg.level_by_id('easy-motor')
+        compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+        with tempfile.TemporaryDirectory() as logs:
+            engine,_,_=mw.build_engine(ENGINE,compiled,Path(logs))
+            try:
+                initial=engine.op(op='mechanical_cables')['cables']
+                before=engine.op(op='snapshot')['snapshot']
+                settled=engine.op(op='cable_setup_step',dt=1/240,n=240)['cables']
+                low=lambda c:min(p[1] for s in c['segments_m'] for p in s)
+                self.assertTrue(any(low(b)<low(a)-.04 for a,b in zip(initial,settled)))
+                self.assertTrue(all(c['connected'] and c['max_joint_gap_m']<.003 for c in settled))
+                waiting=engine.op(op='snapshot')['snapshot']
+                self.assertEqual(waiting['t_s'],before['t_s'])
+                self.assertEqual(waiting['steps'],before['steps'])
+                self.assertEqual(waiting['circuits'],before['circuits'])
+                self.assertEqual([b['pose'] for b in waiting['bodies']],[b['pose'] for b in before['bodies']])
+                import json,subprocess
+                path=Path(logs)/'settled-setup.json';path.write_text(json.dumps(waiting),encoding='utf-8')
+                child=subprocess.Popen(list(engine.proc.args)+['--snapshot',str(path)],stdin=subprocess.PIPE,
+                                       stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,cwd=logs)
+                try:
+                    opened=json.loads(child.stdout.readline());self.assertTrue(opened.get('ok'),opened)
+                    child.stdin.write(json.dumps({'op':'mechanical_cables'})+'\n');child.stdin.flush()
+                    restored=json.loads(child.stdout.readline())['cables']
+                    self.assertEqual([c['segments_m'] for c in restored],[c['segments_m'] for c in settled])
+                    child.stdin.write(json.dumps({'op':'cable_setup_step','dt':1/240,'n':8})+'\n');child.stdin.flush()
+                    self.assertTrue(json.loads(child.stdout.readline())['ok'])
+                finally:
+                    child.stdin.close();child.wait(timeout=15);child.stdout.close();child.stderr.close()
+                # Releasing the editor fixtures must retain the actual cable
+                # pose/velocity, rather than reconstructing its authoring path.
+                engine.op(op='step',dt=1/240,n=1)
+                started=engine.op(op='mechanical_cables')['cables']
+                displacement=max(math.dist(a,b) for c,d in zip(settled,started)
+                                 for s,t in zip(c['segments_m'],d['segments_m']) for a,b in zip(s,t))
+                self.assertLess(displacement,.005)
+                self.assertTrue(all(c['connected'] for c in started))
+                with self.assertRaises(Exception):engine.op(op='cable_setup_step',dt=1/240,n=1)
+                print('CABLE_SETUP',[(c['name'],low(c),c['peak_terminal_force_n']) for c in settled],
+                      'first_run_displacement_m',displacement)
+            finally:engine.close()
+
+    def test_live_session_cables_keep_falling_before_play(self):
+        import time
+        level=mg.level_by_id('easy-motor')
+        compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+        with tempfile.TemporaryDirectory() as logs:
+            session=mw.MachineSession(compiled,ENGINE,Path(logs))
+            try:
+                initial=session.frame(0,0)
+                initial_poses={b['name']:(b['position_m'],b['orientation_wxyz']) for b in initial['bodies']}
+                until=time.monotonic()+5
+                frame=initial
+                while frame['cable_setup_s']<.75 and time.monotonic()<until:
+                    frame=session.frame(frame['seq'],100)
+                self.assertGreaterEqual(frame['cable_setup_s'],.75)
+                self.assertTrue(frame['cable_setup'])
+                self.assertEqual(frame['t'],0)
+                self.assertFalse(frame['playing'])
+                self.assertEqual(initial_poses,{name:(b['position_m'],b['orientation_wxyz']) for name,b in session.bodies.items()})
+                cables=[w['mechanical'] for w in frame['readouts']['electrical']['wires']]
+                self.assertTrue(all(c['connected'] for c in cables))
+                session.play(True)
+                until=time.monotonic()+5
+                while frame['t']==0 and time.monotonic()<until:
+                    frame=session.frame(frame['seq'],100)
+                self.assertGreater(frame['t'],0)
+                self.assertFalse(frame['cable_setup'])
+                self.assertIsNone(session.error)
+            finally:session.close()
+
+    def test_settled_motor_leads_keep_nudged_wins_and_wrong_direction_failures(self):
+        level=mg.level_by_id('easy-motor')
+        for correct in (True,False):
+            compiled=mw.compile_spec(mg.compose(level,level['solution'] if correct else level['wrong'])[0])
+            for seed in range(3):
+                with self.subTest(correct=correct,seed=seed),tempfile.TemporaryDirectory() as logs:
+                    current=mg.nudged(compiled,seed+1) if seed else compiled
+                    session=mw.MachineSession(current,ENGINE,Path(logs),paced=False)
+                    try:
+                        with session.lock:session.engine.op(op='cable_setup_step',dt=1/240,n=240)
+                        session.play(True)
+                        until=time.monotonic()+15
+                        with session.lock:
+                            while session.t<level['time_s']+.2 and not session.error and time.monotonic()<until:
+                                session.lock.wait(.1)
+                            rows=session.readouts.get('stations',[])
+                            won=bool(rows and rows[0]['done'] and rows[0]['at_s']<=level['time_s'])
+                        self.assertIsNone(session.error)
+                        self.assertGreaterEqual(session.t,level['time_s'])
+                        self.assertEqual(won,correct,rows)
+                    finally:session.close()
+
     def test_unpowered_motor_lead_on_the_same_housing_still_has_mass(self):
         spec=e.empty('Unpowered cable')
         e.merge(spec,e.motor('motor',{},{}))

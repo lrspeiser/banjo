@@ -2384,6 +2384,8 @@ class MachineSession:
         self.lock = threading.Condition()
         self.closed = False
         self.playing = False
+        self.cable_setup_s = 0.0
+        self.has_mechanical_cables = any('mechanical' in w for w in compiled.get('electrical', {}).get('wires', []))
         self.speed = 1.0
         self.t = 0.0
         self.seq = 0
@@ -3112,13 +3114,34 @@ class MachineSession:
             self.lock.notify_all()
         return dict(name=name, queued=True)
 
+    def _cable_setup_active(self):
+        return self.paced and self.has_mechanical_cables and self.t == 0 and not self.error and not self.playing
+
     def _run(self):
         clock_start, world_start = time.perf_counter(), self.t
         last_probe = -1.0
         while True:
             with self.lock:
                 while not self.closed and not self.playing:
-                    self.lock.wait(0.5)
+                    # Only real, watched setup sessions settle. Native editor
+                    # fixtures hold the machine; its clock and power stay at 0.
+                    # Unpaced rehearsals remain deterministic explicit steps.
+                    if self._cable_setup_active() and time.monotonic()-self.last_used < 5:
+                        try:
+                            reply = self.engine.op(op='cable_setup_step', dt=DT_S, n=8)
+                            self.cable_setup_s += DT_S*8
+                            self.seq += 1
+                            physical = {c['name']: c for c in reply['cables']}
+                            for w in self.readouts.get('electrical', {}).get('wires', []):
+                                if w['name'] in physical:
+                                    w['mechanical'] = physical[w['name']]
+                                    if not w['mechanical']['connected']:
+                                        w.update(current_a=0, through_w=0, loss_w=0)
+                            self.lock.notify_all()
+                        except Exception as exc:
+                            self.error = str(exc)
+                            self._event('stopped', 'Cable setup stopped: '+str(exc))
+                    self.lock.wait(1/30 if self._cable_setup_active() else 0.5)
                     clock_start, world_start = time.perf_counter(), self.t
                 if self.closed:
                     return
@@ -3267,7 +3290,7 @@ class MachineSession:
     def frame(self, after, wait_ms):
         with self.lock:
             self.last_used = time.monotonic()
-            if wait_ms and self.seq <= after and self.playing:
+            if wait_ms and self.seq <= after and (self.playing or self._cable_setup_active()):
                 self.lock.wait(wait_ms / 1000.0)
             bodies = [{k: v for k, v in b.items() if k not in ('seq', 'cells_seq') and
                        (k != 'cells_local_m' or b['cells_seq'] > after)}
@@ -3280,7 +3303,9 @@ class MachineSession:
             if self.parcels is not None:
                 extra['parcels'] = self.parcels
             return {**extra, 'ok': True, 'session': self.id, 'seq': self.seq, 't': round(self.t, 4),
-                    'playing': self.playing, 'speed': self.speed, 'full': after == 0, 'bodies': bodies,
+                    'playing': self.playing, 'cable_setup': self._cable_setup_active(),
+                    'cable_setup_s': round(self.cable_setup_s, 4),
+                    'speed': self.speed, 'full': after == 0, 'bodies': bodies,
                     'removed': [n for n, s in self.removed.items() if s > after],
                     'events': [e for e in self.events if e['seq'] > after],
                     'readouts': self.readouts, 'error': self.error, 'runtime': self.runtime,

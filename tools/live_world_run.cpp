@@ -2747,6 +2747,13 @@ int main(int argc, char **argv) {
                     continue;
                 } else if (op == "mechanical_cable") {
                     world->mechanicalCable(command.at("cable").dump());
+                } else if (op == "cable_setup_step") {
+                    const double dt=command.value("dt",1./240);
+                    const int n=command.value("n",1);
+                    if(n<1||n>240)throw std::invalid_argument("cable setup batch must have 1..240 steps");
+                    for(int i=0;i<n;++i)world->settleMechanicalCables(dt);
+                    std::cout<<nlohmann::json{{"ok",true},{"cables",nlohmann::json::parse(world->mechanicalCables())}}.dump()<<std::endl;
+                    continue;
                 } else if (op == "mechanical_cables") {
                     std::cout << nlohmann::json{{"ok",true},{"cables",nlohmann::json::parse(world->mechanicalCables())}}.dump()<<std::endl;
                     continue;
