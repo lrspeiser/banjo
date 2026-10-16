@@ -818,7 +818,7 @@ class Puzzles(unittest.TestCase):
                     self.open(level['id'],width,height,phone=width!=1280)
                     timings.append(dict(id=level['id'],viewport=[width,height],load_wall_s=round(time.perf_counter()-opened_at,3)))
                     geometry=self.js("""(() => {const view=document.getElementById('view').getBoundingClientRect(),bar=document.getElementById('phone-toolbar').getBoundingClientRect();
-                      const attached=(bar.left>=view.left&&bar.right<=view.right&&bar.top>=view.top&&bar.top<=view.bottom+12)||
+                      const attached=(bar.left>=view.left&&bar.right<=view.right&&bar.bottom<=view.top&&bar.bottom>=view.top-12)||
                         (bar.left>=view.right&&bar.left<=view.right+12&&bar.top>=view.top&&bar.top<=view.top+12);
                       return ['start','reset'].map(id=>{const el=document.getElementById(id),r=el.getBoundingClientRect();
                         return {id,w:r.width,h:r.height,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,
@@ -977,6 +977,7 @@ class Puzzles(unittest.TestCase):
                 self.assertFalse(self.js("Boolean(document.querySelector('[aria-label=\"along (m) of your battery 1\"]'))"))
                 self.slide('Its voltage',12);self.ghost()
                 self.click_visible('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.assertTrue(self.js("document.getElementById('start').classList.contains('setup-incomplete')"),'the battery still needs both wires')
                 self.wait('window.machineCamera().settled',30)
                 x,y=self.js("machineBodyScreen('your battery 1 housing')")
                 if width!=1280:
@@ -999,11 +1000,24 @@ class Puzzles(unittest.TestCase):
                     self.click_scene_socket(b,touch=width!=1280)
                     self.wait(f'!window.machineGhostState() && {READY}',60)
                 self.assertEqual(self.js("machinePlacements().filter(p=>p.piece==='wire'&&(p.a_terminal==='lamp:minus'||p.b_terminal==='lamp:minus')).length"),2)
+                self.assertFalse(self.js("document.getElementById('start').classList.contains('setup-incomplete')"),'two misplaced wires still allow an emphasized trial')
                 self.click_existing_wire('your wire 2',touch=width!=1280,hold=.2)
                 self.wait(f'machinePlacements().length===2 && {READY}',60)
                 self.assertEqual(self.js('machinePlacements()[1].a_terminal'),'lamp:minus')
                 self.assertEqual(self.js('machinePlacements()[1].b_terminal'),'your battery 1:minus')
-                self.click_visible('Undo');self.wait(f'machinePlacements().length===3 && {READY}',60)
+                if width==390:
+                    host=self.server.machines;original_open=host.open;allow_open=threading.Event()
+                    def held_open(spec):
+                        allow_open.wait(10);return original_open(spec)
+                    with patch.object(host,'open',side_effect=held_open):
+                        try:
+                            self.click_visible('Undo')
+                            self.wait("document.getElementById('clock').textContent.includes('Building')&&!machineCableSetupState().session",5)
+                            self.assertFalse(self.js("Array.from({length:19},(_,i)=>machineWireScreen('your wire 2',(i+1)/20)).filter(Boolean).some(p=>machineScenePick(...p).wire)"),
+                                'Old cord geometry must not select newly renumbered connections')
+                        finally:allow_open.set()
+                else:self.click_visible('Undo')
+                self.wait(f'machinePlacements().length===3 && machineCableSetupState().ready && {READY}',60)
                 self.click_existing_wire('your wire 2',touch=width!=1280)
                 self.wait(f'machinePlacements().length===2 && {READY}',60)
                 self.assertEqual(self.js('machinePlacements()[1].a_terminal'),'lamp:minus')
@@ -2310,7 +2324,7 @@ class Puzzles(unittest.TestCase):
                 focus=self.js("(() => {const el=document.getElementById('focus-piece'),r=el.getBoundingClientRect(),p=el.closest('#recent-changes .guide-body').getBoundingClientRect();return {target:r.toJSON(),pane:p.toJSON(),visible:r.height>=44 && r.top>=p.top && r.bottom<=p.bottom};})()")
                 self.assertTrue(focus['visible'],('Focus must have its complete touch target inside Settings',focus))
                 if width<=599:
-                    self.assertTrue(self.js("document.getElementById('view').getBoundingClientRect().bottom<=document.getElementById('phone-toolbar').getBoundingClientRect().top"),'the smaller scene cannot overflow behind controls')
+                    self.assertTrue(self.js("document.getElementById('phone-toolbar').getBoundingClientRect().bottom<=document.getElementById('view').getBoundingClientRect().top"),'the smaller scene cannot overflow behind controls')
                 self.wait('window.machineCamera().settled',30)
                 for anchor in ([-.8,.575,0],[.29,.575,0]):
                     point=self.screen_point(anchor)
@@ -2936,7 +2950,7 @@ class Puzzles(unittest.TestCase):
         # two native seconds to settle; retain an early held tap to exercise
         # press-time selection while a newly placed cord is still falling.
         settling=.35 if hold else 2
-        self.wait(f'!machineCableSetupState().active || machineCableSetupState().setup_s>={settling}',15)
+        self.wait(f'machineCableSetupState().ready && (!machineCableSetupState().active || machineCableSetupState().setup_s>={settling})',15)
         self.wait(f'Boolean(window.machineWireScreen({json.dumps(name)},{fraction}))',10)
         # Native cords sag during setup. A projected point can be behind a
         # case or inside a terminal's touch area; canvas ownership alone does
@@ -5307,21 +5321,27 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(self.js('machinePlacements()'),kept)
         self.click_visible('Try again');self.assertEqual(self.ghost()['p']['length_m'],.2)
 
-    def test_scene_and_bottom_dock_share_one_layout_on_desktop_and_phones(self):
+    def test_scene_and_action_bar_above_it_share_one_layout_on_desktop_and_phones(self):
         for width,height in ((1440,900),(1280,720),(390,844),(844,390),(320,568)):
             with self.subTest(viewport=(width,height)):
                 self.open('gap',width,height,phone=width<1000)
-                layout=self.js("""(() => {const box=id=>{const r=document.querySelector(id).getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,b:r.bottom};};return {view:box('#view'),dock:box('main>aside'),run:box('#start'),goal:box('#scene-goal'),overflow:document.documentElement.scrollWidth>innerWidth};})()""")
+                layout=self.js("""(() => {const box=id=>{const r=document.querySelector(id).getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,b:r.bottom};};return {view:box('#view'),dock:box('main>aside'),bar:box('#phone-toolbar'),run:box('#start'),goal:box('#scene-goal'),overflow:document.documentElement.scrollWidth>innerWidth};})()""")
                 self.assertAlmostEqual(layout['view']['w'],width,delta=2)
                 self.assertAlmostEqual(layout['dock']['w'],width,delta=2)
                 self.assertGreaterEqual(layout['dock']['y'],layout['view']['b']-1)
+                self.assertLessEqual(layout['bar']['b'],layout['view']['y'])
+                self.assertGreaterEqual(layout['bar']['y'],0)
                 self.assertGreaterEqual(layout['view']['h'],140)
                 self.assertGreaterEqual(layout['run']['h'],44)
                 self.assertLessEqual(layout['run']['b'],height)
                 self.assertLessEqual(layout['goal']['b'],height)
                 self.assertFalse(layout['overflow'])
+                self.assertTrue(self.js("(()=>{const a=document.getElementById('start').getBoundingClientRect(),b=document.getElementById('phone-tabs').getBoundingClientRect();return a.right<=b.left||a.bottom<=b.top;})()"),'the trial button and tabs must not overlap')
                 self.assertEqual(self.js("document.getElementById('start').textContent"),'Try It!')
                 self.assertTrue(self.js("(()=>{const r=id=>document.getElementById(id).getBoundingClientRect();return Math.abs((r('start').left+r('start').right)/2-innerWidth/2)<2&&r('start').width>=160&&r('phone-tabs').width<230;})()"))
+                self.assertTrue(self.js("document.getElementById('start').classList.contains('setup-incomplete')&&!document.getElementById('start').disabled"))
+                proof=ROOT/'build'/'ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'top-action-bar-before-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
                 self.click_visible('Help')
                 self.assertTrue(self.js("document.getElementById('phone-help-panel').checkVisibility()&&!document.getElementById('control-panel').checkVisibility()"))
                 self.assertIsNone(self.js("document.getElementById('panel-toggle')"))
@@ -5330,7 +5350,10 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Controls')
                 self.press('Add a plank');self.ghost()
                 self.assertTrue(self.js("(()=>{const b=document.getElementById('piece-grip'),r=b.getBoundingClientRect(),p=document.getElementById('view').getBoundingClientRect();return b.checkVisibility()&&r.top>=p.top&&r.bottom<=p.bottom&&r.height>=44;})()"))
+                self.assertTrue(self.js("document.getElementById('start').classList.contains('setup-incomplete')"),'an unplaced ghost is not a required piece yet')
                 self.click_visible('Place');self.wait(READY,30)
+                self.assertFalse(self.js("document.getElementById('start').classList.contains('setup-incomplete')"),'placement enables emphasis even without a correct solution')
+                (proof/f'top-action-bar-ready-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
                 self.click_visible('Try It!');self.wait("!document.getElementById('level-done').hidden",20)
                 self.click_visible('Try again');self.assertEqual(self.ghost()['index'],0)
 

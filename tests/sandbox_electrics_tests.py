@@ -1207,4 +1207,15 @@ class Native(unittest.TestCase):
             finally: session.close()
 
 
-if __name__ == '__main__': unittest.main()
+if __name__ == '__main__':
+    shard=next((arg for arg in sys.argv[1:] if arg.startswith('--shard=')),None)
+    if shard:
+        index,count=map(int,shard.split('=',1)[1].split('/'))
+        if count!=2 or not 0<=index<count:raise SystemExit('electrical batches use INDEX/2')
+        sys.argv.remove(shard)
+        tests=[test for case in (Graph,Native) for test in unittest.defaultTestLoader.loadTestsFromTestCase(case)]
+        chosen=tests[index::count]
+        print(f'Electrical batch {index+1}/2: {len(chosen)} cases',flush=True)
+        result=unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(chosen))
+        raise SystemExit(0 if result.wasSuccessful() else 1)
+    unittest.main()

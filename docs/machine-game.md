@@ -1,5 +1,18 @@
 # Puzzles on the machine (/play)
 
+October 16 setup guidance: the Try It!/Reset and Controls/Help action bar
+precedes the scene on desktop and phone. Try It! uses secondary styling until
+the lesson’s required piece counts are placed, including wires. Counts expose
+no solution positions or adjustments; incorrect and incomplete setups remain
+testable. Sandbox has no required-piece gate. After Undo/rebuild, retained
+geometry cannot be selected until the replacement session matches the setup.
+The updated layout and battery/wire flow pass on desktop, portrait and
+landscape phones in 101.701 s. The layout also checks 320 px width; action
+buttons stay at least 44 px and incorrect placements still enable emphasis.
+Two cable removal/Undo flows, including a deliberately delayed replacement
+world, pass under two-core Windows affinity with SwiftShader in 150.599 s.
+
+
 October 16 electrical cord rollout: visible graph wires, solar charging cords
 and legacy heater/cannon circuit leads now use native articulated Jolt cables
 in levels and Sandbox. They sag and contact solids during placed setup, retain

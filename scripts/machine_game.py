@@ -1923,6 +1923,12 @@ def public(level):
     result = {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
                                   'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding','release_to_start','camera_min_m','water_controls') if k in level}
     if not level.get('free'):
+        # Setup guidance exposes counts only, never positions or adjustments.
+        required = {}
+        for piece in level.get('solution', []):
+            kind = piece['piece']
+            required[kind] = required.get(kind, 0) + 1
+        result['required_pieces'] = required
         family = level.get('variant', {}).get('family', level['id'])
         legacy_counts={'easy-solar':1,'easy-water-wheel':1,'easy-water-gate':2,'easy-water-receiver':1,'easy-gears':1,'easy-charge-lift':1,'easy-heat':1}
         result['task_count'] = (legacy_counts.get(family,PLAYER_TASK_COUNTS[family]) if level.get('variant',{}).get('version')==1

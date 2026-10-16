@@ -1716,6 +1716,15 @@ function sceneReadoutTop(rect) {
     .filter(el => !el.hidden && el.getClientRects().length)
     .map(el => el.getBoundingClientRect().bottom - rect.top + 6));
 }
+function updateTrialEmphasis() {
+  const counts = {};
+  for (const p of placements) counts[p.piece] = (counts[p.piece] || 0) + 1;
+  const missing = LEVEL_MODE && level && !level.free && Object.entries(level.required_pieces || {})
+    .some(([piece, count]) => (counts[piece] || 0) < count);
+  const incomplete = Boolean(missing && !world.playing && world.t === 0);
+  $('start').classList.toggle('setup-incomplete', incomplete);
+  $('start').title = incomplete ? 'Place the required pieces first, or try your setup now' : '';
+}
 function renderClock(frame) {
   const behind = frame.pace.behind_s;
   // A level runs at real time, so its clock leaves the speed out.
@@ -1728,6 +1737,7 @@ function renderClock(frame) {
   $('start').hidden=Boolean(LEVEL_MODE&&scored&&lastRun&&lastRun.goal_at_s==null);
   $('start').textContent = frame.playing ? 'Pause' : !LEVEL_MODE ? (frame.t > 0 ? 'Continue' : 'Start')
     : frame.t > 0 ? (scored ? 'Try It!' : 'Continue') : 'Try It!';
+  updateTrialEmphasis();
 }
 
 // ---- building and running --------------------------------------------------------
@@ -1839,7 +1849,8 @@ async function setPlaying(run) {
 const RUNNING_MS = 50, PAUSED_MS = 1000;
 let cableSetupActive = false;
 let cableSetupSeconds = 0;
-window.machineCableSetupState = () => ({session,t:world.t,active:cableSetupActive,setup_s:cableSetupSeconds});
+window.machineCableSetupState = () => ({session,t:world.t,active:cableSetupActive,setup_s:cableSetupSeconds,
+  ready:Boolean(session&&builtSetupKey===currentSetupKey())});
 let wake = null;
 let liveControlPending = false;
 let liveControlRequest = null;
@@ -4301,7 +4312,8 @@ function slidePoint(clientX, clientY, y) {
 const GRAB_MARGIN_PX = 40;
 let rewiringBusy=false;
 function wireCandidates(clientX,clientY,touch=false) {
-  if(ghost || rewiringBusy || pullMode || attachMode || switchDragging || !level)return [];
+  if(ghost || rewiringBusy || pullMode || attachMode || switchDragging || !level ||
+     !session || builtSetupKey!==currentSetupKey())return [];
   pointerRay(clientX,clientY);
   const rect=renderer.domElement.getBoundingClientRect();
   const obstruction=raycaster.intersectObjects([...meshes.values()].filter(m=>m.visible),true)[0];
@@ -4341,7 +4353,7 @@ function wireCandidates(clientX,clientY,touch=false) {
   return result.sort((a,b)=>a.gap-b.gap);
 }
 async function disconnectPlacedWire(hit) {
-  if(ghost || rewiringBusy || !placements[hit.index])return;
+  if(ghost || rewiringBusy || !session || builtSetupKey!==currentSetupKey() || !placements[hit.index])return;
   const sourceLevel=level,was=JSON.stringify(placements);
   rewiringBusy=true;
   try {
@@ -4467,6 +4479,12 @@ renderer.domElement.addEventListener('pointerdown', e => {
     view.classList.remove('grabbing'); return;
   }
   if (cameraGesture) return;
+  // Retained geometry belongs to the preceding setup until the replacement
+  // native world is ready. Undo can renumber pieces: never pick an old shape
+  // against the new placement indices. Camera gestures remain available.
+  if(LEVEL_MODE&&(!session||builtSetupKey!==currentSetupKey())){
+    pressedAt=null;socketPress=null;wirePress=null;return;
+  }
   $('socket-choices').hidden=true;
   socketPointer=[e.clientX,e.clientY];socketPress=null;
   wirePress=!ghost&&e.button===0&&!e.ctrlKey?{id:e.pointerId,hits:wireCandidates(e.clientX,e.clientY,e.pointerType==='touch')}:null;
@@ -5362,6 +5380,7 @@ $('tray-prev').addEventListener('click', () => browseTray(-1));
 $('tray-next').addEventListener('click', () => browseTray(1));
 $('tray-library').addEventListener('click', openPiecePicker);
 function renderSceneTray() {
+  updateTrialEmphasis();
   const bar = $('scene-tray');
   bar.hidden = !LEVEL_MODE || !level || Boolean(ghost);
   if (bar.hidden) return;
@@ -6581,6 +6600,7 @@ function installPhonePanels() {
     (node.matches('.chat') ? help : design).append(node);
   }
   aside.append(design,help);
+  view.before($('phone-toolbar'));
   const settings=Object.assign(document.createElement('details'),{id:'help-settings'});
   const content=Object.assign(document.createElement('div'),{id:'help-settings-content'});
   const snapping=Object.assign(document.createElement('div'),{id:'snap-settings'});
@@ -6681,8 +6701,7 @@ async function startGame() {
     else showLevelsScreen(true);
   }
 }
-// The scene in sight: on a phone the panel below it (the tray, Try It!) is a
-// scroll away, and what happens -- a ghost, a run, how it went -- is up here.
+// Keep the scene in sight when an edit or result needs attention.
 function sceneIntoView() {
   const seen = view.getBoundingClientRect();
   if (seen.top < -40 || seen.bottom > innerHeight + 40) view.scrollIntoView({block: 'start'});

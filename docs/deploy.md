@@ -342,7 +342,7 @@ The final unbatched local run passes all 22 methods in 961.844 s. The partition
 check covers every method and all 23 native families exactly once; two native
 family batches additionally pass in 143.871 s and 60.018 s.
 
-CI runs those six recipe batches, sixteen browser batches and three game
+CI runs those six recipe batches, sixteen browser batches and five game
 integration groups on independent runners. The native CTest job excludes only
 those explicitly named groups; the aggregate release gate requires every group
 to succeed. Game integration keeps each suite's original 600-second deadline.
@@ -418,3 +418,9 @@ tests (155.749 s), then the same seven checks against the installed immutable
 runtime (2.547 s). The broader engine/browser CI remains a separate release
 gate for subsequent feature promotions; it is not claimed complete by these
 focused infrastructure checks. No native source or physics law changed.
+
+The electrical integration group now partitions its 49 existing methods into
+25/24 disjoint cases, each with the original 600-second deadline. A full group
+hit that deadline after 48 passing methods on one CI runner, although the prior
+complete Linux run passed. Combinations have their own integration runner.
+No test is removed and the unbatched CLI retains all 49 methods.

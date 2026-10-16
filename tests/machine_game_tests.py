@@ -48,6 +48,15 @@ EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):
+    def test_setup_requirements_expose_only_piece_counts(self):
+        self.assertEqual(mg.public(mg.level_by_id('easy-power'))['required_pieces'],{'battery':1,'wire':2})
+        self.assertEqual(mg.public(mg.level_by_id('laser'))['required_pieces'],{'mirror':2})
+        self.assertNotIn('required_pieces',mg.public(mg.free_build()))
+        for level in LEVELS:
+            shown=mg.public(level)
+            self.assertNotIn('solution',shown)
+            self.assertTrue(all(isinstance(n,int) and n>0 for n in shown['required_pieces'].values()))
+
     def test_sandbox_has_five_curated_multi_component_examples(self):
         examples=mg.sandbox_templates()
         self.assertEqual(len(examples),5)

@@ -59,7 +59,7 @@ Desktop and phone use the same full-width scene with a compact bottom dock.
 Banjo and navigation share one header row; camera and history controls share
 one row along the top of the scene. The idle time-zero banner stays hidden.
 Levels share Controls / Help tabs; Sandbox also has Design,
-with Try It!/Pause/Reset kept beside the 3D view. The controls dock stays open;
+with Try It!/Pause/Reset above the 3D view. The controls dock stays open;
 Controls and Help switch its content without a collapse arrow. Each level opens
 with its name, what you’ll place, how the mechanism
 works and your goal. **GO** dismisses the introduction and leaves native time
@@ -77,7 +77,7 @@ named options instead of cycling tiny arrows. Lens focus adjusts its actual face
 and native beam preview; tank opening and live valve/release controls stay with
 their devices. **Level Complete!** appears over the scene. Exact sliders and snap preferences are in
 **Changes → Settings**. Both snaps start on. Used tray cards disappear.
-**Try It!** is wider and centered below the scene. Help contains the question
+**Try It!** is wider and centered above the scene. Help contains the question
 box, assistant response and a subdued **Report a bug** link. After a missed
 goal, **Ask for Help** opens a dismissible response about the measured attempt;
 **Try again** restores the setup and selects the last edited piece.

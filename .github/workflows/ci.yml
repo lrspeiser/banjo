@@ -51,7 +51,7 @@ jobs:
           --output-junit ${{ github.workspace }}/ctest-results.xml
           --test-output-size-passed 20000000 --test-output-size-failed 20000000
           -LE "long|performance"
-          -E "^banjo_machine_game_browser_tests_[0-3]$|^banjo_(machine_world|machine_game|sandbox_(mechanics|electrics|water_launch|combinations|motion)|battery_socket|mechanical_switch)_tests$|^banjo_sandbox_variants_tests_[0-5]$"
+          -E "^banjo_machine_game_browser_tests_[0-3]$|^banjo_(machine_world|machine_game|sandbox_(mechanics|water_launch|combinations|motion)|battery_socket|mechanical_switch)_tests$|^banjo_sandbox_electrics_tests_[0-1]$|^banjo_sandbox_variants_tests_[0-5]$"
 
       - name: Keep the test and floating-point evidence
         if: always()
@@ -110,8 +110,14 @@ jobs:
         include:
           - name: authored-machines
             suites: machine_game sandbox_mechanics
-          - name: electrical-machines
-            suites: sandbox_electrics sandbox_combinations
+          - name: electrical-machines-0
+            suites: sandbox_electrics
+            electrical_shard: 0/2
+          - name: electrical-machines-1
+            suites: sandbox_electrics
+            electrical_shard: 1/2
+          - name: combined-machines
+            suites: sandbox_combinations
           - name: water-and-interaction
             suites: machine_world sandbox_water_launch sandbox_motion battery_socket mechanical_switch
     steps:
@@ -127,10 +133,13 @@ jobs:
           BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/integration-engine/banjo_live_world_run
           BANJO_MACHINE_ENGINE: required
           SUITES: ${{ matrix.suites }}
+          ELECTRICAL_SHARD: ${{ matrix.electrical_shard }}
         run: |
           set -euo pipefail
+          args=()
+          if [[ -n "$ELECTRICAL_SHARD" ]]; then args+=("--shard=$ELECTRICAL_SHARD"); fi
           for suite in $SUITES; do
-            timeout 600s python3 -u "tests/${suite}_tests.py" --engine "$BANJO_LIVE_ENGINE"
+            timeout 600s python3 -u "tests/${suite}_tests.py" --engine "$BANJO_LIVE_ENGINE" "${args[@]}"
           done
 
   recipe-tests:
@@ -174,4 +183,4 @@ jobs:
           test "$BROWSER_RESULT" = success
           test "$INTEGRATION_RESULT" = success
           test "$RECIPE_RESULT" = success
-          echo "Source registration, native checks, sixteen browser batches, three game integration groups and six recipe batches passed."
+          echo "Source registration, native checks, sixteen browser batches, five game integration groups and six recipe batches passed."
