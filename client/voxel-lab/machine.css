@@ -773,6 +773,9 @@ body.playing-level #view>.level-done{top:50%;transform:translate(-50%,-50%);z-in
 #piece-editor .gear-label{font:12px/14px system-ui;color:#cde3ef}
 #piece-editor .gear-value{font:600 15px/18px system-ui;white-space:nowrap}
 #piece-editor .gear-controls button[aria-pressed=true]{border-color:#ffdc72;background:#473c20}
+.hold-repeat{touch-action:none;user-select:none;-webkit-user-select:none}
+#piece-editor #gear-plane-feedback{color:#ffdc72}
+#piece-editor #gear-plane-feedback.aligned{color:#50ffb0}
 #piece-editor .spring-length-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px}
 #piece-editor .spring-length-heading{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:3px;font:12px/16px system-ui;flex-wrap:wrap}
 #piece-editor .spring-length-value{font-weight:600;font-size:16px;white-space:nowrap;color:#ffdc72}

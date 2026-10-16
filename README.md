@@ -11,6 +11,9 @@ compressed spring until release.
 Gears show Teeth, Radius and Height together beside the piece. Tap a size to
 choose a preset, or Height to use the vertical handles, while the engine's
 predicted gear motion plays.
+Gear guides start at the axle: green rings show matching wheel planes, and
+green centre lines show matching heights. The edge controls report offsets.
+Hold +/− adjustment buttons or zoom magnifiers to repeat; release to stop.
 
 Each level is a small machine you cannot change, a goal, and a tray of pieces.
 You add pieces, press **Try It!**, and the engine works out what every part

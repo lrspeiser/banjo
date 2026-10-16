@@ -1,5 +1,5 @@
 import * as THREE from './three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints} from './machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints} from './machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from './anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from './profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from './level-library.mjs';
@@ -2294,6 +2294,34 @@ function holdButton(text, act, extra = {}) {
   return b;
 }
 
+// Keep ordinary taps and handle drags intact. A stationary hold starts after
+// 350 ms and stops on release/cancel, a drag, lost focus, or a removed control.
+function repeatOnHold(b, act, {drag=false}={}) {
+  let timer=null,press=null,repeated=false;
+  const stop=()=>{clearTimeout(timer);timer=null;press=null;window.removeEventListener('blur',stop);document.removeEventListener('visibilitychange',stop);};
+  b.classList.add('hold-repeat');
+  b.addEventListener('pointerdown',e=>{
+    if(e.button!==0||b.disabled)return;
+    stop();repeated=false;press={id:e.pointerId,x:e.clientX,y:e.clientY};
+    if(!drag)b.setPointerCapture(e.pointerId);
+    window.addEventListener('blur',stop);document.addEventListener('visibilitychange',stop);
+    const tick=()=>{
+      if(!press||!b.isConnected||b.disabled||!b.checkVisibility()){stop();return;}
+      repeated=true;act();timer=setTimeout(tick,100);
+    };
+    timer=setTimeout(tick,350);
+  });
+  b.addEventListener('pointermove',e=>{
+    if(!press||press.id!==e.pointerId)return;
+    const rect=b.getBoundingClientRect();
+    if(drag?Math.hypot(e.clientX-press.x,e.clientY-press.y)>5:
+      e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top||e.clientY>rect.bottom)stop();
+  });
+  for(const end of ['pointerup','pointercancel','lostpointercapture','blur'])b.addEventListener(end,stop);
+  b.addEventListener('click',e=>{if(repeated&&e.detail!==0){e.preventDefault();e.stopImmediatePropagation();}},true);
+  return stop;
+}
+
 // The ghost as last compiled, moved at once by however far its knobs have
 // moved since; the server's answer then sets it down again.
 function followGhost() {
@@ -2485,7 +2513,7 @@ function updatePieceHandles() {
         if(h.suppressClick){h.suppressClick=false;return;}
         if(ghost)editByDrag(key,Number(ghost.p[key]),direction*240*(numericChoices?1/(rule.choices.length-1):(rule.step||.01)/(rule.max-rule.min)));
       },{ariaLabel:`${direction>0?'Increase':'Decrease'} ${knobName(rule,key)} on object`,
-        title:'Tap for one increment, or drag along the highlighted direction. Exact values are in Changes → Settings.'});
+        title:'Tap for one increment, hold to keep changing, or drag along the highlighted direction. Exact values are in Changes → Settings.'},false);
       h.className='piece-dimension-handle';
       h.link=document.createElementNS('http://www.w3.org/2000/svg','line');editHandleLinks.append(h.link);
       h.addEventListener('pointerdown',e=>{if(e.button!==0||!ghost)return;e.preventDefault();h.focus({preventScroll:true});
@@ -2498,6 +2526,12 @@ function updatePieceHandles() {
         editByDrag(handleDrag.key,handleDrag.initial,(e.clientX-handleDrag.x)*handleDrag.dx+(e.clientY-handleDrag.y)*handleDrag.dy);
       }});
       for(const type of ['pointerup','pointercancel','lostpointercapture'])h.addEventListener(type,()=>{handleDrag=null;updatePieceHandles();});
+      repeatOnHold(h,()=>{
+        if(!ghost||!handleDrag)return;
+        h.suppressClick=true;
+        editByDrag(key,Number(ghost.p[key]),direction*240*(numericChoices?1/(rule.choices.length-1):(rule.step||.01)/(rule.max-rule.min)));
+        if(handleDrag)handleDrag.initial=Number(ghost.p[key]);
+      },{drag:true});
       h.addEventListener('keydown',e=>{if(!ghost||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();e.stopPropagation();
         editByDrag(key,Number(ghost.p[key]),(['ArrowRight','ArrowUp'].includes(e.key)?1:-1)*240*(rule.choices?1/(rule.choices.length-1):(rule.step||.01)/(rule.max-rule.min)));});
       editHandles.append(h);
@@ -2538,7 +2572,7 @@ function updatePieceHandles() {
     for(const [key,value] of Object.entries({x1:(a.x+1)*rect.width/2,y1:(1-a.y)*rect.height/2,x2:point.x-rect.left,y2:point.y-rect.top}))h.link.setAttribute(key,String(value));
 
   });
-  for(const h of editHandles.children){h.removeAttribute('id');h.title=`${knobName(rule,key)}: ${knobDisplayValue(key,ghost.p[key])}. Tap for one increment, or drag along the highlighted direction.`;}
+  for(const h of editHandles.children){h.removeAttribute('id');h.title=`${knobName(rule,key)}: ${knobDisplayValue(key,ghost.p[key])}. Tap for one increment, hold to keep changing, or drag along the highlighted direction.`;}
   const primary=[...editHandles.children].find(h=>!h.hidden);if(primary)primary.id='piece-grip';
 }
 
@@ -2974,7 +3008,9 @@ function springLengthControls(rule){
   group.append(heading);
   for(const [direction,label] of [[-1,'Shorten spring'],[1,'Lengthen spring']]){
     const control=button(`${direction<0?'−':'+'} ${amount}`,()=>{
-      selectGhostKnob('rest_m',true);nudgeKnob('rest_m',direction*increment);
+      if(!ghost)return;
+      if(ghost.card!=='rest_m'){ghost.card='rest_m';editorMode='adjust';clearEditGuide();}
+      nudgeKnob('rest_m',direction*increment);
     },{ariaLabel:label,title:`${label} by ${amount}. Drag the gold handles for finer changes.`});
     control.dataset.springDirection=direction;group.append(control);
   }
@@ -3173,6 +3209,7 @@ function renderGhostBar() {
   else if(rule.part||rule.hinge)editor.append(sceneReferenceControl(ghost.p,key,rule,()=>{renderGhostBar();showGhostKnobs();askGhost();}));
   editor.append(...connectionActions,...(unclipButton?[unclipButton]:[]),setting);
   setting.hidden=isGear; // The three visible fields already show these measurements.
+  if(isGear)editor.append(Object.assign(document.createElement('output'),{id:'gear-plane-feedback',className:'adjustment-feedback',ariaLive:'polite'}));
   if(ghost.p.piece==='gear')editor.append(Object.assign(document.createElement('output'),{id:'gear-motion-feedback',className:'adjustment-feedback',textContent:'Checking gear motion…',
     title:'This is a replay of the engine’s predicted motion for the current placement. Radius is measured to the tooth tips; it changes tooth spacing too.'}));
   // The geometric piece editor is hidden while drawing a cable. A lesson
@@ -3961,11 +3998,16 @@ function syncFlowPlayButton() {
 }
 function updateGearMotionFeedback(){
   const output=$('gear-motion-feedback');if(!output||ghost?.p.piece!=='gear')return;
+  if(ghost.answered&&!ghost.busy&&!ghost.fits){
+    output.textContent=ghost.problems.some(p=>/overlap|goes .*into/i.test(p))?'Clear the overlap — move apart':'Adjust placement to fit';return;
+  }
+  const linedUp=wheelGuideState.length>0&&wheelGuideState.every(q=>q.samePlane&&q.sameHeight);
+  const spacing=linedUp&&!wheelGuideState.every(q=>q.teethReach)?'Teeth apart · ':'';
   const frame=flowGroup.visible?previewShown?.flow_frames?.[flowIndex]:null;
-  if(flowPending||!frame){output.textContent='Checking gear motion…';return;}
+  if(flowPending||!frame){output.textContent=spacing||'Checking gear motion…';return;}
   const target=level.goal?.station?.done_when?.turned_deg?.joint;
   const joint=(frame.mechanism_joints||[]).find(j=>target?j.name===target:j.b===ghostName()+' wheel');
-  output.textContent=joint&&Number.isFinite(joint.turned_deg)?`Preview · ${target?'target wheel':'axle'} ${Math.abs(joint.turned_deg).toFixed(0)}°`:'Preview · gear motion';
+  output.textContent=spacing+(joint&&Number.isFinite(joint.turned_deg)?`Preview · ${target?'target wheel':'axle'} ${Math.abs(joint.turned_deg).toFixed(0)}°`:'Preview · gear motion');
 }
 function updateFlowPreview() {
   const frames=previewShown?.flow_frames || [];
@@ -4320,7 +4362,8 @@ function showGridSnap() {
   output.title=primary?.kinematic?'The lowest point of the cutting edge’s hinge circle. Contact and energy can stop the knife before it reaches this point.':'Green means geometric alignment within 8 mm in 3D. It does not check obstructions, reflected rays or available energy.';
   output.classList.toggle('aligned',axes.length>0||Boolean(match)||Boolean(ghost?.joined&&objectSnapEnabled));
 }
-window.machineWorkingGuide=()=>({primary:ghost?.alignment?.primary,match:guideMatch,objects_enabled:objectSnapEnabled,joined:ghost?.joined});
+window.machineWorkingGuide=()=>({primary:ghost?.alignment?.primary,match:guideMatch,objects_enabled:objectSnapEnabled,joined:ghost?.joined,
+  wheels:wheelGuideState.map((row,i)=>({...row,ring_color:wheelPlaneGuides[i+1].material.color.getHex(),center_color:wheelCenterGuides[i].material.color.getHex()}))});
 window.machinePlacementGrid=()=>({enabled:gridSnapEnabled,step_m:PLACEMENT_GRID.step_m,
   major_step_m:PLACEMENT_GRID.major_step_m,visible:grid.visible,fine_opacity:fineGrid.material.opacity,
   fine_vertices:fineGrid.geometry.attributes.position.count,major_vertices:majorGrid.geometry.attributes.position.count,
@@ -4462,6 +4505,43 @@ const guideMatches=Array.from({length:8},()=>{
   guides.add(dot);return dot;
 });
 let guideMatch=null;
+let wheelGuideState=[];
+const wheelPlaneShape=new THREE.RingGeometry(1,1.025,64);
+const wheelPlaneGuides=Array.from({length:5},()=>{
+  const ring=new THREE.Mesh(wheelPlaneShape,new THREE.MeshBasicMaterial({color:0xffcf59,side:THREE.DoubleSide,transparent:true,opacity:.85,depthTest:false,depthWrite:false}));
+  guides.add(ring);return ring;
+});
+const wheelCenterGuides=Array.from({length:4},()=>guideBar(0xffcf59,.85));
+function updateWheelGuides(primary){
+  wheelGuideState=wheelAlignment(primary,ghost?.alignment?.targets||[]);
+  const planeAligned=wheelGuideState.length>0&&wheelGuideState.every(q=>q.samePlane);
+  const level=wheelGuideState.length>0&&wheelGuideState.every(q=>q.sameHeight);
+  for(const [i,ring] of wheelPlaneGuides.entries()){
+    const row=i===0?primary:wheelGuideState[i-1];
+    ring.visible=Boolean(row?.wheel&&wheelGuideState.length);if(!ring.visible)continue;
+    ring.position.set(...row.at);ring.scale.setScalar(row.wheel.radius_m+.015);
+    ring.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),new THREE.Vector3(...row.dir).normalize());
+    ring.material.color.setHex((i===0?planeAligned:row.samePlane)?0x50ffb0:0xffcf59);
+  }
+  wheelCenterGuides.forEach((bar,i)=>{
+    const row=wheelGuideState[i];bar.visible=Boolean(row);if(!row)return;
+    const a=new THREE.Vector3(...primary.at),delta=new THREE.Vector3(...row.at).sub(a),length=delta.length();
+    bar.position.copy(a).addScaledVector(delta,.5);bar.scale.set(.004,length,.004);
+    if(length>1e-9)bar.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());
+    bar.material.color.setHex(row.samePlane&&row.sameHeight?0x50ffb0:0xffcf59);
+  });
+  const output=$('gear-plane-feedback');
+  if(output){
+    const error=key=>Math.max(...wheelGuideState.map(q=>Math.abs(q[key])))*100;
+    const text=!wheelGuideState.length?'Bring it near another wheel':
+      !wheelGuideState.every(q=>q.parallel)?'Wheel axes point in different directions':
+      `${planeAligned?'Plane aligned':`Plane off ${error('plane_m').toFixed(1)} cm`} · ${level?'Height aligned':`Height off ${error('height_m').toFixed(1)} cm`}`;
+    if(output.textContent!==text)output.textContent=text;
+    output.classList.toggle('aligned',planeAligned&&level);
+    output.title=wheelGuideState.map(q=>`${q.part}: ${q.samePlane?'same plane':'plane offset '+(Math.abs(q.plane_m)*100).toFixed(1)+' cm'}; ${q.sameHeight?'same centre height':'height offset '+(Math.abs(q.height_m)*100).toFixed(1)+' cm'}; ${q.teethReach?'teeth within reach':'teeth separated or roots overlap'}`).join('\n')+'\nGreen shows geometry, not a guaranteed turn. The engine preview checks contact.';
+  }
+  return {planeAligned,level};
+}
 const gridSnapMarker=new THREE.Group();
 for (const axis of ['x','z']) {
   const points=axis==='x'?[new THREE.Vector3(0,0,-.08),new THREE.Vector3(0,0,.08)]
@@ -4482,7 +4562,7 @@ function updateGuides() {
     for (const line of gridSnapMarker.children) line.visible=axes.includes(line.userData.axis);
   }
   guides.visible = Boolean(ghost && ghostGroup.children.length);
-  if (!guides.visible) {guideMatch=null;return;}
+  if (!guides.visible) {guideMatch=null;wheelGuideState=[];return;}
   ghostBox.setFromObject(ghostGroup);
   if (ghostBox.isEmpty()) { guides.visible = false; return; }
   const working=ghost.alignment?.primary;
@@ -4490,8 +4570,9 @@ function updateGuides() {
   const cx = at?.[0]??(ghostBox.min.x + ghostBox.max.x) / 2, cz = at?.[2]??(ghostBox.min.z + ghostBox.max.z) / 2;
   const base = Math.max(.004, at?.[1]??ghostBox.min.y), top = Math.max(base+.4,ghostBox.max.y + .4), far = 50;
   guideMatch=workingAlignment(working?{...working,at}:null,ghost.alignment?.targets||[]);
+  const wheel=updateWheelGuides(working?{...working,at}:null);
   for(const [bar,axis,color] of [[guideX,'x',0xff5c5c],[guideY,'y',0x6fe08a],[guideZ,'z',0x4d9dff]])
-    bar.material.color.setHex(guideMatch.axes.includes(axis)?0x50ffb0:color);
+    bar.material.color.setHex(guideMatch.axes.includes(axis)||(wheel.level&&axis==='y')||(wheel.planeAligned&&Math.abs(working?.dir?.[['x','y','z'].indexOf(axis)]||0)>.999)?0x50ffb0:color);
   const t = Math.max(.004, .0025 * camera.position.distanceTo(new THREE.Vector3(cx, base, cz)));
   guideX.position.set(cx, base, cz); guideX.scale.set(far, t, t);
   guideZ.position.set(cx, base, cz); guideZ.scale.set(t, t, far);
@@ -5209,9 +5290,10 @@ function renderSceneTray() {
 }
 function renderTray() { renderSceneTray(); }
 
-function button(text, onClick, extra = {}) {
+function button(text, onClick, extra = {}, repeat = /^[+−-](?:\s*\d|$)/.test(text)) {
   const b = Object.assign(document.createElement('button'), {type: 'button', textContent: text}, extra);
   b.addEventListener('click', onClick);
+  if(repeat)repeatOnHold(b,onClick);
   return b;
 }
 
@@ -6455,6 +6537,7 @@ async function startGame() {
     ['view-up', () => { elevation=Math.min(1.45,elevation+.15); }], ['view-down', () => { elevation=Math.max(.08,elevation-.15); }],
     ['view-in', () => { distance = Math.max(.4, distance / 1.2); }], ['view-out', () => { distance = Math.min(40, distance * 1.2); }]
   ]) $(id).addEventListener('click',()=>{follow=false;$('follow').setAttribute('aria-pressed','false');change();freshView();});
+  for(const id of ['view-in','view-out'])repeatOnHold($(id),()=>{follow=false;$('follow').setAttribute('aria-pressed','false');distance=Math.max(.4,Math.min(40,distance*(id==='view-in'?1/1.2:1.2)));freshView();});
   $('scene-note').textContent = 'Drag a ghost to move · Drag empty space to turn · Wheel or trackpad pinch to zoom';
   $('game').hidden = false; $('solve').hidden = true; $('undo').hidden = true;
   document.querySelector('.lede').hidden = true;

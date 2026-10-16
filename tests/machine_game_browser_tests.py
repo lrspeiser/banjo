@@ -1201,6 +1201,24 @@ class Puzzles(unittest.TestCase):
                 self.open('easy-gears',width,height,phone=width!=1280)
                 self.assertIn('target gear wheel',self.js('Object.keys(window.machineBodies())'))
                 self.press('Add a gear');self.ghost()
+                self.assertEqual(self.js('machineWorkingGuide().primary.label'),'wheel axle')
+                self.wait("machineWorkingGuide().wheels.length===2",10)
+                self.assertTrue(all(not row['samePlane'] for row in self.js('machineWorkingGuide().wheels')))
+                self.assertIn('Plane off',self.js("document.getElementById('gear-plane-feedback').textContent"))
+                self.slide('Position across (m) of your gear 1',0);self.ghost()
+                self.wait("machineWorkingGuide().wheels.every(row=>row.samePlane&&row.sameHeight)",10)
+                self.assertTrue(all(row['ring_color']==0x50ffb0 for row in self.js('machineWorkingGuide().wheels')))
+                self.assertIn('Plane aligned',self.js("document.getElementById('gear-plane-feedback').textContent"))
+                self.wait("document.getElementById('gear-motion-feedback').textContent.includes('Teeth apart')",10)
+                self.slide('Position along (m) of your gear 1',.15);self.ghost()
+                self.assertFalse(self.ghost()['fits'])
+                self.wait("document.getElementById('gear-motion-feedback').textContent.includes('Clear the overlap')",10)
+                self.slide('Position along (m) of your gear 1',-1);self.ghost()
+                self.slide('Axle height (m) of your gear 1',.70);self.ghost()
+                self.wait("machineWorkingGuide().wheels.every(row=>row.samePlane&&!row.sameHeight)",10)
+                self.assertIn('Height off 5.0 cm',self.js("document.getElementById('gear-plane-feedback').textContent"))
+                self.slide('Axle height (m) of your gear 1',.65);self.ghost()
+                self.choose_adjustment('Teeth')
                 self.set_precision_controls(False)
                 self.assertEqual(self.ghost()['p']['teeth'],18)
                 self.assertFalse(self.js("document.querySelector('[aria-label=\"Its Teeth\"]').checkVisibility()"))
@@ -1269,6 +1287,77 @@ class Puzzles(unittest.TestCase):
                 self.assertNotIn('material',self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"))
                 self.set_precision_controls(False)
                 self.assertEqual(self.js("[...document.getElementById('adjustment-choice').options].map(o=>o.value)"),['teeth','module_m','height_m'])
+
+    def test_holding_adjustment_buttons_repeats_and_release_or_touch_cancel_stops(self):
+        for level,piece,key,adjustment,width,height,touch in (
+                ('easy-gears','gear','height_m','Axle height',1280,860,False),
+                ('easy-lens','lens','radius_m','Focus / face radius',844,390,True),
+                ('easy-power','battery','voltage_v','voltage',320,568,True)):
+            with self.subTest(level=level,viewport=(width,height)):
+                self.open(level,width,height,phone=width!=1280)
+                self.press('Add a '+('battery' if piece=='battery' else 'gear' if piece=='gear' else 'lens'));self.ghost()
+                if piece=='gear':self.click_visible('Adjust Axle height')
+                else:self.choose_adjustment(adjustment)
+                self.ghost();self.wait('machineCamera().settled',20);self.paint()
+                label='Increase '+adjustment+' on object'
+                # Lens naming follows the visible schema's shortened label.
+                if piece=='lens':label='Increase Face radius on object'
+                self.wait(f"document.querySelector('[aria-label={json.dumps(label)}]')?.checkVisibility()",10)
+                b=f"document.querySelector('[aria-label={json.dumps(label)}]')"
+                xy=self.js(f"(()=>{{const b={b},r=b.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];}})()")
+                before=self.ghost()['p'][key]
+                if touch:self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':xy[0],'y':xy[1]}]})
+                else:self.mouse('mousePressed',*xy)
+                time.sleep(.85)
+                if touch:self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+                else:self.mouse('mouseReleased',*xy)
+                after=self.ghost()['p'][key]
+                self.assertGreaterEqual(after-before,6 if piece=='battery' else .029,'A stationary hold repeats, within the declared range')
+                step=self.js(f"machineGhostState().editGuide?.key==={json.dumps(key)}")
+                self.assertTrue(step)
+                time.sleep(.3);self.assertEqual(self.ghost()['p'][key],after,'Release stops further changes')
+                if piece=='battery':
+                    self.assertEqual(after,12,'Repeated steps clamp at the battery maximum')
+                    self.click_visible('Decrease voltage on object')
+                    self.assertEqual(self.ghost()['p'][key],6)
+                else:
+                    self.click_visible(label);tapped=self.ghost()['p'][key]
+                    self.assertAlmostEqual(tapped-after,.01,msg='A subsequent tap makes exactly one increment')
+        # The direct spring buttons use the same hold behavior and clamp at
+        # declared limits. Cancel a touch without generating a release click.
+        self.open('easy-spring',390,844,phone=True);self.press('Add a spring');self.ghost()
+        def touch_hold(label,cancel=False,seconds=.85):
+            xy=self.js(f"(()=>{{const b=document.querySelector('[aria-label={json.dumps(label)}]'),r=b.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];}})()")
+            self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':xy[0],'y':xy[1]}]})
+            time.sleep(seconds)
+            self.page.send('Input.dispatchTouchEvent',{'type':'touchCancel' if cancel else 'touchEnd','touchPoints':[]})
+            return self.ghost()['p']['rest_m']
+        length=touch_hold('Lengthen spring',True)
+        self.assertGreaterEqual(length,.35)
+        time.sleep(.3);self.assertEqual(self.ghost()['p']['rest_m'],length)
+        self.assertEqual(touch_hold('Shorten spring',seconds=2),.2)
+        self.assertTrue(self.js("document.querySelector('[aria-label=\"Shorten spring\"]').disabled"))
+        self.click_visible('Lengthen spring');self.assertEqual(self.ghost()['p']['rest_m'],.25)
+        self.wait('machineCamera().settled',20)
+        before=self.js('machineCamera().distance')
+        xy=self.js("(()=>{const r=document.getElementById('view-out').getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()")
+        self.mouse('mousePressed',*xy);time.sleep(.75);self.mouse('mouseReleased',*xy)
+        self.wait('machineCamera().settled',20)
+        after=self.js('machineCamera().distance')
+        self.assertGreater(after,before*1.44,'Zoom buttons repeat too')
+        time.sleep(.3);self.assertEqual(self.js('machineCamera().distance'),after)
+        self.paint()
+        b="document.querySelector('[aria-label=\"Increase Relaxed length on object\"]')"
+        xy=self.js(f"(()=>{{const r={b}.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];}})()")
+        axis=self.js(f"[{b}.dataset.dx,{b}.dataset.dy].map(Number)")
+        self.mouse('mousePressed',*xy);time.sleep(.55)
+        end=[xy[i]+40*axis[i] for i in range(2)]
+        self.mouse('mouseMoved',*end);time.sleep(.3)
+        dragged=self.js('machineGhostState().p.rest_m')
+        time.sleep(.3)
+        self.assertEqual(self.js('machineGhostState().p.rest_m'),dragged,'Dragging cancels stationary hold repetition')
+        self.mouse('mouseReleased',*end);self.ghost()
+        self.assertEqual(self.js('machineGhostState().p.rest_m'),dragged,'Drag release cannot add a tap')
 
     def test_individual_gear_example_library_and_saved_version_reopen(self):
         self.anonymous_levels(width=390,height=844)

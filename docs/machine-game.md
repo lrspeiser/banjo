@@ -1,5 +1,41 @@
 # Puzzles on the machine (/play)
 
+October 15 gear alignment and held adjustments: compound toothed wheels now
+expose their compiled cylinder centre and hinge axis as the primary working
+point, rather than a post's upper face. Nearby wheel rings turn green for
+parallel planes within 8 mm; their centre connectors require both matching
+planes and centre heights within 8 mm. The editor reports the largest depth
+and height offset in centimetres. Plane alignment does not claim tooth contact
+or a win: the native moving preview remains authoritative. Geometry tests
+also distinguish reachable teeth, root overlap and separated rims. Guides
+use compiled shapes/joints and continue working after arbitrary part renaming.
+Aligned but separated teeth show **Teeth apart**. An engine-rejected overlap
+shows **Clear the overlap — move apart**, rather than staying at Checking.
+No placement, material, joint law, goal or stored solution is changed.
+
+Holding numeric +/− controls, spring-length buttons and zoom magnifiers starts
+repeating after 350 ms, then once per 100 ms. Taps keep their one-step action.
+Release, cancellation, lost capture/focus, hidden/removed controls and beginning
+a gold-handle drag stop repetition. Numeric ranges remain clamped; a drag or
+held press cannot add an extra click when released. Directional movement-pad
+buttons retain their existing held behavior.
+
+Four focused Ubuntu/SwiftShader browser cases pass in 77.321 s: geometry/colour
+feedback and the gear's native win, four-size gear controls, mouse/touch holds
+across gears/lenses/batteries/springs, and the spring's native latch/lift. The
+two-case follow-up passes in 43.424 s, checking actual ring material colours,
+held zoom, touch cancellation, limits, release and switching a hold into a drag.
+Pure view tests and two compiled-geometry/working-point checks pass. The native
+gear replay check passes in 2.320 s: replay/ordinary runs each took 0.2 s;
+all three nudged runs reach the original goal at 1.750, 1.633 and 1.750 s, while
+missing/misplaced gears fail. This editor change adds no conservation model;
+the native binary and all physical thresholds remain unchanged.
+The final spacing-message regression passes on desktop, phone portrait and
+landscape (27.913 s), checking both gap and overlap feedback before the native
+win. Ordinary Chrome checks and screenshots cover all three layouts. Syntax,
+view helpers and the 271-source registration guard pass. Full checkpoint CI
+remains required before production promotion.
+
 October 15 controls simplification: the bottom-right collapse caret and its
 hidden-panel mode are removed on desktop and phones. Controls, Help and the
 Sandbox Design tab switch the always-open dock; Try It!, Reset and the scene's

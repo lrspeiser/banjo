@@ -49,6 +49,28 @@ export function workingAlignment(primary, targets, tolerance=.008) {
   }
   return {axes,matches,direction};
 }
+
+// Wheel planes are independent of centre height and tooth reach. All distances
+// use compiled geometry, never screen projection or a lesson's stored solution.
+export function wheelAlignment(primary, targets, tolerance=.008) {
+  if(!primary?.wheel || !primary.at?.every(Number.isFinite))return [];
+  const unit=v=>v?.length===3&&v.every(Number.isFinite)&&Math.hypot(...v)>1e-9?v.map(x=>x/Math.hypot(...v)):null;
+  const normal=unit(primary.dir);if(!normal)return [];
+  return targets.filter(q=>q.wheel&&q.at?.every(Number.isFinite)).map(q=>{
+    const other=unit(q.dir);if(!other)return null;
+    const delta=q.at.map((x,i)=>x-primary.at[i]);
+    const plane=delta.reduce((s,x,i)=>s+x*normal[i],0);
+    const separation=Math.sqrt(Math.max(0,delta.reduce((s,x)=>s+x*x,0)-plane*plane));
+    const parallel=Math.abs(other.reduce((s,x,i)=>s+x*normal[i],0))>=.999;
+    const samePlane=parallel&&Math.abs(plane)<=tolerance;
+    const height=delta[1];
+    return {...q,plane_m:plane,height_m:height,separation_m:separation,parallel,samePlane,
+      sameHeight:Math.abs(height)<=tolerance,
+      teethReach:samePlane&&separation<=primary.wheel.radius_m+q.wheel.radius_m&&
+        separation>=primary.wheel.root_m+q.wheel.root_m};
+  }).filter(q=>q&&Math.hypot(...q.at.map((x,i)=>x-primary.at[i]))<=2)
+    .sort((a,b)=>a.separation_m-b.separation_m).slice(0,4);
+}
 // Only measured occupied cells. The fill is an energy budget indicator,
 // not a fabricated sub-cell hole, char depth or time-to-win estimate.
 export function thermalCells(light) {

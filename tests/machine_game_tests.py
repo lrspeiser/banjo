@@ -208,6 +208,30 @@ class Tray(unittest.TestCase):
         again=ma.seat_candidates(dict(diameter_m=.04),ball,compiled)
         self.assertAlmostEqual(min(again,key=lambda q:q['distance'])['distance'],0,places=8)
 
+    def test_wheel_guides_use_cylinder_centres_and_hinge_axes_without_piece_names(self):
+        import machine_alignment as ma
+        level=mg.level_by_id('easy-gears')
+        proposed=copy.deepcopy(level['solution'])
+        _,_,_,compiled=mg._assemble(level,proposed,lenient=True)
+        before=copy.deepcopy(compiled)
+        row=mg.ghost(level,proposed,0,nearby=True)['alignment']['primary']
+        self.assertEqual(row['label'],'wheel axle')
+        self.assertEqual(row['at'],[0,.65,0])
+        self.assertEqual(row['dir'],[0,0,1])
+        self.assertAlmostEqual(row['wheel']['radius_m'],.1608)
+        self.assertAlmostEqual(row['wheel']['root_m'],.1272)
+        self.assertEqual(compiled,before)
+        renamed=copy.deepcopy(compiled)
+        names={p['name']:'body '+str(i) for i,p in enumerate(renamed['parts'])}
+        for part in renamed['parts']:part['name']=names[part['name']]
+        for joint in renamed['joints']:
+            for key in ('a','b'):
+                if joint.get(key) in names:joint[key]=names[joint[key]]
+        renamed.pop('electrical',None)
+        wheels=[f for f in ma.features(renamed) if f.get('wheel')]
+        self.assertEqual(len(wheels),3)
+        self.assertTrue(all(f['at'][1]==.65 and f['dir']==[0,0,1] for f in wheels))
+
     def test_working_guides_use_compiled_optics_and_the_knifes_edge_circle(self):
         import machine_alignment as ma
         for id,piece in [('easy-mirror','mirror'),('easy-lens','lens'),('easy-cut','knife')]:

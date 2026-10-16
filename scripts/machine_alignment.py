@@ -29,6 +29,30 @@ def features(compiled):
     parts = {p['name']: p for p in compiled['parts']}
     members = {j['member'] for j in compiled.get('joints', []) if j.get('member')}
     special = {}
+    for joint in compiled.get('joints', []):
+        if joint['kind'] != 'hinge':
+            continue
+        part = parts.get(joint['b'])
+        if not part or part['shape'] != 'compound':
+            continue
+        axis = mw._unit(joint['axis'])
+        solids = mw.solids_of(part)
+        for sub, solid in zip(part['parts'], solids):
+            if sub['shape'] != 'cylinder' or abs(dot(mw._axes(solid)[1], axis)) < .999:
+                continue
+            center, root = solid['at_m'], sub['size_m'][0]/2
+            teeth = []
+            for piece, tooth in zip(part['parts'], solids):
+                delta = [tooth['at_m'][i]-center[i] for i in range(3)]
+                depth = dot(delta, axis)
+                radial = math.sqrt(max(0, dot(delta, delta)-depth*depth))
+                if piece['shape'] == 'box' and radial > root and abs(depth) < .001:
+                    teeth.append((radial, piece['size_m'][0]))
+            if len(teeth) < 6:
+                continue
+            special[part['name']] = feature(part['name'], 'wheel axle', center, axis,
+                wheel=dict(root_m=root, radius_m=max(r+d/2 for r, d in teeth)))
+            break
     for joint in compiled.get('joints',[]):
         if joint['kind']=='slide' and joint['b'].endswith(' push plate'):
             p=parts[joint['b']];axis=mw._unit(joint['axis'])
@@ -143,7 +167,7 @@ def blade_candidates(primary, targets, p):
 def guide(compiled, mine, port_rows=(), prefer_exit=False):
     all_points = features(compiled)
     own = [f for f in all_points if f['part'] in mine]
-    primary = next((f for f in own if f['label'] in ('spring push face','lowest cutting-edge sweep', 'cutting edge',
+    primary = next((f for f in own if f['label'] in ('wheel axle','spring push face','lowest cutting-edge sweep', 'cutting edge',
                    'mirror center', 'lens center', 'collecting face')), None)
     if primary is None and port_rows:
         port = next((p for p in port_rows if p['kind']==('out' if prefer_exit else 'in')), port_rows[0])

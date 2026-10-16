@@ -3,7 +3,7 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
-import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints} from '../client/voxel-lab/machine-view.mjs';
+import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints} from '../client/voxel-lab/machine-view.mjs';
 
 assert.equal(draggedKnobValue({min:0,max:2,step:.1},1,12),1.1);
 assert.equal(draggedKnobValue({min:0,max:2,step:.1},1,400),2);
@@ -74,6 +74,22 @@ assert.deepEqual(workingAlignment({...knifeSweep,at:[-.08,.9,.235]},[cordSpan]).
 assert.equal(workingAlignment({...knifeSweep,at:[-.08,.69,.27]},[cordSpan]).direction,null,'screen crossings at different depths do not align');
 const tiltedSpan={...cordSpan,span:[[0,.525,.185],[0,.825,.285]]};
 assert.equal(workingAlignment({at:[-.08,.675,.235],dir:[1,0,0]},[tiltedSpan]).direction.part,'member','rotated member geometry remains usable');
+
+const wheel={part:'arbitrary body',at:[0,.65,0],dir:[0,0,1],wheel:{root_m:.1272,radius_m:.1608}};
+const neighbour={...wheel,part:'another body',at:[.31,.65,0],dir:[0,0,-1]};
+const wheelCopy=JSON.stringify([wheel,neighbour]);
+assert.ok(wheelAlignment(wheel,[neighbour])[0].samePlane,'opposite axle normals describe the same plane');
+assert.ok(wheelAlignment(wheel,[neighbour])[0].sameHeight);
+assert.ok(wheelAlignment(wheel,[neighbour])[0].teethReach);
+const high=wheelAlignment(wheel,[{...neighbour,at:[.31,.70,0]}])[0];
+assert.ok(high.samePlane&&!high.sameHeight,'coplanar wheels need a separate height cue');
+assert.ok(!wheelAlignment(wheel,[{...neighbour,at:[.31,.65,.02]}])[0].samePlane,'matching screen heights cannot hide depth error');
+assert.ok(!wheelAlignment(wheel,[{...neighbour,dir:[0,1,0]}])[0].samePlane,'crossed axes cannot mesh as coplanar wheels');
+assert.ok(!wheelAlignment(wheel,[{...neighbour,at:[.5,.65,0]}])[0].teethReach,'green planes do not claim contact across a gap');
+assert.ok(!wheelAlignment(wheel,[{...neighbour,at:[.1,.65,0]}])[0].teethReach,'overlapping roots are not a valid contact');
+assert.deepEqual(wheelAlignment({...wheel,dir:[0,0,0]},[neighbour]),[]);
+assert.deepEqual(wheelAlignment(wheel,[{...neighbour,at:[3,.65,0]}]),[]);
+assert.equal(JSON.stringify([wheel,neighbour]),wheelCopy,'alignment cannot change a physical setup');
 
 const pinA = [-.68, .18, .07], pinB = [.68, .08, .07];
 for (const [a,b] of [[pinA,pinB], [pinB,pinA], [pinA,[-.68,.18,.07]], [[0,.012,.1],[0,.012,.3]]]) {
