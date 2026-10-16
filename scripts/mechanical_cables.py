@@ -12,22 +12,30 @@ def length(a, b):
     return math.dist(a, b)
 
 
+def shape_points(part):
+    """World corners using the engine's Rx Ry Rz convention, including kits."""
+    def rotate(point,turn):
+        x,y,z=point;rx,ry,rz=map(math.radians,turn)
+        x,y=math.cos(rz)*x-math.sin(rz)*y,math.sin(rz)*x+math.cos(rz)*y
+        x,z=math.cos(ry)*x+math.sin(ry)*z,-math.sin(ry)*x+math.cos(ry)*z
+        y,z=math.cos(rx)*y-math.sin(rx)*z,math.sin(rx)*y+math.cos(rx)*z
+        return [x,y,z]
+    if part.get('parts'):
+        local=[point for child in part['parts'] for point in shape_points(child)]
+    else:
+        size=part['size_m']
+        local=[[(1 if mask&(1<<i) else -1)*size[i]/2 for i in range(3)] for mask in range(8)]
+    at=part.get('at_m',[0,0,0]);turn=part.get('turn_deg',[0,0,0])
+    return [[at[i]+v for i,v in enumerate(rotate(point,turn))] for point in local]
+
+
 def construction_path(a, b, parts, lane=0, radius=.003):
     clearance=radius+.008
     boxes=[]
     for p in parts:
-        at=p['at_m']; size=p.get('size_m')
-        if not size:
-            children=p.get('parts',[])
-            if not children:continue
-            bound=max(math.sqrt(sum(v*v for v in c.get('at_m',[0,0,0])))+
-                      math.sqrt(sum(v*v for v in c['size_m']))/2 for c in children)
-            size=[2*bound]*3
-        # Rotated bounds are deliberately conservative, not collision geometry.
-        turns=p.get('turn_deg',[0,0,0])
-        if any(abs(t)>1e-8 for t in turns): size=[math.sqrt(sum(v*v for v in size))]*3
-        boxes.append(([at[i]-size[i]/2-clearance for i in range(3)],
-                      [at[i]+size[i]/2+clearance for i in range(3)]))
+        points=shape_points(p)
+        boxes.append(([min(q[i] for q in points)-clearance for i in range(3)],
+                      [max(q[i] for q in points)+clearance for i in range(3)]))
     def inside(p,o):return all(o[0][i]+1e-8<p[i]<o[1][i]-1e-8 for i in range(3))
     def escape(p):
         hits=[o for o in boxes if inside(p,o)]

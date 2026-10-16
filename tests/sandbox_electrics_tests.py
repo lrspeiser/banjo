@@ -20,6 +20,23 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_tilted_solar_panel_does_not_enclose_the_motor_lead_in_empty_space(self):
+        level=mg.level_by_id('easy-charge-lift')
+        # The ordinary editor's clear starting location, distinct from the
+        # authored solution. A diagonal-size cube falsely buried a terminal.
+        spec=mg.compose(level,[dict(piece='solar',x_m=-.16,z_m=-.6,yaw_deg=-90,pitch_deg=70)])[0]
+        compiled=mw.compile_spec(spec)
+        leads=[w for w in compiled['electrical']['wires'] if 'mechanical' in w]
+        self.assertEqual(len(leads),2)
+        self.assertTrue(all(len(w['mechanical']['path_m'])>=2 for w in leads))
+        for p in compiled['parts']:
+            if not p['name'].startswith('your solar'):continue
+            # Independent corner construction through the main scene's matrix.
+            matrix=mw.rotation(p.get('turn_deg',[0,0,0]))
+            for point in e.mechanical_cables.shape_points(p):
+                local=mw._mat_apply(list(map(list,zip(*matrix))),[point[i]-p['at_m'][i] for i in range(3)])
+                self.assertTrue(all(abs(local[i])<=p['size_m'][i]/2+1e-8 for i in range(3)))
+
     def test_clipped_heater_has_a_hollow_mount_and_cannot_heat_remotely(self):
         level=mg.level_by_id('easy-heat')
         spec=mg.compose(level,level['solution'])[0]

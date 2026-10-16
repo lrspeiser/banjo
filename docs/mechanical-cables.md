@@ -145,3 +145,16 @@ enabled/44 px/in-scene/hit-test predicate, rather than visibility alone, while
 the native session and next layout frame finish. No target-size or visibility
 condition is weakened and no spring behavior changes. Its four-layout native
 lift check passes in 25.881 s; full checkpoint CI remains required.
+
+The first hosted checkpoint dd36c712 passed package checks and manually completed
+Turn the axle with three stars, with its engine hash matching the published
+package. Broader CI then exposed a Sun-powered lift editor placement at
+x=-0.16, z=-0.6, turn=-90°, tip=70°. The old construction bound replaced every
+rotated box with a diagonal-size cube, falsely enclosing a motor terminal in
+empty space and blocking placement/connection. Bounds now use actual transformed
+corners, recursively through compounds, in the engine's Rx Ry Rz convention.
+Native collision laws, goals and tolerances are unchanged. A compilation/corner regression
+and the ordinary three-layout solar connection flow cover this follow-up.
+Three compilation/native checks pass in 2.832 s. The solar connection and motor
+browser flows pass in 36.106 s across desktop, phone portrait and landscape.
+The native executable is unchanged by this construction-bound correction.
