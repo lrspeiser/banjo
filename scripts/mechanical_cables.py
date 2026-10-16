@@ -267,11 +267,11 @@ def legacy_leads(circuit,parts,joints,batteries,occupied=()):
     source=next(b['in'] for b in batteries if b['name']==circuit['battery'])
     load=(circuit.get('coil') or {}).get('heats')
     if not load:load=next(j['a'] for j in joints if j['name']==circuit['motor']['hinge'])
-    def plug(name,side=0,exit_extra=0):
+    def plug(name,side=0,exit_extra=0,seat=0):
         p=bodies[name];size=p.get('size_m')
         if not size:
             points=shape_points(p);size=[max(q[i] for q in points)-min(q[i] for q in points) for i in range(3)]
-        x,y,z=side*.3*size[0],0,size[2]/2+.004+exit_extra
+        x,y,z=side*.3*size[0]+seat,0,size[2]/2+.004+exit_extra
         rx,ry,rz=map(math.radians,p.get('turn_deg',[0,0,0]))
         x,y=math.cos(rz)*x-math.sin(rz)*y,math.sin(rz)*x+math.cos(rz)*y
         x,z=math.cos(ry)*x+math.sin(ry)*z,-math.sin(ry)*x+math.cos(ry)*z
@@ -286,18 +286,26 @@ def legacy_leads(circuit,parts,joints,batteries,occupied=()):
     else:
         links=[('supply',source,-1,load,-1,'switched' if 'switch' in circuit else 'plus','load feed'),
                ('return',load,1,source,1,'load return','minus')]
-    leads=[]
+    # A combined battery/load body can expose two different electrical pins
+    # at the same nominal side. Give those real, separate surface seats.
+    from collections import Counter
+    counts=Counter((body,side) for _,a,sa,b,sb,_,_ in links for body,side in ((a,sa),(b,sb)))
+    used=Counter();leads=[]
     for leg,a,sa,b,sb,na,nb in links:
         name=circuit['name']+'/'+leg
-        exits=dict(exit_a_m=plug(a,sa,.15),exit_b_m=plug(b,sb,.15))
-        physical,span,area=connection(name,a,plug(a,sa),b,plug(b,sb),parts,len(leads),exits)
+        seats=[]
+        for key in ((a,sa),(b,sb)):
+            seats.append((used[key]-(counts[key]-1)/2)*.012);used[key]+=1
+        pa,pb=plug(a,sa,seat=seats[0]),plug(b,sb,seat=seats[1])
+        exits=dict(exit_a_m=plug(a,sa,.15,seats[0]),exit_b_m=plug(b,sb,.15,seats[1]))
+        physical,span,area=connection(name,a,pa,b,pb,parts,len(leads),exits)
         # A service loop allows a contact leaf to move without using its
         # supply lead as a mechanical restraint. It is real stock, not a
         # spring-free endpoint exemption or a runtime reroute.
         prior=list(occupied)+[w['mechanical'] for w in leads]
         for extra in (1.,.5,.25,0):
             try:
-                physical,span,area=connection(name,a,plug(a,sa),b,plug(b,sb),parts,len(leads),exits,
+                physical,span,area=connection(name,a,pa,b,pb,parts,len(leads),exits,
                     stock_length=span+extra if extra else None,occupied=prior)
                 break
             except ValueError:

@@ -999,7 +999,7 @@ class Puzzles(unittest.TestCase):
                     self.click_scene_socket(b,touch=width!=1280)
                     self.wait(f'!window.machineGhostState() && {READY}',60)
                 self.assertEqual(self.js("machinePlacements().filter(p=>p.piece==='wire'&&(p.a_terminal==='lamp:minus'||p.b_terminal==='lamp:minus')).length"),2)
-                self.click_existing_wire('your wire 2',touch=width!=1280)
+                self.click_existing_wire('your wire 2',touch=width!=1280,hold=.2)
                 self.wait(f'machinePlacements().length===2 && {READY}',60)
                 self.assertEqual(self.js('machinePlacements()[1].a_terminal'),'lamp:minus')
                 self.assertEqual(self.js('machinePlacements()[1].b_terminal'),'your battery 1:minus')
@@ -2925,14 +2925,14 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Try It!');self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('level-done').textContent"))
 
-    def click_existing_wire(self,name,touch=False,fraction=.5):
+    def click_existing_wire(self,name,touch=False,fraction=.5,hold=0):
         self.wait('machineCamera().settled',30)
         self.wait(f'Boolean(window.machineWireScreen({json.dumps(name)},{fraction}))',10)
         # Native cords sag during setup. A projected point can be behind a
         # case or inside a terminal's touch area; canvas ownership alone does
         # not mean the visible wire can receive that click.
         removable=f'machineScenePick(...p).wires.includes({json.dumps(name)})' if name.startswith('your ') else 'true'
-        expression=f"[{fraction},...Array.from({{length:39}},(_,i)=>(i+1)/40)].map(f=>machineWireScreen({json.dumps(name)},f)).find(p=>p&&document.elementFromPoint(...p)?.tagName==='CANVAS'&&{removable}&&!machineScenePick(...p).socket)"
+        expression=f"[{fraction},...Array.from({{length:39}},(_,i)=>(i+1)/40)].map(f=>machineWireScreen({json.dumps(name)},f)).find(p=>p&&document.elementFromPoint(...p)?.tagName==='CANVAS'&&{removable}&&!machineScenePick(...p).socket&&!machineScenePick(...p).pieces.length)"
         point=None;deadline=time.monotonic()+10
         while time.monotonic()<deadline:
             # A fast live run can finish while we find a moving cord. Dismiss
@@ -2947,9 +2947,12 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(self.js(f'document.elementFromPoint({x},{y})?.tagName'),'CANVAS')
         if touch:
             self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y,'id':1}]})
+            if hold:time.sleep(hold)
             self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
         else:
-            self.mouse('mousePressed',x,y);self.mouse('mouseReleased',x,y)
+            self.mouse('mousePressed',x,y)
+            if hold:time.sleep(hold)
+            self.mouse('mouseReleased',x,y)
         if self.js("!document.getElementById('socket-choices').hidden"):
             self.click_visible('Remove '+name.removeprefix('your '))
 

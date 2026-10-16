@@ -300,6 +300,10 @@ class Engine(unittest.TestCase):
                               'coil': {'heats': 'box', 'resistance_ohm': 2}}],
                 'stations': [{'title': 'Lands', 'done_when': {'switch_closed': 'c'}, 'focus': ['ball']}]}
         compiled = mw.compile_spec(spec)
+        leads=compiled['circuits'][0]['leads']
+        pins=[(lead['mechanical'][body],tuple(lead['mechanical']['path_m'][index]))
+              for lead in leads for body,index in (('a_body',0),('b_body',-1))]
+        self.assertEqual(len(pins),len(set(pins)),'Distinct plugs must not occupy the same surface seat')
         with tempfile.TemporaryDirectory() as logs:
             r = mw.rehearse(compiled, ENGINE, Path(logs), seconds=2.5, after_s=2.0)
         self.assertTrue(r['stations'][0]['done'], r['events'])
@@ -368,7 +372,12 @@ class Engine(unittest.TestCase):
                         break
                 circuit = frame['readouts']['circuits'][0]
                 self.assertTrue(circuit['closed'])
-                self.assertAlmostEqual(circuit['current_a'], 48 / (0.05 + 0.001 + 0.8), places=3)
+                # The migrated leads add geometry-derived copper resistance.
+                # Keep the same current precision and account for every lead.
+                prepared=session.compiled['circuits'][0]
+                lead_resistance=sum(w['resistance_ohm'] for w in prepared['leads'])
+                self.assertGreater(lead_resistance,0)
+                self.assertAlmostEqual(circuit['current_a'], 48 / (0.05 + 0.001 + 0.8 + lead_resistance), places=3)
                 self.assertAlmostEqual(frame['readouts']['heat_ledger']['heater_in_j'], circuit['into_body_j'],
                                        delta=1e-6 * max(1.0, circuit['into_body_j']) + 0.02)
                 self.assertLess(abs(circuit['electrical_residual_j']), 1e-6)

@@ -650,7 +650,7 @@ window.machineWiringState = () => ({selected:terminalStart, busy:terminalBusy,
 // Pick the actual connection point in the scene, independently of the
 // optional offset buttons and precision selectors. These rings and the
 // unfinished line are editing guides, not energized wires or conductors.
-let socketPointer = null, socketPress = null;
+let socketPointer = null, socketPress = null, wirePress = null;
 const socketMarks = new Map();
 const socketSvg = $('scene-sockets'), socketNS = socketSvg.namespaceURI;
 const heaterAttachButton=button('Clip to cord',()=>{
@@ -4350,8 +4350,8 @@ async function disconnectPlacedWire(hit) {
   } catch(e){powerMessage(e.message);}
   finally{rewiringBusy=false;}
 }
-function clickExistingWire(x,y,touch) {
-  const rows=wireCandidates(x,y,touch);if(!rows.length)return false;
+function clickExistingWire(x,y,touch,rows=wireCandidates(x,y,touch)) {
+  if(!rows.length)return false;
   if(rows[1] && rows[1].gap-rows[0].gap<6) {
     const choice=$('socket-choices');choice.replaceChildren();
     for(const row of rows.slice(0,4))choice.append(button(`Remove ${row.name.replace(/^your /,'')}`,()=>{choice.hidden=true;disconnectPlacedWire(row);}));
@@ -4457,12 +4457,13 @@ window.machinePlacementGrid=()=>({enabled:gridSnapEnabled,step_m:PLACEMENT_GRID.
 renderer.domElement.addEventListener('pointerdown', e => {
   if (pointers.size > 1) {
     if (pulling) letGo();
-    cameraGesture = true; draggingGhost = null; pressedAt = null; socketPress=null;$('socket-choices').hidden=true;
+    cameraGesture = true; draggingGhost = null; pressedAt = null; socketPress=null;wirePress=null;$('socket-choices').hidden=true;
     view.classList.remove('grabbing'); return;
   }
   if (cameraGesture) return;
   $('socket-choices').hidden=true;
   socketPointer=[e.clientX,e.clientY];socketPress=null;
+  wirePress=!ghost&&e.button===0&&!e.ctrlKey?{id:e.pointerId,hits:wireCandidates(e.clientX,e.clientY,e.pointerType==='touch')}:null;
   if(pendingPieceReference&&ghost&&e.button===0&&!e.ctrlKey){pressedAt=[e.clientX,e.clientY];sceneDragged=false;draggingGhost=null;return;}
   const nearbySockets=socketsAt(e.clientX,e.clientY,e.pointerType==='touch');
   // The enlarged terminal hit area must not swallow a click on a small case.
@@ -4473,7 +4474,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
   // and an explicitly started connection first, but do not let the enlarged
   // touch halo turn a visible cable tap into a new, unfinished wire.
   const wireClick=!ghost&&!wiringMode&&!terminalStart&&!pickedPowerPort&&
-    nearbySockets[0]?.gap>9&&wireCandidates(e.clientX,e.clientY,e.pointerType==='touch').length>0;
+    nearbySockets[0]?.gap>9&&wirePress?.hits.length>0;
   if(e.button===0&&!e.ctrlKey && nearbySockets.length&&!caseClick&&!wireClick) {
     socketPress=e.pointerId;pressedAt=[e.clientX,e.clientY];sceneDragged=false;draggingGhost=null;return;
   }
@@ -4530,11 +4531,14 @@ renderer.domElement.addEventListener('pointermove', e => {
 renderer.domElement.addEventListener('pointerup', e => {
   if(switchDragging?.pointerId===e.pointerId){endSwitchPointer(e);pressedAt=null;if(!pointers.size)cameraGesture=false;return;}
   const click = e.button === 0 && !cameraGesture && !sceneDragged && pressedAt && Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6;
+  // Select the cord touched at press time. Native gravity can move it before
+  // release; a stationary tap must not pick the case revealed underneath.
+  const pressedWires=wirePress?.id===e.pointerId?wirePress.hits:undefined;wirePress=null;
   if(click && socketPress===e.pointerId && finishSocketClick(e.clientX,e.clientY,e.pointerType==='touch')) {
     socketPress=null;draggingGhost=null;pressedAt=null;return;
   }
   socketPress=null;
-  if(click && !ghost && !e.ctrlKey && clickExistingWire(e.clientX,e.clientY,e.pointerType==='touch')) {
+  if(click && !ghost && !e.ctrlKey && clickExistingWire(e.clientX,e.clientY,e.pointerType==='touch',pressedWires)) {
     draggingGhost=null;pressedAt=null;return;
   }
   if(ghost&&click&&pendingPieceReference){
@@ -4558,7 +4562,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   view.classList.remove('grabbing');
 });
 const cancelPlacementGesture = () => {
-  draggingGhost = null; pressedAt = null;socketPress=null;
+  draggingGhost = null; pressedAt = null;socketPress=null;wirePress=null;
   if (!pointers.size) cameraGesture = false;
   view.classList.remove('grabbing');
 };

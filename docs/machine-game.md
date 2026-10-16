@@ -12,6 +12,12 @@ Outside a connection ring, an exposed placed cord takes precedence over a
 socket's enlarged touch halo. Tapping the ring or explicitly starting a new
 connection still chooses wiring. The browser probe now checks actual cord
 visibility and socket overlap before choosing a deletion point.
+Cable taps retain their initial press hit until release, so a settling cord
+does not select the exposed case behind it. Moving more than the existing
+click threshold or starting a second touch cancels the tap. Three browser
+flows (held taps, solar removal/Undo and camera dragging/prepared leads) pass
+in 76.813 s across desktop and phone orientations. The complete Linux
+machine-world suite passes 38 checks in 49.442 s; the native binary is unchanged.
 Cable fitting rejects pairs whose axis intervals are already farther apart
 than the required clearance before computing exact segment distance. All 39
 authored/example compiled declarations matched the previous implementation;
@@ -23,6 +29,13 @@ lamp goal in 0.433–0.467 s; electrical residuals were below 1.8e-13 J.
 Their old near-side negative could rebound off a real lead into the paddle;
 the negative rehearsal now uses a clear 50 cm lateral miss. The goal, time
 limit, friction, and successful placement remain unchanged.
+Legacy circuit conversion separates coincident nominal plug positions when a
+single body contains both source and load, at 12 mm seat spacing. Other
+connections retain their existing positions. All 39 authored/example compiled
+declarations match before/after. The ball-on-plate contact regression now builds
+and retains its original closure timing/at-rest assertions. The live current
+oracle includes the sum of geometry-derived copper resistances at its original
+three-decimal precision; electrical and heater-ledger bounds are unchanged.
 Wire proximity picking yields to solid cases unless the actual visible cable
 mesh is in front. The older falling battery holder puts its wire jacks on the
 front of its metal pads, leaving the top contact faces clear. Six native checks
