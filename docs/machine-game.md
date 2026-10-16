@@ -1,5 +1,21 @@
 # Puzzles on the machine (/play)
 
+October 15 duplicate-PR qualification: the exact staged `f249755e` source
+passed all 146 browser scenarios and 158 native groups before promotion.
+Its parallel PR merge build exposed three timing-sensitive fixture cases:
+the wiring hint was read before repaint, Help navigation dereferenced a new
+page's element before it existed, and the river gate was sampled one display
+frame before reaching the asserted 8 cm rise. These checks now wait for those
+same states. The gate still must rise at least 0.08 m; native goals, materials,
+timestep and tolerances are unchanged. This follow-up changes tests and the
+dated release notes, not application behavior. Its own complete checks remain
+required before promotion.
+All three affected cases pass on Ubuntu with the published Linux engine and
+SwiftShader (46.478 s), including desktop and phone views. Source registration
+and the unchanged promotion-guard tests pass. Linux tests use
+`GIT_OPTIONAL_LOCKS=0` when run from WSL against the Windows checkout so a
+timed-out read-only Git status cannot leave an index-refresh lock.
+
 October 15 final meter sizing correction: candidate `6210faae` passed all 158
 native CTest groups and 145 of 146 browser scenarios on Linux; its remaining
 failure was the capacitor meter in phone landscape. A pending label could be

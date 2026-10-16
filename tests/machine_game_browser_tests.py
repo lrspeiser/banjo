@@ -1584,6 +1584,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Try It!');self.assert_measured_river_current()
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                self.wait(f"window.machineBodies()['river gate'][1]-{initial}>=.08",10)
                 self.assertGreaterEqual(self.js("window.machineBodies()['river gate'][1]")-initial,.08)
 
     def test_river_lift_has_a_clear_connection_and_native_moving_preview(self):
@@ -2662,7 +2663,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('window.machineWiringState().selected'),'lamp:minus')
                 self.assertEqual(self.js("document.querySelector('#ghost-bar .state').textContent"),'Choose the other connection point.')
                 self.assertEqual(self.js('window.machinePlacements()'),[],'the first click creates no saved wire')
-                self.assertTrue(self.js("document.getElementById('scene-wire-hint').textContent.includes('lamp:minus')"))
+                self.wait("document.getElementById('scene-wire-hint').textContent.includes('lamp:minus')",5)
                 self.assertFalse(self.js("[...document.querySelectorAll('#ghost-bar select')].some(e=>!e.closest('#precision-controls')&&/terminal/.test(e.getAttribute('aria-label'))&&e.getClientRects().length)"))
                 self.key('Escape');self.wait('!window.machineGhostState()',5)
                 self.assertEqual(self.js('window.machinePlacements()'),[])
@@ -3366,7 +3367,7 @@ class Puzzles(unittest.TestCase):
                 self.js('scrollTo(0,0)')
                 before = open_help(); self.key('Escape'); assert_closed(before)
                 self.page.send('Page.navigate', {'url': self.base + '/play'})
-                self.wait("!document.getElementById('levels-screen').hidden", 60)
+                self.wait("document.getElementById('levels-screen')?.hidden===false", 60)
                 before = open_help()
                 # A backdrop click dismisses, while content clicks do not.
                 self.mouse('mousePressed', 2, 2); self.mouse('mouseReleased', 2, 2); assert_closed(before)
