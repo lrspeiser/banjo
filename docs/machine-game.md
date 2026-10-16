@@ -1,5 +1,18 @@
 # Puzzles on the machine (/play)
 
+October 15 navigation qualification: `c156ac6c` passed seven browser batches,
+including the corrected wire audit. Its solar lift check read the hidden
+guide while entering the Sandbox example. All 52 browser navigation call
+sites now share a helper that waits for a new document epoch and completed
+document load; same-document fragment navigation retains its existing epoch.
+Gallery button checks also wait for the actual create/open action to finish
+its native rebuild, rather than accepting the previous ready clock. Four
+focused Ubuntu/SwiftShader cases pass in 47.203 s: solar lift and its Sandbox
+example, saved-design return URLs/cookies, Help navigation, and leaving during
+a deliberately delayed world open. This does not wait for the engine during
+navigation, so the last cancellation test retains its original behavior.
+These are harness changes only. The full exact-checkpoint CI remains required.
+
 October 15 moving-wire snapshot correction: `f8c5e955` CI caught another
 cross-frame audit read: the portrait label endpoint and its wire midpoint,
 read in separate CDP requests, differed by 6.647 pixels while the preview

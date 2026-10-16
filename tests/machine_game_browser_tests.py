@@ -176,7 +176,7 @@ class Puzzles(unittest.TestCase):
         try:
             other=host.open(machine_game.compose(machine_game.level_by_id('easy-weight'),[])[0])
             with patch.object(self.server,'environment','test'):
-                self.page.send('Page.navigate',{'url':self.base+'/play?level=easy-weight'})
+                self.navigate(self.base+'/play?level=easy-weight')
                 self.wait("document.getElementById('test-busy')?.hidden===false",15)
                 self.assertEqual(list(host.sessions),[other['session']])
                 self.click_visible('Use this browser');self.wait(READY,15)
@@ -261,7 +261,7 @@ class Puzzles(unittest.TestCase):
             return result
         try:
             with patch.object(host, 'open', side_effect=delayed_open), patch.object(host, 'close', side_effect=record_close):
-                self.page.send('Page.navigate', {'url':self.base+'/play?level=easy-weight'})
+                self.navigate(self.base+'/play?level=easy-weight')
                 self.assertTrue(entered.wait(10))
                 self.js("document.getElementById('levels-open').click()")
                 proceed.set()
@@ -281,7 +281,7 @@ class Puzzles(unittest.TestCase):
         host.limit = 1
         try:
             other = host.open(machine_game.compose(machine_game.level_by_id('easy-weight'), [])[0])
-            self.page.send('Page.navigate', {'url':self.base+'/play?level=easy-weight'})
+            self.navigate(self.base+'/play?level=easy-weight')
             self.wait("document.getElementById('clock')?.textContent.startsWith('Simulation busy.')", 15)
             self.assertFalse(self.js("document.getElementById('clock').hidden"))
             self.assertEqual(list(host.sessions), [other['session']])
@@ -296,6 +296,17 @@ class Puzzles(unittest.TestCase):
 
     def js(self, expression):
         return self.page.evaluate(expression)
+
+    def navigate(self, url):
+        previous=self.js('performance.timeOrigin')
+        response=self.page.send('Page.navigate',{'url':url})
+        self.assertFalse(response.get('errorText'),response)
+        # Page.navigate acknowledges before the old document is replaced.
+        # Its controls must never satisfy the destination's readiness checks.
+        # A same-document fragment navigation has no new loader/epoch.
+        if response.get('loaderId'):
+            self.wait(f"performance.timeOrigin!=={previous} && document.readyState==='complete'",60)
+        return response
 
     def wait(self, expression, seconds=60.0):
         deadline = time.monotonic() + seconds
@@ -327,7 +338,7 @@ class Puzzles(unittest.TestCase):
         self.page.send('Emulation.setTouchEmulationEnabled', {'enabled': phone, 'maxTouchPoints': 5})
         destination=f'{self.base}/play?level={level}'
         previous=self.js('performance.timeOrigin')
-        navigated=self.page.send('Page.navigate', {'url':destination})
+        navigated=self.navigate(destination)
         self.assertFalse(navigated.get('errorText'),navigated)
         expected=f'location.href==={json.dumps(destination)}'
         if level=='free':
@@ -408,6 +419,15 @@ class Puzzles(unittest.TestCase):
             !b.disabled && b.offsetParent !== null && (!document.getElementById('piece-picker').open || b.closest('#piece-picker')) && ((b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(name)}));
             if (b) b.click(); return Boolean(b); }})()""")
         self.assertTrue(found, f'no button {name!r} to press: '+str(self.js("({ghost:machineGhostState(),editorHidden:document.getElementById('piece-editor').hidden,down:[...document.querySelectorAll('#piece-editor .down')].map(b=>({hidden:b.hidden,disabled:b.disabled}))})")))
+        if name=='Add New Design' or name.startswith(('Start from ','Open design ')):
+            # Gallery actions await design creation and the native rebuild.
+            # The old ready clock can remain while that action starts.
+            self.wait(f"""(() => {{const button=[...document.querySelectorAll('#sandbox-screen button')]
+                .find(b=>(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(name)});
+                return button?.disabled===false && document.getElementById('sandbox-screen').hidden;
+            }})() && {READY}""",90)
+            self.wait('machineCamera().settled',30)
+            self.paint()
 
     def slide(self, label, value):
         if label=='Adjust a piece':
@@ -701,7 +721,7 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(all(d['power_w']>2 for d in lamps),lamps)
 
     def test_rc_sandbox_library_and_saved_version_preserve_component_ratings_and_wires(self):
-        self.page.send('Page.navigate',{'url':self.base+'/machine'})
+        self.navigate(self.base+'/machine')
         self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
         self.press('Start from Charge and release');self.wait(READY,60)
         base=self.js('window.machineDesign().draft.base')
@@ -713,7 +733,7 @@ class Puzzles(unittest.TestCase):
         self.press('Add a piece')
         self.assertTrue(self.js("[...document.querySelectorAll('#piece-grid button')].some(b=>b.textContent.includes('capacitor'))"))
         self.assertTrue(self.js("[...document.querySelectorAll('#piece-grid button')].some(b=>b.textContent.includes('resistor'))"))
-        self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,60)
+        self.navigate(self.js('location.href'));self.wait(READY,60)
         self.assertEqual(self.js('window.machineDesign().draft.base'),base)
         self.assertIn(version,[v['number'] for v in self.js('window.machineDesign().versions')])
         self.click_visible('Try It!')
@@ -1066,7 +1086,7 @@ class Puzzles(unittest.TestCase):
                     if mode=='empty':
                         # Charge is a Sandbox setting; lessons expose only
                         # their relevant adjustments. Use its real example.
-                        self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+                        self.navigate(f'{self.base}/machine')
                         self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
                         self.press('Start from Drop a battery into its holder');self.wait(READY,60)
                         self.click_piece(0);self.ghost()
@@ -1090,7 +1110,7 @@ class Puzzles(unittest.TestCase):
             with self.subTest(viewport=(width,height)):
                 self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
                 self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':width!=1280,'maxTouchPoints':5})
-                self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+                self.navigate(f'{self.base}/machine')
                 self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
                 self.press('Start from Drop a battery into its holder');self.wait(READY,60)
                 initial=self.js('window.machinePlacements()')
@@ -1104,7 +1124,7 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.ghost()['fits'])
                 self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
                 self.click_visible('Save version');self.wait(f"/Version {first_version+1} saved/.test(document.getElementById('design-status').textContent)",10)
-                self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,60)
+                self.navigate(self.js('location.href'));self.wait(READY,60)
                 self.assertEqual(self.js('window.machinePlacements()[0].charge_percent'),0)
                 self.assertEqual(self.js('window.machineDesign().draft.base'),base)
                 self.reveal_control("document.querySelector('#design-versions summary')")
@@ -1127,7 +1147,7 @@ class Puzzles(unittest.TestCase):
             with self.subTest(viewport=(width,height)):
                 self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
                 self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':width!=1280,'maxTouchPoints':5})
-                self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+                self.navigate(f'{self.base}/machine')
                 self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
                 self.press('Start from Drop a battery into its holder');self.wait(READY,60)
                 self.assertEqual(self.js("document.querySelectorAll('#power-labels .power-label').length"),0)
@@ -1486,7 +1506,7 @@ class Puzzles(unittest.TestCase):
                 ('Gravity tank',[dict(piece='water_tank',outlet_model='gravity',opening_percent=38)])]:
             draft=dict(name=name,base=water.CHANNEL_BASE,placements=placements)
             packed=base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
-            self.page.send('Page.navigate',{'url':f'{self.base}/machine#build=j{packed}'})
+            self.navigate(f'{self.base}/machine#build=j{packed}')
             self.wait(f'window.machineDesign?.()?.name==={json.dumps(name)} && {READY}',60)
             saved=self.js('window.machinePlacements()[0]')
             if name=='Legacy wheel':self.assertEqual(saved['side'],'left')
@@ -1500,7 +1520,7 @@ class Puzzles(unittest.TestCase):
             # pending. Wait for the save itself, not a previous sync receipt.
             self.wait(f'window.machineDesign().versions.length==={count+1} && /Version .*saved/.test(document.getElementById("design-status").textContent)',10)
             self.anonymous_cloud_saved()
-            self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,60)
+            self.navigate(self.js('location.href'));self.wait(READY,60)
             self.assertEqual(self.js('window.machinePlacements()[0]'),saved)
             self.assertEqual(self.js('window.machineDesign().versions.at(-1).draft.placements[0]'),saved)
 
@@ -1544,7 +1564,7 @@ class Puzzles(unittest.TestCase):
     def test_river_workbench_places_a_useful_wheel_and_restores_its_saved_connections(self):
         self.page.send('Emulation.setDeviceMetricsOverride',{'width':1280,'height':860,'deviceScaleFactor':1,'mobile':False})
         self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':False})
-        self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+        self.navigate(f'{self.base}/machine')
         self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",60)
         self.press('Start from Build beside a river');self.wait(READY,60)
         self.assertEqual(self.js('window.machinePlacements()'),[])
@@ -1559,7 +1579,7 @@ class Puzzles(unittest.TestCase):
         self.click_visible('Pause');self.click_visible('Restart with my pieces');self.wait(READY,60)
         self.assertEqual(self.js('window.machineDesign().draft.base'),base)
         self.assertEqual(self.js('window.machinePlacements()'),setup)
-        self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,60)
+        self.navigate(self.js('location.href'));self.wait(READY,60)
         self.assertEqual(self.js('window.machinePlacements()'),setup)
         self.assertEqual(self.js('window.machineDesign().draft.base'),base)
         self.press('Remove your water_wheel 1');self.wait(f'window.machinePlacements().length===0 && {READY}',60)
@@ -1724,7 +1744,7 @@ class Puzzles(unittest.TestCase):
                 self.press('Undo'); self.wait(READY,30)
                 self.assertEqual(self.js('window.machinePlacements()[0].length_m'),.7)
                 # The same shortcut keeps a sandbox draft and saved version.
-                self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+                self.navigate(f'{self.base}/machine')
                 self.wait("document.getElementById('sandbox-screen')?.hidden===false",30)
                 self.press('Add New Design'); self.wait(READY,30)
                 self.press('Add a plank'); self.ghost()
@@ -2029,7 +2049,7 @@ class Puzzles(unittest.TestCase):
                 self.slide('Exact height change',.1);self.ghost();self.click_visible('✓ Set down');self.wait(READY,90)
                 self.press('Save version');self.anonymous_cloud_saved()
                 expected=self.js('machineDesign().draft');url=self.js('location.href')
-                self.page.send('Page.navigate',{'url':url});self.wait(READY,90)
+                self.navigate(url);self.wait(READY,90)
                 self.assertEqual(self.js('machineDesign().draft'),expected)
                 self.assertLessEqual(self.js('document.body.scrollWidth'),width)
 
@@ -2062,7 +2082,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(len(self.js('machinePlacements()')),1)
                 self.click_visible('Undo');self.wait(READY,90);self.assertEqual(len(self.js('machinePlacements()')),2)
                 self.press('Save version');self.anonymous_cloud_saved();expected=self.js('machineDesign().draft')
-                self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,90)
+                self.navigate(self.js('location.href'));self.wait(READY,90)
                 self.assertEqual(self.js('machineDesign().draft'),expected)
 
     def test_sandbox_gallery_shows_saved_designs_before_all_examples_without_filters(self):
@@ -2175,7 +2195,7 @@ class Puzzles(unittest.TestCase):
             with self.subTest(viewport=(width,height)):
                 self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
                 for template,channel in [('Build your first circuit','wires'),('A tank that runs dry','water')]:
-                    self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+                    self.navigate(f'{self.base}/machine')
                     self.wait("document.getElementById('sandbox-screen')?.hidden===false",30)
                     self.press('Start from '+template)
                     self.wait("window.machineFlowPreviewState()?.frames>2 && !document.getElementById('flow-preview').hidden",60)
@@ -2518,7 +2538,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Try It!');self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertNotIn('Try again',self.js("document.getElementById('level-done').textContent"))
         self.page.send('Emulation.setDeviceMetricsOverride',{'width':1280,'height':860,'deviceScaleFactor':1,'mobile':False})
-        self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+        self.navigate(f'{self.base}/machine')
         self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",60)
         self.press('Start from Sun powers the flag');self.wait(READY,60)
         self.assertFalse(self.js("document.getElementById('solar-lift-guide').hidden"))
@@ -2570,7 +2590,7 @@ class Puzzles(unittest.TestCase):
     def test_saved_solar_cable_survives_motion_renaming_reload_undo_and_version_restore(self):
         self.page.send('Emulation.setDeviceMetricsOverride', {'width':1280,'height':860,'deviceScaleFactor':1,'mobile':False})
         self.page.send('Emulation.setTouchEmulationEnabled', {'enabled':False})
-        self.page.send('Page.navigate', {'url':f'{self.base}/machine'})
+        self.navigate(f'{self.base}/machine')
         self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)
         self.create_design('Saved solar cable')
         for number, piece, x in [(1,'marble',-1.4),(2,'solar',0),(3,'battery',1)]:
@@ -2607,7 +2627,7 @@ class Puzzles(unittest.TestCase):
         self.press('Remove your marble 1'); self.wait(f'window.machinePlacements().length === 3 && {READY}', 60)
         self.assertEqual(self.js('window.machinePlacements()[2]'),
                          {'piece':'power_cable','a_port':'your solar 1:power','b_port':'your battery 2:power'})
-        self.page.send('Page.navigate', {'url':self.js('location.href')}); self.wait(READY, 60)
+        self.navigate(self.js('location.href')); self.wait(READY, 60)
         self.assertEqual(self.js('window.machinePlacements()[2].b_port'), 'your battery 2:power')
         self.press('Remove your solar 1'); self.wait(f'window.machinePlacements().length === 1 && {READY}', 60)
         self.assertEqual(self.js('window.machinePlacements()[0].piece'), 'battery')
@@ -2624,7 +2644,7 @@ class Puzzles(unittest.TestCase):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
                 self.page.send('Emulation.setDeviceMetricsOverride', {'width':width,'height':height,'deviceScaleFactor':1,'mobile':width != 1280})
-                self.page.send('Page.navigate', {'url': f'{self.base}/play'})
+                self.navigate(f'{self.base}/play')
                 self.wait("document.getElementById('levels-screen')?.hidden===false", 60)
                 self.assertLessEqual(self.js('document.body.scrollWidth'), width)
                 self.open('easy-loop--v2--0000002a--0',width,height,phone=width!=1280)
@@ -2636,7 +2656,7 @@ class Puzzles(unittest.TestCase):
                 self.assertIn('Fresh setup', goal)
                 self.press('Share')
                 self.assertEqual(self.js("document.getElementById('header-share').href"), link.replace(self.base,'https://banjo.is',1))
-                self.page.send('Page.navigate', {'url':link})
+                self.navigate(link)
                 self.wait(READY, 60)
                 self.assertEqual(self.js("document.getElementById('title').textContent"), title)
                 self.assertEqual(self.js("document.getElementById('goal-line').textContent"), goal)
@@ -2930,7 +2950,7 @@ class Puzzles(unittest.TestCase):
     def open_manual_circuit(self,width=1280,height=860):
         self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
         self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':width!=1280,'maxTouchPoints':5})
-        self.page.send('Page.navigate',{'url':f'{self.base}/machine'})
+        self.navigate(f'{self.base}/machine')
         self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",60)
         self.press('Start from Build your first circuit');self.wait(READY,60)
         self.wait("window.machineSwitchState().handles.some(h=>h.name==='control')",15)
@@ -3181,7 +3201,7 @@ class Puzzles(unittest.TestCase):
     def test_saved_terminal_graph_removal_undo_reload_and_restore(self):
         self.page.send('Emulation.setDeviceMetricsOverride',{'width':1280,'height':860,'deviceScaleFactor':1,'mobile':False})
         self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':False})
-        self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+        self.navigate(f'{self.base}/machine')
         self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)
         self.create_design('Saved terminal graph')
         for piece, x in [('battery', -.6), ('bulb', .6)]:
@@ -3219,7 +3239,7 @@ class Puzzles(unittest.TestCase):
         self.press('Undo')
         self.wait(f'window.machinePlacements().length === 4 && {READY}', 60)
         self.assertEqual(self.js('window.machinePlacements()'), first)
-        self.page.send('Page.navigate', {'url': self.js('location.href')})
+        self.navigate(self.js('location.href'))
         self.wait(READY, 60)
         self.assertEqual(self.js('window.machinePlacements()'), first)
         self.press('Remove your battery 1')
@@ -3386,12 +3406,12 @@ class Puzzles(unittest.TestCase):
                 self.press('Add a plank'); self.ghost()
                 self.js('scrollTo(0,0)')
                 before = open_help(); self.key('Escape'); assert_closed(before)
-                self.page.send('Page.navigate', {'url': self.base + '/play'})
+                self.navigate(self.base + '/play')
                 self.wait("document.getElementById('levels-screen')?.hidden===false", 60)
                 before = open_help()
                 # A backdrop click dismisses, while content clicks do not.
                 self.mouse('mousePressed', 2, 2); self.mouse('mouseReleased', 2, 2); assert_closed(before)
-                self.page.send('Page.navigate', {'url': self.base + '/machine'})
+                self.navigate(self.base + '/machine')
                 self.wait("document.getElementById('sandbox-screen')?.hidden===false", 60)
                 before = open_help(); self.click_visible('Close'); assert_closed(before)
                 self.press('Add New Design'); self.wait(READY, 60)
@@ -3453,7 +3473,7 @@ class Puzzles(unittest.TestCase):
                 self.assertRegex(self.js("document.getElementById('start').textContent"), 'Pause')
                 self.click_visible('Pause')
                 for path, screen in (('/play','levels-screen'),('/machine','sandbox-screen')):
-                    self.page.send('Page.navigate', {'url':self.base+path})
+                    self.navigate(self.base+path)
                     self.wait(f"document.getElementById('{screen}')?.hidden===false",60)
                     before=open_updates()
                     self.mouse('mousePressed',2,2); self.mouse('mouseReleased',2,2); closed(before)
@@ -3511,7 +3531,7 @@ class Puzzles(unittest.TestCase):
         self.page.send('Network.setCacheDisabled', {'cacheDisabled': True})
         self.page.send('Network.setBlockedURLs', {'urls': ['*/machine.js']})
         try:
-            self.page.send('Page.navigate', {'url': self.base + '/'})
+            self.navigate(self.base + '/')
             self.wait("location.pathname === '/play' && Boolean(document.getElementById('page-loading')) && !document.getElementById('page-loading').hidden", 10)
             self.assertEqual(self.js("document.querySelector('main').getBoundingClientRect().height"), 0)
             self.assertGreater(self.js("document.getElementById('page-loading').getBoundingClientRect().height"), 0)
@@ -3523,7 +3543,7 @@ class Puzzles(unittest.TestCase):
         self.js("localStorage.setItem('banjo-play-save', JSON.stringify({current:'Landing test',players:{'Landing test':{levels:{},last:'free'}}})); localStorage.removeItem('banjo-play-guide-seen')")
         self.page.events.clear()
         try:
-            self.page.send('Page.navigate', {'url': self.base + '/'})
+            self.navigate(self.base + '/')
             self.wait(f"document.querySelectorAll('.ls-list .level-card').length === {self.level_count} && Boolean(document.getElementById('visitor-return-link'))", 30)
             self.assertNotIn('Landing test', self.js("document.getElementById('levels-screen').textContent"))
             self.assertEqual(self.js('location.pathname'), '/play')
@@ -3545,7 +3565,7 @@ class Puzzles(unittest.TestCase):
         self.page.send('Emulation.setDeviceMetricsOverride', {'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
         self.page.send('Emulation.setTouchEmulationEnabled', {'enabled':width!=1280,'maxTouchPoints':5})
         previous=self.js('performance.timeOrigin')
-        response=self.page.send('Page.navigate',{'url':url or f'{self.base}/play'})
+        response=self.navigate(url or f'{self.base}/play')
         self.assertFalse(response.get('errorText'),response)
         self.wait(f"performance.timeOrigin!=={previous} && document.getElementById('levels-screen')?.hidden===false && Boolean(document.getElementById('visitor-return-link'))",90)
         link=self.js("document.getElementById('visitor-return-link').href")
@@ -3568,7 +3588,7 @@ class Puzzles(unittest.TestCase):
         # able to repopulate the intended fresh-device fixture.
         previous=self.js('performance.timeOrigin')
         parked=f'{self.base}/machine.css'
-        self.page.send('Page.navigate',{'url':parked})
+        self.navigate(parked)
         deadline=time.monotonic()+10
         while time.monotonic()<deadline:
             if self.js(f"location.href==={json.dumps(parked)} && performance.timeOrigin!=={previous}"):break
@@ -3710,7 +3730,7 @@ class Puzzles(unittest.TestCase):
             self.press(f"Open design {design['name']}");self.wait(READY,90)
             self.assertEqual(self.js('machinePlacements()'),placed)
             self.assertEqual(self.js('machineDesign().versions'),design['versions'])
-            self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,90)
+            self.navigate(self.js('location.href'));self.wait(READY,90)
             self.assertEqual(self.js('machineSave().current'),visitor)
             self.assertEqual(self.js('machineDesign().versions'),design['versions'])
         finally:self.anonymous_fixture_restore(backup)
@@ -3790,7 +3810,7 @@ class Puzzles(unittest.TestCase):
         # by a marble, and the marbles it held knock the dominoes down.
         self.page.send('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 860, 'deviceScaleFactor': 1,
                                                               'mobile': False})
-        self.page.send('Page.navigate', {'url': f'{self.base}/play'})
+        self.navigate(f'{self.base}/play')
         self.wait("document.querySelector('.ls-free') && !document.getElementById('levels-screen').hidden", 90)
         self.press('Sandbox: build anything')
         self.wait("document.getElementById('sandbox-screen')?.hidden===false", 10)
@@ -3813,7 +3833,7 @@ class Puzzles(unittest.TestCase):
         self.ghost()
         self.press('Set it down')
         self.wait("machinePlacements().length === 1 && /1 piece on the table/.test(document.getElementById('cost-line').textContent)", 60)
-        self.page.send('Page.navigate', {'url': f'{self.base}/play?level=free'})
+        self.navigate(f'{self.base}/play?level=free')
         self.wait(READY, 90)
         self.wait("machinePlacements().length === 1", 30)
         self.assertEqual(self.js('machinePlacements()[0].piece'),'marble')
@@ -3827,14 +3847,14 @@ class Puzzles(unittest.TestCase):
     def test_sandbox_library_migrates_free_build_and_saves_reopens_and_restores_designs(self):
         # An old free build survives the upgrade. Two named designs keep
         # independent drafts, and checkpoints survive navigation/reloads.
-        self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+        self.navigate(f'{self.base}/machine')
         self.wait("document.getElementById('sandbox-screen') && !document.getElementById('sandbox-screen').hidden", 60)
         old = self.js("localStorage.getItem('banjo-play-save')")
         cookies=self.page.send('Network.getCookies',{'urls':[self.base]})['cookies']
         self.anonymous_fixture_clear()
         self.anonymous_storage_put('banjo-play-save',json.dumps({'current':'Sandbox test','players':{'Sandbox test':{'levels':{},'free':{'placements':[{'piece':'marble','x_m':0,'z_m':0}]}}}}))
         try:
-            self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+            self.navigate(f'{self.base}/machine')
             self.wait("document.getElementById('sandbox-screen') && !document.getElementById('sandbox-screen').hidden", 60)
             self.assertEqual(self.js("document.querySelectorAll('#prebuilt-designs button').length"), self.template_count)
             self.press('Open design My free build')
@@ -3847,7 +3867,7 @@ class Puzzles(unittest.TestCase):
             self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
             self.press('Save version')
             self.wait("/Version 2 saved/.test(document.getElementById('design-status').textContent)", 10)
-            self.page.send('Page.navigate', {'url': self.js('location.href')})
+            self.navigate(self.js('location.href'))
             self.wait(f"document.getElementById('clock') && {READY}", 60)
             self.assertEqual(self.js('window.machineDesign().versions.length'), 2)
             self.js("document.getElementById('design-versions').open = true; document.getElementById('version-pick').value = '1'")
@@ -3894,7 +3914,7 @@ class Puzzles(unittest.TestCase):
             self.anonymous_fixture_restore({'storage':{'banjo-play-save':old} if old is not None else {},'cookies':cookies})
 
     def test_sandbox_chain_keeps_readings_tray_additions_and_base_in_shared_versions(self):
-        self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+        self.navigate(f'{self.base}/machine')
         self.wait("Boolean(document.getElementById('prebuilt-designs'))", 60)
         self.press('Start from Chain reaction')
         self.wait(READY, 60)
@@ -3922,7 +3942,7 @@ class Puzzles(unittest.TestCase):
         self.wait("/#build=/.test(window.machineShareLink())", 10)
         link = self.js('window.machineShareLink()')
         self.assertTrue(link.startswith('https://banjo.is/machine#build='))
-        self.page.send('Page.navigate', {'url': link.replace('https://banjo.is',self.base,1)})
+        self.navigate(link.replace('https://banjo.is',self.base,1))
         self.wait(f"document.getElementById('clock') && {READY}", 60)
         self.assertEqual(self.js('window.machineDesign().draft.base'), base)
         self.assertEqual(self.js('window.machinePlacements().length'), 1)
@@ -3939,7 +3959,7 @@ class Puzzles(unittest.TestCase):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
                 self.page.send('Emulation.setDeviceMetricsOverride', {'width': width, 'height': height, 'deviceScaleFactor': 1, 'mobile': width != 1280})
-                self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+                self.navigate(f'{self.base}/machine')
                 self.wait("Boolean(document.querySelector('#prebuilt-designs button'))", 60)
                 self.press('Start from Gate and split')
                 self.wait(READY, 60)
@@ -3998,7 +4018,7 @@ class Puzzles(unittest.TestCase):
         for width, height in ((390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
                 self.page.send('Emulation.setDeviceMetricsOverride', {'width': width, 'height': height, 'deviceScaleFactor': 2, 'mobile': True})
-                self.page.send('Page.navigate', {'url': f'{self.base}/machine'})
+                self.navigate(f'{self.base}/machine')
                 self.wait("Boolean(document.querySelector('#prebuilt-designs button'))", 60)
                 self.assertLessEqual(self.js('document.body.scrollWidth'), width)
                 self.assertTrue(self.js("[...document.querySelectorAll('#sandbox-screen button')].filter(b=>b.offsetParent!==null).every(b => b.getBoundingClientRect().height >= 44 && b.getBoundingClientRect().right <= innerWidth)"))
@@ -4023,7 +4043,7 @@ class Puzzles(unittest.TestCase):
         # by a string with Attach.
         self.page.send('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 860, 'deviceScaleFactor': 1,
                                                               'mobile': False})
-        self.page.send('Page.navigate', {'url': f'{self.base}/play?level=free'})
+        self.navigate(f'{self.base}/play?level=free')
         self.wait(f"document.getElementById('clock') && {READY}", 90)
         self.js('window.confirm = () => true')
         self.press('Clear the table')
@@ -4100,7 +4120,7 @@ class Puzzles(unittest.TestCase):
         # an empty table sets them all out.
         self.page.send('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 860, 'deviceScaleFactor': 1,
                                                               'mobile': False})
-        self.page.send('Page.navigate', {'url': f'{self.base}/play?level=free'})
+        self.navigate(f'{self.base}/play?level=free')
         self.wait(f"document.getElementById('clock') && {READY}", 90)
         self.js('window.confirm = () => true')
         self.press('Set out the example')
@@ -4112,14 +4132,14 @@ class Puzzles(unittest.TestCase):
         self.press('Clear the table')
         self.wait(f"window.machinePlacements().length === 0 && {READY}", 60)
         self.assertTrue(link.startswith('https://banjo.is/machine#build='))
-        self.page.send('Page.navigate', {'url': link.replace('https://banjo.is',self.base,1)})
+        self.navigate(link.replace('https://banjo.is',self.base,1))
         self.wait(f"typeof window.machinePlacements === 'function' && window.machinePlacements().length === 11 && {READY}", 90)
         self.assertEqual(self.js('window.machinePlacements()'), made)
         self.assertNotIn('#build', self.js('location.href'), 'the link is read once')
         self.assertEqual(self.js("document.getElementById('send').textContent"), 'Build it', 'the chat builds here')
         # Links made before named designs held an array, not a declaration.
         packed = base64.urlsafe_b64encode(json.dumps(made).encode()).decode().rstrip('=')
-        self.page.send('Page.navigate', {'url': f'{self.base}/play?level=free#build=j{packed}'})
+        self.navigate(f'{self.base}/play?level=free#build=j{packed}')
         self.wait(f"typeof window.machinePlacements === 'function' && window.machinePlacements().length === 11 && {READY}", 90)
         self.assertEqual(self.js('window.machinePlacements()'), made)
 
@@ -4162,7 +4182,7 @@ class Puzzles(unittest.TestCase):
         self.open('gap')
         self.assertTrue(self.js("document.getElementById('free-actions').hidden"))
         self.assertEqual(self.js(drawn), [])
-        self.page.send('Page.navigate', {'url': f'{self.base}/play?level=free'})
+        self.navigate(f'{self.base}/play?level=free')
         self.wait(READY, 90)
         self.assertFalse(self.js("document.getElementById('free-actions').hidden"))
         self.assertEqual(self.js(drawn), [])
@@ -4380,7 +4400,7 @@ class Puzzles(unittest.TestCase):
             {'name':'board','shape':'box','material':'oak','size_m':[.6,.02,.12],'at_m':[0,.3,0],'fixed':True},
             {'name':'ball','shape':'sphere','material':'glass','size_m':[.04]*3,'at_m':[.1,.34,.045],'fixed':False}]})
         packed=base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
-        self.page.send('Page.navigate',{'url':self.base+'/machine#build=j'+packed});self.wait(READY,60)
+        self.navigate(self.base+'/machine#build=j'+packed);self.wait(READY,60)
         index=self.js("machineEditableObjects().find(o=>o.name==='ball').index")
         self.click_piece(index);self.ghost()
         self.js('machineView({azimuth:0,elevation:1.1,distance:1.5,at:[0,.3,0]})');self.wait('machineCamera().settled',20)
@@ -4464,7 +4484,7 @@ class Puzzles(unittest.TestCase):
 
         # Saved sandbox declarations and version restores stay exact even
         # when grid assistance is enabled. Ordinary levels reset on reload.
-        self.page.send('Page.navigate',{'url':self.base+'/machine'})
+        self.navigate(self.base+'/machine')
         self.wait("document.getElementById('sandbox-screen')?.hidden===false",60)
         self.create_design('Fine placement')
         self.press('Add a knife');self.ghost()
@@ -4892,7 +4912,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Reset');self.wait(READY,30)
                 self.assertAlmostEqual(self.js("machineBodies()['your door 1 leaf'][2]"),before[2],places=3)
                 self.press('Save version');self.wait('machineDesign().versions.length>0',10)
-                self.page.send('Page.navigate',{'url':self.js('location.href')});self.wait(READY,30)
+                self.navigate(self.js('location.href'));self.wait(READY,30)
                 self.assertEqual(len(self.js('machineAirflowState().fields')),1)
                 self.js("document.getElementById('sandbox-open').click()");self.press('Start from Spring trampoline');self.wait(READY,30)
                 self.assertIn('your trampoline 1 deck',self.js('Object.keys(machineBodies())'))
@@ -4985,7 +5005,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Redo');self.wait(READY,60)
                 self.press('Save version');self.anonymous_cloud_saved()
                 draft=self.js('machineDesign().draft');url=self.js('location.href')
-                self.page.send('Page.navigate',{'url':url});self.wait(READY,60)
+                self.navigate(url);self.wait(READY,60)
                 self.assertEqual(self.js('machineDesign().draft'),draft)
                 self.click_visible('Try It!');self.wait("machineBodies()['loose board'][1]<.1",30)
                 self.click_visible('Pause')
