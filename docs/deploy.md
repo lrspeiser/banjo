@@ -331,6 +331,25 @@ gate. Native JUnit/floating-point evidence remains attached to the run, and
 browser progress and failure traces stream in the job logs. Failure screenshots
 are retained as artifacts. This adds no Render service.
 
+Saved-recipe verification uses six CTest batches, each with the existing
+600-second deadline. Three disjoint subsets cover all 23 native recipe
+families; historical heater validation has its own batch, and the remaining
+20 test methods are split between two batches. Every previous method and
+scenario remains covered. The unbatched CLI still runs all 22 methods.
+The expanded native cable rehearsals had outgrown one 600-second suite slot;
+no physical goal, nudge, negative control or numerical tolerance was relaxed.
+The final unbatched local run passes all 22 methods in 961.844 s. The partition
+check covers every method and all 23 native families exactly once; two native
+family batches additionally pass in 143.871 s and 60.018 s.
+
+CI runs those six recipe batches, eight browser batches and three game
+integration groups on independent runners. The native CTest job excludes only
+those explicitly named groups; the aggregate release gate requires every group
+to succeed. Game integration keeps each suite's original 600-second deadline.
+The remaining C++/API/client checks stay in CTest, and ordinary local CTest still
+registers the complete suite. This changes verification scheduling, not the
+game's CPU allocation or Render hosting.
+
 1. Start a feature branch from current main, preserving unrelated changes.
 2. Verify its scope, update Recent Changes and integrate into `codex/staging`.
    Fetch first and preserve concurrent staging work.

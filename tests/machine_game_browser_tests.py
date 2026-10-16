@@ -1221,16 +1221,19 @@ class Puzzles(unittest.TestCase):
                 before=self.js("window.machineWiringState().powerPorts['your battery 1:power']")
                 self.click_visible('Try It!')
                 self.wait("window.machineContactState().liveDevices.some(d=>d.kind==='bulb' && d.power_w>2)",30)
-                # First electrical contact precedes the pack settling. Wait
-                # for its actual input port to fall the declared distance,
-                # instead of pausing at whichever contact frame arrived first.
-                self.wait(f"machineWiringState().powerPorts['your battery 1:power'][1]<{before[1]-.1}",10)
-                self.press('Pause')
-                state=self.js('window.machineWiringState()')
-                after=state['powerPorts']['your battery 1:power']
+                # Capture the falling input and cord in one frame. Electrical
+                # contact can precede the full fall, and a real bounce between
+                # a separate wait/Pause/read must not replace that measurement.
+                deadline=time.monotonic()+10
+                while True:
+                    state=self.js('window.machineWiringState()')
+                    after=state['powerPorts']['your battery 1:power']
+                    if after[1]<before[1]-.1 or time.monotonic()>=deadline:break
+                    time.sleep(.1)
                 self.assertLess(after[1],before[1]-.1)
                 self.assertEqual(state['powerCables'][0]['points_m'][1],after)
                 self.assertIn('Cable connected',self.js("document.getElementById('power-labels').textContent"))
+                self.press('Pause')
 
 
     def test_lift_lessons_start_with_the_load_and_the_added_device_lifts_that_same_body(self):
@@ -2931,7 +2934,7 @@ class Puzzles(unittest.TestCase):
         # Native cords sag during setup. A projected point can be behind a
         # case or inside a terminal's touch area; canvas ownership alone does
         # not mean the visible wire can receive that click.
-        removable=f'machineScenePick(...p).wires.includes({json.dumps(name)})' if name.startswith('your ') else 'true'
+        removable=f'machineScenePick(...p).wires[0]==={json.dumps(name)}' if name.startswith('your ') else 'true'
         expression=f"[{fraction},...Array.from({{length:39}},(_,i)=>(i+1)/40)].map(f=>machineWireScreen({json.dumps(name)},f)).find(p=>p&&document.elementFromPoint(...p)?.tagName==='CANVAS'&&{removable}&&!machineScenePick(...p).socket&&!machineScenePick(...p).pieces.length)"
         point=None;deadline=time.monotonic()+10
         while time.monotonic()<deadline:
@@ -3033,7 +3036,10 @@ class Puzzles(unittest.TestCase):
             with self.subTest(viewport=(width,height)):
                 self.open('sun',width,height,phone=width!=1280)
                 self.press('Add a solar panel');self.ghost()
-                for label,value in [('x',1),('z',.4),('height',.6),('turn',-45),('tip',75)]:
+                # Face away from the sun for this editing test. The separate
+                # solar-win flows retain the working aim; here a fast win's
+                # result overlay must not replace the cable under the pointer.
+                for label,value in [('x',1),('z',.4),('height',.6),('turn',135),('tip',75)]:
                     self.slide(f'{label} of your solar 1',value)
                 self.ghost();self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
                 self.click_scene_socket('your solar 1:power',touch=width!=1280)
@@ -5183,7 +5189,8 @@ class Puzzles(unittest.TestCase):
             self.press('Add a '+label);self.ghost();self.drag_ghost_to(x,0,touch=True);self.ghost()
             self.press('Place');self.wait(READY,30)
         self.click_scene_socket('your battery 1:plus',touch=True);self.ghost()
-        self.click_scene_socket('your bulb 2:plus',touch=True);self.wait(READY,30)
+        self.click_scene_socket('your bulb 2:plus',touch=True)
+        self.wait(f'!machineGhostState() && machinePlacements().length===3 && {READY}',30)
         self.wait("Boolean(document.querySelector('#wire-adjustments button'))",10)
         label=self.js("document.querySelector('#wire-adjustments button').getAttribute('aria-label')")
         self.click_visible(label);self.ghost();self.click_visible('Thick wire');self.ghost()

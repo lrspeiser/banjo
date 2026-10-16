@@ -4352,7 +4352,10 @@ async function disconnectPlacedWire(hit) {
 }
 function clickExistingWire(x,y,touch,rows=wireCandidates(x,y,touch)) {
   if(!rows.length)return false;
-  if(rows[1] && rows[1].gap-rows[0].gap<6) {
+  // Native cords can lie beside or cross each other. Every lead inside the
+  // touch target is a plausible selection; do not silently delete a neighbour
+  // just because its projected centreline is a few pixels closer.
+  if(rows[1]) {
     const choice=$('socket-choices');choice.replaceChildren();
     for(const row of rows.slice(0,4))choice.append(button(`Remove ${row.name.replace(/^your /,'')}`,()=>{choice.hidden=true;disconnectPlacedWire(row);}));
     choice.append(button('Cancel',()=>{choice.hidden=true;}));choice.hidden=false;

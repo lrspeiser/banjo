@@ -945,10 +945,20 @@ if(BANJO_BUILD_TESTS)
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_game_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                 set_tests_properties(banjo_machine_game_tests PROPERTIES TIMEOUT 600
                     ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
-                foreach(sandbox_suite mechanics electrics water_launch combinations variants motion)
+                foreach(sandbox_suite mechanics electrics water_launch combinations motion)
                     add_test(NAME banjo_sandbox_${sandbox_suite}_tests COMMAND ${Python3_EXECUTABLE}
                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sandbox_${sandbox_suite}_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                     set_tests_properties(banjo_sandbox_${sandbox_suite}_tests PROPERTIES TIMEOUT 600
+                        ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
+                endforeach()
+                # Saved recipes now include physical leads and native negative
+                # rehearsals. Retain every case and the 600 s batch deadline;
+                # isolate thermal trials and partition the all-family sweep.
+                foreach(recipe_shard RANGE 0 5)
+                    add_test(NAME banjo_sandbox_variants_tests_${recipe_shard} COMMAND ${Python3_EXECUTABLE}
+                        ${CMAKE_CURRENT_SOURCE_DIR}/tests/sandbox_variants_tests.py --shard=${recipe_shard}/6
+                        --engine $<TARGET_FILE:banjo_live_world_run>)
+                    set_tests_properties(banjo_sandbox_variants_tests_${recipe_shard} PROPERTIES TIMEOUT 600
                         ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
                 endforeach()
                 add_test(NAME banjo_battery_socket_tests COMMAND ${Python3_EXECUTABLE}

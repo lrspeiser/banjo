@@ -40,8 +40,8 @@ jobs:
         run: cmake --build build/ci --parallel 2
 
       - name: Test the engine and non-browser game checks
-        # Browser batches run on their own runners below. Every
-        # other CTest group and the existing label exclusions stay here.
+        # Browser, recipe and game integration batches run on separate
+        # runners below. Keep every other CTest group and label exclusion.
         env:
           BANJO_CHROME: /usr/bin/google-chrome
           BANJO_CHROME_ARGS: "--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader"
@@ -51,7 +51,7 @@ jobs:
           --output-junit ${{ github.workspace }}/ctest-results.xml
           --test-output-size-passed 20000000 --test-output-size-failed 20000000
           -LE "long|performance"
-          -E "^banjo_machine_game_browser_tests_[0-3]$"
+          -E "^banjo_machine_game_browser_tests_[0-3]$|^banjo_(machine_world|machine_game|sandbox_(mechanics|electrics|water_launch|combinations|motion)|battery_socket|mechanical_switch)_tests$|^banjo_sandbox_variants_tests_[0-5]$"
 
       - name: Keep the test and floating-point evidence
         if: always()
@@ -100,9 +100,64 @@ jobs:
           path: build/ui-proof/browser-failure-*.png
           if-no-files-found: ignore
 
+  game-integration-tests:
+    needs: source-registration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: authored-machines
+            suites: machine_game sandbox_mechanics
+          - name: electrical-machines
+            suites: sandbox_electrics sandbox_combinations
+          - name: water-and-interaction
+            suites: machine_world sandbox_water_launch sandbox_motion battery_socket mechanical_switch
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the electrical solver
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libngspice0-dev
+      - name: Build this revision's game engine
+        run: |
+          cmake -S . -B build/integration-engine -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=OFF
+          cmake --build build/integration-engine --parallel 2 --target banjo_live_world_run
+      - name: Verify ${{ matrix.name }}
+        env:
+          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/integration-engine/banjo_live_world_run
+          BANJO_MACHINE_ENGINE: required
+          SUITES: ${{ matrix.suites }}
+        run: |
+          set -euo pipefail
+          for suite in $SUITES; do
+            timeout 600s python3 -u "tests/${suite}_tests.py" --engine "$BANJO_LIVE_ENGINE"
+          done
+
+  recipe-tests:
+    needs: source-registration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the electrical solver
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libngspice0-dev
+      - name: Build this revision's game engine
+        run: |
+          cmake -S . -B build/recipe-engine -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=OFF
+          cmake --build build/recipe-engine --parallel 2 --target banjo_live_world_run
+      - name: Verify saved recipe batch ${{ matrix.shard }} of 6
+        env:
+          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/recipe-engine/banjo_live_world_run
+          BANJO_MACHINE_ENGINE: required
+        run: timeout 600s python3 -u tests/sandbox_variants_tests.py --shard=${{ matrix.shard }}/6
+
   build-and-test:
     if: ${{ always() }}
-    needs: [source-registration, native-tests, browser-tests]
+    needs: [source-registration, native-tests, browser-tests, game-integration-tests, recipe-tests]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every native check and every browser batch
@@ -110,9 +165,13 @@ jobs:
           SOURCE_RESULT: ${{ needs['source-registration'].result }}
           NATIVE_RESULT: ${{ needs['native-tests'].result }}
           BROWSER_RESULT: ${{ needs['browser-tests'].result }}
+          INTEGRATION_RESULT: ${{ needs['game-integration-tests'].result }}
+          RECIPE_RESULT: ${{ needs['recipe-tests'].result }}
         run: |
           set -euo pipefail
           test "$SOURCE_RESULT" = success
           test "$NATIVE_RESULT" = success
           test "$BROWSER_RESULT" = success
-          echo "Source registration, native checks and all four browser batches passed."
+          test "$INTEGRATION_RESULT" = success
+          test "$RECIPE_RESULT" = success
+          echo "Source registration, native checks, eight browser batches, three game integration groups and six recipe batches passed."

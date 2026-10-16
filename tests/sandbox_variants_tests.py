@@ -15,6 +15,7 @@ import machine_world as world
 import sandbox_variants as variants
 
 ENGINE = Path(os.environ.get('BANJO_LIVE_ENGINE', ROOT / 'build/rube/Release/banjo_live_world_run.exe'))
+NATIVE_FAMILY_BATCH = None
 if '--engine' in sys.argv:
     index = sys.argv.index('--engine')
     ENGINE = Path(sys.argv[index + 1]).resolve()
@@ -459,8 +460,11 @@ class Recipes(unittest.TestCase):
                 self.fail('A verified native engine is required.')
             self.skipTest('Native engine unavailable.')
         measured = []
+        selected=families()
+        if NATIVE_FAMILY_BATCH is not None:
+            selected=selected[NATIVE_FAMILY_BATCH::3]
         with tempfile.TemporaryDirectory() as logs:
-            for family in families():
+            for family in selected:
                 seeds = {}
                 for seed in [42] + list(range(32)):
                     candidate = variants.construct(family, seed)
@@ -491,4 +495,23 @@ class Recipes(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    shard=next((arg for arg in sys.argv[1:] if arg.startswith('--shard=')),None)
+    if shard:
+        index,count=map(int,shard.split('=',1)[1].split('/'))
+        if count!=6 or not 0<=index<count:raise SystemExit('recipe batches use INDEX/6')
+        sys.argv.remove(shard)
+        tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Recipes))
+        native='test_native_all_twenty_seeded_challenges'
+        heat='test_heat_v2_clips_and_wires_while_v1_retains_the_original_attachment'
+        if index<3:
+            NATIVE_FAMILY_BATCH=index
+            chosen=[test for test in tests if test._testMethodName==native]
+        elif index==3:chosen=[test for test in tests if test._testMethodName==heat]
+        else:
+            others=[test for test in tests if test._testMethodName not in (native,heat)]
+            chosen=others[index-4::2]
+        print(f'Recipe batch {index+1}/6: {len(chosen)} cases'+
+              (f', native family subset {index+1}/3' if index<3 else ''),flush=True)
+        result=unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(chosen))
+        raise SystemExit(0 if result.wasSuccessful() else 1)
     unittest.main()

@@ -18,6 +18,18 @@ click threshold or starting a second touch cancels the tap. Three browser
 flows (held taps, solar removal/Undo and camera dragging/prepared leads) pass
 in 76.813 s across desktop and phone orientations. The complete Linux
 machine-world suite passes 38 checks in 49.442 s; the native binary is unchanged.
+All removable cords inside a tap's hit area now offer a labelled chooser,
+rather than requiring their projected distances to be within 6 px. The probe
+chooses an exposed, nearest cord; held taps, removal/Undo, solar cords and
+camera dragging pass four flows in 97.595 s. The falling battery test compares
+its input and cord endpoint in one captured frame after the original 10 cm
+drop; a later physical bounce cannot replace that measurement.
+Under a two-core Windows affinity with SwiftShader rendering, the full battery
+wiring/removal/gauge flow and same-frame falling-input check pass on desktop
+and phone orientations in 74.047 s. This mirrors the CI CPU/rendering budget;
+it does not claim bit-identical Windows/Linux trajectories. The connected-wire
+length test waits for completed placement and native readiness before using
+the placed-wire button, retaining its hit target and exact 10 cm increment.
 Cable fitting rejects pairs whose axis intervals are already farther apart
 than the required clearance before computing exact segment distance. All 39
 authored/example compiled declarations matched the previous implementation;
