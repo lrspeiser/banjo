@@ -1,5 +1,7 @@
 # Level onboarding audit — October 13, 2026
 
+October 17 note: three starter lessons (Roll the ball, Fill the trench, Swing on a rope) were added at ranks 2, 3 and 5 after this audit and were not probed. Their estimates come from author review only, and every later rank moved down by three; see [the starter lessons](machine-game.md#starter-lessons-ball-block-and-string-october-17). The numbering below is the audit's own.
+
 All 34 authored challenges were assessed before their order changed. The table gives estimated newcomer planning/placement/retry time, measured native execution time and blind solver outcomes. No humans were recruited or timed. Native execution seconds and simulated goal seconds are separate from player completion time.
 
 Three LLM assessors received disjoint packets with no parent conversation history. Packets included the public brief, tray, goal and exact starting geometry; they excluded hints, reference solutions, wrong placements and reference manual inputs. Each model chose its own placements and forces, with up to two feedback-based retries. Geometry assistance bypasses visual recognition and precise dragging, so successful probes are an optimistic discoverability check. Failed trials expose ambiguity, not proof of broken physics. One assessor per level is not a statistical usability study.

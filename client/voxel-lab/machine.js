@@ -4960,6 +4960,14 @@ function attachChoice() {
     return;
   }
   const mid = one.at.map((v, i) => +((v + two.at[i]) / 2).toFixed(4));
+  // A lesson's tray may offer only some joins (Swing on a rope: a string).
+  const link = trayItem('link'), kinds = link?.knobs?.kind?.choices || [];
+  if (!link || (!level.free && piecesLeft(link) <= 0)) {
+    card.append(Object.assign(document.createElement('p'), {className: 'hint', textContent: 'This level has no more joins in its tray.'}),
+                button('Cancel', () => setAttach(false)));
+    card.hidden = false;
+    return;
+  }
   const join = (kind, extra = {}) => {
     remember();
     placements.push({piece: 'link', kind, a: one.name, b: two.name, at_m: ['string', 'spring'].includes(kind) ? one.at : mid,
@@ -4967,13 +4975,16 @@ function attachChoice() {
     setAttach(false); renderTray(); renderPlaced(); scheduleRebuild(0);
   };
   const row = Object.assign(document.createElement('div'), {className: 'actions'});
-  row.append(button('Glue', () => join('glue'), {ariaLabel: 'Glue them together'}),
-             button('String', () => join('string'), {ariaLabel: 'Tie them with a string'}),
+  if (kinds.includes('glue')) row.append(button('Glue', () => join('glue'), {ariaLabel: 'Glue them together'}));
+  if (kinds.includes('string')) row.append(button('String', () => join('string'), {ariaLabel: 'Tie them with a string'}));
+  if (kinds.includes('pin')) row.append(
              button('Pin, axle along x', () => join('pin', {axis: 'along x'}), {ariaLabel: 'Pin them, the axle along x'}),
              button('Pin, axle along z', () => join('pin', {axis: 'along z'}), {ariaLabel: 'Pin them, the axle along z'}),
-             button('Pin, axle upright', () => join('pin', {axis: 'upright'}), {ariaLabel: 'Pin them, the axle upright'}),
-             button('Cancel', () => setAttach(false)));
+             button('Pin, axle upright', () => join('pin', {axis: 'upright'}), {ariaLabel: 'Pin them, the axle upright'}));
+  row.append(button('Cancel', () => setAttach(false)));
   card.append(row);
+  card.hidden = false;
+  if (!kinds.includes('spring')) return;
   const spring = {rest_m: Math.max(.01, Math.min(3, Math.hypot(...one.at.map((v, i) => v - two.at[i])))), stiffness_n_m: 100, damping_n_s_m: 1};
   const springOptions = Object.assign(document.createElement('details'), {});
   springOptions.append(Object.assign(document.createElement('summary'), {textContent: 'Connect with a spring'}));
@@ -6180,12 +6191,15 @@ async function chooseLevel(id, design = null) {
   for(const id of ['grid-snap','object-snap'])$(id)?.setAttribute('aria-pressed','true');
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
   undone = []; redone = []; showUndo(); cancelAttach();
-  $('attach-tool').hidden = !level.free;
+  $('attach-tool').hidden = !level.free && !level.tray.some(t => t.attach);
   history_.replaceState(null, '', level.free ? appPath('/machine') + '?design=' + encodeURIComponent(activeDesign.id) : appPath('/play') + '?level=' + level.id);
   $('title').textContent = levelTitle(level);
   $('brief').textContent = level.brief;
   const objectives={
     gap:'Bridge the gap with a plank so the marble reaches the cup.',
+    'easy-roll':'Set the marble on the slope so gravity rolls it into the cup.',
+    'easy-block':'Fill the trench with a block as high as the tables.',
+    'easy-rope':'Place the marble, then tie it to the beam end with a string.',
     cut:'Swing the knife through the cord and drop the weight into the bin.',
     fire:'Aim the cannon, wire its trigger, then drag the trigger to knock off the block.',
     steam:'Heat the boiler until its piston reaches the marked height.',
