@@ -1,5 +1,5 @@
 import * as THREE from './three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints} from './machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints, glideSpan, glideAlpha, glides, frameBlend, pathPoint} from './machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from './anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from './profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from './level-library.mjs';
@@ -172,22 +172,48 @@ function makeMesh(b) {
   return mesh;
 }
 
-function place(mesh, b) {
-  mesh.position.set(...b.position_m);
+// Running pieces glide to each new engine pose over about one gap between
+// frames (machine-view.mjs GLIDE); everything else is placed at once.
+const glidesNow = new Map();
+let glideMs = 50, lastGlideFrameAt = 0, glidesStarted = 0, glidesShownBetween = 0;
+function place(mesh, b, glide = false) {
   const q = b.orientation_wxyz;
+  if (glide && mesh.userData.placed && glides(mesh.position.toArray(), b.position_m)) {
+    glidesNow.set(mesh, {p0: mesh.position.clone(), q0: mesh.quaternion.clone(),
+      p1: new THREE.Vector3(...b.position_m), q1: new THREE.Quaternion(q[1], q[2], q[3], q[0]),
+      at: performance.now(), span: glideMs});
+    glidesStarted++;
+    return;
+  }
+  glidesNow.delete(mesh);
+  mesh.position.set(...b.position_m);
   mesh.quaternion.set(q[1], q[2], q[3], q[0]);
+  mesh.userData.placed = true;
 }
+function advanceGlides(now) {
+  if (!glidesNow.size) return false;
+  for (const [mesh, g] of glidesNow) {
+    const a = glideAlpha(now - g.at, g.span);
+    if (a > 0 && a < 1) glidesShownBetween++;
+    mesh.position.lerpVectors(g.p0, g.p1, a);
+    mesh.quaternion.slerpQuaternions(g.q0, g.q1, a);
+    if (a >= 1) glidesNow.delete(mesh);
+  }
+  return true;
+}
+window.machineGlideState = () => ({active: glidesNow.size, span_ms: glideMs, started: glidesStarted, between: glidesShownBetween});
+window.machineDrawnBodies = () => Object.fromEntries([...meshes].map(([name, mesh]) => [name, mesh.position.toArray()]));
 
-function syncMeshes(changed) {
-  for (const [name, mesh] of meshes) if (!world.bodies.has(name)) { scene.remove(mesh); disposeBodyGeometry(mesh); meshes.delete(name); }
+function syncMeshes(changed, glide = false) {
+  for (const [name, mesh] of meshes) if (!world.bodies.has(name)) { glidesNow.delete(mesh); scene.remove(mesh); disposeBodyGeometry(mesh); meshes.delete(name); }
   for (const b of changed) {
     let mesh = meshes.get(b.name);
     const cells = b.cells_local_m ? b.cells_local_m.length : 0;
     if (mesh && (mesh.userData.revision !== b.revision || mesh.userData.cells !== cells)) {
-      scene.remove(mesh); disposeBodyGeometry(mesh); meshes.delete(b.name); mesh = null;
+      glidesNow.delete(mesh); scene.remove(mesh); disposeBodyGeometry(mesh); meshes.delete(b.name); mesh = null;
     }
     if (!mesh) { mesh = makeMesh(b); meshes.set(b.name, mesh); }
-    place(mesh, b);
+    place(mesh, b, glide);
   }
   const heat = new Map((readouts.heat || []).map(h => [h.name, h.temperature_k]));
   $('heat-legend').hidden = !(readouts.heat || []).some(h => h.temperature_k > 320);
@@ -1440,6 +1466,9 @@ function updateRopes() {
   }
   const gone = new Set((readouts.joints || []).filter(j => j.attached === false).map(j => j.name));
   const at = (name, v) => {
+    // Ropes follow the drawn piece, which may be gliding behind the engine.
+    const mesh = meshes.get(name);
+    if (mesh?.userData.placed && world.bodies.has(name)) return v.clone().applyQuaternion(mesh.quaternion).add(mesh.position);
     const b = world.bodies.get(name); if (!b) return null;
     const q = new THREE.Quaternion(b.orientation_wxyz[1], b.orientation_wxyz[2], b.orientation_wxyz[3], b.orientation_wxyz[0]);
     return v.clone().applyQuaternion(q).add(new THREE.Vector3(...b.position_m));
@@ -1870,7 +1899,9 @@ async function poll(mine) {
       readouts = frame.readouts || readouts; playing = frame.playing; lastFrame = frame;
       cableSetupActive = Boolean(frame.cable_setup);
       cableSetupSeconds = frame.cable_setup_s || 0;
-      syncMeshes(changed.map(b => world.bodies.get(b.name)));
+      const running = playing || cableSetupActive, arrived = performance.now();
+      if (running && changed.length) { glideMs = glideSpan(glideMs, arrived - lastGlideFrameAt); lastGlideFrameAt = arrived; }
+      syncMeshes(changed.map(b => world.bodies.get(b.name)), running);
       if (frame.water) syncWater(frame.water);
       if (frame.parcels) syncParcels(frame.parcels);
       updateWires(); syncLight(); addEvents(frame.events); renderStations(); renderReadings(frame); renderClock(frame);
@@ -2053,6 +2084,8 @@ function render() {
   // bounds by whole major squares keeps every line on the same world grid.
   fineGrid.position.x=Math.round(target.x/PLACEMENT_GRID.major_step_m)*PLACEMENT_GRID.major_step_m;
   fineGrid.position.z=Math.round(target.z/PLACEMENT_GRID.major_step_m)*PLACEMENT_GRID.major_step_m;
+  if (advanceGlides(performance.now()) && ropes.length) updateRopes();
+  updatePreviewRunners(performance.now());
   if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); updateEditGuide(); syncMovePad(); }
   drawPull();
   drawSwitchPull();
@@ -3472,6 +3505,8 @@ window.machineGhostState = () => ghost ? {p: {...ghost.p}, index: ghost.index, f
 // zone, and after it hits something, that thing's colour, with a dot where it
 // hit. A see-through copy of the goal's thing stands where it ends up.
 const previewGroup = new THREE.Group();
+const RUNNER_REST_S = .8;
+let previewRunners = [], flowBlends = 0;
 scene.add(previewGroup);
 const HIT_COLOURS = [0xffb347, 0xff6bd6, 0xc38bff, 0xffe066, 0x7cf0e0, 0xff8080];
 const FREE_COLOUR = 0x9fdcff, GOAL_COLOUR = 0x5fe08f;
@@ -3951,6 +3986,21 @@ function drawFlowMechanisms(frame){
     flowGroup.add(line);
   }
 }
+// Mechanisms glide between preview samples instead of jumping every 0.1 s.
+// Wires, water and light keep the sample at or before the shown time.
+function blendFlowMechanisms(a,b,f){
+  if(!a||!b||a===b||!(f>0))return;
+  const later=new Map((b.mechanisms||[]).map(p=>[p.name,p]));
+  for(const pose of a.mechanisms||[]){
+    const to=later.get(pose.name),mesh=flowMechanismMeshes.get(pose.name);
+    if(!to||!mesh||!glides(pose.position_m,to.position_m))continue;
+    const qa=pose.orientation_wxyz,qb=to.orientation_wxyz;
+    mesh.position.lerpVectors(new THREE.Vector3(...pose.position_m),new THREE.Vector3(...to.position_m),f);
+    mesh.quaternion.slerpQuaternions(new THREE.Quaternion(qa[1],qa[2],qa[3],qa[0]),new THREE.Quaternion(qb[1],qb[2],qb[3],qb[0]),f);
+    flowBlends++;
+  }
+}
+window.machineFlowBlendCount=()=>flowBlends;
 function syncFlowMechanismVisibility(){
   for(const [name,mesh] of flowMechanismMeshes){
     if(flowGroup.visible&&mesh.visible){const original=meshes.get(name);if(original)original.visible=false;}
@@ -4113,9 +4163,9 @@ function updateFlowPreview() {
   if (flowPlaying && flowTick) flowTime+=Math.min(.1,(now-flowTick)/1000);
   flowTick=now;
   if (flowTime>end) flowTime=0;
-  let index=0;
-  while (index+1<frames.length && frames[index+1].t<=flowTime) index++;
+  const {index,next,f}=frameBlend(frames,flowTime);
   if (index!==flowIndex) {flowIndex=index;drawFlowFrame(frames[index]);syncFlowMechanismVisibility();}
+  blendFlowMechanisms(frames[index],frames[next],f);
   const currents=(frames[index].surface?.flow_samples||[]).map(s=>Math.hypot(...s.velocity_m_s)).filter(Number.isFinite);
   $('flow-summary').textContent=`Flow preview · ${describeTime(frames[index].t)}${currents.length?` · Current up to ${Math.max(...currents).toFixed(2)} m/s`:''}${previewShown.complete?'':' · incomplete'}`;
   $('flow-time').max=String(end); $('flow-time').value=String(flowTime);
@@ -4139,7 +4189,7 @@ $('flow-preview').addEventListener('toggle',()=>{
 });
 
 function clearPreview() {
-  clearFlowFrame();clearFlowMechanisms(); flowIndex=-1; flowTime=0; flowTick=0;
+  clearFlowFrame();clearFlowMechanisms(); flowIndex=-1; flowTime=0; flowTick=0; previewRunners=[];
   $('flow-preview').hidden=true;
   for (const c of [...previewGroup.children]) {
     previewGroup.remove(c);
@@ -4223,10 +4273,32 @@ function drawPreview(r) {
       const q = path.turn_wxyz;
       if (q) end.quaternion.set(q[1], q[2], q[3], q[0]);
       previewGroup.add(end);
+      // A see-through copy travels the rehearsed path at real speed, gliding
+      // between samples, so the player sees the motion and not only its trace.
+      if (path.points.length > 1) {
+        const runner = mesh.clone(true);
+        runner.traverse(o => { if (o.isMesh) { o.material = previewEndLook; o.castShadow = false; o.userData.shared = true; } });
+        runner.userData.shared = true;
+        runner.position.set(...path.points[0].slice(1, 4));
+        previewGroup.add(runner);
+        previewRunners.push({runner, points: path.points, start: performance.now()});
+      }
     }
   }
   showPreviewLegend(r, colourOf);
 }
+// After the run's end the copy rests at the finish briefly, then starts again.
+function updatePreviewRunners(now) {
+  for (const r of previewRunners) {
+    const first = r.points[0][0], last = r.points[r.points.length - 1][0];
+    const loop = Math.max(.1, last - first) + RUNNER_REST_S;
+    const t = first + ((now - r.start) / 1000) % loop;
+    const at = pathPoint(r.points, t);
+    if (at) r.runner.position.set(...at);
+    r.runner.visible = previewGroup.visible && !playing;
+  }
+}
+window.machinePreviewRunners = () => previewRunners.map(r => ({at: r.runner.position.toArray(), visible: r.runner.visible}));
 
 function showPreviewLegend(r, colourOf) {
   const box = $('preview-legend');

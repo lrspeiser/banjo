@@ -1316,6 +1316,8 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.ghost()['fits'],self.ghost())
                 self.wait("machineFlowPreviewState()?.visible&&!machineFlowPreviewState().pending&&machineFlowPreviewState().playing",30)
                 self.wait("machineFlowPreviewState().drawn?.mechanisms?.some(b=>b.name==='drive gear wheel'&&Math.abs(b.orientation_wxyz[3])>.01)",30)
+                # Wheels glide between preview samples instead of stepping.
+                blends=self.js('machineFlowBlendCount()');self.wait(f'machineFlowBlendCount()>{blends}',10)
                 self.assertIn('Preview',self.js("document.getElementById('gear-motion-feedback').textContent"))
                 self.paint()
                 self.assertTrue(self.js("['drive gear wheel','target gear wheel'].every(name=>{const p=machineBodyScreen(name);return p&&!document.elementFromPoint(...p)?.closest('#piece-editor');})"),'The editor must leave both wheel centres visible')
@@ -1929,6 +1931,43 @@ class Puzzles(unittest.TestCase):
                 self.press('Save version')
                 self.wait('window.machineDesign().versions.length===1',5)
                 self.assertEqual(len(self.js('window.machineDesign().versions[0].draft.placements')),1)
+
+    def test_running_pieces_glide_between_engine_frames_on_desktop_and_phones(self):
+        # The page asks for at most about 20 engine frames a second, while a
+        # screen draws about 60. Moving pieces glide from where they are drawn
+        # to each new engine pose, so drawn frames between engine frames show
+        # in-between poses. The finished pose is still exactly the engine's.
+        # (A software-rendered CI page draws only a few frames a second, so
+        # this counts glides and in-between poses instead of frame rates.)
+        for width,height in ((1280,860),(390,844)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width!=1280)
+                self.press('Add a plank'); self.ghost()
+                self.drag_ghost_to(.3,0,touch=width!=1280)
+                self.slide('Cut to length of your plank 1',.7)
+                self.ghost()
+                # Before running, a see-through ball travels the rehearsed path.
+                self.wait('window.machinePreviewRunners().some(r=>r.visible)',30)
+                first=self.js('window.machinePreviewRunners()[0].at'); time.sleep(.5)
+                self.assertNotEqual(first,self.js('window.machinePreviewRunners()[0].at'),'the preview copy moves along its path')
+                before=self.js('window.machineGlideState()')
+                self.click_visible('Try It!')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                got=self.js('window.machineGlideState()')
+                print('GLIDE_STATE',json.dumps(got),flush=True)
+                self.assertGreater(got['started']-before['started'],10,'running pieces glide to new engine poses')
+                self.assertGreater(got['between']-before['between'],0,'some drawn frames fall between engine frames')
+                self.assertGreaterEqual(got['span_ms'],16)
+                self.assertLessEqual(got['span_ms'],150)
+                # A paused machine is drawn exactly where the engine has it.
+                if self.js("document.getElementById('start').textContent.includes('Pause')"):self.click_visible('Pause')
+                self.wait('window.machineGlideState().active===0',5)
+                time.sleep(.3)
+                drawn,engine=self.js('window.machineDrawnBodies()'),self.js('window.machineBodies()')
+                for name,at in engine.items():
+                    if name in drawn:
+                        self.assertLess(max(abs(a-b) for a,b in zip(at,drawn[name])),1e-6,name)
 
     def test_run_waits_for_latest_placement_check_and_cancelling_cancels_the_run(self):
         self.open('laser')

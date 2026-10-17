@@ -1233,5 +1233,8 @@ if(BANJO_BUILD_TESTS)
         add_test(NAME banjo_machine_view_tests COMMAND ${BANJO_NODE_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_view_test.mjs)
         set_tests_properties(banjo_machine_view_tests PROPERTIES TIMEOUT 10 LABELS "client;machine")
+        add_test(NAME banjo_machine_glide_tests COMMAND ${BANJO_NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_glide_test.mjs)
+        set_tests_properties(banjo_machine_glide_tests PROPERTIES TIMEOUT 10 LABELS "client;machine")
     endif()
 endif()

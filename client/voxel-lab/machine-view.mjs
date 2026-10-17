@@ -358,3 +358,59 @@ export function pieceToolbarPosition(scene, piece, size, obstacles=[], {edgeOnly
     distance:Math.hypot(at.x+w/2-(piece.left+piece.right)/2,at.y+h/2-(piece.top+piece.bottom)/2)}));
   return ranked.sort((a,b)=>a.penalty-b.penalty||a.distance-b.distance)[0];
 }
+
+// Smooth motion between engine frames. While a machine runs the page asks for
+// at most about 20 frames a second, but the screen draws about 60. Each moving
+// piece glides from where it is drawn to the newest engine pose over roughly
+// one gap between frames, so motion is drawn at the screen rate. This is
+// display only: readings, goals and later requests use the engine's frame.
+export const GLIDE = {min_ms: 16, max_ms: 150, snap_m: 0.5, settle: 0.3};
+
+// How long the next glide lasts, from the previous glide length and the time
+// since the last frame arrived. A long gap (a pause or a slow build) is not a
+// running frame interval, so it leaves the estimate unchanged.
+export function glideSpan(previous_ms, gap_ms) {
+  const previous = Math.min(GLIDE.max_ms, Math.max(GLIDE.min_ms, previous_ms || GLIDE.max_ms / 3));
+  if (!(gap_ms > 0) || gap_ms > 4 * GLIDE.max_ms) return previous;
+  const next = previous + (gap_ms - previous) * GLIDE.settle;
+  return Math.min(GLIDE.max_ms, Math.max(GLIDE.min_ms, next));
+}
+
+// Fraction of a glide shown after elapsed_ms, eased so it never overshoots.
+export function glideAlpha(elapsed_ms, span_ms) {
+  if (!(span_ms > 0)) return 1;
+  return Math.min(1, Math.max(0, elapsed_ms / span_ms));
+}
+
+// Whether a pose change is a glide or a jump: a piece that moved further than
+// snap_m in one frame was set up again or teleported and is placed at once.
+export function glides(from_m, to_m) {
+  if (!from_m || !to_m) return false;
+  const d = Math.hypot(to_m[0] - from_m[0], to_m[1] - from_m[1], to_m[2] - from_m[2]);
+  return Number.isFinite(d) && d < GLIDE.snap_m;
+}
+
+// Where a time falls among sampled preview frames ({t} rows in time order):
+// the sample at or before it, the next one, and how far between them (0..1).
+export function frameBlend(frames, t) {
+  if (!frames?.length) return null;
+  let index = 0;
+  while (index + 1 < frames.length && frames[index + 1].t <= t) index++;
+  const next = index + 1 < frames.length ? index + 1 : index;
+  const span = frames[next].t - frames[index].t;
+  const f = next === index || !(span > 0) ? 0 : Math.min(1, Math.max(0, (t - frames[index].t) / span));
+  return {index, next, f};
+}
+
+// A point along a sampled path ([t, x, y, z] rows in time order) at time t,
+// interpolated between samples and held at the ends.
+export function pathPoint(points, t) {
+  if (!points?.length) return null;
+  if (t <= points[0][0]) return points[0].slice(1, 4);
+  const last = points[points.length - 1];
+  if (t >= last[0]) return last.slice(1, 4);
+  let i = 0;
+  while (i + 1 < points.length && points[i + 1][0] <= t) i++;
+  const a = points[i], b = points[i + 1], f = (t - a[0]) / (b[0] - a[0] || 1);
+  return [1, 2, 3].map(k => a[k] + (b[k] - a[k]) * f);
+}
