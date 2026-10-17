@@ -459,6 +459,10 @@ class Puzzles(unittest.TestCase):
         # Large trays live in the library; use its ordinary scene entry point.
         if name.startswith('Add a ') and name != 'Add a piece' and self.js("!document.getElementById('tray-library').hidden && !document.getElementById('piece-picker').open"):
             self.press('Add a piece')
+            # The library opens on the last filter and search (kept across
+            # visits); show every piece when the one wanted is filtered out.
+            if not self.js(f"[...document.querySelectorAll('#piece-picker button')].some(b=>b.offsetParent!==null&&(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(name)})"):
+                self.press('Show all pieces');self.slide('Search pieces','')
         self.reveal_control(self.button_expression(name))
         found = self.js(f"""(() => {{ const b = [...document.querySelectorAll('button')].find(b =>
             !b.disabled && b.offsetParent !== null && (!document.getElementById('piece-picker').open || b.closest('#piece-picker')) && ((b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(name)}));
@@ -2057,6 +2061,104 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(all((d['state'] or {}).get('connected') for d in detail),('the cord stayed plugged in',detail))
                 self.assertLess(max(ring)-min(ring),.001,ring)
                 self.assertLess(max(cord)-min(cord),.005,detail)
+
+    def test_plank_end_balls_change_its_length_from_one_end_and_precise_brings_back_the_arrows(self):
+        # Playtest: a selected plank showed about nine kinds of helpers. Now a
+        # gold ball on each end changes its length (the other end stays put)
+        # and the middle grip moves it; arrows, axis lines and +/- handles
+        # wait behind Precise.
+        for width,height,touch in ((1280,860,False),(390,844,True),(844,390,True)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=touch)
+                self.js("window.machineView({azimuth:0,elevation:.5,distance:2.2,at:[.25,.3,0]})");self.wait('window.machineCamera().settled',30)
+                self.press('Add a plank');self.ghost();self.paint()
+                self.wait('window.machinePlankEnds().length===2',5)
+                self.assertEqual(self.js("document.querySelectorAll('#piece-handles button').length"),0,'no +/- handles without Precise')
+                self.assertTrue(self.js("document.getElementById('edit-guide-label').hidden"),'no arrows without Precise')
+                ends=self.js('window.machinePlankEnds()')
+                for e in ends:self.assertGreaterEqual(e['box']['width'],44);self.assertGreaterEqual(e['box']['height'],44)
+                before=self.ghost()['p']
+                # The plank is built of 2 cm cells, so its drawn ends sit on
+                # that grid: an end that stays put stays within half a cell.
+                drawn=lambda i:next(e for e in self.js('window.machinePlankEnds()') if e['end']==i)['at_m']
+                left_end=drawn(0)
+                right=next(e for e in ends if e['end']==1)['box'];at=[right['x']+22,right['y']+22]
+                d=self.js("[Number(document.querySelector('.plank-end[data-end=\"1\"]').dataset.dx),Number(document.querySelector('.plank-end[data-end=\"1\"]').dataset.dy)]")
+                self.drag(at,[at[0]+d[0]*40,at[1]+d[1]*40],touch=touch)
+                after=self.ghost()['p'];self.paint()
+                self.assertGreater(after['length_m'],before['length_m'])
+                self.assertLess(math.dist(drawn(0),left_end),.011,'the left end stays where it was')
+                right_end=drawn(1)
+                # Keys on a focused end: one step at a time, the other end fixed.
+                # (Two length steps a key, so the middle moves one whole step.)
+                self.js("document.querySelector('.plank-end[data-end=\"0\"]').focus()")
+                for kind in ('keyDown','keyUp'):
+                    self.page.send('Input.dispatchKeyEvent',{'type':kind,'key':'ArrowLeft','code':'ArrowLeft','windowsVirtualKeyCode':37})
+                keyed=self.ghost()['p'];self.paint()
+                self.assertAlmostEqual(keyed['length_m'],after['length_m']-.02,places=4)
+                self.assertLess(math.dist(drawn(1),right_end),.011,'the right end stays where it was')
+                self.press('Precise controls')
+                self.wait("document.querySelectorAll('#piece-handles button:not([hidden])').length>0",10)
+                self.assertEqual(self.js("document.querySelector('[aria-label=\"Precise controls\"]').getAttribute('aria-pressed')"),'true')
+                self.press('Precise controls')
+                self.wait("document.querySelectorAll('#piece-handles button').length===0",10)
+                self.click_visible('Place');self.wait(READY,30)
+                self.assertEqual(self.js('window.machinePlankEnds().length'),0,'no end balls once placed')
+
+    def test_add_another_places_the_piece_then_offers_the_next(self):
+        for width,height,phone in ((1280,860,False),(390,844,True),(844,390,True)):
+            with self.subTest(viewport=(width,height)):
+                self.open('free',width,height,phone=phone)
+                self.press('Add a marble');self.ghost()
+                self.wait("Boolean(document.querySelector('#piece-editor .add-another:not(:disabled)'))",10)
+                another=self.js("(()=>{const b=document.querySelector('#piece-editor .add-another'),r=b.getBoundingClientRect();return {w:r.width,h:r.height,label:getComputedStyle(b.querySelector('.add-another-label')).display};})()")
+                self.assertGreaterEqual(another['w'],44);self.assertGreaterEqual(another['h'],44)
+                if height<500:self.assertEqual(another['label'],'none','a short screen shows only the +')
+                before=len(self.js('machinePlacements()'))
+                self.click_visible('Add another')
+                self.wait("document.getElementById('piece-picker').open",10)
+                self.assertEqual(len(self.js('machinePlacements()')),before+1,'the marble was placed first')
+                self.assertIsNone(self.js('window.machineGhostState()'))
+                self.press('Back to sandbox')
+        # A lesson with two mirrors in a small tray: the first is placed and
+        # the tray is ready for the second.
+        self.open('laser')
+        self.press('Add a mirror');self.ghost()
+        self.slide('x of your mirror 1',-.35);self.slide('z of your mirror 1',0)
+        self.assertTrue(self.ghost()['fits'])
+        self.click_visible('Add another')
+        self.wait('!window.machineGhostState() && machinePlacements().length===1',10)
+        self.assertEqual(self.js("document.activeElement.getAttribute('aria-label')"),'Add a mirror')
+
+    def test_library_keeps_its_filter_and_search_on_the_next_visit(self):
+        self.open('free')
+        self.press('Add a piece')
+        self.press('Show Power')
+        self.slide('Search pieces','steam')
+        self.press('Back to sandbox')
+        self.open('free')
+        self.press('Add a piece')
+        self.assertEqual(self.js('window.machinePieceFilter().filter'),'power')
+        self.assertEqual(self.js("document.getElementById('piece-search').value"),'steam')
+        self.assertEqual(self.js('window.machinePieceFilter().shown'),['steam'])
+        self.press('Show all pieces');self.slide('Search pieces','')
+        self.press('Back to sandbox')
+
+    def test_live_controls_glow_teal_apart_from_your_pieces(self):
+        # Pointing at a live control's card lights the machine it works teal;
+        # your own pieces glow gold under the mouse.
+        self.open('easy-water-receiver')
+        self.click_visible('Add a water tank');self.ghost()
+        self.click_visible('Place');self.wait(READY,30)
+        self.wait("Boolean(document.querySelector('.device-live-card'))",10)
+        card=self.js("(()=>{const c=document.querySelector('.device-live-card'),r=c.getBoundingClientRect();return [r.x+r.width/2,r.y+8];})()")
+        self.mouse('mouseMoved',*card)
+        self.wait('window.machineGlowState().control.length>0',5)
+        state=self.js('window.machineGlowState()')
+        self.assertTrue(all(state['emissive'][n]==0x0a5a50 for n in state['control']),state)
+        self.mouse('mouseMoved',*self.empty_scene_point())
+        self.wait('window.machineGlowState().control.length===0',5)
+        self.assertEqual(self.js("getComputedStyle(document.querySelector('.device-live-card')).borderTopColor"),'rgb(70, 194, 176)')
 
     def test_interactive_pieces_glow_on_hover_and_pulse_on_an_empty_tap(self):
         # Your placed pieces glow gold under the mouse; tapping empty scene
@@ -3827,6 +3929,7 @@ class Puzzles(unittest.TestCase):
     def test_selected_controls_highlight_the_piece_and_follow_its_orientation(self):
         self.open('free')
         self.press('Add a plank')
+        self.press('Precise controls')  # a plank's arrows wait behind Precise
         guide = self.ghost()['editGuide']
         self.assertEqual(guide['key'], 'length_m')
         self.assertEqual(len(guide['arrows']), 2)
@@ -4603,6 +4706,24 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual([p['piece'] for p in self.js('window.machinePlacements()')],[p['piece'] for p in self.js("window.machineBlueprints().find(b=>b.name==='Test ramp').placements")])
                 self.press('Undo'); self.wait(f"window.machinePlacements().length===0 && {READY}",30)
                 self.assertTrue(self.js("!document.getElementById('piece-picker').open"))
+
+    def test_sandbox_light_goal_puts_a_target_facing_the_view_and_the_engine_measures_it(self):
+        # Player-made levels: besides "this object into a zone", light onto a
+        # target. In Find the focus the target goes in the laser's beam,
+        # facing the view (and so the laser), and the run reaches it.
+        self.open('free')
+        self.press('Start from Find the focus')
+        self.js("window.machineView({azimuth:-Math.PI/2+.05,elevation:.3,distance:2,at:[-.3,.575,0]})");self.wait('window.machineCamera().settled',30)
+        self.slide('What the goal is about','light:')
+        self.click_visible('Set light target here')
+        self.wait(f"window.machineGoalState().goal?.done_when?.lit_at && {READY}",60)
+        spot=self.js('window.machineGoalState().goal.done_when.lit_at')
+        self.assertEqual(spot['facing'],'-x')
+        for got,want in zip(spot['at_m'],[-.3,.575,0]):self.assertAlmostEqual(got,want,delta=.011)
+        self.assertTrue(self.js("Boolean(window.machineBodies()['light goal target'])"),'the target is in the scene')
+        self.press('Run')
+        self.wait('window.machineGoalState().done',20)
+        self.assertIn('Goal reached',self.js("document.getElementById('verdict').textContent"))
 
     def test_sandbox_goal_zone_is_measured_by_the_engine_and_shares_as_a_challenge(self):
         for width,height in ((1280,860),(390,844)):
@@ -6037,6 +6158,10 @@ class Puzzles(unittest.TestCase):
                                 self.assertTrue(self.js("Boolean(document.querySelector('#piece-editor button[aria-label^=\"Toggle \"]'))"))
                         elif rule.get('part') or rule.get('hinge'):
                             self.assertTrue(self.js("Boolean(document.querySelector('#piece-editor button[aria-label^=\"Choose \"]'))"))
+                        if item['piece']=='plank' and key=='length_m':
+                            # A plank's length is its end balls (Precise brings back +/-).
+                            self.wait('window.machinePlankEnds().length===2',10)
+                            continue
                         if (len(rule.get('choices',[]))>1 and all(isinstance(v,(int,float)) for v in rule['choices'])) or (not rule.get('choices') and rule.get('max',0)>rule.get('min',0)):
                             self.wait("Boolean(document.querySelector('#piece-handles button:not([hidden])'))",10)
                             self.assertFalse(self.js("Boolean(document.querySelector('#piece-editor #piece-grip'))"))
@@ -6145,6 +6270,7 @@ class Puzzles(unittest.TestCase):
     def test_adjustment_handle_keyboard_changes_one_step_without_moving_piece(self):
         self.open('gap')
         self.press('Add a plank');self.ghost()
+        self.press('Precise controls')  # a plank's +/- handles wait behind Precise
         for label in ('Increase Cut to length on object','Decrease Cut to length on object'):
             self.wait("document.querySelector('#piece-handles button:not([hidden])')!==null",10)
             self.click_visible(label)

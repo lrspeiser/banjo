@@ -214,15 +214,37 @@ def fresh_easy(family_id, seed, exe, logs, recipe_id=None):
     return level
 
 
+# A light goal's target faces one of these ways: a small plate with a light
+# sensor on its face, as the optical Sandbox examples use.
+LIGHT_GOAL_FACINGS = {'+x': [1, 0, 0], '-x': [-1, 0, 0], '+z': [0, 0, 1], '-z': [0, 0, -1], 'up': [0, 1, 0]}
+LIGHT_GOAL_W = 0.2          # watts on the sensor's 2 x 2 cm face, as in the optical examples
+LIGHT_GOAL_PLATE, LIGHT_GOAL_CELL = 'light goal target', 'light goal'
+
+
 def sandbox_goal(goal):
     """A goal a player sets on a Sandbox design: get one named body into a
-    box-shaped zone. The engine measures it like any level's in_zone goal;
-    the design is not scored or ranked."""
+    box-shaped zone, or get light onto a spot (lit_at: a target plate with a
+    light sensor there, facing one way). The engine measures it like any
+    level's in_zone or lit_w goal; the design is not scored or ranked."""
     if not isinstance(goal, dict):
         raise ValueError('A Sandbox goal is an object')
     rule = goal.get('done_when')
+    def vector(value, low, high, what):
+        if not isinstance(value, list) or len(value) != 3 or not all(
+                isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and low <= v <= high for v in value):
+            raise ValueError(f'A Sandbox goal zone needs {what}')
+        return [float(v) for v in value]
+    if isinstance(rule, dict) and set(rule) == {'lit_at'} and isinstance(rule['lit_at'], dict):
+        spot = rule['lit_at']
+        if spot.get('facing') not in LIGHT_GOAL_FACINGS:
+            raise ValueError('A light goal faces +x, -x, +z, -z or up')
+        at = vector(spot.get('at_m'), -50, 50, 'a centre within 50 m')
+        if at[1] < .07:
+            raise ValueError('A light goal sits at least 7 cm above the ground')
+        title = str(goal.get('title') or 'Light reaches the target').strip()[:80] or 'Light reaches the target'
+        return {'title': title, 'done_when': {'lit_at': {'at_m': at, 'facing': spot['facing']}}}
     if not isinstance(rule, dict) or set(rule) != {'in_zone'} or not isinstance(rule['in_zone'], dict):
-        raise ValueError('A Sandbox goal gets a body into a zone (in_zone)')
+        raise ValueError('A Sandbox goal gets a body into a zone (in_zone) or light onto a spot (lit_at)')
     zone = rule['in_zone']
     # Either a named body, or "the first <piece> you place" (a shared
     # challenge starts without the author's pieces).
@@ -232,16 +254,29 @@ def sandbox_goal(goal):
             raise ValueError('A Sandbox goal names one body or one kind of piece')
     elif not isinstance(part, str) or not part or len(part) > 120:
         raise ValueError('A Sandbox goal names the body to move')
-    def vector(value, low, high, what):
-        if not isinstance(value, list) or len(value) != 3 or not all(
-                isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and low <= v <= high for v in value):
-            raise ValueError(f'A Sandbox goal zone needs {what}')
-        return [float(v) for v in value]
     at = vector(zone.get('at_m'), -50, 50, 'a centre within 50 m')
     size = vector(zone.get('size_m'), .02, 5, 'sides from 2 cm to 5 m')
     title = str(goal.get('title') or 'Your goal').strip()[:80] or 'Your goal'
     target = {'piece': piece} if piece is not None else {'part': part}
     return {'title': title, 'done_when': {'in_zone': {**target, 'at_m': at, 'size_m': size}}}
+
+
+def light_goal_target(spot):
+    """A light goal's target: a fixed 12 x 12 cm plate, 2 cm thick, its face
+    at the spot and facing the declared way, on a 4 cm post down to the
+    ground, and a 2 x 2 cm light sensor on that face."""
+    at, normal = spot['at_m'], LIGHT_GOAL_FACINGS[spot['facing']]
+    size = [.12, .12, .12]
+    size[next(i for i, v in enumerate(normal) if v)] = .02
+    middle = [round(at[i] - normal[i] * .01, 4) for i in range(3)]
+    plate = {'name': LIGHT_GOAL_PLATE, 'shape': 'box', 'material': 'concrete', 'size_m': size, 'at_m': middle,
+             'turn_deg': [0.0, 0.0, 0.0], 'fixed': True}
+    parts, bottom = [plate], round(middle[1] - size[1] / 2, 4)
+    if bottom > .005:
+        parts.append({'name': LIGHT_GOAL_PLATE + ' post', 'shape': 'box', 'material': 'concrete', 'size_m': [.04, bottom, .04],
+                      'at_m': [middle[0], round(bottom / 2, 4), middle[2]], 'turn_deg': [0.0, 0.0, 0.0], 'fixed': True})
+    cell = {'name': LIGHT_GOAL_CELL, 'on': LIGHT_GOAL_PLATE, 'at_m': [round(v, 4) for v in at], 'normal': list(normal), 'area_m2': .0004}
+    return parts, cell
 
 
 def requested_level(data):
@@ -1652,7 +1687,26 @@ def compose(level, placements, leave_out_goal=False):
     if not level.get('goal'):
         spec.setdefault('stations', [])
         mine = level.get('sandbox_goal')
-        if mine:
+        if mine and 'lit_at' in mine['done_when']:
+            # Light onto a spot: a fixed target plate there (on a post when
+            # it is off the ground) with a light sensor on its face. Nothing
+            # else is added; whatever light reaches it is the engine's.
+            spot = mine['done_when']['lit_at']
+            parts, cell = light_goal_target(spot)
+            inside = next((q['name'] for q in compiled['parts'] for a in parts
+                           if any(mw.overlap_depth(sa, sb) > 0.0 for sa in mw.solids_of(a) for sb in mw.solids_of(q))), None)
+            if LIGHT_GOAL_PLATE in names or inside:
+                needs = f'the light goal is inside {inside}; set it in open space' if inside else 'the light goal is already here'
+                if not leave_out_goal:
+                    raise LevelRefused([needs])
+                spec['_needs'] = needs
+            else:
+                spec['parts'] = list(spec.get('parts', [])) + parts
+                light = spec.setdefault('light', {})
+                light['photocells'] = list(light.get('photocells', [])) + [cell]
+                spec['stations'] = [{'title': mine['title'], 'done_when': {'lit_w': {'photocell': LIGHT_GOAL_CELL, 'w': LIGHT_GOAL_W}},
+                                     'focus': [LIGHT_GOAL_PLATE], 'player_goal': True}] + list(spec['stations'])
+        elif mine:
             # A player's own goal: measured first, never scored. Until the
             # body it names exists it is left out and the page says so.
             zone = dict(mine['done_when']['in_zone'])

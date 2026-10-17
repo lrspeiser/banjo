@@ -45,14 +45,26 @@ tolerance are unchanged; Sandbox gains optional player goals):
 * **Interactive glow.** The mouse-over piece you can pick up has a gold
   emissive glow; tapping empty scene briefly tints every pickable piece (1.4 s).
   Prepared puzzle parts are not included. Measured heat glow takes precedence.
-* **Add another (Sandbox).** After **Place**, the scene tray's **+ Add a
-  piece** button pulses for 2.4 s. Opening the library with a fitted piece
-  selected places it first; an unfitted piece stays selected with a message.
-  (A separate **+** in the piece editor was tried and removed: it widened the
-  editor past the screen edge in CI layouts.)
+  Live controls have their own colour (October 17): a switch handle under the
+  mouse, or the machine a live-control card works (Release spring, a tap
+  opening) while the pointer or focus is on the card, glows teal (`0x0a5a50`),
+  and the cards and their buttons are teal too, apart from the blue editing
+  controls. Browser check: `test_live_controls_glow_teal_apart_from_your_pieces`.
+* **Add another.** After **Place**, the scene tray's **+ Add a piece** button
+  pulses for 2.4 s. Opening the library with a fitted piece selected places it
+  first; an unfitted piece stays selected with a message. **+ Add another**
+  (October 17) is a full-width row under the piece toolbar, shown while the
+  tray has something left to add after the selected piece: it places the piece
+  and opens the library (Sandbox) or brings up the scene tray (a lesson with a
+  small tray). On a short landscape screen only its **+** shows. (An earlier
+  **+** inside the toolbar row was removed because it widened the editor past
+  the screen edge; a row of its own keeps the 250 px width.) Browser check:
+  `test_add_another_places_the_piece_then_offers_the_next` at 1280×860, 390×844
+  and 844×390, and in Point the laser.
 * **Library filters.** Category chips (44 px) replace the dropdown, with a
   **Recent** chip for the last eight Sandbox pieces added (browser storage,
-  optional). The last search and category persist while the page is open.
+  optional). The last search and category persist across visits too
+  (`banjo.pieceFilter` in browser storage, October 17).
   Search matches every typed word against the name, description, category and
   a short list of everyday words (ball, board, rope, cog, lamp...).
 * **Build ▸ Tune ▸ Run.** A three-step switch (44 px buttons, small arrows
@@ -83,6 +95,25 @@ tolerance are unchanged; Sandbox gains optional player goals):
   movable selected piece (display only; the scene drag is unchanged). Axis
   guides extend 3× the piece's size (0.8–4 m) unless Precision controls are open,
   when they keep their 50 m length.
+* **Simple plank handles and Precise (October 17).** A selected plank shows a
+  gold ball on each end (22 px on a 44 px target) and the middle grip, and
+  nothing else: its arrows, axis lines and +/- length handles wait behind
+  **Precise**, a switch beside Move that opens the Precision controls. Dragging
+  an end ball sets the length from the point on the plank's line nearest the
+  pointer, with the other end kept where it is (the middle moves by half the
+  change; about the middle when the level does not let the plank move). Arrow
+  keys on a focused end change the length 2 cm at a time, so the middle moves
+  one whole 1 cm position step and the other end stays exactly put. The plank
+  is built of 2 cm cells, so its drawn ends sit on that grid; an end that stays
+  put stays within half a cell. On a plank short on screen the balls sit at
+  least 50 px from the middle so the grip stays reachable. Browser check:
+  `test_plank_end_balls_change_its_length_from_one_end_and_precise_brings_back_the_arrows`
+  at 1280×860, 390×844 and 844×390.
+* **Result card on short screens (October 17).** The Level Complete card uses
+  its compact layout on screens 430 px tall or less as well as 820 px wide or
+  less. At 844×390 the scene is about 230 px tall and the card 160 px; with the
+  large title the energy line was cut off below it (measured on Windows fonts;
+  CI's Linux fonts happened to fit).
 * **Blueprints (Sandbox).** **Design → Blueprints** saves the design's placed
   pieces (not its prepared base objects) under a name, up to 20, in the
   anonymous profile; blueprints merge across devices by id. **Add a piece →
@@ -102,6 +133,16 @@ tolerance are unchanged; Sandbox gains optional player goals):
   `SandboxGoal`). **Copy challenge link** packs the base and goal without the
   author's pieces; a goal about one of the author's named pieces is refused for
   sharing. Challenges are not yet listed in the level menu.
+  A goal can instead be **light reaches a target** (`lit_at`, October 17): a
+  fixed 12 × 12 cm plate, 2 cm thick, its face where the view is centred and
+  facing the camera (the nearest of ±x, ±z, or up when the view looks down
+  steeply), on a 4 cm post to the ground, with a 2 × 2 cm light sensor on its
+  face. The station is the same `lit_w` check the optical examples use, at
+  0.2 W. A target inside another part is refused with "set it in open space".
+  Measured in **Find the focus** (`tests/machine_game_tests.py` `SandboxGoal`):
+  a target in the laser's beam facing it is lit at 0.017 s; one 0.5 m beside
+  the beam, or in the beam facing away, is not. Browser check:
+  `test_sandbox_light_goal_puts_a_target_facing_the_view_and_the_engine_measures_it`.
 
 ## Starter lessons: ball, block and string (October 17)
 

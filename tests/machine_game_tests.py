@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 import machine_world as mw     # noqa: E402
 import machine_game as mg      # noqa: E402
 import machine_chat as mc      # noqa: E402
+import sandbox_mechanics as sm  # noqa: E402
 
 ENGINE = None
 if '--engine' in sys.argv:
@@ -1301,6 +1302,42 @@ class SandboxGoal(unittest.TestCase):
         self.assertTrue(results['over'].get('done'), results)
         self.assertFalse(results['beside'].get('done'), results)
 
+
+    def test_a_light_goal_puts_a_target_with_a_sensor_where_it_is_set(self):
+        focus = next(t for t in sm.templates() if t['name'] == 'Find the focus')
+        goal = {'title': 'Light here', 'done_when': {'lit_at': {'at_m': [-.3, .575, 0], 'facing': '-x'}}}
+        free = mg.requested_level({'level': 'free', 'base': focus['base'], 'goal': goal})
+        spec = mg.compose(free, focus['placements'])[0]
+        self.assertEqual(spec['stations'][0]['done_when'], {'lit_w': {'photocell': mg.LIGHT_GOAL_CELL, 'w': mg.LIGHT_GOAL_W}})
+        self.assertTrue(spec['stations'][0]['player_goal'])
+        plate = next(p for p in spec['parts'] if p['name'] == mg.LIGHT_GOAL_PLATE)
+        self.assertEqual(plate['size_m'], [.02, .12, .12])
+        self.assertTrue(any(p['name'] == mg.LIGHT_GOAL_PLATE + ' post' for p in spec['parts']), 'held up on a post')
+        cell = next(c for c in spec['light']['photocells'] if c['name'] == mg.LIGHT_GOAL_CELL)
+        self.assertEqual((cell['at_m'], cell['normal']), ([-.3, .575, 0], [-1, 0, 0]))
+        mw.compile_spec(spec)
+        # Set inside a piece, it says so rather than building it.
+        inside = mg.requested_level({'level': 'free', 'base': focus['base'],
+                                     'goal': {'done_when': {'lit_at': {'at_m': [focus['placements'][0]['x_m'], .575, 0], 'facing': '-x'}}}})
+        self.assertIn('set it in open space', mg.compose(inside, focus['placements'], leave_out_goal=True)[0]['_needs'])
+        for bad in ({'lit_at': {'at_m': [0, .5, 0], 'facing': 'down'}}, {'lit_at': {'at_m': [0, .02, 0], 'facing': 'up'}},
+                    {'lit_at': {'at_m': [0, .5], 'facing': '+x'}}, {'lit_at': {'at_m': [0, .5, 0], 'facing': '+x'}, 'in_zone': {}}):
+            with self.assertRaises(ValueError, msg=bad):
+                mg.requested_level({'level': 'free', 'goal': {'done_when': bad}})
+
+    @need_engine
+    def test_a_light_goal_is_reached_in_the_beam_facing_it_and_not_beside_it_or_facing_away(self):
+        focus = next(t for t in sm.templates() if t['name'] == 'Find the focus')
+        results = {}
+        with tempfile.TemporaryDirectory() as logs:
+            for name, at, facing in (('in the beam', [-.3, .575, 0], '-x'), ('beside it', [-.3, .575, .5], '-x'),
+                                     ('facing away', [-.3, .575, 0], '+x')):
+                free = mg.requested_level({'level': 'free', 'base': focus['base'],
+                                           'goal': {'title': 'Light here', 'done_when': {'lit_at': {'at_m': at, 'facing': facing}}}})
+                run = mw.rehearse(mw.compile_spec(mg.compose(free, focus['placements'])[0]), ENGINE, Path(logs), seconds=1.5)
+                self.assertIsNone(run['error'])
+                results[name] = next(s for s in run['stations'] if s['title'] == 'Light here').get('done', False)
+        self.assertEqual(results, {'in the beam': True, 'beside it': False, 'facing away': False})
 
 class Engine(unittest.TestCase):
     @need_engine

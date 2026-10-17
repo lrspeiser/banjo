@@ -205,13 +205,21 @@ function syncMeshes(changed) {
 // Things you can pick up glow: gold under the mouse, and all of them briefly
 // when a level opens or a tap lands on empty scene, so touch players can see
 // what is interactive. Hot parts keep their measured heat glow.
-const HOVER_GLOW = 0x5a3c00, HINT_GLOW = 0x2e2a10;
+// A live control on a machine (a switch handle to drag, a spring latch whose
+// Release button you point at) glows teal instead, like its control card, so
+// it reads as something that works the machine rather than a piece to move.
+const HOVER_GLOW = 0x5a3c00, HINT_GLOW = 0x2e2a10, CONTROL_GLOW = 0x0a5a50;
 let hoverGlowIndex = -1, hintGlowUntil = 0, hintGlowTimer = 0;
 function paintGlow(mesh) {
   // Only the body's own material, as the heat tint always did: lamps and
   // other parts keep any glow of their own.
-  const glow = mesh.userData.heatGlow || (mesh.userData.hover ? HOVER_GLOW : mesh.userData.hint ? HINT_GLOW : 0);
+  const glow = mesh.userData.heatGlow || (mesh.userData.control ? CONTROL_GLOW : mesh.userData.hover ? HOVER_GLOW : mesh.userData.hint ? HINT_GLOW : 0);
   mesh.material?.emissive?.setHex(glow);
+}
+function deviceBodies(name) { return [...meshes.keys()].filter(n => n === name || n.startsWith(name + ' ')); }
+function setControlGlow(names = []) {
+  const on = new Set(names);
+  for (const [name, m] of meshes) if (Boolean(m.userData.control) !== on.has(name)) { m.userData.control = on.has(name); paintGlow(m); }
 }
 function pieceMeshNames(index) {
   if (index < 0) return [];
@@ -236,7 +244,9 @@ function hintInteractive(ms = 1400) {
   hintGlowTimer = setTimeout(() => { for (const m of meshes.values()) { m.userData.hint = false; paintGlow(m); } }, ms);
 }
 window.machineGlowState = () => ({hover: [...meshes].filter(([, m]) => m.userData.hover).map(([n]) => n),
-  hint: [...meshes].filter(([, m]) => m.userData.hint).map(([n]) => n)});
+  hint: [...meshes].filter(([, m]) => m.userData.hint).map(([n]) => n),
+  control: [...meshes].filter(([, m]) => m.userData.control).map(([n]) => n),
+  emissive: Object.fromEntries([...meshes].filter(([, m]) => m.userData.hover || m.userData.control).map(([n, m]) => [n, m.material?.emissive?.getHex() ?? null]))});
 
 // Explicit terminal wires and prepared contact/coil circuits share visible
 // floor routes. A contact circuit includes its supply, switched and return
@@ -2774,6 +2784,110 @@ function positionValueChoices(source){
 valueChoices.addEventListener('keydown',e=>{if(e.key==='Escape')pendingPieceReference=null;e.stopPropagation();});
 addEventListener('resize',()=>{if(valueChoices.matches(':popover-open')&&valueChoices.source?.isConnected)positionValueChoices(valueChoices.source);});
 let handleDrag=null;
+// Simple handles on a plank (playtest plan): a gold ball on each end -- drag
+// one to lengthen or shorten the plank while the other end stays where it is
+// -- and the move grip in its middle. Until Precise is on, the plank's
+// arrows, axis lines and +/- length handles are not shown.
+const plankEnds = Object.assign(document.createElement('div'), {id: 'plank-ends'}); view.append(plankEnds);
+let plankEndDrag = null;
+function simplePlank() {
+  return Boolean(ghost && ghost.p.piece === 'plank' && !ghost.baseObject && !looking && !$('precision-controls')?.open);
+}
+// The plank's two ends in the world, from its drawn ghost (length along its own x).
+function plankEndPoints() {
+  const mesh = ghostGroup.children.find(m => m.userData.partName === ghostName());
+  const length = mesh?.geometry?.parameters?.width;
+  if (!length) return null;
+  mesh.updateMatrixWorld(true);
+  return [-1, 1].map(s => mesh.localToWorld(new THREE.Vector3(s * length / 2, 0, 0)));
+}
+// Set the plank's length with the end at `fixed` (a world point) kept where
+// it is, when the level lets the plank move; otherwise about its middle.
+function setPlankLength(length, fixed, toward) {
+  const rule = trayItem('plank')?.knobs?.length_m;
+  if (!ghost || !rule) return false;
+  const step = rule.step || .01;
+  length = Math.min(rule.max, Math.max(rule.min, Math.round(length / step) * step));
+  length = +length.toFixed(4);
+  if (length === ghost.p.length_m) return false;
+  const p = {...ghost.p};
+  if (!setKnob(p, 'length_m', length)) return false;
+  // (The drawn ghost already stands where ghost.p says, moved by followGhost.)
+  const middle = fixed.clone().addScaledVector(toward, length / 2), knobs = trayItem('plank').knobs;
+  // (setKnob reports no change as false; that is not a refusal.)
+  if (knobs.x_m) setKnob(p, 'x_m', +middle.x.toFixed(4));
+  if (knobs.x_m && knobs.z_m) setKnob(p, 'z_m', +middle.z.toFixed(4));
+  Object.assign(ghost.p, p);
+  followGhost(); showGhostKnobs(); askGhost();
+  return true;
+}
+function endGrip(which) {
+  const b = button('', () => {}, {className: 'plank-end', ariaLabel: `Drag the plank's ${which ? 'right' : 'left'} end to lengthen or shorten it`,
+    title: 'Drag to lengthen or shorten the plank; the other end stays put. Arrow keys change it 2 cm at a time.'});
+  b.dataset.end = String(which);
+  b.append(Object.assign(document.createElement('span'), {className: 'plank-end-ball'}));
+  const start = () => { const ends = plankEndPoints(); if (!ends) return null;
+    const fixed = ends[1 - which], toward = ends[which].clone().sub(fixed).normalize(); return {fixed, toward}; };
+  b.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || !ghost) return;
+    const s = start(); if (!s) return;
+    e.preventDefault(); e.stopPropagation(); b.setPointerCapture(e.pointerId);
+    plankEndDrag = {id: e.pointerId, ...s};
+  });
+  b.addEventListener('pointermove', e => {
+    const d = plankEndDrag;
+    if (!d || d.id !== e.pointerId) return;
+    // The point on the plank's line nearest the pointer's ray.
+    pointerRay(e.clientX, e.clientY);
+    const {origin, direction} = raycaster.ray, w = d.fixed.clone().sub(origin);
+    const along = d.toward.dot(direction), denom = 1 - along * along;
+    if (denom < 1e-4) return;
+    const t = (along * direction.dot(w) - d.toward.dot(w)) / denom;
+    setPlankLength(t, d.fixed, d.toward);
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(type, () => { plankEndDrag = null; });
+  b.addEventListener('keydown', e => {
+    const delta = {ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1}[e.key];
+    const s = delta && start(); if (!s) return;
+    // Not also the page's arrow-key nudge of the selected piece.
+    e.preventDefault(); e.stopPropagation();
+    // Two length steps a key: the middle then moves one whole position step,
+    // so the other end stays exactly where it is.
+    const knobs = trayItem('plank').knobs, step = (knobs.length_m.step || .01) * (knobs.x_m ? 2 : 1);
+    setPlankLength(ghost.p.length_m + delta * step, s.fixed, s.toward);
+  });
+  return b;
+}
+function updatePlankEnds() {
+  const ends = ghost && ghost.p.piece === 'plank' && !ghost.baseObject && !looking && editorMode !== 'turn' && trayItem('plank')?.knobs?.length_m ? plankEndPoints() : null;
+  if (!ends) { if (plankEnds.childElementCount && !plankEndDrag) plankEnds.replaceChildren(); return; }
+  if (plankEnds.childElementCount !== 2) plankEnds.replaceChildren(endGrip(0), endGrip(1));
+  freshView();
+  const rect = view.getBoundingClientRect(), canvas = renderer.domElement.getBoundingClientRect();
+  const screen = ends.map(at => { const p = at.clone().project(camera);
+    return {x: canvas.left - rect.left + (p.x + 1) / 2 * canvas.width, y: canvas.top - rect.top + (1 - p.y) / 2 * canvas.height, behind: p.z > 1}; });
+  // A plank short on screen keeps its balls clear of the middle grip: each at
+  // least 50 px from the middle, along the plank.
+  const [a, b] = screen, mid = {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2}, span = Math.hypot(b.x - a.x, b.y - a.y);
+  if (span < 100) {
+    const ux = span > 1 ? (b.x - a.x) / span : 1, uy = span > 1 ? (b.y - a.y) / span : 0;
+    a.x = mid.x - ux * 50; a.y = mid.y - uy * 50; b.x = mid.x + ux * 50; b.y = mid.y + uy * 50;
+  }
+  // With the +/- handles away, the right end is the plank's main size grip,
+  // with the way that lengthens it.
+  const main = simplePlank() && ghost.card === 'length_m', out = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  screen.forEach(({x, y, behind}, i) => {
+    const ball = plankEnds.children[i];
+    const hidden = behind || x < 0 || y < 0 || x > rect.width || y > rect.height;
+    if (ball.hidden !== hidden) ball.hidden = hidden;
+    ball.style.left = `${x - 22}px`; ball.style.top = `${y - 22}px`;
+    const sign = i ? 1 : -1;
+    ball.dataset.dx = String(sign * (b.x - a.x) / out); ball.dataset.dy = String(sign * (b.y - a.y) / out);
+    if (i === 1 && main) ball.id = 'piece-grip'; else if (ball.id) ball.removeAttribute('id');
+  });
+}
+window.machinePlankEnds = () => [...plankEnds.children].filter(b => !b.hidden).map(b => ({end: Number(b.dataset.end), box: b.getBoundingClientRect().toJSON(),
+  at_m: plankEndPoints()?.[Number(b.dataset.end)]?.toArray().map(v => +v.toFixed(4)) || null}));
 // A round "move" grip at the centre of a movable piece: drag the piece (or
 // this grip) to move it. It is a marker over the scene; the drag itself is
 // the same scene drag as before.
@@ -2791,7 +2905,10 @@ function updateMoveGrip() {
 window.machineMoveGrip = () => !$('move-grip').hidden && $('move-grip').getBoundingClientRect().toJSON();
 function updatePieceHandles() {
   updateMoveGrip();
+  updatePlankEnds();
   if(handleDrag)return; // Preserve pointer capture while native previews are replaced.
+  // A simple plank's end balls replace its +/- length handles.
+  if(simplePlank()&&ghost.card==='length_m'){editHandles.replaceChildren();editHandleLinks.replaceChildren();return;}
   const rule=ghost&&trayItem(ghost.p.piece).knobs[ghost.card];
   const numericChoices=rule?.choices?.length>1&&rule.choices.every(Number.isFinite);
   const numericRange=!rule?.choices&&rule?.min!=null&&rule.max>rule.min;
@@ -2928,7 +3045,7 @@ function drawEditGuide(parts) {
 }
 function updateEditGuide() {
   const label = $('edit-guide-label');
-  editGroup.visible = Boolean(ghost && editAnchor && ghost.editGuide?.key === ghost.card);
+  editGroup.visible = Boolean(ghost && editAnchor && ghost.editGuide?.key === ghost.card) && !(simplePlank() && ghost.card === 'length_m');
   if (!editGroup.visible) { label.hidden = true; updatePieceHandles();return; }
   editGroup.position.copy(ghostGroup.position);
   // Keep the arrows legible as the camera zooms, without changing their anchors.
@@ -3178,6 +3295,22 @@ function placeGhost() {
 }
 function setGhostDown() {
   if (placeGhost()) {selectPhonePanel('controls');scheduleRebuild(0);pulseAddPiece();}
+}
+// Add another: offered while a new piece of yours is selected (not one being
+// changed, and not a wire, cord or string) and the tray has something left to
+// add after it.
+function canAddAnother() {
+  if (!ghost || !level || ghost.was || ghost.rewireKey || ghost.baseObject || ['wire', 'power_cable', 'link'].includes(ghost.p.piece)) return false;
+  if (level.free) return true;
+  return level.tray.some(t => !t.attach && !t.legacy && piecesLeft(t) - (t.piece === ghost.p.piece && !ghost.was ? 1 : 0) > 0);
+}
+function addAnother() {
+  if (!ghost || !(ghost.fits && ghost.answered && !ghost.busy)) return;
+  // The library places the selected piece first, then opens.
+  if (libraryTray()) { openPiecePicker(); return; }
+  placeGhost(); scheduleRebuild(0);
+  renderSceneTray(); sceneIntoView();
+  $('tray-add')?.focus({preventScroll: true});
 }
 // After a Sandbox piece is placed, the library button glows briefly: that is
 // where the next piece comes from.
@@ -3451,6 +3584,16 @@ function renderGhostBar() {
   const state = Object.assign(document.createElement('p'), {className: 'state'});
   const actions = Object.assign(document.createElement('div'), {className: 'actions'});
   actions.append(button('Place', setGhostDown, {className: 'down', ariaLabel:'Place', disabled: !ghost.fits || ghost.busy}), throwAway);
+  // Place this piece and go straight on to the next one: a row of its own
+  // under the toolbar (a short landscape screen shows only its +).
+  let another = null;
+  if (canAddAnother()) {
+    another = button('', addAnother, {className: 'add-another', ariaLabel: 'Add another',
+      title: libraryTray() ? 'Place this piece, then choose the next one from the library' : 'Place this piece, then add the next one from your tray',
+      disabled: !ghost.fits || ghost.busy || !ghost.answered});
+    another.append(Object.assign(document.createElement('span'), {className: 'add-another-mark', textContent: '+'}),
+      Object.assign(document.createElement('span'), {className: 'add-another-label', textContent: ' Add another'}));
+  }
   if(ghost.baseObject || ghost.was)actions.insertBefore(button('Delete piece',()=>removeSelectedObject(),{ariaLabel:'Delete selected piece'}),throwAway);
   if(ghost.rewireKey) actions.insertBefore(button('Disconnect wire',()=>{
     if(!ghost?.rewireKey || terminalBusy || powerBusy)return;
@@ -3501,7 +3644,7 @@ function renderGhostBar() {
     head.after(prompt);if(!keys.some(k=>!knobs[k].terminal&&!knobs[k].power_port)){row.hidden=true;chips.hidden=true;}
   }
   // Removal is an occasional action; keep it with the exact controls.
-  for(const b of [...actions.children])if(!b.classList.contains('down')&&b!==throwAway)precision.append(b);
+  for(const b of [...actions.children])if(!b.classList.contains('down')&&!b.classList.contains('add-another')&&b!==throwAway)precision.append(b);
   card.replaceChildren(fields);
   const needsClip=ghost.p.piece==='ignition'&&ghost.p.attachment_version===2&&!ghost.p.target;
   view.classList.toggle('choosing-attachment',Boolean(needsClip));
@@ -3518,9 +3661,16 @@ function renderGhostBar() {
   turn.setAttribute('aria-pressed',String(editorMode==='turn'&&!looking));
   move.disabled=!movableGhost();turn.hidden=!Object.entries(knobs).some(([k,r])=>r.turning&&pieceKnobVisible(ghost.p,k));
   modes.append(move,turn);
-  modes.hidden=move.disabled&&turn.hidden;
+  // A plank's arrows, axis lines and +/- length handles wait behind Precise;
+  // without it the plank shows its end balls and middle grip only.
+  if(ghost.p.piece==='plank'&&!ghost.baseObject){
+    const precise=button('Precise',()=>{const d=$('precision-controls');if(!d)return;d.open=!d.open;if(ghost)renderGhostBar();},
+      {ariaLabel:'Precise controls',title:'Show the arrows, axis lines and exact numbers for this plank'});
+    precise.setAttribute('aria-pressed',String(precisionOpen));modes.append(precise);
+  }
+  modes.hidden=move.disabled&&turn.hidden&&!modes.querySelector('[aria-label="Precise controls"]');
   const top=Object.assign(document.createElement('div'),{className:'piece-toolbar'});top.append(modes,actions);
-  editor.replaceChildren(top,...(isGear?[gearControls(knobs)]:[chips]));
+  editor.replaceChildren(top,...(another?[another]:[]),...(isGear?[gearControls(knobs)]:[chips]));
   if(ghost.p.piece==='spring'&&knobs.rest_m&&pieceKnobVisible(ghost.p,'rest_m'))editor.append(springLengthControls(knobs.rest_m));
   if(isGear)precision.querySelector('summary').after(chips);
   if(rule.choices&&(!isGear||!['teeth','module_m','height_m'].includes(key)))editor.append(row);
@@ -3643,6 +3793,8 @@ function showGhostState() {
     ?!ghost.p.a_terminal||!ghost.p.b_terminal:!ghost.p.a_port||!ghost.p.b_port));
   const checkingCable=Boolean(cable && !choosingTerminal && ghost.busy);
   if(cable)$('piece-editor').hidden=!ghost.was&&(choosingTerminal||checkingCable);
+  const another = document.querySelector('#piece-editor .add-another');
+  if (another && ghost) another.disabled = !ghost.fits || ghost.busy || !ghost.answered;
   const bar = document.querySelector('#piece-editor .down');
   if (bar && ghost) {
     bar.disabled = !ghost.fits || ghost.busy || !ghost.answered;
@@ -4815,6 +4967,8 @@ renderer.domElement.addEventListener('pointermove', e => {
     if (!e.buttons && e.pointerType === 'mouse') {
       const under = !pullMode && !attachMode && !playing ? placedAt(e.clientX, e.clientY) : -1;
       setHoverGlow(under);
+      const handle = under < 0 && !pullMode && !attachMode && session && !switchDragging ? switchHandleAt(e.clientX, e.clientY) : null;
+      setControlGlow(handle ? [handle.handle.part] : []);
       view.classList.toggle('pickable', !pullMode && !attachMode && (wireCandidates(e.clientX,e.clientY).length>0 || under >= 0));
     }
     return;
@@ -4883,7 +5037,7 @@ const cancelPlacementGesture = () => {
   view.classList.remove('grabbing');
 };
 renderer.domElement.addEventListener('pointercancel', cancelPlacementGesture);
-renderer.domElement.addEventListener('pointerleave',()=>{socketPointer=null;view.classList.remove('socket-hover');setHoverGlow(-1);});
+renderer.domElement.addEventListener('pointerleave',()=>{socketPointer=null;view.classList.remove('socket-hover');setHoverGlow(-1);if(!liveCards.querySelector(':hover'))setControlGlow();});
 renderer.domElement.addEventListener('lostpointercapture', e => {
   pointers.delete(e.pointerId); pinch = 0; cancelPlacementGesture();
 });
@@ -4972,7 +5126,8 @@ function updateGuides() {
     gridSnapMarker.position.set(ghost.p.x_m??0,.005,ghost.p.z_m??0);
     for (const line of gridSnapMarker.children) line.visible=axes.includes(line.userData.axis);
   }
-  guides.visible = Boolean(ghost && ghostGroup.children.length);
+  // A simple plank (Precise off) shows no axis lines.
+  guides.visible = Boolean(ghost && ghostGroup.children.length) && !simplePlank();
   if (!guides.visible) {guideMatch=null;wheelGuideState=[];return;}
   ghostBox.setFromObject(ghostGroup);
   if (ghostBox.isEmpty()) { guides.visible = false; return; }
@@ -5839,6 +5994,16 @@ const PIECE_WORDS = {marble:'ball roll sphere', ring_marble:'ball sphere ring lo
   battery:'power cell', wire:'cable lead cord', motor:'spin turn', gear:'cog wheel teeth', switch:'button toggle', bulb:'lamp light'};
 let pieceFilter = 'all', recentPieces = [];
 try { recentPieces = JSON.parse(localStorage.getItem('banjo.recentPieces') || '[]').filter(p => typeof p === 'string').slice(0, 8); } catch { recentPieces = []; }
+// The last filter and search come back on the next visit too, not only while
+// the page stays open.
+try {
+  const saved = JSON.parse(localStorage.getItem('banjo.pieceFilter') || '{}');
+  if (typeof saved?.filter === 'string') pieceFilter = saved.filter;
+  if (typeof saved?.query === 'string') $('piece-search').value = saved.query.slice(0, 60);
+} catch { /* private window */ }
+function rememberPieceFilter() {
+  try { localStorage.setItem('banjo.pieceFilter', JSON.stringify({filter: pieceFilter, query: $('piece-search').value.slice(0, 60)})); } catch { /* private window */ }
+}
 function rememberRecentPiece(piece) {
   recentPieces = [piece, ...recentPieces.filter(p => p !== piece)].slice(0, 8);
   try { localStorage.setItem('banjo.recentPieces', JSON.stringify(recentPieces)); } catch {}
@@ -5895,27 +6060,51 @@ function goalChoices() {
   const kinds = [...new Set(placements.map(p => p.piece))];
   for (const piece of kinds) out.push({value: 'piece:' + piece, label: `Your first ${pieceLabel(piece)}`});
   for (const p of machine?.parts || []) if (!p.fixed && !p.name.startsWith('your ')) out.push({value: 'part:' + p.name, label: p.name});
+  // Or light onto a spot: a small target there, facing you, with a light
+  // sensor on its face (as the optical examples have).
+  out.push({value: 'light:', label: 'Light reaches a target (middle of the view)'});
   return out;
 }
-function goalTarget(g) { const z = g?.done_when?.in_zone; return z ? (z.piece ? 'piece:' + z.piece : 'part:' + z.part) : ''; }
+function goalTarget(g) { const z = g?.done_when?.in_zone; return g?.done_when?.lit_at ? 'light:' : z ? (z.piece ? 'piece:' + z.piece : 'part:' + z.part) : ''; }
+// The light target faces the camera: the nearest of +x, -x, +z, -z, or up
+// when the view looks down steeply.
+function lightGoalFacing() {
+  if (elevation > 1.0) return 'up';
+  const x = Math.sin(azimuth), z = Math.cos(azimuth);
+  return Math.abs(x) > Math.abs(z) ? (x > 0 ? '+x' : '-x') : (z > 0 ? '+z' : '-z');
+}
 function renderGoalControls() {
   const box = $('design-goal'); if (!box) return;
   box.hidden = !level?.free || !activeDesign;
   if (box.hidden) return;
-  const goal = activeDesign.draft.goal, choices = goalChoices(), select = $('goal-body'), chosen = select.value || goalTarget(goal);
+  // A choice the player made is kept; otherwise the current goal's, or the
+  // first piece (the light target is offered, never assumed).
+  const goal = activeDesign.draft.goal, choices = goalChoices(), select = $('goal-body'),
+    chosen = (select.dataset.picked && select.value) || goalTarget(goal);
   select.replaceChildren(...choices.map(c => new Option(c.label, c.value)));
   if (goal && !choices.some(c => c.value === goalTarget(goal))) select.append(new Option(goalTarget(goal).replace(/^(piece|part):/, ''), goalTarget(goal)));
   select.value = chosen && (choices.some(c => c.value === chosen) || chosen === goalTarget(goal)) ? chosen : (choices[0]?.value || '');
-  if (goal) $('goal-size').value = String(goal.done_when.in_zone.size_m[0]);
+  if (goal?.done_when?.in_zone) $('goal-size').value = String(goal.done_when.in_zone.size_m[0]);
+  const light = select.value === 'light:';
+  $('goal-size').hidden = $('goal-size').previousElementSibling.hidden = light;
+  $('goal-here').textContent = light ? 'Set light target here' : 'Set goal zone here';
   $('goal-here').disabled = !select.value;
   $('goal-clear').disabled = $('goal-share').disabled = !goal;
   if (!$('goal-status').dataset.sticky) $('goal-status').textContent = goal ? `Goal: ${goal.title}` : choices.length ? 'No goal yet.' : 'Add a piece that can move, then choose it here.';
 }
+$('goal-body').addEventListener('change', () => { $('goal-body').dataset.picked = '1'; renderGoalControls(); });
 function goalStatus(text) { $('goal-status').textContent = text; $('goal-status').dataset.sticky = '1'; setTimeout(() => { delete $('goal-status').dataset.sticky; }, 4000); }
 $('goal-here').addEventListener('click', () => {
   if (!level?.free || !activeDesign || ghostInTheWay()) return;
   const value = $('goal-body').value, size = Number($('goal-size').value) || .4;
   if (!value) return;
+  if (value === 'light:') {
+    remember();
+    activeDesign.draft.goal = {title: 'Get light onto the target', done_when: {lit_at: {facing: lightGoalFacing(),
+      at_m: [Math.round(target.x * 100) / 100, Math.round(Math.max(.07, target.y) * 100) / 100, Math.round(target.z * 100) / 100]}}};
+    keepBuild(); scheduleRebuild(0); goalStatus('Light target set where the view is centred, facing you. Aim light at it and press Run.');
+    renderGoalControls(); return;
+  }
   const [kind, name] = [value.slice(0, value.indexOf(':')), value.slice(value.indexOf(':') + 1)];
   const label = kind === 'piece' ? `Get your ${pieceLabel(name)} into the green zone` : `Get ${name} into the green zone`;
   remember();
@@ -5932,7 +6121,7 @@ $('goal-clear').addEventListener('click', () => {
 $('goal-share').addEventListener('click', async () => {
   const goal = activeDesign?.draft.goal; if (!goal) return;
   const author = new Set(placements.map((p, i) => `your ${p.piece} ${i + 1}`));
-  if (goal.done_when.in_zone.part && author.has(goal.done_when.in_zone.part)) { goalStatus('Choose “Your first …” so the challenge works without your pieces.'); return; }
+  if (goal.done_when.in_zone?.part && author.has(goal.done_when.in_zone.part)) { goalStatus('Choose “Your first …” so the challenge works without your pieces.'); return; }
   const url = SHARE_SITE + '/machine#build=' + await packBuild({name: 'Challenge: ' + activeDesign.name, base: activeDesign.draft.base, placements: [], goal});
   try { await navigator.clipboard.writeText(url); goalStatus('Challenge link copied. It has your base and goal, without the pieces you placed.'); }
   catch { window.prompt('Copy this challenge link', url); }
@@ -5943,7 +6132,7 @@ let goalAnnounced = -1;
 // The engine's compiled stations keep the goal's title and rule, first.
 function playerGoalStation() {
   const goal = level?.free && activeDesign?.draft.goal, first = machine?.stations?.[0];
-  return goal && first?.title === goal.title && first.done_when?.in_zone ? first : null;
+  return goal && first?.title === goal.title && (first.done_when?.in_zone || first.done_when?.lit_w) ? first : null;
 }
 function announcePlayerGoal() {
   if (!playerGoalStation()) return;
@@ -5967,7 +6156,7 @@ function renderPieceChips() {
   if (!['all','recent','blueprints'].includes(pieceFilter) && !present.has(pieceFilter)) pieceFilter = 'all';
   box.dataset.value = pieceFilter;
   box.replaceChildren(...PIECE_GROUPS.filter(([value]) => value === 'all' || (value === 'recent' ? recent.length : value === 'blueprints' ? hasBlueprints : present.has(value))).map(([value, label]) => {
-    const chip = button(label, () => { pieceFilter = value; renderPieceChips(); renderPiecePicker(); },
+    const chip = button(label, () => { pieceFilter = value; rememberPieceFilter(); renderPieceChips(); renderPiecePicker(); },
       {className: 'piece-chip', ariaLabel: `Show ${label === 'All' ? 'all pieces' : label}`}, false);
     chip.setAttribute('aria-pressed', String(value === pieceFilter));
     return chip;
@@ -6050,7 +6239,7 @@ function renderBlueprintCards() {
     return card;
   }));
 }
-$('piece-search').addEventListener('input', renderPiecePicker);
+$('piece-search').addEventListener('input', () => { rememberPieceFilter(); renderPiecePicker(); });
 $('piece-picker-close').addEventListener('click', () => $('piece-picker').close());
 $('piece-picker').addEventListener('close', () => {
   document.body.classList.remove('choosing-piece');
@@ -6215,10 +6404,16 @@ function renderMachineControls() {
   connectionFramingPending=true;
   liveControlPending = false;
   const controls = $('machine-controls'), rows = $('machine-control-rows');
-  rows.replaceChildren();liveCards.replaceChildren();
+  rows.replaceChildren();liveCards.replaceChildren();setControlGlow();
   const beside=(node,name,at)=>{
     const card=document.createElement('section');card.className='device-live-card';card.anchor=new THREE.Vector3(...at);
-    card.deviceName=name;card.append(Object.assign(document.createElement('strong'),{textContent:name}),node,Object.assign(document.createElement('output'),{className:'device-control-status',ariaLive:'polite'}));liveCards.append(card);return node;
+    card.deviceName=name;card.append(Object.assign(document.createElement('strong'),{textContent:name}),node,Object.assign(document.createElement('output'),{className:'device-control-status',ariaLive:'polite'}));liveCards.append(card);
+    // The machine the card works glows teal while the pointer or focus is on it.
+    card.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse')setControlGlow(deviceBodies(name));});
+    card.addEventListener('pointerleave',()=>setControlGlow());
+    card.addEventListener('focusin',()=>setControlGlow(deviceBodies(name)));
+    card.addEventListener('focusout',()=>setControlGlow());
+    return node;
   };
   const action = (label, command, name, at, autoStart=false) => {
     const b = button(label, async () => {
@@ -7073,7 +7268,7 @@ async function unpackBuild(packed) {
   if (draft.base != null && (typeof draft.base !== 'object' || draft.base.schema !== 'banjo.machine.v1')) throw new Error('not a machine');
   preserveLegacyWater(draft);
   // A shared goal is kept as data; the server validates it before any use.
-  const goal = draft.goal && typeof draft.goal === 'object' && !Array.isArray(draft.goal) && draft.goal.done_when?.in_zone ? draft.goal : null;
+  const goal = draft.goal && typeof draft.goal === 'object' && !Array.isArray(draft.goal) && (draft.goal.done_when?.in_zone || draft.goal.done_when?.lit_at) ? draft.goal : null;
   return {base: draft.base || null, placements: list, name: typeof draft.name === 'string' ? draft.name.slice(0, 60) : 'Shared design', ...(goal ? {goal} : {})};
 }
 $('free-share').addEventListener('click', async () => {
