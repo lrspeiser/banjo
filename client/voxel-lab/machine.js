@@ -2498,7 +2498,9 @@ function currentMode() {
 const MODE_HINTS = {build: 'Add and place pieces', tune: 'Change sizes and settings', run: 'The engine runs your machine'};
 function renderPlayMode() {
   const box = $('play-mode');
-  const show = LEVEL_MODE && Boolean(level) && !document.body.matches('.on-sandbox,.on-levels,.choosing-piece');
+  // Hidden on the Levels and Sandbox galleries; the piece library covers the
+  // page itself, so Run is there again the moment it closes.
+  const show = LEVEL_MODE && Boolean(level) && !document.body.matches('.on-sandbox,.on-levels');
   if (box.hidden === show) box.hidden = !show;
   if (!show) return;
   const mode = currentMode();
@@ -6494,7 +6496,7 @@ function parkDesign() {
 function showSandboxScreen(show = true) {
   const box = $('sandbox-screen'); box.hidden = !show;
   if (!show) for (const panel of box.querySelectorAll('.save-help-panel:popover-open')) panel.hidePopover();
-  document.body.classList.toggle('on-sandbox', show);
+  document.body.classList.toggle('on-sandbox', show); renderPlayMode();
   if (!show) { resize(); return; }
   parkDesign(); showLevelsScreen(false);
   history_.replaceState(null, '', appPath('/machine'));
@@ -6793,7 +6795,7 @@ function showLevelsScreen(show) {
   const box = $('levels-screen');
   box.hidden = !show;
   if (!show) for (const panel of box.querySelectorAll('.save-help-panel:popover-open')) panel.hidePopover();
-  document.body.classList.toggle('on-levels', show);
+  document.body.classList.toggle('on-levels', show); renderPlayMode();
   if (!show) { resize(); return; }
   stopSwitchDrag();
   box.replaceChildren();
