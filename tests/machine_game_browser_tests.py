@@ -1994,8 +1994,14 @@ class Puzzles(unittest.TestCase):
                 self.open('gap',width,height,phone=width!=1280)
                 self.wait('window.machinePlayMode().shown',10)
                 self.assertEqual(self.js('window.machinePlayMode().mode'),'build')
-                box=self.js("(()=>{const r=document.getElementById('play-mode').getBoundingClientRect(),v=document.getElementById('view').getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,vl:v.left,vr:v.right,vt:v.top}})()")
-                self.assertGreaterEqual(box['l'],box['vl']); self.assertLessEqual(box['r'],box['vr']); self.assertGreater(box['t'],box['vt'])
+                # Wide screens: in the toolbar row. Narrow phones: inside the scene.
+                box=self.js("(()=>{const m=document.getElementById('play-mode'),r=m.getBoundingClientRect(),v=(m.classList.contains('in-toolbar')?document.getElementById('phone-toolbar'):document.getElementById('view')).getBoundingClientRect();return {inToolbar:m.classList.contains('in-toolbar'),l:r.left,r:r.right,t:r.top,b:r.bottom,vl:v.left,vr:v.right,vt:v.top,vb:v.bottom}})()")
+                self.assertEqual(box['inToolbar'],width>=700,box)
+                self.assertGreaterEqual(box['l'],box['vl']); self.assertLessEqual(box['r'],box['vr'])
+                self.assertGreaterEqual(box['t'],box['vt']); self.assertLessEqual(box['b'],box['vb'])
+                if box['inToolbar']:
+                    clear=self.js("[...document.querySelectorAll('#reset,#start,#phone-tabs')].every(n=>{const a=n.getBoundingClientRect(),b=document.getElementById('play-mode').getBoundingClientRect();return a.right<=b.left||b.right<=a.left||a.bottom<=b.top||b.bottom<=a.top;})")
+                    self.assertTrue(clear,'the switch does not overlap Reset, Try It! or the tabs')
                 sizes=self.js("[...document.querySelectorAll('#play-mode button')].map(b=>{const r=b.getBoundingClientRect();return Math.min(r.width,r.height)})")
                 self.assertTrue(all(v>=44 for v in sizes),sizes)
                 # The switch does not cover the camera or history controls.
