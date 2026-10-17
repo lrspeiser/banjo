@@ -2029,6 +2029,11 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Power input of your battery 1')
                 self.wait(f'window.machinePlacements().length===3 && {READY}',60)
                 cable=self.js("machineWiringState().powerCables[0].name")
+                # Cords settle in real time before a run. Run too soon (on a
+                # loaded machine, where settling is slower) and the falling
+                # battery yanks the unsettled cord out of its socket, which is
+                # physics, not drawing: wait for a second of settling first.
+                self.wait("machineCableSetupState().setup_s>=1",60)
                 record={'cables':[cable],'ports':['your battery 1:power']}
                 self.assertTrue(self.js(f"machineRecordDrawing(['your battery 1 housing'],1500,{json.dumps(record)})"))
                 self.click_visible('Run')
@@ -2049,6 +2054,7 @@ class Puzzles(unittest.TestCase):
                 # whether the cord was blended and whether it was still plugged in.
                 detail=[dict(gap_m=round(g,5),applied=r['applied'],newest=r['newest'],next_t=r['next_t'],fraction=round(r['fraction'] or 0,3),
                              state=r.get('cable_state',{}).get(cable)) for g,r in zip(cord,rows)]
+                self.assertTrue(all((d['state'] or {}).get('connected') for d in detail),('the cord stayed plugged in',detail))
                 self.assertLess(max(ring)-min(ring),.001,ring)
                 self.assertLess(max(cord)-min(cord),.005,detail)
 
