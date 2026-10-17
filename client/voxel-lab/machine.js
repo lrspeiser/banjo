@@ -5145,9 +5145,29 @@ function setAttach(on) {
   if (attachMode && pullMode) $('pull-tool').click();
   $('attach-tool').setAttribute('aria-pressed', String(attachMode));
   view.classList.toggle('attaching', attachMode);
-  cancelAttach();
+  cancelAttach(); drawTieRings();
 }
 $('attach-tool').addEventListener('click', () => { if (ghost) cancelGhost(); setAttach(!attachMode); });
+function tiePoints() { return (!level?.free && level?.tray?.find(t => t.attach)?.tie_points) || []; }
+// Gold rings show a lesson's tie points while joining.
+const tieRings = new THREE.Group(); scene.add(tieRings);
+function drawTieRings() {
+  for (const c of [...tieRings.children]) { tieRings.remove(c); c.geometry.dispose(); }
+  if (!attachMode) return;
+  for (const t of tiePoints()) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(.035, .008, 8, 24), new THREE.MeshBasicMaterial({color: 0xffd34d, depthTest: false}));
+    ring.position.set(...t.at_m); ring.rotation.x = Math.PI / 2; ring.renderOrder = 5; tieRings.add(ring);
+  }
+}
+window.machineTieRings = () => tieRings.children.map(r => r.position.toArray());
+function startTrayAttach() {
+  if (ghost) cancelGhost();
+  setAttach(true);
+  const card = $('attach-card');
+  card.replaceChildren(Object.assign(document.createElement('p'), {className: 'hint',
+    textContent: tiePoints().length ? 'Tap the gold tie ring, then tap the part to tie to it.' : 'Tap the first part where it should be tied, then tap the second part.'}), button('Cancel', () => setAttach(false)));
+  card.hidden = false;
+}
 $('pull-tool').addEventListener('click', () => { if (pullMode && attachMode) setAttach(false); });
 function attachChoice() {
   const [one, two] = attaching, card = $('attach-card');
@@ -5200,6 +5220,9 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (!attachMode || ghost || e.button !== 0 || cameraGesture || sceneDragged || !pressedAt || Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) >= 6) return;
   const part = partAt(e.clientX, e.clientY);
   if (!part || attaching.length >= 2 || (attaching[0] && attaching[0].name === part.name)) return;
+  // A lesson's tie ring: a tap on that part near it ties exactly there.
+  const ring = tiePoints().find(t => t.part === part.name && Math.hypot(...t.at_m.map((v, i) => v - part.at[i])) <= (t.snap_m || .2));
+  if (ring) part.at = [...ring.at_m];
   attaching.push(part);
   const dot = new THREE.Mesh(PORT_DOT, new THREE.MeshBasicMaterial({color: 0xffd34d, depthTest: false}));
   dot.position.set(...part.at);
@@ -5770,7 +5793,9 @@ function renderSceneTray() {
   const bar = $('scene-tray');
   bar.hidden = !LEVEL_MODE || !level || Boolean(ghost);
   if (bar.hidden) return;
-  const items = level.tray.filter(t => !t.attach && !t.legacy && (level.free || piecesLeft(t)>0));
+  // A lesson's join (Swing on a rope: one string) is a tray card too: it
+  // turns on Attach with a short instruction. Sandbox keeps Attach in Settings.
+  const items = level.tray.filter(t => (!t.attach || !level.free) && !t.legacy && (level.free || piecesLeft(t)>0));
   if (trayLevel !== level || trayDesign !== activeDesign?.id || !items.some(t => t.piece === trayPiece)) {
     trayLevel = level; trayDesign = activeDesign?.id; trayPiece = items[0]?.piece;
   }
@@ -5782,6 +5807,16 @@ function renderSceneTray() {
   const t = items.find(t => t.piece === trayPiece);
   if (!t) { bar.hidden = true; return; }
   const left = piecesLeft(t), li = document.createElement('li');
+  if (t.attach) {
+    const kinds = t.knobs?.kind?.choices || [], name = kinds.length === 1 ? kinds[0] : 'join';
+    const card = button('', startTrayAttach, {id:'tray-add', ariaLabel:`Add a ${name}`, title:'Tap one part, then the other, to join them'});
+    card.dataset.piece = t.piece;
+    const caption = Object.assign(document.createElement('span'), {className:'tray-caption'});
+    caption.append(Object.assign(document.createElement('strong'), {className:'tray-name', textContent:name}),
+      Object.assign(document.createElement('small'), {className:'tray-left', textContent:`${left} left · tap two parts`}));
+    card.append(Object.assign(document.createElement('span'), {className:'tray-picture tray-join', textContent:'🔗'}), caption);
+    li.append(card); ul.append(li); return;
+  }
   const editIndex=!level.free&&left<=0?placements.findIndex(p=>p.piece===t.piece):-1;
   const card = button('', () => editIndex>=0?pickUp(editIndex):addTrayPiece(t), {id:'tray-add', ariaLabel:editIndex>=0?`Adjust ${pieceLabel(t.piece)}`:`Add a ${pieceLabel(t.piece)}`,
     disabled:left <= 0&&editIndex<0, title:editIndex>=0?'Click to adjust the piece you placed':left > 0 ? 'Click to place this piece' : 'All of these pieces are placed'});

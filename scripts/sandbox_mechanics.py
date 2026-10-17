@@ -656,10 +656,13 @@ def _starter_levels():
         a={'part': True, 'default': '', 'label': 'one part'},
         b={'part': True, 'default': '', 'label': 'the other part'},
         at_m={'point': True, 'label': 'where'},
-        at_b_m={'point': True, 'needed': False, 'label': "the string's other end"}))
+        at_b_m={'point': True, 'needed': False, 'label': "the string's other end"}),
+        # A visible tie ring under the beam's end: a tap on the beam within
+        # 20 cm of it ties there. Placement help only; the engine decides the swing.
+        tie_points=[{'part': 'frame beam', 'at_m': [0, 1.4, 0], 'snap_m': .2, 'label': 'tie ring'}])
     on_leaf = [-.5, .812, 0]   # the top of the marble resting on the leaf
     swing_level = _starter_level('easy-rope', 'Swing on a rope', 'rope tension',
-        'Set the marble on the trapdoor, which drops open when you start. Then choose Attach, press the end of the beam, press the marble and choose String, so it swings up into the green zone.',
+        'Set the marble on the trapdoor, which drops open when you start. Then add the string: tap the gold tie ring at the end of the beam, tap the marble and choose String, so it swings up into the green zone.',
         swing, [hung, string],
         {'title': 'The marble swings into the zone', 'focus': ['your marble 1'], 'needs': 'Place the marble first.',
          'station': {'done_when': {'in_zone': {'part': 'your marble 1', 'at_m': [.42, .74, 0], 'size_m': [.16, .12, .2]}}}},

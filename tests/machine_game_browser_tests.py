@@ -2042,6 +2042,34 @@ class Puzzles(unittest.TestCase):
                 self.wait(f"window.machinePlayMode().mode==='build' && {READY}",30)
                 self.assertEqual(self.js('window.machinePlacements()[0].length_m'),.7,'Build returns to time zero with your pieces')
 
+    def test_rope_lesson_is_solved_with_a_string_through_attach_on_desktop_and_phones(self):
+        # The lesson's tray offers one string: Attach shows only that join.
+        for width,height in ((1280,860),(390,844)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-rope',width,height,phone=width!=1280)
+                self.press('Add a marble');self.ghost()
+                self.drag_ghost_to(-.5,0,touch=width!=1280);self.ghost()
+                self.assertTrue(self.ghost()['fits'])
+                self.click_visible('Place');self.wait(READY,30)
+                self.js("window.machineView({azimuth:0,elevation:.15,distance:3.2,at:[-.2,1,0]})");self.wait('window.machineCamera().settled',30)
+                # The string is a tray card that starts attaching, with a hint.
+                self.press('Add a string')
+                self.wait("!document.getElementById('attach-card').hidden && document.getElementById('attach-card').textContent.includes('tie ring')",5)
+                self.assertEqual(self.js('window.machineTieRings()'),[[0,1.4,0]])
+                for point in ([0.0,1.43,.08],None):
+                    at=self.js(f"window.machineScreenPoint({json.dumps(point)})") if point else self.js("window.machineBodyScreen('your marble 1')")
+                    self.mouse('mousePressed',*at);self.mouse('mouseReleased',*at)
+                self.wait("!document.getElementById('attach-card').hidden",10)
+                labels=self.js("[...document.querySelectorAll('#attach-card button')].map(b=>b.getAttribute('aria-label')||b.textContent)")
+                self.assertIn('Tie them with a string',labels)
+                self.assertFalse(any(l.startswith(('Glue','Pin')) for l in labels),labels)
+                self.press('Tie them with a string')
+                self.wait(f"window.machinePlacements().some(p=>p.piece==='link'&&p.kind==='string') && {READY}",30)
+                self.click_visible('Try It!')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                print('ROPE_RESULT',json.dumps({'done':self.js("document.getElementById('level-done').textContent"),'verdict':self.js("document.getElementById('verdict').textContent"),'link':self.js("window.machinePlacements().find(p=>p.piece==='link')")}),flush=True)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+
     def test_run_waits_for_latest_placement_check_and_cancelling_cancels_the_run(self):
         self.open('laser')
         self.press('Add a mirror'); self.ghost()
