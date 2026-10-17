@@ -902,6 +902,140 @@ def knob_default(rule):
 class FreeBuild(unittest.TestCase):
     FREE = mg.level_by_id('free')
 
+    # Like pieces snapping flush: plank end to end, block side to side and on top.
+    def _flush(self, placed, index, **extra):
+        before = copy.deepcopy(placed)
+        reply = mg.ghost(self.FREE, placed, index, snapping=True, nearby=True, **extra)
+        self.assertEqual(placed, before, 'a snap is only a suggestion')
+        return reply.get('snap')
+
+    def _built(self, placed, index):
+        reply = mg.ghost(self.FREE, placed, index, nearby=True)
+        self.assertTrue(reply['fits'], reply['problems'])
+        _, _, _, compiled = mg._assemble(self.FREE, placed, lenient=True)
+        return {p['name']: p for p in compiled['parts']}, reply
+
+    def assertFlush(self, a, b, collinear=False):
+        gap = mg._gap(a, b)
+        self.assertGreaterEqual(gap, -1e-9, 'no overlap')
+        self.assertLessEqual(gap, mg.FLUSH_TOUCH_M, 'no gap')
+        self.assertEqual(mw.overlap_depth(a, b) > 0.001, False)
+        if collinear:
+            self.assertAlmostEqual(a['at_m'][1], b['at_m'][1], places=4)
+
+    def test_plank_ends_snap_flush_and_collinear(self):
+        for yaw in (0, 30, -90):
+            with self.subTest(yaw=yaw):
+                r = math.radians(yaw)
+                fwd = [math.cos(r), -math.sin(r)]
+                first = {'piece': 'plank', 'x_m': 0.0, 'z_m': 0.0, 'length_m': 0.4, 'yaw_deg': yaw}
+                # 4 cm past the end and 2 cm off the line, turned 4 degrees off it.
+                near = {'piece': 'plank', 'length_m': 0.6, 'yaw_deg': yaw + 4,
+                        'x_m': round(0.54 * fwd[0] + 0.02 * fwd[1], 4), 'z_m': round(0.54 * fwd[1] - 0.02 * fwd[0], 4)}
+                snap = self._flush([first, near], 1)
+                self.assertIsNotNone(snap)
+                self.assertEqual((snap['to'], snap['port']), ('your plank 1', 'one end'))
+                self.assertTrue(snap['moved'] and snap['exact'])
+                placed = [first, dict(near, **snap['knobs'])]
+                self.assertAlmostEqual(placed[1]['yaw_deg'], yaw, places=4)
+                parts, reply = self._built(placed, 1)
+                self.assertFalse(reply['snap']['moved'], 'once snapped it stays put')
+                self.assertFlush(parts['your plank 1'], parts['your plank 2'], collinear=True)
+                # Along the same line: the second's middle is on the first's axis.
+                at = parts['your plank 2']['at_m']
+                self.assertAlmostEqual(at[0] * fwd[1] - at[2] * fwd[0], 0.0, places=3)
+                self.assertFalse(any(j for j in mg.compose(self.FREE, placed)[0].get('joints', [])),
+                                 'snapping adds no glue')
+        # Other end too, and a plank across the line (60 degrees off) is not pulled round.
+        first = {'piece': 'plank', 'x_m': 0.0, 'z_m': 0.0, 'length_m': 0.4}
+        snap = self._flush([first, {'piece': 'plank', 'x_m': -0.43, 'z_m': 0.0, 'length_m': 0.4}], 1)
+        self.assertEqual(snap['port'], 'other end')
+        self.assertAlmostEqual(snap['knobs']['x_m'], -0.4001, places=4)
+        self.assertIsNone(self._flush([first, {'piece': 'plank', 'x_m': 0.42, 'z_m': 0.0, 'length_m': 0.4, 'yaw_deg': 60}], 1))
+
+    def test_block_sides_and_top_snap_flush(self):
+        first = {'piece': 'block', 'x_m': 0.0, 'z_m': 0.0}
+        for near, port in (({'x_m': 0.13, 'z_m': 0.01}, 'right side'), ({'x_m': -0.12, 'z_m': -0.02}, 'left side'),
+                           ({'x_m': 0.01, 'z_m': 0.12}, 'front side'), ({'x_m': 0.02, 'z_m': -0.13}, 'back side')):
+            with self.subTest(port=port):
+                snap = self._flush([first, dict(piece='block', **near)], 1)
+                self.assertEqual((snap['to'], snap['port']), ('your block 1', port))
+                placed = [first, dict(dict(piece='block', **near), **snap['knobs'])]
+                parts, _ = self._built(placed, 1)
+                a, b = parts['your block 1'], parts['your block 2']
+                self.assertFlush(a, b)
+                self.assertAlmostEqual(a['at_m'][1], b['at_m'][1], places=4, msg='standing on the same floor')
+        # A turned block: the snap follows its sides, and a quarter turn off still matches.
+        turned = {'piece': 'block', 'x_m': 0.0, 'z_m': 0.0, 'yaw_deg': 30}
+        snap = self._flush([turned, {'piece': 'block', 'x_m': 0.11, 'z_m': -0.04, 'yaw_deg': 118}], 1)
+        self.assertEqual(snap['port'], 'right side')
+        parts, _ = self._built([turned, dict(dict(piece='block', x_m=0.11, z_m=-0.04, yaw_deg=118), **snap['knobs'])], 1)
+        self.assertFlush(parts['your block 1'], parts['your block 2'])
+
+    def test_blocks_stack_centred_on_top(self):
+        # Fixed blocks are set down, so a smaller one near the middle stands centred on the top.
+        first = {'piece': 'block', 'x_m': 0.0, 'z_m': 0.0, 'tall_m': 0.2}
+        near = {'piece': 'block', 'x_m': 0.02, 'z_m': 0.01, 'tall_m': 0.1}
+        snap = self._flush([first, near], 1)
+        self.assertEqual(snap['port'], 'top')
+        parts, _ = self._built([first, dict(near, **snap['knobs'])], 1)
+        a, b = parts['your block 1'], parts['your block 2']
+        self.assertFlush(a, b)
+        self.assertAlmostEqual(b['at_m'][1] - mw._half(b)[1], a['at_m'][1] + mw._half(a)[1], places=4)
+        self.assertEqual((b['at_m'][0], b['at_m'][2]), (a['at_m'][0], a['at_m'][2]))
+        # Loose blocks say their height: held over another, they go onto its top.
+        low = {'piece': 'loose_block', 'x_m': 0.0, 'z_m': 0.0, 'center_height_m': 0.1}
+        high = {'piece': 'loose_block', 'x_m': 0.03, 'z_m': 0.0, 'center_height_m': 0.33}
+        snap = self._flush([low, high], 1)
+        self.assertEqual(snap['port'], 'top')
+        self.assertEqual(snap['knobs'], {'x_m': 0.0, 'z_m': 0.0, 'center_height_m': 0.3})
+        parts, _ = self._built([low, dict(high, **snap['knobs'])], 1)
+        self.assertFlush(parts['your loose_block 1'], parts['your loose_block 2'])
+        self.assertFalse(mg.compose(self.FREE, [low, dict(high, **snap['knobs'])])[0].get('joints'),
+                         'stacked loose blocks only touch; nothing glues them')
+
+    def test_flush_snap_releases_beyond_capture_and_respects_its_hold(self):
+        import machine_alignment as ma
+        first = {'piece': 'block', 'x_m': 0.0, 'z_m': 0.0}
+        captured = self._flush([first, {'piece': 'block', 'x_m': 0.17, 'z_m': 0.0}], 1)
+        self.assertAlmostEqual(captured['distance'], 0.17 - 0.1001, places=4)
+        held = captured['to'] + '|' + captured['port']
+        # 9 cm from the flush spot: past capture (8 cm) but within release (11 cm).
+        between = [first, {'piece': 'block', 'x_m': 0.1901, 'z_m': 0.0}]
+        self.assertGreater(0.09, ma.CAPTURE_M)
+        self.assertIsNone(self._flush(between, 1))
+        self.assertIsNotNone(self._flush(between, 1, snap_hold=held))
+        beyond = [first, {'piece': 'block', 'x_m': 0.2201, 'z_m': 0.0}]
+        self.assertIsNone(self._flush(beyond, 1, snap_hold=held))
+        # Exact controls do not snap, and planks never snap to blocks.
+        self.assertNotIn('snap', mg.ghost(self.FREE, [first, {'piece': 'block', 'x_m': 0.13, 'z_m': 0.0}], 1, nearby=True))
+        self.assertIsNone(self._flush([first, {'piece': 'plank', 'x_m': 0.25, 'z_m': 0.0, 'length_m': 0.4}], 1))
+
+    def test_flush_snap_is_refused_where_it_would_overlap_something(self):
+        # Something of the level's stands where the snapped block would go.
+        free = copy.deepcopy(self.FREE)
+        free['machine'].setdefault('parts', []).append(
+            {'name': 'post', 'shape': 'box', 'material': 'oak', 'size_m': [0.04, 0.3, 0.04], 'at_m': [0.13, 0.15, 0.0], 'fixed': True})
+        first = {'piece': 'block', 'x_m': 0.0, 'z_m': 0.0}
+        self.assertIsNotNone(self._flush([first, {'piece': 'block', 'x_m': 0.16, 'z_m': 0.03}], 1), 'clear spot, for contrast')
+        self.assertNotIn('snap', mg.ghost(free, [first, {'piece': 'block', 'x_m': 0.16, 'z_m': 0.03}], 1, snapping=True, nearby=True))
+        # A plank's flush spot blocked by a post: refused, not lifted onto it.
+        free['machine']['parts'][-1]['at_m'] = [0.5, 0.15, 0.0]
+        placed = [{'piece': 'plank', 'x_m': 0.0, 'z_m': 0.0, 'length_m': 0.4},
+                  {'piece': 'plank', 'x_m': 0.43, 'z_m': 0.0, 'length_m': 0.4}]
+        self.assertIsNotNone(self._flush(placed, 1), 'clear spot, for contrast')
+        self.assertNotIn('snap', mg.ghost(free, placed, 1, snapping=True, nearby=True))
+
+    def test_flush_snapping_stays_out_of_lessons(self):
+        # The one lesson with a plank ('gap') has one plank; none of them gets faces.
+        self.assertIn('gap', [l['id'] for l in LEVELS if any(t['piece'] == 'plank' for t in l['tray'])])
+        for level in LEVELS:
+            with self.subTest(level=level['id']):
+                solution = copy.deepcopy(level['solution'])
+                _, checked, _, compiled = mg._assemble(level, solution, lenient=True)
+                for i in range(len(solution)):
+                    self.assertEqual(mg.flush_candidates(level, checked, i, compiled), [])
+
     def test_named_connections_keep_identity_and_can_target_later_placements(self):
         free = mg.requested_level({'level': 'free', 'base': mg.sandbox_water_launch.CHANNEL_BASE})
         placed = [{'piece':'water_wheel','side':'off','load_part':'your weight 2'},
