@@ -1,7 +1,7 @@
 # Puzzles on the machine (/play)
 
-October 16 playtest follow-up (display and editing only; no engine, goal or
-tolerance change):
+October 16 playtest follow-up (the engine, every level's goal and every test
+tolerance are unchanged; Sandbox gains optional player goals):
 
 * **Gliding motion.** While a machine runs the page still requests at most 20
   frames a second (`RUNNING_MS`). Each moved body now glides from its drawn pose
@@ -30,6 +30,37 @@ tolerance change):
   optional). The last search and category persist while the page is open.
   Search matches every typed word against the name, description, category and
   a short list of everyday words (ball, board, rope, cog, lamp...).
+* **Build / Tune / Run.** A three-part switch (44 px buttons) sits beside
+  Reset when the page is at least 700 px wide, and below the camera row on
+  narrower phones. The mode is derived from state: Run while a machine runs or
+  has run (world time above zero), Tune while a selected piece is on its
+  adjustment controls or Tune was chosen, otherwise Build. Tune hides the scene
+  tray and opens the last edited piece; Build after a run is **Restart with my
+  pieces**; Run presses Try It!. Live device controls (for example Release
+  spring) are unchanged.
+* **Move grip and local guides.** A 36 px gold grip marks the centre of a
+  movable selected piece (display only; the scene drag is unchanged). Axis
+  guides extend 3× the piece's size (0.8–4 m) unless Precision controls are open,
+  when they keep their 50 m length.
+* **Blueprints (Sandbox).** **Design → Blueprints** saves the design's placed
+  pieces (not its prepared base objects) under a name, up to 20, in the
+  anonymous profile; blueprints merge across devices by id. **Add a piece →
+  Blueprints** adds a copy centred on the view's target point.
+  `blueprintPlacements` (machine-view.mjs) renumbers `your <piece> <n>`
+  references within the group after the existing pieces; names outside the
+  group are kept. The combined setup goes through the server `check` first; a
+  refused drop changes nothing. Saving preview/simulation results with a
+  blueprint was not implemented: a blueprint's behaviour depends on what it is
+  combined with, so the engine always rehearses the whole machine.
+* **Player goals and challenges (Sandbox).** `machine_game.sandbox_goal`
+  accepts one `in_zone` goal per design: a named body, or `piece` (the first
+  placed piece of that kind), a centre within 50 m and sides of 2 cm–5 m. It is
+  added as the first station and reported, never scored or ranked. Measured:
+  a marble dropped from 0.4 m over a 0.4 × 0.3 × 0.4 m zone reaches it; one
+  dropped 1.5 m to the side does not (`tests/machine_game_tests.py`
+  `SandboxGoal`). **Copy challenge link** packs the base and goal without the
+  author's pieces; a goal about one of the author's named pieces is refused for
+  sharing. Challenges are not yet listed in the level menu.
 
 October 16 setup guidance: the Try It!/Reset and Controls/Help action bar
 precedes the scene on desktop and phone. Try It! uses secondary styling until
