@@ -252,10 +252,14 @@ class Requests(unittest.TestCase):
         self.assertEqual(self.profile({'op': 'open', 'cached_visitor': ids[2]}, cookie)[1]['visitor'], ids[1])
         self.assertEqual(self.profile({'op': 'open', 'cached_visitor': ids[2]})[1]['visitor'], ids[2])
         unknown = str(uuid.uuid4())
-        for payload, extra in (({'op': 'open', 'visitor': unknown}, cookie),
-                               ({'op': 'open', 'cached_visitor': ids[0]}, {'Cookie': self.cookie_name+'=' + unknown})):
-            status, missing, _ = self.profile(payload, extra)
-            self.assertEqual((status, missing['visitor']), (404, unknown))
+        status, missing, _ = self.profile({'op': 'open', 'visitor': unknown}, cookie)
+        self.assertEqual((status, missing['visitor']), (404, unknown))
+        # A cookie the server does not know is stale (another server on the
+        # same host, or a lost database): the browser's cached identity opens
+        # and replaces it, rather than the page being refused on every reload.
+        status, opened, headers = self.profile({'op': 'open', 'cached_visitor': ids[0]}, {'Cookie': self.cookie_name+'=' + unknown})
+        self.assertEqual((status, opened['visitor']), (200, ids[0]))
+        self.assertIn(self.cookie_name+'=' + ids[0], headers.get('Set-Cookie', ''))
         status, imported, _ = self.profile({'op': 'open', 'cached_visitor': unknown})
         self.assertEqual((status, imported['visitor'], imported['created']), (200, unknown, True))
 

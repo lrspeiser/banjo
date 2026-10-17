@@ -133,7 +133,15 @@ a SHA-256 hash of the UUID; this is not encryption of the saved designs.
 
 Successful profile opens set an HttpOnly, SameSite=Lax cookie for one year;
 public HTTPS cookies are Secure. An explicit return link takes precedence over
-the cookie, then the cached browser identity. The application omits request
+the cookie, then the cached browser identity. A cookie the server does not know
+(set by another server on the same host, such as a second local test server, or
+kept across a lost database) is ignored: the cached browser identity opens, and
+is made again with the browser's cached progress when it is gone, and the
+cookie is replaced. Until October 17, 2026 such a cookie stopped the page at
+"That visitor profile was not found" on every reload, because the page cannot
+clear an HttpOnly cookie. A return link the server does not know still answers
+404; the page then opens with the progress this browser kept for that link, or
+with its own save, and the Levels screen says which. The application omits request
 access logs and sends `Referrer-Policy: no-referrer`, but a token URL can still
 remain in browser history or hosting/proxy request records. There is no Google
 login, email recovery or independent account credential. Retain the return link

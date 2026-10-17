@@ -4049,6 +4049,28 @@ class Puzzles(unittest.TestCase):
     def anonymous_cloud_saved(self):
         self.wait("(()=>{const s=window.machineProfileState?.();return s?.ready&&!s.pending&&!s.error;})()",30)
 
+    def test_a_stale_cookie_or_an_unknown_return_link_still_opens_the_game(self):
+        # A visitor cookie this server does not know (another local server on
+        # the same host, or a lost database) used to stop the page at "That
+        # visitor profile was not found", and reloading could not help: the
+        # cookie is HttpOnly. The game now opens with this browser's own save.
+        self.anonymous_levels()
+        self.anonymous_fixture_clear()
+        stale=str(uuid.uuid4())
+        self.page.send('Network.setCookie',{'name':'banjo-visitor','value':stale,'url':self.base,'httpOnly':True,'sameSite':'Lax'})
+        fresh,_=self.anonymous_levels()
+        self.assertNotEqual(fresh,stale)
+        self.assertFalse(self.js("Boolean(document.querySelector('.levels-notice'))"))
+        cookies=[c['value'] for c in self.page.send('Network.getCookies',{'urls':[self.base]})['cookies'] if c['name']=='banjo-visitor']
+        self.assertEqual(cookies,[fresh],'the stale cookie is replaced by the working identity')
+        # A return link this server does not have opens the game too, with
+        # this browser's save, and the levels screen says why.
+        unknown=str(uuid.uuid4())
+        opened,_=self.anonymous_levels(f'{self.base}/play?visitor={unknown}')
+        self.assertEqual(opened,fresh)
+        self.assertIn('return link',self.js("document.querySelector('.levels-notice')?.textContent||''"))
+        self.assertNotIn(unknown,self.js('Object.keys(machineSave().players)'))
+
     def test_save_help_is_on_demand_and_keeps_the_design_and_focus(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             self.anonymous_levels(width=width,height=height)

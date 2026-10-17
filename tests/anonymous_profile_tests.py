@@ -49,9 +49,19 @@ class Profiles(unittest.TestCase):
         cached=str(uuid.uuid4());row=self.store.open(cached_visitor=cached)
         self.assertEqual(row['visitor'],cached);self.assertTrue(row['created'])
         unknown=str(uuid.uuid4())
-        for kwargs in ({'visitor':unknown},{'cookie_visitor':unknown}):
-            with self.assertRaises(profiles.ProfileMissing) as caught:self.store.open(**kwargs)
-            self.assertEqual(caught.exception.data['visitor'],unknown)
+        with self.assertRaises(profiles.ProfileMissing) as caught:self.store.open(unknown)
+        self.assertEqual(caught.exception.data['visitor'],unknown)
+        # A cookie this server does not know is stale (another server on the
+        # same host, or a lost database): the browser's cached identity opens,
+        # and is made again when it is gone, so the page never stops loading.
+        self.assertEqual(self.store.open(cookie_visitor=unknown,cached_visitor=a)['visitor'],a)
+        again=self.store.open(cookie_visitor=unknown,cached_visitor=cached)
+        self.assertEqual(again['visitor'],cached);self.assertFalse(again['created'])
+        lost=str(uuid.uuid4());fresh=self.store.open(cookie_visitor=unknown,cached_visitor=lost)
+        self.assertEqual(fresh['visitor'],lost);self.assertTrue(fresh['created'])
+        new=self.store.open(cookie_visitor=unknown)
+        self.assertNotIn(new['visitor'],(unknown,a,b,cached,lost));self.assertTrue(new['created'])
+        with self.assertRaises(profiles.ProfileMissing):self.store.open(unknown)
 
     def test_concurrent_devices_cannot_clobber_each_other(self):
         token=self.store.open()['visitor'];other=profiles.ProfileStore(self.path)

@@ -5470,6 +5470,7 @@ function persist() {
   const cached = cacheSave(); profileSync.schedule();
   return cached || profileSync.state().ready;
 }
+let returnLinkNotice = '';
 async function openAnonymousProfile() {
   const imports = [...save.migratedProfiles];
   for (const id of imports) {
@@ -5480,7 +5481,21 @@ async function openAnonymousProfile() {
     save.migratedProfiles = save.migratedProfiles.filter(value => value !== id); cacheSave();
   }
   const explicit = validVisitor(params.get('visitor')) ? params.get('visitor').toLowerCase() : null;
-  const opened = await profileRequest({op:'open', visitor:explicit || (imports.length ? save.current : null), cached_visitor:save.current});
+  let opened;
+  try {
+    opened = await profileRequest({op:'open', visitor:explicit || (imports.length ? save.current : null), cached_visitor:save.current});
+  } catch (error) {
+    if (!(error.status === 404 && explicit)) throw error;
+    // A return link this server does not have. Progress this browser kept for
+    // it is restored (and saved again); otherwise play goes on with this
+    // browser's own save, and the levels screen says what happened.
+    const kept = save.players[explicit], empty = !kept || JSON.stringify(kept) === JSON.stringify({levels: {}});
+    if (empty) delete save.players[explicit];
+    const own = empty ? Object.keys(save.players).find(id => id !== explicit) || null : explicit;
+    opened = await profileRequest({op:'open', cached_visitor:own});
+    returnLinkNotice = empty ? 'That return link’s progress was not found on this server, so you are playing with this browser’s own save.'
+      : 'That return link’s progress was not found on this server; the copy kept in this browser has been saved again.';
+  }
   const cached = save.players[opened.visitor], metadata = save.cloud?.[opened.visitor];
   if (provisionalVisitor && provisionalVisitor !== opened.visitor) delete save.players[provisionalVisitor];
   provisionalVisitor = null;
@@ -6599,6 +6614,7 @@ function showLevelsScreen(show) {
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Levels'});
+  if (returnLinkNotice) add(box, 'p', {className: 'levels-notice', textContent: returnLinkNotice}).setAttribute('role', 'status');
   if (level) head.append(button(`Back to ${levelTitle(level)}`, async () => {
     showLevelsScreen(false);
     history_.replaceState(null, '', level.free ? appPath('/machine') + '?design=' + encodeURIComponent(activeDesign.id) : appPath('/play') + '?level=' + level.id);

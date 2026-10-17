@@ -148,28 +148,30 @@ class ProfileStore:
             raise ProfileCapacity('Profile storage is full; your previous saved version was kept.')
 
     def open(self, visitor=None, cached_visitor=None, cookie_visitor=None, before_create=None):
-        # Explicit/cookie identifiers must already exist. A cached UUID is a
-        # permitted migration identity; a new browser gets a random UUID4.
+        # An explicit return link must already exist. A cookie names this
+        # browser's profile when this server has it; one it does not know (set
+        # by another server on the same host, or kept across a lost database)
+        # is stale, and the browser's cached UUID is used instead rather than
+        # refusing to load. A cached UUID is a permitted migration identity; a
+        # new browser gets a random UUID4.
         if visitor is not None:
-            selected, must_exist = visitor_id(visitor), True
-        elif cookie_visitor is not None:
-            selected, must_exist = visitor_id(cookie_visitor), True
-        elif cached_visitor is not None:
-            selected, must_exist = visitor_id(cached_visitor), False
+            known, fallback = [visitor_id(visitor)], None
         else:
-            selected, must_exist = str(uuid.uuid4()), False
+            known = [visitor_id(cookie_visitor)] if cookie_visitor is not None else []
+            fallback = visitor_id(cached_visitor) if cached_visitor is not None else str(uuid.uuid4())
         with self._transaction() as connection:
-            row = self._find(connection, selected)
-            if row is not None:
-                return self._reply(selected, row)
-            if must_exist:
-                raise ProfileMissing('That visitor profile was not found.', visitor=selected)
+            for selected in known + ([fallback] if fallback else []):
+                row = self._find(connection, selected)
+                if row is not None:
+                    return self._reply(selected, row)
+            if fallback is None:
+                raise ProfileMissing('That visitor profile was not found.', visitor=known[0])
             self._capacity(connection, 2)
             if before_create:
                 before_create()
             connection.execute('INSERT INTO profiles(key_sha256,revision,profile_json,profile_bytes) VALUES(?,0,?,2)',
-                               (self._key(selected), '{}'))
-            return self._reply(selected, (0, '{}'), True)
+                               (self._key(fallback), '{}'))
+            return self._reply(fallback, (0, '{}'), True)
 
     def create(self, visitor, profile, before_create=None):
         selected = visitor_id(visitor)
@@ -290,13 +292,20 @@ class RemoteProfileStore:
             raise ProfileUnavailable('Shared profile storage is unavailable; your local draft was kept.') from None
 
     def open(self, visitor=None, cached_visitor=None, cookie_visitor=None, before_create=None):
-        identity = next((value for value in (visitor, cookie_visitor, cached_visitor) if value is not None), None)
-        selected = visitor_id(identity) if identity is not None else str(uuid.uuid4())
+        # As ProfileStore.open: a return link must exist; a cookie the
+        # upstream does not know is stale and falls back to the cached UUID.
+        if visitor is not None:
+            return self._request(visitor_id(visitor), 'open')
+        if cookie_visitor is not None:
+            try:
+                return self._request(visitor_id(cookie_visitor), 'open')
+            except ProfileMissing:
+                pass
+        selected = visitor_id(cached_visitor) if cached_visitor is not None else str(uuid.uuid4())
         try:
             return self._request(selected, 'open')
         except ProfileMissing:
-            if visitor is not None or cookie_visitor is not None:
-                raise
+            pass
         if before_create:
             before_create()
         return self._request(selected, 'open', _cached=True)
