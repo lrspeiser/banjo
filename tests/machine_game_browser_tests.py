@@ -5442,7 +5442,9 @@ class Puzzles(unittest.TestCase):
         self.click_scene_socket('your battery 1:plus',touch=True);self.ghost()
         self.click_scene_socket('your bulb 2:plus',touch=True)
         self.wait(f'!machineGhostState() && machinePlacements().length===3 && {READY}',30)
-        self.wait("Boolean(document.querySelector('#wire-adjustments button'))",10)
+        # The label gains the measured copper gauge once the engine reports
+        # it; read it after that, not the interim name.
+        self.wait("document.querySelector('#wire-adjustments button')?.textContent.includes('mm²')",10)
         label=self.js("document.querySelector('#wire-adjustments button').getAttribute('aria-label')")
         self.click_visible(label);self.ghost();self.click_visible('Thick wire');self.ghost()
         self.slide('Adjustment','length_m');before=self.ghost()['p']['length_m']
