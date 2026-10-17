@@ -211,11 +211,15 @@ body.choosing-piece{overflow:hidden}
 #piece-picker button,#piece-picker input,#piece-picker select{min-height:44px;padding:8px 12px;border:1px solid #63899d;border-radius:8px;background:#294c60;color:#e7f2f8;font:15px system-ui}
 #piece-picker button{cursor:pointer}
 #piece-picker :focus-visible{outline:3px solid #9fdcff;outline-offset:2px}
-.piece-picker-filters{display:flex;gap:12px;flex:none}
+.piece-picker-filters{display:flex;flex-direction:column;gap:8px;flex:none;min-width:0}
 .piece-picker-filters label{display:grid;gap:4px;font-size:13px;min-width:0}
 .piece-picker-filters label:first-child{flex:1}
 .piece-picker-filters input,.piece-picker-filters select{width:100%}
 #piece-results{color:#b9cbd6;font-size:13px}
+#piece-category{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}
+#piece-picker .piece-chip{flex:none}
+#piece-picker .piece-chip{min-height:44px;padding:6px 14px;border-radius:22px;background:#1b2f3c;border-color:#3d5b6d}
+#piece-picker .piece-chip[aria-pressed=true]{background:#226345;border-color:#78cea2;font-weight:600}
 #piece-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));grid-auto-rows:max-content;gap:12px;overflow-y:auto;min-height:0;padding:4px;align-content:start;overscroll-behavior:contain}
 #piece-grid .piece-card{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px;background:#1b2f3c;border-color:#3d5b6d;text-align:center}
 #piece-grid .piece-card:hover{background:#244255;border-color:#5fe08f}
@@ -225,7 +229,7 @@ body.choosing-piece{overflow:hidden}
 .piece-card strong{font-size:17px}
 .piece-description{color:#b9cbd6;font-size:13px;line-height:1.4}
 .piece-count{color:#9fdcff;font-size:12px}
-@media(max-width:500px){#piece-picker{padding-top:12px;gap:10px}.piece-picker-head h1{font-size:22px}.piece-picker-head button{max-width:155px}#piece-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#piece-grid .piece-card{padding:8px}.piece-picture,.piece-picture img{height:125px}.piece-picture img{width:125px}.piece-picker-filters{gap:8px}.piece-picker-filters label:last-child{width:145px}}
+@media(max-width:500px){#piece-picker{padding-top:12px;gap:10px}.piece-picker-head h1{font-size:22px}.piece-picker-head button{max-width:155px}#piece-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}#piece-grid .piece-card{padding:8px}.piece-picture,.piece-picture img{height:125px}.piece-picture img{width:125px}.piece-picker-filters{gap:8px}}
 @media(max-height:500px){#piece-picker{padding-top:8px;gap:6px}.piece-picker-head h1{font-size:22px}#piece-picker-help{display:none}.piece-picker-filters label{display:flex;align-items:center;gap:6px}.piece-picture,.piece-picture img{height:120px}.piece-picture img{width:120px}}
 /* The ghost's controls: docked just below the scene (the top of the side
    panel, which on a phone comes right after the scene), kept in sight. */
@@ -664,6 +668,7 @@ body.panel-tabs .control-panel .ghost-bar .knob-row.numeric-slider{display:block
 #piece-editor .piece-modes,#piece-editor .actions{flex:1}
 #piece-editor button[aria-pressed=true]{border-color:#b6e7ff;background:#38627a;box-shadow:inset 0 -2px #b6e7ff}
 #piece-editor .down{background:#226345;border-color:#78cea2}
+#piece-editor .another{flex:none;min-width:44px;font-size:20px;font-weight:700;background:#1d4f6b;border-color:#6cc6ff}
 #piece-editor .adjustment-picker label{display:none}
 #piece-editor .adjustment-picker select{width:0;flex:1}
 #piece-grip{touch-action:none;cursor:ew-resize;font-size:22px;min-width:44px;min-height:44px}

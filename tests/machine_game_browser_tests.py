@@ -4255,6 +4255,31 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(self.js("document.querySelectorAll('#stations li').length"), 9)
 
 
+    def test_sandbox_place_and_add_another_opens_the_library_with_the_piece_placed(self):
+        for width,height in ((1280,860),(390,844)):
+            with self.subTest(viewport=(width,height)):
+                self.page.send('Emulation.setDeviceMetricsOverride', {'width': width, 'height': height, 'deviceScaleFactor': 1, 'mobile': width != 1280})
+                self.navigate(f'{self.base}/machine')
+                self.wait("document.getElementById('sandbox-screen')?.hidden===false",30)
+                self.press('Add New Design'); self.wait(READY,30)
+                self.press('Add a plank'); self.ghost()
+                self.assertTrue(self.ghost()['fits'])
+                size=self.js("(()=>{const b=[...document.querySelectorAll('#piece-editor button')].find(b=>b.getAttribute('aria-label')==='Place and add another piece');const r=b.getBoundingClientRect();return [r.width,r.height]})()")
+                self.assertGreaterEqual(min(size),40,size)
+                self.press('Place and add another piece')
+                self.wait("document.getElementById('piece-picker').open",5)
+                self.assertIsNone(self.js('window.machineGhostState()'))
+                self.assertEqual([p['piece'] for p in self.js('window.machineDesign().draft.placements')],['plank'])
+                self.press('Add a marble')
+                self.assertEqual(self.ghost()['p']['piece'],'marble')
+                # Opening the library again places the fitted marble first.
+                fits=self.ghost()['fits']
+                self.js("document.getElementById('tray-library').click()")
+                if fits:
+                    self.wait("document.getElementById('piece-picker').open",5)
+                    self.assertEqual([p['piece'] for p in self.js('window.machineDesign().draft.placements')],['plank','marble'])
+                    self.press('Back to sandbox')
+
     def test_piece_library_search_filter_cancel_and_placement_on_desktop_and_phones(self):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
@@ -4285,7 +4310,11 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js("Boolean(document.activeElement.closest('#piece-picker'))"))
                 self.slide('Search pieces', 'gate')
                 self.assertEqual(self.js("[...document.querySelectorAll('#piece-grid strong')].map(e=>e.textContent)"), ['track', 'shelf'])
-                self.slide('Category', 'power')
+                # Category chips (no Recent chip before anything was added).
+                if width==1280:self.assertNotIn('Recent',self.js('window.machinePieceFilter().chips'))
+                chips=self.js("[...document.querySelectorAll('#piece-category .piece-chip')].map(b=>b.getBoundingClientRect().height)")
+                self.assertTrue(all(h>=44 for h in chips),chips)
+                self.press('Show Power')
                 self.assertFalse(self.js("document.getElementById('piece-empty').hidden"))
                 self.slide('Search pieces', '')
                 self.assertEqual(self.js("[...document.querySelectorAll('#piece-grid strong')].map(e=>e.textContent)"), ['cannon', 'steam', 'open airflow'])
@@ -4294,7 +4323,14 @@ class Puzzles(unittest.TestCase):
                 self.assertIsNone(self.js('window.machineGhostState()'))
                 self.wait("document.activeElement.getAttribute('aria-label') === 'Add a piece'", 5)
                 self.press('Add a piece')
+                # The last category is remembered; All shows every piece.
+                self.assertEqual(self.js('window.machinePieceFilter().filter'),'power')
+                self.press('Show all pieces')
                 self.assertEqual(self.js("document.querySelectorAll('#piece-grid .piece-card').length"), self.piece_count)
+                # Everyday words find pieces by what they do.
+                self.slide('Search pieces', 'ball')
+                self.assertIn('marble',self.js('window.machinePieceFilter().shown'))
+                self.slide('Search pieces', '')
                 self.key('Escape')
                 self.assertFalse(self.js("document.getElementById('piece-picker').open"))
                 self.assertEqual(self.js('window.machinePlacements()'), before)
@@ -4307,6 +4343,10 @@ class Puzzles(unittest.TestCase):
                 self.press('Set it down')
                 self.wait(f"window.machinePlacements().length === 12 && {READY}", 60)
                 self.assertEqual(self.js('window.machinePlacements()')[:11], before)
+                self.press('Add a piece')
+                self.assertIn('Recent',self.js('window.machinePieceFilter().chips'))
+                self.assertEqual(self.js('window.machinePieceFilter().shown[0]'),'marble','recently added pieces come first')
+                self.press('Back to sandbox')
                 self.press('Try It!')
                 self.wait("/World 2\\./.test(document.getElementById('clock').textContent)", 30)
                 self.press('Pause')

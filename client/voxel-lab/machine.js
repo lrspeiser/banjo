@@ -3009,6 +3009,11 @@ function placeGhost() {
 function setGhostDown() {
   if (placeGhost()) {selectPhonePanel('controls');scheduleRebuild(0);}
 }
+function placeAndAddAnother() {
+  if (!placeGhost()) return;
+  scheduleRebuild(0);
+  openPiecePicker();
+}
 
 // The ghost's own controls, just below the scene and out of its way (the top
 // of the side panel, kept in sight as the panel scrolls): on a phone the list
@@ -3273,6 +3278,9 @@ function renderGhostBar() {
   const state = Object.assign(document.createElement('p'), {className: 'state'});
   const actions = Object.assign(document.createElement('div'), {className: 'actions'});
   actions.append(button('Place', setGhostDown, {className: 'down', ariaLabel:'Place', disabled: !ghost.fits || ghost.busy}), throwAway);
+  // Sandbox: place this piece and go straight to choosing the next one.
+  if(level?.free&&libraryTray())actions.insertBefore(button('+', placeAndAddAnother, {className: 'another', ariaLabel:'Place and add another piece',
+    title:'Place and add another piece', disabled: !ghost.fits || ghost.busy}, false),throwAway);
   if(ghost.baseObject || ghost.was)actions.insertBefore(button('Delete piece',()=>removeSelectedObject(),{ariaLabel:'Delete selected piece'}),throwAway);
   if(ghost.rewireKey) actions.insertBefore(button('Disconnect wire',()=>{
     if(!ghost?.rewireKey || terminalBusy || powerBusy)return;
@@ -3323,7 +3331,7 @@ function renderGhostBar() {
     head.after(prompt);if(!keys.some(k=>!knobs[k].terminal&&!knobs[k].power_port)){row.hidden=true;chips.hidden=true;}
   }
   // Removal is an occasional action; keep it with the exact controls.
-  for(const b of [...actions.children])if(!b.classList.contains('down')&&b!==throwAway)precision.append(b);
+  for(const b of [...actions.children])if(!b.classList.contains('down')&&!b.classList.contains('another')&&b!==throwAway)precision.append(b);
   card.replaceChildren(fields);
   const needsClip=ghost.p.piece==='ignition'&&ghost.p.attachment_version===2&&!ghost.p.target;
   view.classList.toggle('choosing-attachment',Boolean(needsClip));
@@ -5413,13 +5421,48 @@ async function addTrayPiece(t) {
     catch(e){$('verdict').textContent=e.data?.problems?.join('; ')||e.message;return;}
   }
   trayPiece = t.piece;
+  if (level.free) rememberRecentPiece(t.piece);
   const p = {piece: t.piece};
   for (const [key, rule] of Object.entries(t.knobs)) p[key] = knobDefault(rule);
   startGhost(p, placements.length,Boolean(t.start_at_defaults));
 }
+// Library filters: tap a category chip; Recent lists pieces you added most
+// lately. The last search and category stay until you change them.
+const PIECE_GROUPS = [['all','All'],['recent','Recent'],['structure','Supports'],['routes','Tracks'],['motion','Motion'],
+  ['power','Power'],['electrics','Wiring'],['optics','Light'],['water','Water']];
+const PIECE_WORDS = {marble:'ball roll sphere', plank:'board beam bridge wood', block:'cube box brick step', link:'rope string tie glue pin join spring',
+  loose_block:'cube box crate', tackle:'pulley rope lift crane', lens:'glass focus', mirror:'reflect bounce', solar:'sun panel',
+  battery:'power cell', wire:'cable lead cord', motor:'spin turn', gear:'cog wheel teeth', switch:'button toggle', bulb:'lamp light'};
+let pieceFilter = 'all', recentPieces = [];
+try { recentPieces = JSON.parse(localStorage.getItem('banjo.recentPieces') || '[]').filter(p => typeof p === 'string').slice(0, 8); } catch { recentPieces = []; }
+function rememberRecentPiece(piece) {
+  recentPieces = [piece, ...recentPieces.filter(p => p !== piece)].slice(0, 8);
+  try { localStorage.setItem('banjo.recentPieces', JSON.stringify(recentPieces)); } catch {}
+}
+function renderPieceChips() {
+  const box = $('piece-category'), tray = level.tray.filter(t => !t.attach && !t.legacy);
+  const present = new Set(tray.map(t => (PIECE_INFO[t.piece] || ['structure'])[0]));
+  const recent = recentPieces.filter(p => tray.some(t => t.piece === p));
+  if (pieceFilter === 'recent' && !recent.length) pieceFilter = 'all';
+  if (!['all','recent'].includes(pieceFilter) && !present.has(pieceFilter)) pieceFilter = 'all';
+  box.dataset.value = pieceFilter;
+  box.replaceChildren(...PIECE_GROUPS.filter(([value]) => value === 'all' || (value === 'recent' ? recent.length : present.has(value))).map(([value, label]) => {
+    const chip = button(label, () => { pieceFilter = value; renderPieceChips(); renderPiecePicker(); },
+      {className: 'piece-chip', ariaLabel: `Show ${label === 'All' ? 'all pieces' : label}`}, false);
+    chip.setAttribute('aria-pressed', String(value === pieceFilter));
+    return chip;
+  }));
+}
+window.machinePieceFilter = () => ({filter: pieceFilter, chips: [...$('piece-category').children].map(c => c.textContent), recent: [...recentPieces],
+  shown: [...$('piece-grid').querySelectorAll('.piece-card')].map(c => c.dataset.piece)});
 function openPiecePicker() {
-  if (!level || ghost || $('piece-picker').open) return;
-  $('piece-search').value = ''; $('piece-category').value = 'all';
+  if (!level || $('piece-picker').open) return;
+  // Choosing another piece places the one being edited, when it fits.
+  if (ghost) {
+    if (!(ghost.fits && ghost.answered && !ghost.busy)) { $('verdict').textContent = 'Place or remove the selected piece first: it does not fit here yet.'; return; }
+    placeGhost(); scheduleRebuild(0);
+  }
+  renderPieceChips();
   $('piece-picker-close').textContent = level.free ? 'Back to sandbox' : 'Back to puzzle';
   renderPiecePicker();
   document.body.classList.add('choosing-piece');
@@ -5428,11 +5471,17 @@ function openPiecePicker() {
   $('piece-picker-close').focus({preventScroll: true});
 }
 function renderPiecePicker() {
-  const query = $('piece-search').value.trim().toLowerCase(), category = $('piece-category').value;
-  const items = level.tray.filter(t => !t.attach && !t.legacy).filter(t => {
+  const query = $('piece-search').value.trim().toLowerCase(), category = pieceFilter;
+  const words = query.split(/\s+/).filter(Boolean);
+  let items = level.tray.filter(t => !t.attach && !t.legacy).filter(t => {
     const [group, description] = PIECE_INFO[t.piece] || ['structure', 'Add this piece to your machine.'];
-    return (category === 'all' || category === group) && `${pieceLabel(t.piece)} ${description}`.toLowerCase().includes(query);
+    const groupLabel = PIECE_GROUPS.find(([value]) => value === group)?.[1] || '';
+    const text = `${pieceLabel(t.piece)} ${t.piece} ${description} ${groupLabel} ${PIECE_WORDS[t.piece] || ''}`.toLowerCase();
+    return (category === 'all' || category === group || (category === 'recent' && recentPieces.includes(t.piece))) && words.every(w => text.includes(w));
   });
+  // Recently added pieces come first.
+  const rank = t => { const i = recentPieces.indexOf(t.piece); return i < 0 ? 99 : i; };
+  if (category === 'recent' || (category === 'all' && !words.length)) items = items.map((t, i) => [t, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([t]) => t);
   $('piece-results').textContent = `${items.length} ${items.length === 1 ? 'piece' : 'pieces'}`;
   $('piece-empty').hidden = Boolean(items.length);
   $('piece-grid').replaceChildren(...items.map(t => {
@@ -5463,7 +5512,6 @@ function renderPiecePicker() {
   }));
 }
 $('piece-search').addEventListener('input', renderPiecePicker);
-$('piece-category').addEventListener('change', renderPiecePicker);
 $('piece-picker-close').addEventListener('click', () => $('piece-picker').close());
 $('piece-picker').addEventListener('close', () => {
   document.body.classList.remove('choosing-piece');

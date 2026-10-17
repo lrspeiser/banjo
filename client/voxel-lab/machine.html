@@ -315,7 +315,7 @@
 <dialog id="piece-picker" aria-labelledby="piece-picker-title" aria-describedby="piece-picker-help">
 <div class="piece-picker-head"><h1 id="piece-picker-title">Choose a piece</h1><button id="piece-picker-close" type="button">Back to sandbox</button></div>
 <p id="piece-picker-help">Choose a piece to return to your design and place it.</p>
-<div class="piece-picker-filters"><label>Search pieces<input id="piece-search" type="search" aria-label="Search pieces" placeholder="e.g. track, gate, lift" autocomplete="off"></label><label>Category<select id="piece-category" aria-label="Category"><option value="all">All pieces</option><option value="routes">Tracks and routing</option><option value="motion">Motion and triggers</option><option value="structure">Supports and bridges</option><option value="power">Power</option><option value="optics">Light and optics</option><option value="electrics">Electricity and wiring</option><option value="water">Water</option></select></label></div>
+<div class="piece-picker-filters"><label>Search pieces<input id="piece-search" type="search" aria-label="Search pieces" placeholder="e.g. track, gate, lift" autocomplete="off"></label><div id="piece-category" role="group" aria-label="Category" data-value="all"></div></div>
 <output id="piece-results" aria-live="polite"></output>
 <div id="piece-grid" aria-label="Available pieces"></div>
 <p id="piece-empty" hidden>No pieces match. Try another search or choose All pieces.</p>
