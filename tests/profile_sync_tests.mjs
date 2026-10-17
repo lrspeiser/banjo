@@ -219,3 +219,14 @@ test('stale or skipped revisions and invalid acknowledged profiles cannot clear 
     assert.equal(local.levels.cut.stars, 3);
   }
 });
+
+test('blueprints from both devices are kept and a synced deletion stays deleted', () => {
+  const a = {id: 'a', name: 'Ramp', placements: [{piece: 'plank'}]};
+  const b = {id: 'b', name: 'Lift', placements: [{piece: 'tackle'}]};
+  const c = {id: 'c', name: 'Old', placements: []};
+  const {profile} = mergeProfiles({blueprints: [b, c]}, {blueprints: [a]}, {blueprints: [c]});
+  assert.deepEqual(profile.blueprints.map(r => r.id), ['a', 'b'], 'deleted here after sync: c stays deleted');
+  const edited = mergeProfiles({blueprints: [{...a, name: 'Remote'}]}, {blueprints: [{...a, name: 'Here'}]}, {});
+  assert.deepEqual(edited.profile.blueprints.map(r => r.name), ['Here']);
+  assert.equal('blueprints' in mergeProfiles({}, {}, {}).profile, false);
+});

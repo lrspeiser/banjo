@@ -4319,6 +4319,37 @@ class Puzzles(unittest.TestCase):
                     self.assertEqual([p['piece'] for p in self.js('window.machineDesign().draft.placements')],['plank','marble'])
                     self.press('Back to sandbox')
 
+    def test_blueprint_saves_your_pieces_and_drops_them_into_another_design(self):
+        for width,height in ((1280,860),(390,844)):
+            with self.subTest(viewport=(width,height)):
+                self.page.send('Emulation.setDeviceMetricsOverride', {'width': width, 'height': height, 'deviceScaleFactor': 1, 'mobile': width != 1280})
+                self.navigate(f'{self.base}/machine')
+                self.wait("document.getElementById('sandbox-screen')?.hidden===false",30)
+                self.press('Add New Design'); self.wait(READY,30)
+                self.press('Add a plank'); self.ghost(); self.click_visible('Place'); self.wait(READY,30)
+                self.press('Add a marble'); self.ghost()
+                if self.ghost()['fits']: self.click_visible('Place')
+                else: self.press('Throw the ghost away')
+                self.wait(READY,30)
+                count=len(self.js('window.machinePlacements()'))
+                if width!=1280: self.click_visible('Design')
+                self.click_summary('#design-blueprints summary')
+                self.slide('Blueprint name','Test ramp')
+                self.press('Save as blueprint')
+                self.wait("window.machineBlueprints().some(b=>b.name==='Test ramp')",5)
+                self.assertEqual(len(self.js("window.machineBlueprints().find(b=>b.name==='Test ramp').placements")),count)
+                # A new design: the blueprint is in the library under Blueprints.
+                if width!=1280: self.click_visible('Controls')
+                self.press('All designs'); self.wait("document.getElementById('sandbox-screen')?.hidden===false",30)
+                self.press('Add New Design'); self.wait(READY,30)
+                self.press('Add a piece')
+                self.press('Show Blueprints')
+                self.press('Add blueprint Test ramp')
+                self.wait(f"window.machinePlacements().length==={count} && {READY}",60)
+                self.assertEqual([p['piece'] for p in self.js('window.machinePlacements()')],[p['piece'] for p in self.js("window.machineBlueprints().find(b=>b.name==='Test ramp').placements")])
+                self.press('Undo'); self.wait(f"window.machinePlacements().length===0 && {READY}",30)
+                self.assertTrue(self.js("!document.getElementById('piece-picker').open"))
+
     def test_piece_library_search_filter_cancel_and_placement_on_desktop_and_phones(self):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):

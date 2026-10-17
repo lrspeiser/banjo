@@ -414,3 +414,30 @@ export function pathPoint(points, t) {
   const a = points[i], b = points[i + 1], f = (t - a[0]) / (b[0] - a[0] || 1);
   return [1, 2, 3].map(k => a[k] + (b[k] - a[k]) * f);
 }
+
+// Blueprints: a saved group of player pieces dropped into another design.
+// Pieces refer to each other by name ("your plank 2 ..."), so a dropped copy
+// renumbers those references after the pieces already in the design and
+// moves every piece so the group's centre lands at the chosen ground point.
+export function blueprintPlacements(saved, existing, at_m) {
+  const rows = JSON.parse(JSON.stringify(saved || []));
+  const offset = existing;
+  const xs = rows.filter(p => Number.isFinite(p.x_m)).map(p => p.x_m);
+  const zs = rows.filter(p => Number.isFinite(p.z_m)).map(p => p.z_m);
+  const cx = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0;
+  const cz = zs.length ? (Math.min(...zs) + Math.max(...zs)) / 2 : 0;
+  const rename = value => typeof value === 'string'
+    ? value.replace(/^your (\S+) (\d+)(?=$| )/, (whole, piece, n) => {
+        const i = Number(n) - 1;
+        return i >= 0 && i < rows.length && rows[i].piece === piece ? `your ${piece} ${i + 1 + offset}` : whole;
+      })
+    : Array.isArray(value) ? value.map(rename)
+    : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, rename(v)]))
+    : value;
+  return rows.map(p => {
+    const q = rename(p);
+    if (Number.isFinite(q.x_m)) q.x_m = Math.round((q.x_m - cx + at_m[0]) * 1e4) / 1e4;
+    if (Number.isFinite(q.z_m)) q.z_m = Math.round((q.z_m - cz + at_m[1]) * 1e4) / 1e4;
+    return q;
+  });
+}

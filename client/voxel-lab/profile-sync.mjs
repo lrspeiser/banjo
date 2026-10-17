@@ -33,6 +33,15 @@ export function mergeProfiles(remote, local, base, makeId = () => globalThis.cry
     const key = row?.id ?? canonical(row);
     if (!seen.has(key)) { seen.add(key); profile.freshChallenges.push(clone(row)); }
   }
+  // Blueprints from either device are kept; the same blueprint edited on both
+  // keeps this device's copy. A blueprint deleted here stays deleted only if
+  // the other device still has the copy it was synced with.
+  const baseBlueprints = new Set(array(base.blueprints).map(row => row?.id));
+  const localBlueprintIds = new Set(array(local.blueprints).map(row => row?.id));
+  profile.blueprints = [...array(local.blueprints).map(clone),
+    ...array(remote.blueprints).filter(row => row?.id && !localBlueprintIds.has(row.id) &&
+      !(baseBlueprints.has(row.id) && equal(row, array(base.blueprints).find(b => b?.id === row.id)))).map(clone)];
+  if (!profile.blueprints.length && !remote.blueprints && !local.blueprints) delete profile.blueprints;
   const remoteStore = object(remote.sandbox), localStore = object(local.sandbox);
   const remoteItems = array(remoteStore.items), localItems = array(localStore.items);
   const originals = new Map(remoteItems.map(row => [row.id, clone(row)]));

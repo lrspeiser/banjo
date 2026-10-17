@@ -112,6 +112,7 @@
 <div class="chat-actions"><button id="designs-open" type="button">All designs</button><button id="save-design" type="button">Save version</button></div>
 <label for="design-name">Design name</label><input id="design-name" type="text" maxlength="60">
 <output id="design-status" aria-live="polite"></output>
+<details id="design-blueprints"><summary>Blueprints</summary><p class="legend">Save the pieces you placed in this design as a blueprint, then add the whole group to any design from <b>Add a piece → Blueprints</b>.</p><label for="blueprint-name">Blueprint name</label><input id="blueprint-name" type="text" aria-label="Blueprint name" maxlength="40" placeholder="e.g. Marble ramp"><button id="save-blueprint" type="button">Save as blueprint</button><ul id="blueprint-list" class="blueprint-list"></ul></details>
 <details id="design-versions"><summary>Saved versions</summary><label for="version-pick">Version to reopen</label><select id="version-pick"></select><button id="restore-version" type="button">Restore version</button></details>
 </section>
 <section id="game" hidden aria-label="The puzzle">

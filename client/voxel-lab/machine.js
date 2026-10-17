@@ -1,5 +1,5 @@
 import * as THREE from './three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints, glideSpan, glideAlpha, glides, frameBlend, pathPoint} from './machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints, glideSpan, glideAlpha, glides, frameBlend, pathPoint, blueprintPlacements} from './machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from './anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from './profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from './level-library.mjs';
@@ -5502,7 +5502,7 @@ async function addTrayPiece(t) {
 }
 // Library filters: tap a category chip; Recent lists pieces you added most
 // lately. The last search and category stay until you change them.
-const PIECE_GROUPS = [['all','All'],['recent','Recent'],['structure','Supports'],['routes','Tracks'],['motion','Motion'],
+const PIECE_GROUPS = [['all','All'],['blueprints','Blueprints'],['recent','Recent'],['structure','Supports'],['routes','Tracks'],['motion','Motion'],
   ['power','Power'],['electrics','Wiring'],['optics','Light'],['water','Water']];
 const PIECE_WORDS = {marble:'ball roll sphere', plank:'board beam bridge wood', block:'cube box brick step', link:'rope string tie glue pin join spring',
   loose_block:'cube box crate', tackle:'pulley rope lift crane', lens:'glass focus', mirror:'reflect bounce', solar:'sun panel',
@@ -5513,14 +5513,59 @@ function rememberRecentPiece(piece) {
   recentPieces = [piece, ...recentPieces.filter(p => p !== piece)].slice(0, 8);
   try { localStorage.setItem('banjo.recentPieces', JSON.stringify(recentPieces)); } catch {}
 }
+// ---- blueprints: your own groups of pieces, reused in any Sandbox design ----
+const MAX_BLUEPRINTS = 20;
+function blueprints() { return Array.isArray(me().blueprints) ? me().blueprints : []; }
+function renderBlueprints() {
+  const box = $('design-blueprints'); if (!box) return;
+  box.hidden = !level?.free;
+  if (!level?.free) return;
+  $('save-blueprint').disabled = !placements.length;
+  $('blueprint-list').replaceChildren(...blueprints().map(b => {
+    const li = document.createElement('li');
+    li.append(Object.assign(document.createElement('span'), {textContent: `${b.name} · ${b.placements.length} ${b.placements.length === 1 ? 'piece' : 'pieces'}`}),
+      button('Delete', () => { me().blueprints = blueprints().filter(x => x.id !== b.id); persist(); renderBlueprints(); },
+        {ariaLabel: `Delete blueprint ${b.name}`}, false));
+    return li;
+  }));
+}
+$('save-blueprint').addEventListener('click', () => {
+  if (!level?.free || ghostInTheWay() || !placements.length) return;
+  const name = $('blueprint-name').value.trim().slice(0, 40) || (activeDesign?.name || 'Blueprint').slice(0, 40);
+  const row = {id: crypto.randomUUID(), name, placements: clone(placements), at: new Date().toISOString()};
+  me().blueprints = [row, ...blueprints()].slice(0, MAX_BLUEPRINTS);
+  persist(); $('blueprint-name').value = '';
+  renderBlueprints();
+  designStatus(`Saved blueprint “${name}” (${row.placements.length} ${row.placements.length === 1 ? 'piece' : 'pieces'}).`);
+});
+// Dropping a blueprint adds its pieces around the middle of the view, after
+// the engine has checked the combined setup. Undo takes the group back out.
+async function addBlueprint(b) {
+  if (!level?.free || ghost) return;
+  const added = blueprintPlacements(b.placements, placements.length, [target.x, target.z]);
+  const next = [...placements, ...added];
+  $('verdict').textContent = `Checking blueprint “${b.name}”…`;
+  try {
+    await api({op: 'check', level: 'free', ...sandboxRequest(), placements: next});
+  } catch (e) {
+    $('verdict').textContent = `Could not add “${b.name}” here: ` + (e.data?.problems?.join('; ') || e.message) + ' Turn or move the view to another spot and try again.';
+    return;
+  }
+  remember(); placements = next; keepBuild();
+  renderTray(); renderPlaced(); scheduleRebuild(0);
+  $('verdict').textContent = `Added blueprint “${b.name}”: ${added.length} ${added.length === 1 ? 'piece' : 'pieces'}. Undo removes it.`;
+}
+window.machineBlueprints = () => clone(blueprints());
 function renderPieceChips() {
   const box = $('piece-category'), tray = level.tray.filter(t => !t.attach && !t.legacy);
   const present = new Set(tray.map(t => (PIECE_INFO[t.piece] || ['structure'])[0]));
   const recent = recentPieces.filter(p => tray.some(t => t.piece === p));
+  const hasBlueprints = Boolean(level.free && blueprints().length);
   if (pieceFilter === 'recent' && !recent.length) pieceFilter = 'all';
-  if (!['all','recent'].includes(pieceFilter) && !present.has(pieceFilter)) pieceFilter = 'all';
+  if (pieceFilter === 'blueprints' && !hasBlueprints) pieceFilter = 'all';
+  if (!['all','recent','blueprints'].includes(pieceFilter) && !present.has(pieceFilter)) pieceFilter = 'all';
   box.dataset.value = pieceFilter;
-  box.replaceChildren(...PIECE_GROUPS.filter(([value]) => value === 'all' || (value === 'recent' ? recent.length : present.has(value))).map(([value, label]) => {
+  box.replaceChildren(...PIECE_GROUPS.filter(([value]) => value === 'all' || (value === 'recent' ? recent.length : value === 'blueprints' ? hasBlueprints : present.has(value))).map(([value, label]) => {
     const chip = button(label, () => { pieceFilter = value; renderPieceChips(); renderPiecePicker(); },
       {className: 'piece-chip', ariaLabel: `Show ${label === 'All' ? 'all pieces' : label}`}, false);
     chip.setAttribute('aria-pressed', String(value === pieceFilter));
@@ -5545,6 +5590,7 @@ function openPiecePicker() {
   $('piece-picker-close').focus({preventScroll: true});
 }
 function renderPiecePicker() {
+  if (pieceFilter === 'blueprints' && level.free) { renderBlueprintCards(); return; }
   const query = $('piece-search').value.trim().toLowerCase(), category = pieceFilter;
   const words = query.split(/\s+/).filter(Boolean);
   let items = level.tray.filter(t => !t.attach && !t.legacy).filter(t => {
@@ -5583,6 +5629,24 @@ function renderPiecePicker() {
       chooseLevel('free', design).catch(e => { clockMessage(e.message); });
     }));
     return wrapper;
+  }));
+}
+function renderBlueprintCards() {
+  const query = $('piece-search').value.trim().toLowerCase();
+  const rows = blueprints().filter(b => `${b.name} ${b.placements.map(p => pieceLabel(p.piece)).join(' ')}`.toLowerCase().includes(query));
+  $('piece-results').textContent = `${rows.length} ${rows.length === 1 ? 'blueprint' : 'blueprints'}`;
+  $('piece-empty').hidden = Boolean(rows.length);
+  $('piece-grid').replaceChildren(...rows.map(b => {
+    const counts = {};
+    for (const p of b.placements) counts[pieceLabel(p.piece)] = (counts[pieceLabel(p.piece)] || 0) + 1;
+    const card = button('', () => { $('piece-picker').close(); addBlueprint(b); view.focus({preventScroll: true}); },
+      {className: 'piece-card blueprint-card', ariaLabel: `Add blueprint ${b.name}`}, false);
+    card.dataset.blueprint = b.id;
+    card.append(Object.assign(document.createElement('span'), {className: 'blueprint-mark', textContent: '▦'}),
+      Object.assign(document.createElement('strong'), {textContent: b.name}),
+      Object.assign(document.createElement('span'), {className: 'piece-description',
+        textContent: Object.entries(counts).map(([name, n]) => n > 1 ? `${n} × ${name}` : name).join(', ')}));
+    return card;
   }));
 }
 $('piece-search').addEventListener('input', renderPiecePicker);
@@ -5837,6 +5901,7 @@ function ghostItem() {
 }
 
 function renderPlaced() {
+  renderBlueprints();
   $('placed').replaceChildren();
   $('placed-head').hidden=true;
   if (ghost) { showGhostKnobs(); showGhostState(); }
@@ -5987,6 +6052,7 @@ function checkpointDesign(d, label = '') {
   if (d.versions.length > 30) d.versions.shift();
 }
 function renderDesignControls() {
+  renderBlueprints();
   $('sandbox-controls').hidden = !level?.free;
   $('design-versions').hidden = !level?.free;
   $('machine-data').hidden = !level?.free;
