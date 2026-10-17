@@ -1318,6 +1318,18 @@ Older dated measurement notes below retain their original level numbers;
 use the audit table for current numbering and the level names/IDs to compare
 those historical measurements.
 
+**Joining in a lesson.** A lesson whose tray offers a join shows it as a tray
+card; it turns on Attach with a hint, and the join card offers only the kinds
+that tray allows. Swing on a rope draws a gold tie ring at [0, 1.4, 0] under
+the beam end; a tap on the beam within 0.2 m of it ties there. Measured with the
+engine: a knot 4 cm off the ring along the beam still wins, 8 cm off misses,
+and a knot on the beam's front face (z = 0.08 m) misses, while the marble's own
+tie point and marble positions from x = −0.56 to −0.44 m all win. Taps alone
+were therefore too imprecise; the ring is placement help, and the goal zone,
+geometry and engine are unchanged. Browser check: placing the marble by drag,
+tapping the beam face and the marble, and choosing String wins with three
+stars (goal at 0.70 s) on desktop and portrait phone.
+
 ## More contact and spring mechanisms
 
 October 13: the Sandbox library has **Hinged door**, **Trapdoor**,
