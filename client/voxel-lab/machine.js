@@ -1672,6 +1672,7 @@ function renderStations() {
     li.append(head, shows, law);
     list.append(li);
   });
+  announcePlayerGoal();
 }
 
 function pair(dl, label, value) {
@@ -2247,7 +2248,10 @@ let levels = [], level = null, placements = [], placedCost = [], placedEnergy = 
 let generatedLevel = null;
 let freeLevel = null;
 let sandboxBase = null, sandboxTemplates = [], activeDesign = null, sandboxObjects = [];
-function sandboxRequest() { const base=ghost?.baseObject ? ghost.base || ghost.originalBase : activeDesign?.draft.base; return level?.free && base ? {base} : {}; }
+function sandboxRequest() {
+  const base=ghost?.baseObject ? ghost.base || ghost.originalBase : activeDesign?.draft.base, goal=level?.free&&activeDesign?.draft.goal;
+  return {...(level?.free && base ? {base} : {}), ...(goal ? {goal} : {})};
+}
 
 // ---- the ghost: a piece before it is set down ------------------------------------
 // A see-through copy of a piece. It stays put until deliberately dragged;
@@ -5556,6 +5560,77 @@ async function addBlueprint(b) {
   $('verdict').textContent = `Added blueprint “${b.name}”: ${added.length} ${added.length === 1 ? 'piece' : 'pieces'}. Undo removes it.`;
 }
 window.machineBlueprints = () => clone(blueprints());
+
+// ---- your goal: a Sandbox design can carry one in_zone goal --------------
+// Player pieces are named by kind ("the first marble you place"), so the
+// same goal works when shared as a challenge without your pieces.
+function goalChoices() {
+  const out = [];
+  const kinds = [...new Set(placements.map(p => p.piece))];
+  for (const piece of kinds) out.push({value: 'piece:' + piece, label: `Your first ${pieceLabel(piece)}`});
+  for (const p of machine?.parts || []) if (!p.fixed && !p.name.startsWith('your ')) out.push({value: 'part:' + p.name, label: p.name});
+  return out;
+}
+function goalTarget(g) { const z = g?.done_when?.in_zone; return z ? (z.piece ? 'piece:' + z.piece : 'part:' + z.part) : ''; }
+function renderGoalControls() {
+  const box = $('design-goal'); if (!box) return;
+  box.hidden = !level?.free || !activeDesign;
+  if (box.hidden) return;
+  const goal = activeDesign.draft.goal, choices = goalChoices(), select = $('goal-body'), chosen = select.value || goalTarget(goal);
+  select.replaceChildren(...choices.map(c => new Option(c.label, c.value)));
+  if (goal && !choices.some(c => c.value === goalTarget(goal))) select.append(new Option(goalTarget(goal).replace(/^(piece|part):/, ''), goalTarget(goal)));
+  select.value = chosen && (choices.some(c => c.value === chosen) || chosen === goalTarget(goal)) ? chosen : (choices[0]?.value || '');
+  if (goal) $('goal-size').value = String(goal.done_when.in_zone.size_m[0]);
+  $('goal-here').disabled = !select.value;
+  $('goal-clear').disabled = $('goal-share').disabled = !goal;
+  if (!$('goal-status').dataset.sticky) $('goal-status').textContent = goal ? `Goal: ${goal.title}` : choices.length ? 'No goal yet.' : 'Add a piece that can move, then choose it here.';
+}
+function goalStatus(text) { $('goal-status').textContent = text; $('goal-status').dataset.sticky = '1'; setTimeout(() => { delete $('goal-status').dataset.sticky; }, 4000); }
+$('goal-here').addEventListener('click', () => {
+  if (!level?.free || !activeDesign || ghostInTheWay()) return;
+  const value = $('goal-body').value, size = Number($('goal-size').value) || .4;
+  if (!value) return;
+  const [kind, name] = [value.slice(0, value.indexOf(':')), value.slice(value.indexOf(':') + 1)];
+  const label = kind === 'piece' ? `Get your ${pieceLabel(name)} into the green zone` : `Get ${name} into the green zone`;
+  remember();
+  activeDesign.draft.goal = {title: label, done_when: {in_zone: {...(kind === 'piece' ? {piece: name} : {part: name}),
+    at_m: [Math.round(target.x * 100) / 100, Math.round(Math.max(size * .375, target.y) * 100) / 100, Math.round(target.z * 100) / 100],
+    size_m: [size, size * .75, size]}}};
+  keepBuild(); scheduleRebuild(0); goalStatus('Goal zone set where the view is centred. Press Try It! to test it.');
+  renderGoalControls();
+});
+$('goal-clear').addEventListener('click', () => {
+  if (!activeDesign?.draft.goal) return;
+  remember(); delete activeDesign.draft.goal; keepBuild(); scheduleRebuild(0); goalStatus('Goal removed.'); renderGoalControls();
+});
+$('goal-share').addEventListener('click', async () => {
+  const goal = activeDesign?.draft.goal; if (!goal) return;
+  const author = new Set(placements.map((p, i) => `your ${p.piece} ${i + 1}`));
+  if (goal.done_when.in_zone.part && author.has(goal.done_when.in_zone.part)) { goalStatus('Choose “Your first …” so the challenge works without your pieces.'); return; }
+  const url = SHARE_SITE + '/machine#build=' + await packBuild({name: 'Challenge: ' + activeDesign.name, base: activeDesign.draft.base, placements: [], goal});
+  try { await navigator.clipboard.writeText(url); goalStatus('Challenge link copied. It has your base and goal, without the pieces you placed.'); }
+  catch { window.prompt('Copy this challenge link', url); }
+  $('goal-share').dataset.url = url;
+});
+// A reached player goal is announced once per run.
+let goalAnnounced = -1;
+// The engine's compiled stations keep the goal's title and rule, first.
+function playerGoalStation() {
+  const goal = level?.free && activeDesign?.draft.goal, first = machine?.stations?.[0];
+  return goal && first?.title === goal.title && first.done_when?.in_zone ? first : null;
+}
+function announcePlayerGoal() {
+  if (!playerGoalStation()) return;
+  const state = (readouts.stations || [])[0];
+  if (state?.done && goalAnnounced !== polling) {
+    goalAnnounced = polling;
+    const said = `Goal reached at ${describeTime(state.at_s)}! ${activeDesign.draft.goal.title}.`;
+    $('verdict').textContent = said; goalStatus(said);
+  }
+}
+window.machineGoalState = () => ({goal: activeDesign?.draft.goal ? clone(activeDesign.draft.goal) : null,
+  station: playerGoalStation() ? clone(playerGoalStation()) : null, done: Boolean((readouts.stations || [])[0]?.done && playerGoalStation()),
+  verdict: $('verdict').textContent + ' ' + $('goal-status').textContent, link: $('goal-share').dataset.url || null});
 function renderPieceChips() {
   const box = $('piece-category'), tray = level.tray.filter(t => !t.attach && !t.legacy);
   const present = new Set(tray.map(t => (PIECE_INFO[t.piece] || ['structure'])[0]));
@@ -5901,7 +5976,7 @@ function ghostItem() {
 }
 
 function renderPlaced() {
-  renderBlueprints();
+  renderBlueprints(); renderGoalControls();
   $('placed').replaceChildren();
   $('placed-head').hidden=true;
   if (ghost) { showGhostKnobs(); showGhostState(); }
@@ -5977,10 +6052,11 @@ function travel(from, to) {
   if (!Array.isArray(back) && activeDesign) {
     if (JSON.stringify(activeDesign.draft.base) !== JSON.stringify(back.base)) framedFree = false;
     activeDesign.draft.base = back.base;
+    if (back.goal) activeDesign.draft.goal = back.goal; else delete activeDesign.draft.goal;
   }
   endGhost(); cancelAttach(); renderTray(); renderPlaced(); showUndo(); scheduleRebuild(0);
 }
-function setupSnapshot() { return JSON.stringify(level?.free ? {placements, base: activeDesign?.draft.base || null} : placements); }
+function setupSnapshot() { return JSON.stringify(level?.free ? {placements, base: activeDesign?.draft.base || null, ...(activeDesign?.draft.goal ? {goal: activeDesign.draft.goal} : {})} : placements); }
 async function removeSelectedObject(){
   const g=ghost;if(!g)return;
   try{
@@ -6052,7 +6128,7 @@ function checkpointDesign(d, label = '') {
   if (d.versions.length > 30) d.versions.shift();
 }
 function renderDesignControls() {
-  renderBlueprints();
+  renderBlueprints(); renderGoalControls();
   $('sandbox-controls').hidden = !level?.free;
   $('design-versions').hidden = !level?.free;
   $('machine-data').hidden = !level?.free;
@@ -6471,7 +6547,7 @@ async function chooseLevel(id, design = null) {
     const store = designStore();
     if (sharedBuild) {
       const shared = sharedBuild; sharedBuild = null;
-      try { const draft = await unpackBuild(shared); design = newDesign(draft.name || 'Shared design', {base: draft.base, placements: draft.placements}); }
+      try { const draft = await unpackBuild(shared); design = newDesign(draft.name || 'Shared design', {base: draft.base, placements: draft.placements, ...(draft.goal ? {goal: draft.goal} : {})}); }
       catch { say('refused', 'That link does not hold a design this page can read.'); }
     }
     activeDesign = design || store.items.find(d => d.id === store.last) || store.items[0] || newDesign('Untitled design');
@@ -6609,7 +6685,7 @@ let headerShareEpoch=0;
 async function headerShareURL() {
   if(document.body.classList.contains('on-levels'))return SHARE_SITE+'/play';
   if(document.body.classList.contains('on-sandbox'))return SHARE_SITE+'/machine';
-  if(level?.free && activeDesign)return SHARE_SITE+'/machine#build='+await packBuild({name:activeDesign.name,base:activeDesign.draft.base,placements});
+  if(level?.free && activeDesign)return SHARE_SITE+'/machine#build='+await packBuild({name:activeDesign.name,base:activeDesign.draft.base,placements,...(activeDesign.draft.goal?{goal:activeDesign.draft.goal}:{})});
   return SHARE_SITE+'/play'+(level?'?level='+encodeURIComponent(level.id):'');
 }
 function updateHeaderShare() {
@@ -6653,7 +6729,9 @@ async function unpackBuild(packed) {
     throw new Error('not a build');
   if (draft.base != null && (typeof draft.base !== 'object' || draft.base.schema !== 'banjo.machine.v1')) throw new Error('not a machine');
   preserveLegacyWater(draft);
-  return {base: draft.base || null, placements: list, name: typeof draft.name === 'string' ? draft.name.slice(0, 60) : 'Shared design'};
+  // A shared goal is kept as data; the server validates it before any use.
+  const goal = draft.goal && typeof draft.goal === 'object' && !Array.isArray(draft.goal) && draft.goal.done_when?.in_zone ? draft.goal : null;
+  return {base: draft.base || null, placements: list, name: typeof draft.name === 'string' ? draft.name.slice(0, 60) : 'Shared design', ...(goal ? {goal} : {})};
 }
 $('free-share').addEventListener('click', async () => {
   const link = `${SHARE_SITE}/machine#build=${await packBuild({name: activeDesign.name, base: activeDesign.draft.base, placements})}`;

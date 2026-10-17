@@ -212,6 +212,36 @@ def fresh_easy(family_id, seed, exe, logs, recipe_id=None):
     return level
 
 
+def sandbox_goal(goal):
+    """A goal a player sets on a Sandbox design: get one named body into a
+    box-shaped zone. The engine measures it like any level's in_zone goal;
+    the design is not scored or ranked."""
+    if not isinstance(goal, dict):
+        raise ValueError('A Sandbox goal is an object')
+    rule = goal.get('done_when')
+    if not isinstance(rule, dict) or set(rule) != {'in_zone'} or not isinstance(rule['in_zone'], dict):
+        raise ValueError('A Sandbox goal gets a body into a zone (in_zone)')
+    zone = rule['in_zone']
+    # Either a named body, or "the first <piece> you place" (a shared
+    # challenge starts without the author's pieces).
+    part, piece = zone.get('part'), zone.get('piece')
+    if piece is not None:
+        if part is not None or not isinstance(piece, str) or not re.fullmatch(r'[a-z_]{1,40}', piece):
+            raise ValueError('A Sandbox goal names one body or one kind of piece')
+    elif not isinstance(part, str) or not part or len(part) > 120:
+        raise ValueError('A Sandbox goal names the body to move')
+    def vector(value, low, high, what):
+        if not isinstance(value, list) or len(value) != 3 or not all(
+                isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and low <= v <= high for v in value):
+            raise ValueError(f'A Sandbox goal zone needs {what}')
+        return [float(v) for v in value]
+    at = vector(zone.get('at_m'), -50, 50, 'a centre within 50 m')
+    size = vector(zone.get('size_m'), .02, 5, 'sides from 2 cm to 5 m')
+    title = str(goal.get('title') or 'Your goal').strip()[:80] or 'Your goal'
+    target = {'piece': piece} if piece is not None else {'part': part}
+    return {'title': title, 'done_when': {'in_zone': {**target, 'at_m': at, 'size_m': size}}}
+
+
 def requested_level(data):
     """Sandbox declarations use the same tray, ghost, preview and live engine.
 
@@ -243,6 +273,10 @@ def requested_level(data):
                 wheel['knobs']['radius_m']['default']=.65
                 wheel['knobs']['side']['default']='off'
                 wheel['start_at_defaults']=True
+    if data.get('goal') is not None:
+        if not level.get('free'):
+            raise ValueError('A player-set goal belongs to a Sandbox design, not a level')
+        level['sandbox_goal'] = sandbox_goal(data['goal'])
     return level
 
 
@@ -1497,6 +1531,24 @@ def compose(level, placements, leave_out_goal=False):
         raise LevelRefused(clashes[:4])
     if not level.get('goal'):
         spec.setdefault('stations', [])
+        mine = level.get('sandbox_goal')
+        if mine:
+            # A player's own goal: measured first, never scored. Until the
+            # body it names exists it is left out and the page says so.
+            zone = dict(mine['done_when']['in_zone'])
+            if 'piece' in zone:
+                kind = zone.pop('piece')
+                zone['part'] = next((f'your {kind} {i+1}' for i, p in enumerate(checked) if p['piece'] == kind), None)
+                wanted = f'a {kind.replace("_", " ")}'
+            else:
+                wanted = zone['part']
+            if zone['part'] in names:
+                spec['stations'] = [{'title': mine['title'], 'done_when': {'in_zone': zone}, 'focus': [],
+                                     'player_goal': True}] + list(spec['stations'])
+            elif leave_out_goal:
+                spec['_needs'] = f'the goal is about {wanted}, which is not here yet'
+            else:
+                raise LevelRefused([f'the goal is about {wanted}, which is not here yet'])
         return spec, checked, cost      # sandbox readings are retained, never scored
     spec['stations'] = []
     role_names={role:next((f'your {piece} {i+1}' for i,p in enumerate(checked) if p['piece']==piece),f'@{role}')

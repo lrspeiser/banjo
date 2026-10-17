@@ -1116,6 +1116,52 @@ class FreeBuild(unittest.TestCase):
         self.assertIn('ratchet', gate, 'its shelf\'s gate stays open')
 
 
+class SandboxGoal(unittest.TestCase):
+    GOAL = {'title': 'Into the box', 'done_when': {'in_zone': {'part': 'your marble 1', 'at_m': [0, .05, 0], 'size_m': [.4, .3, .4]}}}
+
+    def test_a_player_goal_is_validated_and_measured_first_without_scoring(self):
+        free = mg.requested_level({'level': 'free', 'goal': self.GOAL})
+        spec = mg.compose(free, [{'piece': 'marble', 'x_m': 0, 'z_m': 0}])[0]
+        self.assertEqual(spec['stations'][0]['done_when'], self.GOAL['done_when'])
+        self.assertTrue(spec['stations'][0]['player_goal'])
+        mw.compile_spec(spec)          # the engine declaration accepts it
+        # Until the body exists the goal is left out (or refused).
+        self.assertIn('not here yet', mg.compose(free, [], leave_out_goal=True)[0]['_needs'])
+        with self.assertRaises(mg.LevelRefused):
+            mg.compose(free, [])
+        for bad in ({'done_when': {'hits': ['a', 'b']}}, {'done_when': {'in_zone': {'part': 'x', 'at_m': [0, 0], 'size_m': [1, 1, 1]}}},
+                    {'done_when': {'in_zone': {'part': 'x', 'at_m': [0, 0, 0], 'size_m': [0, 1, 1]}}},
+                    {'done_when': {'in_zone': {'part': 'x', 'at_m': [0, 999, 0], 'size_m': [1, 1, 1]}}},
+                    {'done_when': {'in_zone': {'part': 'x', 'at_m': [0, float('nan'), 0], 'size_m': [1, 1, 1]}}}, 'zone'):
+            with self.assertRaises(ValueError, msg=bad):
+                mg.requested_level({'level': 'free', 'goal': bad})
+        with self.assertRaisesRegex(ValueError, 'Sandbox design'):
+            mg.requested_level({'level': 'gap', 'goal': self.GOAL})
+        # A shared challenge: "the first marble you place".
+        kind = {'title': 'Marble in', 'done_when': {'in_zone': {'piece': 'marble', 'at_m': [0, .05, 0], 'size_m': [.4, .3, .4]}}}
+        free = mg.requested_level({'level': 'free', 'goal': kind})
+        spec = mg.compose(free, [{'piece': 'plank', 'x_m': 1, 'z_m': 0}, {'piece': 'marble', 'x_m': 0, 'z_m': 0}])[0]
+        self.assertEqual(spec['stations'][0]['done_when']['in_zone']['part'], 'your marble 2')
+        self.assertEqual(mg.compose(free, [{'piece': 'plank', 'x_m': 1, 'z_m': 0}], leave_out_goal=True)[0]['_needs'],
+                         'the goal is about a marble, which is not here yet')
+        for bad in ({'piece': 'Marble!'}, {'piece': 'marble', 'part': 'x'}):
+            with self.assertRaises(ValueError):
+                mg.requested_level({'level': 'free', 'goal': {'done_when': {'in_zone': {**bad, 'at_m': [0, 0, 0], 'size_m': [1, 1, 1]}}}})
+
+    @need_engine
+    def test_a_marble_dropped_over_the_zone_reaches_it_and_one_dropped_beside_it_does_not(self):
+        free = mg.requested_level({'level': 'free', 'goal': self.GOAL})
+        results = {}
+        with tempfile.TemporaryDirectory() as logs:
+            for name, x in (('over', 0), ('beside', 1.5)):
+                spec = mg.compose(free, [{'piece': 'marble', 'x_m': x, 'z_m': 0, 'height_m': .4}])[0]
+                run = mw.rehearse(mw.compile_spec(spec), ENGINE, Path(logs), seconds=2)
+                self.assertIsNone(run['error'])
+                results[name] = next(s for s in run['stations'] if s['title'] == 'Into the box')
+        self.assertTrue(results['over'].get('done'), results)
+        self.assertFalse(results['beside'].get('done'), results)
+
+
 class Engine(unittest.TestCase):
     @need_engine
     def test_gear_motion_replay_observes_native_contact_without_changing_the_setup(self):

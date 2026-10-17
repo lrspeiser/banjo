@@ -283,8 +283,8 @@ body.on-sandbox main{display:none}
 #sandbox-controls input,#sandbox-controls select{width:100%;min-height:44px;box-sizing:border-box;background:#10202a;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;padding:6px;font:14px system-ui}
 #sandbox-controls button{min-height:44px}
 #design-status{display:block;margin-top:8px;font-size:13px;color:#c9dbe5}
-#design-versions,#design-blueprints{margin-top:10px}
-#design-versions>summary,#design-blueprints>summary{min-height:44px;padding:12px 0;line-height:20px;box-sizing:border-box}
+#design-versions,#design-blueprints,#design-goal{margin-top:10px}
+#design-versions>summary,#design-blueprints>summary,#design-goal>summary{min-height:44px;padding:12px 0;line-height:20px;box-sizing:border-box}
 #restore-version{margin-top:8px}
 .ls-player{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0}
 .ls-player select{max-width:100%;min-height:44px}
@@ -982,3 +982,6 @@ body[data-mode=run] #scene-tray,body[data-mode=tune] #scene-tray{display:none!im
 .blueprint-list button{min-height:44px}
 #design-blueprints button#save-blueprint{min-height:44px;margin-top:6px}
 #piece-grid .blueprint-mark{display:flex;align-items:center;justify-content:center;width:100%;height:150px;font-size:64px;color:#9fdcff;background:#13222d;border-radius:6px}
+#design-goal select,#design-goal button{min-height:44px;width:100%;margin:4px 0}
+#design-goal .chat-actions button{width:auto;flex:1}
+#design-goal output{display:block;font-size:13px;color:#b9cbd6;margin-top:4px}

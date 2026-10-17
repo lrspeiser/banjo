@@ -4350,6 +4350,47 @@ class Puzzles(unittest.TestCase):
                 self.press('Undo'); self.wait(f"window.machinePlacements().length===0 && {READY}",30)
                 self.assertTrue(self.js("!document.getElementById('piece-picker').open"))
 
+    def test_sandbox_goal_zone_is_measured_by_the_engine_and_shares_as_a_challenge(self):
+        for width,height in ((1280,860),(390,844)):
+            with self.subTest(viewport=(width,height)):
+                self.page.send('Emulation.setDeviceMetricsOverride', {'width': width, 'height': height, 'deviceScaleFactor': 1, 'mobile': width != 1280})
+                self.navigate(f'{self.base}/machine')
+                self.wait("document.getElementById('sandbox-screen')?.hidden===false",30)
+                self.press('Add New Design'); self.wait(READY,30)
+                self.press('Add a marble'); self.ghost()
+                self.slide('x of your marble 1',0); self.slide('across (z, m) of your marble 1',0)
+                self.assertTrue(self.ghost()['fits'])
+                self.click_visible('Place'); self.wait(READY,30)
+                # Put the zone where the marble is: centre the view on it.
+                self.js("window.machineView({at:[0,0,0]})"); self.wait('window.machineCamera().settled',30)
+                if width!=1280: self.click_visible('Design')
+                self.click_summary('#design-goal summary')
+                self.assertEqual(self.js("document.getElementById('goal-body').value"),'piece:marble')
+                self.slide('Zone size','0.8')
+                self.press('Set goal zone here')
+                self.wait(f"window.machineGoalState().station?.done_when?.in_zone?.part==='your marble 1' && {READY}",30)
+                if width!=1280: self.click_visible('Controls')
+                self.click_visible('Try It!')
+                self.wait('window.machineGoalState().done',30)
+                self.assertIn('Goal reached',self.js('window.machineGoalState().verdict'))
+                # Challenge link: base and goal, without the author's pieces.
+                if width!=1280: self.click_visible('Design')
+                self.reveal_control("document.getElementById('goal-share')")
+                self.page.send('Browser.grantPermissions',{'permissions':['clipboardReadWrite','clipboardSanitizedWrite'],'origin':self.base})
+                self.js("document.getElementById('goal-share').click()")
+                self.wait('window.machineGoalState().link',10)
+                link=self.js('window.machineGoalState().link')
+                self.assertIn('#build=',link)
+                self.navigate(f"{self.base}/machine#build={link.split('#build=')[1]}")
+                self.wait(f"window.machineDesign()?.name?.startsWith('Challenge:') && {READY}",60)
+                self.assertEqual(self.js('window.machinePlacements()'),[])
+                self.assertEqual(self.js('window.machineDesign().draft.goal.done_when.in_zone.piece'),'marble')
+                # Undo after removing the goal brings it back.
+                if width!=1280: self.click_visible('Design')
+                self.click_summary('#design-goal summary')
+                self.press('Remove goal'); self.wait('!window.machineGoalState().goal',5)
+                self.press('Undo'); self.wait('Boolean(window.machineGoalState().goal)',10)
+
     def test_piece_library_search_filter_cancel_and_placement_on_desktop_and_phones(self):
         for width, height in ((1280, 860), (390, 844), (844, 390)):
             with self.subTest(viewport=(width, height)):
