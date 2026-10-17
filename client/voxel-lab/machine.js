@@ -5251,9 +5251,72 @@ window.machineTieRings = () => tieRings.children.map(r => r.position.toArray());
 function startTrayAttach() {
   if (ghost) cancelGhost();
   setAttach(true);
-  const card = $('attach-card');
-  card.replaceChildren(Object.assign(document.createElement('p'), {className: 'hint',
-    textContent: tiePoints().length ? 'Tap the gold tie ring, then tap the part to tie to it.' : 'Tap the first part where it should be tied, then tap the second part.'}), button('Cancel', () => setAttach(false)));
+  showAttachStep();
+}
+// Your own pieces that can be tied, each by its main moving body.
+function ownMovableParts(except) {
+  const rows = [];
+  placements.forEach((p, i) => {
+    if (['link', 'wire', 'power_cable'].includes(p.piece)) return;
+    const name = `your ${p.piece} ${i + 1}`, names = [...meshes.keys()];
+    const body = names.find(n => n === name) || names.find(n => n.startsWith(name + ' '));
+    if (!body || body === except || world.bodies.get(body)?.anchored) return;
+    const several = placements.filter(q => q.piece === p.piece).length > 1;
+    rows.push({name: body, label: `your ${pieceLabel(p.piece)}${several ? ' ' + (i + 1) : ''}`});
+  });
+  return rows;
+}
+// Where to tie on a part: the point of its surface facing `from` (the first
+// point picked) or the camera, found on its own mesh.
+function tiePointOn(name, from) {
+  const mesh = meshes.get(name), b = world.bodies.get(name);
+  if (!mesh || !b) return null;
+  freshView();
+  const center = new THREE.Vector3(...b.position_m), start = from ? new THREE.Vector3(...from) : camera.position.clone();
+  const toward = center.clone().sub(start);
+  const hit = toward.lengthSq() > 1e-12 && new THREE.Raycaster(start, toward.normalize()).intersectObject(mesh, true).find(h => h.object.isMesh);
+  return (hit ? hit.point : center).toArray().map(v => +v.toFixed(4));
+}
+// A fingertip is wider than a marble: a tap this close to one of your pieces
+// on screen picks it.
+function nearOwnPart(x, y, radius, except) {
+  freshView();
+  const rect = renderer.domElement.getBoundingClientRect();
+  let best = null;
+  for (const row of ownMovableParts(except)) {
+    const box = new THREE.Box3().setFromObject(meshes.get(row.name));
+    if (box.isEmpty()) continue;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const cx of [box.min.x, box.max.x]) for (const cy of [box.min.y, box.max.y]) for (const cz of [box.min.z, box.max.z]) {
+      const p = new THREE.Vector3(cx, cy, cz).project(camera);
+      const sx = rect.left + (p.x + 1) / 2 * rect.width, sy = rect.top + (1 - p.y) / 2 * rect.height;
+      x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+    }
+    const gap = Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(y0 - y, 0, y - y1));
+    if (gap <= radius && (!best || gap < best.gap)) best = {...row, gap};
+  }
+  return best;
+}
+function markAttach(part) {
+  attaching.push(part);
+  const dot = new THREE.Mesh(PORT_DOT, new THREE.MeshBasicMaterial({color: 0xffd34d, depthTest: false}));
+  dot.position.set(...part.at);
+  attachMark.add(dot);
+  if (attaching.length === 2) attachChoice(); else showAttachStep();
+}
+// The card while joining: what to tap next, and after the first point, your
+// pieces to choose from, so nothing small has to be hit with a finger.
+function showAttachStep(note = '') {
+  const card = $('attach-card'), first = attaching[0];
+  const ring = first && tiePoints().some(t => t.part === first.name && t.at_m.every((v, i) => Math.abs(v - first.at[i]) < 1e-6));
+  const text = !first ? (tiePoints().length ? 'Tap the gold tie ring, then tap the part to tie to it.' : 'Tap the first part where it should be tied, then tap the second part.')
+    : `${ring ? 'Tied at the tie ring' : `First point on ${first.name}`}. Now tap the part to tie to it${ownMovableParts(first.name).length ? ', or choose it here' : ''}.`;
+  card.replaceChildren(Object.assign(document.createElement('p'), {className: 'hint', textContent: note ? `${note} ${text}` : text}));
+  const row = Object.assign(document.createElement('div'), {className: 'actions'});
+  if (first) for (const part of ownMovableParts(first.name))
+    row.append(button(`Tie to ${part.label}`, () => markAttach({name: part.name, at: tiePointOn(part.name, first.at)})));
+  row.append(button('Cancel', () => setAttach(false)));
+  card.append(row);
   card.hidden = false;
 }
 $('pull-tool').addEventListener('click', () => { if (pullMode && attachMode) setAttach(false); });
@@ -5306,17 +5369,22 @@ function attachChoice() {
 }
 renderer.domElement.addEventListener('pointerup', e => {
   if (!attachMode || ghost || e.button !== 0 || cameraGesture || sceneDragged || !pressedAt || Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) >= 6) return;
-  const part = partAt(e.clientX, e.clientY);
-  if (!part || attaching.length >= 2 || (attaching[0] && attaching[0].name === part.name)) return;
+  if (attaching.length >= 2) return;
+  const first = attaching[0];
+  let part = partAt(e.clientX, e.clientY);
+  // A tap near one of your pieces picks it: in a lesson even over another
+  // part (a marble is a few pixels wide on a phone); in Sandbox only when
+  // nothing is under the tap.
+  if (!part || (!level?.free && !ownMovableParts(first?.name).some(r => r.name === part.name))) {
+    const near = nearOwnPart(e.clientX, e.clientY, e.pointerType === 'touch' ? 32 : 16, first?.name);
+    if (near) part = {name: near.name, at: tiePointOn(near.name, first?.at)};
+  }
+  if (!part) { showAttachStep('Nothing to tie there.'); return; }
+  if (first && first.name === part.name) return;
   // A lesson's tie ring: a tap on that part near it ties exactly there.
   const ring = tiePoints().find(t => t.part === part.name && Math.hypot(...t.at_m.map((v, i) => v - part.at[i])) <= (t.snap_m || .2));
   if (ring) part.at = [...ring.at_m];
-  attaching.push(part);
-  const dot = new THREE.Mesh(PORT_DOT, new THREE.MeshBasicMaterial({color: 0xffd34d, depthTest: false}));
-  dot.position.set(...part.at);
-  attachMark.add(dot);
-  $('clock').title = attaching.length === 1 ? `${part.name}: now press the part to join it to` : '';
-  if (attaching.length === 2) attachChoice();
+  markAttach(part);
 }, true);
 window.machineAttachState = () => ({on: attachMode, picked: attaching.map(p => p.name), card: !$('attach-card').hidden});
 

@@ -1353,6 +1353,21 @@ geometry and engine are unchanged. Browser check: placing the marble by drag,
 tapping the beam face and the marble, and choosing String wins with three
 stars (goal at 0.70 s) on desktop and portrait phone.
 
+Tying by touch (October 17, from a playtest report that tapping the rope part
+did nothing): at the lesson's default view the marble is about 6 px wide on a
+390×844 phone and 7 px on desktop, so after the ring a tap had to land exactly
+on it; a tap 10 px off did nothing on the phone and picked the trapdoor leaf on
+desktop. Now, in a lesson, a tap within 32 px (touch) or 16 px (mouse) of one of
+the player's own pieces picks that piece even over another part; in Sandbox only
+when nothing is under the tap. After the first point the join card offers each
+of the player's own moving pieces by name (**Tie to your marble**); the knot
+goes on the surface point facing the first point, found on the piece's mesh. A
+tap on nothing says so. Join card buttons are 44 px tall. Browser check
+(`test_rope_lesson_ties_by_touch_near_the_marble_or_by_choosing_it`): a near
+miss by touch on a portrait phone and the named choice on portrait and
+landscape phones each tie the marble and win; a mouse near miss over the
+trapdoor picks the marble.
+
 ## More contact and spring mechanisms
 
 October 13: the Sandbox library has **Hinged door**, **Trapdoor**,

@@ -181,7 +181,7 @@ body.reading-guide{overflow:hidden}
 #free-actions{flex-wrap:wrap}
 .attach-card p{margin:0 0 6px}
 .attach-card .actions{display:flex;flex-wrap:wrap;gap:6px}
-.attach-card button{min-height:40px;padding:6px 10px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer;font:14px system-ui}
+.attach-card button{min-height:44px;padding:6px 10px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;cursor:pointer;font:14px system-ui}
 #attach-tool[aria-pressed=true]{background:#6b5a1f;border-color:#ffd34d}
 #view.attaching canvas{cursor:crosshair}
 .level-done h2{margin:0 0 4px;font-size:22px}

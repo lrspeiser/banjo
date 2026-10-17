@@ -2128,6 +2128,53 @@ class Puzzles(unittest.TestCase):
                 print('ROPE_RESULT',json.dumps({'done':self.js("document.getElementById('level-done').textContent"),'verdict':self.js("document.getElementById('verdict').textContent"),'link':self.js("window.machinePlacements().find(p=>p.piece==='link')")}),flush=True)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
 
+    def test_rope_lesson_ties_by_touch_near_the_marble_or_by_choosing_it(self):
+        # Playtest: on a phone the marble is a few pixels wide, so after the
+        # tie ring a tap had to land exactly on it and a near miss did nothing
+        # (or picked the trapdoor). A tap near your piece now picks it, and the
+        # card offers it by name.
+        def tap(x,y):
+            self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y,'id':1}]})
+            time.sleep(.05)
+            self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+            self.paint()
+        for width,height,how in ((390,844,'near'),(844,390,'button'),(390,844,'button')):
+            with self.subTest(viewport=(width,height),how=how):
+                self.open('easy-rope',width,height,phone=True)
+                self.press('Add a marble');self.ghost()
+                self.slide('Position along (m) of your marble 1',-.5);self.slide('Position across (m) of your marble 1',0)
+                self.assertTrue(self.ghost()['fits'])
+                self.click_visible('Place');self.wait(READY,30);self.paint()
+                self.press('Add a string')
+                self.wait("!document.getElementById('attach-card').hidden",5)
+                tap(*self.js("window.machineScreenPoint([0,1.43,.08])"))
+                self.wait("machineAttachState().picked.length===1",5)
+                self.assertIn('tie ring',self.js("document.getElementById('attach-card').textContent"))
+                if how=='near':
+                    marble=self.js("window.machineBodyScreen('your marble 1')")
+                    tap(marble[0]+10,marble[1]-6)
+                else:
+                    self.click_visible('Tie to your marble')
+                self.wait("machineAttachState().picked.length===2",5)
+                self.assertEqual(self.js('machineAttachState().picked'),['frame beam','your marble 1'])
+                self.press('Tie them with a string')
+                self.wait(f"window.machinePlacements().some(p=>p.piece==='link'&&p.kind==='string'&&p.b==='your marble 1') && {READY}",30)
+                self.click_visible('Try It!')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+        # With a mouse, a near miss over the trapdoor picks your marble, not the trapdoor.
+        self.open('easy-rope')
+        self.press('Add a marble');self.ghost()
+        self.slide('Position along (m) of your marble 1',-.5);self.slide('Position across (m) of your marble 1',0)
+        self.click_visible('Place');self.wait(READY,30);self.paint()
+        self.press('Add a string')
+        ring=self.js("window.machineScreenPoint([0,1.43,.08])")
+        self.mouse('mousePressed',*ring);self.mouse('mouseReleased',*ring)
+        marble=self.js("window.machineBodyScreen('your marble 1')")
+        self.mouse('mousePressed',marble[0]+10,marble[1]-6);self.mouse('mouseReleased',marble[0]+10,marble[1]-6)
+        self.wait("machineAttachState().picked.length===2",5)
+        self.assertEqual(self.js('machineAttachState().picked'),['frame beam','your marble 1'])
+
     def test_run_waits_for_latest_placement_check_and_cancelling_cancels_the_run(self):
         self.open('laser')
         self.press('Add a mirror'); self.ghost()
