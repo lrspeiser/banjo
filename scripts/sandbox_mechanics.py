@@ -467,7 +467,7 @@ _spring_lesson['release_to_start']=True
 _spring_lesson['camera_min_m']=1.1
 _spring_lesson['par_energy_j']=137614000
 _spring_lesson['brief']='Place the spring under the oak box, increase its relaxed length to compress it, then release its latch to push the box above the green mark.'
-_spring_lesson['hints']=[_spring_lesson['brief'],'The narrow push plate must fit between the two cradle forks. Try It! readies the spring; Release spring beside it starts the run.']
+_spring_lesson['hints']=[_spring_lesson['brief'],'The narrow push plate must fit between the two cradle forks. Run readies the spring; Release spring beside it starts the run.']
 _latched_example=copy.deepcopy(_spring_lesson['machine'])
 _latched_example['stations']=[dict(title='The box rises',done_when=copy.deepcopy(_spring_lesson['goal']['station']['done_when']))]
 TEMPLATES.append(dict(name='Latch and lift',description='Aim a compressed spring under a waiting box, then release its latch. The push plate lifts the box through contact.',

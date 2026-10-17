@@ -583,7 +583,7 @@ def heater_setup_guide(level, spec, editing, targets):
                 return step(f'Click the other {mark} ring to finish this lead.', 'socket:'+(b if p['a_terminal']==a else a))
             return step(f'Click supply {mark}, then heater {mark}, to draw the {"feed" if terminal=="plus" else "return"} wire.', 'socket:'+a, 'socket:'+b) or step(
                 'Zoom out to bring both wire connection rings into view, then choose Next hint.', 'control:view-out')
-    return step('Press Try It! Watch the heater’s watts and the cord’s temperature as current heats it.', 'control:start')
+    return step('Press Run. Watch the heater’s watts and the cord’s temperature as current heats it.', 'control:start')
 
 
 def respond_coach(level, placements, ui=None, last_run=None, call=None):

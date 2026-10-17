@@ -55,14 +55,30 @@ tolerance are unchanged; Sandbox gains optional player goals):
   optional). The last search and category persist while the page is open.
   Search matches every typed word against the name, description, category and
   a short list of everyday words (ball, board, rope, cog, lamp...).
-* **Build / Tune / Run.** A three-part switch (44 px buttons) sits beside
-  Reset when the page is at least 700 px wide, and at the top of the Controls
-  panel on narrower phones (an overlay inside a phone's scene covered pieces). The mode is derived from state: Run while a machine runs or
+* **Build ▸ Tune ▸ Run.** A three-step switch (44 px buttons, small arrows
+  between the steps) sits in the middle of the bar above the scene on every
+  screen. The mode is derived from state: Run while a machine runs or
   has run (world time above zero), Tune while a selected piece is on its
   adjustment controls or Tune was chosen, otherwise Build. Tune hides the scene
   tray and opens the last edited piece; Build after a run is **Restart with my
-  pieces**; Run presses Try It!. Live device controls (for example Release
-  spring) are unchanged.
+  pieces**. **Run** is the start button itself (`#start`); there is no
+  separate Try It! button. It reads **Pause** while the machine runs, then
+  **Run** again: it continues a paused run and, after a run is over, runs the
+  setup again from the start. A missed run keeps it in place; the result card
+  still offers Try again and Ask for Help. Live device controls (for example
+  Release spring) are unchanged.
+* **One bar above the scene (October 17, owner request).** From 900 px wide
+  the bar is one row: Reset, Controls/Help (and Design in Sandbox) and Undo on
+  the left, Build ▸ Tune ▸ Run in the middle, and the camera controls (turn,
+  tilt, zoom) on the right, so the scene gains the height of the camera row
+  that used to sit over its top. Redo appears beside Undo only when there is
+  something to redo. Narrower, the bar holds Reset, the switch and the tabs
+  (the tabs drop to a second row in Sandbox and below 360 px), and the camera
+  row stays along the top of the scene. Browser checks:
+  `test_header_and_camera_share_single_rows_without_an_idle_banner` (one row of
+  44 px buttons at 1280×860), `test_build_tune_run_switch_follows_and_changes_what_the_player_is_doing`
+  and `test_scene_and_action_bar_above_it_share_one_layout_on_desktop_and_phones`
+  (the switch centred, clear of Reset and the tabs, at 1440 to 320 px wide).
 * **Move grip and local guides.** A 36 px gold grip marks the centre of a
   movable selected piece (display only; the scene drag is unchanged). Axis
   guides extend 3× the piece's size (0.8–4 m) unless Precision controls are open,

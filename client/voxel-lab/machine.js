@@ -583,7 +583,7 @@ async function pickTerminal(name,fromScene=false) {
     if (!g.fits) { powerMessage(g.problems.join(' · ')); return; }
     if (placeGhost()) {
       await rebuildLevel(false);
-      if (level === sourceLevel) powerMessage('Wire connected. Try It! to try the circuit.',!fromScene);
+      if (level === sourceLevel) powerMessage('Wire connected. Run to try the circuit.',!fromScene);
     }
   } catch (e) { powerMessage(e.message); }
   finally { terminalBusy = false; positionTerminalLabels(); }
@@ -1086,7 +1086,7 @@ async function pickPowerPort(port,fromScene=false) {
       askGhost();while(ghost===g && g.busy)await g.check;
       if(ghost!==g || level!==sourceLevel)return;
       if(!g.fits){powerMessage(g.problems.join(' · '));return;}
-      if(placeGhost()){await rebuildLevel(false);setWiringMode(false);powerMessage('Power cable connected. Try It! to try the machine.',!fromScene);}
+      if(placeGhost()){await rebuildLevel(false);setWiringMode(false);powerMessage('Power cable connected. Run to try the machine.',!fromScene);}
     } catch(e){powerMessage(e.message);}
     finally{powerBusy=false;terminalBusy=false;updatePowerLabels();}
     return;
@@ -1113,7 +1113,7 @@ async function pickPowerPort(port,fromScene=false) {
     remember(); placements = next; pickedPowerPort = null; renderTray(); renderPlaced();
     await rebuildLevel(false);
     setWiringMode(false);
-    if (level === sourceLevel && activeDesign?.id === designId) powerMessage('Power cable connected. Try It! to try the machine.',!fromScene);
+    if (level === sourceLevel && activeDesign?.id === designId) powerMessage('Power cable connected. Run to try the machine.',!fromScene);
   } catch (e) { powerMessage(e.message); }
   finally { powerBusy = false; updatePowerLabels(); }
 }
@@ -1770,20 +1770,21 @@ function updateTrialEmphasis() {
     .some(([piece, count]) => (counts[piece] || 0) < count);
   const incomplete = Boolean(missing && !world.playing && world.t === 0);
   $('start').classList.toggle('setup-incomplete', incomplete);
-  $('start').title = incomplete ? 'Place the required pieces first, or try your setup now' : '';
+  if (incomplete) $('start').title = 'Place the required pieces first, or run your setup now';
 }
 function renderClock(frame) {
   const behind = frame.pace.behind_s;
   // A level runs at real time, so its clock leaves the speed out.
   let text = `World ${describeTime(frame.t)} · ` + (LEVEL_MODE ? '' : `${frame.speed}× · `) + (frame.error ? 'stopped: ' + frame.error :
     frame.playing ? 'calculating live' : frame.t > 0 ? (LEVEL_MODE && scored ? 'run over' : 'paused')
-    : LEVEL_MODE ? 'ready: press Try It!'+(level?.release_to_start&&machine?.joints.some(j=>j.name.endsWith(' restraint'))&&!ghost?' · Release spring to start':'') : 'ready: press Start');
+    : LEVEL_MODE ? 'ready: press Run'+(level?.release_to_start&&machine?.joints.some(j=>j.name.endsWith(' restraint'))&&!ghost?' · Release spring to start':'') : 'ready: press Start');
   if (frame.playing && behind > .25) text += ` · ${behind.toFixed(1)} s behind real time while the engine works`;
   clockMessage(text);
   $('clock').hidden = !frame.error && !frame.playing && frame.t === 0;
-  $('start').hidden=Boolean(LEVEL_MODE&&scored&&lastRun&&lastRun.goal_at_s==null);
-  $('start').textContent = frame.playing ? 'Pause' : !LEVEL_MODE ? (frame.t > 0 ? 'Continue' : 'Start')
-    : frame.t > 0 ? (scored ? 'Try It!' : 'Continue') : 'Try It!';
+  // Run is the switch's last step: it starts the machine, pauses it while it
+  // runs and continues or runs it again from there.
+  $('start').textContent = frame.playing ? 'Pause' : 'Run';
+  $('start').title = frame.playing ? 'Pause the machine' : frame.t > 0 && !scored ? 'Continue the run' : 'Run your machine';
   updateTrialEmphasis();
 }
 
@@ -1858,7 +1859,7 @@ async function build(next, start, request) {
   } catch (e) {
     if (mine !== polling) return {};
     clockMessage(e.data?.code === 'site_busy'
-      ? 'Simulation busy. Close another game tab or wait a moment, then press Try It!.'
+      ? 'Simulation busy. Close another game tab or wait a moment, then press Run.'
       : 'Could not build: ' + e.message);
     if(e.data?.code==='site_busy')showTestBusy();
     if (e.data && e.data.problems) addEvents(e.data.problems.map(text => ({t: 0, text})));
@@ -1999,6 +2000,11 @@ function recordDrawing(step) {
       const w = wires.find(row => row.name === name), segments = w?.drawnSegments || w?.mechanicalSample?.segments_m;
       return [name, segments ? [segments[0][0], segments.at(-1)[1]] : null];
     })),
+    cable_state: Object.fromEntries(drawingRecord.cables.map(name => {
+      const w = wires.find(row => row.name === name), s = w?.mechanicalSample;
+      return [name, s ? {blended: Boolean(w.drawnSegments), attached: s.attached ?? null, connected: s.connected ?? null,
+        peak_terminal_force_n: s.peak_terminal_force_n ?? null, retention_n: s.retention_n ?? null} : null];
+    })),
     ports: Object.fromEntries(drawingRecord.ports.map(name => [name, portOf(name) ? powerPortAt(portOf(name)) : null]))});
 }
 window.machinePlaybackState = () => ({shown_t: playback.shown, applied_t: playback.applied, newest_t: playback.newest,
@@ -2028,7 +2034,7 @@ async function poll(mine) {
     } catch (e) {
       if (mine !== polling) return;
       if (e.status === 410) {
-        clockMessage(LEVEL_MODE ? 'The server closed this level while it sat idle; press Try It! to build it again'
+        clockMessage(LEVEL_MODE ? 'The server closed this level while it sat idle; press Run to build it again'
           : 'This machine stopped running on the server; press Set up again');
         showTestBusy('Test simulation moved');
         session = null; return;
@@ -2256,7 +2262,7 @@ $('reset').addEventListener('click', () => {
   else build(spec).catch(() => {});
 });
 $('restart-pieces').addEventListener('click', () => resetGame(true));
-for (const name of ['build', 'tune', 'run']) $('mode-' + name + '-tab').addEventListener('click', () => choosePlayMode(name));
+for (const name of ['build', 'tune']) $('mode-' + name + '-tab').addEventListener('click', () => choosePlayMode(name));
 $('speed').addEventListener('change', () => { if (session) api({op: 'play', session, running: playing, speed: Number($('speed').value)}).catch(() => {}); });
 $('follow').addEventListener('click', () => { follow = !follow; $('follow').setAttribute('aria-pressed', String(follow)); if (!follow) goal.copy(target); });
 // Press a station to look at it. The list is drawn again with every frame, so
@@ -2477,12 +2483,12 @@ let padAxes = '';
 let looking = false;
 let editorMode = 'move', lastEdited = null;
 
-// Build / Tune / Run: one small switch under the camera controls says what
-// the player is doing and keeps the other controls out of the way. Run is
-// Try It!; Build returns a run to time zero with your pieces; Tune opens the
-// size and setting controls of the selected (or last edited) piece.
+// Build ▸ Tune ▸ Run: one small switch in the bar above the scene says what
+// the player is doing and keeps the other controls out of the way. Run is the
+// start button itself (#start: run, pause, continue); Build returns a run to
+// time zero with your pieces; Tune opens the size and setting controls of the
+// selected (or last edited) piece.
 let tuneArmed = false, shownMode = '';
-const wideModeBar = matchMedia('(min-width: 700px)');
 function currentMode() {
   if (playing || world.t > 0) return 'run';
   if (tuneArmed || (ghost && editorMode === 'adjust')) return 'tune';
@@ -2497,17 +2503,15 @@ function renderPlayMode() {
   const mode = currentMode();
   if (mode !== shownMode) {
     shownMode = mode; document.body.dataset.mode = mode;
-    for (const name of ['build', 'tune', 'run']) $('mode-' + name + '-tab').setAttribute('aria-pressed', String(name === mode));
+    for (const name of ['build', 'tune', 'run']) $(name === 'run' ? 'start' : 'mode-' + name + '-tab').setAttribute('aria-pressed', String(name === mode));
     $('play-mode-hint').textContent = mode === 'tune' && !ghost ? 'Tap a piece to tune it' : MODE_HINTS[mode];
   }
   if (mode === 'tune') $('play-mode-hint').textContent = ghost ? MODE_HINTS.tune : placements.length ? 'Tap a piece to tune it' : 'Place a piece first';
-  // Wide screens: in the toolbar beside Reset. Narrow phones: just below the
-  // camera and history controls, where a tall scene has room.
-  // Wide screens: in the toolbar beside Reset. Narrow phones: at the top of
-  // the controls below the scene, where it never covers a piece.
-  const inToolbar = wideModeBar.matches && !$('phone-toolbar').hidden;
-  const home = inToolbar ? $('phone-toolbar') : $('control-panel');
-  if (box.parentElement !== home) { if (inToolbar) home.append(box); else home.prepend(box); }
+  // In the middle of the bar above the scene, where Run stays beside the
+  // 3D view on every screen.
+  const inToolbar = !$('phone-toolbar').hidden && Boolean($('toolbar-left'));
+  if (inToolbar && box.previousElementSibling !== $('toolbar-left')) $('toolbar-left').after(box);
+  else if (!inToolbar && box.parentElement !== $('control-panel')) $('control-panel').prepend(box);
   box.classList.toggle('in-toolbar', inToolbar);
   box.classList.toggle('in-panel', !inToolbar);
 }
@@ -5802,7 +5806,7 @@ $('goal-here').addEventListener('click', () => {
   activeDesign.draft.goal = {title: label, done_when: {in_zone: {...(kind === 'piece' ? {piece: name} : {part: name}),
     at_m: [Math.round(target.x * 100) / 100, Math.round(Math.max(size * .375, target.y) * 100) / 100, Math.round(target.z * 100) / 100],
     size_m: [size, size * .75, size]}}};
-  keepBuild(); scheduleRebuild(0); goalStatus('Goal zone set where the view is centred. Press Try It! to test it.');
+  keepBuild(); scheduleRebuild(0); goalStatus('Goal zone set where the view is centred. Press Run to test it.');
   renderGoalControls();
 });
 $('goal-clear').addEventListener('click', () => {
@@ -6108,7 +6112,7 @@ function renderMachineControls() {
         await liveControlRequest;
         if(operation.op==='release_joint')b.dataset.queuedRelease='true';
         if(autoStart&&!playing){liveControlPending=false;await setPlaying(true);}
-        showDeviceControlStatus(playing?'Applying at the next engine step.':'Queued. Choose Try It! to continue.',b); if (wake) wake();
+        showDeviceControlStatus(playing?'Applying at the next engine step.':'Queued. Choose Run to continue.',b); if (wake) wake();
       }
       catch (e) { liveControlPending = false;showDeviceControlStatus(e.message,b); }
       finally { b.disabled = b.dataset.queuedRelease==='true'; }
@@ -6125,7 +6129,7 @@ function renderMachineControls() {
       input.addEventListener('input',()=>{output.textContent=`${input.value}%`;});
       input.addEventListener('change',async()=>{
         try {liveControlPending=true;liveControlRequest=api({op:'water_opening',session,name:source.name,fraction:Number(input.value)/100});
-          await liveControlRequest;showDeviceControlStatus(playing?'Applying tap opening.':'Opening queued. Choose Try It! to continue.',input);if(wake)wake();}
+          await liveControlRequest;showDeviceControlStatus(playing?'Applying tap opening.':'Opening queued. Choose Run to continue.',input);if(wake)wake();}
         catch(error){liveControlPending=false;showDeviceControlStatus(error.message,input);}
       });
       label.append(input,output);beside(label,source.name.replace(/ outlet$/,''),source.at_m);continue;
@@ -6547,7 +6551,7 @@ function startOver(keep) {
   renderTray(); renderPlaced();
   return rebuildLevel(false).then(() => {
     if (!$('verdict').textContent) $('verdict').textContent = keep
-      ? 'Back to the start, with your pieces: pick one up to move or change it, then Try It!.'
+      ? 'Back to the start, with your pieces: pick one up to move or change it, then Run.'
       : 'Back to the start: add a piece from your tray.';
     sceneIntoView();
   });
@@ -6893,7 +6897,7 @@ async function askFree() {
       // A marble that opens a gate is spent on the floor: most on a piece is a build that works.
       say(2 * onPieces.length > ended.length ? 'model' : 'refused', `Rehearsed once in the engine: ${onPieces.length} of ${ended.length} ` +
         `marbles ended on a piece${onPieces.length ? ` (${[...new Set(onPieces.map(e => e.on))].join(', ')})` : ''}` +
-        (onPieces.length < ended.length ? `, ${ended.length - onPieces.length} on the ground` : '') + '. Choose Try It! to watch, and move what needs moving.');
+        (onPieces.length < ended.length ? `, ${ended.length - onPieces.length} on the ground` : '') + '. Choose Run to watch, and move what needs moving.');
     }
     $('message').value = '';
     framedFree = false;
@@ -7117,7 +7121,7 @@ async function askLevel(mode, {popup=false,message:requestedMessage}={}) {
       endGhost(); remember();
       placements = r.placements.map(p => { const q = {...p}; delete q.cost; return q; });
       helped = true; renderTray(); renderPlaced();
-      if (r.rehearsal && level.free) say(r.rehearsal.error?'refused':'model',r.rehearsal.error?`Engine check: ${r.rehearsal.error}`:'Built and checked in the engine. Choose Try It! to watch.');
+      if (r.rehearsal && level.free) say(r.rehearsal.error?'refused':'model',r.rehearsal.error?`Engine check: ${r.rehearsal.error}`:'Built and checked in the engine. Choose Run to watch.');
       else if (r.rehearsal) say(r.rehearsal.manual_input_required || r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.manual_input_required
         ? `Setup checked. ${r.rehearsal.manual_input_label || 'Drag the field handle'} to try the machine.` : r.rehearsal.goal_at_s != null
         ? `Rehearsed once in the engine: the goal happened at ${describeTime(r.rehearsal.goal_at_s)}.`
@@ -7231,7 +7235,7 @@ function installPhonePanels() {
     const mobile = phoneLayout.matches;
     document.body.classList.toggle('phone-panels',mobile);
     $('phone-toolbar').hidden = false;
-    $('phone-runbar').append($('start'),$('reset'));
+    $('phone-runbar').append($('reset'));
     $('reset').textContent = 'Reset';
     $('reset').setAttribute('aria-label','Reset');
     $('reset').title = level?.free ? 'Return your machine to time zero' : 'Start the level over; Undo recovers your pieces';
@@ -7248,6 +7252,24 @@ function installPhonePanels() {
     if(next!==null){e.preventDefault();e.stopPropagation();selectPhonePanel(names[next],true);}
   });
   phoneLayout.addEventListener('change',update); update();
+  const left=Object.assign(document.createElement('div'),{id:'toolbar-left'}),right=Object.assign(document.createElement('div'),{id:'toolbar-right'});
+  $('phone-toolbar').append(left,right);
+  oneRowToolbar.addEventListener('change',layoutToolbar); layoutToolbar();
+}
+// The bar above the scene. From 900 px wide it is one row: Reset, the panel
+// tabs and Undo on the left, Build ▸ Tune ▸ Run in the middle and the camera
+// controls on the right, so the scene keeps the height of a second row.
+// Narrower, the bar holds Reset, the switch and the tabs, and the camera row
+// runs along the top of the scene.
+const oneRowToolbar = matchMedia('(min-width: 900px)');
+function layoutToolbar() {
+  const wide = oneRowToolbar.matches;
+  $('phone-toolbar').classList.toggle('one-row', wide);
+  $('toolbar-left').append($('phone-runbar'), ...(wide ? [$('phone-tabs'), $('viewer-history')] : []));
+  $('toolbar-right').append(...(wide ? [$('viewer-perspective'), $('viewer-zoom')] : [$('phone-tabs')]));
+  if (!wide) $('viewer-corner').append($('viewer-history'), $('viewer-perspective'), $('viewer-zoom'));
+  $('viewer-corner').hidden = wide;
+  renderPlayMode(); resize();
 }
 
 async function startGame() {
@@ -7317,9 +7339,9 @@ function ghostInTheWay() {
   if (bar) { bar.className = 'state refused'; bar.textContent = said; }
   return true;
 }
-// A level's one button, over the scene: Try It! builds the level afresh with
+// Run, the last step of Build ▸ Tune ▸ Run: it builds the level afresh with
 // the pieces and plays it; while it plays it pauses, then continues; after
-// the run, Try It!.
+// the run, it runs it again.
 let startingRun = false;
 async function runLevel() {
   const failed = e => { clockMessage(e.message); };

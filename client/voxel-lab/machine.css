@@ -991,3 +991,31 @@ body[data-mode=run] #scene-tray,body[data-mode=tune] #scene-tray{display:none!im
 .tray-picture.tray-join{display:flex;align-items:center;justify-content:center;font-size:40px}
 /* A return link this server does not have: the game still opens, and says so. */
 .levels-notice{margin:0 0 12px;padding:8px 12px;border:1px solid #d9a441;border-radius:8px;background:#3a2c10;color:#ffe9c2;font-size:15px;line-height:1.4}
+/* Build ▸ Tune ▸ Run in the middle of the bar above the scene. Run (#start)
+   is the switch's last step: it starts, pauses and continues the machine,
+   so there is no separate Try It! button. October 17. */
+#play-mode .mode-arrow{color:#7f9aab;font-size:13px;line-height:1;padding:0 1px;user-select:none}
+body.panel-tabs #phone-toolbar{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr)}
+#toolbar-left,#toolbar-right{display:flex;align-items:center;gap:4px;min-width:0;grid-row:1}
+#toolbar-left{grid-column:1;justify-self:start}
+#toolbar-right{grid-column:3;justify-self:end}
+body.panel-tabs #phone-runbar{display:flex;flex:none}
+#play-mode.in-toolbar{grid-column:2;grid-row:1;justify-self:center;margin:0}
+#play-mode #start{min-height:44px;min-width:56px;padding:4px 12px;border:1px solid #3d5b6d;border-radius:20px;box-sizing:border-box;height:44px;background:transparent;color:#cfe0ea;font:600 14px system-ui;cursor:pointer;width:auto}
+#play-mode #start:not([aria-pressed=true]):not(.setup-incomplete){border-color:#6fc39a;color:#eafff3;box-shadow:inset 0 0 0 1px #6fc39a}
+#play-mode #start[aria-pressed=true]{background:#1d4f6b;color:#fff;border-color:#8fc8e6}
+@media(max-width:599px){#play-mode button{min-width:44px;padding:4px 8px;font-size:13px}#play-mode #start{min-width:48px;padding:4px 8px;font-size:13px}#play-mode .mode-arrow{padding:0}}
+/* Sandbox's three tabs, and the narrowest phones, take a second row. */
+@media(max-width:599px){body.panel-tabs #phone-toolbar:has(#phone-design-tab:not([hidden])) #toolbar-right{grid-column:1/-1;grid-row:2;justify-self:end}}
+@media(max-width:359px){body.panel-tabs #toolbar-right{grid-column:1/-1;grid-row:2;justify-self:end}}
+/* One row from 900 px wide: the camera controls leave the scene for the bar. */
+body.panel-tabs #phone-toolbar.one-row{padding:4px max(8px,calc((100% - 1240px)/2))}
+#phone-toolbar.one-row #phone-tabs{flex:none;order:0;margin-left:0}
+#phone-toolbar.one-row #viewer-history{order:1}
+#phone-toolbar.one-row #viewer-history,#phone-toolbar.one-row #viewer-perspective,#phone-toolbar.one-row #viewer-zoom{position:static;display:flex;align-items:center;gap:2px;background:none;transform:none}
+#phone-toolbar.one-row #viewer-zoom{width:180px}
+#phone-toolbar.one-row #view-zoom{width:0;min-width:44px;flex:1;margin:0}
+#phone-toolbar.one-row #viewer-perspective button,#phone-toolbar.one-row #viewer-zoom button{width:44px;padding:2px;font-size:16px}
+#phone-toolbar.one-row #redo-pieces:disabled{display:none}
+#viewer-corner[hidden]{display:none}
+body.panel-tabs:has(#phone-toolbar.one-row) #view #clock{top:6px}

@@ -384,7 +384,7 @@ export function blendPose(a, b, fraction) {
 // and each body is drawn between that frame and the next one already received.
 // Nothing is drawn past the newest frame and nothing is predicted; when frames
 // stop, the drawing stops at the last one. Frames that do not advance world
-// time (a paused run, cords settling before Try It!) are applied at once.
+// time (a paused run, cords settling before Run) are applied at once.
 export class FramePlayback {
   constructor() { this.reset(0, 0); }
   reset(t = 0, now = 0) {
