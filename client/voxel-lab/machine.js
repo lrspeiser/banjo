@@ -3302,7 +3302,9 @@ function setGhostDown() {
 function canAddAnother() {
   if (!ghost || !level || ghost.was || ghost.rewireKey || ghost.baseObject || ['wire', 'power_cable', 'link'].includes(ghost.p.piece)) return false;
   if (level.free) return true;
-  return level.tray.some(t => !t.attach && !t.legacy && piecesLeft(t) - (t.piece === ghost.p.piece && !ghost.was ? 1 : 0) > 0);
+  // A cable, wire or string is a connection, not a next piece.
+  return level.tray.some(t => !t.attach && !t.legacy && !['wire', 'power_cable', 'link'].includes(t.piece) &&
+    piecesLeft(t) - (t.piece === ghost.p.piece && !ghost.was ? 1 : 0) > 0);
 }
 function addAnother() {
   if (!ghost || !(ghost.fits && ghost.answered && !ghost.busy)) return;

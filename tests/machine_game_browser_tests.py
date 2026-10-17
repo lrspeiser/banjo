@@ -2110,10 +2110,14 @@ class Puzzles(unittest.TestCase):
             with self.subTest(viewport=(width,height)):
                 self.open('free',width,height,phone=phone)
                 self.press('Add a marble');self.ghost()
+                if height<500:
+                    # No room for another row on a short screen; the library
+                    # still places the piece first.
+                    self.assertFalse(self.js("document.querySelector('#piece-editor .add-another').checkVisibility()"))
+                    self.press('Throw the ghost away');continue
                 self.wait("Boolean(document.querySelector('#piece-editor .add-another:not(:disabled)'))",10)
-                another=self.js("(()=>{const b=document.querySelector('#piece-editor .add-another'),r=b.getBoundingClientRect();return {w:r.width,h:r.height,label:getComputedStyle(b.querySelector('.add-another-label')).display};})()")
+                another=self.js("(()=>{const b=document.querySelector('#piece-editor .add-another'),r=b.getBoundingClientRect();return {w:r.width,h:r.height};})()")
                 self.assertGreaterEqual(another['w'],44);self.assertGreaterEqual(another['h'],44)
-                if height<500:self.assertEqual(another['label'],'none','a short screen shows only the +')
                 before=len(self.js('machinePlacements()'))
                 self.click_visible('Add another')
                 self.wait("document.getElementById('piece-picker').open",10)

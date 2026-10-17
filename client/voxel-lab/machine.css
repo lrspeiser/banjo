@@ -1032,10 +1032,12 @@ body.panel-tabs:has(#phone-toolbar.one-row) #view #clock{top:6px}
 @media (prefers-reduced-motion:no-preference){.string-end:not(.over) .string-end-ring{animation:string-end-call 1.6s ease-in-out infinite}}
 @keyframes string-end-call{50%{box-shadow:0 0 0 2px #142836aa,0 0 16px #ffd34dcc}}
 /* Add another, a row under Place: places this piece and goes straight on to
-   the next one. On a short landscape screen only its + shows. October 17. */
+   the next one. October 17. */
 #piece-editor>.add-another{flex:none;width:100%;min-height:44px;font-size:13px;background:#1d4a5f;border-color:#78b6ce;white-space:nowrap}
 #piece-editor>.add-another:disabled{opacity:.55}
-@media(max-height:500px){#piece-editor .add-another-label{display:none}#piece-editor .add-another-mark{font-size:22px;line-height:1}}
+/* A short screen has no room for another row beside the piece (it would
+   reach the camera row); opening the library places the piece first anyway. */
+@media(max-height:500px){#piece-editor>.add-another{display:none}}
 /* Live controls on a machine (Release spring, valves) are teal, like the
    glow on the part they work, apart from the blue editing controls. */
 .device-live-card{border-color:#46c2b0}

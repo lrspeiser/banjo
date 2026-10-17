@@ -56,7 +56,10 @@ tolerance are unchanged; Sandbox gains optional player goals):
   (October 17) is a full-width row under the piece toolbar, shown while the
   tray has something left to add after the selected piece: it places the piece
   and opens the library (Sandbox) or brings up the scene tray (a lesson with a
-  small tray). On a short landscape screen only its **+** shows. (An earlier
+  small tray). Cables, wires and strings do not count as a next piece. It is
+  hidden on screens 500 px tall or less, where the extra row reached the
+  camera controls and covered Place (CI, Sun lesson at 844×390); there the
+  library still places the piece first. (An earlier
   **+** inside the toolbar row was removed because it widened the editor past
   the screen edge; a row of its own keeps the 250 px width.) Browser check:
   `test_add_another_places_the_piece_then_offers_the_next` at 1280×860, 390×844
