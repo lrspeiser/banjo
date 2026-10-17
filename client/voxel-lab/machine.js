@@ -2277,7 +2277,7 @@ function hiddenPiece(name) { return ghost?.baseObject ? ghost.baseObject.parts.i
 function ghostPlacements() { const list = placements.slice(); if(!ghost.baseObject)list[ghost.index] = ghost.p; return list; }
 
 // A knob set as its slider would set it: on its step, within its range.
-function setKnob(p, key, v) {
+function setKnob(p, key, v, exact=false) {
   const r = trayItem(p.piece).knobs[key];
   if(r?.choices) {
     if(!r.choices.includes(v) || p[key]===v)return false;
@@ -2287,7 +2287,9 @@ function setKnob(p, key, v) {
   if (r.turning) v = ((v + 180) % 360 + 360) % 360 - 180;
   // On its step counted from its minimum, as the slider steps.
   const step = r.step || 0.01;
-  const next = Number(Math.min(r.max, Math.max(r.min, r.min + Math.round((v - r.min) / step) * step)).toFixed(4));
+  // A flush snap (like pieces meeting) is kept as the server measured it:
+  // rounded to a 1 cm step, a turned plank would overlap its neighbour.
+  const next = Number(Math.min(r.max, Math.max(r.min, exact ? v : r.min + Math.round((v - r.min) / step) * step)).toFixed(4));
   if (next === p[key]) return false;
   p[key] = next;
   if (ghost?.p===p && (key==='x_m'||key==='z_m')) ghost.gridLocks=null;
@@ -2951,7 +2953,7 @@ async function checkGhost(g) {
     // Moved by hand near where it connects to another piece: put where the
     // two connect, and asked about again there.
     if (r.snap && r.snap.moved && snapping && objectSnapEnabled && !g.again) {
-      const moved = Object.entries(r.snap.knobs).map(([k, v]) => setKnob(g.p, k, v)).some(Boolean);
+      const moved = Object.entries(r.snap.knobs).map(([k, v]) => setKnob(g.p, k, v, Boolean(r.snap.exact))).some(Boolean);
       if (moved) { followGhost(); showGhostKnobs(); g.again = true; }
     }
     Object.assign(g, {fits: r.fits, problems: r.problems, cost: r.cost, sun: r.sun || [], energy: r.energy, drawnAt: sent, answered: true,

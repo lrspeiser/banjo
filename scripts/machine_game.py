@@ -396,6 +396,12 @@ def _plank(name, k, ctx):
             'turn_deg': mw.turn_of(mw.heading(*angles)), 'fixed': False}
     axes, half = mw._axes(part), mw._half(part)
     ext = [sum(abs(axes[j][i]) * half[j] for j in range(3)) for i in range(3)]
+    if angles[0] % 90 and not angles[1] and not angles[2]:
+        # Turned only about the vertical, off the axes: its own outline, not
+        # the square round it, decides what it lands on, so a plank laid end
+        # to end with a turned one lies beside it rather than up on it.
+        part['at_m'][1] = round(rest_height(part, ctx['parts'], gap=0.002), 4)
+        return {'parts': [part]}
     rest = set_down_height(ctx['parts'], x - ext[0], x + ext[0], z - ext[2], z + ext[2])
     part['at_m'][1] = round(rest + ext[1] + 0.002, 4)
     return {'parts': [part]}
@@ -1051,9 +1057,11 @@ def _forward(p):
     return [math.cos(yaw), 0.0, -math.sin(yaw)]
 
 
-def ports(checked, compiled):
+def ports(checked, compiled, like=False):
     """Every placed piece's ports: {'piece': index, 'name', 'port', 'kind'
-    ('in', 'out' or 'trigger'), 'at', 'dir' (the way a marble goes there)}."""
+    ('in', 'out' or 'trigger'), 'at', 'dir' (the way a marble goes there)}.
+    like: also the faces where like pieces meet flush (kind 'face': a
+    plank's ends, a block's sides and top), for the free build's snapping."""
     out, parts = [], {p['name']: p for p in compiled['parts']}
     for i, p in enumerate(checked):
         name, fwd = f'your {p["piece"]} {i + 1}', _forward(p)
@@ -1061,6 +1069,11 @@ def ports(checked, compiled):
         def add(port, kind, at, way):
             out.append({'piece': i, 'name': name, 'port': port, 'kind': kind,
                         'at': [round(v, 4) for v in at], 'dir': [round(v, 4) for v in way]})
+        if like and p['piece'] in FLUSH_FAMILY and name in parts:
+            for port, at, way in _flush_faces(p, parts[name]):
+                add(port, 'face', at, way)
+                out[-1]['family'] = FLUSH_FAMILY[p['piece']]
+            continue
         if p['piece'] in ('track', 'shelf', 'ramp'):
             top = [p['x_m'], p['top_height_m'], p.get('z_m', 0.0)]
             low = p['top_height_m'] - p['drop_m'] if 'drop_m' in p else p['foot_height_m']
@@ -1110,6 +1123,104 @@ def ports(checked, compiled):
                 add(label, 'out', [pin[0] + sign * 0.11 * fwd[0], pin[1] - 0.10, pin[2] + sign * 0.11 * fwd[2]],
                     [sign * v for v in fwd])
     return out
+
+
+# ---- flush faces: like pieces meeting -------------------------------------------
+#
+# In the free build a plank's two ends, and a block's four sides and its top,
+# are where a like piece dragged near is put to meet it flush: plank end to
+# plank end, along the same line and at the same height; block side to block
+# side, or one block centred on another's top. This is placement geometry
+# only. No joint is made: fixed blocks are each held by the world, loose
+# planks and loose blocks merely touch, and glue or a pin (Attach) joins them.
+
+FLUSH_FAMILY = {'plank': 'plank', 'block': 'block', 'loose_block': 'block'}
+FLUSH_YAW_DEG = 10.0      # turned this near the other's line (a block: any quarter turn of it)
+FLUSH_CLEAR_M = 0.0001    # kept apart by this much, so 0.1 mm rounding never overlaps them
+FLUSH_TOUCH_M = 0.001     # and, built, they must meet to within this
+
+
+def _flush_faces(p, part):
+    """(port, face centre, outward normal) for a plank's ends (flat planks
+    only) or a block's sides and top, from its compiled box."""
+    axes, half, c = mw._axes(part), mw._half(part), part['at_m']
+    if abs(axes[1][1]) < 0.999:
+        return []          # tipped or rolled: not on a line or a level top
+    face = lambda sign, j: [c[i] + sign * half[j] * axes[j][i] for i in range(3)]
+    if p['piece'] == 'plank':
+        return [('one end', face(1, 0), axes[0]), ('other end', face(-1, 0), [-v for v in axes[0]])]
+    out = [(label, face(sign, j), [sign * v for v in axes[j]])
+           for label, sign, j in (('right side', 1, 0), ('left side', -1, 0), ('front side', 1, 2), ('back side', -1, 2))]
+    return out + [('top', face(1, 1), axes[1])]
+
+
+def flush_candidates(level, checked, index, compiled, found=None):
+    """Where piece `index` meets a like piece flush, for each such face near
+    enough to matter: {'distance', 'knobs', 'to', 'port', 'at', 'exact',
+    'flush'}. Only the free build has them; nothing is moved here."""
+    p = checked[index]
+    family = FLUSH_FAMILY.get(p['piece'])
+    if not level.get('free') or family is None:
+        return []
+    parts = {q['name']: q for q in compiled['parts']}
+    name = f'your {p["piece"]} {index + 1}'
+    part = parts.get(name)
+    if part is None or abs(mw._axes(part)[1][1]) < 0.999:
+        return []
+    tray = next(t for t in level['tray'] if t['piece'] == p['piece'])['knobs']
+    found = ports(checked, compiled, like=True) if found is None else found
+    half = mw._half(part)
+    explicit_height = 'center_height_m' in tray      # a loose block says its height; the rest are set down
+    out = []
+    for q in found:
+        if q['kind'] != 'face' or q.get('family') != family or q['piece'] == index:
+            continue
+        other = checked[q['piece']]
+        if q['port'] == 'top' and not explicit_height and q['piece'] > index:
+            continue        # set down before the one it would stand on is built
+        period = 180.0 if family == 'plank' else 90.0
+        mine_yaw, their_yaw = p.get('yaw_deg', 0.0), other.get('yaw_deg', 0.0)
+        diff = (mine_yaw - their_yaw + period / 2) % period - period / 2
+        if abs(diff) > (FLUSH_YAW_DEG if 'yaw_deg' in tray else 1e-6):
+            continue
+        yaw = (mine_yaw - diff + 180.0) % 360.0 - 180.0
+        r = math.radians(yaw)
+        axes = [[math.cos(r), 0.0, -math.sin(r)], [0.0, 1.0, 0.0], [math.sin(r), 0.0, math.cos(r)]]
+        n, at = q['dir'], q['at']
+        target = parts[q['name']]
+        if q['port'] == 'top':
+            centre = [at[0], at[1] + half[1], at[2]]
+        else:
+            reach = sum(abs(sum(axes[j][i] * n[i] for i in range(3))) * half[j] for j in range(3))
+            centre = [at[i] + (reach + FLUSH_CLEAR_M) * n[i] for i in range(3)]
+            # Sides: bottoms level with the other's; a plank lies where it is set down.
+            centre[1] = target['at_m'][1] - mw._half(target)[1] + half[1]
+        knobs = {'x_m': round(centre[0], 4), 'z_m': round(centre[2], 4)}
+        if 'yaw_deg' in tray and abs(yaw - mine_yaw) > 1e-6:
+            knobs['yaw_deg'] = round(yaw, 4)
+        if explicit_height:
+            knobs['center_height_m'] = round(centre[1], 4)
+        delta = [knobs['x_m'] - p['x_m'], knobs['z_m'] - p.get('z_m', 0.0)]
+        if explicit_height:
+            # Dragged across the ground into a block, onto its top is a stack;
+            # held in the air, it is as far as it is above.
+            rise = knobs['center_height_m'] - p['center_height_m']
+            delta.append(min(0.0, rise) if q['port'] == 'top' else rise)
+        out.append(dict(distance=math.hypot(*delta), knobs=knobs, to=q['name'], port=q['port'], at=at, exact=True,
+                        flush={'target': q['name'], 'collinear': family == 'plank'}))
+    return out
+
+
+def flush_fits(compiled, name, flush):
+    """A flush snap, built: the two meet (to within FLUSH_TOUCH_M, neither
+    apart nor into each other) and two planks lie at one height."""
+    parts = {p['name']: p for p in compiled['parts']}
+    mine, theirs = parts.get(name), parts.get(flush['target'])
+    if not mine or not theirs:
+        return False
+    if abs(_gap(mine, theirs)) > FLUSH_TOUCH_M:
+        return False
+    return not flush['collinear'] or abs(mine['at_m'][1] - theirs['at_m'][1]) <= FLUSH_TOUCH_M
 
 
 FLIP_DROP_M = 0.11    # a track's far end this far over a flip-flop's pin drops onto its middle
@@ -1478,6 +1589,8 @@ def ghost(level, placements, index, snapping=False, edit_key=None, nearby=False,
             heights = ('height_m','top_height_m','pivot_height_m','bore_height_m')
             delta += [old['knobs'][k]-p.get(k,0) for k in heights if k in old['knobs']]
             choices.append(dict(old, distance=math.hypot(*delta)))
+        # Like pieces meeting flush (free build only: a lesson keeps its own snaps).
+        choices.extend(flush_candidates(level, checked, index, compiled))
         eligible = [q for q in choices if q['distance'] <= (machine_alignment.RELEASE_M
                     if snap_hold==q['to']+'|'+q['port'] else machine_alignment.CAPTURE_M)]
         if eligible:
@@ -1492,8 +1605,13 @@ def ghost(level, placements, index, snapping=False, edit_key=None, nearby=False,
                 bad = fitted['problems']+clashes_of(fitted)
                 ball = next((q for q in fitted['parts'] if q['name']==name), None)
                 unsupported = p['piece']=='marble' and ball and found.get('at') and abs(ball['at_m'][1]-found['at'][1])>.015
+                # Flush means flush once built: a plank that would drop off
+                # the line, or a block set down elsewhere, is not offered.
+                unsupported = unsupported or (found.get('flush') and not flush_fits(fitted, name, found['flush']))
                 if not unsupported and not any(about_it(problem) for problem in bad):
-                    moved = any(abs(v-p.get(k,0))>.006 if isinstance(v,(int,float)) else v!=p.get(k) for k,v in knobs.items())
+                    # An exact (flush) fit is off by more than its own rounding, not by half a slider step.
+                    tolerance = .0002 if found.get('exact') else .006
+                    moved = any(abs(v-p.get(k,0))>tolerance if isinstance(v,(int,float)) else v!=p.get(k) for k,v in knobs.items())
                     if snapping or not moved:
                         reply['snap'] = dict(found, knobs=knobs, moved=moved, nearby=True)
                         if found.get('at'):

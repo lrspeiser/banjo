@@ -1765,6 +1765,41 @@ loose sphere. Surface placement retains the compiler's ordinary support
 height; explicit-height/prepared spheres can adjust height to the nearby
 surface. Candidates need at least a diameter plus 10 mm of lane width, 5 mm
 end clearance, and an upward face normal with vertical component ≥0.65.
+
+October 16: **like pieces meet flush** in the Sandbox. With **Snap to
+objects** on, a plank or block dragged within the same 8 cm capture distance
+(released past 11 cm) of a like piece's face is moved so the two meet:
+
+- **Plank end to plank end**: along the same line, at the same height. A plank
+  turned within 10° of the other's line is turned onto it; one further off is
+  left alone. Only flat planks (no tip or roll) have ends to snap.
+- **Block side to block side**: any of a block's four sides, bottoms level, for
+  fixed blocks and loose blocks alike. A block turned within 10° of any quarter
+  turn of its neighbour is squared up with it.
+- **Block on top**: centred on the lower block's top. A fixed block is set down
+  as before, so it stacks when dragged over the other's middle; a loose block,
+  whose height is its own knob, stacks when held over it or dragged into it.
+
+Planks snap only to planks, blocks (fixed or loose) only to blocks. The
+pieces are left 0.1 mm apart, so rounding never overlaps them, and the server
+builds the snapped spot and offers it only if the two then touch within 1 mm
+(and two planks lie at one height) and nothing about the piece is refused: an
+overlap with anything else, or a plank that would come to rest higher on
+something in the way, cancels the snap. The page keeps these positions as the
+server measured them rather than rounding them to the 1 cm slider step. A
+plank turned only about the vertical is now set down by its own outline, not
+the square round it, so it lies beside a turned neighbour instead of on it.
+
+Snapping is placement geometry only. No glue or joint is added: fixed blocks
+are each held by the world, while loose planks and loose blocks merely touch,
+and **Attach** (glue or a pin) joins them. Lessons keep their own snaps: faces
+are only offered in the free build, so no level's solution or snapping
+changes. Alt-drag, the exact controls and turning do not snap, and grid snap
+behaves as before. Measured by `tests/machine_game_tests.py` (FreeBuild): plank
+ends at 0°, 30° and −90° (gap 0 to 1 mm, no overlap, same height, on one line,
+no joints); all four block sides and a turned block; fixed and loose stacks
+centred on top; release beyond capture and hold to the release distance;
+refusal when a post stands in the snapped spot; and no faces in any lesson.
 Capture uses a full 3D distance of 80 mm; an existing match releases at 110 mm.
 An airborne ball far above a track does not teleport down. Ordinary overlap,
 ground and support-height checks reject blocked seats. Track/pipe connector
@@ -2657,7 +2692,7 @@ The pieces, besides the levels' plank, ramp, cannon and steam engine:
 - **Dominoes**: a row of oak dominoes, 2 to 20 of them, standing on what is under the row.
 - **Lever**: a seesaw on a pin on a block.
 
-**Snap points.** While a piece is being placed, dots show where the other pieces connect: green where a marble comes in (a track's or bend's top end, a flip-flop's middle), amber where it goes out (a far end, or below and just beyond a flip-flop's ends, where what joins there is clear of the rocker as it tips), violet a gate's paddle. Drag a piece near one, within 10 cm across the ground and a metre up or down, and it is put where the two connect, and its bar says what it is joined to. A track's top end goes 3 cm past and 4 cm under another's far end, so what rolls off drops onto it. A track's far end goes 4 cm above another's top end, or 11 cm above a flip-flop's middle and 4 cm short of it, or 6.5 cm above a gate's paddle and 5 cm short of it, because what rolls off flies on a little as it falls. A flip-flop goes under a track's far end with its board behind, where the marbles fly. A marble goes just inside a track's top end. Only a piece moved by hand snaps; the arrows, the sliders and turning move it freely. Measured: a marble rolls down a track and onto the track snapped to it, and stops at its end.
+**Snap points.** While a piece is being placed, dots show where the other pieces connect: green where a marble comes in (a track's or bend's top end, a flip-flop's middle), amber where it goes out (a far end, or below and just beyond a flip-flop's ends, where what joins there is clear of the rocker as it tips), violet a gate's paddle. Drag a piece near one, within 10 cm across the ground and a metre up or down, and it is put where the two connect, and its bar says what it is joined to. A track's top end goes 3 cm past and 4 cm under another's far end, so what rolls off drops onto it. A track's far end goes 4 cm above another's top end, or 11 cm above a flip-flop's middle and 4 cm short of it, or 6.5 cm above a gate's paddle and 5 cm short of it, because what rolls off flies on a little as it falls. A flip-flop goes under a track's far end with its board behind, where the marbles fly. A marble goes just inside a track's top end. Only a piece moved by hand snaps; the arrows, the sliders and turning move it freely. Measured: a marble rolls down a track and onto the track snapped to it, and stops at its end. In the free build, planks also snap end to end and blocks side to side or on top (see "like pieces meet flush" above).
 
 **Attach.** 🔗 Attach joins two parts: press one, then the other, and choose **glue** (held together where they were pressed), a **pin** (they turn about it, its axle along x, along z or upright), or a **string** (tied from the first point to the second, as long as it is then). A join is one of your pieces: it is listed, kept with the build, taken back with Undo and removed with Remove. Taking a piece away takes the joins to it with it. Two fixed parts are not joined, since that would move nothing. A pin or glue shows as a dot where the parts join, and a string as a line. Measured: a plank on a block, pinned at its middle, tips when a marble lands on one end and stays on its pin; glued there, it does not tip.
 
