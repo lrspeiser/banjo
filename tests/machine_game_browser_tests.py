@@ -1988,6 +1988,45 @@ class Puzzles(unittest.TestCase):
         self.assertNotIn('ball',self.js('window.machineGlowState().hint'),'prepared puzzle parts are not offered')
         self.wait('window.machineGlowState().hint.length===0',5)
 
+    def test_build_tune_run_switch_follows_and_changes_what_the_player_is_doing(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width!=1280)
+                self.wait('window.machinePlayMode().shown',10)
+                self.assertEqual(self.js('window.machinePlayMode().mode'),'build')
+                box=self.js("(()=>{const r=document.getElementById('play-mode').getBoundingClientRect(),v=document.getElementById('view').getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,vl:v.left,vr:v.right,vt:v.top}})()")
+                self.assertGreaterEqual(box['l'],box['vl']); self.assertLessEqual(box['r'],box['vr']); self.assertGreater(box['t'],box['vt'])
+                sizes=self.js("[...document.querySelectorAll('#play-mode button')].map(b=>{const r=b.getBoundingClientRect();return Math.min(r.width,r.height)})")
+                self.assertTrue(all(v>=44 for v in sizes),sizes)
+                # The switch does not cover the camera or history controls.
+                self.assertTrue(self.js("""[...document.querySelectorAll('#viewer-zoom,#viewer-perspective,#viewer-history')].filter(n=>n.getClientRects().length).every(n=>{
+                    const a=n.getBoundingClientRect(),b=document.getElementById('play-mode').getBoundingClientRect();
+                    return a.right<=b.left||b.right<=a.left||a.bottom<=b.top||b.bottom<=a.top;})"""))
+                self.press('Tune')
+                self.assertEqual(self.js('window.machinePlayMode().mode'),'tune')
+                self.assertEqual(self.js('window.machinePlayMode().hint'),'Place a piece first')
+                self.press('Build')
+                self.press('Add a plank'); self.ghost()
+                self.drag_ghost_to(.3,0,touch=width!=1280)
+                self.slide('Cut to length of your plank 1',.7)
+                self.ghost(); self.click_visible('Place'); self.wait(READY,30)
+                self.press('Tune')
+                self.wait("window.machineGhostState()?.p?.piece==='plank'",10)
+                self.assertEqual(self.js('window.machinePlayMode().mode'),'tune')
+                self.assertTrue(self.js("document.getElementById('scene-tray').checkVisibility()===false"),'the tray waits while tuning')
+                self.press('Build')
+                self.assertEqual(self.js('window.machinePlayMode().mode'),'build')
+                if self.js('Boolean(window.machineGhostState())'):self.click_visible('Place'); self.wait(READY,30)
+                self.press('Run')
+                self.wait("window.machinePlayMode().mode==='run'",10)
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                if self.js("document.getElementById('level-done').checkVisibility()") and self.js("[...document.querySelectorAll('#level-done button')].some(b=>b.textContent.trim()==='Keep building'||b.textContent.includes('Restart'))"):
+                    pass
+                self.js("document.getElementById('mode-build-tab').click()")
+                self.wait(f"window.machinePlayMode().mode==='build' && {READY}",30)
+                self.assertEqual(self.js('window.machinePlacements()[0].length_m'),.7,'Build returns to time zero with your pieces')
+
     def test_run_waits_for_latest_placement_check_and_cancelling_cancels_the_run(self):
         self.open('laser')
         self.press('Add a mirror'); self.ghost()

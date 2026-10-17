@@ -959,3 +959,20 @@ body.panel-tabs #phone-runbar #start.setup-incomplete{background:#294c60;border-
 }
 
 @media(max-width:599px){body.panel-tabs #phone-tabs button{padding:4px}}
+
+/* Build / Tune / Run switch, centred below the camera controls. */
+.play-mode{position:absolute;left:50%;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:2px;padding:3px;border:1px solid #3d5b6d;border-radius:24px;background:rgba(13,23,32,.82);max-width:calc(100% - 16px);box-sizing:border-box}
+.play-mode[hidden]{display:none}
+#play-mode button{min-height:44px;min-width:56px;padding:4px 12px;border:0;border-radius:20px;background:transparent;color:#cfe0ea;font:600 14px system-ui;cursor:pointer}
+#play-mode button[aria-pressed=true]{background:#226345;color:#fff}
+#play-mode button#mode-run-tab[aria-pressed=true]{background:#1d4f6b}
+.play-mode button:focus-visible{outline:3px solid #9fdcff;outline-offset:1px}
+.play-mode output{padding:0 10px 0 6px;color:#b9cbd6;font-size:12px;white-space:nowrap}
+@media(max-width:520px){.play-mode output{display:none}}
+body[data-mode=run] #scene-tray,body[data-mode=tune] #scene-tray{display:none!important}
+#play-mode.in-toolbar{position:static;transform:none;grid-column:1;grid-row:1;justify-self:end;margin-right:8px;padding:2px}
+.play-mode.in-toolbar output{display:none}
+/* Centre grip of a movable selected piece: shows where to drag. */
+.move-grip{position:absolute;z-index:4;width:36px;height:36px;border-radius:50%;box-sizing:border-box;border:2px solid #ffd77a;background:rgba(255,200,80,.28);color:#fff3cf;display:flex;align-items:center;justify-content:center;font:18px system-ui;pointer-events:none;box-shadow:0 0 0 3px rgba(13,23,32,.35)}
+.move-grip[hidden]{display:none}
+.move-grip.dragging{background:rgba(255,200,80,.55)}

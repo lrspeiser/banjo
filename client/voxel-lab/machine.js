@@ -803,7 +803,7 @@ function drawSceneSockets() {
       const x=rect.left+(point.x+1)*rect.width/2,y=rect.top+(1-point.y)*rect.height/2;
       const mesh=meshes.get(part.name),box=mesh&&coachObjectBox([mesh]);
       const bounds=box?{left:box.x,right:box.x+box.width,top:box.y,bottom:box.y+box.height}:{left:x-12,right:x+12,top:y-12,bottom:y+12};
-      const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history')]
+      const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#play-mode:not(.in-toolbar)')]
         .filter(e=>e.checkVisibility()).map(e=>e.getBoundingClientRect());
       const at=pieceToolbarPosition(rect,bounds,heaterAttachButton.getBoundingClientRect(),obstacles);
       heaterAttachButton.style.left=`${at.x-rect.left}px`;heaterAttachButton.style.top=`${at.y-rect.top}px`;
@@ -2121,6 +2121,7 @@ function render() {
   fineGrid.position.z=Math.round(target.z/PLACEMENT_GRID.major_step_m)*PLACEMENT_GRID.major_step_m;
   if (advanceGlides(performance.now()) && ropes.length) updateRopes();
   updatePreviewRunners(performance.now());
+  renderPlayMode();
   if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); updateEditGuide(); syncMovePad(); }
   drawPull();
   drawSwitchPull();
@@ -2165,6 +2166,7 @@ $('reset').addEventListener('click', () => {
   else build(spec).catch(() => {});
 });
 $('restart-pieces').addEventListener('click', () => resetGame(true));
+for (const name of ['build', 'tune', 'run']) $('mode-' + name + '-tab').addEventListener('click', () => choosePlayMode(name));
 $('speed').addEventListener('change', () => { if (session) api({op: 'play', session, running: playing, speed: Number($('speed').value)}).catch(() => {}); });
 $('follow').addEventListener('click', () => { follow = !follow; $('follow').setAttribute('aria-pressed', String(follow)); if (!follow) goal.copy(target); });
 // Press a station to look at it. The list is drawn again with every frame, so
@@ -2379,6 +2381,58 @@ let padAxes = '';
 // the selected piece resumes Move; dragging empty space always turns the view.
 let looking = false;
 let editorMode = 'move', lastEdited = null;
+
+// Build / Tune / Run: one small switch under the camera controls says what
+// the player is doing and keeps the other controls out of the way. Run is
+// Try It!; Build returns a run to time zero with your pieces; Tune opens the
+// size and setting controls of the selected (or last edited) piece.
+let tuneArmed = false, shownMode = '';
+const wideModeBar = matchMedia('(min-width: 700px)');
+function currentMode() {
+  if (playing || world.t > 0) return 'run';
+  if (tuneArmed || (ghost && editorMode === 'adjust')) return 'tune';
+  return 'build';
+}
+const MODE_HINTS = {build: 'Add and place pieces', tune: 'Change sizes and settings', run: 'The engine runs your machine'};
+function renderPlayMode() {
+  const box = $('play-mode');
+  const show = LEVEL_MODE && Boolean(level) && !document.body.matches('.on-sandbox,.on-levels,.choosing-piece');
+  if (box.hidden === show) box.hidden = !show;
+  if (!show) return;
+  const mode = currentMode();
+  if (mode !== shownMode) {
+    shownMode = mode; document.body.dataset.mode = mode;
+    for (const name of ['build', 'tune', 'run']) $('mode-' + name + '-tab').setAttribute('aria-pressed', String(name === mode));
+    $('play-mode-hint').textContent = mode === 'tune' && !ghost ? 'Tap a piece to tune it' : MODE_HINTS[mode];
+  }
+  if (mode === 'tune') $('play-mode-hint').textContent = ghost ? MODE_HINTS.tune : placements.length ? 'Tap a piece to tune it' : 'Place a piece first';
+  // Wide screens: in the toolbar beside Reset. Narrow phones: just below the
+  // camera and history controls, where a tall scene has room.
+  const inToolbar = wideModeBar.matches && !$('phone-toolbar').hidden;
+  const home = inToolbar ? $('phone-toolbar') : view;
+  if (box.parentElement !== home) { home.append(box); box.style.top = ''; }
+  box.classList.toggle('in-toolbar', inToolbar);
+  if (inToolbar) return;
+  const rect = view.getBoundingClientRect();
+  const below = Math.max(0, ...[...view.querySelectorAll('#viewer-zoom,#viewer-perspective,#viewer-history')]
+    .filter(n => !n.hidden && n.getClientRects().length).map(n => n.getBoundingClientRect().bottom - rect.top));
+  const top = `${Math.round(below + 6)}px`;
+  if (box.style.top !== top) box.style.top = top;
+}
+function choosePlayMode(mode) {
+  if (!LEVEL_MODE || !level) return;
+  const now = currentMode();
+  if (mode === 'run') { tuneArmed = false; if (!playing) $('start').click(); return; }
+  if (now === 'run') resetGame(true);
+  tuneArmed = mode === 'tune';
+  if (ghost && !ghost.baseObject) { editorMode = tuneArmed ? 'adjust' : 'move'; setLooking(false); renderGhostBar(); }
+  else if (tuneArmed && placements.length) {
+    const i = lastEdited != null && placements[lastEdited] ? lastEdited : placements.length - 1;
+    pickUp(i);
+  }
+  shownMode = ''; renderPlayMode();
+}
+window.machinePlayMode = () => ({mode: currentMode(), shown: !$('play-mode').hidden, hint: $('play-mode-hint').textContent});
 function setLooking(on) {
   looking = Boolean(on && ghost);
   draggingGhost = null;
@@ -2620,7 +2674,23 @@ function positionValueChoices(source){
 valueChoices.addEventListener('keydown',e=>{if(e.key==='Escape')pendingPieceReference=null;e.stopPropagation();});
 addEventListener('resize',()=>{if(valueChoices.matches(':popover-open')&&valueChoices.source?.isConnected)positionValueChoices(valueChoices.source);});
 let handleDrag=null;
+// A round "move" grip at the centre of a movable piece: drag the piece (or
+// this grip) to move it. It is a marker over the scene; the drag itself is
+// the same scene drag as before.
+function updateMoveGrip() {
+  const grip = $('move-grip');
+  const box = ghost && editorMode === 'move' && !looking && movableGhost() && !handleDrag ? ghostScreenBox() : null;
+  const rect = view.getBoundingClientRect();
+  const show = Boolean(box) && box.x1 - box.x0 > 4 && (box.x0 + box.x1) / 2 > rect.left && (box.x0 + box.x1) / 2 < rect.right;
+  if (grip.hidden === show) grip.hidden = !show;
+  if (!show) return;
+  grip.style.left = `${(box.x0 + box.x1) / 2 - rect.left - 18}px`;
+  grip.style.top = `${(box.y0 + box.y1) / 2 - rect.top - 18}px`;
+  grip.classList.toggle('dragging', view.classList.contains('grabbing'));
+}
+window.machineMoveGrip = () => !$('move-grip').hidden && $('move-grip').getBoundingClientRect().toJSON();
 function updatePieceHandles() {
+  updateMoveGrip();
   if(handleDrag)return; // Preserve pointer capture while native previews are replaced.
   const rule=ghost&&trayItem(ghost.p.piece).knobs[ghost.card];
   const numericChoices=rule?.choices?.length>1&&rule.choices.every(Number.isFinite);
@@ -2938,7 +3008,7 @@ async function checkGhost(g) {
 // the view meets the scene.
 function startGhost(p, index, keepPlace = false) {
   endGhost();
-  editorMode='move';lastEdited=index;
+  editorMode=tuneArmed&&index<placements.length?'adjust':'move';lastEdited=index;
   // Prebuilt/saved placements may omit default-valued knobs. Resolve them
   // before editing so range controls and selectors show the compiled setup.
   for (const [key, rule] of Object.entries(trayItem(p.piece).knobs)) {
@@ -4808,7 +4878,11 @@ function updateGuides() {
   const working=ghost.alignment?.primary;
   const at=working?.at?.map((v,i)=>v+ghostGroup.position.getComponent(i));
   const cx = at?.[0]??(ghostBox.min.x + ghostBox.max.x) / 2, cz = at?.[2]??(ghostBox.min.z + ghostBox.max.z) / 2;
-  const base = Math.max(.004, at?.[1]??ghostBox.min.y), top = Math.max(base+.4,ghostBox.max.y + .4), far = 50;
+  // Short local guides keep the scene readable; Precision controls show the
+  // full-length lines across the ground for exact alignment.
+  const size = ghostBox.getSize(new THREE.Vector3()).length();
+  const base = Math.max(.004, at?.[1]??ghostBox.min.y), top = Math.max(base+.4,ghostBox.max.y + .4),
+    far = $('precision-controls')?.open ? 50 : Math.max(.8, Math.min(4, 3 * size));
   guideMatch=workingAlignment(working?{...working,at}:null,ghost.alignment?.targets||[]);
   const wheel=updateWheelGuides(working?{...working,at}:null);
   for(const [bar,axis,color] of [[guideX,'x',0xff5c5c],[guideY,'y',0x6fe08a],[guideZ,'z',0x4d9dff]])

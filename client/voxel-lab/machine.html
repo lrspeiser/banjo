@@ -21,6 +21,8 @@
 <div id="viewer-zoom"><input id="view-zoom" type="range" min="0" max="100" step="1" value="50" aria-label="Scene zoom"></div>
 </div>
 <section id="piece-editor" hidden aria-label="Selected piece controls"></section>
+<div id="move-grip" class="move-grip" hidden aria-hidden="true" title="Drag to move"><span>✥</span></div>
+<div id="play-mode" class="play-mode" role="group" aria-label="Mode" hidden><button id="mode-build-tab" type="button" aria-pressed="true" title="Add and place pieces">Build</button><button id="mode-tune-tab" type="button" aria-pressed="false" title="Change sizes and settings of a piece">Tune</button><button id="mode-run-tab" type="button" aria-pressed="false" title="Run your machine (Try It!)">Run</button><output id="play-mode-hint" aria-live="polite"></output></div>
 <div id="scene-mode" class="scene-mode" hidden role="group" aria-label="Scene interaction">
 <button id="mode-view" type="button" aria-pressed="false" title="Drag empty space to turn the view; right/middle drag or two fingers also work (Esc)">View</button>
 <button id="mode-move" type="button" aria-pressed="true" title="Drag the selected piece to move it; a click returns to View (Esc)">Move</button>
