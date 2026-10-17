@@ -1960,8 +1960,9 @@ class Puzzles(unittest.TestCase):
                 self.ghost()
                 # Before running, a see-through ball travels the rehearsed path.
                 self.wait('window.machinePreviewRunners().some(r=>r.visible)',30)
-                first=self.js('window.machinePreviewRunners()[0].at'); time.sleep(.5)
-                self.assertNotEqual(first,self.js('window.machinePreviewRunners()[0].at'),'the preview copy moves along its path')
+                # It rests 0.8 s at the end of each pass, so watch for movement.
+                first=self.js('window.machinePreviewRunners()[0].at')
+                self.wait(f"window.machinePreviewRunners()[0].at.some((v,i)=>Math.abs(v-{json.dumps(first)}[i])>1e-6)",5)
                 before=self.js('window.machineGlideState()')
                 self.click_visible('Try It!')
                 self.wait("!document.getElementById('level-done').hidden",30)
