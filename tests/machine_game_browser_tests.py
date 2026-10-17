@@ -24,6 +24,7 @@ import tempfile
 from unittest.mock import patch
 import threading
 import time
+import traceback
 import unittest
 import uuid
 from pathlib import Path
@@ -42,6 +43,12 @@ class LiveBrowserResult(unittest.TextTestResult):
     """Keep failures available even when a later case reaches the batch deadline."""
     def report_now(self, test, err):
         self.stream.write('\n'+self._exc_info_to_string(err,test)+'\n');self.stream.flush()
+        if os.environ.get('GITHUB_ACTIONS')=='true':
+            # A workflow annotation names the case and its assertion, so the
+            # failure is readable from the run summary without the full log.
+            said=''.join(traceback.format_exception_only(err[0],err[1])).strip()[-900:]
+            escape=lambda text:str(text).replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+            self.stream.write(f'::error title={escape(test.id().split(".")[-1])}::{escape(said)}\n');self.stream.flush()
         try:
             proof=ROOT/'build'/'ui-proof';proof.mkdir(parents=True,exist_ok=True)
             name=re.sub('[^a-zA-Z0-9_-]','_',test.id())

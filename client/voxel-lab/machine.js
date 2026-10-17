@@ -231,8 +231,10 @@ function syncMeshes(changed, glide = false) {
 const HOVER_GLOW = 0x5a3c00, HINT_GLOW = 0x2e2a10;
 let hoverGlowIndex = -1, hintGlowUntil = 0, hintGlowTimer = 0;
 function paintGlow(mesh) {
+  // Only the body's own material, as the heat tint always did: lamps and
+  // other parts keep any glow of their own.
   const glow = mesh.userData.heatGlow || (mesh.userData.hover ? HOVER_GLOW : mesh.userData.hint ? HINT_GLOW : 0);
-  mesh.traverse(o => { if (o.isMesh && o.material?.emissive && !o.material.transparent) o.material.emissive.setHex(glow); });
+  mesh.material?.emissive?.setHex(glow);
 }
 function pieceMeshNames(index) {
   if (index < 0) return [];
