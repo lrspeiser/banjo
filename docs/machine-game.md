@@ -1,5 +1,36 @@
 # Puzzles on the machine (/play)
 
+October 16 playtest follow-up (display and editing only; no engine, goal or
+tolerance change):
+
+* **Gliding motion.** While a machine runs the page still requests at most 20
+  frames a second (`RUNNING_MS`). Each moved body now glides from its drawn pose
+  to the newest engine pose over one smoothed frame gap (`GLIDE` in
+  `machine-view.mjs`: 16–150 ms, pauses ignored), with slerped orientation. A
+  move of 0.5 m or more in one frame (reset, rebuild) is placed at once. Ropes
+  follow the drawn bodies. Readings, goals and the next request use the engine
+  frame; a paused or finished machine is drawn exactly at the engine pose
+  (browser check: 1e-6 m). In the software-rendered test Chrome the page draws
+  only about 5 frames a second, so the check counts glides and in-between
+  poses (Mind the gap: about 60 glides and 12–26 in-between frames per run on
+  desktop and portrait phone) rather than a frame rate.
+* **Preview motion.** Flow-preview mechanisms blend between rehearsal samples
+  (at least 0.1 s apart) instead of holding each one. A see-through copy of the
+  goal body travels the rehearsed path at real speed, rests 0.8 s at its end and
+  repeats. Paths store position only, so the copy keeps its starting
+  orientation; it is a teaching overlay, not a new prediction.
+* **Interactive glow.** The mouse-over piece you can pick up has a gold
+  emissive glow; tapping empty scene briefly tints every pickable piece (1.4 s).
+  Prepared puzzle parts are not included. Measured heat glow takes precedence.
+* **Add another (Sandbox).** A 44 px **+** beside **Place** places the fitted
+  piece and opens the library. Opening the library with a fitted piece selected
+  places it first; an unfitted piece stays selected with a message.
+* **Library filters.** Category chips (44 px) replace the dropdown, with a
+  **Recent** chip for the last eight Sandbox pieces added (browser storage,
+  optional). The last search and category persist while the page is open.
+  Search matches every typed word against the name, description, category and
+  a short list of everyday words (ball, board, rope, cog, lamp...).
+
 October 16 setup guidance: the Try It!/Reset and Controls/Help action bar
 precedes the scene on desktop and phone. Try It! uses secondary styling until
 the lesson’s required piece counts are placed, including wires. Counts expose
