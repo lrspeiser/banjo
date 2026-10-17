@@ -220,9 +220,44 @@ function syncMeshes(changed, glide = false) {
   for (const [name, mesh] of meshes) {
     const k = heat.get(name) ?? heat.get(family(name));
     mesh.material.color.setHex(heatTint(mesh.userData.base, k));
-    mesh.material.emissive?.setHex(k > 600 ? heatTint(0x000000, k) & 0x7f3f1f : 0);
+    mesh.userData.heatGlow = k > 600 ? heatTint(0x000000, k) & 0x7f3f1f : 0;
+    paintGlow(mesh);
   }
 }
+
+// Things you can pick up glow: gold under the mouse, and all of them briefly
+// when a level opens or a tap lands on empty scene, so touch players can see
+// what is interactive. Hot parts keep their measured heat glow.
+const HOVER_GLOW = 0x5a3c00, HINT_GLOW = 0x2e2a10;
+let hoverGlowIndex = -1, hintGlowUntil = 0, hintGlowTimer = 0;
+function paintGlow(mesh) {
+  const glow = mesh.userData.heatGlow || (mesh.userData.hover ? HOVER_GLOW : mesh.userData.hint ? HINT_GLOW : 0);
+  mesh.traverse(o => { if (o.isMesh && o.material?.emissive && !o.material.transparent) o.material.emissive.setHex(glow); });
+}
+function pieceMeshNames(index) {
+  if (index < 0) return [];
+  if (index < placements.length) {
+    const prefix = `your ${placements[index].piece} ${index + 1}`;
+    return [...meshes.keys()].filter(name => name === prefix || name.startsWith(prefix + ' '));
+  }
+  return sandboxObjects[index - placements.length]?.parts || [];
+}
+function setHoverGlow(index) {
+  const names = new Set(pieceMeshNames(index));
+  for (const [name, m] of meshes) if (Boolean(m.userData.hover) !== names.has(name)) { m.userData.hover = names.has(name); paintGlow(m); }
+  hoverGlowIndex = index;
+}
+function hintInteractive(ms = 1400) {
+  if (!LEVEL_MODE || !level) return;
+  const names = new Set();
+  for (let i = 0; i < placements.length + (level.free ? sandboxObjects.length : 0); i++) for (const n of pieceMeshNames(i)) names.add(n);
+  for (const [name, m] of meshes) { m.userData.hint = names.has(name); paintGlow(m); }
+  hintGlowUntil = performance.now() + ms;
+  clearTimeout(hintGlowTimer);
+  hintGlowTimer = setTimeout(() => { for (const m of meshes.values()) { m.userData.hint = false; paintGlow(m); } }, ms);
+}
+window.machineGlowState = () => ({hover: [...meshes].filter(([, m]) => m.userData.hover).map(([n]) => n),
+  hint: [...meshes].filter(([, m]) => m.userData.hint).map(([n]) => n)});
 
 // Explicit terminal wires and prepared contact/coil circuits share visible
 // floor routes. A contact circuit includes its supply, switched and return
@@ -4598,9 +4633,14 @@ renderer.domElement.addEventListener('pointermove', e => {
   if (!ghost) {
     view.classList.remove('grab');
     // A piece of yours under the mouse can be clicked to pick it up.
-    if (!e.buttons && e.pointerType === 'mouse') view.classList.toggle('pickable', !pullMode && !attachMode && (wireCandidates(e.clientX,e.clientY).length>0 || placedAt(e.clientX, e.clientY) >= 0));
+    if (!e.buttons && e.pointerType === 'mouse') {
+      const under = !pullMode && !attachMode && !playing ? placedAt(e.clientX, e.clientY) : -1;
+      setHoverGlow(under);
+      view.classList.toggle('pickable', !pullMode && !attachMode && (wireCandidates(e.clientX,e.clientY).length>0 || under >= 0));
+    }
     return;
   }
+  setHoverGlow(-1);
   if (draggingGhost && draggingGhost.id === e.pointerId && pointers.size === 1 && !cameraGesture) {
     if (!draggingGhost.active) {
       if (!pressedAt || Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) < 6) return;
@@ -4651,7 +4691,8 @@ renderer.domElement.addEventListener('pointerup', e => {
   else if (!ghost && click && !pullMode && !attachMode) {
     const choices=placedOwnersAt(e.clientX,e.clientY);
     if(choices.length>1)chooseScenePiece(choices,e.clientX,e.clientY);
-    else if(choices.length)pickUp(choices[0]);
+    else if(choices.length){setHoverGlow(-1);pickUp(choices[0]);}
+    else if(!playing)hintInteractive();
   }
   draggingGhost = null; pressedAt = null;
   if (!pointers.size) cameraGesture = false;
@@ -4663,7 +4704,7 @@ const cancelPlacementGesture = () => {
   view.classList.remove('grabbing');
 };
 renderer.domElement.addEventListener('pointercancel', cancelPlacementGesture);
-renderer.domElement.addEventListener('pointerleave',()=>{socketPointer=null;view.classList.remove('socket-hover');});
+renderer.domElement.addEventListener('pointerleave',()=>{socketPointer=null;view.classList.remove('socket-hover');setHoverGlow(-1);});
 renderer.domElement.addEventListener('lostpointercapture', e => {
   pointers.delete(e.pointerId); pinch = 0; cancelPlacementGesture();
 });

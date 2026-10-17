@@ -1969,6 +1969,25 @@ class Puzzles(unittest.TestCase):
                     if name in drawn:
                         self.assertLess(max(abs(a-b) for a,b in zip(at,drawn[name])),1e-6,name)
 
+    def test_interactive_pieces_glow_on_hover_and_pulse_on_an_empty_tap(self):
+        # Your placed pieces glow gold under the mouse; tapping empty scene
+        # briefly highlights every piece you can pick up.
+        self.open('gap')
+        self.press('Add a plank'); self.ghost()
+        self.drag_ghost_to(.3,0)
+        self.click_visible('Place'); self.wait(READY,30); self.paint()
+        at=self.js("window.machineBodyScreen('your plank 1')")
+        self.assertIsNotNone(at)
+        self.mouse('mouseMoved',*at); self.paint()
+        self.wait("window.machineGlowState().hover.includes('your plank 1')",5)
+        empty=self.empty_scene_point()
+        self.mouse('mouseMoved',*empty)
+        self.wait('window.machineGlowState().hover.length===0',5)
+        self.mouse('mousePressed',*empty); self.mouse('mouseReleased',*empty)
+        self.wait("window.machineGlowState().hint.includes('your plank 1')",5)
+        self.assertNotIn('ball',self.js('window.machineGlowState().hint'),'prepared puzzle parts are not offered')
+        self.wait('window.machineGlowState().hint.length===0',5)
+
     def test_run_waits_for_latest_placement_check_and_cancelling_cancels_the_run(self):
         self.open('laser')
         self.press('Add a mirror'); self.ghost()
