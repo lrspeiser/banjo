@@ -2002,8 +2002,10 @@ class Puzzles(unittest.TestCase):
                 self.wait('window.machinePlayMode().shown',10)
                 self.assertEqual(self.js('window.machinePlayMode().mode'),'build')
                 # Wide screens: in the toolbar row. Narrow phones: inside the scene.
-                box=self.js("(()=>{const m=document.getElementById('play-mode'),r=m.getBoundingClientRect(),v=(m.classList.contains('in-toolbar')?document.getElementById('phone-toolbar'):document.getElementById('view')).getBoundingClientRect();return {inToolbar:m.classList.contains('in-toolbar'),l:r.left,r:r.right,t:r.top,b:r.bottom,vl:v.left,vr:v.right,vt:v.top,vb:v.bottom}})()")
+                box=self.js("(()=>{const m=document.getElementById('play-mode'),r=m.getBoundingClientRect(),v=(m.classList.contains('in-toolbar')?document.getElementById('phone-toolbar'):document.getElementById('control-panel')).getBoundingClientRect();return {inToolbar:m.classList.contains('in-toolbar'),l:r.left,r:r.right,t:r.top,b:r.bottom,vl:v.left,vr:v.right,vt:v.top,vb:v.bottom}})()")
                 self.assertEqual(box['inToolbar'],width>=700,box)
+                if not box['inToolbar']:
+                    self.assertTrue(self.js("Boolean(document.getElementById('play-mode').closest('#control-panel'))"),'narrow phones keep the switch below the scene')
                 self.assertGreaterEqual(box['l'],box['vl']); self.assertLessEqual(box['r'],box['vr'])
                 self.assertGreaterEqual(box['t'],box['vt']); self.assertLessEqual(box['b'],box['vb'])
                 if box['inToolbar']:
@@ -4316,19 +4318,19 @@ class Puzzles(unittest.TestCase):
                 self.press('Add New Design'); self.wait(READY,30)
                 self.press('Add a plank'); self.ghost()
                 self.assertTrue(self.ghost()['fits'])
-                size=self.js("(()=>{const b=[...document.querySelectorAll('#piece-editor button')].find(b=>b.getAttribute('aria-label')==='Place and add another piece');const r=b.getBoundingClientRect();return [r.width,r.height]})()")
-                self.assertGreaterEqual(min(size),40,size)
-                self.press('Place and add another piece')
-                self.wait("document.getElementById('piece-picker').open",5)
-                self.assertIsNone(self.js('window.machineGhostState()'))
-                self.assertEqual([p['piece'] for p in self.js('window.machineDesign().draft.placements')],['plank'])
+                # Placing points to where the next piece comes from.
+                self.click_visible('Place')
+                self.wait("document.getElementById('tray-library').classList.contains('pulse')",5)
+                self.assertTrue(self.js("document.getElementById('tray-library').checkVisibility()"))
+                self.wait(READY,30)
                 self.press('Add a marble')
                 self.assertEqual(self.ghost()['p']['piece'],'marble')
-                # Opening the library again places the fitted marble first.
+                # Opening the library with a fitted piece selected places it first.
                 fits=self.ghost()['fits']
                 self.js("document.getElementById('tray-library').click()")
                 if fits:
                     self.wait("document.getElementById('piece-picker').open",5)
+                    self.assertIsNone(self.js('window.machineGhostState()'))
                     self.assertEqual([p['piece'] for p in self.js('window.machineDesign().draft.placements')],['plank','marble'])
                     self.press('Back to sandbox')
 

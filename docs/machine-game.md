@@ -22,17 +22,19 @@ tolerance are unchanged; Sandbox gains optional player goals):
 * **Interactive glow.** The mouse-over piece you can pick up has a gold
   emissive glow; tapping empty scene briefly tints every pickable piece (1.4 s).
   Prepared puzzle parts are not included. Measured heat glow takes precedence.
-* **Add another (Sandbox).** A 44 px **+** beside **Place** places the fitted
-  piece and opens the library. Opening the library with a fitted piece selected
-  places it first; an unfitted piece stays selected with a message.
+* **Add another (Sandbox).** After **Place**, the scene tray's **+ Add a
+  piece** button pulses for 2.4 s. Opening the library with a fitted piece
+  selected places it first; an unfitted piece stays selected with a message.
+  (A separate **+** in the piece editor was tried and removed: it widened the
+  editor past the screen edge in CI layouts.)
 * **Library filters.** Category chips (44 px) replace the dropdown, with a
   **Recent** chip for the last eight Sandbox pieces added (browser storage,
   optional). The last search and category persist while the page is open.
   Search matches every typed word against the name, description, category and
   a short list of everyday words (ball, board, rope, cog, lamp...).
 * **Build / Tune / Run.** A three-part switch (44 px buttons) sits beside
-  Reset when the page is at least 700 px wide, and below the camera row on
-  narrower phones. The mode is derived from state: Run while a machine runs or
+  Reset when the page is at least 700 px wide, and at the top of the Controls
+  panel on narrower phones (an overlay inside a phone's scene covered pieces). The mode is derived from state: Run while a machine runs or
   has run (world time above zero), Tune while a selected piece is on its
   adjustment controls or Tune was chosen, otherwise Build. Tune hides the scene
   tray and opens the last edited piece; Build after a run is **Restart with my

@@ -805,7 +805,7 @@ function drawSceneSockets() {
       const x=rect.left+(point.x+1)*rect.width/2,y=rect.top+(1-point.y)*rect.height/2;
       const mesh=meshes.get(part.name),box=mesh&&coachObjectBox([mesh]);
       const bounds=box?{left:box.x,right:box.x+box.width,top:box.y,bottom:box.y+box.height}:{left:x-12,right:x+12,top:y-12,bottom:y+12};
-      const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#play-mode:not(.in-toolbar)')]
+      const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history')]
         .filter(e=>e.checkVisibility()).map(e=>e.getBoundingClientRect());
       const at=pieceToolbarPosition(rect,bounds,heaterAttachButton.getBoundingClientRect(),obstacles);
       heaterAttachButton.style.left=`${at.x-rect.left}px`;heaterAttachButton.style.top=`${at.y-rect.top}px`;
@@ -2416,16 +2416,13 @@ function renderPlayMode() {
   if (mode === 'tune') $('play-mode-hint').textContent = ghost ? MODE_HINTS.tune : placements.length ? 'Tap a piece to tune it' : 'Place a piece first';
   // Wide screens: in the toolbar beside Reset. Narrow phones: just below the
   // camera and history controls, where a tall scene has room.
+  // Wide screens: in the toolbar beside Reset. Narrow phones: at the top of
+  // the controls below the scene, where it never covers a piece.
   const inToolbar = wideModeBar.matches && !$('phone-toolbar').hidden;
-  const home = inToolbar ? $('phone-toolbar') : view;
-  if (box.parentElement !== home) { home.append(box); box.style.top = ''; }
+  const home = inToolbar ? $('phone-toolbar') : $('control-panel');
+  if (box.parentElement !== home) { if (inToolbar) home.append(box); else home.prepend(box); }
   box.classList.toggle('in-toolbar', inToolbar);
-  if (inToolbar) return;
-  const rect = view.getBoundingClientRect();
-  const below = Math.max(0, ...[...view.querySelectorAll('#viewer-zoom,#viewer-perspective,#viewer-history')]
-    .filter(n => !n.hidden && n.getClientRects().length).map(n => n.getBoundingClientRect().bottom - rect.top));
-  const top = `${Math.round(below + 6)}px`;
-  if (box.style.top !== top) box.style.top = top;
+  box.classList.toggle('in-panel', !inToolbar);
 }
 function choosePlayMode(mode) {
   if (!LEVEL_MODE || !level) return;
@@ -3085,12 +3082,15 @@ function placeGhost() {
   return true;
 }
 function setGhostDown() {
-  if (placeGhost()) {selectPhonePanel('controls');scheduleRebuild(0);}
+  if (placeGhost()) {selectPhonePanel('controls');scheduleRebuild(0);pulseAddPiece();}
 }
-function placeAndAddAnother() {
-  if (!placeGhost()) return;
-  scheduleRebuild(0);
-  openPiecePicker();
+// After a Sandbox piece is placed, the library button glows briefly: that is
+// where the next piece comes from.
+let addPulseTimer = 0;
+function pulseAddPiece() {
+  if (!level?.free) return;
+  const b = $('tray-library'); b.classList.add('pulse');
+  clearTimeout(addPulseTimer); addPulseTimer = setTimeout(() => b.classList.remove('pulse'), 2400);
 }
 
 // The ghost's own controls, just below the scene and out of its way (the top
@@ -3356,9 +3356,6 @@ function renderGhostBar() {
   const state = Object.assign(document.createElement('p'), {className: 'state'});
   const actions = Object.assign(document.createElement('div'), {className: 'actions'});
   actions.append(button('Place', setGhostDown, {className: 'down', ariaLabel:'Place', disabled: !ghost.fits || ghost.busy}), throwAway);
-  // Sandbox: place this piece and go straight to choosing the next one.
-  if(level?.free&&libraryTray())actions.insertBefore(button('+', placeAndAddAnother, {className: 'another', ariaLabel:'Place and add another piece',
-    title:'Place and add another piece', disabled: !ghost.fits || ghost.busy}, false),throwAway);
   if(ghost.baseObject || ghost.was)actions.insertBefore(button('Delete piece',()=>removeSelectedObject(),{ariaLabel:'Delete selected piece'}),throwAway);
   if(ghost.rewireKey) actions.insertBefore(button('Disconnect wire',()=>{
     if(!ghost?.rewireKey || terminalBusy || powerBusy)return;
@@ -3409,7 +3406,7 @@ function renderGhostBar() {
     head.after(prompt);if(!keys.some(k=>!knobs[k].terminal&&!knobs[k].power_port)){row.hidden=true;chips.hidden=true;}
   }
   // Removal is an occasional action; keep it with the exact controls.
-  for(const b of [...actions.children])if(!b.classList.contains('down')&&!b.classList.contains('another')&&b!==throwAway)precision.append(b);
+  for(const b of [...actions.children])if(!b.classList.contains('down')&&b!==throwAway)precision.append(b);
   card.replaceChildren(fields);
   const needsClip=ghost.p.piece==='ignition'&&ghost.p.attachment_version===2&&!ghost.p.target;
   view.classList.toggle('choosing-attachment',Boolean(needsClip));
