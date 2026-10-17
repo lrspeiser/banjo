@@ -1,5 +1,5 @@
 import * as THREE from './three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints, glideSpan, glideAlpha, glides, frameBlend, pathPoint, blueprintPlacements} from './machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints, blendPose, FramePlayback, glides, frameBlend, pathPoint, blueprintPlacements} from './machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from './anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from './profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from './level-library.mjs';
@@ -172,48 +172,25 @@ function makeMesh(b) {
   return mesh;
 }
 
-// Running pieces glide to each new engine pose over about one gap between
-// frames (machine-view.mjs GLIDE); everything else is placed at once.
-const glidesNow = new Map();
-let glideMs = 50, lastGlideFrameAt = 0, glidesStarted = 0, glidesShownBetween = 0;
-function place(mesh, b, glide = false) {
-  const q = b.orientation_wxyz;
-  if (glide && mesh.userData.placed && glides(mesh.position.toArray(), b.position_m)) {
-    glidesNow.set(mesh, {p0: mesh.position.clone(), q0: mesh.quaternion.clone(),
-      p1: new THREE.Vector3(...b.position_m), q1: new THREE.Quaternion(q[1], q[2], q[3], q[0]),
-      at: performance.now(), span: glideMs});
-    glidesStarted++;
-    return;
-  }
-  glidesNow.delete(mesh);
+// A body is drawn at a measured pose: a frame's, or between two frames while
+// a run plays (FramePlayback below).
+function place(mesh, b) {
   mesh.position.set(...b.position_m);
+  const q = b.orientation_wxyz;
   mesh.quaternion.set(q[1], q[2], q[3], q[0]);
-  mesh.userData.placed = true;
 }
-function advanceGlides(now) {
-  if (!glidesNow.size) return false;
-  for (const [mesh, g] of glidesNow) {
-    const a = glideAlpha(now - g.at, g.span);
-    if (a > 0 && a < 1) glidesShownBetween++;
-    mesh.position.lerpVectors(g.p0, g.p1, a);
-    mesh.quaternion.slerpQuaternions(g.q0, g.q1, a);
-    if (a >= 1) glidesNow.delete(mesh);
-  }
-  return true;
-}
-window.machineGlideState = () => ({active: glidesNow.size, span_ms: glideMs, started: glidesStarted, between: glidesShownBetween});
 window.machineDrawnBodies = () => Object.fromEntries([...meshes].map(([name, mesh]) => [name, mesh.position.toArray()]));
 
-function syncMeshes(changed, glide = false) {
-  for (const [name, mesh] of meshes) if (!world.bodies.has(name)) { glidesNow.delete(mesh); scene.remove(mesh); disposeBodyGeometry(mesh); meshes.delete(name); }
+function syncMeshes(changed) {
+  for (const [name, mesh] of meshes) if (!world.bodies.has(name)) { scene.remove(mesh); disposeBodyGeometry(mesh); meshes.delete(name); }
   for (const b of changed) {
     let mesh = meshes.get(b.name);
     const cells = b.cells_local_m ? b.cells_local_m.length : 0;
     if (mesh && (mesh.userData.revision !== b.revision || mesh.userData.cells !== cells)) {
-      glidesNow.delete(mesh); scene.remove(mesh); disposeBodyGeometry(mesh); meshes.delete(b.name); mesh = null;
+      scene.remove(mesh); disposeBodyGeometry(mesh); meshes.delete(b.name); mesh = null;
     }
     if (!mesh) { mesh = makeMesh(b); meshes.set(b.name, mesh); }
-    place(mesh, b, glide);
+    place(mesh, b);
   }
   const heat = new Map((readouts.heat || []).map(h => [h.name, h.temperature_k]));
   $('heat-legend').hidden = !(readouts.heat || []).some(h => h.temperature_k > 320);
@@ -313,7 +290,7 @@ const electricalStartPoses = new Map();
 function terminalAt(device, key, at) {
   const part = device.terminal_parts?.[key] || device.part;
   if (ghost && (device.name === ghostName() || device.name.startsWith(ghostName()+' '))) return at;
-  const start = electricalStartPoses.get(part), now = world.bodies.get(part);
+  const start = electricalStartPoses.get(part), now = shownBody(part);
   if (!start) return at; // A new ghost's body does not exist in the engine yet.
   if (!now) return null;
   const q = start.orientation_wxyz, n = now.orientation_wxyz;
@@ -493,7 +470,7 @@ function updateContactCircuitReadings() {
     const tags=[...labels.querySelectorAll('span')],leaders=[...labels.querySelectorAll('line')];
     tags[1].textContent=diagram.fixedIsStatic?'Fixed pad':'Other contact';
     for(const [i,name] of [diagram.moving,diagram.fixed].entries()) {
-      const at=new THREE.Vector3(...world.bodies.get(name).position_m).project(camera);
+      const at=new THREE.Vector3(...shownBody(name).position_m).project(camera);
       const x=(at.x+1)*view.clientWidth/2,y=(1-at.y)*view.clientHeight/2,tag=tags[i];
       const left=Math.max(8,Math.min(view.clientWidth-tag.offsetWidth-8,x-tag.offsetWidth-35));
       const top=Math.max(55,Math.min(view.clientHeight-tag.offsetHeight-8,y+(i?28:-40)));
@@ -743,7 +720,7 @@ function sceneSockets() {
   if(heater) {
     const cord=level.goal?.station?.done_when?.parted;
     for(const part of machine.parts.filter(p=>p.shape==='box'&&!p.name.startsWith(ghostName())&&(!cord||p.name===cord))) {
-      project('heat:'+part.name,world.bodies.get(part.name)?.position_m||part.at_m,'heater','Clip',part);
+      project('heat:'+part.name,shownBody(part.name)?.position_m||part.at_m,'heater','Clip',part);
     }
     return rows;
   }
@@ -799,7 +776,7 @@ function drawSceneSockets() {
   const part=attaching&&machine?.parts.find(p=>p.name===cord);
   heaterAttachButton.hidden=!part||playing;
   if(part&&!heaterAttachButton.hidden){
-    const point=new THREE.Vector3(...(world.bodies.get(part.name)?.position_m||part.at_m)).project(camera);
+    const point=new THREE.Vector3(...(shownBody(part.name)?.position_m||part.at_m)).project(camera);
     heaterAttachButton.hidden=Math.abs(point.z)>1||Math.abs(point.x)>1||Math.abs(point.y)>1;
     if(!heaterAttachButton.hidden){
       const x=rect.left+(point.x+1)*rect.width/2,y=rect.top+(1-point.y)*rect.height/2;
@@ -1495,18 +1472,21 @@ const drumLines = new Map();
 function updateRopes() {
   // A rope on a drum: from where the engine says it leaves the drum to where
   // it meets its load.
+  // Between two frames, the rope's measured ends are drawn part of the way
+  // to the next frame's, as the bodies are.
+  const later = new Map((blendTarget?.readouts?.joints || []).map(j => [j.name, j]));
+  const between = (a, b) => b ? a.map((v, i) => v + (b[i] - v) * blendFraction) : a;
   for (const j of (readouts.joints || []).filter(j => j.kind === 'drum' && j.leaves && j.meets)) {
     let line = drumLines.get(j.name);
     if (!line) { line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({color: 0xd8c9a3})); scene.add(line); drumLines.set(j.name, line); }
-    line.geometry.setFromPoints([new THREE.Vector3(...j.leaves), new THREE.Vector3(...j.meets)]);
+    const next = later.get(j.name);
+    line.geometry.setFromPoints([new THREE.Vector3(...between(j.leaves, next?.leaves)), new THREE.Vector3(...between(j.meets, next?.meets))]);
     line.visible = j.attached !== false;
   }
   const gone = new Set((readouts.joints || []).filter(j => j.attached === false).map(j => j.name));
   const at = (name, v) => {
-    // Ropes follow the drawn piece, which may be gliding behind the engine.
-    const mesh = meshes.get(name);
-    if (mesh?.userData.placed && world.bodies.has(name)) return v.clone().applyQuaternion(mesh.quaternion).add(mesh.position);
-    const b = world.bodies.get(name); if (!b) return null;
+    // Ropes follow the piece as it is drawn, between frames while it moves.
+    const b = shownBody(name); if (!b) return null;
     const q = new THREE.Quaternion(b.orientation_wxyz[1], b.orientation_wxyz[2], b.orientation_wxyz[3], b.orientation_wxyz[0]);
     return v.clone().applyQuaternion(q).add(new THREE.Vector3(...b.position_m));
   };
@@ -1599,7 +1579,7 @@ function updateWires() {
     if(w.mechanicalName || w.powerCable && nativeCable(w.name)) {
       const cable=nativeCable(w.mechanicalName||w.name);
       if(cable){
-        if(w.mechanicalSample!==cable){w.line.geometry.dispose();w.line.geometry=mechanicalCableGeometry(cable);w.route=cable.segments_m.flat();w.mechanicalSample=cable;}
+        if(w.mechanicalSample!==cable){w.line.geometry.dispose();w.line.geometry=mechanicalCableGeometry(cable);w.route=cable.segments_m.flat();w.mechanicalSample=cable;w.drawnSegments=null;}
         w.connected=cable.connected;w.line.visible=!flowGroup.visible||(cableSetupActive&&!ghost);
         if(w.powerCable)w.points_m=[powerPortAt(w.fromPort),powerPortAt(w.toPort)];
         const value=w.powerCable?cable.charging_current_a:readouts.circuits?.find(c=>c.name===w.name)?.current_a||0;
@@ -1624,7 +1604,7 @@ function updateWires() {
       if(live?.mechanical?.segments_m) {
         if(w.mechanicalSample!==live.mechanical){
           w.line.geometry.dispose();w.line.geometry=mechanicalCableGeometry(live.mechanical);
-          w.route=live.mechanical.segments_m.flat();w.mechanicalSample=live.mechanical;
+          w.route=live.mechanical.segments_m.flat();w.mechanicalSample=live.mechanical;w.drawnSegments=null;
         }
         w.connected=live.mechanical.connected;
         w.line.visible=!flowGroup.visible || (cableSetupActive && !ghost);
@@ -1854,6 +1834,7 @@ async function build(next, start, request) {
     cableSetupSeconds = opened.cable_setup_s || 0;
     drawAirflows();
     world = mergeFrame({seq: 0, t: 0, bodies: new Map()}, opened);
+    resetPlayback();
     electricalStartPoses.clear();
     for (const [name,body] of world.bodies) electricalStartPoses.set(name,
       {position_m:[...body.position_m],orientation_wxyz:[...body.orientation_wxyz]});
@@ -1921,6 +1902,108 @@ window.machineCableSetupState = () => ({session,t:world.t,active:cableSetupActiv
 let wake = null;
 let liveControlPending = false;
 let liveControlRequest = null;
+// Frames are drawn a moment after they arrive (FramePlayback): each is applied
+// when the drawn time reaches it, and between two frames the moving bodies,
+// the ropes and cords joined to them, and their labels and connection rings
+// are drawn part of the way from one measured pose to the next. Asking the
+// server for "after" uses the newest frame received, not the one being drawn.
+const playback = new FramePlayback();
+let receivedSeq = 0, blendedPoses = new Map(), blendTarget = null, blendFraction = 0;
+const playbackStats = {runs: 0, behind_max_s: 0, logged: true};
+function resetPlayback() {
+  playback.reset(world.t, performance.now());
+  receivedSeq = world.seq; blendedPoses = new Map(); blendTarget = null; blendFraction = 0;
+}
+function applyFrame(frame) {
+  if (frame.mine !== polling) return;
+  // Everything worked out from this frame uses its poses; the drawing loop
+  // blends toward the next frame again afterwards.
+  blendedPoses = new Map();
+  const changed = frame.bodies;
+  world = mergeFrame(world, frame);
+  readouts = frame.readouts || readouts; lastFrame = frame;
+  syncMeshes(changed.map(b => world.bodies.get(b.name)));
+  if (frame.water) syncWater(frame.water);
+  if (frame.parcels) syncParcels(frame.parcels);
+  updateWires(); syncLight(); addEvents(frame.events); renderStations(); renderReadings(frame);
+  // The run's state now, rather than as it was when this frame was measured.
+  renderClock({...frame, playing});
+  watchGoal(frame);
+}
+// Draw the moving bodies between the applied frame and the next one received.
+function blendBodies(step) {
+  const moving = new Set((step.next?.bodies || []).map(b => b.name));
+  for (const name of blendedPoses.keys()) {
+    const b = world.bodies.get(name), mesh = meshes.get(name);
+    if (b && mesh && !moving.has(name)) place(mesh, b);
+  }
+  blendedPoses = new Map(); blendTarget = step.next; blendFraction = step.fraction || 0;
+  if (!step.next) return;
+  for (const b of step.next.bodies) {
+    const from = world.bodies.get(b.name), mesh = meshes.get(b.name);
+    if (!from || !mesh || !b.position_m || !from.position_m) continue;
+    const pose = blendPose(from, b, step.fraction);
+    blendedPoses.set(b.name, {...from, ...pose});
+    place(mesh, pose);
+  }
+}
+// A native cable moving between two frames is drawn between its two measured
+// shapes too, so a cord stays on the device it is plugged into. Only cables
+// whose shape changes between the frames are rebuilt; once there is no next
+// frame, each is drawn as measured again.
+const cableIn = (source, name) => source?.mechanical_cables?.find(c => c.name === name) || source?.electrical?.wires?.find(w => w.name === name)?.mechanical;
+function blendCables() {
+  for (const w of wires) {
+    if (!w.mechanicalSample?.segments_m) continue;
+    const now = w.mechanicalSample.segments_m, later = cableIn(blendTarget?.readouts, w.mechanicalName || w.name)?.segments_m;
+    const moving = blendFraction > 0 && later?.length === now.length &&
+      now.some((pair, i) => pair.some((p, k) => p.some((v, j) => Math.abs(v - later[i][k][j]) > 1e-7)));
+    if (!moving && !w.drawnSegments) continue;
+    w.drawnSegments = moving ? now.map((pair, i) => pair.map((p, k) => p.map((v, j) => v + (later[i][k][j] - v) * blendFraction))) : null;
+    w.line.geometry.dispose();
+    w.line.geometry = mechanicalCableGeometry(moving ? {...w.mechanicalSample, segments_m: w.drawnSegments} : w.mechanicalSample);
+  }
+  for (const w of wires) if (w.powerCable && w.mechanicalSample && w.points_m) w.points_m = [powerPortAt(w.fromPort), powerPortAt(w.toPort)];
+}
+// A body as it is drawn now: between frames when it is moving.
+function shownBody(name) { return blendedPoses.get(name) || world.bodies.get(name); }
+function shownBodies() { return blendedPoses.size ? new Map([...world.bodies, ...blendedPoses]) : world.bodies; }
+// One console line per run: how often frames came and whether the server kept
+// real time (each watched run also logs RUN_PACE on the server).
+function logRunPace(frame) {
+  const pace = frame.pace || {};
+  if (playing) { playbackStats.logged = false; playbackStats.behind_max_s = Math.max(playbackStats.behind_max_s, pace.behind_max_s ?? pace.behind_s ?? 0); return; }
+  if (playbackStats.logged || !(frame.t > 0)) return;
+  playbackStats.logged = true; playbackStats.runs++;
+  const report = {level: level?.id || null, world_s: frame.t, server_behind_max_s: playbackStats.behind_max_s,
+    frames: playback.received, longest_wait_ms: Math.round(playback.longestWait_ms), world_s_per_frame: Number((playback.gap ?? 0).toFixed(3))};
+  playbackStats.lastRun = report; playbackStats.behind_max_s = 0;
+  console.info('Banjo run pace', JSON.stringify(report));
+}
+// For tests: record what each drawn frame showed of the named bodies, cords
+// and power ports, with the applied frame and the next one drawn toward.
+let drawingRecord = null;
+window.machineRecordDrawing = (names, frames = 900, {cables = [], ports = []} = {}) => {
+  drawingRecord = {names, cables, ports, frames, rows: []}; return true;
+};
+window.machineDrawingRecord = () => drawingRecord?.rows || [];
+function recordDrawing(step) {
+  if (!drawingRecord || drawingRecord.rows.length >= drawingRecord.frames) return;
+  const next = new Map((step.next?.bodies || []).map(b => [b.name, b]));
+  const portOf = name => (machine?.electrical?.power_ports || []).find(p => p.name === name);
+  drawingRecord.rows.push({at: performance.now(), shown: playback.shown, newest: playback.newest, applied: playback.applied,
+    fraction: step.fraction, next_t: step.next?.t ?? null,
+    bodies: Object.fromEntries(drawingRecord.names.map(name => [name, {drawn: meshes.get(name)?.position.toArray() || null,
+      applied: world.bodies.get(name)?.position_m || null, next: next.get(name)?.position_m || null}])),
+    cables: Object.fromEntries(drawingRecord.cables.map(name => {
+      const w = wires.find(row => row.name === name), segments = w?.drawnSegments || w?.mechanicalSample?.segments_m;
+      return [name, segments ? [segments[0][0], segments.at(-1)[1]] : null];
+    })),
+    ports: Object.fromEntries(drawingRecord.ports.map(name => [name, portOf(name) ? powerPortAt(portOf(name)) : null]))});
+}
+window.machinePlaybackState = () => ({shown_t: playback.shown, applied_t: playback.applied, newest_t: playback.newest,
+  queued: playback.queue.length, rate: playback.rate, world_s_per_frame: playback.gap, received: playback.received,
+  longest_wait_ms: playback.longestWait_ms, blended: [...blendedPoses.keys()], last_run: playbackStats.lastRun || null});
 async function poll(mine) {
   let last = 0;
   while (mine === polling && session) {
@@ -1930,20 +2013,18 @@ async function poll(mine) {
     if (mine !== polling || !session) return;
     last = performance.now();
     try {
-      const frame = await api({op: 'frame', session, after: world.seq, wait_ms: playing || cableSetupActive ? 120 : 0});
+      const frame = await api({op: 'frame', session, after: receivedSeq, wait_ms: playing || cableSetupActive ? 120 : 0});
       if (mine !== polling) return;
-      const changed = frame.bodies;
-      world = mergeFrame(world, frame);
-      readouts = frame.readouts || readouts; playing = frame.playing; lastFrame = frame;
+      receivedSeq = frame.seq; playing = frame.playing;
       cableSetupActive = Boolean(frame.cable_setup);
       cableSetupSeconds = frame.cable_setup_s || 0;
-      const running = playing || cableSetupActive, arrived = performance.now();
-      if (running && changed.length) { glideMs = glideSpan(glideMs, arrived - lastGlideFrameAt); lastGlideFrameAt = arrived; }
-      syncMeshes(changed.map(b => world.bodies.get(b.name)), running);
-      if (frame.water) syncWater(frame.water);
-      if (frame.parcels) syncParcels(frame.parcels);
-      updateWires(); syncLight(); addEvents(frame.events); renderStations(); renderReadings(frame); renderClock(frame);
-      watchGoal(frame);
+      logRunPace(frame);
+      playback.receive({...frame, mine}, performance.now());
+      // The run (and its goal) is followed here as well as in the drawing
+      // loop, which a background tab slows or stops: a page that is not
+      // drawn applies every frame as it arrives.
+      if (document.hidden) { playback.drain(applyFrame); blendBodies({next: null}); }
+      else playback.advance(performance.now(), applyFrame, Number($('speed').value) || 1);
     } catch (e) {
       if (mine !== polling) return;
       if (e.status === 410) {
@@ -2110,8 +2191,15 @@ function pointerRay(clientX, clientY) {
 
 function render() {
   requestAnimationFrame(render);
+  const step = playback.advance(performance.now(), applyFrame, Number($('speed').value) || 1);
+  const wasBlending = blendedPoses.size > 0;
+  blendBodies(step);
+  if (machine) blendCables();
+  recordDrawing(step);
+  // Ropes, springs and pins follow the bodies they join as they are drawn.
+  if (machine && (wasBlending || blendedPoses.size)) updateRopes();
   if (follow && machine && playing) {
-    const f = focusPoint(readouts.stations, machine.stations, world.bodies);
+    const f = focusPoint(readouts.stations, machine.stations, shownBodies());
     if (f) { goal.set(f.at[0], Math.max(.25, f.at[1]), f.at[2]); distance += (Math.max(2.2, Math.min(distance, 3.4)) - distance) * .02; }
   }
   target.lerp(goal, .05);
@@ -2122,7 +2210,6 @@ function render() {
   // bounds by whole major squares keeps every line on the same world grid.
   fineGrid.position.x=Math.round(target.x/PLACEMENT_GRID.major_step_m)*PLACEMENT_GRID.major_step_m;
   fineGrid.position.z=Math.round(target.z/PLACEMENT_GRID.major_step_m)*PLACEMENT_GRID.major_step_m;
-  if (advanceGlides(performance.now()) && ropes.length) updateRopes();
   updatePreviewRunners(performance.now());
   renderPlayMode();
   if (LEVEL_MODE) { for (const [name, mesh] of meshes) mesh.visible = !hiddenPiece(name); updateGuides(); updateEditGuide(); syncMovePad(); }
@@ -3805,8 +3892,8 @@ function powerFeedbackSnapshot() {
       if(w.route) samples.push({...live,name:w.name,points_m:w.route,unit:'A',value:live?.current_a||0,routed:true});
     } else {
       const live=readouts.circuits?.find(c=>c.name===w.name);
-      const points=w.route||[world.bodies.get(w.from)?.position_m,w.via,
-        w.to?world.bodies.get(w.to)?.position_m:w.toPoint].filter(Boolean);
+      const points=w.route||[shownBody(w.from)?.position_m,w.via,
+        w.to?shownBody(w.to)?.position_m:w.toPoint].filter(Boolean);
       if(points.length>1) samples.push({name:w.name+(w.leg?'/'+w.leg:''),points_m:points,
         unit:'A',value:live?.current_a||0,through_w:live?.power_w||0,return_path:w.leg==='return',routed:Boolean(w.route),mechanical:nativeCable(w.mechanicalName)});
     }
@@ -3851,7 +3938,7 @@ function updatePowerFeedback() {
       title:rating+(ghost.p.piece==='spring'?'. Proposed spring settings; the engine measures motion after release.':'. Measured voltage, current and power remain separate.')});
   }
   for(const d of sample.devices) {
-    const at=world.bodies.get(d.part)?.position_m||d.at_m;if(!at)continue;
+    const at=shownBody(d.part)?.position_m||d.at_m;if(!at)continue;
     if(d.requirement==='heater') {
       items.push({id:'device:'+d.name,name:'Heater',kind:'object',at,
         text:`${d.resistance_ohm} Ω · ${d.clipped_to?'clipped to '+d.clipped_to:'not attached'}\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${d.input_w.toFixed(0)} W · ${Math.abs(d.current_a).toFixed(2)} A`}`+
@@ -4521,8 +4608,9 @@ function wireCandidates(clientX,clientY,touch=false) {
     }
     if(wire.pickGeometry!==wire.line.geometry) {
       wire.pickGeometry=wire.line.geometry;
-      wire.pickPoints=wire.mechanicalSample?.segments_m
-        ? wire.mechanicalSample.segments_m.flat().map(p=>new THREE.Vector3(...p))
+      const drawn=wire.drawnSegments||wire.mechanicalSample?.segments_m;
+      wire.pickPoints=drawn
+        ? drawn.flat().map(p=>new THREE.Vector3(...p))
         : wire.line.geometry.parameters.path.getPoints(24);
     }
     const pts=wire.pickPoints.map(at=>{const p=at.clone().project(camera);return {at,x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2,z:p.z};});

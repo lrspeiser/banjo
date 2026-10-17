@@ -40,6 +40,11 @@ STEPS_PER_CALL = 4
 # out (a break or a dent, on the engine's worker) stay held while everything
 # else moves on, before it waits for the answer.
 MAX_HOLD_S = 0.05
+# A cord's shape is measured again in the step after a body it is plugged into
+# has moved this far or turned this much since the last measurement, so the
+# cord is shown on its device; still machines keep the 0.1 s reading.
+CABLE_FOLLOW_M = 0.001
+CABLE_FOLLOW_COS = math.cos(math.radians(0.5) / 2)
 MAX_PARTS = 120
 MAX_TIME_S = 120.0
 # The hardest a person testing a part pulls on it, newtons: about what one
@@ -2404,6 +2409,14 @@ class MachineSession:
         self.cable_setup_s = 0.0
         self.has_mechanical_cables = bool(compiled.get('electrical', {}).get('wires') or
             compiled.get('electrical', {}).get('power_cables') or any(c.get('leads') for c in compiled['circuits']))
+        # The bodies cords are plugged into, and where each was when the cords
+        # were last measured (see _plugged_moved).
+        electrical = compiled.get('electrical', {})
+        rows = [*electrical.get('wires', []), *electrical.get('power_cables', []),
+                *(lead for c in compiled['circuits'] for lead in c.get('leads') or [])]
+        self._plugged = {m[k] for m in (row.get('mechanical') for row in rows) if isinstance(m, dict)
+                         for k in ('a_body', 'b_body') if m.get(k)}
+        self._cable_poses = {}
         self.speed = 1.0
         self.t = 0.0
         self.seq = 0
@@ -2424,6 +2437,7 @@ class MachineSession:
         self.wall_compute_s = 0.0
         self.fracture_s = 0.0
         self.behind_s = 0.0
+        self.behind_max_s = 0.0   # the most this run ever fell behind real time
         self._first_impact = set()
         self._parted = set()
         self._switches = {}
@@ -3146,6 +3160,29 @@ class MachineSession:
             self.lock.notify_all()
         return dict(name=name, queued=True)
 
+    def _plugged_moved(self, reply):
+        """Whether a body a cord is plugged into has moved or turned noticeably
+        since the cords were last measured."""
+        for b in reply.get('bodies', []):
+            seen = self._cable_poses.get(b['name']) if b['name'] in self._plugged else False
+            if seen is False:
+                continue
+            if seen is None or math.dist(seen[0], b['position_m']) > CABLE_FOLLOW_M or \
+                    abs(sum(x * y for x, y in zip(seen[1], b['orientation_wxyz']))) < CABLE_FOLLOW_COS:
+                return True
+        return False
+
+    def _cable_readouts(self, cables):
+        """Native cords' measured shapes, and whether each is still plugged in,
+        into the readings the page draws them from."""
+        physical = {c['name']: c for c in cables}
+        self.readouts['mechanical_cables'] = list(physical.values())
+        for w in self.readouts.get('electrical', {}).get('wires', []):
+            if w['name'] in physical:
+                w['mechanical'] = physical[w['name']]
+                if not w['mechanical']['connected']:
+                    w.update(current_a=0, through_w=0, loss_w=0)
+
     def _cable_setup_active(self):
         return self.paced and self.has_mechanical_cables and self.t == 0 and not self.error and not self.playing
 
@@ -3163,13 +3200,7 @@ class MachineSession:
                             reply = self.engine.op(op='cable_setup_step', dt=DT_S, n=8)
                             self.cable_setup_s += DT_S*8
                             self.seq += 1
-                            physical = {c['name']: c for c in reply['cables']}
-                            self.readouts['mechanical_cables']=list(physical.values())
-                            for w in self.readouts.get('electrical', {}).get('wires', []):
-                                if w['name'] in physical:
-                                    w['mechanical'] = physical[w['name']]
-                                    if not w['mechanical']['connected']:
-                                        w.update(current_a=0, through_w=0, loss_w=0)
+                            self._cable_readouts(reply['cables'])
                             self.lock.notify_all()
                         except Exception as exc:
                             self.error = str(exc)
@@ -3222,9 +3253,19 @@ class MachineSession:
                         with self.lock:
                             self._ingest(fractured, full=True)
                             self._broke(name, fractured)
+                # While a device with a cord plugged in moves, the cords are
+                # measured with every step, as the bodies are, so a cord is
+                # shown where its device is now rather than where it was at
+                # the last 0.1 s reading.
+                cables = self.engine.op(op='mechanical_cables')['cables'] \
+                    if self.has_mechanical_cables and self._plugged_moved(reply) else None
                 self.wall_compute_s += time.perf_counter() - started
                 with self.lock:
                     self._ingest(reply)
+                    if cables is not None:
+                        self._cable_readouts(cables)
+                        self._cable_poses = {n: (self.bodies[n]['position_m'], self.bodies[n]['orientation_wxyz'])
+                                             for n in self._plugged if n in self.bodies}
                     if reply.get('finished'):
                         self._broke(reply['finished'], reply)
                     held_since = self._held_since
@@ -3245,6 +3286,7 @@ class MachineSession:
                         self._probe()
                         last_probe = self.t
                     self.behind_s = max(0.0, target - self.t) if self.paced else 0.0
+                    self.behind_max_s = max(self.behind_max_s, self.behind_s)
                     self.lock.notify_all()
                 self.journal.write(json.dumps({'t': self.t, 'events': [e for e in self.events if e['seq'] == self.seq]})
                                    + '\n')
@@ -3343,12 +3385,20 @@ class MachineSession:
                     'events': [e for e in self.events if e['seq'] > after],
                     'readouts': self.readouts, 'error': self.error, 'runtime': self.runtime,
                     'pace': {'compute_s': round(self.wall_compute_s, 3), 'fracture_s': round(self.fracture_s, 3),
-                             'behind_s': round(self.behind_s, 3), 'build_s': round(self.build_s, 3)}}
+                             'behind_s': round(self.behind_s, 3), 'behind_max_s': round(self.behind_max_s, 3),
+                             'build_s': round(self.build_s, 3)}}
 
     def close(self):
         with self.lock:
             self.closed = True
             self.lock.notify_all()
+            ran = self.paced and self.t > 0
+            pace = {'level': (getattr(self, 'game', None) or {}).get('level'), 'world_s': round(self.t, 3),
+                    'behind_max_s': round(self.behind_max_s, 3), 'compute_s': round(self.wall_compute_s, 3),
+                    'fracture_s': round(self.fracture_s, 3)}
+        # One line per watched run in the host's log: did the server keep real time?
+        if ran:
+            print('RUN_PACE ' + json.dumps(pace, separators=(',', ':')), flush=True)
         self.engine.close()
         try:
             self.journal.close()

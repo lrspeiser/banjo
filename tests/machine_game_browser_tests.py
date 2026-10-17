@@ -1944,14 +1944,13 @@ class Puzzles(unittest.TestCase):
                 self.wait('window.machineDesign().versions.length===1',5)
                 self.assertEqual(len(self.js('window.machineDesign().versions[0].draft.placements')),1)
 
-    def test_running_pieces_glide_between_engine_frames_on_desktop_and_phones(self):
+    def test_running_pieces_are_drawn_between_engine_frames_on_desktop_and_phones(self):
         # The page asks for at most about 20 engine frames a second, while a
-        # screen draws about 60. Moving pieces glide from where they are drawn
-        # to each new engine pose, so drawn frames between engine frames show
-        # in-between poses. The finished pose is still exactly the engine's.
-        # (A software-rendered CI page draws only a few frames a second, so
-        # this counts glides and in-between poses instead of frame rates.)
-        for width,height in ((1280,860),(390,844)):
+        # screen draws about 60. Each frame is drawn a moment after it arrives,
+        # and between two frames a moving piece is drawn part of the way from
+        # the applied frame to the next one received: never past the newest
+        # frame, and the run's result is the engine's own.
+        for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.open('gap',width,height,phone=width!=1280)
                 self.press('Add a plank'); self.ghost()
@@ -1963,24 +1962,77 @@ class Puzzles(unittest.TestCase):
                 # It rests 0.8 s at the end of each pass, so watch for movement.
                 first=self.js('window.machinePreviewRunners()[0].at')
                 self.wait(f"window.machinePreviewRunners()[0].at.some((v,i)=>Math.abs(v-{json.dumps(first)}[i])>1e-6)",5)
-                before=self.js('window.machineGlideState()')
+                self.assertTrue(self.js("machineRecordDrawing(['ball'],1500)"))
                 self.click_visible('Try It!')
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
-                got=self.js('window.machineGlideState()')
-                print('GLIDE_STATE',json.dumps(got),flush=True)
-                self.assertGreater(got['started']-before['started'],10,'running pieces glide to new engine poses')
-                self.assertGreater(got['between']-before['between'],0,'some drawn frames fall between engine frames')
-                self.assertGreaterEqual(got['span_ms'],16)
-                self.assertLessEqual(got['span_ms'],150)
-                # A paused machine is drawn exactly where the engine has it.
+                # Once the run stops, the drawing reaches the last frame exactly.
                 if self.js("document.getElementById('start').textContent.includes('Pause')"):self.click_visible('Pause')
-                self.wait('window.machineGlideState().active===0',5)
-                time.sleep(.3)
-                drawn,engine=self.js('window.machineDrawnBodies()'),self.js('window.machineBodies()')
-                for name,at in engine.items():
-                    if name in drawn:
-                        self.assertLess(max(abs(a-b) for a,b in zip(at,drawn[name])),1e-6,name)
+                self.wait("machinePlaybackState().queued===0 && machinePlaybackState().blended.length===0 && "
+                          "machinePlaybackState().shown_t===machinePlaybackState().newest_t",30)
+                drawn,applied=self.js('machineDrawnBodies()'),self.js('machineBodies()')
+                for name,at in applied.items():
+                    if name in drawn:self.assertTrue(all(abs(a-b)<1e-12 for a,b in zip(drawn[name],at)),(name,drawn[name],at))
+                rows=[r for r in self.js('machineDrawingRecord()') if r['bodies']['ball']['drawn'] and r['bodies']['ball']['applied']]
+                self.assertGreater(len(rows),5)
+                glided=0
+                for before,row in zip([None]+rows,rows):
+                    self.assertLessEqual(row['shown'],row['newest']+1e-9,'never drawn past the newest frame')
+                    self.assertLessEqual(row['applied'],row['shown']+1e-9)
+                    if before:self.assertGreaterEqual(row['shown'],before['shown']-1e-12,'drawn time never goes back')
+                    ball=row['bodies']['ball']
+                    expected=[a+(n-a)*row['fraction'] for a,n in zip(ball['applied'],ball['next'])] if ball['next'] else ball['applied']
+                    self.assertTrue(all(abs(d-e)<1e-9 for d,e in zip(ball['drawn'],expected)),(row,expected))
+                    if ball['next'] and 0<row['fraction']<1 and any(abs(n-a)>1e-6 for a,n in zip(ball['applied'],ball['next'])):glided+=1
+                self.assertGreater(glided,0,'the ball is drawn between two measured frames')
+                seconds=(rows[-1]['at']-rows[0]['at'])/1000
+                if len(rows)/max(seconds,1e-3)>=30:
+                    # Where the page draws at full speed it shows many more
+                    # positions than the frames it receives (CI draws at ~5-7 fps).
+                    moved=lambda key:sum(1 for a,b in zip(rows,rows[1:]) if any(abs(p-q)>1e-6 for p,q in zip(a['bodies']['ball'][key],b['bodies']['ball'][key])))
+                    self.assertGreaterEqual(moved('drawn'),1.5*moved('applied'),(moved('drawn'),moved('applied')))
+                pace=self.js('machinePlaybackState().last_run')
+                self.assertEqual(pace['level'],'gap')
+                self.assertIn('server_behind_max_s',pace)
+
+    def test_a_cord_stays_on_the_battery_it_is_plugged_into_while_the_battery_falls(self):
+        # Between two frames a falling battery is drawn part of the way to its
+        # next pose; its plugged-in cord, connection ring and readings are drawn
+        # from the same poses, so the cord does not run ahead of the battery.
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
+                self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':width!=1280,'maxTouchPoints':5})
+                self.navigate(f'{self.base}/machine')
+                self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
+                self.press('Start from Drop a battery into its holder');self.wait(READY,60)
+                self.press('Add a solar panel');self.ghost()
+                self.slide('Position along (m) of your solar 2',0)
+                self.slide('Position across (m) of your solar 2',.7)
+                self.assertTrue(self.ghost()['fits'])
+                self.press('Set it down');self.wait(f'!window.machineGhostState() && {READY}',60)
+                self.click_visible('Power output of your solar 2')
+                self.click_visible('Power input of your battery 1')
+                self.wait(f'window.machinePlacements().length===3 && {READY}',60)
+                cable=self.js("machineWiringState().powerCables[0].name")
+                record={'cables':[cable],'ports':['your battery 1:power']}
+                self.assertTrue(self.js(f"machineRecordDrawing(['your battery 1 housing'],1500,{json.dumps(record)})"))
+                self.click_visible('Try It!')
+                self.wait("window.machineContactState().liveDevices.some(d=>d.kind==='bulb' && d.power_w>2)",30)
+                self.press('Pause')
+                rows=[r for r in self.js('machineDrawingRecord()') if r['bodies']['your battery 1 housing']['drawn'] and r['cables'][cable] and r['ports']['your battery 1:power']]
+                self.assertGreater(len(rows),2)
+                heights=[r['bodies']['your battery 1 housing']['drawn'][1] for r in rows]
+                self.assertGreater(max(heights)-min(heights),.05,'the battery fell while it was drawn')
+                port0=rows[0]['ports']['your battery 1:power']
+                ends=rows[0]['cables'][cable]
+                end=min((0,1),key=lambda i:math.dist(ends[i],port0))
+                ring=[math.dist(r['ports']['your battery 1:power'],r['bodies']['your battery 1 housing']['drawn']) for r in rows]
+                cord=[math.dist(r['cables'][cable][end],r['ports']['your battery 1:power']) for r in rows]
+                # The connection ring moves rigidly with the drawn housing, and
+                # the cord's plugged end keeps the same small offset from it.
+                self.assertLess(max(ring)-min(ring),.001,ring)
+                self.assertLess(max(cord)-min(cord),.005,cord)
 
     def test_interactive_pieces_glow_on_hover_and_pulse_on_an_empty_tap(self):
         # Your placed pieces glow gold under the mouse; tapping empty scene

@@ -359,31 +359,94 @@ export function pieceToolbarPosition(scene, piece, size, obstacles=[], {edgeOnly
   return ranked.sort((a,b)=>a.penalty-b.penalty||a.distance-b.distance)[0];
 }
 
-// Smooth motion between engine frames. While a machine runs the page asks for
-// at most about 20 frames a second, but the screen draws about 60. Each moving
-// piece glides from where it is drawn to the newest engine pose over roughly
-// one gap between frames, so motion is drawn at the screen rate. This is
-// display only: readings, goals and later requests use the engine's frame.
-export const GLIDE = {min_ms: 16, max_ms: 150, snap_m: 0.5, settle: 0.3};
-
-// How long the next glide lasts, from the previous glide length and the time
-// since the last frame arrived. A long gap (a pause or a slow build) is not a
-// running frame interval, so it leaves the estimate unchanged.
-export function glideSpan(previous_ms, gap_ms) {
-  const previous = Math.min(GLIDE.max_ms, Math.max(GLIDE.min_ms, previous_ms || GLIDE.max_ms / 3));
-  if (!(gap_ms > 0) || gap_ms > 4 * GLIDE.max_ms) return previous;
-  const next = previous + (gap_ms - previous) * GLIDE.settle;
-  return Math.min(GLIDE.max_ms, Math.max(GLIDE.min_ms, next));
+// A pose part of the way between two measured poses: the position on the
+// straight line between them, the turn on the shortest arc. Display only;
+// fraction 0 is `a` exactly and 1 is `b` exactly.
+export function blendPose(a, b, fraction) {
+  const f = Math.max(0, Math.min(1, Number.isFinite(fraction) ? fraction : 0));
+  const position_m = a.position_m.map((v, i) => v + (b.position_m[i] - v) * f);
+  const p = a.orientation_wxyz || [1, 0, 0, 0];
+  let q = b.orientation_wxyz || [1, 0, 0, 0];
+  let cos = p.reduce((s, v, i) => s + v * q[i], 0);
+  if (cos < 0) { q = q.map(v => -v); cos = -cos; }
+  let wa = 1 - f, wb = f;
+  if (cos < .9995) {
+    const angle = Math.acos(Math.min(1, cos)), sin = Math.sin(angle);
+    wa = Math.sin((1 - f) * angle) / sin; wb = Math.sin(f * angle) / sin;
+  }
+  const blended = p.map((v, i) => v * wa + q[i] * wb), norm = Math.hypot(...blended) || 1;
+  return {position_m, orientation_wxyz: blended.map(v => v / norm)};
 }
 
-// Fraction of a glide shown after elapsed_ms, eased so it never overshoots.
-export function glideAlpha(elapsed_ms, span_ms) {
-  if (!(span_ms > 0)) return 1;
-  return Math.min(1, Math.max(0, elapsed_ms / span_ms));
+// Smooth playback of a live run. Frames arrive a few times a second, each the
+// engine's measured state at its world time. The page draws the run a moment
+// behind the newest frame: a frame is applied when the drawn time reaches it,
+// and each body is drawn between that frame and the next one already received.
+// Nothing is drawn past the newest frame and nothing is predicted; when frames
+// stop, the drawing stops at the last one. Frames that do not advance world
+// time (a paused run, cords settling before Try It!) are applied at once.
+export class FramePlayback {
+  constructor() { this.reset(0, 0); }
+  reset(t = 0, now = 0) {
+    this.queue = []; this.shown = t; this.applied = t; this.newest = t; this.at = now;
+    this.rate = null; this.gap = null; this.lastArrival = null; this.lastT = t;
+    this.received = 0; this.longestWait_ms = 0;
+  }
+  // `now` is milliseconds on the page's clock (performance.now()).
+  receive(frame, now) {
+    const advanced = frame.t - this.lastT;
+    if (advanced > 1e-9 && this.lastArrival != null) {
+      const wall = (now - this.lastArrival) / 1000;
+      if (wall > .005) {
+        const rate = advanced / wall;
+        this.rate = this.rate == null ? rate : this.rate + .25 * (rate - this.rate);
+        this.gap = this.gap == null ? advanced : this.gap + .25 * (advanced - this.gap);
+        this.longestWait_ms = Math.max(this.longestWait_ms, now - this.lastArrival);
+      }
+    }
+    // A frame that did not move world time starts the measurement again.
+    this.lastArrival = advanced > 1e-9 || this.lastArrival == null ? now : null;
+    this.lastT = Math.max(this.lastT, frame.t);
+    this.newest = Math.max(this.newest, frame.t);
+    this.received++;
+    this.queue.push(frame);
+  }
+  // Move the drawn time on to `now`, applying (in order) every frame it has
+  // reached. Returns the next frame to draw toward and how far toward it.
+  advance(now, apply, speed = 1) {
+    const dt = Math.max(0, Math.min(.25, (now - this.at) / 1000));
+    this.at = now;
+    const rate = this.rate ?? speed, expected = this.gap ?? .05 * speed;
+    // Overdue: three of the usual intervals between frames, at least 0.25 s.
+    const waiting = this.lastArrival == null || now - this.lastArrival > Math.max(250, 3000 * expected / Math.max(.05, rate));
+    // A frame and a half of world time behind the newest, so a late frame
+    // does not stop the motion; all of the way once frames stop arriving.
+    const want = waiting ? this.newest : this.newest - Math.min(.5, 1.5 * expected);
+    if (this.newest - this.shown > 1.5) this.shown = want;   // far behind (a hidden tab): catch up
+    let next = this.shown + dt * rate;
+    next += (want - next) * Math.min(1, dt / .35);
+    this.shown = Math.min(this.newest, Math.max(this.shown, next));
+    while (this.queue.length && this.queue[0].t <= this.shown + 1e-9) this.applyNext(apply);
+    const following = this.queue[0] || null;
+    const span = following ? following.t - this.applied : 0;
+    return {next: following, fraction: span > 1e-9 ? Math.max(0, Math.min(1, (this.shown - this.applied) / span)) : 0};
+  }
+  applyNext(apply) {
+    const frame = this.queue.shift();
+    this.applied = Math.max(this.applied, frame.t);
+    this.shown = Math.max(this.shown, this.applied);
+    apply(frame);
+  }
+  // Apply everything received, for a page that is not being drawn.
+  drain(apply) { while (this.queue.length) this.applyNext(apply); }
 }
+
+// A preview sample further than snap_m from the previous one (a reset or a
+// rebuilt rehearsal) is shown at once rather than blended.
+export const GLIDE = {snap_m: 0.5};
 
 // Whether a pose change is a glide or a jump: a piece that moved further than
-// snap_m in one frame was set up again or teleported and is placed at once.
+// snap_m between two preview samples was set up again and is placed at once.
 export function glides(from_m, to_m) {
   if (!from_m || !to_m) return false;
   const d = Math.hypot(to_m[0] - from_m[0], to_m[1] - from_m[1], to_m[2] - from_m[2]);

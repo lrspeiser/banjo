@@ -3,17 +3,40 @@
 October 16 playtest follow-up (the engine, every level's goal and every test
 tolerance are unchanged; Sandbox gains optional player goals):
 
-* **Gliding motion.** While a machine runs the page still requests at most 20
-  frames a second (`RUNNING_MS`). Each moved body now glides from its drawn pose
-  to the newest engine pose over one smoothed frame gap (`GLIDE` in
-  `machine-view.mjs`: 16–150 ms, pauses ignored), with slerped orientation. A
-  move of 0.5 m or more in one frame (reset, rebuild) is placed at once. Ropes
-  follow the drawn bodies. Readings, goals and the next request use the engine
-  frame; a paused or finished machine is drawn exactly at the engine pose
-  (browser check: 1e-6 m). In the software-rendered test Chrome the page draws
-  only about 5 frames a second, so the check counts glides and in-between
-  poses (Mind the gap: about 60 glides and 12–26 in-between frames per run on
-  desktop and portrait phone) rather than a frame rate.
+* **Motion drawn between engine frames (October 17).** While a machine runs
+  the page still requests at most 20 frames a second (`RUNNING_MS`). It draws
+  the run about a frame and a half behind the newest frame (`FramePlayback` in
+  `machine-view.mjs`): a frame is applied when the drawn time reaches it, and
+  each moving body is drawn part of the way from the applied frame to the next
+  one received, never past the newest and without prediction. When frames
+  stop, the drawing stops exactly at the last one. Ropes, pins, drum ropes,
+  native cords, labels and connection rings are drawn from the same in-between
+  poses. A tab that is not being drawn applies frames as they arrive, so goals
+  still register. This replaced the first version (October 16), which glided
+  each body from its drawn pose toward the newest pose while cords, labels and
+  rings stayed at the newest pose. Browser check: every drawn frame equals the
+  blend of the applied and next frames to 1e-9 m, the finished machine is drawn
+  at the engine pose, and Mind the gap is still won, at 1280×860, 390×844 and
+  844×390 (`test_running_pieces_are_drawn_between_engine_frames_on_desktop_and_phones`).
+* **Cords measured with their devices (October 17).** The server read cord
+  shapes only every 0.1 s of world time while bodies came every step, so a
+  cord plugged into a moving device was drawn up to 0.1 s behind it: 50 mm off
+  on a battery falling 159 mm into its holder. Now, in the step after a body a
+  cord is plugged into moves more than 1 mm or turns more than 0.5°
+  (`CABLE_FOLLOW_M`, `CABLE_FOLLOW_COS`), the cords are read again; through
+  the same fall the cord end stays within 0.3 mm of its connection ring.
+  Still machines keep the 0.1 s reading. Engine time for one run, measured
+  locally: Give it power 3.35–3.43 s for 4.5 s of world (3.44–3.56 s before),
+  Turn the axle 0.35–0.36 s (unchanged); reading cords on every step instead
+  cost 3.66–3.80 s and 0.40–0.45 s. Browser check:
+  `test_a_cord_stays_on_the_battery_it_is_plugged_into_while_the_battery_falls`.
+* **Server pace.** Each watched run writes one `RUN_PACE {...}` line to the
+  server log (world time, the most it fell behind real time, engine and
+  fracture time), and the page logs `Banjo run pace` to its console, so a
+  hosted server falling behind shows up in its log. Measured locally, Mind the
+  gap's own solution kept real time (6.52 s of world in 6.51 s, 0.25–0.41 s of
+  engine work, never behind): its chug was the page drawing 20 positions a
+  second.
 * **Preview motion.** Flow-preview mechanisms blend between rehearsal samples
   (at least 0.1 s apart) instead of holding each one. A see-through copy of the
   goal body travels the rehearsed path at real speed, rests 0.8 s at its end and
