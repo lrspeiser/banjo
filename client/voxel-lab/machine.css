@@ -1019,3 +1019,13 @@ body.panel-tabs #phone-toolbar.one-row{padding:4px max(8px,calc((100% - 1240px)/
 #phone-toolbar.one-row #redo-pieces:disabled{display:none}
 #viewer-corner[hidden]{display:none}
 body.panel-tabs:has(#phone-toolbar.one-row) #view #clock{top:6px}
+/* The string's loose end while tying (Attach): a small circle on a 44 px
+   touch target, dragged onto the part to tie to. Gold when it is over one.
+   October 17. */
+.string-end{position:absolute;width:44px;height:44px;padding:0;margin:0;border:0;border-radius:50%;background:transparent;display:grid;place-items:center;pointer-events:auto;touch-action:none;cursor:grab;z-index:8}
+.string-end[hidden]{display:none}
+.string-end:active{cursor:grabbing}
+.string-end-ring{width:16px;height:16px;border-radius:50%;border:3px solid #f1e2b8;background:#14283655;box-shadow:0 0 0 2px #142836aa,0 0 10px #ffd34d88;transition:transform .12s,border-color .12s}
+.string-end.over .string-end-ring{border-color:#ffd34d;transform:scale(1.35)}
+@media (prefers-reduced-motion:no-preference){.string-end:not(.over) .string-end-ring{animation:string-end-call 1.6s ease-in-out infinite}}
+@keyframes string-end-call{50%{box-shadow:0 0 0 2px #142836aa,0 0 16px #ffd34dcc}}

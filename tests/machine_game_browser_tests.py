@@ -2123,7 +2123,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844)):
             with self.subTest(viewport=(width,height)):
                 self.open('easy-rope',width,height,phone=width!=1280)
-                self.press('Add a marble');self.ghost()
+                self.press('Add a ring marble');self.ghost()
                 self.drag_ghost_to(-.5,0,touch=width!=1280);self.ghost()
                 self.assertTrue(self.ghost()['fits'])
                 self.click_visible('Place');self.wait(READY,30)
@@ -2133,7 +2133,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("!document.getElementById('attach-card').hidden && document.getElementById('attach-card').textContent.includes('tie ring')",5)
                 self.assertEqual(self.js('window.machineTieRings()'),[[0,1.4,0]])
                 for point in ([0.0,1.43,.08],None):
-                    at=self.js(f"window.machineScreenPoint({json.dumps(point)})") if point else self.js("window.machineBodyScreen('your marble 1')")
+                    at=self.js(f"window.machineScreenPoint({json.dumps(point)})") if point else self.js("window.machineBodyScreen('your ring_marble 1')")
                     self.mouse('mousePressed',*at);self.mouse('mouseReleased',*at)
                 self.wait("!document.getElementById('attach-card').hidden",10)
                 labels=self.js("[...document.querySelectorAll('#attach-card button')].map(b=>b.getAttribute('aria-label')||b.textContent)")
@@ -2149,8 +2149,8 @@ class Puzzles(unittest.TestCase):
     def test_rope_lesson_ties_by_touch_near_the_marble_or_by_choosing_it(self):
         # Playtest: on a phone the marble is a few pixels wide, so after the
         # tie ring a tap had to land exactly on it and a near miss did nothing
-        # (or picked the trapdoor). A tap near your piece now picks it, and the
-        # card offers it by name.
+        # (or picked the trapdoor). A tap near your piece now picks it (on the
+        # ring marble, its ring), and the card offers it by name.
         def tap(x,y):
             self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y,'id':1}]})
             time.sleep(.05)
@@ -2159,8 +2159,8 @@ class Puzzles(unittest.TestCase):
         for width,height,how in ((390,844,'near'),(844,390,'button'),(390,844,'button')):
             with self.subTest(viewport=(width,height),how=how):
                 self.open('easy-rope',width,height,phone=True)
-                self.press('Add a marble');self.ghost()
-                self.slide('Position along (m) of your marble 1',-.5);self.slide('Position across (m) of your marble 1',0)
+                self.press('Add a ring marble');self.ghost()
+                self.slide('Position along (m) of your ring_marble 1',-.5);self.slide('Position across (m) of your ring_marble 1',0)
                 self.assertTrue(self.ghost()['fits'])
                 self.click_visible('Place');self.wait(READY,30);self.paint()
                 self.press('Add a string')
@@ -2169,29 +2169,88 @@ class Puzzles(unittest.TestCase):
                 self.wait("machineAttachState().picked.length===1",5)
                 self.assertIn('tie ring',self.js("document.getElementById('attach-card').textContent"))
                 if how=='near':
-                    marble=self.js("window.machineBodyScreen('your marble 1')")
+                    marble=self.js("window.machineBodyScreen('your ring_marble 1')")
                     tap(marble[0]+10,marble[1]-6)
                 else:
-                    self.click_visible('Tie to your marble')
+                    self.click_visible('Tie to your ring marble')
                 self.wait("machineAttachState().picked.length===2",5)
-                self.assertEqual(self.js('machineAttachState().picked'),['frame beam','your marble 1'])
+                self.assertEqual(self.js('machineAttachState().picked'),['frame beam','your ring_marble 1 ring'])
                 self.press('Tie them with a string')
-                self.wait(f"window.machinePlacements().some(p=>p.piece==='link'&&p.kind==='string'&&p.b==='your marble 1') && {READY}",30)
+                self.wait(f"window.machinePlacements().some(p=>p.piece==='link'&&p.kind==='string'&&p.b==='your ring_marble 1 ring') && {READY}",30)
                 self.click_visible('Run')
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
         # With a mouse, a near miss over the trapdoor picks your marble, not the trapdoor.
         self.open('easy-rope')
-        self.press('Add a marble');self.ghost()
-        self.slide('Position along (m) of your marble 1',-.5);self.slide('Position across (m) of your marble 1',0)
+        self.press('Add a ring marble');self.ghost()
+        self.slide('Position along (m) of your ring_marble 1',-.5);self.slide('Position across (m) of your ring_marble 1',0)
         self.click_visible('Place');self.wait(READY,30);self.paint()
         self.press('Add a string')
         ring=self.js("window.machineScreenPoint([0,1.43,.08])")
         self.mouse('mousePressed',*ring);self.mouse('mouseReleased',*ring)
-        marble=self.js("window.machineBodyScreen('your marble 1')")
+        marble=self.js("window.machineBodyScreen('your ring_marble 1')")
         self.mouse('mousePressed',marble[0]+10,marble[1]-6);self.mouse('mouseReleased',marble[0]+10,marble[1]-6)
         self.wait("machineAttachState().picked.length===2",5)
-        self.assertEqual(self.js('machineAttachState().picked'),['frame beam','your marble 1'])
+        self.assertEqual(self.js('machineAttachState().picked'),['frame beam','your ring_marble 1 ring'])
+
+    def test_rope_lesson_ties_by_dragging_the_string_end_onto_the_ring_marble(self):
+        # Playtest: the preview of the marble's fall looked like a string to
+        # tie. After the tie ring a string now hangs from it with a circle on
+        # its loose end; dragging the circle onto the ring marble ties the
+        # string to the marble's ring, as long as it is then.
+        def press(x,y,touch):
+            if touch:self.page.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y,'id':1}]})
+            else:self.page.send('Input.dispatchMouseEvent',{'type':'mousePressed','x':x,'y':y,'button':'left','buttons':1,'clickCount':1})
+        def move(x,y,touch):
+            if touch:self.page.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':x,'y':y,'id':1}]})
+            else:self.page.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':x,'y':y,'button':'left','buttons':1})
+        def release(x,y,touch):
+            if touch:self.page.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+            else:self.page.send('Input.dispatchMouseEvent',{'type':'mouseReleased','x':x,'y':y,'button':'left','buttons':0,'clickCount':1})
+        def drag_end_to(target,touch):
+            box=self.js('machineStringEnd()')['box'];start=[box['x']+box['width']/2,box['y']+box['height']/2]
+            press(*start,touch)
+            for k in range(1,13):
+                move(start[0]+(target[0]-start[0])*k/12,start[1]+(target[1]-start[1])*k/12,touch);time.sleep(.02)
+            self.paint()
+            over=self.js("document.getElementById('string-end').classList.contains('over')")
+            release(*target,touch);self.paint()
+            return over
+        for width,height,touch in ((390,844,True),(844,390,True),(1280,860,False)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-rope',width,height,phone=touch)
+                self.press('Add a ring marble');self.ghost()
+                self.slide('Position along (m) of your ring_marble 1',-.5);self.slide('Position across (m) of your ring_marble 1',0)
+                self.click_visible('Place');self.wait(READY,30);self.paint()
+                self.press('Add a string')
+                self.assertIsNone(self.js('machineStringEnd()'),'no string before the first point')
+                ring=self.js("window.machineScreenPoint([0,1.43,.08])")
+                press(*ring,touch);release(*ring,touch);self.paint()
+                self.wait("machineAttachState().picked.length===1 && Boolean(machineStringEnd())",5)
+                end=self.js('machineStringEnd()')
+                self.assertEqual(end['from_m'],[0,1.4,0])
+                self.assertAlmostEqual(end['at_m'][1],1.1,places=3,msg='it hangs below the tie ring')
+                self.assertGreaterEqual(end['box']['width'],44);self.assertGreaterEqual(end['box']['height'],44)
+                self.assertIn('Drag the circle',self.js("document.getElementById('attach-card').textContent"))
+                # Let go over nothing: the string stays, and the card says why.
+                empty=self.js("window.machineScreenPoint([.6,1.2,0])")
+                self.assertFalse(drag_end_to(empty,touch))
+                self.wait("/not on a part/.test(document.getElementById('attach-card').textContent)",5)
+                self.assertEqual(self.js('machineAttachState().picked'),['frame beam'])
+                self.assertTrue(self.js('Boolean(machineStringEnd())'))
+                # Onto the ring marble: tied at the top bar of its ring.
+                ring_body=self.js("machineBodies()['your ring_marble 1 ring']")
+                self.assertTrue(drag_end_to(self.js(f"window.machineScreenPoint([{ring_body[0]},{ring_body[1]+.02},{ring_body[2]}])"),touch),'the circle lights over the marble')
+                self.wait(f"window.machinePlacements().some(p=>p.piece==='link') && {READY}",30)
+                link=self.js("window.machinePlacements().find(p=>p.piece==='link')")
+                self.assertEqual((link['kind'],link['a'],link['b'],link['at_m']),('string','frame beam','your ring_marble 1 ring',[0,1.4,0]))
+                for got,want in zip(link['at_b_m'],[-.5,.855,0]):self.assertAlmostEqual(got,want,places=3)
+                self.assertIsNone(self.js('machineStringEnd()'),'the loose end is gone once tied')
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'rope-string-tied-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Run')
+                self.wait("!document.getElementById('level-done').hidden",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
 
     def test_run_waits_for_latest_placement_check_and_cancelling_cancels_the_run(self):
         self.open('laser')

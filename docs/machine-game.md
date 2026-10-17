@@ -123,7 +123,7 @@ outcomes are decided by gravity, contact and joints:
 |---|---|---|---|
 | Roll the ball (`easy-roll`, 2) | Gravity rolls a ball down a slope. Place one 4 cm iron marble (position only) on a fixed oak slope; it must roll into a cup on the floor within 3 s. | Marble at x = −0.7 m: in the cup at 1.017 / 1.033 / 1.017 s. Par 6.60 MJ (6,593,156 J marble fabrication). | Default x = 0.1 m on flat floor (authored wrong setup), and on the slope's line but 0.3 m to the side: it rests where it is set. |
 | Fill the trench (`easy-block`, 3) | A fixed block provides structure. The 6 cm iron ball rolls off a ramp along a table toward a 0.30 m wide, 0.30 m deep trench. The player sets a 0.26 × 0.30 m concrete block in the trench and stretches its height (0.04–0.50 m). Ball in the cup within 4 s. | Block at x = 0.05 m, 0.30 m tall (top level with the tables): in the cup at 1.500 / 1.467 / 1.483 s. Par 53.4 MJ (56.16 kg concrete). | 0.20 m tall (authored wrong setup: the ball drops into the hole), 0.40 m tall (a wall stops it), no block, and the default block set down on the far table (also a wall). |
-| Swing on a rope (`easy-rope`, 5) | A string carries tension, never compression. A trapdoor's own weight opens it at the start. The player places the marble on it, uses **Attach** to tie it to the end of a cantilever beam with a `string` (native `tie`: a maximum distance, slack below it) and it swings into a raised zone within 3 s. | Marble at x = −0.5 m; string from the beam end (0, 1.40, 0) to the marble's top: in the zone at 0.667 s in all three runs. Par 6.60 MJ: the marble only, since the tie has no modelled mass. | String tied low on the trapdoor stand (authored wrong setup: it stays slack and the marble falls), no string, and a string tied to the beam 0.4 m along from the marble instead of 0.5 m (a shorter swing that does not reach the zone). |
+| Swing on a rope (`easy-rope`, 5) | A string carries tension, never compression. A trapdoor's own weight opens it at the start. The player places the **ring marble** on it, uses **Attach** to tie it to the end of a cantilever beam with a `string` (native `tie`: a maximum distance, slack below it) and it swings into a raised zone within 3 s. | Ring marble at x = −0.5 m; string from the beam end (0, 1.40, 0) to the top bar of the marble's ring (−0.5, 0.855, 0): in the zone at 0.683 s in all three runs (October 17; the plain marble tied at its top took 0.667 s). Par 7.06 MJ: the 0.282 kg ring marble only, since the tie has no modelled mass. | String tied low on the trapdoor stand (authored wrong setup: it stays slack and the marble falls), no string, and a string tied to the beam 0.4 m along from the marble instead of 0.5 m (a shorter swing that does not reach the zone). |
 
 The **Attach** tool, previously Sandbox only, now appears in a level whose tray
 offers a join. Its card offers only the join kinds that tray allows (this
@@ -618,7 +618,7 @@ already lacks that axis. These are the remaining device adjustments/connections:
 | Roll the ball (added October 17) | marble: placement only |
 | Fill the trench (added October 17) | block: Height (m) |
 | Mind the gap | plank: Cut to length |
-| Swing on a rope (added October 17) | marble: placement only; link: Attach picks both ends of a string |
+| Swing on a rope (added October 17) | ring marble: placement only; link: Attach picks both ends of a string |
 | Spring lifts the load | spring: Relaxed length (m) |
 | Raise the crate | tackle: Counterweight preset (kg), Rope ratio, Counterweight height (m) |
 | Find the focus | lens: Focus / face radius, Diameter (m) |
@@ -1383,6 +1383,41 @@ tap on nothing says so. Join card buttons are 44 px tall. Browser check
 miss by touch on a portrait phone and the named choice on portrait and
 landscape phones each tie the marble and win; a mouse near miss over the
 trapdoor picks the marble.
+
+Dragging the string (October 17, owner playtest): the dashed preview of where
+the marble falls looked like a string waiting to be tied. The preview stays.
+After the first point, when the tray's join offers a string, a string now
+hangs 0.3 m down from that point with a small circle on its loose end (a 44 px
+touch target). Dragging the circle moves the end across the plane through the
+knot that faces the camera (at most 3 m of string, never below the ground); it
+turns gold over a part it can tie to. Letting go on a part ties a string there
+at once, as long as it is then; letting go on nothing leaves the string hanging
+and says so. A tap on the circle is an ordinary tap on what is under it, so the
+tap-and-choose route and **Tie to your …** still work. The lesson now uses a
+**ring marble** (below), and its string ties to the top bar of the marble's
+ring. Browser check
+(`test_rope_lesson_ties_by_dragging_the_string_end_onto_the_ring_marble`): on
+390×844 and 844×390 by touch and 1280×860 by mouse, the string hangs below the
+tie ring, a drop on nothing keeps it, and a drop on the ring marble ties it to
+(−0.5, 0.855, 0) and wins.
+
+**Ring marble.** A Sandbox piece, and the rope lesson's marble: a 4 cm iron
+marble with an iron tie ring fixed on top for tying a string. The ring is its
+own body, eight 4 mm bars round a 20 mm circle with its hole along z, welded
+1 mm above the ball with a fixed joint (as glue joins two pieces); 0.282 kg in
+all. Its tray row declares where a string ties (`tie_on`: the ring's top bar),
+so a tap on the ball or near the piece ties to the ring. Nothing about rolling
+is scripted. A first ring 12 mm in radius let it roll like a wheel about the
+ring's axis with the ring clear of the floor: down the Roll the ball slope it
+curved away and was still rolling after 6 s. The ring is now wider than the
+ball (44 mm across against 40 mm), so it reaches the floor whichever way the
+ball rolls. On the same slope, set down at x = −0.7 m it stops at the slope's
+foot (x = −0.10 m) 4.3 s in, at −0.3 m it stops after 1.65 s having moved
+4 cm, and at −0.5 m it veers 0.44 m sideways; the plain marble rolls into the
+cup from −0.7 and −0.5 m. Engine check
+(`test_a_ring_marble_does_not_roll_true_where_a_marble_does`, nudged, three
+runs each): the marble reaches the cup from both places, the ring marble from
+neither, with no engine error.
 
 ## More contact and spring mechanisms
 
@@ -2787,6 +2822,7 @@ Checked on October 11, 2026 (`tests/machine_game_tests.py` and `tests/machine_ga
 The pieces, besides the levels' plank, ramp, cannon and steam engine:
 
 - **Marble**: an iron, oak or rubber ball, 4 or 6 cm, set down on whatever is under it. On a slope it rests on the slope itself, not on top of the slope's box.
+- **Ring marble**: a 4 cm iron marble with an iron tie ring welded on top, for tying a string. The ring is wider than the ball, so it lurches and stops instead of rolling true (see Ring marble above).
 - **Track**: a board with a rail on each side, from its top end down by its drop over its length. It can be turned about the upright to point any way. Its far end is open (a marble rolls off it), a stop (the marble stays there), or a gate.
 - **Shelf**: a short track tilted a little toward its gate, so marbles set down on it roll to the gate and wait there. This is how a marble stays up high until something lets it go.
 - **The gate**: a flap hangs across the track from a bar on a pin over one rail, and the pin runs along the track. A marble pushes the flap along the pin, which the pin holds, so the flap doesn't move. Out past the rail is a short arm with a paddle on its end. Press the paddle down (drop a marble on it, tip a lever under it, or pull it) and the flap swings up out of the way. On its own it falls shut again. A **gate that stays open** has a catch that holds it once it is 20° up. Measured: three iron marbles wait at a closed gate. An iron marble dropped onto its paddle swings it up 56°: with the catch, all three roll off the end; without it, the gate falls shut before they arrive and they wait.

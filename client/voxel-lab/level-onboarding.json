@@ -98,7 +98,7 @@
         5
       ],
       "primary_controls": {
-        "marble": [
+        "ring_marble": [
           "x_m"
         ],
         "link": [
@@ -107,7 +107,7 @@
       },
       "chapter": "Level 1: Mechanics",
       "lesson_controls": {
-        "marble": [
+        "ring_marble": [
           "x_m",
           "z_m"
         ],

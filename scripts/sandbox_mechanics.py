@@ -252,8 +252,42 @@ def gears(name, k, ctx):
     return result
 
 
+# A ring marble: an iron marble with an iron tie ring fixed on top, so a
+# string has somewhere to tie. The ring is its own body (eight short bars
+# round a 20 mm circle, its hole along z), welded to the ball 1 mm above it
+# with a fixed joint, as glue joins two pieces. Nothing about rolling is
+# scripted. The ring is wider than the ball (44 mm across against 40 mm), so
+# whichever way the marble rolls the ring reaches the floor: a narrower ring
+# let it roll like a wheel about the ring's axis, curving but rolling on.
+RING_MARBLE_D = .04
+RING_R = .02        # the ring's centre-line radius
+RING_WIRE = .004    # the ring's bar thickness
+RING_GAP = .001     # between the ball's top and the ring
+RING_TIE = dict(part=' ring', at_m=[0, RING_R, 0])  # where a string ties: the ring's top bar
+
+
+def ring_marble(name, k, ctx):
+    import machine_game as mg
+    d, (x, z) = RING_MARBLE_D, _position(k)
+    ball = {'name': name, 'shape': 'sphere', 'material': 'iron', 'size_m': [d, d, d],
+            'at_m': [x, 0.0, z], 'turn_deg': [0.0, 0.0, 0.0], 'fixed': False}
+    ball['at_m'][1] = round(mg.rest_height(ball, ctx['parts']), 4)
+    top = ball['at_m'][1] + d / 2
+    chord = 2 * (RING_R + RING_WIRE / 2) * math.tan(math.pi / 8)
+    bars = [{'shape': 'box', 'size_m': [round(chord, 5), RING_WIRE, RING_WIRE],
+             'at_m': [round(RING_R * math.sin(a), 5), round(-RING_R * math.cos(a), 5), 0],
+             'turn_deg': [0, 0, round(math.degrees(a), 3)]}
+            for a in (2 * math.pi * i / 8 for i in range(8))]
+    ring = {'name': name + ' ring', 'shape': 'compound', 'material': 'iron', 'fixed': False,
+            'at_m': [x, round(top + RING_GAP + RING_WIRE / 2 + RING_R, 4), z], 'parts': bars}
+    weld = {'name': name + ' weld', 'kind': 'fix', 'a': name, 'b': name + ' ring',
+            'at_m': [x, round(top + RING_GAP / 2, 4), z], 'axis': [0.0, 1.0, 0.0]}
+    return {'parts': [ball, ring], 'joints': [weld]}
+
+
 PIECES = {'knife': knife, 'mirror': mirror, 'lens': lens, 'solar': solar,
-          'tackle': tackle, 'weight': weight, 'spring': spring, 'gears': gears, 'gear':gear}
+          'tackle': tackle, 'weight': weight, 'spring': spring, 'gears': gears, 'gear':gear,
+          'ring_marble': ring_marble}
 
 
 def tray(piece, title, knobs, **extra):
@@ -300,6 +334,7 @@ TRAY = [
          'material':choice('Material',['aluminum','oak','glass','iron'],'aluminum'),
          'friction_n_m':number('Bearing friction (N m)',0,.1,.001,.001)},turning=False,
          primary_knobs=['teeth','module_m','height_m']),
+    tray('ring_marble', 'Ring marble', {}, turning=False, tie_on=RING_TIE),
     tray('gears', 'Gear pair (saved designs)', {'height_m': number('Axle height (m)', .35, .8, .4),
          'teeth_a': choice('Input teeth', [12, 18, 24], 12),
          'teeth_b': choice('Output teeth', [12, 18, 24], 24),
@@ -649,8 +684,9 @@ def _starter_levels():
                       box('trapdoor leaf', [.2, .04, .3], [-.52, .75, 0], 'oak', False)]
     swing['joints'] = [dict(name='trapdoor hinge', kind='hinge', a='trapdoor stand', b='trapdoor leaf',
                             at_m=[-.62, .75, 0], axis=[0, 0, 1], lower_deg=-90, upper_deg=0, friction_n_m=.01)]
-    hung = _starter_row('marble', dict(x_m=number('Position along (m)', -.6, -.2, -.25),
-                                       z_m=number('Position across (m)', -.4, .4, 0)), turning=False)
+    hung = _starter_row('ring_marble', dict(x_m=number('Position along (m)', -.6, -.2, -.25),
+                                            z_m=number('Position across (m)', -.4, .4, 0)), turning=False,
+                        sandbox_builder=True, tie_on=RING_TIE)
     string = dict(piece='link', count=1, cost=0, turning=False, across=False, attach=True, knobs=dict(
         kind=choice('Joined by', ['string'], 'string'),
         a={'part': True, 'default': '', 'label': 'one part'},
@@ -660,18 +696,21 @@ def _starter_levels():
         # A visible tie ring under the beam's end: a tap on the beam within
         # 20 cm of it ties there. Placement help only; the engine decides the swing.
         tie_points=[{'part': 'frame beam', 'at_m': [0, 1.4, 0], 'snap_m': .2, 'label': 'tie ring'}])
-    on_leaf = [-.5, .812, 0]   # the top of the marble resting on the leaf
+    # The top bar of the ring marble's ring, the marble resting on the leaf:
+    # ball centre .792 (leaf top .77, radius .02, set-down gap .002), ring
+    # centre .835, top bar .855.
+    on_leaf = [-.5, .855, 0]
     swing_level = _starter_level('easy-rope', 'Swing on a rope', 'rope tension',
-        'Set the marble on the trapdoor, which drops open when you start. Then add the string: tap the gold tie ring at the end of the beam, tap the marble and choose String, so it swings up into the green zone.',
+        'Set the ring marble on the trapdoor, which drops open when you start. Then add the string: tap the gold tie ring at the end of the beam and drag the string\'s loose end onto the marble\'s ring, so it swings up into the green zone.',
         swing, [hung, string],
-        {'title': 'The marble swings into the zone', 'focus': ['your marble 1'], 'needs': 'Place the marble first.',
-         'station': {'done_when': {'in_zone': {'part': 'your marble 1', 'at_m': [.42, .74, 0], 'size_m': [.16, .12, .2]}}}},
-        [dict(piece='marble', x_m=-.5, z_m=0),
-         dict(piece='link', kind='string', a='frame beam', b='your marble 1', at_m=[0, 1.4, 0], at_b_m=on_leaf)],
-        [dict(piece='marble', x_m=-.5, z_m=0),
-         dict(piece='link', kind='string', a='trapdoor stand', b='your marble 1', at_m=[-.645, .1, 0], at_b_m=on_leaf)], 3,
+        {'title': 'The marble swings into the zone', 'focus': ['your ring_marble 1'], 'needs': 'Place the ring marble first.',
+         'station': {'done_when': {'in_zone': {'part': 'your ring_marble 1', 'at_m': [.42, .74, 0], 'size_m': [.16, .12, .2]}}}},
+        [dict(piece='ring_marble', x_m=-.5, z_m=0),
+         dict(piece='link', kind='string', a='frame beam', b='your ring_marble 1 ring', at_m=[0, 1.4, 0], at_b_m=on_leaf)],
+        [dict(piece='ring_marble', x_m=-.5, z_m=0),
+         dict(piece='link', kind='string', a='trapdoor stand', b='your ring_marble 1 ring', at_m=[-.645, .1, 0], at_b_m=on_leaf)], 3,
         'A string pulls but never pushes. Tied high and to one side, the falling marble swings around the knot; tied low, the string goes slack and the marble just drops.',
-        6600000)  # the same marble; a string has no modelled mass
+        7060000)  # 7,052,260 J: the 0.282 kg iron ring marble, rounded up; a string has no modelled mass
     return [roll_level, trench_level, swing_level]
 
 

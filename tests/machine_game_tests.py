@@ -2079,12 +2079,12 @@ class Engine(unittest.TestCase):
         # A marble on flat floor stays put; a block too low leaves a hole and
         # one too high is a wall; a string tied low goes slack. Nudged, as
         # the solutions are, and each without an engine error.
-        leaf = [-.5, .812, 0]
+        leaf = [-.5, .855, 0]
         cases = {'easy-roll': [[dict(piece='marble')], [dict(piece='marble', x_m=-.7, z_m=.3)]],
                  'easy-block': [[], [dict(piece='block', x_m=.05, tall_m=.4)]],
-                 'easy-rope': [[dict(piece='marble', x_m=-.5)],
-                               [dict(piece='marble', x_m=-.5), dict(piece='link', kind='string', a='frame beam',
-                                    b='your marble 1', at_m=[-.1, 1.4, 0], at_b_m=leaf)]]}
+                 'easy-rope': [[dict(piece='ring_marble', x_m=-.5)],
+                               [dict(piece='ring_marble', x_m=-.5), dict(piece='link', kind='string', a='frame beam',
+                                    b='your ring_marble 1 ring', at_m=[-.1, 1.4, 0], at_b_m=leaf)]]}
         with tempfile.TemporaryDirectory() as logs:
             for ident, setups in cases.items():
                 level = mg.level_by_id(ident)
@@ -2096,6 +2096,27 @@ class Engine(unittest.TestCase):
         self.assertEqual(sum(t['piece'] == 'link' for t in mg.level_by_id('easy-rope')['tray']), 1)
         self.assertEqual(mg.level_by_id('easy-rope')['tray'][1]['knobs']['kind']['choices'], ['string'],
                          'the rope lesson offers only a tension-only string')
+
+    @need_engine
+    def test_a_ring_marble_does_not_roll_true_where_a_marble_does(self):
+        # On the roll lesson's slope a marble set down near the top rolls into
+        # the cup; a ring marble set down at the same place does not. Its ring
+        # is wider than the ball, so it reaches the floor whichever way the
+        # ball rolls. Nudged, as the solutions are.
+        roll = mg.level_by_id('easy-roll')
+        ring = copy.deepcopy(roll)
+        row = copy.deepcopy(next(t for t in mg.free_build()['tray'] if t['piece'] == 'ring_marble'))
+        row.update(count=1, cost=0)
+        ring['tray'] = [row]
+        ring['goal']['station']['done_when']['in_zone']['part'] = 'your ring_marble 1'
+        with tempfile.TemporaryDirectory() as logs:
+            for x in (-.7, -.5):
+                with self.subTest(x_m=x):
+                    t = mg.trial(roll, [dict(piece='marble', x_m=x)], ENGINE, Path(logs), runs=3)
+                    self.assertEqual(t['worked'], 3, t['results'])
+                    t = mg.trial(ring, [dict(piece='ring_marble', x_m=x)], ENGINE, Path(logs), runs=3)
+                    self.assertEqual(t['worked'], 0, t['results'])
+                    self.assertTrue(all(r['error'] is None for r in t['results']), t['results'])
 
 
 if __name__ == '__main__':

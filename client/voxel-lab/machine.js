@@ -2239,6 +2239,7 @@ function render() {
   frameNewConnections();
   positionPieceEditor();
   updatePieceHandles();
+  if (stringEnd && !stringEnd.drag) placeStringEnd();
   positionPowerLabels();
   positionTerminalLabels();
   drawSceneSockets();
@@ -5216,7 +5217,7 @@ window.machineSwitchState=()=>({drag:switchDragging&&{name:switchDragging.device
 // -- glue where they were pressed, a pin there (its axle along x, along z or
 // upright), or a string from the first point to the second, as long as
 // it is then. The join is one of the pieces: it is kept, taken back, removed.
-let attachMode = false, attaching = [];
+let attachMode = false, attaching = [], stringEnd = null;
 const attachMark = new THREE.Group();
 scene.add(attachMark);
 function partAt(clientX, clientY) {
@@ -5228,7 +5229,7 @@ function partAt(clientX, clientY) {
   return o ? {name: nameOf.get(o), at: hit.point.toArray().map(v => +v.toFixed(4))} : null;
 }
 function cancelAttach() {
-  attaching = [];
+  attaching = []; hideStringEnd();
   for (const c of [...attachMark.children]) attachMark.remove(c);
   $('attach-card').hidden = true; $('attach-card').replaceChildren();
 }
@@ -5257,24 +5258,37 @@ function startTrayAttach() {
   setAttach(true);
   showAttachStep();
 }
-// Your own pieces that can be tied, each by its main moving body.
+// A piece's own tie point, where its tray row declares one (a ring marble:
+// the top bar of its ring), as {part: the body's name after the piece's,
+// at_m: in that body's own frame}.
+function pieceTie(name) {
+  const m = /^your (\S+) (\d+)( .*)?$/.exec(name || '');
+  const tie = m && trayItem(m[1])?.tie_on;
+  return tie && (m[3] || '') === tie.part ? tie : null;
+}
+// Your own pieces that can be tied, each by its main moving body (or the
+// body with its tie point), with all of the piece's bodies.
 function ownMovableParts(except) {
   const rows = [];
   placements.forEach((p, i) => {
     if (['link', 'wire', 'power_cable'].includes(p.piece)) return;
-    const name = `your ${p.piece} ${i + 1}`, names = [...meshes.keys()];
-    const body = names.find(n => n === name) || names.find(n => n.startsWith(name + ' '));
-    if (!body || body === except || world.bodies.get(body)?.anchored) return;
+    const name = `your ${p.piece} ${i + 1}`, bodies = [...meshes.keys()].filter(n => n === name || n.startsWith(name + ' '));
+    const tie = trayItem(p.piece)?.tie_on;
+    const body = tie && bodies.includes(name + tie.part) ? name + tie.part : bodies.find(n => n === name) || bodies[0];
+    if (!body || bodies.includes(except) || world.bodies.get(body)?.anchored) return;
     const several = placements.filter(q => q.piece === p.piece).length > 1;
-    rows.push({name: body, label: `your ${pieceLabel(p.piece)}${several ? ' ' + (i + 1) : ''}`});
+    rows.push({name: body, bodies, label: `your ${pieceLabel(p.piece)}${several ? ' ' + (i + 1) : ''}`});
   });
   return rows;
 }
-// Where to tie on a part: the point of its surface facing `from` (the first
-// point picked) or the camera, found on its own mesh.
+// Where to tie on a part: its own tie point, or the point of its surface
+// facing `from` (the first point picked) or the camera, found on its mesh.
 function tiePointOn(name, from) {
   const mesh = meshes.get(name), b = world.bodies.get(name);
   if (!mesh || !b) return null;
+  const tie = pieceTie(name), q = b.orientation_wxyz;
+  if (tie && q) return new THREE.Vector3(...tie.at_m).applyQuaternion(new THREE.Quaternion(q[1], q[2], q[3], q[0]))
+    .add(new THREE.Vector3(...b.position_m)).toArray().map(v => +v.toFixed(4));
   freshView();
   const center = new THREE.Vector3(...b.position_m), start = from ? new THREE.Vector3(...from) : camera.position.clone();
   const toward = center.clone().sub(start);
@@ -5288,7 +5302,8 @@ function nearOwnPart(x, y, radius, except) {
   const rect = renderer.domElement.getBoundingClientRect();
   let best = null;
   for (const row of ownMovableParts(except)) {
-    const box = new THREE.Box3().setFromObject(meshes.get(row.name));
+    const box = new THREE.Box3();
+    for (const body of row.bodies) box.expandByObject(meshes.get(body));
     if (box.isEmpty()) continue;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const cx of [box.min.x, box.max.x]) for (const cy of [box.min.y, box.max.y]) for (const cz of [box.min.z, box.max.z]) {
@@ -5301,20 +5316,27 @@ function nearOwnPart(x, y, radius, except) {
   }
   return best;
 }
-function markAttach(part) {
+// A string end let go on a part ties a string there at once; a tap on the
+// second part asks how to join them.
+function markAttach(part, kind = '') {
   attaching.push(part);
   const dot = new THREE.Mesh(PORT_DOT, new THREE.MeshBasicMaterial({color: 0xffd34d, depthTest: false}));
   dot.position.set(...part.at);
   attachMark.add(dot);
-  if (attaching.length === 2) attachChoice(); else showAttachStep();
+  if (attaching.length === 1) { showStringEnd(part); showAttachStep(); return; }
+  hideStringEnd();
+  if (kind && joinPicked(kind)) return;
+  attachChoice();
 }
-// The card while joining: what to tap next, and after the first point, your
+// The card while joining: what to do next, and after the first point, your
 // pieces to choose from, so nothing small has to be hit with a finger.
 function showAttachStep(note = '') {
   const card = $('attach-card'), first = attaching[0];
   const ring = first && tiePoints().some(t => t.part === first.name && t.at_m.every((v, i) => Math.abs(v - first.at[i]) < 1e-6));
-  const text = !first ? (tiePoints().length ? 'Tap the gold tie ring, then tap the part to tie to it.' : 'Tap the first part where it should be tied, then tap the second part.')
-    : `${ring ? 'Tied at the tie ring' : `First point on ${first.name}`}. Now tap the part to tie to it${ownMovableParts(first.name).length ? ', or choose it here' : ''}.`;
+  const choose = first && ownMovableParts(first.name).length ? ', or choose it here' : '';
+  const text = !first ? (tiePoints().length ? 'Tap the gold tie ring to tie a string to it.' : 'Tap the first part where it should be tied, then tap the second part.')
+    : `${ring ? 'Tied at the tie ring' : `First point on ${first.name}`}. ` + (stringEnd
+      ? `Drag the circle on the string's end onto the part to tie it to${choose}.` : `Now tap the part to tie to it${choose}.`);
   card.replaceChildren(Object.assign(document.createElement('p'), {className: 'hint', textContent: note ? `${note} ${text}` : text}));
   const row = Object.assign(document.createElement('div'), {className: 'actions'});
   if (first) for (const part of ownMovableParts(first.name))
@@ -5324,6 +5346,19 @@ function showAttachStep(note = '') {
   card.hidden = false;
 }
 $('pull-tool').addEventListener('click', () => { if (pullMode && attachMode) setAttach(false); });
+// The two picked points joined as `kind`: one of the pieces, kept, taken
+// back or removed like any other. False when they cannot be joined (both
+// fixed, or no join left in the tray); the choice card then says why.
+function joinPicked(kind, extra = {}) {
+  const [one, two] = attaching, link = trayItem('link'), body = name => world.bodies.get(name);
+  if (!one || !two || !link || (!level.free && piecesLeft(link) <= 0) || !(link.knobs?.kind?.choices || []).includes(kind)) return false;
+  if (body(one.name)?.anchored && body(two.name)?.anchored) return false;
+  const mid = one.at.map((v, i) => +((v + two.at[i]) / 2).toFixed(4)), ends = ['string', 'spring'].includes(kind);
+  remember();
+  placements.push({piece: 'link', kind, a: one.name, b: two.name, at_m: ends ? one.at : mid, ...(ends ? {at_b_m: two.at} : {}), ...extra});
+  setAttach(false); renderTray(); renderPlaced(); scheduleRebuild(0);
+  return true;
+}
 function attachChoice() {
   const [one, two] = attaching, card = $('attach-card');
   const body = name => world.bodies.get(name);
@@ -5334,7 +5369,6 @@ function attachChoice() {
     card.hidden = false;
     return;
   }
-  const mid = one.at.map((v, i) => +((v + two.at[i]) / 2).toFixed(4));
   // A lesson's tray may offer only some joins (Swing on a rope: a string).
   const link = trayItem('link'), kinds = link?.knobs?.kind?.choices || [];
   if (!link || (!level.free && piecesLeft(link) <= 0)) {
@@ -5343,12 +5377,7 @@ function attachChoice() {
     card.hidden = false;
     return;
   }
-  const join = (kind, extra = {}) => {
-    remember();
-    placements.push({piece: 'link', kind, a: one.name, b: two.name, at_m: ['string', 'spring'].includes(kind) ? one.at : mid,
-                     ...(['string', 'spring'].includes(kind) ? {at_b_m: two.at} : {}), ...extra});
-    setAttach(false); renderTray(); renderPlaced(); scheduleRebuild(0);
-  };
+  const join = (kind, extra = {}) => joinPicked(kind, extra);
   const row = Object.assign(document.createElement('div'), {className: 'actions'});
   if (kinds.includes('glue')) row.append(button('Glue', () => join('glue'), {ariaLabel: 'Glue them together'}));
   if (kinds.includes('string')) row.append(button('String', () => join('string'), {ariaLabel: 'Tie them with a string'}));
@@ -5371,25 +5400,108 @@ function attachChoice() {
   card.append(springOptions);
   card.hidden = false;
 }
-renderer.domElement.addEventListener('pointerup', e => {
-  if (!attachMode || ghost || e.button !== 0 || cameraGesture || sceneDragged || !pressedAt || Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) >= 6) return;
-  if (attaching.length >= 2) return;
+// What a tap, or a string end let go, at (x, y) picks.
+function tieTargetAt(x, y, touch) {
   const first = attaching[0];
-  let part = partAt(e.clientX, e.clientY);
+  let part = partAt(x, y);
   // A tap near one of your pieces picks it: in a lesson even over another
   // part (a marble is a few pixels wide on a phone); in Sandbox only when
   // nothing is under the tap.
-  if (!part || (!level?.free && !ownMovableParts(first?.name).some(r => r.name === part.name))) {
-    const near = nearOwnPart(e.clientX, e.clientY, e.pointerType === 'touch' ? 32 : 16, first?.name);
+  if (!part || (!level?.free && !ownMovableParts(first?.name).some(r => r.bodies.includes(part.name)))) {
+    const near = nearOwnPart(x, y, touch ? 32 : 16, first?.name);
     if (near) part = {name: near.name, at: tiePointOn(near.name, first?.at)};
   }
-  if (!part) { showAttachStep('Nothing to tie there.'); return; }
-  if (first && first.name === part.name) return;
+  if (!part) return null;
+  // On a piece with its own tie point (a ring marble's ring), there.
+  const own = ownMovableParts(first?.name).find(r => r.bodies.includes(part.name));
+  if (own && pieceTie(own.name)) part = {name: own.name, at: tiePointOn(own.name, first?.at)};
   // A lesson's tie ring: a tap on that part near it ties exactly there.
   const ring = tiePoints().find(t => t.part === part.name && Math.hypot(...t.at_m.map((v, i) => v - part.at[i])) <= (t.snap_m || .2));
   if (ring) part.at = [...ring.at_m];
-  markAttach(part);
+  return part;
+}
+function tieAt(x, y, touch, kind = '') {
+  if (attaching.length >= 2) return;
+  const part = tieTargetAt(x, y, touch), first = attaching[0];
+  if (!part) { showAttachStep(kind ? 'The string\'s end is not on a part.' : 'Nothing to tie there.'); return; }
+  if (first && first.name === part.name) return;
+  markAttach(part, first ? kind : '');
+}
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!attachMode || ghost || e.button !== 0 || cameraGesture || sceneDragged || !pressedAt || Math.hypot(e.clientX - pressedAt[0], e.clientY - pressedAt[1]) >= 6) return;
+  tieAt(e.clientX, e.clientY, e.pointerType === 'touch');
 }, true);
+
+// The string's loose end. After the first point a string hangs from it with
+// a small circle on its end: drag the circle onto the part to tie the string
+// to and it is tied there, as long as it is then. A tap on the circle is an
+// ordinary tap on what is under it.
+const STRING_LOOK = new THREE.LineBasicMaterial({color: 0xf1e2b8, depthTest: false});
+function hideStringEnd() {
+  if (!stringEnd) return;
+  stringEnd.line.removeFromParent(); stringEnd.line.geometry.dispose(); stringEnd.el.remove();
+  stringEnd = null;
+}
+function showStringEnd(first) {
+  hideStringEnd();
+  if (!(trayItem('link')?.knobs?.kind?.choices || []).includes('string')) return;
+  const from = new THREE.Vector3(...first.at), end = new THREE.Vector3(first.at[0], Math.max(.02, first.at[1] - .3), first.at[2]);
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([from, end]), STRING_LOOK);
+  line.renderOrder = 6; scene.add(line);
+  const el = Object.assign(document.createElement('button'), {type: 'button', id: 'string-end', className: 'string-end',
+    title: 'Drag onto the part to tie the string to'});
+  el.setAttribute('aria-label', "Drag the string's end onto the part to tie it to");
+  el.append(Object.assign(document.createElement('span'), {className: 'string-end-ring'}));
+  view.append(el);
+  stringEnd = {from, end, line, el, drag: null};
+  el.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || !stringEnd) return;
+    e.preventDefault(); e.stopPropagation();
+    el.setPointerCapture(e.pointerId);
+    stringEnd.drag = {id: e.pointerId, x: e.clientX, y: e.clientY, moved: false};
+  });
+  el.addEventListener('pointermove', e => {
+    const d = stringEnd?.drag;
+    if (!d || d.id !== e.pointerId) return;
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) >= 6) d.moved = true;
+    if (!d.moved) return;
+    moveStringEnd(e.clientX, e.clientY);
+    const target = tieTargetAt(e.clientX, e.clientY, e.pointerType === 'touch');
+    el.classList.toggle('over', Boolean(target && target.name !== attaching[0]?.name));
+  });
+  el.addEventListener('pointerup', e => {
+    const d = stringEnd?.drag;
+    if (!d || d.id !== e.pointerId) return;
+    stringEnd.drag = null; el.classList.remove('over');
+    tieAt(e.clientX, e.clientY, e.pointerType === 'touch', d.moved ? 'string' : '');
+  });
+  el.addEventListener('pointercancel', () => { if (stringEnd) { stringEnd.drag = null; el.classList.remove('over'); } });
+  placeStringEnd();
+}
+// The loose end follows the pointer across the plane through the knot that
+// faces the camera: up to 3 m of string, and never below the ground.
+function moveStringEnd(x, y) {
+  pointerRay(x, y);
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), stringEnd.from);
+  const hit = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+  if (!hit) return;
+  const reach = hit.sub(stringEnd.from);
+  if (reach.length() > 3) reach.setLength(3);
+  stringEnd.end.copy(stringEnd.from).add(reach); stringEnd.end.y = Math.max(.01, stringEnd.end.y);
+  stringEnd.line.geometry.setFromPoints([stringEnd.from, stringEnd.end]);
+  placeStringEnd();
+}
+function placeStringEnd() {
+  if (!stringEnd) return;
+  freshView();
+  const p = stringEnd.end.clone().project(camera), rect = view.getBoundingClientRect(), canvas = renderer.domElement.getBoundingClientRect();
+  const x = canvas.left - rect.left + (p.x + 1) / 2 * canvas.width, y = canvas.top - rect.top + (1 - p.y) / 2 * canvas.height;
+  const hidden = p.z > 1 || x < 0 || y < 0 || x > rect.width || y > rect.height;
+  if (stringEnd.el.hidden !== hidden) stringEnd.el.hidden = hidden;
+  stringEnd.el.style.left = `${x - 22}px`; stringEnd.el.style.top = `${y - 22}px`;
+}
+window.machineStringEnd = () => stringEnd && !stringEnd.el.hidden
+  ? {at_m: stringEnd.end.toArray(), from_m: stringEnd.from.toArray(), box: stringEnd.el.getBoundingClientRect().toJSON()} : null;
 window.machineAttachState = () => ({on: attachMode, picked: attaching.map(p => p.name), card: !$('attach-card').hidden});
 
 // Turning by hand: Shift and the wheel turns it, Alt and the wheel tips it.
@@ -5593,7 +5705,7 @@ function bestStars(id) { return record(id).stars || 0; }
 const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
                     mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens', flipflop: 'flip-flop'};
 // A piece's name on its button: as the tray calls it, but a flip-flop has its hyphen.
-function pieceLabel(piece) { return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({door:'hinged door',trampoline:'spring trampoline',wind:'open airflow',loose_block:'loose block',flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'heating coil',power_cable:'power cable'})[piece] || piece; }
+function pieceLabel(piece) { return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({door:'hinged door',trampoline:'spring trampoline',wind:'open airflow',loose_block:'loose block',flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',ring_marble:'ring marble',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'heating coil',power_cable:'power cable'})[piece] || piece; }
 function toolsOf(player) {
   if (!player.tools) {
     player.tools = {};
@@ -5653,6 +5765,7 @@ function trayItem(piece) { return piece==='base_object'?baseObjectTray:level.tra
 
 const PIECE_INFO = {
   marble: ['motion', 'A ball to roll, drop, or set a machine moving.'],
+  ring_marble: ['motion', 'A marble with an iron ring fixed on top for tying a string. The ring is wider than the ball, so it lurches and stops instead of rolling true.'],
   track: ['routes', 'A straight, sloping track with rails and an optional gate.'],
   bend: ['routes', 'A curved track to carry marbles around a corner.'],
   shelf: ['routes', 'Hold marbles behind a gate until its paddle is pressed.'],
@@ -5718,7 +5831,7 @@ async function addTrayPiece(t) {
 // lately. The last search and category stay until you change them.
 const PIECE_GROUPS = [['all','All'],['blueprints','Blueprints'],['recent','Recent'],['structure','Supports'],['routes','Tracks'],['motion','Motion'],
   ['power','Power'],['electrics','Wiring'],['optics','Light'],['water','Water']];
-const PIECE_WORDS = {marble:'ball roll sphere', plank:'board beam bridge wood', block:'cube box brick step', link:'rope string tie glue pin join spring',
+const PIECE_WORDS = {marble:'ball roll sphere', ring_marble:'ball sphere ring loop eye tie string swing pendulum', plank:'board beam bridge wood', block:'cube box brick step', link:'rope string tie glue pin join spring',
   loose_block:'cube box crate', tackle:'pulley rope lift crane', lens:'glass focus', mirror:'reflect bounce', solar:'sun panel',
   battery:'power cell', wire:'cable lead cord', motor:'spin turn', gear:'cog wheel teeth', switch:'button toggle', bulb:'lamp light'};
 let pieceFilter = 'all', recentPieces = [];
@@ -5984,11 +6097,12 @@ function renderSceneTray() {
   const left = piecesLeft(t), li = document.createElement('li');
   if (t.attach) {
     const kinds = t.knobs?.kind?.choices || [], name = kinds.length === 1 ? kinds[0] : 'join';
+    const how = t.tie_points?.length && name === 'string' ? 'tap the ring, drag the end' : 'tap two parts';
     const card = button('', startTrayAttach, {id:'tray-add', ariaLabel:`Add a ${name}`, title:'Tap one part, then the other, to join them'});
     card.dataset.piece = t.piece;
     const caption = Object.assign(document.createElement('span'), {className:'tray-caption'});
     caption.append(Object.assign(document.createElement('strong'), {className:'tray-name', textContent:name}),
-      Object.assign(document.createElement('small'), {className:'tray-left', textContent:`${left} left · tap two parts`}));
+      Object.assign(document.createElement('small'), {className:'tray-left', textContent:`${left} left · ${how}`}));
     card.append(Object.assign(document.createElement('span'), {className:'tray-picture tray-join', textContent:'🔗'}), caption);
     li.append(card); ul.append(li); return;
   }
@@ -6788,7 +6902,7 @@ async function chooseLevel(id, design = null) {
     gap:'Bridge the gap with a plank so the marble reaches the cup.',
     'easy-roll':'Set the marble on the slope so gravity rolls it into the cup.',
     'easy-block':'Fill the trench with a block as high as the tables.',
-    'easy-rope':'Place the marble, then tie it to the beam end with a string.',
+    'easy-rope':'Place the ring marble, then drag a string from the beam’s gold ring onto the marble’s ring.',
     cut:'Swing the knife through the cord and drop the weight into the bin.',
     fire:'Aim the cannon, wire its trigger, then drag the trigger to knock off the block.',
     steam:'Heat the boiler until its piston reaches the marked height.',
