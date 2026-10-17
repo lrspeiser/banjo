@@ -64,6 +64,40 @@ tolerance are unchanged; Sandbox gains optional player goals):
   author's pieces; a goal about one of the author's named pieces is refused for
   sharing. Challenges are not yet listed in the level menu.
 
+## Starter lessons: ball, block and string (October 17)
+
+A playtester found **Raise the crate** (block and tackle) too early. Three
+one-idea lessons now come first in Level 1: Mechanics, so the catalogue has 37
+challenges (eight chain-reaction levels, twenty-six piece lessons, three
+advanced electronics activities). The Level 1 order is now: Tip the lever,
+Roll the ball, Fill the trench, Mind the gap, Swing on a rope, Spring lifts the
+load, Raise the crate, then the earlier sequence. Later ranks move down by three;
+chapter order and the other relative orders are unchanged. Their minute
+estimates come from author review only. They were added after the October 13
+blind probe and are not in its receipt; their cards say so.
+
+The lessons use the existing core `marble`, `block` and `link` builders and
+the ordinary level stands. No goal, tolerance or engine law changed. Native
+outcomes are decided by gravity, contact and joints:
+
+| Level (id, rank) | What it teaches and the player's work | Reference solution, measured (3 nudged runs) | Misplaced setups, measured (all 0/3 wins, no engine errors) |
+|---|---|---|---|
+| Roll the ball (`easy-roll`, 2) | Gravity rolls a ball down a slope. Place one 4 cm iron marble (position only) on a fixed oak slope; it must roll into a cup on the floor within 3 s. | Marble at x = −0.7 m: in the cup at 1.017 / 1.033 / 1.017 s. Par 6.60 MJ (6,593,156 J marble fabrication). | Default x = 0.1 m on flat floor (authored wrong setup), and on the slope's line but 0.3 m to the side: it rests where it is set. |
+| Fill the trench (`easy-block`, 3) | A fixed block provides structure. The 6 cm iron ball rolls off a ramp along a table toward a 0.30 m wide, 0.30 m deep trench. The player sets a 0.26 × 0.30 m concrete block in the trench and stretches its height (0.04–0.50 m). Ball in the cup within 4 s. | Block at x = 0.05 m, 0.30 m tall (top level with the tables): in the cup at 1.500 / 1.467 / 1.483 s. Par 53.4 MJ (56.16 kg concrete). | 0.20 m tall (authored wrong setup: the ball drops into the hole), 0.40 m tall (a wall stops it), no block, and the default block set down on the far table (also a wall). |
+| Swing on a rope (`easy-rope`, 5) | A string carries tension, never compression. A trapdoor's own weight opens it at the start. The player places the marble on it, uses **Attach** to tie it to the end of a cantilever beam with a `string` (native `tie`: a maximum distance, slack below it) and it swings into a raised zone within 3 s. | Marble at x = −0.5 m; string from the beam end (0, 1.40, 0) to the marble's top: in the zone at 0.667 s in all three runs. Par 6.60 MJ: the marble only, since the tie has no modelled mass. | String tied low on the trapdoor stand (authored wrong setup: it stays slack and the marble falls), no string, and a string tied to the beam 0.4 m along from the marble instead of 0.5 m (a shorter swing that does not reach the zone). |
+
+The **Attach** tool, previously Sandbox only, now appears in a level whose tray
+offers a join. Its card offers only the join kinds that tray allows (this
+lesson: String). A level tray's single join is counted like any other piece.
+This is a presentation change; the `link` builder, the tie joint and compose
+validation are unchanged. Focused verification: both engine tests of
+`tests/machine_game_tests.py` restricted to these three levels pass in 2.741 s
+on `build/linux/banjo_live_world_run`, plus `node tests/level_intro_test.mjs`
+(37 introductions) and the source-registration guard. The browser suite was not
+run for this change; its catalogue counts now expect 37. Remaining caveats: the
+rope lesson's tie is an ideal massless string with no rendered sag or
+breaking load; the minute estimates are unprobed.
+
 October 16 setup guidance: the Try It!/Reset and Controls/Help action bar
 precedes the scene on desktop and phone. Try It! uses secondary styling until
 the lesson’s required piece counts are placed, including wires. Counts expose
@@ -542,8 +576,11 @@ already lacks that axis. These are the remaining device adjustments/connections:
 | Level | Device controls |
 |---|---|
 | Tip the lever | weight: Starting height (m) |
-| Spring lifts the load | spring: Relaxed length (m) |
+| Roll the ball (added October 17) | marble: placement only |
+| Fill the trench (added October 17) | block: Height (m) |
 | Mind the gap | plank: Cut to length |
+| Swing on a rope (added October 17) | marble: placement only; link: Attach picks both ends of a string |
+| Spring lifts the load | spring: Relaxed length (m) |
 | Raise the crate | tackle: Counterweight preset (kg), Rope ratio, Counterweight height (m) |
 | Find the focus | lens: Focus / face radius, Diameter (m) |
 | Cut the cord | knife: Pivot height (m), Arm length (m), turn |
@@ -1114,7 +1151,7 @@ disappear; selecting a placed object uses its rendered solid. Whole machine,
 Restart with my pieces and the Puzzle details disclosure are removed from the
 ordinary game interface. Existing inspection-return controls remain separate.
 
-All 34 challenges stay visible in four chapters: Level 1: Mechanics (including
+All 34 challenges (37 since the October 17 starter lessons) stay visible in four chapters: Level 1: Mechanics (including
 spatial optics), Level 2: Electricity, Level 3: Water, Level 4: Heat and chain
 reactions. Chapter order supersedes the former global difficulty ranking;
 relative ranks within chapters retain that audit's ordering. The time estimates

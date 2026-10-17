@@ -843,10 +843,10 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             self.anonymous_levels(width=width,height=height)
             ids=self.js("[...document.querySelectorAll('#levels-screen .level-card')].map(n=>n.dataset.level)")
-            self.assertEqual(len(ids),34);self.assertEqual(ids[0],'easy-weight');self.assertEqual(ids[-1],'fire')
+            self.assertEqual(len(ids),37);self.assertEqual(ids[0],'easy-weight');self.assertEqual(ids[-1],'fire')
             self.assertLess(ids.index('easy-mirror'),ids.index('laser'))
             self.assertLess(ids.index('easy-loop'),ids.index('advanced-parallel'))
-            self.assertEqual(self.js("document.querySelectorAll('.level-time-estimate').length"),34)
+            self.assertEqual(self.js("document.querySelectorAll('.level-time-estimate').length"),37)
             self.assertTrue(self.js(r"[...document.querySelectorAll('.level-time-estimate')].every(n=>/^Est\. [0-9]+–[0-9]+ min$/.test(n.textContent)&&n.title.includes('not measured human'))"))
             self.assertLessEqual(self.js('document.documentElement.scrollWidth'),width)
             self.open('easy-weight',width,height,phone=width!=1280)
@@ -5683,7 +5683,7 @@ class Puzzles(unittest.TestCase):
         self.wait("!document.getElementById('levels-screen').hidden",10)
         self.assertEqual(self.js("[...document.querySelectorAll('.level-chapter h2')].map(x=>x.textContent)"),
                          ['Level 1: Mechanics','Level 2: Electricity','Level 3: Water','Level 4: Heat and chain reactions'])
-        self.assertEqual(self.js("document.querySelectorAll('.level-card').length"),34)
+        self.assertEqual(self.js("document.querySelectorAll('.level-card').length"),37)
         self.assertEqual(self.js("document.querySelectorAll('.level-card-details').length"),0)
         self.assertEqual(self.js("document.querySelectorAll('#levels-screen select').length"),0)
 

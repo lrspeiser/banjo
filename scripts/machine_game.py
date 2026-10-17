@@ -61,6 +61,7 @@ PLAYER_TASK_COUNTS = {
     'easy-water-receiver': 1, 'easy-divert-water': 1, 'easy-heat': 3, 'easy-catapult': 1,
     'easy-marble-light': 1, 'easy-water-gate': 3, 'easy-charge-lift': 2,
     'easy-river-lift': 2, 'advanced-resistor':1,'advanced-parallel':4,'advanced-capacitor':1,
+    'easy-roll': 1, 'easy-block': 1, 'easy-rope': 2,
 }
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -118,8 +119,9 @@ def load_levels():
     for level in levels:
         _with_free_knobs(level)
         row=onboarding[level['id']]
+        # A lesson added after the blind probe states its own, weaker basis.
         level['onboarding']={'rank':row['rank'],'estimated_minutes':row['estimated_minutes'],
-                             'estimate_basis':catalogue['estimate_basis'],'chapter':row['chapter']}
+                             'estimate_basis':row.get('estimate_basis',catalogue['estimate_basis']),'chapter':row['chapter']}
         if row.get('title'):level['title']=row['title']
         for tray in level['tray']:
             # Presentation only: keep the full declaration/defaults for the

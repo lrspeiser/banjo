@@ -4,9 +4,13 @@ const pieces={plank:'a plank',ramp:'a ramp',knife:'a swinging knife',mirror:'mir
   spring:'a spring',gear:'a gear',motor:'a motor',battery:'a battery',wire:'wires',bulb:'a bulb',
   switch:'a switch',resistor:'a resistor',capacitor:'a capacitor',water_tank:'a water tank',
   water_wheel:'a water wheel',water_chute:'a water chute',steam:'a boiler and piston',
-  ignition:'a heating coil',cannon:'a cannon',catapult:'a counterweight catapult'};
+  ignition:'a heating coil',cannon:'a cannon',catapult:'a counterweight catapult',
+  marble:'a marble',block:'a block',link:'a string'};
 export const LEVEL_MECHANISMS=Object.freeze({
   'easy-weight':'A falling weight pushes one end of the lever down, turning it around its pivot.',
+  'easy-roll':'Gravity pulls the marble down a slope, and it keeps rolling along the floor. On flat ground nothing makes it start.',
+  'easy-block':'A block stays where you set it and holds up whatever rolls over it. Its top must be level with the tables.',
+  'easy-rope':'A string pulls but never pushes. It stops the falling marble moving away from the knot, so the marble swings around it.',
   'easy-spring':'A compressed spring stores energy. Its latch holds a push plate until you release it; the plate must touch the box to lift it.',
   gap:'The marble rolls along supported surfaces. Your plank can bridge the gap between the tables.',
   'easy-tackle':'A falling counterweight pulls a rope through pulleys to lift the waiting crate.',
@@ -58,7 +62,8 @@ function goalDescription(level,fallback){
   if(rule.charged_j)return `Charge the battery to at least ${rule.charged_j.at_least_j} J.`;
   if(rule.water_in_zone_l){const r=rule.water_in_zone_l;return `Collect at least ${r.l} litres in the receiver and keep it there for ${r.for_s} s.`;}
   if(rule.parted)return 'Heat the cord until it breaks and releases the weight.';
-  const zones={gap:'Roll the marble into the cup.','easy-catapult':'Launch the marble into the receiving bin.',
+  const zones={gap:'Roll the marble into the cup.','easy-roll':'Roll the marble into the cup.',
+    'easy-block':'Roll the ball across the trench into the cup.','easy-rope':'Swing the marble into the green zone.','easy-catapult':'Launch the marble into the receiving bin.',
     'easy-cut':'Cut the cord so the weight falls into the bin.',cut:'Cut the cord so the weight falls into the bin.',
     tackle:'Raise the crate to the shelf mark.',laser:'Burn through the cord so the weight falls into the bin.',
     sun:'Raise the weight to the green height mark.',steam:'Raise the piston into the marked height zone.',

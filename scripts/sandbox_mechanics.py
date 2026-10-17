@@ -574,3 +574,103 @@ _solar_lesson['hints'] = [_solar_lesson['brief'],
     'The wall blocks sunlight behind it. A panel at either side can collect power; the watts meter and the ray to the sun show whether it is shaded.',
     'Choose Connect wires in Controls, then click panel Out and battery In. Without the cable only the panel’s local store charges.']
 _solar_lesson['par_energy_j'] = 192000000  # 191,439,840 J fabrication, rounded up to three figures
+
+
+# ---- starter lessons: a ball, a block and a rope ------------------------------
+# Three first lessons teach the primitives before the block and tackle. A
+# win comes only from native gravity, contact and (for the rope) a
+# tension-only tie joint. Nothing scripts a motion or checks a piece's name.
+# They use the core marble, block and link builders, so the base gets the
+# usual level stands (no custom_base) and old saves are unaffected.
+
+def _starter_row(piece, knobs, **extra):
+    return dict(piece=piece, count=1, cost=0, knobs=knobs, start_at_defaults=True, **extra)
+
+
+def _starter_level(identity, title, teaches, brief, machine, tray, goal, solution, wrong, seconds, hint, par):
+    return {'id': identity, 'title': title, 'difficulty': 'easy', 'teaches': teaches, 'brief': brief,
+            'time_s': seconds, 'budget': 100, 'par': 100, 'style_pieces': 1, 'par_energy_j': par,
+            'machine': machine, 'tray': tray, 'goal': goal, 'hints': [brief, hint],
+            'solution': solution, 'wrong': wrong}
+
+
+def _starter_levels():
+    # Roll the ball: an oak slope, a cup on the floor beyond its foot.
+    roll = base('Roll the ball')
+    roll['kits'] = [dict(kit='ramp', name='slope', top_m=[-.9, .4, 0], bottom_m=[-.3, .06, 0],
+                         width_m=.12, material='oak')]
+    roll['parts'] = [box('cup back', [.04, .1, .3], [.88, .05, 0]),
+                     box('cup left', [.36, .06, .04], [.68, .03, .13]),
+                     box('cup right', [.36, .06, .04], [.68, .03, -.13])]
+    marble = _starter_row('marble', dict(x_m=number('Position along (m)', -1, .2, .1),
+                                         z_m=number('Position across (m)', -.4, .4, 0)), turning=False)
+    roll_level = _starter_level('easy-roll', 'Roll the ball', 'gravity and rolling',
+        'Set the marble down on the slope. Gravity rolls it down and along the floor into the green cup.',
+        roll, [marble],
+        {'title': 'The marble is in the cup', 'focus': ['your marble 1'], 'needs': 'Place the marble first.',
+         'station': {'done_when': {'in_zone': {'part': 'your marble 1', 'at_m': [.68, .03, 0], 'size_m': [.36, .1, .22]}}}},
+        [dict(piece='marble', x_m=-.7, z_m=0)], [dict(piece='marble', x_m=0, z_m=0)], 3,
+        'A marble on flat ground stays where it is. Only a slope gives gravity a direction to roll it.',
+        6600000)  # 6,593,156 J: the 0.264 kg iron marble's fabrication energy, rounded up
+
+    # Fill the trench: the gap level's ramp and tables, with a 30 cm trench
+    # whose floor is the ground. A fixed block is set down on what is under it.
+    trench = base('Fill the trench')
+    trench['kits'] = [dict(kit='ramp', name='start ramp', top_m=[-1.3, .62, 0], bottom_m=[-.7, .3, 0],
+                           width_m=.12, ball=dict(material='iron', diameter_m=.06, name='ball'))]
+    trench['parts'] = [box('near table', [.6, .3, .3], [-.4, .15, 0]),
+                       box('far table', [.9, .3, .3], [.65, .15, 0]),
+                       box('cup back', [.04, .1, .3], [1.08, .35, 0]),
+                       box('cup left', [.34, .06, .04], [.89, .33, .13]),
+                       box('cup right', [.34, .06, .04], [.89, .33, -.13])]
+    block = _starter_row('block', dict(
+        x_m=number('Position along (m)', -.6, 1, .5), z_m=number('Position across (m)', -.4, .4, 0),
+        length_m=dict(number('Length (m)', .26, .26, .26), hidden=True),
+        tall_m=number('Height (m)', .04, .5, .1, .02),
+        depth_m=dict(number('Depth (m)', .3, .3, .3), hidden=True),
+        material=dict(choice('Material', ['concrete'], 'concrete'), hidden=True)), turning=False)
+    trench_level = _starter_level('easy-block', 'Fill the trench', 'structure',
+        'The ball rolls along the table toward a trench. Set the block down in the trench and stretch its height until its top is level with the tables.',
+        trench, [block],
+        {'title': 'The ball is in the cup', 'focus': ['ball'],
+         'station': {'done_when': {'in_zone': {'part': 'ball', 'at_m': [.89, .34, 0], 'size_m': [.34, .1, .22]}}}},
+        [dict(piece='block', x_m=.05, z_m=0, tall_m=.3)], [dict(piece='block', x_m=.05, z_m=0, tall_m=.2)], 4,
+        'A block stays exactly where you set it and holds up what rolls over it. Too low leaves a hole; too high makes a wall.',
+        53400000)  # 53,352,000 J: 56.2 kg of concrete, rounded up
+
+    # Swing on a rope: an oak beam held out from one post, ending short of a
+    # trapdoor whose own weight opens it at the start (nothing is above the
+    # marble, so it is set down on the leaf). A string ('tie') pulls but
+    # never pushes.
+    swing = base('Swing on a rope')
+    swing['parts'] = [box('frame post', [.08, 1.4, .08], [.85, .7, 0]),
+                      box('frame beam', [.99, .08, .16], [.395, 1.44, 0], 'oak'),
+                      box('trapdoor stand', [.08, .75, .08], [-.685, .375, 0]),
+                      box('trapdoor leaf', [.2, .04, .3], [-.52, .75, 0], 'oak', False)]
+    swing['joints'] = [dict(name='trapdoor hinge', kind='hinge', a='trapdoor stand', b='trapdoor leaf',
+                            at_m=[-.62, .75, 0], axis=[0, 0, 1], lower_deg=-90, upper_deg=0, friction_n_m=.01)]
+    hung = _starter_row('marble', dict(x_m=number('Position along (m)', -.6, -.2, -.25),
+                                       z_m=number('Position across (m)', -.4, .4, 0)), turning=False)
+    string = dict(piece='link', count=1, cost=0, turning=False, across=False, attach=True, knobs=dict(
+        kind=choice('Joined by', ['string'], 'string'),
+        a={'part': True, 'default': '', 'label': 'one part'},
+        b={'part': True, 'default': '', 'label': 'the other part'},
+        at_m={'point': True, 'label': 'where'},
+        at_b_m={'point': True, 'needed': False, 'label': "the string's other end"}))
+    on_leaf = [-.5, .812, 0]   # the top of the marble resting on the leaf
+    swing_level = _starter_level('easy-rope', 'Swing on a rope', 'rope tension',
+        'Set the marble on the trapdoor, which drops open when you start. Then choose Attach, press the end of the beam, press the marble and choose String, so it swings up into the green zone.',
+        swing, [hung, string],
+        {'title': 'The marble swings into the zone', 'focus': ['your marble 1'], 'needs': 'Place the marble first.',
+         'station': {'done_when': {'in_zone': {'part': 'your marble 1', 'at_m': [.42, .74, 0], 'size_m': [.16, .12, .2]}}}},
+        [dict(piece='marble', x_m=-.5, z_m=0),
+         dict(piece='link', kind='string', a='frame beam', b='your marble 1', at_m=[0, 1.4, 0], at_b_m=on_leaf)],
+        [dict(piece='marble', x_m=-.5, z_m=0),
+         dict(piece='link', kind='string', a='trapdoor stand', b='your marble 1', at_m=[-.645, .1, 0], at_b_m=on_leaf)], 3,
+        'A string pulls but never pushes. Tied high and to one side, the falling marble swings around the knot; tied low, the string goes slack and the marble just drops.',
+        6600000)  # the same marble; a string has no modelled mass
+    return [roll_level, trench_level, swing_level]
+
+
+STARTER_LEVELS = _starter_levels()
+EASY_LEVELS.extend(STARTER_LEVELS)

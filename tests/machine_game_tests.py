@@ -499,7 +499,11 @@ class Tray(unittest.TestCase):
         audit=importlib.util.module_from_spec(spec);spec.loader.exec_module(audit)
         receipt=json.loads((ROOT/'docs/level-onboarding-audit.json').read_text(encoding='utf-8'))
         self.assertFalse(receipt['human_times_measured'])
-        self.assertEqual({r['id'] for r in receipt['levels']},{l['id'] for l in LEVELS})
+        # Lessons added after the blind probe are not in its receipt; each
+        # must say so in its own estimate basis rather than borrow the probe's.
+        unprobed={l['id'] for l in LEVELS if 'not yet probed' in l['onboarding']['estimate_basis']}
+        self.assertEqual(unprobed,{'easy-roll','easy-block','easy-rope'})
+        self.assertEqual({r['id'] for r in receipt['levels']},{l['id'] for l in LEVELS}-unprobed)
         for level in LEVELS:
             exported=audit.packet(level)
             self.assertFalse({'solution','wrong','hints','solution_inputs'} & set(exported['player']))
@@ -662,6 +666,8 @@ class Tray(unittest.TestCase):
         for level in LEVELS:
             tries = [level['solution']]
             for t in level['tray']:
+                if t.get('attach'):
+                    continue      # a join adds a joint between two parts, never a part that could float
                 for end in ('min', 'max'):
                     p = {'piece': t['piece']}
                     for key, rule in t['knobs'].items():
@@ -2067,6 +2073,29 @@ class Engine(unittest.TestCase):
                 t = mg.trial(lv, placed, ENGINE, Path(logs), runs=1,
                              handle_inputs=lv.get('solution_inputs'), release_inputs=lv.get('solution_releases'))
                 self.assertEqual(t['worked'], 0, lv['id'])
+
+    @need_engine
+    def test_starter_ball_block_and_string_lessons_fail_when_the_primitive_is_misused(self):
+        # A marble on flat floor stays put; a block too low leaves a hole and
+        # one too high is a wall; a string tied low goes slack. Nudged, as
+        # the solutions are, and each without an engine error.
+        leaf = [-.5, .812, 0]
+        cases = {'easy-roll': [[dict(piece='marble')], [dict(piece='marble', x_m=-.7, z_m=.3)]],
+                 'easy-block': [[], [dict(piece='block', x_m=.05, tall_m=.4)]],
+                 'easy-rope': [[dict(piece='marble', x_m=-.5)],
+                               [dict(piece='marble', x_m=-.5), dict(piece='link', kind='string', a='frame beam',
+                                    b='your marble 1', at_m=[-.1, 1.4, 0], at_b_m=leaf)]]}
+        with tempfile.TemporaryDirectory() as logs:
+            for ident, setups in cases.items():
+                level = mg.level_by_id(ident)
+                for placed in [level['wrong'], *setups]:
+                    with self.subTest(level=ident, placed=placed):
+                        t = mg.trial(level, placed, ENGINE, Path(logs), runs=3)
+                        self.assertEqual(t['worked'], 0, t['results'])
+                        self.assertTrue(all(r['error'] is None for r in t['results']), t['results'])
+        self.assertEqual(sum(t['piece'] == 'link' for t in mg.level_by_id('easy-rope')['tray']), 1)
+        self.assertEqual(mg.level_by_id('easy-rope')['tray'][1]['knobs']['kind']['choices'], ['string'],
+                         'the rope lesson offers only a tension-only string')
 
 
 if __name__ == '__main__':
