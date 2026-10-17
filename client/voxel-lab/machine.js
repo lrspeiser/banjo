@@ -1888,7 +1888,8 @@ async function setPlaying(run) {
       throw error;
     }
     if(mine!==polling||session!==requestedSession)return;
-    playing=frame.playing;renderClock(frame);if(wake)wake();
+    // A pause ends the run's pace report now, not at the next (slower) poll.
+    playing=frame.playing;logRunPace(frame);renderClock(frame);if(wake)wake();
   } finally {finish();}
 }
 

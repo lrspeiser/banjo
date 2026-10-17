@@ -2004,6 +2004,7 @@ class Puzzles(unittest.TestCase):
                     # positions than the frames it receives (CI draws at ~5-7 fps).
                     moved=lambda key:sum(1 for a,b in zip(rows,rows[1:]) if any(abs(p-q)>1e-6 for p,q in zip(a['bodies']['ball'][key],b['bodies']['ball'][key])))
                     self.assertGreaterEqual(moved('drawn'),1.5*moved('applied'),(moved('drawn'),moved('applied')))
+                self.wait('machinePlaybackState().last_run!==null',5)
                 pace=self.js('machinePlaybackState().last_run')
                 self.assertEqual(pace['level'],'gap')
                 self.assertIn('server_behind_max_s',pace)
