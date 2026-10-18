@@ -919,6 +919,87 @@ def knob_default(rule):
 class FreeBuild(unittest.TestCase):
     FREE = mg.level_by_id('free')
 
+    @staticmethod
+    def course_proposal():
+        return dict(reply='A marble takes a ramp, a turn and a stopped catch.',clear=True,
+            add=[dict(piece='track',id='entry',x_m=-.8,z_m=0,top_height_m=1,run_m=.8,drop_m=.12),
+                 dict(piece='bend',id='turn',turn_deg=90,radius_m=.3,drop_m=.06,join=dict(to=1,port='far end')),
+                 dict(piece='track',id='finish',run_m=.7,drop_m=.08,end='stop',join=dict(to=2,port='far end')),
+                 dict(piece='marble',id='ball',join=dict(to=1,port='top end'))],
+            verify=[dict(marble='ball',via=['entry','turn','finish'],finish='finish',seconds=10)])
+
+    def test_word_builder_has_one_existing_tool_contract_in_3d_and_wall_spaces(self):
+        import sandbox_wall
+        for level in (self.FREE,mg.requested_level(dict(level='free',base=sandbox_wall.world_base())),
+                mg.requested_level(dict(level='free',base=sandbox_wall.base()))):
+            prompt=mc.free_prompt(level)
+            for text in ('EXISTING Sandbox tools','Never invent a device','Include every required object',
+                    'verify','SAME marble','id (not name)','earlier final piece number'):
+                self.assertIn(text.lower(),prompt.lower())
+            self.assertIn('marble',prompt)
+
+    def test_structured_builder_schema_and_knob_translation_use_the_actual_catalog(self):
+        schema=mc.free_response_schema(self.FREE)
+        self.assertFalse(schema['additionalProperties'])
+        self.assertEqual(set(schema['required']),set(schema['properties']))
+        options=schema['properties']['add']['items']['anyOf']
+        allowed=[row['properties']['piece']['enum'][0] for row in options]
+        self.assertIn('rope',allowed);self.assertNotIn('imaginary_teleporter',allowed)
+        bend=next(row for row in options if row['properties']['piece']['enum']==['bend'])
+        self.assertNotIn('run_m',bend['properties']['knobs']['items']['properties']['name']['enum'])
+        original=dict(reply='Proposal',add=[dict(piece='track',id='entry',join=None,
+            knobs=[dict(name='run_m',value=.8),dict(name='drop_m',value=.12)])],
+            edit=[dict(number=1,knobs=[dict(name='run_m',value=1)])],
+            assemblies=[dict(kind='marble_lift',x_m=None,height_m=None)])
+        normalized=mc.normalize_build_answer(original)
+        self.assertEqual(normalized['add'],[dict(piece='track',id='entry',run_m=.8,drop_m=.12)])
+        self.assertEqual(normalized['edit'],[dict(number=1,set=dict(run_m=1))])
+        self.assertEqual(normalized['assemblies'],[dict(kind='marble_lift')])
+        self.assertIn('knobs',original['add'][0],'translation must not mutate a recorded model answer')
+        for knobs in ([dict(name='run_m',value=.8),dict(name='run_m',value=.9)],
+                [dict(name='piece',value='imaginary_teleporter')]):
+            with self.assertRaises(mg.LevelRefused):mc.normalize_build_answer(dict(add=[dict(piece='track',knobs=knobs)]))
+
+    def test_course_verification_resolves_ids_and_rejects_fake_or_duplicate_targets(self):
+        answer=self.course_proposal()
+        result=mc.respond_free('Build a marble course',self.FREE,[],call=lambda messages:(answer,{}))
+        compiled=mw.compile_spec(mg.compose(self.FREE,result['placements'])[0])
+        aliases={p['id']:f'your {p["piece"]} {i+1}' for i,p in enumerate(answer['add'])}
+        checks=mc.course_checks(answer['verify'],result['placements'],compiled,aliases)
+        self.assertEqual(checks[0]['via'],['your track 1','your bend 2','your track 3'])
+        for change in (dict(marble='entry'),dict(via=['entry','entry']),dict(via=['entry','invented']),
+                dict(seconds=float('inf')),dict(seconds=0),dict(script='move the marble')):
+            with self.subTest(change=change),self.assertRaises(mg.LevelRefused):
+                mc.course_checks([dict(answer['verify'][0],**change)],result['placements'],compiled,aliases)
+
+    def test_word_builder_rejects_unavailable_controls_and_forward_joins(self):
+        for bad in (dict(piece='track',teleport=True),dict(piece='track',join=dict(to=2,port='far end')),
+                dict(piece='imaginary_teleporter')):
+            with self.subTest(bad=bad):
+                count=[]
+                def call(messages):count.append(1);return dict(reply='Proposal',add=[bad]),{}
+                with self.assertRaises(mg.LevelRefused):mc.respond_free('Build it',self.FREE,[],call=call)
+                self.assertEqual(len(count),3)
+
+    def test_a_failed_course_cannot_pass_by_removing_its_route_checks(self):
+        answer=self.course_proposal();calls=[]
+        def call(messages):
+            calls.append(copy.deepcopy(messages))
+            return (answer if len(calls)==1 else dict(answer,verify=[])),{}
+        def run(compiled,**kw):return dict(paths={},hits=[],events=[],error=None)
+        with self.assertRaisesRegex(mg.LevelRefused,'Keep'):
+            mc.respond_free('Build a marble course',self.FREE,[],call=call,rehearse=run)
+        self.assertEqual(len(calls),3)
+        self.assertIn('could not verify',calls[1][-1]['content'])
+
+    def test_bad_route_metadata_can_be_corrected_without_preserving_invalid_stages(self):
+        answer=self.course_proposal();calls=[]
+        bad=copy.deepcopy(answer);bad['verify'][0]['via'].insert(0,'ball')
+        def call(messages):calls.append(1);return (bad if len(calls)==1 else answer),{}
+        result=mc.respond_free('Build a marble course',self.FREE,[],call=call)
+        self.assertEqual(len(calls),2)
+        self.assertEqual(len(result['placements']),4)
+
     # Like pieces snapping flush: plank end to end, block side to side and on top.
     def _flush(self, placed, index, **extra):
         before = copy.deepcopy(placed)
@@ -1350,6 +1431,43 @@ class SandboxGoal(unittest.TestCase):
         self.assertEqual(results, {'in the beam': True, 'beside it': False, 'facing away': False})
 
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_word_builder_can_repair_a_staged_course_without_applying_the_failed_draft(self):
+        level=mg.requested_level(dict(level='free',base=dict(schema=mw.SCHEMA,parts=[],stations=[])))
+        original=[];proposal=FreeBuild.course_proposal();proposal['clear']=False
+        proposal['add'][2]['end']='open'
+        calls=[]
+        def call(messages):
+            calls.append(copy.deepcopy(messages))
+            if len(calls)==1:return proposal,{}
+            return dict(reply='Added a physical end stop to catch the marble.',edit=[dict(number=3,set=dict(end='stop'))],
+                verify=proposal['verify']),{}
+        with tempfile.TemporaryDirectory() as logs:
+            result=mc.respond_free('Build a complete marble course',level,original,call=call,
+                rehearse=lambda compiled,**kw:mw.rehearse(compiled,ENGINE,Path(logs),wall_limit_s=60,**kw))
+        self.assertEqual(len(calls),2)
+        feedback=json.loads(calls[1][-1]['content'])
+        self.assertEqual(len(feedback['on_the_table']),4)
+        self.assertEqual(original,[])
+        self.assertEqual(len(result['placements']),4)
+        self.assertEqual(result['placements'][2]['end'],'stop')
+        self.assertTrue(result['rehearsal']['checks'][0]['happened'])
+
+    @need_engine
+    def test_word_built_course_has_ordered_native_contacts_and_a_catch_for_three_materials(self):
+        base=dict(schema=mw.SCHEMA,title='Blank course qualification',parts=[],kits=[],stations=[])
+        level=mg.requested_level(dict(level='free',base=base))
+        for material in ('glass','oak','iron'):
+            with self.subTest(material=material),tempfile.TemporaryDirectory() as logs:
+                answer=FreeBuild.course_proposal();answer['add'][-1]['material']=material
+                def run(compiled,**kw):return mw.rehearse(compiled,ENGINE,Path(logs),wall_limit_s=60,**kw)
+                result=mc.respond_free('Build a course with a marble',level,[],call=lambda messages:(answer,{}),rehearse=run)
+                check=result['rehearsal']['checks'][0]
+                self.assertTrue(check['happened'],check)
+                self.assertEqual([s['piece'] for s in check['stages']],['your track 1','your bend 2','your track 3'])
+                self.assertEqual(check['finished_on'],'your track 3')
+                print('WORD_BUILT_COURSE',material,json.dumps(check),flush=True)
+
     @need_engine
     def test_gear_motion_replay_observes_native_contact_without_changing_the_setup(self):
         level=mg.level_by_id('easy-gears')

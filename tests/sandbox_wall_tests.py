@@ -94,7 +94,9 @@ class Wall(unittest.TestCase):
         level=mg.requested_level(dict(level='free',base=wall.base()))
         bad=dict(reply='Lift.',add=[dict(piece='wall_track'),dict(piece='motor'),
             dict(piece='wire',a_terminal='battery:plus',b_terminal='motor:plus')])
-        good=dict(reply='Added a physical lift.',assemblies=[dict(kind='marble_lift')])
+        # Replace the rejected proposal explicitly; repairs may now edit a
+        # staged candidate instead of always starting from the original.
+        good=dict(reply='Added a physical lift.',clear=True,assemblies=[dict(kind='marble_lift')])
         asked=[]
         def call(messages):
             asked.append(copy.deepcopy(messages))
@@ -109,7 +111,7 @@ class Wall(unittest.TestCase):
 
     def test_engine_failure_is_repaired_and_never_applied_after_exhaustion(self):
         level=mg.requested_level(dict(level='free',base=wall.base()));before=[]
-        answer=dict(reply='Lift.',assemblies=[dict(kind='marble_lift')]);calls=[]
+        answer=dict(reply='Lift.',clear=True,assemblies=[dict(kind='marble_lift')]);calls=[]
         def call(messages):calls.append(copy.deepcopy(messages));return answer,{}
         def engine(compiled,**kwargs):return dict(error='test-only failed native trial',events=[])
         with self.assertRaisesRegex(mg.LevelRefused,'failed native trial'):

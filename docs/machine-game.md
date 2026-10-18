@@ -1,5 +1,53 @@
 # Puzzles on the machine (/play)
 
+October 18 word-builder course verification: the shared prompt explicitly limits
+the builder to the active Sandbox catalog, its actual knobs and connections.
+Wall mounting uses two placement coordinates in the same 3D world; ordinary
+pieces retain their 3D controls. The provider now receives a strict structured
+response schema with each piece's own knob names. Settings are translated into
+the same placement API the player uses; invented operations, controls, missing
+references and forward joins are refused. The catalog includes the physical
+Rope tool, numbered parts/joints and real terminal references. The prompt gives
+measured wall-transfer guidance from the existing wall starter rather than
+declaring a new device or imposing runtime motion.
+
+Repairs operate on a temporary proposal, including numbered pieces that were
+refused for overlap. The original design is unchanged until the complete
+proposal compiles and its requested native checks pass. A repair may edit the
+staged pieces or explicitly clear and replace them. Invalid route metadata can
+be corrected, but a physically failed valid route cannot be removed or reduced
+to obtain a pass. The retry limit remains three proposals. Native failure after
+that limit leaves the design intact; it is not an assurance that arbitrary
+natural-language machines can be built.
+
+The structured `verify` list names a freely moving marble, 2–12 distinct stage
+pieces in contact order, a fixed finish/catcher and a 1–25 s rehearsal. Requests
+for a course, Rube Goldberg machine or zigzag require a route. Observation uses
+native impacts plus the marble's initial resting support; no forces, triggers
+or body positions are assigned. A pass requires the complete contact order,
+at least 0.25 m travel and final support on the catcher. Settling is observed
+over the final 0.5 s (at least 0.4 s of trace), within 20 mm. Support uses the
+existing 5 mm `resting_on` probe. Rehearsals expose each tracked body's actual
+final native pose/time separately; the course observer appends it to the sparse
+motion record, preserving existing preview timing. A resting trace is thus not
+mistaken for ongoing motion. The check covers a sampled trajectory and fixed catcher;
+it is not a general interpretation of every electronics/fluid/thermal goal.
+
+The native three-stage qualification completes for glass/oak/iron at DT=1/240 s
+and 20 mm construction resolution, travelling 2.131/2.092/2.123 m respectively.
+A separate open-ended course fails, then succeeds after the builder edits its
+staged catch track to add the existing physical end stop. The goal and original
+design remain unchanged. No native law, timestep, energy/momentum tolerance or
+level solution is modified; these observations make no new conservation claim.
+A real configured-model request from a blank 3D workspace produced six editable
+pieces (one marble, three tracks and two bends) on its first proposal in 21.875 s.
+Its native run passed four ordered stages, travelled 3.719 m and settled on its
+finish track. More complicated gate/flip-flop trials were refused; the engine
+did not verify them. The browser regression uses a provider fixture and the
+actual HTTP/native rehearsal to cover placement, measured feedback, Run,
+Undo/Redo and saved versions at desktop/portrait/landscape sizes. That UI test
+is separate from the real-model trial above.
+
 October 18 Sandbox start/stop qualification: returning from Run to Tune now
 awaits a single rebuild before reopening the last apparatus. Build, Reset,
 another selection or leaving the design invalidates the pending selection;

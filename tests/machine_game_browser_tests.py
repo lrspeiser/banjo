@@ -3010,6 +3010,35 @@ class Puzzles(unittest.TestCase):
                 self.wait(f"machineContactState().liveDevices.some(m=>m.name==={json.dumps(motor)} && m.power_w>.1)",30)
                 self.click_visible('Pause')
 
+    def test_words_build_a_complete_course_from_blank_with_native_checks_undo_and_save(self):
+        import machine_game_tests
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.press('Add New Design');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements()'),[])
+                self.click_visible('Describe a design')
+                self.assertTrue(self.js("document.getElementById('builder-scope').checkVisibility()"))
+                self.slide('Your question','Build a complete marble course using the existing tools')
+                answer=machine_game_tests.FreeBuild.course_proposal()
+                # The provider fixture proposes a layout; the HTTP endpoint's
+                # ordinary native rehearsal must supply the actual proof.
+                with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')),patch('machine_chat._call',return_value=(answer,{})) as provider:
+                    self.press('Build it')
+                    self.wait("machinePlacements().length===4 && "+READY,60)
+                self.assertEqual(provider.call_count,1)
+                self.assertTrue(provider.call_args.kwargs['schema']['properties']['verify']['minItems']==1)
+                self.assertIn('passed 3 stages in order',self.js("document.getElementById('chat-log').textContent"))
+                self.assertNotIn('undefined',self.js("document.getElementById('chat-log').textContent"))
+                self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+                self.click_visible('Controls');self.click_visible('Save version');self.anonymous_cloud_saved()
+                self.click_visible('Undo');self.wait('machinePlacements().length===0 && '+READY,30)
+                self.click_visible('Redo');self.wait('machinePlacements().length===4 && '+READY,30)
+                self.click_visible('Run');self.wait("machineBodies()['your marble 4']?.[2]<-.4",30)
+                self.click_visible('Pause')
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'word-built-course-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
     def test_wall_word_builder_adds_a_verified_lift_with_undo_save_and_scene_controls(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

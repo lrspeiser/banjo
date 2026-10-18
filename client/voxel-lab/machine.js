@@ -7681,8 +7681,9 @@ async function chooseLevel(id, design = null) {
   $('solve').hidden = true;
   $('send').textContent = level.free ? 'Build it' : 'Ask for a hint';
   document.querySelector('.chat h2').textContent = level.free ? 'Build with words' : 'Ask for help';
+  $('builder-scope').hidden=!level.free;
   $('message').placeholder = level.free
-    ? 'Say what to build, e.g. “Hold three marbles up high behind a gate, then split them three ways”'
+    ? 'Describe a course using Banjo’s pieces, e.g. “Build a marble run with two turns and a finish catcher”'
     : 'Ask about this level, e.g. “Why does my ball fall short?”';
   $('share-link').hidden = true;
   if (level.free) {
@@ -7725,29 +7726,29 @@ $('free-example').addEventListener('click', () => {
 
 // A free build from words: the model says which pieces and what each joins
 // to, the server works out where they go and rehearses it once in the engine.
+function builderCheckSummary(checks) {
+  return checks.map(c=>c.kind==='course'
+    ? `The marble passed ${c.stages.length} stages in order, travelled ${c.distance_m.toFixed(2)} m and finished on ${c.finished_on.replace(/^your /,'').replaceAll('_',' ')}.`
+    : `The marble rose ${Math.round(c.lifted_m*100)} cm and dropped onto the raised chute at ${describeTime(c.released_at_s)}.`).join(' ')+' Choose Run to watch.';
+}
 async function askFree() {
   const message = $('message').value.trim();
   if (!message) { $('message').focus(); return; }
   $('send').disabled = true;
   $('chat-status').textContent = 'Building it, then rehearsing it once in the engine (up to a minute)…';
+  const sourceLevel=level,sourceDesign=activeDesign?.id;
   say('you', message);
   try {
     const r = await api({op: 'chat', level: 'free', ...sandboxRequest(), placements, message});
+    if(level!==sourceLevel||activeDesign?.id!==sourceDesign)return;
     say('model', r.reply);
     endGhost(); remember();
     placements = r.placements.map(p => ({...p}));
     renderTray(); renderPlaced();
-    const ended = (r.rehearsal && r.rehearsal.ended) || [];
     const checks=r.rehearsal?.checks||[];
     if(checks.length) {
-      say('model',checks.map(c=>`The marble rose ${Math.round(c.lifted_m*100)} cm and dropped onto the raised chute at ${describeTime(c.released_at_s)}.`).join(' ')+' Choose Run to watch.');
-    } else if (ended.length) {
-      const onPieces = ended.filter(e => e.on && e.on !== 'the ground');
-      // A marble that opens a gate is spent on the floor: most on a piece is a build that works.
-      say(2 * onPieces.length > ended.length ? 'model' : 'refused', `Rehearsed once in the engine: ${onPieces.length} of ${ended.length} ` +
-        `marbles ended on a piece${onPieces.length ? ` (${[...new Set(onPieces.map(e => e.on))].join(', ')})` : ''}` +
-        (onPieces.length < ended.length ? `, ${ended.length - onPieces.length} on the ground` : '') + '. Choose Run to watch, and move what needs moving.');
-    }
+      say('model',builderCheckSummary(checks));
+    } else say('model','The engine ran this layout; no completion goal was checked. Choose Run to try it.');
     $('message').value = '';
     framedFree = false;
     await rebuildLevel(false);
@@ -8056,13 +8057,14 @@ async function askLevel(mode, {popup=false,message:requestedMessage}={}) {
       if (r.rehearsal && level.free) {
         const checks=r.rehearsal.checks||[];
         say(r.rehearsal.error?'refused':'model',r.rehearsal.error?`Engine check: ${r.rehearsal.error}`:
-          checks.length?checks.map(c=>`The marble rose ${Math.round(c.lifted_m*100)} cm and dropped onto the raised chute at ${describeTime(c.released_at_s)}.`).join(' ')+' Choose Run to watch.':
-          'Built and checked in the engine. Choose Run to watch.');
+          checks.length?builderCheckSummary(checks):
+          'The engine ran this setup; no completion goal was checked. Choose Run to try it.');
       }
       else if (r.rehearsal) say(r.rehearsal.manual_input_required || r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.manual_input_required
         ? `Setup checked. ${r.rehearsal.manual_input_label || 'Drag the field handle'} to try the machine.` : r.rehearsal.goal_at_s != null
         ? `Rehearsed once in the engine: the goal happened at ${describeTime(r.rehearsal.goal_at_s)}.`
         : 'Rehearsed once in the engine: the goal did not happen. Try moving the pieces.');
+      if(level.free)framedFree=false;
       await rebuildLevel(false);
     }
     if(!requestedMessage)$('message').value = '';

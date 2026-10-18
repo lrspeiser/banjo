@@ -3603,6 +3603,10 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
             if track:
                 out['paths'] = {name: {'points': points, 'turn_wxyz': session.trail_turn.get(name)}
                                 for name, points in session.trail.items()}
+                # Sparse motion traces omit unchanged frames. Expose the
+                # actual final poses separately, preserving preview timing.
+                out['tracked_final']={name:dict(t_s=round(session.t,3),at_m=[round(v,4) for v in session.bodies[name]['position_m']])
+                    for name in session.trail if name in session.bodies}
                 out['hits'] = list(session.trail_hits)
             if flows:
                 session._capture_flows(final=True)
