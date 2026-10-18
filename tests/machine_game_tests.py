@@ -1448,6 +1448,22 @@ class SandboxGoal(unittest.TestCase):
 
 class Engine(unittest.TestCase):
     @need_engine
+    def test_fixed_stage_probe_requires_native_intact_geometry(self):
+        level=mg.level_by_id('free');answer=FreeBuild.course_proposal()
+        result=mc.respond_free('Build a course',level,[],call=lambda messages:(answer,{}))
+        compiled=mw.compile_spec(mg.compose(level,result['placements'])[0])
+        checks=mc.course_checks([dict(marble=4,via=[1,2,3],finish=3,seconds=10)],result['placements'],compiled,{})
+        with tempfile.TemporaryDirectory() as logs:
+            measured=mw.rehearse(compiled,ENGINE,Path(logs),seconds=10,track=['your marble 4'])
+        measured['hits']=[]
+        self.assertTrue(mc.measure_courses(checks,measured,compiled)[0]['happened'],'native path may prove rolling contact with intact fixed surfaces')
+        intact=list(measured['intact_fixed'])
+        measured['intact_fixed']=[n for n in intact if n!='your track 3' and not n.startswith('your track 3 ')]
+        self.assertFalse(mc.measure_courses(checks,measured,compiled)[0]['happened'],'a changed catcher cannot be checked against its old shape')
+        measured['intact_fixed']=[]
+        self.assertFalse(mc.measure_courses(checks,measured,compiled)[0]['happened'],'initial geometry cannot substitute for missing native contact evidence after a surface changes')
+
+    @need_engine
     def test_flaky_live_gate_proposal_is_repaired_by_an_existing_control_before_apply(self):
         draft=json.loads((ROOT/'tests/fixtures/chat-built-gate-proposal.json').read_text())
         before=copy.deepcopy(draft);original=[];calls=[]

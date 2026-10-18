@@ -3552,6 +3552,9 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
         # Each path starts where the body stands before anything moves.
         session.trail = {name: [[0.0] + [round(v, 4) for v in session.bodies[name]['position_m']]]
                          if name in session.bodies else [] for name in track}
+        shape_keys=('revision','shape','dimensions_m','position_m','orientation_wxyz','rigid_parts_local','cells_local_m')
+        fixed_starts={name:copy.deepcopy({k:body.get(k) for k in shape_keys})
+            for name,body in session.bodies.items() if body.get('anchored')}
     if flows:
         session.flow_trail = []
         session.flow_interval = max(.1, seconds/180)
@@ -3607,6 +3610,12 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                 # actual final poses separately, preserving preview timing.
                 out['tracked_final']={name:dict(t_s=round(session.t,3),at_m=[round(v,4) for v in session.bodies[name]['position_m']])
                     for name in session.trail if name in session.bodies}
+                # Geometry probes may use only fixed shapes whose native
+                # revision, geometry and pose stayed intact, never a cut,
+                # burned, deformed, moved or removed construction surface.
+                out['intact_fixed']=[name for name,initial in fixed_starts.items()
+                    if name in session.bodies and session.bodies[name].get('anchored') and
+                    all(initial.get(k)==session.bodies[name].get(k) for k in shape_keys)]
                 out['hits'] = list(session.trail_hits)
             if flows:
                 session._capture_flows(final=True)

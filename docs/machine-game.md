@@ -25,7 +25,10 @@ pieces in contact order, a fixed finish/catcher and a shared 1–25 s rehearsal.
 for a course, Rube Goldberg machine or zigzag require a route. Observation uses
 native impacts plus probes of fixed-stage geometry at native trajectory poses;
 moving stages require native impacts. This covers rolling contacts that do not
-produce a reported impact. No forces, triggers or body positions are assigned.
+produce a reported impact. Probes and the final catch may use only bodies whose
+native revision, shape, anchoring and pose remain intact; a cut, burned,
+deformed, moved or removed surface cannot be checked against its old geometry.
+No forces, triggers or body positions are assigned.
 A pass requires the complete contact order,
 at least 0.25 m travel and final support on the catcher. Settling is observed
 over the final 0.5 s (at least 0.4 s of trace), within 20 mm. Support uses the

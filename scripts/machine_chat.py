@@ -556,7 +556,7 @@ def measure_courses(checks,rehearsal,compiled):
         # support tolerance. Moving mechanisms still require native impacts.
         for target in check['via']:
             fixed=[p for p in supports['parts'] if p['name']==target or mg.owner(p)==target]
-            if not fixed or any(not p['fixed'] for p in fixed):continue
+            if not fixed or any(not p['fixed'] or p['name'] not in rehearsal.get('intact_fixed',[]) for p in fixed):continue
             fixture=dict(compiled,parts=fixed)
             for point in points:
                 if mg.resting_on(fixture,point[1:4],check['radius_m']):hits.append(dict(t=point[0],other=target))
@@ -567,7 +567,7 @@ def measure_courses(checks,rehearsal,compiled):
             if not hit:break
             after=hit['t'];stages.append(dict(piece=target,at_s=after))
         distance=sum(math.dist(a[1:4],b[1:4]) for a,b in zip(points,points[1:]))
-        ended=mg.resting_on(dict(supports,parts=[p for p in supports['parts'] if p['fixed']]),points[-1][1:4],check['radius_m']) if points else None
+        ended=mg.resting_on(dict(supports,parts=[p for p in supports['parts'] if p['fixed'] and p['name'] in rehearsal.get('intact_fixed',[])]),points[-1][1:4],check['radius_m']) if points else None
         if ended and ended!=check['finish']:ended=mg.owner({'name':ended}) or ended
         tail=[p for p in points if p[0]>=points[-1][0]-.5] if points else []
         preceding=[p for p in points if p[0]<points[-1][0]-.5] if points else []
