@@ -4445,6 +4445,10 @@ class Puzzles(unittest.TestCase):
             self.press('Set it down');self.wait(f'!machineGhostState() && {READY}',60)
             self.press('Save version');self.wait('machineDesign().versions.length===1',10)
             design=self.js('machineDesign()');placed=self.js('machinePlacements()')
+            self.click_summary('#design-blueprints summary')
+            self.slide('Blueprint name','Recovered assembly');self.press('Save as blueprint')
+            blueprint=self.js("machineBlueprints().find(b=>b.name==='Recovered assembly')")
+            self.assertEqual(blueprint['schema'],'banjo.blueprint.v2')
             self.anonymous_cloud_saved()
             original_page=self.page
             other=chrome_driver.Chrome(1280,860)
@@ -4457,6 +4461,7 @@ class Puzzles(unittest.TestCase):
                 self.press(f"Open design {design['name']}");self.wait(READY,90)
                 self.assertEqual(self.js('machinePlacements()'),placed)
                 self.assertEqual(self.js('machineDesign().versions'),design['versions'])
+                self.assertEqual(self.js("machineBlueprints().find(b=>b.name==='Recovered assembly')"),blueprint)
                 self.anonymous_cloud_saved()
                 self.anonymous_fixture_clear()
                 separate,_=self.anonymous_levels()

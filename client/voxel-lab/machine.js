@@ -3280,7 +3280,7 @@ function startGhost(p, index, keepPlace = false) {
 // level goes back to its start first: pieces are placed there.
 function pickUp(i) {
   if(placements[i]?.piece==='rope'){
-    const p=placements[i];startTrayAttach('rope');attaching=[{name:p.a,at:[...p.at_m]}];ropeVia=[...p.via];ropeEditing=i;showAttachStep();return;
+    const p=placements[i];startTrayAttach('rope');attaching=[{name:p.a,at:ropeAnchor(p.a,p.anchor_a)||[...p.at_m],anchor:p.anchor_a}];ropeVia=[...p.via];ropeEditing=i;showAttachStep();return;
   }
   if(level?.free && i>=placements.length){
     const object=sandboxObjects[i-placements.length];if(!object)return;
@@ -5520,6 +5520,16 @@ function ropeSockets() {
     /^your (anchor|counterweight|weight|block) \d+$/.test(p.name)).map(p=>({part:p.name,
       at_m:[p.at_m[0],p.at_m[1]+(p.name.includes('anchor')?-.5:.5)*p.size_m[1],p.at_m[2]],snap_m:.25,label:p.name}));
 }
+function ropeAnchor(name,anchor){
+  const part=machine?.parts.find(p=>p.name===name);if(!part?.size_m||!anchor)return null;
+  const frame=new THREE.Object3D();frame.position.set(...part.at_m);frame.rotation.set(...part.turn_deg.map(d=>d*Math.PI/180),'XYZ');frame.updateMatrixWorld();
+  return frame.localToWorld(new THREE.Vector3(...anchor.map((v,i)=>v*part.size_m[i]))).toArray();
+}
+function ropeLocalAnchor(part){
+  const body=machine?.parts.find(p=>p.name===part.name);if(!body?.size_m)return null;
+  const frame=new THREE.Object3D();frame.position.set(...body.at_m);frame.rotation.set(...body.turn_deg.map(d=>d*Math.PI/180),'XYZ');frame.updateMatrixWorld();
+  return frame.worldToLocal(new THREE.Vector3(...part.at)).toArray().map((v,i)=>Math.max(-.5,Math.min(.5,v/body.size_m[i])));
+}
 function tiePoints() { return attachPiece==='rope'?ropeSockets():(!level?.free && level?.tray?.find(t => t.attach)?.tie_points) || []; }
 // Gold rings show a lesson's tie points while joining.
 const tieRings = new THREE.Group(); scene.add(tieRings);
@@ -5672,7 +5682,7 @@ function showAttachStep(note = '') {
 }
 async function finishRope(end) {
   const start=attaching[0];if(!start||start.name===end.name)return;
-  const row={piece:'rope',a:start.name,b:end.name,at_m:start.at,at_b_m:end.at,via:[...ropeVia]};
+  const row={piece:'rope',a:start.name,b:end.name,at_m:start.at,at_b_m:end.at,via:[...ropeVia],anchor_a:start.anchor||ropeLocalAnchor(start),anchor_b:ropeLocalAnchor(end)};
   const source=level,stamp=JSON.stringify(placements),next=clone(placements),index=ropeEditing??next.length;next[index]=row;
   try {
     await api({op:'check',level:level.id,...sandboxRequest(),placements:next});

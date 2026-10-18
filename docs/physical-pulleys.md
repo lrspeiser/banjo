@@ -66,7 +66,11 @@ assembly. Published height goals/deadlines are unchanged. Local native rehearsal
 first reached Thread a pulley at 0.433 s, Raise the crate at 0.833 s and Lift
 with less at 1.000 s in the initial voxel-counterweight probe; subsequent exact
 compound counterweights pass the same goals and negative controls. The five
-integration checks include the new exact-mass and rotated geometry.
+integration checks include the new exact-mass and rotated geometry. A sixth
+check moves and resizes the starter lift for the heavier crate, using saved
+body-relative surface attachments; its native run reaches the same Lift with
+less goal without deleting or manually relocating rope endpoints. These are
+manufacturing edits before a run, not runtime changes to rod lengths.
 Live browser Thread a pulley used roughly 1.1–1.3 s of engine work for 0.6–0.7 s
 of world time locally. It is heavier than the old ideal pulley. Hosting and
 physical-phone performance need measurement; no real-time guarantee is made.

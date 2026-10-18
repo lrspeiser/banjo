@@ -61,6 +61,28 @@ class RoutedRopes(unittest.TestCase):
             result=game.trial(level,level['solution'],ENGINE,pathlib.Path(directory),runs=1)
         self.assertEqual(result['worked'],1,result)
 
+    def test_reused_lift_can_change_height_and_weight_without_losing_its_rope_ends(self):
+        original=game.level_by_id('easy-tackle');level=game.level_by_id('tackle')
+        pieces=copy.deepcopy(original['solution'])
+        # The same assembly fits the lower crate through its exposed load port.
+        for p in pieces:
+            if 'x_m' in p:p['x_m']-=.2
+            if 'height_m' in p:p['height_m']-=.2
+        pieces[1]['height_m']=.32
+        pieces[0]['height_m']=pieces[2]['height_m']=1.95
+        pieces[3].update(height_m=1.65,mass_kg=12)
+        pieces[4].update(anchor_a=[0,-.5,0],anchor_b=[0,.5,0])
+        # Old world points deliberately remain where the starter was saved.
+        # Explicit body-relative surface attachments own the new endpoints.
+        compiled=world.compile_spec(game.compose(level,pieces)[0])
+        strand=compiled['strands'][0]
+        counter=next(p for p in compiled['parts'] if p['name']=='your counterweight 4')
+        self.assertAlmostEqual(strand['path_m'][-1][1],counter['at_m'][1]+counter['size_m'][1]/2)
+        self.assertAlmostEqual(strand['path_m'][0][1],1.95-.04)
+        with tempfile.TemporaryDirectory() as directory:
+            result=game.trial(level,pieces,ENGINE,pathlib.Path(directory),runs=1)
+        self.assertEqual(result['worked'],1,result)
+
     def test_assembly_checks_inventory_and_reports_real_overlaps(self):
         level=game.level_by_id('easy-thread')
         good=game.assembly_ghost(level,level['solution'],0)

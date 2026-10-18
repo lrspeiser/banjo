@@ -24,7 +24,11 @@ October 17 audit implementation, checkpoint 2:
   A Load port can align the group's saved load attachment to the chosen box.
   The saved pieces are rebuilt and simulated; no assembly trajectory is replayed.
   Anonymous profile synchronization carries the same JSON through the existing
-  store. Winning keeps a starter from the player's actual placed pieces, with a
+  store; a clean second browser recovered a v2 blueprint through the return URL.
+  New rope ends store body-relative surface coordinates, so editing a device's
+  position or size rebuilds its manufactured route from the new attachment.
+  Older absolute endpoints remain readable. Runtime length, contact and tension
+  remain native. Winning keeps a starter from the player's actual placed pieces, with a
   separate Save assembly action. Levels offer only inventory-compatible groups.
 * Manual switches enter Run ready at time zero. Dragging starts native time;
   pressing Run again explicitly runs without that input. Build cannot release
@@ -34,6 +38,8 @@ October 17 audit implementation, checkpoint 2:
 * Measured locally: 30 native rope/contact/reaction/refinement scenarios pass;
   all three routed-rope lessons pass three native runs with nudges and their
   negative controls fail. A 90° rotated assembly also reaches the same height.
+  A saved starter resized for the heavier crate retains its ends and reaches
+  the original Lift with less goal and deadline.
   Host (42), prepared playback (4), blueprint geometry/reference checks and
   desktop/phone group placement and Undo pass. Thread a pulley passes ordinary
   scene clicks at 1280×860, 390×844 and 844×390. Spring release, lens and tap

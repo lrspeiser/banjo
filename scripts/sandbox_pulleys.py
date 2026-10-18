@@ -61,6 +61,14 @@ def pulley(name,k,ctx):
 
 def routed_rope(name,k,ctx):
     a,b=k['a'],k['b'];start=list(k['at_m']);end=list(k['at_b_m'])
+    bodies={p['name']:p for p in ctx['parts']}
+    def attachment(body,key,fallback):
+        anchor=k.get(key)
+        if anchor is None:return fallback
+        if body not in bodies or any(abs(v)>.5001 for v in anchor):raise ValueError('Choose a surface attachment on the body')
+        part=bodies[body];axes=mw._axes(part)
+        return [part['at_m'][i]+sum(axes[j][i]*anchor[j]*part['size_m'][j] for j in range(3)) for i in range(3)]
+    start=attachment(a,'anchor_a',start);end=attachment(b,'anchor_b',end)
     guides={p['name']:p for p in ctx.get('spec',{}).get('pulleys',[])}
     route=[]
     for ref in k.get('via',[]):
@@ -113,6 +121,8 @@ TRAY=[
     dict(piece='rope',title='Rope through pulleys',count=99,cost=0,sandbox_builder=True,attach='rope',turning=False,across=False,knobs={
         'a':dict(part=True,default='',label='First attachment'),'b':dict(part=True,default='',label='Last attachment'),
         'at_m':dict(point=True,default=[0,1,0]),'at_b_m':dict(point=True,default=[1,1,0]),
+        'anchor_a':dict(point=True,needed=False,default=None,hidden=True),
+        'anchor_b':dict(point=True,needed=False,default=None,hidden=True),
         'via':dict(part_list=True,default=[],label='Pulley route')},primary_knobs=['via'])]
 EASY_LEVELS=[]
 TEMPLATES=[]
