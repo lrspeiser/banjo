@@ -10,6 +10,12 @@ Some device laws remain lumped or ideal, and the coupling/calibration limits
 below matter. Heavy impacts or cuts can run slower than real time; the page's
 clock says when.
 
+October 18 specialist-library evaluation: retain ngspice for richer circuits;
+prototype SPlisHSPlasH for contained/poured water and OWA-EPANET for filled
+plumbing. SPHinXsys, DualSPHysics, Chrono, Xyce and offline field/CFD tools
+were also reviewed. These are proposed experiments, not new runtime models.
+See the [comparison and qualification plan](physics-solvers.md).
+
 October 18 wall workshop: only the editor is planar. A real backing and clear
 front guard contain native 3D bodies; real fixed/hinge joints mount tracks,
 pegs, seesaws and gears. No pose projection or prescribed rolling speed is
