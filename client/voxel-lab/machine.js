@@ -7726,28 +7726,33 @@ $('free-example').addEventListener('click', () => {
 
 // A free build from words: the model says which pieces and what each joins
 // to, the server works out where they go and rehearses it once in the engine.
-function builderCheckSummary(checks) {
+function builderCheckSummary(checks,runs=1) {
   return checks.map(c=>c.kind==='course'
     ? `The marble passed ${c.stages.length} stages in order, travelled ${c.distance_m.toFixed(2)} m and finished on ${c.finished_on.replace(/^your /,'').replaceAll('_',' ')}.`
-    : `The marble rose ${Math.round(c.lifted_m*100)} cm and dropped onto the raised chute at ${describeTime(c.released_at_s)}.`).join(' ')+' Choose Run to watch.';
+    : `The marble rose ${Math.round(c.lifted_m*100)} cm and dropped onto the raised chute at ${describeTime(c.released_at_s)}.`).join(' ')+(runs>1?` Passed ${runs} physics trials.`:'')+' Choose Run to watch.';
 }
 async function askFree() {
   const message = $('message').value.trim();
   if (!message) { $('message').focus(); return; }
   $('send').disabled = true;
-  $('chat-status').textContent = 'Building it, then rehearsing it once in the engine (up to a minute)…';
+  $('chat-status').textContent = 'Assembling the pieces and testing their marble routes…';
   const sourceLevel=level,sourceDesign=activeDesign?.id;
+  const sourceSetup=currentSetupKey(),sourceEdit=JSON.stringify(ghost?.p||null);
   say('you', message);
   try {
     const r = await api({op: 'chat', level: 'free', ...sandboxRequest(), placements, message});
     if(level!==sourceLevel||activeDesign?.id!==sourceDesign)return;
+    if(currentSetupKey()!==sourceSetup||JSON.stringify(ghost?.p||null)!==sourceEdit){
+      say('model','You changed the design while the builder was working. Your edits were kept; ask again to build from this setup.');return;
+    }
     say('model', r.reply);
+    for(const note of r.limitations||[])say('model',note);
     endGhost(); remember();
     placements = r.placements.map(p => ({...p}));
     renderTray(); renderPlaced();
     const checks=r.rehearsal?.checks||[];
     if(checks.length) {
-      say('model',builderCheckSummary(checks));
+      say('model',builderCheckSummary(checks,r.rehearsal.verified_runs));
     } else say('model','The engine ran this layout; no completion goal was checked. Choose Run to try it.');
     $('message').value = '';
     framedFree = false;
@@ -8049,6 +8054,7 @@ async function askLevel(mode, {popup=false,message:requestedMessage}={}) {
         editing:ghost?{index:ghost.index,p:ghost.p,fits:ghost.fits,mode:editorMode,adjustment:ghost.card}:null}});
     if(level!==requestLevel)return;
     say('model', r.reply);
+    for(const note of r.limitations||[])say('model',note);
     if(popup)$('run-help-reply').textContent=r.reply;
     if (mode === 'build' && Array.isArray(r.placements)) {
       endGhost(); remember();
@@ -8057,7 +8063,7 @@ async function askLevel(mode, {popup=false,message:requestedMessage}={}) {
       if (r.rehearsal && level.free) {
         const checks=r.rehearsal.checks||[];
         say(r.rehearsal.error?'refused':'model',r.rehearsal.error?`Engine check: ${r.rehearsal.error}`:
-          checks.length?builderCheckSummary(checks):
+          checks.length?builderCheckSummary(checks,r.rehearsal.verified_runs):
           'The engine ran this setup; no completion goal was checked. Choose Run to try it.');
       }
       else if (r.rehearsal) say(r.rehearsal.manual_input_required || r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.manual_input_required

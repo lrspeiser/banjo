@@ -19,6 +19,13 @@ it higher. The builder expands a single-pass **Marble lift wheel**, a marble,
 battery and two physical wires, finds room and checks the native result before
 applying it. Reset reloads the cradle. See [the qualification](docs/machine-game.md).
 
+**Sandbox → Describe a design** can also assemble a complete marble course from
+the active piece library. Try “Build a downhill marble course with two bends
+and a finish catcher.” It places the marble and supports too, checks ordered
+native contacts and a settled finish, and repairs a temporary proposal before
+changing your design. Open **Build on a wall** first to use mounted pieces.
+Complex requests can still fail verification; the original design is kept.
+
 Visible electrical wires and charging cords now have native Jolt mass,
 bending, contact and terminal pull-out, including during placement. See [the cable model and qualification](docs/mechanical-cables.md)
 for its rollout scope, measurements and remaining limits.

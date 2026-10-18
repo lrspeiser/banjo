@@ -971,6 +971,8 @@ class FreeBuild(unittest.TestCase):
                 dict(seconds=float('inf')),dict(seconds=0),dict(script='move the marble')):
             with self.subTest(change=change),self.assertRaises(mg.LevelRefused):
                 mc.course_checks([dict(answer['verify'][0],**change)],result['placements'],compiled,aliases)
+        with self.assertRaisesRegex(mg.LevelRefused,'shared rehearsal duration'):
+            mc.course_checks([answer['verify'][0],dict(answer['verify'][0],seconds=5)],result['placements'],compiled,aliases)
 
     def test_word_builder_rejects_unavailable_controls_and_forward_joins(self):
         for bad in (dict(piece='track',teleport=True),dict(piece='track',join=dict(to=2,port='far end')),
@@ -999,6 +1001,20 @@ class FreeBuild(unittest.TestCase):
         result=mc.respond_free('Build a marble course',self.FREE,[],call=call)
         self.assertEqual(len(calls),2)
         self.assertEqual(len(result['placements']),4)
+
+    def test_a_physical_failure_cannot_be_fixed_by_retargeting_the_goal(self):
+        answer=self.course_proposal();calls=[]
+        changed=copy.deepcopy(answer);changed['verify'][0]['finish']='entry'
+        def call(messages):calls.append(1);return (answer if len(calls)==1 else changed),{}
+        with self.assertRaisesRegex(mg.LevelRefused,'original route targets'):
+            mc.respond_free('Build a course',self.FREE,[],call=call,
+                rehearse=lambda compiled,**kw:dict(error='test-only physical failure',paths={},hits=[],events=[]))
+        self.assertEqual(len(calls),3)
+
+    def test_builder_returns_unavailable_feature_explanations_with_its_answer(self):
+        answer=dict(self.course_proposal(),limitations=['Continuous bucket rotation is not available in the single-pass lift.'])
+        result=mc.respond_free('Build a course',self.FREE,[],call=lambda messages:(answer,{}))
+        self.assertEqual(result['limitations'],answer['limitations'])
 
     # Like pieces snapping flush: plank end to end, block side to side and on top.
     def _flush(self, placed, index, **extra):
@@ -1431,6 +1447,52 @@ class SandboxGoal(unittest.TestCase):
         self.assertEqual(results, {'in the beam': True, 'beside it': False, 'facing away': False})
 
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_flaky_live_gate_proposal_is_repaired_by_an_existing_control_before_apply(self):
+        draft=json.loads((ROOT/'tests/fixtures/chat-built-gate-proposal.json').read_text())
+        before=copy.deepcopy(draft);original=[];calls=[]
+        verify=[dict(marble=4,via=[1,6,7,8],finish=8,seconds=15),dict(marble=5,via=[1,6,7,9],finish=9,seconds=15)]
+        def call(messages):
+            calls.append(copy.deepcopy(messages))
+            if len(calls)==1:return dict(reply='Gate proposal',add=draft['placements'],verify=verify),{}
+            return dict(reply='Increased the trigger marble to open the gate reliably.',edit=[dict(number=3,set=dict(diameter_m=.1))],verify=verify),{}
+        with tempfile.TemporaryDirectory() as logs:
+            result=mc.respond_free('Build a Rube Goldberg course',mg.level_by_id('free'),original,call=call,
+                rehearse=lambda compiled,**kw:mw.rehearse(compiled,ENGINE,Path(logs),wall_limit_s=60,**kw))
+        self.assertEqual(len(calls),2)
+        self.assertIn('small placement variation',calls[1][-1]['content'])
+        self.assertEqual(result['placements'][2]['diameter_m'],.1)
+        self.assertEqual(result['rehearsal']['verified_runs'],3)
+        self.assertEqual(len(result['rehearsal']['checks']),2)
+        self.assertTrue(all(c['happened'] for r in result['rehearsal']['variations'] for c in r['checks']))
+        self.assertEqual(original,[]);self.assertEqual(draft,before)
+
+    @need_engine
+    def test_course_checks_can_target_a_real_subpart_contact(self):
+        level=mg.level_by_id('free');answer=FreeBuild.course_proposal()
+        answer['verify'][0]['via']=[1,'your bend 2 1',3]
+        with tempfile.TemporaryDirectory() as logs:
+            result=mc.respond_free('Build a course',level,[],call=lambda messages:(answer,{}),
+                rehearse=lambda compiled,**kw:mw.rehearse(compiled,ENGINE,Path(logs),wall_limit_s=60,**kw))
+        self.assertTrue(result['rehearsal']['checks'][0]['happened'])
+        self.assertEqual(result['rehearsal']['checks'][0]['stages'][1]['piece'],'your bend 2 1')
+
+    @need_engine
+    def test_recorded_live_chat_course_reaches_every_stage_with_nudges(self):
+        draft=json.loads((ROOT/'tests/fixtures/chat-built-marble-course.json').read_text())
+        level=mg.requested_level(dict(level='free',base=draft['base']))
+        for material in ('glass','oak','iron'):
+            ps=copy.deepcopy(draft['placements']);ps[-1]['material']=material
+            compiled=mw.compile_spec(mg.compose(level,ps)[0])
+            checks=mc.course_checks([dict(marble=6,via=[1,2,3,4,5],finish=5,seconds=15)],ps,compiled,{})
+            for seed in (0,1,2):
+                with self.subTest(material=material,seed=seed),tempfile.TemporaryDirectory() as logs:
+                    scene=mg.nudged(compiled,seed) if seed else compiled
+                    r=mw.rehearse(scene,ENGINE,Path(logs),seconds=15,wall_limit_s=60,track=['your marble 6'])
+                    check=mc.measure_courses(checks,r,scene)[0]
+                    self.assertIsNone(r['error']);self.assertTrue(check['happened'],check)
+                    print('LIVE_CHAT_COURSE',material,seed,check['distance_m'],check['finished_on'],flush=True)
+
     @need_engine
     def test_word_builder_can_repair_a_staged_course_without_applying_the_failed_draft(self):
         level=mg.requested_level(dict(level='free',base=dict(schema=mw.SCHEMA,parts=[],stations=[])))

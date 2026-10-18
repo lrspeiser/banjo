@@ -15,16 +15,18 @@ Repairs operate on a temporary proposal, including numbered pieces that were
 refused for overlap. The original design is unchanged until the complete
 proposal compiles and its requested native checks pass. A repair may edit the
 staged pieces or explicitly clear and replace them. Invalid route metadata can
-be corrected, but a physically failed valid route cannot be removed or reduced
-to obtain a pass. The retry limit remains three proposals. Native failure after
+be corrected, but a physically failed valid route cannot be removed, reduced,
+retargeted or given a longer deadline to obtain a pass. The retry limit remains three proposals. Native failure after
 that limit leaves the design intact; it is not an assurance that arbitrary
 natural-language machines can be built.
 
 The structured `verify` list names a freely moving marble, 2–12 distinct stage
-pieces in contact order, a fixed finish/catcher and a 1–25 s rehearsal. Requests
+pieces in contact order, a fixed finish/catcher and a shared 1–25 s rehearsal. Requests
 for a course, Rube Goldberg machine or zigzag require a route. Observation uses
-native impacts plus the marble's initial resting support; no forces, triggers
-or body positions are assigned. A pass requires the complete contact order,
+native impacts plus probes of fixed-stage geometry at native trajectory poses;
+moving stages require native impacts. This covers rolling contacts that do not
+produce a reported impact. No forces, triggers or body positions are assigned.
+A pass requires the complete contact order,
 at least 0.25 m travel and final support on the catcher. Settling is observed
 over the final 0.5 s (at least 0.4 s of trace), within 20 mm. Support uses the
 existing 5 mm `resting_on` probe. Rehearsals expose each tracked body's actual
@@ -42,11 +44,37 @@ level solution is modified; these observations make no new conservation claim.
 A real configured-model request from a blank 3D workspace produced six editable
 pieces (one marble, three tracks and two bends) on its first proposal in 21.875 s.
 Its native run passed four ordered stages, travelled 3.719 m and settled on its
-finish track. More complicated gate/flip-flop trials were refused; the engine
+finish track. A second real request through the ordinary chat UI created six
+pieces from a new blank design; a follow-up verification covered all five stage
+pieces in order without moving them. The marble travelled 3.203 m into the
+stopped finish. That exact saved design is recorded in
+`tests/fixtures/chat-built-marble-course.json`; its nine native glass/oak/iron
+reference/nudged runs all pass (3.195–3.239 m), and its iron reference remains
+on the catch track at 100 s. Its saved local name is **Chat-built marble zigzag**.
+More complicated gate/flip-flop trials were refused; the engine
 did not verify them. The browser regression uses a provider fixture and the
 actual HTTP/native rehearsal to cover placement, measured feedback, Run,
 Undo/Redo and saved versions at desktop/portrait/landscape sizes. That UI test
-is separate from the real-model trial above.
+is separate from the real-model trials above. Live wall-course requests still
+failed geometry checks in the bounded trials; the active wall catalog and
+existing measured wall/lift cases remain supported, but general automatic wall
+course construction is not qualified by those trials.
+
+Every generated course now also rehearses two existing 1.5 mm nudged setups,
+short-circuiting on failure before it can be applied. The reply reports three
+physics trials on success. A separate nine-piece live request assembled a
+trigger marble, ratcheting shelf gate, two released marbles, feed rail,
+flip-flop and two stopped catch tracks in 27.42 s on its first proposal.
+A live UI request also completed that chain and both catch goals. Repeat
+tests exposed a brittle timing margin: a small nudge could send both released
+marbles to one branch. The recorded negative proposal in
+`tests/fixtures/chat-built-gate-proposal.json` must therefore be refused.
+An existing-control repair enlarges its trigger marble from 60 to 100 mm;
+the unchanged two route goals then pass in the reference and both nudged runs.
+The regression verifies refusal, staged repair, goal preservation and atomic
+application, without changing the gate/flip-flop laws or tolerances.
+If the player edits a placed or held piece while the model is working, the
+client keeps that edit and refuses to apply the now-outdated proposal.
 
 October 18 Sandbox start/stop qualification: returning from Run to Tune now
 awaits a single rebuild before reopening the last apparatus. Build, Reset,

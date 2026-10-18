@@ -1,0 +1,12 @@
+{
+  "name": "Chat-built marble zigzag",
+  "base": null,
+  "placements": [
+    {"piece":"track","x_m":-0.93,"z_m":0.87,"top_height_m":1.2,"run_m":0.8,"drop_m":0.12,"end":"open","yaw_deg":0},
+    {"piece":"bend","x_m":-0.1,"z_m":0.87,"top_height_m":1.04,"turn_deg":90,"radius_m":0.25,"drop_m":0.06,"yaw_deg":0},
+    {"piece":"track","x_m":0.15,"z_m":0.59,"top_height_m":0.94,"run_m":0.9,"drop_m":0.08,"end":"open","yaw_deg":90},
+    {"piece":"bend","x_m":0.15,"z_m":-0.34,"top_height_m":0.82,"turn_deg":-60,"radius_m":0.2,"drop_m":0.05,"yaw_deg":90},
+    {"piece":"track","x_m":0.276,"z_m":-0.5282,"top_height_m":0.73,"run_m":0.7,"drop_m":0.08,"end":"stop","yaw_deg":30},
+    {"piece":"marble","x_m":-0.88,"z_m":0.87,"material":"iron","diameter_m":0.04,"placement":"on surface","height_m":0.6}
+  ]
+}

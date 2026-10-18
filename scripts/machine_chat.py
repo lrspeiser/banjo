@@ -531,6 +531,8 @@ def course_checks(rows, placements, compiled, aliases):
         if type(seconds) not in (int,float) or not math.isfinite(seconds) or not 1<=seconds<=25:
             raise mg.LevelRefused(['verify seconds must be finite, from 1 to 25'])
         checks.append(dict(kind='course',marble=marble,via=via,finish=finish,seconds=seconds,radius_m=ball['size_m'][0]/2))
+    if len({c['seconds'] for c in checks})>1:
+        raise mg.LevelRefused(['Use one shared rehearsal duration for all verify routes'])
     return checks
 
 
@@ -549,14 +551,24 @@ def measure_courses(checks,rehearsal,compiled):
         if points:
             initial=mg.resting_on(supports,points[0][1:4],check['radius_m'])
             if initial:hits.insert(0,dict(t=0,other=initial))
+        # Rolling onto a fixed rail need not create a reported impact. Probe
+        # its actual geometry at native trace positions, with the same 5 mm
+        # support tolerance. Moving mechanisms still require native impacts.
+        for target in check['via']:
+            fixed=[p for p in supports['parts'] if p['name']==target or mg.owner(p)==target]
+            if not fixed or any(not p['fixed'] for p in fixed):continue
+            fixture=dict(compiled,parts=fixed)
+            for point in points:
+                if mg.resting_on(fixture,point[1:4],check['radius_m']):hits.append(dict(t=point[0],other=target))
+        hits.sort(key=lambda h:h['t'])
         stages=[];after=0.
         for target in check['via']:
-            hit=next((h for h in hits if (mg.owner({'name':h.get('other','')}) or h.get('other'))==target and h['t']>=after),None)
+            hit=next((h for h in hits if (h.get('other')==target or mg.owner({'name':h.get('other','')})==target) and after<=h['t']<=check['seconds']),None)
             if not hit:break
             after=hit['t'];stages.append(dict(piece=target,at_s=after))
         distance=sum(math.dist(a[1:4],b[1:4]) for a,b in zip(points,points[1:]))
         ended=mg.resting_on(dict(supports,parts=[p for p in supports['parts'] if p['fixed']]),points[-1][1:4],check['radius_m']) if points else None
-        if ended:ended=mg.owner({'name':ended}) or ended
+        if ended and ended!=check['finish']:ended=mg.owner({'name':ended}) or ended
         tail=[p for p in points if p[0]>=points[-1][0]-.5] if points else []
         preceding=[p for p in points if p[0]<points[-1][0]-.5] if points else []
         if preceding:tail.insert(0,preceding[-1])
@@ -760,6 +772,9 @@ def respond_free(message, level, placements, call=None, rehearse=None):
         answer=normalize_build_answer(answer)
         unknown=set(answer)-{'reply','clear','assemblies','edit','add','verify','limitations'}
         if unknown:raise mg.LevelRefused(['Use only the documented build operations; unsupported fields: '+', '.join(sorted(unknown))])
+        limitations=answer.get('limitations',[])
+        if not isinstance(limitations,list) or len(limitations)>4 or any(not isinstance(s,str) or len(s)>500 for s in limitations):
+            raise mg.LevelRefused(['limitations must list at most four short explanations of unavailable requested features'])
         if not isinstance(answer.get('clear',False),bool):
             raise mg.LevelRefused(['clear must be true or false'])
         placed = [] if answer.get('clear') else [dict(p) for p in scratch]
@@ -870,7 +885,7 @@ def respond_free(message, level, placements, call=None, rehearse=None):
         return [{k: v for k, v in p.items() if k != 'cost'} for p in checked], compiled, checks
     answer, usage = call(messages)
     answer = _placements_answer(answer)
-    rehearsal=None;required_checks=0;required_routes=int(course_requested);required_stages=0
+    rehearsal=None;required_checks=0;required_routes=int(course_requested);required_stages=0;goal_contract=None
     for attempt in range(3):
         try:
             placed, compiled, checks = built(answer)
@@ -882,6 +897,10 @@ def respond_free(message, level, placements, call=None, rehearse=None):
                 raise mg.LevelRefused(['Keep all route checks and stages while repairing the course'])
             required_routes=max(required_routes,len(courses))
             required_stages=max(required_stages,sum(len(c['via']) for c in courses))
+            proposed_goals=[{k:c[k] for k in ('marble','via','finish','seconds')} for c in courses]
+            if goal_contract is None and courses:goal_contract=copy.deepcopy(proposed_goals)
+            elif goal_contract is not None and proposed_goals!=goal_contract:
+                raise mg.LevelRefused(['Keep the original route targets, order and deadline; repair the piece settings instead. Required verify: '+json.dumps(goal_contract)])
             if rehearse is not None:
                 marbles=[p for p in compiled['parts'] if p['shape']=='sphere' and not p['fixed']]
                 seconds=max((c.get('seconds',12) for c in checks),default=25)
@@ -890,13 +909,23 @@ def respond_free(message, level, placements, call=None, rehearse=None):
                 measured+=measure_courses([c for c in checks if c.get('kind')=='course'],r,compiled)
                 if r.get('error') or any(not c['happened'] for c in measured):
                     raise mg.LevelRefused(['The engine could not verify this machine: '+str(r.get('error') or measured)])
+                variations=[]
+                if courses:
+                    for seed in (1,2):
+                        variant=mg.nudged(compiled,seed)
+                        trial=rehearse(variant,track=[p['name'] for p in marbles],seconds=seconds)
+                        observed=measure_courses(courses,trial,variant)
+                        if trial.get('error') or any(not c['happened'] for c in observed):
+                            raise mg.LevelRefused(['The course failed a small placement variation; repair it without changing its goals: '+
+                                str(dict(seed=seed,error=trial.get('error'),checks=observed))])
+                        variations.append(dict(seed=seed,checks=observed))
                 ended=[]
                 for p in marbles:
                     points=(r.get('paths',{}).get(p['name']) or {}).get('points') or []
                     if points:ended.append(dict(marble=p['name'],on=mg.resting_on(compiled,points[-1][1:4],.5*p['size_m'][0]),
                         at_m=[round(v,2) for v in points[-1][1:4]]))
                 rehearsal=dict(events=[e['text'] for e in r['events'][:20]],error=None,ended=ended,checks=measured,
-                    world_time_s=r.get('world_time_s'),wall_s=r.get('wall_s'))
+                    world_time_s=r.get('world_time_s'),wall_s=r.get('wall_s'),verified_runs=1+len(variations),variations=variations)
             break
         except (mg.LevelRefused, mw.MachineRefused) as e:
             if attempt == 2:
@@ -917,7 +946,8 @@ def respond_free(message, level, placements, call=None, rehearse=None):
             answer, more = call(messages)
             answer = _placements_answer(answer)
             usage = _added(usage, more)
-    out = {'ok': True, 'reply': answer['reply'], 'placements': placed, 'usage': usage}
+    out = {'ok': True, 'reply': answer['reply'], 'placements': placed, 'usage': usage,
+           'limitations':answer.get('limitations',[])}
     if rehearsal is not None:out['rehearsal']=rehearsal
     return out
 

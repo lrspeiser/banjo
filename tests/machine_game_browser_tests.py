@@ -3010,6 +3010,43 @@ class Puzzles(unittest.TestCase):
                 self.wait(f"machineContactState().liveDevices.some(m=>m.name==={json.dumps(motor)} && m.power_w>.1)",30)
                 self.click_visible('Pause')
 
+    def test_word_builder_does_not_overwrite_an_edit_made_while_it_was_thinking(self):
+        import machine_game_tests
+        self.anonymous_levels();self.press('Sandbox: build anything');self.press('Add New Design');self.wait(READY,30)
+        self.click_visible('Describe a design');self.slide('Your question','Build a complete marble course')
+        entered=threading.Event();release=threading.Event()
+        def provider(*args,**kwargs):
+            entered.set();release.wait(30);return machine_game_tests.FreeBuild.course_proposal(),{}
+        with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')),patch('machine_chat._call',side_effect=provider):
+            try:
+                self.press('Build it');self.assertTrue(entered.wait(5))
+                self.click_visible('Controls');self.press('Add a marble');self.ghost()
+                kept=self.js('machineGhostState().p')
+            finally:release.set()
+            self.wait("!document.getElementById('send').disabled",45)
+        self.assertEqual(self.js('machinePlacements()'),[])
+        self.assertEqual(self.js('machineGhostState().p'),kept)
+        self.assertIn('Your edits were kept',self.js("document.getElementById('chat-log').textContent"))
+
+    def test_saved_live_model_course_opens_and_runs_through_ordinary_controls(self):
+        import machine_game
+        draft=json.loads((ROOT/'tests/fixtures/chat-built-marble-course.json').read_text())
+        packed='j'+base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
+        self.anonymous_levels()
+        self.navigate(self.base+'/machine#build='+packed)
+        self.wait('machinePlacements().length===6 && '+READY,30)
+        for _ in range(4):self.click_visible('Look from above')
+        for _ in range(3):self.click_visible('Zoom in')
+        self.wait('machineCamera().settled',10)
+        self.click_visible('Run');self.wait("/World [89]/.test(document.getElementById('clock').textContent)",20)
+        self.click_visible('Pause')
+        at=self.js("machineBodies()['your marble 6']")
+        compiled=machine_game.mw.compile_spec(machine_game.compose(machine_game.level_by_id('free'),draft['placements'])[0])
+        support=machine_game.resting_on(compiled,at,.02)
+        self.assertTrue(support.startswith('your track 5'),(at,support))
+        proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+        (proof/'word-built-live-course.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
     def test_words_build_a_complete_course_from_blank_with_native_checks_undo_and_save(self):
         import machine_game_tests
         for width,height in ((1280,860),(390,844),(844,390)):

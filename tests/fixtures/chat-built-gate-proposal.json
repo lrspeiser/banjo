@@ -1,0 +1,15 @@
+{
+  "name":"Live model gate proposal before robustness repair",
+  "base":null,
+  "placements":[
+    {"piece":"shelf","x_m":-0.7,"z_m":0,"top_height_m":0.9,"run_m":0.4,"drop_m":0.02,"end":"gate that stays open","yaw_deg":0},
+    {"piece":"track","x_m":-0.7456,"z_m":0.14,"top_height_m":1.0689,"run_m":0.36,"drop_m":0.03,"end":"open","yaw_deg":0},
+    {"piece":"marble","x_m":-0.6856,"z_m":0.14,"material":"iron","diameter_m":0.06,"placement":"on surface","height_m":0.6},
+    {"piece":"marble","x_m":-0.64,"z_m":0,"material":"iron","diameter_m":0.06,"placement":"on surface","height_m":0.6},
+    {"piece":"marble","x_m":-0.575,"z_m":0,"material":"iron","diameter_m":0.06,"placement":"on surface","height_m":0.6},
+    {"piece":"track","x_m":-0.27,"z_m":0,"top_height_m":0.84,"run_m":0.9,"drop_m":0.08,"end":"open","yaw_deg":0},
+    {"piece":"flipflop","x_m":0.67,"z_m":0,"height_m":0.65,"tipped":"left","yaw_deg":-90},
+    {"piece":"track","x_m":0.67,"z_m":-0.14,"top_height_m":0.51,"run_m":0.6,"drop_m":0.08,"end":"stop","yaw_deg":90},
+    {"piece":"track","x_m":0.67,"z_m":0.14,"top_height_m":0.51,"run_m":0.6,"drop_m":0.08,"end":"stop","yaw_deg":-90}
+  ]
+}
