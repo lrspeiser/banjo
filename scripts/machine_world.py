@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 from collections import OrderedDict
+from functools import lru_cache
 import base64
 import json
 import math
@@ -1391,7 +1392,38 @@ def compile_strands(spec,parts,problems):
     return out
 
 
+def _json_declaration(value):
+    """Cache only exact JSON types; do not coerce invalid/native inputs."""
+    if type(value) in (str, int, bool) or value is None:return True
+    if type(value) is float:return math.isfinite(value)
+    if type(value) is list:return all(_json_declaration(v) for v in value)
+    if type(value) is dict:return all(type(k) is str and _json_declaration(v) for k,v in value.items())
+    return False
+
+
+@lru_cache(maxsize=16)
+def _compiled_declaration(encoded, lenient):
+    return _compile_spec_uncached(json.loads(encoded), lenient)
+
+
 def compile_spec(spec, lenient=False):
+    """Reuse identical validated declarations, never a running world.
+
+    Sandbox admission, composition and object selection often validate the
+    same cable routes repeatedly. The complete declaration (including goals,
+    materials and wire settings), its insertion order and leniency are the
+    key. Each caller owns a deep copy. The cache is process-local and bounded;
+    large or non-JSON native inputs follow the original compiler directly.
+    Failed compilation is not cached.
+    """
+    if type(spec) is dict and type(lenient) is bool and _json_declaration(spec):
+        encoded=json.dumps(spec,separators=(',',':'))
+        if len(encoded)<=131072:
+            return copy.deepcopy(_compiled_declaration(encoded,lenient))
+    return _compile_spec_uncached(spec,lenient)
+
+
+def _compile_spec_uncached(spec, lenient=False):
     """Expand kits and check everything the engine will be asked to build.
     Returns the compiled machine; raises MachineRefused with every problem.
     lenient: return what could be compiled, with the problems in it, rather

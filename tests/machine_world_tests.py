@@ -68,6 +68,49 @@ def part(name, size, at, **kw):
 
 
 class Declaration(unittest.TestCase):
+    def test_compilation_cache_preserves_validation_and_caller_ownership(self):
+        mw._compiled_declaration.cache_clear()
+        source=dict(schema=mw.SCHEMA,parts=[part('block',[.1,.1,.1],[0,.05,0],fixed=True)])
+        original=copy.deepcopy(source)
+        with patch.object(mw,'_compile_spec_uncached',wraps=mw._compile_spec_uncached) as compiler:
+            first=mw.compile_spec(source);expected=copy.deepcopy(first)
+            first['parts'][0]['at_m'][0]=99
+            self.assertEqual(mw.compile_spec(source),expected)
+            self.assertEqual(compiler.call_count,1)
+            self.assertEqual(source,original)
+            for material in ('glass','oak','iron'):
+                changed=copy.deepcopy(source);changed['parts'][0]['material']=material
+                self.assertEqual(mw.compile_spec(changed),mw._compile_spec_uncached(changed))
+            changed=copy.deepcopy(source);changed['parts'][0]['at_m'][0]=.2
+            self.assertEqual(mw.compile_spec(changed)['parts'][0]['at_m'][0],.2)
+        refused=copy.deepcopy(source);refused['parts'][0]['material']='unknown'
+        self.assertTrue(mw.compile_spec(refused,lenient=True)['problems'])
+        with self.assertRaises(mw.MachineRefused):mw.compile_spec(refused)
+        # Native callers' tuples keep the original compiler's behavior.
+        invalid=copy.deepcopy(source);invalid['parts'][0]['at_m']=(0,.05,0)
+        self.assertEqual(mw.compile_spec(invalid),mw._compile_spec_uncached(invalid))
+        for i in range(20):mw.compile_spec(dict(source,title='cache capacity '+str(i)))
+        self.assertEqual(mw._compiled_declaration.cache_info().currsize,16)
+        large=dict(source,unused='x'*131073)
+        with patch.object(mw,'_compile_spec_uncached',wraps=mw._compile_spec_uncached) as compiler:
+            mw.compile_spec(large);mw.compile_spec(large)
+            self.assertEqual(compiler.call_count,2,'oversized declarations do not occupy the cache')
+
+    def test_compilation_cache_matches_all_showcase_routes_and_changed_terminals(self):
+        import machine_game
+        for row in machine_game.sandbox_templates():
+            with self.subTest(machine=row['name']):
+                base=row['base'];original=copy.deepcopy(base)
+                expected=mw._compile_spec_uncached(base)
+                self.assertEqual(mw.compile_spec(base),expected)
+                self.assertEqual(mw.compile_spec(base),expected)
+                self.assertEqual(base,original)
+                if row['name']=='Electric marble relay':
+                    changed=copy.deepcopy(base)
+                    changed['electrical']['devices'][0]['terminals']['plus'][0]-=.01
+                    self.assertEqual(mw.compile_spec(changed),mw._compile_spec_uncached(changed))
+                    self.assertNotEqual(mw.compile_spec(changed)['electrical'],expected['electrical'])
+
     def test_default_machine_compiles_from_general_parts(self):
         c = mw.compile_spec(mw.default_spec())
         names = {p['name'] for p in c['parts']}

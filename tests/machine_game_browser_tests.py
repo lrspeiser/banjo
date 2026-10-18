@@ -3070,6 +3070,64 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('machineBodies().traveller'),initial)
                 self.assertEqual(self.js('machineDesign().draft.base.title'),name)
 
+    def test_electric_relay_can_stop_edit_and_restart_without_repeated_builds(self):
+        self.anonymous_levels();self.press('Sandbox: build anything')
+        self.press('Start from Electric marble relay');self.wait(READY,90)
+        original=self.js('machineDesign().draft')
+        selected=self.js('machineEditableObjects().at(-1)')
+        for mode in ('Tune','Build','Reset','Tune then Build'):
+            with self.subTest(stop=mode):
+                self.click_visible('Run')
+                self.wait("/World [1-9]/.test(document.getElementById('clock').textContent)",30)
+                self.click_visible('Pause')
+                self.wait("/paused/.test(document.getElementById('clock').textContent)",15)
+                self.js('''window.relayFetch=window.fetch;window.relayOpens=0;
+                    window.relayGate=new Promise(resolve=>window.releaseRelay=resolve);
+                    window.relayHold=false;window.relayHeld=false;
+                    window.fetch=async(...args)=>{const opening=JSON.parse(args[1]?.body||'null')?.op==='level_open';
+                      if(opening)window.relayOpens++;
+                      const response=await window.relayFetch(...args);
+                      if(opening&&window.relayHold){window.relayHold=false;window.relayHeld=true;await window.relayGate;}
+                      return response;};''')
+                try:
+                    began=time.monotonic()
+                    if mode=='Tune then Build':
+                        self.js('window.relayHold=true');self.click_visible('Tune')
+                        self.wait('window.relayHeld',45)
+                        self.click_visible('Build');self.js('window.releaseRelay()')
+                    else:self.click_visible(mode)
+                    self.wait(READY,45)
+                    if mode=='Tune':
+                        self.wait(SETTLED,45)
+                        self.assertEqual(self.js('machineGhostState().p.object'),selected['id'])
+                    else:self.assertIsNone(self.js('machineGhostState()'),'a superseded Tune cannot select a piece after Build or Reset')
+                    self.assertEqual(self.js('window.relayOpens'),2 if mode=='Tune then Build' else 1,'returning to editing must not recursively rebuild')
+                    print('RELAY_STOP_EDIT',mode,round(time.monotonic()-began,3),flush=True)
+                finally:self.js('window.releaseRelay();window.fetch=window.relayFetch')
+                if self.js('Boolean(machineGhostState())'):
+                    self.click_visible('Throw the ghost away')
+                self.assertEqual(self.js('machineDesign().draft'),original)
+
+    def test_electric_relay_stop_and_tune_on_phone_screens(self):
+        for width,height in ((390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.press('Start from Electric marble relay');self.wait(READY,90)
+                original=self.js('machineDesign().draft')
+                self.click_visible('Run');self.wait("/World [1-9]/.test(document.getElementById('clock').textContent)",30)
+                self.click_visible('Pause');self.click_visible('Tune')
+                self.wait(READY,30);self.wait(SETTLED,30)
+                self.assertIsNotNone(self.js('machineGhostState().p.object'))
+                self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+                for ident in ('start','reset','mode-build-tab','mode-tune-tab'):
+                    self.assertTrue(self.js(f"(()=>{{const b=document.getElementById('{ident}'),r=b.getBoundingClientRect();return r.width>=44&&r.height>=44&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight&&b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}})()"))
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'electric-relay-tune-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Throw the ghost away');self.click_visible('Reset');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlayMode().mode'),'build')
+                self.assertIsNone(self.js('machineGhostState()'))
+                self.assertEqual(self.js('machineDesign().draft'),original)
+
     def test_each_new_marble_showcase_runs_and_saves_its_prepared_base(self):
         self.anonymous_levels();self.press('Sandbox: build anything')
         for name,count in (('Marble skyscraper',6),('Waterworks express',6),('Solar pinball factory',6),

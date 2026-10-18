@@ -1854,10 +1854,11 @@ function releaseWorld() {
   });
 }
 async function build(next, start, request) {
+  const mine = ++polling;
   await stopSwitchDrag();
+  if(mine!==polling)return {};
   closeHeatInspection();
   syncThermalSpots(null);
-  const mine = ++polling;
   $('test-busy').hidden=true;
   const released = releaseWorld();
   $('power-labels').replaceChildren(); powerLabels.clear(); powerMessage('');
@@ -2379,9 +2380,10 @@ $('start').addEventListener('click', () => {
 });
 // Reset a challenge to its authored beginning; sandbox resets its built machine.
 function resetGame(keep) {
+  runRequest++;runArmed=false;tuneArmed=false;editorMode='move';
   endGhost(); cancelAttach(); stopSwitchDrag();
-  if (!keep) { startOver(false); return; }
-  rebuildLevel(false).catch(() => {});
+  if (!keep) return startOver(false);
+  return rebuildLevel(false);
 }
 $('reset').addEventListener('click', () => {
   if (LEVEL_MODE && level) resetGame(Boolean(level.free));
@@ -2647,16 +2649,23 @@ function renderPlayMode() {
   box.classList.toggle('in-toolbar', inToolbar);
   box.classList.toggle('in-panel', !inToolbar);
 }
-function choosePlayMode(mode) {
+async function choosePlayMode(mode) {
   if(readOnlyCourse())return;
   if (!LEVEL_MODE || !level) return;
   const now = currentMode();
   if (mode === 'run') { tuneArmed = false; if (!playing) $('start').click(); return; }
   if (mode === 'tune' && !ghost && !placements.length && !(level.free && sandboxObjects.length)) return;
   runArmed = false;
-  runRequest++;
-  if (now === 'run') resetGame(true);
+  // Finish one return to time zero before selecting an apparatus. Starting
+  // pickUp in parallel used to rebuild again, and its stale continuation
+  // could rebuild yet again after the player chose Build or Reset.
+  const resetting=now==='run'?resetGame(true):null;
+  const request=++runRequest;
   tuneArmed = mode === 'tune';
+  if(resetting){
+    const opened=await resetting;
+    if(request!==runRequest||!opened)return;
+  }
   if (ghost && !ghost.baseObject) { editorMode = tuneArmed ? 'adjust' : 'move'; setLooking(false); renderGhostBar(); }
   else if (tuneArmed && (placements.length || level.free && sandboxObjects.length)) {
     const count = placements.length + (level.free ? sandboxObjects.length : 0);
@@ -3400,15 +3409,20 @@ function startGhost(p, index, keepPlace = false) {
 // A piece set down, made a ghost again to move, change or turn it (from the
 // panel, or by clicking it in the scene). After a run, or during one, the
 // level goes back to its start first: pieces are placed there.
-function pickUp(i) {
+async function pickUp(i) {
   if(readOnlyCourse())return;
+  const request=++runRequest,sourceLevel=level;
   if(placements[i]?.piece==='rope'){
     const p=placements[i];startTrayAttach('rope');attaching=[{name:p.a,at:ropeAnchor(p.a,p.anchor_a)||[...p.at_m],anchor:p.anchor_a}];ropeVia=[...p.via];ropeEditing=i;showAttachStep();return;
   }
   if(level?.free && i>=placements.length){
-    const object=sandboxObjects[i-placements.length];if(!object)return;
-    if(playing||world.t>0)rebuildLevel(false).then(()=>pickUp(i)).catch(()=>{});
-    else startGhost(object.wall?{piece:'base_object',object:object.id,x_m:object.wall.x_m,z_m:object.wall.z_m,width_m:object.wall.width_m,wall_height_m:object.wall.height_m}:
+    let object=sandboxObjects[i-placements.length];if(!object)return;
+    if(playing||world.t>0){
+      const opened=await rebuildLevel(false);
+      if(!opened||request!==runRequest||level!==sourceLevel)return;
+      object=sandboxObjects.find(o=>o.id===object.id);if(!object)return;
+    }
+    startGhost(object.wall?{piece:'base_object',object:object.id,x_m:object.wall.x_m,z_m:object.wall.z_m,width_m:object.wall.width_m,wall_height_m:object.wall.height_m}:
       {piece:'base_object',object:object.id,x_m:object.at_m[0],z_m:object.at_m[2],height_m:0},placements.length,true);
     return;
   }
@@ -7140,6 +7154,7 @@ function renderDesignControls() {
   $('restore-version').disabled = !activeDesign.versions.length;
 }
 function parkDesign() {
+  runRequest++;
   closeLevelIntroduction();
   stopSwitchDrag();
   if ($('piece-picker').open) $('piece-picker').close();
@@ -7275,10 +7290,13 @@ async function rebuildLevel(start, {takeOver=false,prepared=null}={}) {
   clearTimeout(rebuildTimer);
   keepBuild();
   scored = false; $('verdict').replaceChildren(); closeDone();
+  let mine;
   try {
     const setupKey = currentSetupKey();
-    const opened = await build(null, false, {op: 'level_open', level: level.id, ...sandboxRequest(), placements, helped,...(takeOver?{take_over:true}:{}),...(prepared?{prepared_run:prepared}:{})});
-    if (opened.session !== session) return;
+    const opening = build(null, false, {op: 'level_open', level: level.id, ...sandboxRequest(), placements, helped,...(takeOver?{take_over:true}:{}),...(prepared?{prepared_run:prepared}:{})});
+    mine=polling;
+    const opened=await opening;
+    if (mine!==polling || !opened.session || opened.session !== session) return null;
     builtSetupKey = setupKey;
     builtCanRun = !opened.needs;
     if(runInspection && contactCircuitRows.has(runInspection)) inspectContactCircuit(runInspection);
@@ -7299,12 +7317,15 @@ async function rebuildLevel(start, {takeOver=false,prepared=null}={}) {
     else if(start && waitingForManualHandle()) clockMessage('Ready · drag a highlighted handle to start, or choose Run again');
     else if (start) await setPlaying(true);
     if (!start) schedulePreview(200);
+    return opened;
   } catch (e) {
+    if(mine!==polling)return null;
     const problems = e.data && e.data.problems ? e.data.problems.join('; ') : e.message;
     $('verdict').textContent = problems;
     // Still show the level as it stands, without the pieces that do not fit.
     if (placements.length && e.status === 422)
       await build(null, false, {op: 'level_open', level: level.id, ...sandboxRequest(), placements: [], helped}).catch(() => {});
+    return null;
   }
 }
 

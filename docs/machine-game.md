@@ -1,5 +1,33 @@
 # Puzzles on the machine (/play)
 
+October 18 Sandbox start/stop qualification: returning from Run to Tune now
+awaits a single rebuild before reopening the last apparatus. Build, Reset,
+another selection or leaving the design invalidates the pending selection;
+canceled openings cannot recursively reopen it or replace a newer error/result.
+Reset clears the editing/run mode back to Build. Pause/continue retains the
+same live session. A delayed-response regression reproduced the former stale
+Tune selection and passes with the fix, including exact opening counts.
+
+Compilation now keeps a process-local LRU of 16 validated declarations up to
+128 KiB of serialized JSON each. Its full ordered JSON and strict/lenient flag
+form the key; every consumer receives a deep copy. Larger/non-JSON inputs use
+the original compiler, and failed strict validation is not cached. This reuses
+construction checks, never a simulated result or a native world. Complete
+compiled outputs (including cable routes/settings) agree with the original
+compiler for all five showcases; edited terminal and glass/oak/iron inputs,
+caller isolation, validation and eviction are covered separately. No geometry,
+material law, timestep, conservation tolerance or goal changes.
+
+On this Windows computer, Electric marble relay's ordinary Run → Pause → Tune,
+Build and Reset transitions measured 33.907/15.128/19.571 s before, and
+3.523/3.384/3.853 s after (not a controlled hosting benchmark). Delaying a Tune
+reply, choosing Build and releasing it takes 6.358 s and leaves no selected
+piece or extra rebuild. Identical relay compilation measured 3.079 s uncached,
+2.989 s cold and 0.0027 s warm. Desktop, 390×844 portrait and 844×390 landscape
+browser runs preserve the design, support restart/editing and keep the mode
+and Reset buttons usable. The native C185 engine is unchanged; live relay
+simulation remains relatively expensive.
+
 October 18 editable walls: a version 2 wall can now be selected through an
 uncovered part of its backing. **Width** and **Height** remain together beside
 the selection; gold edge handles drag or step the dimensions, and **Place**
