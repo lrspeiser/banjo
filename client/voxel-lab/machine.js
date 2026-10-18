@@ -2090,7 +2090,11 @@ function frameCamera(includeGhost=false) {
       if (child.isMesh && child.geometry?.isBufferGeometry)
         bounds.union(new THREE.Box3().setFromObject(child));
     });
-    if (!bounds.isEmpty()) pts.push(bounds.min.toArray(), bounds.max.toArray());
+    if (!bounds.isEmpty()) {
+      if(overviewDesign()){
+        for(const x of [bounds.min.x,bounds.max.x])for(const y of [bounds.min.y,bounds.max.y])for(const z of [bounds.min.z,bounds.max.z])pts.push([x,y,z]);
+      }else pts.push(bounds.min.toArray(), bounds.max.toArray());
+    }
     else pts.push(body.position_m);
   }
   if(includeGhost && ghostGroup.children.length) {
@@ -2127,8 +2131,9 @@ function frameCamera(includeGhost=false) {
     const up=new THREE.Vector3().crossVectors(forward,right);
     const vertical=Math.tan(camera.fov*Math.PI/360),horizontal=vertical*camera.aspect;
     let fit=1.6;
-    for(const x of [lo[0],hi[0]])for(const y of [lo[1],hi[1]])for(const z of [lo[2],hi[2]]){
-      const q=new THREE.Vector3(x,y,z).sub(goal);
+    // Fit the real apparatus bounds, not empty corners of the combined box.
+    for(const p of pts){
+      const q=new THREE.Vector3(...p).sub(goal);
       fit=Math.max(fit,q.dot(forward)+Math.max(Math.abs(q.dot(right))/horizontal,Math.abs(q.dot(up))/vertical));
     }
     distance=Math.min(40,fit*1.12);

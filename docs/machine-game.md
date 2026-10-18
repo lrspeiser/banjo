@@ -77,6 +77,11 @@ voxel phase (5 cm can legitimately introduce a 5 mm construction shift).
 Its position, volume, material, reference-pruning and immutability assertions
 are unchanged. Independent apparatus edits run on up to four worker processes;
 the native simulations retain their original timesteps and goals.
+All 419 editable apparatus groups pass those move/remove checks; together
+with the rope-end regression and curated-gallery declarations, the three
+checks pass in 260.145 s locally. Source registration remains 274/274 and the
+client geometry/interpolation checks pass. The tighter overview fits each
+body's actual bounds rather than empty corners of the combined world box.
 
 October 18 result actions: level wins offer Next level (when one remains),
 Play again and All levels. Manual assembly saving stays in Sandbox under
