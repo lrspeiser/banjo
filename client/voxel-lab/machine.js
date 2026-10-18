@@ -7641,9 +7641,16 @@ async function communityRequest(body) {
   return reply;
 }
 function coursePath(course){return appPath('/machine')+(course.id?'?course='+encodeURIComponent(course.id):'#build='+course.packed);}
-function courseURL(course){return SHARE_SITE+'/machine'+(course.id?'?course='+encodeURIComponent(course.id):'#build='+course.packed);}
+async function courseURL(course){
+  // A local UUID exists only on this computer. Carry its setup in the link
+  // so sharing it to banjo.is does not refer to a nonexistent hosted record.
+  const packed=document.documentElement.dataset.banjoEnvironment==='local'&&course.id
+    ?await packBuild({viewOnly:true,name:course.name,...course.draft}):course.packed;
+  return SHARE_SITE+'/machine'+(packed?'#build='+packed:'?course='+encodeURIComponent(course.id));
+}
 function courseDesign(course){return {id:'shared-'+(course.id||'link'),name:course.name,draft:clone(course.draft),versions:[],sharedCourse:course};}
 function setSharedCourse(course){
+  for(const row of powerFeedbackRows.values()){row.card.remove();row.leader.remove();}powerFeedbackRows.clear();
   sharedCourse=course;document.body.classList.toggle('read-only-course',Boolean(course));
   $('course-view-bar').hidden=!course;
   $('course-view-title').textContent=course?.name||'Shared course';$('course-view-status').textContent='';
@@ -7697,7 +7704,7 @@ for(const [id,publish] of [['course-share-link',false],['course-publish',true]])
   const buttons=[$('course-share-link'),$('course-publish'),$('course-unpublish')];buttons.forEach(b=>b.disabled=true);
   try{
     courseDescription=$('course-description').value;
-    const course=await shareCurrentCourse(publish),url=courseURL(course),link=$('course-link');
+    const course=await shareCurrentCourse(publish),url=await courseURL(course),link=$('course-link');
     link.hidden=false;link.value=url;
     let copied=false;try{await navigator.clipboard.writeText(url);copied=true;}catch{/* The selectable link stays visible. */}
     $('course-unpublish').hidden=!course.published;
@@ -7732,7 +7739,7 @@ $('header-share').addEventListener('click',async e=>{
   e.preventDefault();
   const link=$('header-share');
   try {
-    const url=level?.free&&!document.body.matches('.on-sandbox,.on-levels')?courseURL(await shareCurrentCourse()):await headerShareURL();link.href=url;
+    const url=level?.free&&!document.body.matches('.on-sandbox,.on-levels')?await courseURL(await shareCurrentCourse()):await headerShareURL();link.href=url;
     await navigator.clipboard.writeText(url);
     link.textContent='Copied';link.title='Share link copied';
     setTimeout(()=>{link.textContent='Share';link.title='Copy a link to this setup';},2000);

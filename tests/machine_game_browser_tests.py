@@ -5309,6 +5309,42 @@ class Puzzles(unittest.TestCase):
                 self.navigate(link.replace('https://banjo.is',self.base,1));self.wait(READY,60)
                 (proof/f'community-course-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
 
+    def test_shared_wire_readings_switch_to_inspection_and_back_to_editing_on_copy(self):
+        import sandbox_wall
+        owner=str(uuid.uuid4());design_id=str(uuid.uuid4())
+        design=dict(id=design_id,name='Community wired lift',draft=dict(base=sandbox_wall.base(),
+                    placements=sandbox_wall.lift_assembly()[0]),versions=[],nextVersion=1,at='2026-10-18T00:00:00Z')
+        self.server.profiles.create(owner,dict(sandbox=dict(items=[design],last=design_id)))
+        self.server.courses.share(owner,design,publish=True)
+        self.navigate(f'{self.base}/machine?visitor={owner}&design={design_id}');self.wait(READY,60)
+        self.wait("document.querySelectorAll('#power-feedback-labels button').length===2",30)
+        self.click_visible('All designs');self.click_visible('Browse Community')
+        self.wait("Boolean(document.querySelector('#community-courses button'))",15)
+        self.click_visible('Run course Community wired lift')
+        self.wait("document.body.classList.contains('read-only-course') && "+READY,60)
+        self.wait("document.querySelectorAll('#power-feedback-labels .wire').length===2",30)
+        self.assertEqual(self.js("document.querySelectorAll('#power-feedback-labels button').length"),0)
+        self.click_visible('Copy to my Sandbox')
+        self.wait("!document.body.classList.contains('read-only-course') && "+READY,60)
+        self.wait("document.querySelectorAll('#power-feedback-labels button').length===2",30)
+
+    def test_local_course_share_carries_its_setup_without_a_hosted_database_id(self):
+        previous=self.server.environment
+        try:
+            self.server.environment='local'
+            owner=str(uuid.uuid4());design_id=str(uuid.uuid4())
+            design=dict(id=design_id,name='Portable local marble',draft=dict(base=None,
+                        placements=[dict(piece='marble',x_m=0,z_m=0)]),versions=[],nextVersion=1,at='2026-10-18T00:00:00Z')
+            self.server.profiles.create(owner,dict(sandbox=dict(items=[design],last=design_id)))
+            self.navigate(f'{self.base}/machine?visitor={owner}&design={design_id}');self.wait(READY,60)
+            self.press('Share')
+            link=self.js('machineShareLink()');self.assertTrue(link.startswith('https://banjo.is/machine#build='),link)
+            self.navigate(link.replace('https://banjo.is',self.base,1))
+            self.wait("document.body.classList.contains('read-only-course') && "+READY,60)
+            self.assertEqual(self.js('machinePlacements()'),design['draft']['placements'])
+            self.assertTrue(self.js("document.getElementById('course-copy').checkVisibility()"))
+        finally:self.server.environment=previous
+
     def test_a_build_is_shared_by_a_link(self):
         # The example, shared: the link holds every piece, and opening it on
         # an empty table sets them all out.
