@@ -24,6 +24,7 @@ FAMILY_VERSIONS['easy-water-wheel']=3
 FAMILY_VERSIONS['easy-water-receiver']=3
 FAMILY_VERSIONS['easy-gears']=3
 FAMILY_VERSIONS['easy-power']=3
+FAMILY_VERSIONS['easy-tackle']=3
 FAMILY_VERSIONS['easy-bulb']=3
 FAMILY_VERSIONS.update({family:2 for family in ('easy-motor','easy-river-lift','easy-charge-lift')})
 MAX_ATTEMPTS = 3
@@ -58,6 +59,7 @@ POLICIES = {
 }
 
 LEGACY_POLICIES=copy.deepcopy(POLICIES)
+POLICIES['easy-tackle']=('piece','counterweight','height_m',(.9,.95,1,1.05))
 for family in ('easy-water-wheel','easy-water-gate'):
     POLICIES[family]=('piece','water_tank','fill_l',(3.5,4.5,5,5.5))
 POLICIES['easy-spring']=('piece','spring','stiffness_n_m',(180,200,220,240))
@@ -139,6 +141,10 @@ def _apparatus(family_level, version):
     """
     result = copy.deepcopy(family_level)
     family = family_level['id']
+    if family=='easy-tackle' and version==2:
+        import sandbox_pulleys as pulleys
+        import machine_game as game
+        return game._with_free_knobs(copy.deepcopy(pulleys.LEGACY_TACKLE))
     if family=='easy-heat' and version==1:
         import sandbox_electrics as electrical
         import machine_game as game
@@ -265,7 +271,7 @@ def construct(family_level, seed, *, attempt=0, version=None):
     version = _version(family, version)
     result = _apparatus(family_level, version)
     result['id'] = identity(family, seed, attempt, version=version)
-    kind, name, parameter, values = (LEGACY_POLICIES if version==1 or (family=='easy-bulb' and version==2) else POLICIES)[family]
+    kind, name, parameter, values = (LEGACY_POLICIES if version==1 or (family in ('easy-bulb','easy-tackle') and version==2) else POLICIES)[family]
     digest = hashlib.sha256(f'banjo-easy:{version}:{family}:{seed}'.encode('ascii')).digest()
     value = values[(int.from_bytes(digest[:8], 'big') + attempt) % len(values)]
     if kind == 'piece':
@@ -312,7 +318,7 @@ def construct(family_level, seed, *, attempt=0, version=None):
     canonical={t['piece']:t for t in family_level['tray']}
     for tray in result['tray']:
         source=canonical.get(tray['piece'],{})
-        keys=list(source.get('lesson_knobs',[]))
+        keys=list(source.get('lesson_knobs',[])) if source else list(tray['knobs'])
         if version < FAMILY_VERSIONS.get(family,1):
             keys.extend(k for k in legacy_extras.get(tray['piece'],[]) if k not in keys)
         tray['lesson_knobs']=[k for k in keys if k in tray['knobs']]

@@ -1,5 +1,45 @@
 # Puzzles on the machine (/play)
 
+October 17 audit implementation, checkpoint 2:
+
+* Individual Rope anchor, Pulley wheel, Counterweight and Rope through pulleys
+  pieces are in Sandbox. In **Thread a pulley**, start at a gold end ring, tap
+  the wheel, then the other ring. Wheel routes have explicit Over/Under choices.
+  **Raise the crate** and **Lift with less** use a moving wheel bolted to the
+  crate and a separate fixed wheel. Choosing the moving wheel's Load aligns
+  its hook to the selected box; the native fixed mount remains an ideal bolt.
+  Neither level's goal geometry nor deadline changed. The new Raise the crate
+  kit's fabrication benchmark is 1.32 GJ (1,314,787,828 J including the strand,
+  rounded up), replacing its older kit's 827,064,040 J benchmark. Lift with less
+  uses 1.43 GJ for its new kit (1,425,959,350 J), replacing 749 MJ. Fibre fabrication
+  uses the existing generic 20 MJ/kg estimate, not a measured material property;
+  it is separate from the native mechanical energy ledger. Legacy tackle pieces and v1/v2 recipes retain
+  their original ideal constraints. [Measurements and limits](physical-pulleys.md).
+* Blueprint v2 stores local piece IDs, internal references and explicit outside
+  ports. Design → Blueprints can save a selected subset. Insertion checks the
+  current inventory and native geometry, shows a group preview, and allows
+  ground dragging, vertical dragging and 90° turns before one Place/Undo step.
+  Existing v1 saves remain readable; copying now renames terminal references
+  and transforms endpoint coordinates too. Ports require an explicit destination.
+  A Load port can align the group's saved load attachment to the chosen box.
+  The saved pieces are rebuilt and simulated; no assembly trajectory is replayed.
+  Anonymous profile synchronization carries the same JSON through the existing
+  store. Winning keeps a starter from the player's actual placed pieces, with a
+  separate Save assembly action. Levels offer only inventory-compatible groups.
+* Manual switches enter Run ready at time zero. Dragging starts native time;
+  pressing Run again explicitly runs without that input. Build cannot release
+  a spring latch. Tanks offer Adjust tap while building, with live opening in Run.
+  Preparation progress appears only while waiting to run, outside the workspace;
+  background preparation does not add height to the controls panel.
+* Measured locally: 30 native rope/contact/reaction/refinement scenarios pass;
+  all three routed-rope lessons pass three native runs with nudges and their
+  negative controls fail. A 90° rotated assembly also reaches the same height.
+  Host (42), prepared playback (4), blueprint geometry/reference checks and
+  desktop/phone group placement and Undo pass. Thread a pulley passes ordinary
+  scene clicks at 1280×860, 390×844 and 844×390. Spring release, lens and tap
+  controls, and the manual cannon flow pass their focused browser checks.
+  These are automated checks, not timed human playtests or physical-phone FPS.
+
 October 17 audit implementation, checkpoint 1:
 
 * New levels and designs clear Tune/Run intent and restore Build. Tune is

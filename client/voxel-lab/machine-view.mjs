@@ -482,25 +482,62 @@ export function pathPoint(points, t) {
 // Pieces refer to each other by name ("your plank 2 ..."), so a dropped copy
 // renumbers those references after the pieces already in the design and
 // moves every piece so the group's centre lands at the chosen ground point.
-export function blueprintPlacements(saved, existing, at_m) {
-  const rows = JSON.parse(JSON.stringify(saved || []));
+export function blueprintPlacements(saved, existing, at_m, quarterTurns=0, bindings={}) {
+  const assembly=saved?.schema==='banjo.blueprint.v2'?saved:null;
+  const source=assembly?assembly.pieces.map(p=>p.placement):Array.isArray(saved)?saved:saved?.placements||[];
+  const rows = JSON.parse(JSON.stringify(source));
+  const decode=value=>typeof value==='string'?value.replace(/^@(p\d+|port\d+)(?=$|[: ])/,(all,id)=>{
+    if(id.startsWith('port')){if(!bindings[id])throw Error(`Connect ${assembly.ports.find(p=>p.id===id)?.label||id} first`);return bindings[id];}
+    const index=assembly.pieces.findIndex(p=>p.id===id);if(index<0)throw Error('Blueprint contains a missing piece');
+    return `your ${rows[index].piece} ${existing+index+1}`;
+  }):Array.isArray(value)?value.map(decode):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,decode(v)])):value;
+  if(assembly)for(let i=0;i<rows.length;i++)rows[i]=decode(rows[i]);
   const offset = existing;
   const xs = rows.filter(p => Number.isFinite(p.x_m)).map(p => p.x_m);
   const zs = rows.filter(p => Number.isFinite(p.z_m)).map(p => p.z_m);
   const cx = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0;
   const cz = zs.length ? (Math.min(...zs) + Math.max(...zs)) / 2 : 0;
   const rename = value => typeof value === 'string'
-    ? value.replace(/^your (\S+) (\d+)(?=$| )/, (whole, piece, n) => {
+    ? value.replace(/^your (\S+) (\d+)(?=$|[ :])/, (whole, piece, n) => {
         const i = Number(n) - 1;
         return i >= 0 && i < rows.length && rows[i].piece === piece ? `your ${piece} ${i + 1 + offset}` : whole;
       })
     : Array.isArray(value) ? value.map(rename)
     : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, rename(v)]))
     : value;
+  const angle=quarterTurns*Math.PI/2,c=Math.cos(angle),s=Math.sin(angle);
+  const point=p=>[Math.round(((p[0]-cx)*c+(p[2]-cz)*s+at_m[0])*1e4)/1e4||0,p[1],
+    Math.round((-(p[0]-cx)*s+(p[2]-cz)*c+at_m[1])*1e4)/1e4||0];
   return rows.map(p => {
-    const q = rename(p);
-    if (Number.isFinite(q.x_m)) q.x_m = Math.round((q.x_m - cx + at_m[0]) * 1e4) / 1e4;
-    if (Number.isFinite(q.z_m)) q.z_m = Math.round((q.z_m - cz + at_m[1]) * 1e4) / 1e4;
+    const q = assembly?p:rename(p);
+    if(Number.isFinite(q.x_m)||Number.isFinite(q.z_m)) {
+      const at=point([q.x_m??0,0,q.z_m??0]);q.x_m=at[0];q.z_m=at[2];
+    }
+    for(const key of ['at_m','at_b_m'])if(Array.isArray(q[key]))q[key]=point(q[key]);
+    if(quarterTurns&&Number.isFinite(q.yaw_deg))q.yaw_deg=((q.yaw_deg+quarterTurns*90+180)%360+360)%360-180;
+    if(quarterTurns%2&&['along x','along z'].includes(q.axis))q.axis=q.axis==='along x'?'along z':'along x';
     return q;
   });
+}
+
+// Local IDs survive insertion and deletion elsewhere in a design. References
+// to apparatus outside the selection become explicit ports, never silently
+// attaching to an identically named object in the destination.
+export function makeBlueprint(saved, indices, rules={},parts=[]) {
+  const chosen=[...new Set(indices)].filter(i=>saved[i]).sort((a,b)=>a-b);
+  const names=new Map(chosen.map((i,n)=>[`your ${saved[i].piece} ${i+1}`,`p${n}`]));
+  const ports=[];
+  const pieces=chosen.map((i,n)=>{
+    const p=JSON.parse(JSON.stringify(saved[i])),knobs=rules[p.piece]||{};
+    const encode=(value,key)=>Array.isArray(value)?value.map(v=>encode(v,key)):typeof value==='string'&&value?(()=>{
+      const match=/^(your \S+ \d+)(.*)$/.exec(value);
+      if(match&&names.has(match[1]))return '@'+names.get(match[1])+match[2];
+      const id=`port${ports.length}`,side=value.match(/:(over|under)$/)?.[0]||'',target=side?value.slice(0,-side.length):value;
+      const part=parts.find(p=>p.name===target),point=key==='load'&&part?.size_m?[part.at_m[0],part.at_m[1]+part.size_m[1]/2,part.at_m[2]]:null;
+      ports.push({id,owner:`p${n}`,field:key,kind:knobs[key]?.terminal?'terminal':knobs[key]?.hinge?'hinge':'part',label:knobs[key]?.label||key,hint:target,point});return '@'+id+side;
+    })():value;
+    for(const [key,rule] of Object.entries(knobs))if(['part','hinge','terminal','power_port','part_list'].some(k=>rule[k]))p[key]=encode(p[key],key);
+    return {id:`p${n}`,placement:p};
+  });
+  return {schema:'banjo.blueprint.v2',pieces,ports,placements:JSON.parse(JSON.stringify(chosen.map(i=>saved[i])))};
 }

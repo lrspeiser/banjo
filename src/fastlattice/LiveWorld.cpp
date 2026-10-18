@@ -7748,6 +7748,14 @@ bool LiveWorld::judgeStep() {
 }
 
 void LiveWorld::step(double dt_s) {
+    if(!std::isfinite(dt_s)||dt_s<=0)throw std::invalid_argument("a live step needs a positive finite dt");
+    double limit=dt_s;
+    for(const auto &cord:impl_->mechanical_cables)limit=std::min(limit,cord.maximumStep());
+    if(dt_s>limit*(1+1e-8)) {
+        const auto steps=unsigned(std::ceil(dt_s/limit));
+        for(unsigned i=0;i<steps;++i)step(dt_s/steps);
+        return;
+    }
     impl_->releaseCableSetup();
     if (!(dt_s > 0.0)) throw std::invalid_argument("a live step needs a positive dt");
     if (!impl_->circuits.empty()) impl_->validateCircuitStep(dt_s);
@@ -9262,8 +9270,13 @@ void LiveWorld::settleMechanicalCables(double dt_s) {
             }
         } catch(...) {I.releaseCableSetup();throw;}
     }
-    I.world->step(dt_s);
-    for(auto &c:I.mechanical_cables)c.settle(dt_s);
+    double limit=dt_s;
+    for(const auto &cord:I.mechanical_cables)limit=std::min(limit,cord.maximumStep());
+    const auto steps=unsigned(std::ceil(dt_s/limit-1e-8));
+    for(unsigned i=0;i<steps;++i){
+        I.world->step(dt_s/steps);
+        for(auto &c:I.mechanical_cables)c.settle(dt_s/steps);
+    }
 }
 
 std::vector<LiveMotor> LiveWorld::motors() const {

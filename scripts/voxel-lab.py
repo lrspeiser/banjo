@@ -438,6 +438,9 @@ class Handler(BaseHTTPRequestHandler):
        snapping=bool(data.get('snap')),snap_hold=data.get('snap_hold'),nearby=bool(data.get('nearby_snap')))}
      edited=machine_game.requested_level({'level':'free','base':r['base']})
      machine_game.compose(edited,data.get('placements') or [])
+   elif op=='assembly_ghost':
+    level=machine_game.requested_level(data)
+    r={'ok':True,**machine_game.assembly_ghost(level,data.get('placements') or [],data.get('start'))}
    elif op=='level_ghost':
     # A piece before it is set down: what it would be and where, and why it
     # could not go there. Compiled only, never run, so it is not rationed.

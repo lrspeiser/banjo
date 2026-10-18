@@ -1,5 +1,5 @@
 import * as THREE from './three.module.js';
-import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints, blendPose, FramePlayback, glides, frameBlend, pathPoint, blueprintPlacements} from './machine-view.mjs';
+import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints, blendPose, FramePlayback, glides, frameBlend, pathPoint, blueprintPlacements, makeBlueprint} from './machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from './anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from './profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from './level-library.mjs';
@@ -104,7 +104,7 @@ window.machineAirflowState=()=>({fields:machine?.airflows||[],arrows:airflowGrou
 let playing = false, follow = true, readouts = {}, polling = 0, history = [], undo = [], lastFrame = null;
 let switchDragging = null, switchPullQueue = Promise.resolve(), switchTouchGesture=false, playPending=null;
 const meshes = new Map(), wires = [];
-function disposeBodyGeometry(body){body.traverse(object=>object.geometry?.dispose());}
+function disposeBodyGeometry(body){body.traverse(object=>{object.geometry?.dispose();if(object.name==='interaction-outline')object.material?.dispose();});}
 const materials = new Map();
 
 function material(hex, kind) {
@@ -388,6 +388,10 @@ function syncWires() {
   syncPowerLabels();
   syncTerminalLabels();
   syncContactCircuits();
+  for(const strand of machine.strands||[]) {
+    const line=new THREE.Mesh(new THREE.BufferGeometry(),new THREE.MeshStandardMaterial({color:0xd6ba7b,roughness:.9}));
+    scene.add(line);wires.push({line,name:strand.name,mechanicalName:strand.name,color:0xd6ba7b,rope:true});
+  }
 }
 
 const contactCircuitRows = new Map(), contactCircuitOutlines = [];
@@ -657,7 +661,7 @@ function positionTerminalLabels() {
       } else feedback.hidden=true;
     }
     if (handle) {
-      handle.disabled=Boolean(ghost||pullMode||attachMode||!session);
+      handle.hidden=currentMode()!=='run';handle.disabled=currentMode()!=='run'||Boolean(ghost||pullMode||attachMode||!session);
       const measured=snapshot.devices.find(d=>d.name===device.name);
       feedback.hidden=false;feedback.textContent=(snapshot.preview?'Preview · ':'')+(measured?`${measured.closed?'Closed':'Open'} · ${Math.abs(measured.current_a||0).toFixed(3)} A`:'Drag to operate');
     }
@@ -1778,7 +1782,7 @@ $('test-takeover').addEventListener('click',async()=>{
   finally {button.disabled=false;}
 });
 function sceneReadoutTop(rect) {
-  return Math.max(6, ...[$('clock'), $('viewer-corner'), $('run-preparation')]
+  return Math.max(6, ...[$('clock'), $('viewer-corner')]
     .filter(Boolean)
     .filter(el => !el.hidden && el.getClientRects().length)
     .map(el => el.getBoundingClientRect().bottom - rect.top + 6));
@@ -2108,7 +2112,8 @@ function frameCamera(includeGhost=false) {
   const half = Math.min(camera.fov * Math.PI / 360, Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect));
   const radius = Math.hypot(...lo.map((low, i) => Math.max(Math.abs(low - goal.getComponent(i)), Math.abs(hi[i] - goal.getComponent(i)))));
   distance = Math.min(40, Math.max(level?.camera_min_m || (zone ? 2.2 : 1.6), 1.12 * radius / Math.sin(half)));
-  azimuth = -.25; elevation = .38;
+  const pulley=machine?.pulleys?.[0],heading=pulley?.heading||[1,0,0];
+  azimuth = pulley?Math.atan2(heading[2],-heading[0])+.12:-.25; elevation = .38;
 }
 
 // A scripted view, for scripts/film_machine.py: where the camera looks from
@@ -2558,7 +2563,7 @@ function choosePlayMode(mode) {
   }
   shownMode = ''; renderPlayMode();
 }
-window.machinePlayMode = () => ({mode: currentMode(), shown: !$('play-mode').hidden, hint: $('play-mode-hint').textContent});
+window.machinePlayMode = () => ({mode: currentMode(), shown: !$('play-mode').hidden, hint: $('play-mode-hint').textContent,starting:startingRun});
 function setLooking(on) {
   looking = Boolean(on && ghost);
   draggingGhost = null;
@@ -3240,6 +3245,7 @@ async function checkGhost(g) {
 // index): a ghost of it, starting where the middle of
 // the view meets the scene.
 function startGhost(p, index, keepPlace = false) {
+  cancelAssembly();
   runArmed = false;
   runRequest++;
   endGhost();
@@ -3273,6 +3279,9 @@ function startGhost(p, index, keepPlace = false) {
 // panel, or by clicking it in the scene). After a run, or during one, the
 // level goes back to its start first: pieces are placed there.
 function pickUp(i) {
+  if(placements[i]?.piece==='rope'){
+    const p=placements[i];startTrayAttach('rope');attaching=[{name:p.a,at:[...p.at_m]}];ropeVia=[...p.via];ropeEditing=i;showAttachStep();return;
+  }
   if(level?.free && i>=placements.length){
     const object=sandboxObjects[i-placements.length];if(!object)return;
     if(playing||world.t>0)rebuildLevel(false).then(()=>pickUp(i)).catch(()=>{});
@@ -3408,6 +3417,13 @@ function nudgeKnob(key, by) {
 }
 
 let pendingPieceReference=null;
+function alignPulleyLoad(p,key){
+  if(p.piece!=='pulley'||key!=='load'||!p[key])return;
+  const body=machine.parts.find(b=>b.name===p[key]);if(!body?.size_m)return;
+  const angle=(p.yaw_deg||0)*Math.PI/180;
+  p.mount='moving';p.x_m=body.at_m[0]-.04*Math.sin(angle);p.z_m=body.at_m[2]-.04*Math.cos(angle);
+  p.height_m=body.at_m[1]+body.size_m[1]/2+(p.radius_m||.12)+.08;
+}
 function sceneReferenceControl(p,key,rule,changed){
   const row=document.createElement('div');row.className='scene-reference';
   const allowed=[...referenceControl(p,key,rule,()=>{}).options].map(o=>o.value);
@@ -3426,7 +3442,7 @@ function sceneReferenceControl(p,key,rule,changed){
       const label=value||'No connection';
       const option=button(label,()=>{
         closeValueChoices();pendingPieceReference=null;if(ghost!==selected)return;
-        p[key]=value;changed();
+        p[key]=value;alignPulleyLoad(p,key);changed();
       },{ariaLabel:`Connect ${knobName(rule,key)} to ${label}`});
       option.setAttribute('aria-pressed',String(p[key]===value));options.append(option);
     }
@@ -3537,6 +3553,7 @@ function renderGhostBar() {
   const directKeys=keys.filter(k=>!knobs[k].turning&&!heightKnobs(ghost.p).includes(k));
   if(!directKeys.length&&keys[0])directKeys.push(keys[0]);
   const visibleKeys=directKeys.slice(0,3);
+  chips.style.gridTemplateColumns=`repeat(${Math.max(1,visibleKeys.length)},minmax(0,1fr))`;
   if(directKeys.includes(ghost.card)&&!visibleKeys.includes(ghost.card))visibleKeys[visibleKeys.length-1]=ghost.card;
   for(const k of visibleKeys){
     const r=knobs[k],label=ghost.p.piece==='lens'&&k==='radius_m'?'Focus':knobName(r,k).replace(/\s*\([^)]*\)$/,'');
@@ -3778,8 +3795,9 @@ function positionLiveControls(){
       card.querySelector('output').textContent='The restrained part is free to move.';
     }
     const adjust=card.querySelector('.spring-adjust');
-    if(release){release.hidden=currentMode()!=='run';release.disabled=!session||startingRun||liveControlPending||released||release.dataset.queuedRelease==='true';}
+    if(release){release.hidden=currentMode()!=='run';release.disabled=currentMode()!=='run'||!session||startingRun||liveControlPending||released||release.dataset.queuedRelease==='true';}
     if(adjust)adjust.disabled=!session||playing||world.t>0||liveControlPending||released||release.dataset.queuedRelease==='true';
+    for(const operation of card.querySelectorAll('button:not(.spring-adjust),label'))operation.hidden=currentMode()!=='run';
     card.hidden=Boolean(ghost)||(currentMode()!=='run'&&!adjust)||document.body.matches('.on-levels,.on-sandbox,.scene-win');if(card.hidden)continue;
     const anchor=card.anchor.clone().project(camera);card.hidden=Math.abs(anchor.z)>1||Math.abs(anchor.x)>1||Math.abs(anchor.y)>1;if(card.hidden)continue;
     if(card.matches(':active')){occupied.push(card.getBoundingClientRect());continue;}
@@ -3794,6 +3812,7 @@ function positionLiveControls(){
   for(const [card,leader] of liveControlLeaders)if(!card.isConnected){leader.remove();liveControlLeaders.delete(card);}
 }
 function positionPieceEditor() {
+  positionRopeSockets();
   positionLiveControls();
   editorLeader.style.display='none';
   const editor=$('piece-editor');if(editor.hidden||!ghost)return;
@@ -4098,6 +4117,7 @@ function powerFeedbackSnapshot() {
   }),devices:preview.power_devices||[]};
   const samples=[];
   for(const w of wires) {
+    if(w.rope)continue;
     if(w.powerCable) {
       samples.push({name:w.name,points_m:w.route,unit:'W',routed:true,mechanical:nativeCable(w.name),
         value:readouts.machines?.solar_panels?.find(p=>p.name===w.panel)?.power_w||0});
@@ -4418,6 +4438,11 @@ function blendFlowMechanisms(a,b,f){
     mesh.quaternion.slerpQuaternions(new THREE.Quaternion(qa[1],qa[2],qa[3],qa[0]),new THREE.Quaternion(qb[1],qb[2],qb[3],qb[0]),f);
     flowBlends++;
   }
+  for(const group of flowGroup.children.filter(c=>c.userData.ropeName)){
+    const first=a.ropes?.find(r=>r.name===group.userData.ropeName),next=b.ropes?.find(r=>r.name===group.userData.ropeName);
+    if(first&&next&&first.segments_m.length===next.segments_m.length)drawRopeInstances(group,{
+      radius_m:first.radius_m,segments_m:first.segments_m.map((segment,i)=>segment.map((point,j)=>point.map((v,k)=>v+(next.segments_m[i][j][k]-v)*f)))});
+  }
 }
 window.machineFlowBlendCount=()=>flowBlends;
 function syncFlowMechanismVisibility(){
@@ -4438,9 +4463,26 @@ function flowLabel(text, point) {
   sprite.position.copy(point); flowGroup.add(sprite); flowLabels.push(sprite);
 }
 
+function drawRopeInstances(group,cable){
+  const cylinder=group.children[0],caps=group.children[1],matrix=new THREE.Matrix4(),q=new THREE.Quaternion(),up=new THREE.Vector3(0,1,0);
+  for(const [i,[a,b]] of cable.segments_m.entries()){
+    const first=new THREE.Vector3(...a),last=new THREE.Vector3(...b),direction=last.clone().sub(first);
+    q.setFromUnitVectors(up,direction.clone().normalize());
+    matrix.compose(first.clone().add(last).multiplyScalar(.5),q,new THREE.Vector3(cable.radius_m,direction.length(),cable.radius_m));cylinder.setMatrixAt(i,matrix);
+    for(const [j,at] of [first,last].entries()){matrix.makeScale(cable.radius_m,cable.radius_m,cable.radius_m);matrix.setPosition(at);caps.setMatrixAt(i*2+j,matrix);}
+  }
+  cylinder.instanceMatrix.needsUpdate=true;caps.instanceMatrix.needsUpdate=true;
+}
 function drawFlowFrame(frame) {
   clearFlowFrame();
   drawFlowMechanisms(frame);
+  for(const rope of frame.ropes||[]){
+    const group=new THREE.Group();group.userData.ropeName=rope.name;group.userData.physicalCable=true;
+    const look=new THREE.MeshStandardMaterial({color:0xd6ba7b,roughness:.9});
+    const cylinder=new THREE.InstancedMesh(new THREE.CylinderGeometry(1,1,1,6),look,rope.segments_m.length),
+      caps=new THREE.InstancedMesh(new THREE.SphereGeometry(1,6,4),look,rope.segments_m.length*2);
+    cylinder.frustumCulled=false;caps.frustumCulled=false;group.add(cylinder,caps);drawRopeInstances(group,rope);flowGroup.add(group);
+  }
   // The sunlight lesson keeps the real bulb glow without displaying its
   // radiated rays as if they were a collector source. Native light is intact.
   const light = beamSegments(solarLiftGraph()&&!opticalSetup()?.lamps?.length?[]:frame.light);
@@ -4631,13 +4673,13 @@ function schedulePreview(ms = 700) {
 }
 
 async function askPreview() {
-  if (!LEVEL_MODE || !level || !previewOn || playing || document.body.matches('.on-sandbox,.on-levels')) return;
+  if (!LEVEL_MODE || !level || !previewOn || playing || runArmed || attachMode || assemblyDraft || document.body.matches('.on-sandbox,.on-levels')) return;
   // A ghost that does not fit, or is still being worked out: nothing to rehearse.
   if (ghost && (!ghost.answered || !ghost.fits)) { clearPreview(); return; }
   const mine = ++previewAsk, list = ghost ? ghostPlacements() : placements;
   const key=setupKeyFor(list),work={key,promise:null};
   preparingRun=work;
-  preparation.hidden=false;preparationLabel.textContent='Preparing your machine…';preparationMeter.removeAttribute('value');
+  preparation.hidden=!startingRun;preparationLabel.textContent='Preparing your machine…';preparationMeter.removeAttribute('value');
   const progress=setInterval(async()=>{
     try{
       const state=await api({op:'preparation_status'});
@@ -4701,7 +4743,7 @@ function drawPreview(r) {
     if (mesh && path.points.length) {
       // Where the goal's thing comes to rest (or is at the end), see-through.
       const end = mesh.clone(true), last = path.points[path.points.length - 1];
-      end.traverse(o => { if (o.isMesh) { o.material = previewEndLook; o.castShadow = false; o.userData.shared = true; } });
+      end.traverse(o => { if(o.name==='interaction-outline')o.visible=false;if (o.isMesh) { o.material = previewEndLook; o.castShadow = false; o.userData.shared = true; } });
       end.userData.shared = true;
       end.position.set(last[1], last[2], last[3]);
       const q = path.turn_wxyz;
@@ -4711,7 +4753,7 @@ function drawPreview(r) {
       // between samples, so the player sees the motion and not only its trace.
       if (path.points.length > 1) {
         const runner = mesh.clone(true);
-        runner.traverse(o => { if (o.isMesh) { o.material = previewEndLook; o.castShadow = false; o.userData.shared = true; } });
+        runner.traverse(o => { if(o.name==='interaction-outline')o.visible=false;if (o.isMesh) { o.material = previewEndLook; o.castShadow = false; o.userData.shared = true; } });
         runner.userData.shared = true;
         runner.position.set(...path.points[0].slice(1, 4));
         previewGroup.add(runner);
@@ -5087,7 +5129,7 @@ renderer.domElement.addEventListener('pointerup', e => {
     const name=object&&nameOf.get(object);
     const endpoint=ref.rule.hinge?(machine?.joints||[]).find(j=>j.kind==='hinge'&&(j.a===name||j.b===name)&&ref.allowed.includes(j.name))?.name:
       ref.key==='battery'?(machine?.batteries||[]).find(b=>b.in===name&&ref.allowed.includes(b.name))?.name:name;
-    if(endpoint&&ref.allowed.includes(endpoint)){ref.p[ref.key]=endpoint;pendingPieceReference=null;closeValueChoices();ref.changed();}
+    if(endpoint&&ref.allowed.includes(endpoint)){ref.p[ref.key]=endpoint;alignPulleyLoad(ref.p,ref.key);pendingPieceReference=null;closeValueChoices();ref.changed();}
     else $('adjustment-feedback').textContent='Choose a compatible object in the scene. Default connections and exact endpoints are in Changes → Settings.';
   } else if (ghost && click) setLooking(true);
   else if (!ghost && click && !pullMode && !attachMode) {
@@ -5346,7 +5388,7 @@ function switchHandleAt(x,y,touch=false) {
   })||null;
 }
 function startSwitchDrag(device,e) {
-  if(switchDragging||ghost||pullMode||attachMode||!session||cameraGesture||pointers.size>1||e.button!==0||e.ctrlKey)return false;
+  if(currentMode()!=='run'||switchDragging||ghost||pullMode||attachMode||!session||cameraGesture||pointers.size>1||e.button!==0||e.ctrlKey)return false;
   const mesh=meshes.get(device.handle.part),grip=terminalAt({name:device.name,part:device.handle.part},'',device.handle.at_m);
   if(!mesh||!grip)return false;
   pointerRay(e.clientX,e.clientY);
@@ -5445,7 +5487,7 @@ window.machineSwitchState=()=>({drag:switchDragging&&{name:switchDragging.device
 // -- glue where they were pressed, a pin there (its axle along x, along z or
 // upright), or a string from the first point to the second, as long as
 // it is then. The join is one of the pieces: it is kept, taken back, removed.
-let attachMode = false, attaching = [], stringEnd = null;
+let attachMode = false, attaching = [], stringEnd = null, attachPiece='link',ropeVia=[],ropeEditing=null;
 const attachMark = new THREE.Group();
 scene.add(attachMark);
 function partAt(clientX, clientY) {
@@ -5457,32 +5499,63 @@ function partAt(clientX, clientY) {
   return o ? {name: nameOf.get(o), at: hit.point.toArray().map(v => +v.toFixed(4))} : null;
 }
 function cancelAttach() {
-  attaching = []; hideStringEnd();
+  attaching = [];ropeVia=[];ropeEditing=null; hideStringEnd();
   for (const c of [...attachMark.children]) attachMark.remove(c);
   $('attach-card').hidden = true; $('attach-card').replaceChildren();
 }
 function setAttach(on) {
   attachMode = Boolean(on);
+  if(attachMode){clearTimeout(previewTimer);previewAsk++;clearPreview();}
   if (attachMode && pullMode) $('pull-tool').click();
   $('attach-tool').setAttribute('aria-pressed', String(attachMode));
   view.classList.toggle('attaching', attachMode);
   cancelAttach(); drawTieRings();
 }
-$('attach-tool').addEventListener('click', () => { if (ghost) cancelGhost(); setAttach(!attachMode); });
-function tiePoints() { return (!level?.free && level?.tray?.find(t => t.attach)?.tie_points) || []; }
+$('attach-tool').addEventListener('click', () => {
+  if(attachMode){setAttach(false);return;}
+  startTrayAttach(trayItem('link')?'link':'rope');
+});
+function ropeSockets() {
+  return (machine?.parts||[]).filter(p=>p.name==='crate'||p.name==='counterweight'||
+    /^your (anchor|counterweight|weight|block) \d+$/.test(p.name)).map(p=>({part:p.name,
+      at_m:[p.at_m[0],p.at_m[1]+(p.name.includes('anchor')?-.5:.5)*p.size_m[1],p.at_m[2]],snap_m:.25,label:p.name}));
+}
+function tiePoints() { return attachPiece==='rope'?ropeSockets():(!level?.free && level?.tray?.find(t => t.attach)?.tie_points) || []; }
 // Gold rings show a lesson's tie points while joining.
 const tieRings = new THREE.Group(); scene.add(tieRings);
+const ropeSocketButtons=[];
+function positionRopeSockets(){
+  if(!ropeSocketButtons.length)return;const rect=view.getBoundingClientRect();
+  const occupied=[...view.querySelectorAll('#viewer-corner,#clock')].filter(n=>!n.hidden).map(n=>n.getBoundingClientRect());
+  for(const row of ropeSocketButtons){
+    const p=new THREE.Vector3(...row.at).project(camera),x=rect.left+(p.x+1)*rect.width/2,y=rect.top+(1-p.y)*rect.height/2;
+    row.button.hidden=Math.abs(p.z)>1;if(row.button.hidden){row.line.style.display='none';continue;}
+    const at=pieceToolbarPosition(rect,{left:x-8,right:x+8,top:y-8,bottom:y+8},row.button.getBoundingClientRect(),occupied,{edgeOnly:true});
+    row.button.style.left=`${at.x-rect.left}px`;row.button.style.top=`${at.y-rect.top}px`;
+    controlLeader(row.line,row.button,{x,y});occupied.push(row.button.getBoundingClientRect());
+  }
+}
 function drawTieRings() {
+  for(const row of ropeSocketButtons){row.button.remove();row.line.remove();}ropeSocketButtons.length=0;
   for (const c of [...tieRings.children]) { tieRings.remove(c); c.geometry.dispose(); }
   if (!attachMode) return;
   for (const t of tiePoints()) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(.035, .008, 8, 24), new THREE.MeshBasicMaterial({color: 0xffd34d, depthTest: false}));
     ring.position.set(...t.at_m); ring.rotation.x = Math.PI / 2; ring.renderOrder = 5; tieRings.add(ring);
   }
+  if(attachPiece==='rope')for(const t of [...tiePoints(),...(machine?.pulleys||[]).map(p=>({part:p.name,at_m:p.at_m,wheel:true}))]){
+    const caption=t.part.replace(/^your /,''),b=button(t.wheel?'↻ '+caption:'◉ '+caption,()=>markAttach({name:t.part,at:[...t.at_m]}),
+      {className:'rope-socket',ariaLabel:(t.wheel?'Route rope around ':'Attach rope to ')+t.part});
+    const line=document.createElementNS(controlLeaders.namespaceURI,'line');controlLeaders.append(line);view.append(b);
+    ropeSocketButtons.push({button:b,line,at:t.at_m});
+  }
+  positionRopeSockets();
 }
 window.machineTieRings = () => tieRings.children.map(r => r.position.toArray());
-function startTrayAttach() {
+function startTrayAttach(piece='link') {
   if (ghost) cancelGhost();
+  attachPiece=piece;
+  selectPhonePanel('controls');
   setAttach(true);
   showAttachStep();
 }
@@ -5547,6 +5620,16 @@ function nearOwnPart(x, y, radius, except) {
 // A string end let go on a part ties a string there at once; a tap on the
 // second part asks how to join them.
 function markAttach(part, kind = '') {
+  if(attachPiece==='rope') {
+    const guide=machine?.pulleys?.find(p=>p.name===part.name||p.carrier===part.name);
+    if(guide) {
+      if(!attaching.length){showAttachStep('Start at a gold end ring first.');return;}
+      if(ropeVia.length>=2){showAttachStep('This rope can pass around two wheels.');return;}
+      if(ropeVia.some(v=>v.startsWith(guide.name+':'))){showAttachStep('That wheel is already in the route. Choose the next wheel or finish at a gold ring.');return;}
+      ropeVia.push(guide.name+':'+(guide.moving?'under':'over'));showAttachStep();return;
+    }
+    if(attaching.length){finishRope(part);return;}
+  }
   attaching.push(part);
   const dot = new THREE.Mesh(PORT_DOT, new THREE.MeshBasicMaterial({color: 0xffd34d, depthTest: false}));
   dot.position.set(...part.at);
@@ -5560,6 +5643,19 @@ function markAttach(part, kind = '') {
 // pieces to choose from, so nothing small has to be hit with a finger.
 function showAttachStep(note = '') {
   const card = $('attach-card'), first = attaching[0];
+  if(attachPiece==='rope') {
+    $('control-panel').prepend(card);
+    card.replaceChildren(Object.assign(document.createElement('p'),{textContent:note||(!first?
+      'Rope: tap a gold attachment ring to start.':'Tap each pulley wheel in order, then tap the finishing gold ring.')}));
+    if(first)card.append(Object.assign(document.createElement('p'),{className:'hint',textContent:
+      [first.name,...ropeVia.map(v=>v.replace(':',' · '))].join(' → ')}));
+    for(const [i,ref] of ropeVia.entries())card.append(button(ref.split(':')[1]==='over'?'Over wheel':'Under wheel',()=>{
+      ropeVia[i]=ref.replace(/:(over|under)$/,ref.endsWith(':over')?':under':':over');showAttachStep();
+    },{ariaLabel:`Change rope side at wheel ${i+1}`}));
+    if(level?.free&&trayItem('link'))card.append(button('Rigid join or string',()=>startTrayAttach('link')));
+    card.append(button('Cancel',()=>setAttach(false)));card.hidden=false;return;
+  }
+  if(card.parentElement!==view)view.append(card);
   const ring = first && tiePoints().some(t => t.part === first.name && t.at_m.every((v, i) => Math.abs(v - first.at[i]) < 1e-6));
   const choose = first && ownMovableParts(first.name).length ? ', or choose it here' : '';
   const text = !first ? (tiePoints().length ? 'Tap the gold tie ring to tie a string to it.' : 'Tap the first part where it should be tied, then tap the second part.')
@@ -5567,11 +5663,22 @@ function showAttachStep(note = '') {
       ? `Drag the circle on the string's end onto the part to tie it to${choose}.` : `Now tap the part to tie to it${choose}.`);
   card.replaceChildren(Object.assign(document.createElement('p'), {className: 'hint', textContent: note ? `${note} ${text}` : text}));
   const row = Object.assign(document.createElement('div'), {className: 'actions'});
+  if(level?.free&&trayItem('rope'))row.append(button('Thread rope through pulleys',()=>startTrayAttach('rope')));
   if (first) for (const part of ownMovableParts(first.name))
     row.append(button(`Tie to ${part.label}`, () => markAttach({name: part.name, at: tiePointOn(part.name, first.at)})));
   row.append(button('Cancel', () => setAttach(false)));
   card.append(row);
   card.hidden = false;
+}
+async function finishRope(end) {
+  const start=attaching[0];if(!start||start.name===end.name)return;
+  const row={piece:'rope',a:start.name,b:end.name,at_m:start.at,at_b_m:end.at,via:[...ropeVia]};
+  const source=level,stamp=JSON.stringify(placements),next=clone(placements),index=ropeEditing??next.length;next[index]=row;
+  try {
+    await api({op:'check',level:level.id,...sandboxRequest(),placements:next});
+    if(level!==source||JSON.stringify(placements)!==stamp||!attachMode)return;
+    remember();placements=next;setAttach(false);renderTray();renderPlaced();scheduleRebuild(0);
+  }catch(e){showAttachStep(e.data?.problems?.join('; ')||e.message);}
 }
 $('pull-tool').addEventListener('click', () => { if (pullMode && attachMode) setAttach(false); });
 // The two picked points joined as `kind`: one of the pieces, kept, taken
@@ -5672,6 +5779,7 @@ function hideStringEnd() {
 }
 function showStringEnd(first) {
   hideStringEnd();
+  if(attachPiece==='rope')return;
   if (!(trayItem('link')?.knobs?.kind?.choices || []).includes('string')) return;
   const from = new THREE.Vector3(...first.at), end = new THREE.Vector3(first.at[0], Math.max(.02, first.at[1] - .3), first.at[2]);
   const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([from, end]), STRING_LOOK);
@@ -6041,7 +6149,7 @@ const PIECE_INFO = {
   scaffold: ['structure', 'A grounded platform with visible legs and feet. Put it below a loose piece to support it by contact.'],
   catapult: ['motion', 'A counterweight turns a cradle that launches through physical contact.']
 };
-function libraryTray() { return level.free || level.tray.filter(t => !t.attach).length > 4; }
+function libraryTray() { return level.free || level.tray.filter(t => !t.attach).length > 4 || blueprints().some(blueprintAvailable); }
 function piecesLeft(t) { return (t.count || 1) - placements.filter(p => p.piece === t.piece).length; }
 async function addTrayPiece(t) {
   if (ghost || piecesLeft(t) <= 0) return;
@@ -6080,11 +6188,111 @@ function rememberRecentPiece(piece) {
 }
 // ---- blueprints: your own groups of pieces, reused in any Sandbox design ----
 const MAX_BLUEPRINTS = 20;
+let assemblyDraft=null,assemblyVersion=0,assemblyTimer=null;
+const assemblyGroup=new THREE.Group();scene.add(assemblyGroup);
+const assemblyCard=Object.assign(document.createElement('section'),{id:'assembly-editor',hidden:true});view.append(assemblyCard);
+const blueprintRules=()=>Object.fromEntries(level.tray.map(t=>[t.piece,t.knobs]));
+function blueprintAvailable(b){
+  if(level?.free)return true;const counts={};for(const p of b.placements||[])counts[p.piece]=(counts[p.piece]||0)+1;
+  return Object.entries(counts).every(([piece,n])=>{const row=trayItem(piece);return row&&piecesLeft(row)>=n;});
+}
+function cancelAssembly(){assemblyDraft=null;assemblyVersion++;clearTimeout(assemblyTimer);assemblyCard.hidden=true;
+  for(const mesh of [...assemblyGroup.children]){assemblyGroup.remove(mesh);mesh.traverse(m=>m.geometry?.dispose());}assemblyGroup.position.set(0,0,0);}
+function assemblyRows(){return blueprintPlacements(assemblyDraft.blueprint,placements.length,assemblyDraft.at,assemblyDraft.turn,assemblyDraft.bindings).map(p=>{
+  if(assemblyDraft.lift&&Number.isFinite(p.height_m))p.height_m+=assemblyDraft.lift;
+  for(const key of ['at_m','at_b_m'])if(assemblyDraft.lift&&p[key])p[key][1]+=assemblyDraft.lift;
+  return p;
+});}
+function renderAssembly(){
+  const a=assemblyDraft;if(!a)return;
+  assemblyCard.hidden=false;assemblyCard.replaceChildren(Object.assign(document.createElement('strong'),{textContent:a.blueprint.name}));
+  const row=document.createElement('div');row.className='actions';
+  for(const [key,text] of [['move','Move'],['lift','Lift']]){const b=button(text,()=>{a.mode=key;renderAssembly();},{ariaLabel:`${text} assembly`});b.setAttribute('aria-pressed',String(a.mode===key));row.append(b);}
+  row.append(button('Turn 90°',()=>{a.turn=(a.turn+1)%4;askAssembly();},{ariaLabel:'Turn assembly 90 degrees'}));assemblyCard.append(row);
+  for(const port of a.blueprint.ports||[]){
+    const label=document.createElement('label');label.textContent=port.label;
+    const select=document.createElement('select');select.setAttribute('aria-label',`Assembly ${port.label}`);
+    select.append(new Option('Choose connection',''));
+    const choices=port.kind==='hinge'?(machine.joints||[]).filter(j=>j.kind==='hinge').map(j=>j.name):port.kind==='terminal'?[...terminalMap(machine.electrical).keys()]:[...world.bodies.keys()];
+    for(const name of choices)select.append(new Option(name,name));select.value=a.bindings[port.id]||'';
+    select.addEventListener('change',()=>{a.bindings[port.id]=select.value;
+      const targetPart=machine.parts.find(p=>p.name===select.value);
+      if(port.point&&targetPart?.size_m){
+        const pieces=a.blueprint.placements,xs=pieces.filter(p=>Number.isFinite(p.x_m)).map(p=>p.x_m),zs=pieces.filter(p=>Number.isFinite(p.z_m)).map(p=>p.z_m);
+        const cx=(Math.min(...xs)+Math.max(...xs))/2,cz=(Math.min(...zs)+Math.max(...zs))/2,angle=a.turn*Math.PI/2;
+        a.at=[targetPart.at_m[0]-(port.point[0]-cx)*Math.cos(angle)-(port.point[2]-cz)*Math.sin(angle),
+          targetPart.at_m[2]+(port.point[0]-cx)*Math.sin(angle)-(port.point[2]-cz)*Math.cos(angle)];
+        a.lift=targetPart.at_m[1]+targetPart.size_m[1]/2-port.point[1];
+      }
+      askAssembly();});label.append(select);assemblyCard.append(label);
+  }
+  assemblyCard.append(Object.assign(document.createElement('output'),{textContent:a.busy?'Checking fit…':a.problems?.join('; ')||'Drag the gold assembly; drag empty space to change the view.'}));
+  assemblyCard.append(button('Place assembly',placeAssembly,{disabled:a.busy||!a.fits,className:'primary'}),button('Cancel assembly',cancelAssembly));
+}
+async function askAssembly(){
+  const a=assemblyDraft;if(!a)return;const version=++assemblyVersion;a.busy=true;a.fits=false;renderAssembly();
+  try{
+    const rows=assemblyRows(),r=await api({op:'assembly_ghost',level:level.id,...sandboxRequest(),placements:[...placements,...rows],start:placements.length});
+    if(assemblyDraft!==a||version!==assemblyVersion)return;
+    a.rows=rows;a.fits=r.fits;a.problems=r.problems;
+    for(const mesh of [...assemblyGroup.children]){assemblyGroup.remove(mesh);mesh.traverse(m=>m.geometry?.dispose());}
+    assemblyGroup.position.set(0,0,0);a.drawnAt=[...a.at];a.drawnLift=a.lift;
+    buildParts(assemblyGroup,r.parts,()=>ghostLook.fits,ghostEdge.fits);
+    for(const strand of r.strands||[]){const geometry=mechanicalCableGeometry({...strand,segments_m:strand.path_m.slice(1).map((p,i)=>[strand.path_m[i],p])});assemblyGroup.add(new THREE.Mesh(geometry,ghostLook.fits));}
+  }catch(e){if(assemblyDraft===a&&version===assemblyVersion)a.problems=e.data?.problems||[e.message];}
+  finally{if(assemblyDraft===a&&version===assemblyVersion){a.busy=false;renderAssembly();}}
+}
+async function placeAssembly(){
+  const a=assemblyDraft;if(!a||a.busy||!a.fits)return false;
+  remember();placements.push(...a.rows);cancelAssembly();keepBuild();renderTray();renderPlaced();scheduleRebuild(0);return true;
+}
+function positionAssembly(){
+  requestAnimationFrame(positionAssembly);if(!assemblyDraft||assemblyCard.hidden)return;
+  const rect=view.getBoundingClientRect(),box=new THREE.Box3().setFromObject(assemblyGroup),points=[];
+  if(box.isEmpty())return;
+  for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){
+    const p=new THREE.Vector3(x,y,z).project(camera);points.push([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2]);}
+  const piece={left:Math.min(...points.map(p=>p[0])),right:Math.max(...points.map(p=>p[0])),top:Math.min(...points.map(p=>p[1])),bottom:Math.max(...points.map(p=>p[1]))};
+  const obstacles=[...view.querySelectorAll('#viewer-corner,#scene-tray')].filter(e=>!e.hidden).map(e=>e.getBoundingClientRect());
+  const at=pieceToolbarPosition(rect,piece,assemblyCard.getBoundingClientRect(),obstacles,{edgeOnly:true});
+  assemblyCard.style.left=`${at.x-rect.left}px`;assemblyCard.style.top=`${at.y-rect.top}px`;
+}
+requestAnimationFrame(positionAssembly);
+let assemblyDrag=null;
+const assemblyGround=(x,y)=>{pointerRay(x,y);return raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),0),new THREE.Vector3());};
+renderer.domElement.addEventListener('pointerdown',e=>{
+  if(!assemblyDraft||e.button!==0||e.ctrlKey)return;pointerRay(e.clientX,e.clientY);
+  if(!raycaster.intersectObjects(assemblyGroup.children,true).some(h=>h.object.isMesh))return;
+  const point=assemblyGround(e.clientX,e.clientY);if(!point)return;
+  assemblyDrag={id:e.pointerId,point,at:[...assemblyDraft.at],lift:assemblyDraft.lift,y:e.clientY};
+  renderer.domElement.setPointerCapture(e.pointerId);e.preventDefault();e.stopImmediatePropagation();
+},true);
+renderer.domElement.addEventListener('pointermove',e=>{
+  if(!assemblyDraft||assemblyDrag?.id!==e.pointerId)return;const a=assemblyDraft,d=assemblyDrag;
+  if(a.mode==='lift')a.lift=Math.round((d.lift+(d.y-e.clientY)*.005)*100)/100;
+  else {const point=assemblyGround(e.clientX,e.clientY);if(point)a.at=[d.at[0]+point.x-d.point.x,d.at[1]+point.z-d.point.z].map(v=>gridSnapEnabled?Math.round(v/.02)*.02:v);}
+  if(a.drawnAt)assemblyGroup.position.set(a.at[0]-a.drawnAt[0],a.lift-(a.drawnLift||0),a.at[1]-a.drawnAt[1]);
+  a.fits=false;clearTimeout(assemblyTimer);assemblyTimer=setTimeout(askAssembly,140);e.preventDefault();e.stopImmediatePropagation();
+},true);
+for(const type of ['pointerup','pointercancel'])renderer.domElement.addEventListener(type,e=>{
+  if(assemblyDrag?.id!==e.pointerId)return;assemblyDrag=null;clearTimeout(assemblyTimer);askAssembly();e.preventDefault();e.stopImmediatePropagation();
+},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&assemblyDraft){cancelAssembly();e.preventDefault();e.stopImmediatePropagation();}},true);
+window.machineAssembly=()=>assemblyDraft&&({at:assemblyDraft.at,lift:assemblyDraft.lift,turn:assemblyDraft.turn,fits:assemblyDraft.fits,busy:assemblyDraft.busy,rows:assemblyDraft.rows});
 function blueprints() { return Array.isArray(me().blueprints) ? me().blueprints : []; }
+function saveAssembly(name,indices,source=null){
+  const row={id:crypto.randomUUID(),name,...makeBlueprint(placements,indices,blueprintRules(),machine.parts),at:new Date().toISOString(),source};
+  me().blueprints=[row,...blueprints()].slice(0,MAX_BLUEPRINTS);persist();renderBlueprints();return row;
+}
 function renderBlueprints() {
   const box = $('design-blueprints'); if (!box) return;
   box.hidden = !level?.free;
   if (!level?.free) return;
+  let selection=$('blueprint-selection');
+  if(!selection){selection=document.createElement('details');selection.id='blueprint-selection';$('save-blueprint').before(selection);}
+  const stamp=JSON.stringify(placements.map(p=>p.piece));
+  if(selection.dataset.stamp!==stamp){selection.dataset.stamp=stamp;selection.replaceChildren(Object.assign(document.createElement('summary'),{textContent:'Pieces in this blueprint'}));
+    placements.forEach((p,i)=>{const label=document.createElement('label'),check=Object.assign(document.createElement('input'),{type:'checkbox',checked:true,value:String(i)});label.append(check,document.createTextNode(`${pieceLabel(p.piece)} ${i+1}`));selection.append(label);});}
   $('save-blueprint').disabled = !placements.length;
   $('blueprint-list').replaceChildren(...blueprints().map(b => {
     const li = document.createElement('li');
@@ -6097,28 +6305,24 @@ function renderBlueprints() {
 $('save-blueprint').addEventListener('click', () => {
   if (!level?.free || ghostInTheWay() || !placements.length) return;
   const name = $('blueprint-name').value.trim().slice(0, 40) || (activeDesign?.name || 'Blueprint').slice(0, 40);
-  const row = {id: crypto.randomUUID(), name, placements: clone(placements), at: new Date().toISOString()};
-  me().blueprints = [row, ...blueprints()].slice(0, MAX_BLUEPRINTS);
-  persist(); $('blueprint-name').value = '';
+  const indices=[...$('blueprint-selection').querySelectorAll('input:checked')].map(n=>Number(n.value));
+  if(!indices.length){designStatus('Choose at least one piece.');return;}
+  const row=saveAssembly(name,indices);$('blueprint-name').value = '';
   renderBlueprints();
   designStatus(`Saved blueprint “${name}” (${row.placements.length} ${row.placements.length === 1 ? 'piece' : 'pieces'}).`);
 });
 // Dropping a blueprint adds its pieces around the middle of the view, after
 // the engine has checked the combined setup. Undo takes the group back out.
 async function addBlueprint(b) {
-  if (!level?.free || ghost) return;
-  const added = blueprintPlacements(b.placements, placements.length, [target.x, target.z]);
-  const next = [...placements, ...added];
-  $('verdict').textContent = `Checking blueprint “${b.name}”…`;
-  try {
-    await api({op: 'check', level: 'free', ...sandboxRequest(), placements: next});
-  } catch (e) {
-    $('verdict').textContent = `Could not add “${b.name}” here: ` + (e.data?.problems?.join('; ') || e.message) + ' Turn or move the view to another spot and try again.';
-    return;
-  }
-  remember(); placements = next; keepBuild();
-  renderTray(); renderPlaced(); scheduleRebuild(0);
-  $('verdict').textContent = `Added blueprint “${b.name}”: ${added.length} ${added.length === 1 ? 'piece' : 'pieces'}. Undo removes it.`;
+  if(!level||ghost)return;cancelAssembly();const source=level;
+  if(playing||world.t>0)await rebuildLevel(false);
+  if(level!==source)return;runArmed=false;tuneArmed=false;clearTimeout(previewTimer);previewAsk++;clearPreview();
+  const rules=blueprintRules(),prepared=clone(b);
+  if(prepared.schema!=='banjo.blueprint.v2')Object.assign(prepared,makeBlueprint(prepared.placements,prepared.placements.map((_,i)=>i),rules));
+  // Add default orientation only to pieces which actually support it.
+  for(const p of prepared.pieces)if(rules[p.placement.piece]?.yaw_deg&&p.placement.yaw_deg==null)p.placement.yaw_deg=0;
+  assemblyDraft={blueprint:prepared,at:[target.x,target.z],lift:0,turn:0,mode:'move',bindings:{},fits:false,busy:true};
+  await askAssembly();
 }
 window.machineBlueprints = () => clone(blueprints());
 
@@ -6220,7 +6424,7 @@ function renderPieceChips() {
   const box = $('piece-category'), tray = level.tray.filter(t => !t.attach && !t.legacy);
   const present = new Set(tray.map(t => (PIECE_INFO[t.piece] || ['structure'])[0]));
   const recent = recentPieces.filter(p => tray.some(t => t.piece === p));
-  const hasBlueprints = Boolean(level.free && blueprints().length);
+  const hasBlueprints = blueprints().some(blueprintAvailable);
   if (pieceFilter === 'recent' && !recent.length) pieceFilter = 'all';
   if (pieceFilter === 'blueprints' && !hasBlueprints) pieceFilter = 'all';
   if (!['all','recent','blueprints'].includes(pieceFilter) && !present.has(pieceFilter)) pieceFilter = 'all';
@@ -6250,7 +6454,7 @@ function openPiecePicker() {
   $('piece-picker-close').focus({preventScroll: true});
 }
 function renderPiecePicker() {
-  if (pieceFilter === 'blueprints' && level.free) { renderBlueprintCards(); return; }
+  if (pieceFilter === 'blueprints') { renderBlueprintCards(); return; }
   const query = $('piece-search').value.trim().toLowerCase(), category = pieceFilter;
   const words = query.split(/\s+/).filter(Boolean);
   let items = level.tray.filter(t => !t.attach && !t.legacy).filter(t => {
@@ -6293,7 +6497,7 @@ function renderPiecePicker() {
 }
 function renderBlueprintCards() {
   const query = $('piece-search').value.trim().toLowerCase();
-  const rows = blueprints().filter(b => `${b.name} ${b.placements.map(p => pieceLabel(p.piece)).join(' ')}`.toLowerCase().includes(query));
+  const rows = blueprints().filter(blueprintAvailable).filter(b => `${b.name} ${b.placements.map(p => pieceLabel(p.piece)).join(' ')}`.toLowerCase().includes(query));
   $('piece-results').textContent = `${rows.length} ${rows.length === 1 ? 'blueprint' : 'blueprints'}`;
   $('piece-empty').hidden = Boolean(rows.length);
   $('piece-grid').replaceChildren(...rows.map(b => {
@@ -6358,9 +6562,9 @@ function renderSceneTray() {
   if (!t) { bar.hidden = true; return; }
   const left = piecesLeft(t), li = document.createElement('li');
   if (t.attach) {
-    const kinds = t.knobs?.kind?.choices || [], name = kinds.length === 1 ? kinds[0] : 'join';
-    const how = t.tie_points?.length && name === 'string' ? 'tap the ring, drag the end' : 'tap two parts';
-    const card = button('', startTrayAttach, {id:'tray-add', ariaLabel:`Add a ${name}`, title:'Tap one part, then the other, to join them'});
+    const kinds = t.knobs?.kind?.choices || [], name = t.piece==='rope'?'rope':kinds.length === 1 ? kinds[0] : 'join';
+    const how = t.piece==='rope'?'ring → wheel → ring':t.tie_points?.length && name === 'string' ? 'tap the ring, drag the end' : 'tap two parts';
+    const card = button('', ()=>startTrayAttach(t.piece), {id:'tray-add', ariaLabel:`Add a ${name}`, title:'Tap one part, then the other, to join them'});
     card.dataset.piece = t.piece;
     const caption = Object.assign(document.createElement('span'), {className:'tray-caption'});
     caption.append(Object.assign(document.createElement('strong'), {className:'tray-name', textContent:name}),
@@ -6515,7 +6719,10 @@ function renderMachineControls() {
           await liveControlRequest;showDeviceControlStatus(playing?'Applying tap opening.':'Opening queued. Choose Run to continue.',input);if(wake)wake();}
         catch(error){liveControlPending=false;showDeviceControlStatus(error.message,input);}
       });
-      label.append(input,output);beside(label,source.name.replace(/ outlet$/,''),source.at_m);continue;
+      label.append(input,output);beside(label,source.name.replace(/ outlet$/,''),source.at_m);
+      const owner=/^your water_tank (\d+)/.exec(source.name);
+      if(owner)liveCards.lastChild.prepend(button('Adjust tap',()=>pickUp(Number(owner[1])-1),{className:'spring-adjust'}));
+      continue;
     }
     let opened = source.valve_open !== false;
     action(`Toggle ${source.name} valve`, () => ({op: 'water_valve', name: source.name, open: opened = !opened}),source.name,source.at_m);
@@ -6614,12 +6821,13 @@ window.machineBodyHitPoints=name=>{
 // moves with them, and a join to the piece taken away goes with it.
 function removePiece(i) {
   const gone = `your ${placements[i].piece} ${i + 1}`;
-  const belongs = n => typeof n === 'string' && (n === gone || n.startsWith(gone + ' ') || n.startsWith(gone + ':'));
-  const refKeys = p => Object.entries(trayItem(p.piece).knobs).filter(([, r]) => r.part || r.hinge || r.terminal || r.power_port).map(([k]) => k);
+  const belongs = n => Array.isArray(n)?n.some(belongs):typeof n === 'string' && (n === gone || n.startsWith(gone + ' ') || n.startsWith(gone + ':'));
+  const refKeys = p => Object.entries(trayItem(p.piece).knobs).filter(([, r]) => r.part || r.hinge || r.terminal || r.power_port || r.part_list).map(([k]) => k);
   const remaining = placements.map((p, oldIndex) => ({p, oldIndex})).filter(({p, oldIndex}) => oldIndex !== i &&
-    (!['link', 'wire', 'power_cable'].includes(p.piece) || !refKeys(p).some(k => belongs(p[k]))));
+    (!['link', 'wire', 'power_cable','rope'].includes(p.piece) || !refKeys(p).some(k => belongs(p[k]))));
   const names = new Map(remaining.map(({p, oldIndex}, newIndex) => [`your ${p.piece} ${oldIndex + 1}`, `your ${p.piece} ${newIndex + 1}`]));
   const renamed = name => {
+    if(Array.isArray(name))return name.map(renamed);
     const m = /^(your \S+ \d+)(.*)$/.exec(name);
     return m && names.has(m[1]) ? names.get(m[1]) + m[2] : name;
   };
@@ -6651,6 +6859,7 @@ function showUndo() {
 }
 function travel(from, to) {
   if (!from.length) return;
+  cancelAssembly();
   to.push(setupSnapshot());
   const back = JSON.parse(from.pop());
   placements = Array.isArray(back) ? back : back.placements;
@@ -6659,7 +6868,7 @@ function travel(from, to) {
     activeDesign.draft.base = back.base;
     if (back.goal) activeDesign.draft.goal = back.goal; else delete activeDesign.draft.goal;
   }
-  endGhost(); cancelAttach(); renderTray(); renderPlaced(); showUndo(); scheduleRebuild(0);
+  endGhost(); setAttach(false); renderTray(); renderPlaced(); showUndo(); scheduleRebuild(0);
 }
 function setupSnapshot() { return JSON.stringify(level?.free ? {placements, base: activeDesign?.draft.base || null, ...(activeDesign?.draft.goal ? {goal: activeDesign.draft.goal} : {})} : placements); }
 async function removeSelectedObject(){
@@ -6851,6 +7060,7 @@ const currentSetupKey = () => setupKeyFor(placements);
 window.machinePreparationState=()=>({ready:Boolean(preparedRun&&preparedRun.key===setupKeyFor(ghost?ghostPlacements():placements)),pending:Boolean(preparingRun)});
 async function rebuildLevel(start, {takeOver=false,prepared=null}={}) {
   runArmed = Boolean(start);
+  if(start){clearTimeout(previewTimer);previewAsk++;clearPreview();resetLaserPreview();}
   const runInspection = start ? inspectedCircuit : null;
   // A rebuild still waiting to start would come after this one and undo it
   // (a Run pressed just after setting a piece down stayed unstarted).
@@ -6878,6 +7088,7 @@ async function rebuildLevel(start, {takeOver=false,prepared=null}={}) {
     // Its goal is about a piece not placed yet: shown, not run.
     if (opened.needs) $('verdict').textContent = opened.needs;
     else if (start && level.release_to_start) clockMessage('Ready · press Release spring beside the spring');
+    else if(start && (machine?.electrical?.devices||[]).some(d=>d.handle)) clockMessage('Ready · drag a highlighted handle to start, or choose Run again');
     else if (start) await setPlaying(true);
     if (!start) schedulePreview(200);
   } catch (e) {
@@ -6930,6 +7141,7 @@ let advanceTimer = null;
 // Back to the level's beginning, not running: with the same pieces (to move
 // or change them) or with none.
 function startOver(keep) {
+  cancelAssembly();
   runRequest++;
   tuneArmed = false; runArmed = false; editorMode = 'move';
   endGhost();
@@ -6981,6 +7193,7 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     actions.append(button('Play again', () => { closeDone(); startOver(true); }, {className: 'primary', ariaLabel: 'Play this level again'}),
                    allLevels);
   } else if (r.earned.goal) {
+    if(placements.length&&!blueprints().some(b=>b.source===level.id))saveAssembly(`Starter · ${levelTitle(level)}`,placements.map((_,i)=>i),level.id);
     // The win, and what it took: less energy is better.
     // A first win with a tool is an achievement; a win again is the level.
     const unlocked = (kept.unlocked || []).map(toolName);
@@ -7025,6 +7238,9 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     const actions = add('div', {className: 'actions'});
     if (next) actions.append(button('Next level ▶', () => { closeDone(); chooseLevel(next.id).catch(() => {}); },
                                     {className: 'primary', ariaLabel: 'Next level'}));
+    if(placements.length)actions.append(button('Save assembly',()=>{
+      saveAssembly(`My ${levelTitle(level)}`,placements.map((_,i)=>i));$('verdict').textContent='Assembly saved in Blueprints.';
+    },{ariaLabel:'Save this machine as an assembly'}));
     actions.append(button('Play again', () => { closeDone(); startOver(true); }, {ariaLabel: 'Play this level again'}),
                    allLevels);
   } else {
@@ -7118,6 +7334,7 @@ renderer.domElement.addEventListener('pointerdown', () => {
 });
 
 async function chooseLevel(id, design = null) {
+  cancelAssembly();
   closeLevelIntroduction();
   if($('run-help').open)$('run-help').close();
   closeCoach();
@@ -7167,7 +7384,7 @@ async function chooseLevel(id, design = null) {
   endGhost(); tuneArmed=false;runArmed=false;runRequest++;editorMode='move';shownMode='';gridSnapEnabled=true;objectSnapEnabled=true;lastEdited=null;closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
   for(const id of ['grid-snap','object-snap'])$(id)?.setAttribute('aria-pressed','true');
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
-  undone = []; redone = []; showUndo(); cancelAttach();
+  undone = []; redone = []; showUndo(); setAttach(false);
   $('attach-tool').hidden = !level.free && !level.tray.some(t => t.attach);
   history_.replaceState(null, '', level.free ? appPath('/machine') + '?design=' + encodeURIComponent(activeDesign.id) : appPath('/play') + '?level=' + level.id);
   $('title').textContent = levelTitle(level);
@@ -7720,6 +7937,7 @@ function sceneIntoView() {
 
 // Checkpoints contain placed pieces, rather than an uncommitted adjustment.
 function ghostInTheWay() {
+  if(assemblyDraft){$('verdict').textContent='Place or cancel the assembly first.';return true;}
   if (!ghost) return false;
   const said = `Set your ${ghost.p.piece} down first (or cancel it): a ghost is not part of the machine yet.`;
   $('verdict').textContent = said;
@@ -7738,7 +7956,7 @@ async function preparedForRun(key) {
     !(electrical.devices||[]).some(d=>d.handle)&&!(machine?.circuits||[]).some(c=>c.leads?.length)&&
     !(machine?.joints||[]).some(j=>j.name.endsWith(' restraint'));
   if(!automatic)return null;
-  if(preparingRun?.key===key){try{await preparingRun.promise;}catch{/* Fall back to the live engine. */}}
+  if(preparingRun?.key===key){preparation.hidden=false;try{await preparingRun.promise;}catch{/* Fall back to the live engine. */}}
   return preparedRun?.key===key?preparedRun.token:null;
 }
 async function runLevel() {
@@ -7747,6 +7965,7 @@ async function runLevel() {
   startingRun = true;
   const request=++runRequest;
   try {
+    if(assemblyDraft&&!await placeAssembly())return;
     if (playing) { await setPlaying(false); return; }
     if (ghost) {
       const g = ghost, sourceLevel = level;
@@ -7770,7 +7989,9 @@ async function runLevel() {
       return;
     }
     if (session && world.t > 0 && !scored) { await setPlaying(true); return; }
-    if (session && cableSetupActive && builtCanRun && world.t === 0 && !scored && builtSetupKey === currentSetupKey() && !level.release_to_start) {
+    const manualHandle=(machine?.electrical?.devices||[]).some(d=>d.handle);
+    if(session&&runArmed&&world.t===0&&builtSetupKey===currentSetupKey()&&manualHandle){await setPlaying(true);return;}
+    if (session && cableSetupActive && builtCanRun && world.t === 0 && !scored && builtSetupKey === currentSetupKey() && !level.release_to_start&&!manualHandle) {
       clearTimeout(rebuildTimer);
       sceneIntoView(); await setPlaying(true); return;
     }
@@ -7780,6 +8001,7 @@ async function runLevel() {
   } catch (e) { failed(e); }
   finally {
     startingRun = false;
+    preparation.hidden=true;
   }
 }
 $('solve').addEventListener('click', () => askLevel('build'));

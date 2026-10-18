@@ -503,7 +503,7 @@ class Tray(unittest.TestCase):
         # Lessons added after the blind probe are not in its receipt; each
         # must say so in its own estimate basis rather than borrow the probe's.
         unprobed={l['id'] for l in LEVELS if 'not yet probed' in l['onboarding']['estimate_basis']}
-        self.assertEqual(unprobed,{'easy-roll','easy-block','easy-rope'})
+        self.assertEqual(unprobed,{'easy-roll','easy-block','easy-rope','easy-thread'})
         self.assertEqual({r['id'] for r in receipt['levels']},{l['id'] for l in LEVELS}-unprobed)
         for level in LEVELS:
             exported=audit.packet(level)
@@ -685,7 +685,7 @@ class Tray(unittest.TestCase):
         stand = next(p for p in mg.ghost(laser, laser['solution'], 0)['parts'] if p['name'] == 'your mirror 1 stand')
         self.assertAlmostEqual(stand['at_m'][1] - 0.5 * stand['size_m'][1], 0.0, places=6)
         # Level 8's rope turns over pulley blocks hung from the beam, in line with it.
-        tackle = mg.level_by_id('tackle')
+        tackle = mg._with_free_knobs(next(l for l in json.loads(mg.LEVELS_PATH.read_text())['levels'] if l['id']=='tackle'))
         parts = {p['name']: p for p in mg._assemble(tackle, tackle['solution'])[3]['parts']}
         for name in ('your tackle 1 pulley 1', 'your tackle 1 pulley 2'):
             block, beam = parts[name], parts['gantry beam']
@@ -721,7 +721,7 @@ class Tray(unittest.TestCase):
         self.assertAlmostEqual(plank['j'], plank['kg'] * 10.4e6, delta=1.0)
         # Aluminium costs six times iron's energy a kilogram: on level 8 the
         # heavier iron counterweight takes less energy to make.
-        tackle = mg.level_by_id('tackle')
+        tackle = mg._with_free_knobs(next(l for l in json.loads(mg.LEVELS_PATH.read_text())['levels'] if l['id']=='tackle'))
         def made(kg, ratio, h):
             c = mw.compile_spec(mg.compose(tackle, [dict(tackle['solution'][0], counterweight_kg=kg, ratio=ratio,
                                                          drop_from_m=h)])[0])

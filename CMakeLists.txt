@@ -911,6 +911,10 @@ if(BANJO_BUILD_TESTS)
             target_link_libraries(banjo_mechanical_cable_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_mechanical_cable_tests)
             add_test(NAME banjo_mechanical_cable_tests COMMAND banjo_mechanical_cable_tests)
+            add_executable(banjo_physical_rope_tests tests/physical_rope_tests.cpp)
+            target_link_libraries(banjo_physical_rope_tests PRIVATE banjo_fastlattice_scene)
+            banjo_enable_warnings(banjo_physical_rope_tests)
+            add_test(NAME banjo_physical_rope_tests COMMAND banjo_physical_rope_tests)
             target_link_libraries(banjo_circuit_tests PRIVATE banjo_fastlattice_scene)
             banjo_enable_warnings(banjo_circuit_tests)
             add_test(NAME banjo_circuit_tests COMMAND banjo_circuit_tests)
@@ -933,6 +937,9 @@ if(BANJO_BUILD_TESTS)
                 add_test(NAME banjo_machine_replay_tests COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_replay_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                 set_tests_properties(banjo_machine_replay_tests PROPERTIES TIMEOUT 60 LABELS "machine;http")
+                add_test(NAME banjo_physical_rope_game_tests COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/physical_rope_game_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
+                set_tests_properties(banjo_physical_rope_game_tests PROPERTIES TIMEOUT 240 LABELS "native;machine")
                 add_test(NAME banjo_machine_world_tests COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_world_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                 set_tests_properties(banjo_machine_world_tests PROPERTIES TIMEOUT 300

@@ -18,7 +18,7 @@ CACHE_BYTES = 64 * 1024 * 1024
 def eligible(level, compiled):
     graph = compiled.get('electrical') or {}
     return not (level.get('free') or level.get('release_to_start') or compiled.get('spouts') or
-                compiled.get('ropes') or graph.get('wires') or graph.get('power_cables') or
+                compiled.get('ropes') or compiled.get('strands') or graph.get('wires') or graph.get('power_cables') or
                 any(c.get('leads') for c in compiled.get('circuits', [])) or
                 any(d.get('handle') for d in graph.get('devices', [])) or
                 any(j['name'].endswith(' restraint') for j in compiled.get('joints', [])))

@@ -349,6 +349,7 @@ class Puzzles(unittest.TestCase):
             print('MISSING_PIECE_IMAGES',json.dumps(self.js("[...document.querySelectorAll('#piece-grid .piece-card')].filter(b=>!b.querySelector('img').naturalWidth).map(b=>b.dataset.piece)")),flush=True)
         if 'machinePlacements' in expression or 'machineContactState' in expression or expression==SETTLED:
             print('MACHINE_WAIT_STATE',json.dumps(self.js("({placements:machinePlacements(),ghost:machineGhostState(),design:machineDesign(),status:document.getElementById('design-status').textContent,wiring:machineWiringState().busy,contact:machineContactState().liveDevices})")),flush=True)
+        if 'machineSwitchState' in expression:print('SWITCH_WAIT_STATE',json.dumps(self.js('({switch:machineSwitchState(),mode:machinePlayMode(),preview:machinePreviewState()})')),flush=True)
         if http_errors:
             failures=[]
             for event in self.page.events:
@@ -3651,10 +3652,11 @@ class Puzzles(unittest.TestCase):
 
     def switch_handle_target(self,name='control'):
         if self.js("machinePlayMode().mode!=='run'"):
-            self.click_visible('Run');self.wait("document.getElementById('start').textContent==='Pause'",30)
+            self.click_visible('Run');self.wait("machinePlayMode().mode==='run'&&!machinePlayMode().starting",30)
         label=f'Drag {name} handle'
         self.wait(f"[...document.querySelectorAll('button')].some(b=>b.getAttribute('aria-label')==={json.dumps(label)}&&!b.disabled&&b.offsetParent!==null)",15)
         self.wait('window.machineCamera().settled',30)
+        self.paint()
         target=self.js(f"(() => {{const b=[...document.querySelectorAll('button')].find(b=>b.getAttribute('aria-label')==={json.dumps(label)}),r=b.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return {{x,y,w:r.width,h:r.height,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,uncovered:b.contains(document.elementFromPoint(x,y))}};}})()")
         self.assertTrue(target['visible'] and target['uncovered'],target)
         self.assertGreaterEqual(target['w'],44);self.assertGreaterEqual(target['h'],44)
@@ -3677,8 +3679,10 @@ class Puzzles(unittest.TestCase):
                 saved = self.js('window.machineDesign().versions.slice(-1)[0].draft')
                 self.assertFalse(self.js("[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Toggle control')"))
                 before=self.js("window.machineSwitchState().handles.find(h=>h.name==='control').at_m")
+                self.assertTrue(self.js("document.querySelector('[aria-label=\"Drag control handle\"]').disabled"),'Build cannot operate a switch')
+                x,y=self.switch_handle_target()
                 self.click_visible('Drag control handle')
-                self.assertTrue(self.js(READY),'a simple tap does not start the machine')
+                self.assertEqual(self.js('machineCableSetupState().t'),0,'a simple tap does not start the machine')
                 self.assertIsNone(self.js('window.machineSwitchState().drag'))
                 x,y=self.switch_handle_target()
                 self.drag([x,y],[x,y-85],touch=width!=1280,steps=12)
@@ -3884,15 +3888,18 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('window.machinePlacements().slice(1).map(p=>[p.a_terminal,p.b_terminal])'),
                     [['trigger:out','your cannon 1:plus'],['your cannon 1:minus','supply:minus']])
                 self.key('Escape')
-                self.wait("window.machinePreviewState()?.legend.includes('to start') && document.querySelector('[aria-label=\"Drag trigger handle\"]')?.checkVisibility()",20)
+                self.wait("window.machinePreviewState()?.legend.includes('to start')",20)
                 self.click_visible('Run')
+                self.wait("machinePlayMode().mode==='run'&&!machinePlayMode().starting",30)
+                self.click_visible('Run') # Deliberately run without operating the physical trigger.
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Try again',self.js("document.getElementById('level-done').textContent"))
                 self.assertFalse(self.js("window.machineSwitchState().handles.find(h=>h.name==='trigger').closed"))
                 self.press('Keep my pieces');self.wait(READY,60)
                 self.assertEqual(self.js("document.querySelector('[aria-label=\"Drag trigger handle\"]').textContent"),'Drag to fire ↓')
+                self.switch_handle_target('trigger')
                 self.click_visible('Drag trigger handle')
-                self.assertTrue(self.js(READY),'a tap does not fire')
+                self.assertEqual(self.js('machineCableSetupState().t'),0,'a tap does not fire')
                 x,y=self.switch_handle_target('trigger')
                 self.drag([x,y],[x,y+85],touch=width<1000,steps=12)
                 self.wait("!document.getElementById('level-done').hidden",30)
@@ -4716,6 +4723,20 @@ class Puzzles(unittest.TestCase):
                     self.assertEqual([p['piece'] for p in self.js('window.machineDesign().draft.placements')],['plank','marble'])
                     self.press('Back to sandbox')
 
+    def test_thread_pulley_uses_scene_rings_and_native_rope_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-thread',width,height,phone=width!=1280)
+                self.click_visible('Add a rope')
+                self.assertEqual(len(self.js('window.machineTieRings()')),2)
+                for label in ('Attach rope to crate','Route rope around guide wheel','Attach rope to counterweight'):
+                    self.click_visible(label)
+                self.wait(f"window.machinePlacements().length===1&&{READY}",30)
+                self.assertEqual(self.js('window.machinePlacements()[0].via'),['guide wheel:over'])
+                self.wait("window.machineContactCircuitState().wires.some(c=>c.mechanical?.kind==='rope')",10)
+                self.press('Run');self.wait("document.getElementById('verdict').textContent.includes('★')",30)
+                self.assertNotIn('Try again',self.js("document.getElementById('level-done').textContent"))
+
     def test_blueprint_saves_your_pieces_and_drops_them_into_another_design(self):
         for width,height in ((1280,860),(390,844)):
             with self.subTest(viewport=(width,height)):
@@ -4742,6 +4763,9 @@ class Puzzles(unittest.TestCase):
                 self.press('Add a piece')
                 self.press('Show Blueprints')
                 self.press('Add blueprint Test ramp')
+                self.wait('window.machineAssembly()?.fits&&!window.machineAssembly().busy',30)
+                self.assertEqual(self.js('window.machinePlacements().length'),0,'the assembly is a proposed group until placed')
+                self.click_visible('Place assembly')
                 self.wait(f"window.machinePlacements().length==={count} && {READY}",60)
                 self.assertEqual([p['piece'] for p in self.js('window.machinePlacements()')],[p['piece'] for p in self.js("window.machineBlueprints().find(b=>b.name==='Test ramp').placements")])
                 self.press('Undo'); self.wait(f"window.machinePlacements().length===0 && {READY}",30)
@@ -6176,7 +6200,7 @@ class Puzzles(unittest.TestCase):
                     self.assertEqual(self.js("document.querySelectorAll('#piece-editor [data-gear-key]').length"),3)
                     self.assertFalse(self.js("document.querySelector('#piece-editor select')!==null"))
                     self.set_precision_controls(True)
-                else:self.assertTrue(self.js("document.getElementById('piece-editor').contains(document.getElementById('adjustment-choice'))"))
+                else:self.assertTrue(self.js("Boolean(document.querySelector('#piece-editor .direct-properties'))"),'ordinary selection uses labelled properties; exact selection stays in Precision')
                 variants=[None]
                 for key in ('mount','mode','outlet_model','side','plane','placement'):
                     variants.extend((key,value) for value in item['knobs'].get(key,{}).get('choices',[]))

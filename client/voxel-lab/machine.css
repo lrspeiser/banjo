@@ -778,11 +778,20 @@ body.playing-level #view>.level-done{top:50%;transform:translate(-50%,-50%);z-in
 #piece-editor .property-name{font-size:11px;line-height:13px}
 #piece-editor .property-value{font-size:13px;line-height:16px;font-weight:600}
 #play-mode button:disabled{opacity:.45;cursor:default}
-#run-preparation{position:static;display:flex;align-items:center;gap:8px;padding:4px 8px;margin:4px 0;background:#142836ed;border:1px solid #63899d;border-radius:6px;font-size:12px;box-sizing:border-box}
+#run-preparation{position:fixed;z-index:20;right:8px;bottom:8px;width:min(420px,calc(100% - 16px));display:flex;align-items:center;gap:8px;padding:4px 8px;margin:0;background:#142836ed;border:1px solid #63899d;border-radius:6px;font-size:12px;box-sizing:border-box}
 #run-preparation[hidden]{display:none}
 #run-preparation progress{flex:1;min-width:30px;width:70px;accent-color:#64d6a1}
 #run-preparation button{min-width:44px;min-height:44px}
-body:has(#phone-toolbar.one-row) #run-preparation{top:6px}
+#assembly-editor{position:absolute;z-index:7;width:230px;max-height:calc(100% - 56px);overflow:auto;padding:8px;background:#142836ed;border:1px solid #ffd77a;border-radius:8px;display:flex;flex-direction:column;gap:4px;box-sizing:border-box}
+#assembly-editor[hidden]{display:none}
+#assembly-editor button,#assembly-editor select{min-height:44px;min-width:44px}
+#assembly-editor output{font-size:12px;line-height:1.3}
+#assembly-editor label{display:flex;flex-direction:column;font-size:13px}
+#assembly-editor .actions{display:flex;gap:4px}
+#blueprint-selection label{display:flex;align-items:center;gap:8px;min-height:44px}
+#blueprint-selection input{min-width:24px;min-height:24px;width:auto}
+#control-panel>.attach-card{position:static;transform:none;width:100%;max-height:none;box-sizing:border-box;margin:0 0 8px;padding:8px;font-size:16px}
+.rope-socket{position:absolute;z-index:7;min-height:44px;min-width:44px;width:120px;font-size:12px;line-height:15px;padding:4px;background:#293c38e8;border:1px solid #ffd77a;border-radius:6px;color:#ffe6a8;touch-action:manipulation}
 #piece-editor .adjustment-feedback{font-size:12px;line-height:1.25;min-height:0;white-space:normal;overflow-wrap:anywhere}
 #piece-editor .gear-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
 #piece-editor .gear-controls button{min-width:44px;min-height:44px;padding:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}

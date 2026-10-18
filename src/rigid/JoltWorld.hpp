@@ -543,6 +543,7 @@ public:
         // Inextensible articulated rods: native fixed translation rows,
         // with the same passive rotational springs. No axial spring energy.
         bool inextensible_translation{};
+        unsigned velocity_iterations{128}, position_iterations{16};
     };
     struct FaceSpringObservation {
         Vec3 displacement_cs_m{},rotation_cs_rad{};

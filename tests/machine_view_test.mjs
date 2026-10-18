@@ -3,6 +3,7 @@
 // temperature colours start above 320 K, and the camera looks at the first
 // station the engine has not yet measured as done.
 import assert from 'node:assert/strict';
+import {makeBlueprint,blueprintPlacements} from '../client/voxel-lab/machine-view.mjs';
 import {mergeFrame, family, heatTint, focusPoint, stationPoint, materialColor, describeTime, beamSegments, lensOutline, wireRoute, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints} from '../client/voxel-lab/machine-view.mjs';
 
 assert.equal(draggedKnobValue({min:0,max:2,step:.1},1,12),1.1);
@@ -183,3 +184,23 @@ for(const [a,b] of [[[0,0,0],[0,.2,0]],[[1,2,3],[-1,2,3]],[[0,0,0],[.2,.2,.2]]])
   assert.ok(p.every(row=>row.every(Number.isFinite)));
 }
 assert.deepEqual(springCoilPoints([0,0,0],[0,0,0]),[]);
+
+const assemblySource=[{piece:'battery',x_m:1,z_m:0,yaw_deg:0},
+  {piece:'bulb',x_m:2,z_m:0,yaw_deg:0},
+  {piece:'wire',a:'your battery 1:plus',b:'your bulb 2:plus',at_m:[1,.2,0],at_b_m:[2,.2,0]},
+  {piece:'wire',a:'your battery 1:minus',b:'prepared lamp:minus'}];
+const assemblyRules={wire:{a:{terminal:true},b:{terminal:true}}};
+const assembly=makeBlueprint(assemblySource,[0,1,2,3],assemblyRules);
+assert.equal(assembly.schema,'banjo.blueprint.v2');
+assert.equal(assembly.pieces[2].placement.a,'@p0:plus');
+assert.equal(assembly.ports.length,1);
+assert.throws(()=>blueprintPlacements(assembly,7,[0,0]),/Connect/);
+const grouped=blueprintPlacements(assembly,7,[0,0],1,{port0:'destination lamp:minus'});
+assert.equal(grouped[2].a,'your battery 8:plus');assert.equal(grouped[2].b,'your bulb 9:plus');
+assert.equal(grouped[3].b,'destination lamp:minus');assert.equal(grouped[0].yaw_deg,90);
+assert.deepEqual(grouped[2].at_m,[0,.2,.5]);assert.deepEqual(grouped[2].at_b_m,[0,.2,-.5]);
+assert.equal(assemblySource[0].yaw_deg,0,'editing a copy never changes the saved assembly');
+const legacy=blueprintPlacements(assemblySource.slice(0,3),4,[3,4]);
+assert.equal(legacy[2].a,'your battery 5:plus');assert.deepEqual(legacy[2].at_m,[2.5,.2,4]);
+const subset=makeBlueprint(assemblySource,[1,2],assemblyRules);
+assert.equal(subset.pieces[1].placement.b,'@p0:plus');assert.equal(subset.ports.length,1,'a cut selection exposes its missing source');

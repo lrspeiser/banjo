@@ -1336,6 +1336,61 @@ KIT_HELP = {
 
 # ---- the declaration ---------------------------------------------------------
 
+def _surface_distance(part, point):
+    axes=_axes(part)
+    delta=[point[i]-part['at_m'][i] for i in range(3)]
+    local=[sum(axes[j][i]*delta[i] for i in range(3)) for j in range(3)]
+    if part['shape']=='compound':
+        return min(_surface_distance(s,local) for s in part['parts'])
+    half=_half(part)
+    if part['shape']=='sphere':return math.hypot(*local)-half[0]
+    if part['shape']=='cylinder':
+        radial=math.hypot(local[0],local[2])-half[0]; axial=abs(local[1])-half[1]
+        return math.hypot(max(0,radial),max(0,axial))+min(0,max(radial,axial))
+    outside=[abs(local[i])-half[i] for i in range(3)]
+    return math.hypot(*(max(0,v) for v in outside))+min(0,max(outside))
+
+
+def compile_strands(spec,parts,problems):
+    """Validate manufactured routes; native rods own their later motion."""
+    rows=spec.get('strands',[]);out=[];by_name={p['name']:p for p in parts}
+    if not isinstance(rows,list) or len(rows)>16:
+        problems.append('Use at most sixteen physical ropes');return out
+    for row in rows:
+        try:
+            if not isinstance(row,dict):raise ValueError('a rope must be an object')
+            name=row.get('name','');a=row.get('a_body');b=row.get('b_body');path=row.get('path_m')
+            if not isinstance(name,str) or not 1<=len(name)<=120 or any(s['name']==name for s in out):
+                raise ValueError('ropes need unique names')
+            if a not in by_name or b not in by_name or a==b:raise ValueError('rope ends need different existing bodies')
+            if not isinstance(path,list) or not 2<=len(path)<=64 or any(not isinstance(p,list) or len(p)!=3 or
+                any(not isinstance(v,(float,int)) or isinstance(v,bool) or not math.isfinite(v) or abs(v)>20 for v in p) for p in path):
+                raise ValueError('rope routes need 2–64 finite xyz points')
+            # This first fibre model has one declared material and resolution.
+            # Keeping these fixed prevents unqualified stiffness/mass ratios.
+            expected=dict(kind='rope',circuit=0,radius_m=.006,density_kg_m3=700,segment_m=.04,
+                retention_n=1000,bend_rigidity_n_m2=1e-7,loss_time_s=.002,friction=.5)
+            if any(row.get(k,v)!=v for k,v in expected.items()):raise ValueError('unsupported rope material or resolution')
+            spans=[math.dist(p,q) for p,q in zip(path,path[1:])]
+            if any(s<1e-6 for s in spans) or sum(math.ceil(s/.04) for s in spans)>256:
+                raise ValueError('rope route exceeds 256 rods or has duplicate points')
+            if any(abs(_surface_distance(by_name[body],p))>.016 for body,p in ((a,path[0]),(b,path[-1]))):
+                raise ValueError('attach rope ends to the surface of their bodies')
+            for i,(p,q) in enumerate(zip(path,path[1:])):
+                samples=max(1,math.ceil(spans[i]/.01))
+                for step in range(samples+1):
+                    point=[p[j]+(q[j]-p[j])*step/samples for j in range(3)]
+                    for body in parts:
+                        # Only the terminal connector can contain its own end.
+                        if body['name']==a and math.dist(point,path[0])<.018:continue
+                        if body['name']==b and math.dist(point,path[-1])<.018:continue
+                        if _surface_distance(body,point)<.003:
+                            raise ValueError(f'rope route goes through {body["name"]}; route around it')
+            out.append(dict(expected,name=name,a_body=a,b_body=b,path_m=copy.deepcopy(path)))
+        except (ValueError,TypeError,KeyError) as exc:problems.append(f'physical rope: {exc}')
+    return out
+
+
 def compile_spec(spec, lenient=False):
     """Expand kits and check everything the engine will be asked to build.
     Returns the compiled machine; raises MachineRefused with every problem.
@@ -2004,6 +2059,7 @@ def compile_spec(spec, lenient=False):
                 c['leads']=electrics.mechanical_cables.legacy_leads(c,checked,joint_rows,batteries,occupied)
                 occupied.extend(w['mechanical'] for w in c['leads'])
             except (ValueError,KeyError,TypeError,StopIteration) as exc:problems.append(f'circuit {c["name"]}: cable construction: {exc}')
+    strands=compile_strands(spec,checked,problems)
     if problems and not lenient:
         raise MachineRefused(problems)
     return ({'problems': problems} if lenient else {}) | {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
@@ -2011,7 +2067,8 @@ def compile_spec(spec, lenient=False):
             'torches': torches, 'spouts': checked_spouts, 'stations': stations, 'cells': round(cells), 'notes': notes,
             'plasticity': bool(spec.get('plasticity', False)), 'sun': sun, 'solar_panels': solar_panels,
             'thermo': {key: rows for key, rows in thermo.items() if rows}, 'blades': checked_blades, 'ropes': ropes,
-            'light': light,'water_regions':checked_water_regions,'airflows':airflows}
+            'light': light,'water_regions':checked_water_regions,'airflows':airflows,
+            'strands':strands,'pulleys':copy.deepcopy(spec.get('pulleys',[]))}
 
 
 def scene_of(compiled):
@@ -2356,6 +2413,7 @@ def build_engine(exe, compiled, workdir, preview_job=None):
             circuit_ids[c['name']] = engine.op(op='circuit', network=network)['circuit']
             for w in leads:engine.op(op='mechanical_cable',cable=dict(w['mechanical'],circuit=circuit_ids[c['name']]))
         circuit_ids.update(electrics.build_electrical(engine, compiled, store_ids, joint_ids))
+        for strand in compiled.get('strands',[]):engine.op(op='mechanical_cable',cable=strand)
         for t in compiled['torches']:
             engine.op(op='heat', target=t['target'], power_w=t['power_w'], seconds=t['seconds'])
         # Start working out a collision that is coming before it arrives (up
@@ -2421,7 +2479,7 @@ class MachineSession:
         self.closed = False
         self.playing = False
         self.cable_setup_s = 0.0
-        self.has_mechanical_cables = bool(compiled.get('electrical', {}).get('wires') or
+        self.has_mechanical_cables = bool(compiled.get('strands') or compiled.get('electrical', {}).get('wires') or
             compiled.get('electrical', {}).get('power_cables') or any(c.get('leads') for c in compiled['circuits']))
         # The bodies cords are plugged into, and where each was when the cords
         # were last measured (see _plugged_moved).
@@ -2430,6 +2488,7 @@ class MachineSession:
                 *(lead for c in compiled['circuits'] for lead in c.get('leads') or [])]
         self._plugged = {m[k] for m in (row.get('mechanical') for row in rows) if isinstance(m, dict)
                          for k in ('a_body', 'b_body') if m.get(k)}
+        self._plugged.update(s[k] for s in compiled.get('strands',[]) for k in ('a_body','b_body'))
         self._cable_poses = {}
         self.speed = 1.0
         self.t = 0.0
@@ -2886,6 +2945,7 @@ class MachineSession:
         frame = {'t': round(self.t, 4), 'light': copy.deepcopy((r.get('light') or {}).get('paths', [])[:32]),
                  'wires': [], 'devices': copy.deepcopy((r.get('electrical') or {}).get('devices', [])),
                  'power_devices':copy.deepcopy(r.get('power_devices',[]))}
+        frame['ropes']=[copy.deepcopy(c) for c in r.get('mechanical_cables',[]) if c.get('kind')=='rope']
         # Observe existing native mechanisms for a river rehearsal. Shape
         # records travel once; frames carry only their measured poses/joints.
         # This never drives a body or changes the live setup.
@@ -2910,6 +2970,7 @@ class MachineSession:
         parts={p['name']:p for p in self.compiled['parts']}
         rotating={j['b'] for j in self.compiled['joints'] if j['kind']=='hinge'
                   and parts[j['b']]['shape']=='compound' and not parts[j['b']]['fixed']}
+        if self.compiled.get('strands'):rotating.update(p['name'] for p in self.compiled['parts'] if not p['fixed'])
         if rotating:
             names=set(sorted(set(getattr(self,'flow_mechanism_names',set()))|rotating)[:32])
             frame['mechanisms']=[dict(name=name,position_m=self.bodies[name]['position_m'],

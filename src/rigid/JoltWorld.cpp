@@ -3089,6 +3089,7 @@ unsigned JoltWorld::addFaceSpring(const FaceSpringDescription &d) {
     impl_->requireConfigurationMutable();
     const auto valid=[](Vec3 v,bool positive){return std::isfinite(v.x+v.y+v.z)&&std::min({v.x,v.y,v.z})>=(positive?1e-12:0);};
     if(d.a==d.b||!contains(d.a)||!contains(d.b)||impl_->joints_.size()>=4096||
+       d.velocity_iterations<1||d.velocity_iterations>255||d.position_iterations<1||d.position_iterations>255||
        (d.inextensible_translation&&(d.log_rotation_gradient||d.centered_integration))||
        !valid(d.translation_stiffness_n_m,true)||!valid(d.rotation_stiffness_n_m_rad,true)||
        !valid(d.translation_damping_n_s_m,false)||!valid(d.rotation_damping_n_m_s_rad,false)||
@@ -3112,7 +3113,7 @@ unsigned JoltWorld::addFaceSpring(const FaceSpringDescription &d) {
         d.rotation_damping_n_m_s_rad.x,d.rotation_damping_n_m_s_rad.y,d.rotation_damping_n_m_s_rad.z};
     for(unsigned i=0;i<6;++i)s.mMotorSettings[i].mSpringSettings={JPH::ESpringMode::StiffnessAndDamping,float(k[i]),float(c[i])};
     if(d.inextensible_translation){
-        s.mNumVelocityStepsOverride=128;s.mNumPositionStepsOverride=16;
+        s.mNumVelocityStepsOverride=d.velocity_iterations;s.mNumPositionStepsOverride=d.position_iterations;
         for(unsigned i=0;i<3;++i)s.MakeFixedAxis(static_cast<JPH::SixDOFConstraint::EAxis>(i));
     }
     auto *raw=static_cast<JPH::SixDOFConstraint*>(impl_->physics_->GetBodyInterface().CreateConstraint(&s,impl_->bodies_.at(d.a),impl_->bodies_.at(d.b)));

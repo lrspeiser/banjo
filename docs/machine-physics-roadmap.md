@@ -10,6 +10,14 @@ Some device laws remain lumped or ideal, and the coupling/calibration limits
 below matter. Heavy impacts or cuts can run slower than real time; the page's
 clock says when.
 
+October 17: new individual pulley wheels and routed fibre strands use native
+Jolt contact, mass and passive bending. Their mechanical advantage follows the
+route rather than an assigned ratio; both revised lifting lessons retain their
+height goals and deadlines. This covers the new Rope/Pulley pieces, not all
+historical tie/drum recipes. Effective homogeneous strand properties, ideal
+axle bearings and mounts, numerical losses, missing strand fracture and
+performance limits are recorded in [the pulley qualification](physical-pulleys.md).
+
 October 16: visible graph wires, solar charging cords and legacy circuit
 leads now use native Jolt rods, mass, contact and passive bending/twist.
 Their actual stock length sets resistance; terminal overload disconnects the

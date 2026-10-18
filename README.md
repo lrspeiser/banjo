@@ -48,14 +48,20 @@ Prepared materials, damping and unrelated electrical ratings stay out of lessons
 
 ## What there is
 
-**Eight chain-reaction levels, twenty-six piece lessons and three advanced electronics activities.**
+**Eight chain-reaction levels, twenty-seven piece lessons and three advanced electronics activities.**
 Every card shows its task count and stars; Help reveals level details and energy records.
-The 37 challenges are grouped as Level 1: Mechanics, Level 2: Electricity,
+The 38 challenges are grouped as Level 1: Mechanics, Level 2: Electricity,
 Level 3: Water, and Level 4: Heat and chain reactions, with all choices visible.
 Within each chapter they retain the [audited relative order](docs/level-onboarding-audit.md).
 Three starter lessons added on October 17 (**Roll the ball**, **Fill the trench**
 and **Swing on a rope**) teach the ball, block and string before **Raise the crate**;
 they were placed by author review and are not part of that blind audit.
+**Thread a pulley** adds a fourth primitive lesson. **Raise the crate** and
+**Lift with less** now use individual wheels and a routed, massive native rope;
+their published height goals and deadlines are unchanged. See the
+[pulley qualification and limits](docs/physical-pulleys.md). Blueprints save
+selected pieces with internal connections and exposed ports; they are placed
+as a movable group and can be reused within a later level's inventory.
 Estimated player times remain historical estimates from blind LLM probes and
 interface review, not measurements of the new interface or a timed human study.
 Desktop and phone use the same full-width scene with a compact bottom dock.

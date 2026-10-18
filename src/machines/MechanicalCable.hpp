@@ -1,6 +1,7 @@
 #pragma once
 #include "rigid/JoltWorld.hpp"
 #include <nlohmann/json.hpp>
+#include <limits>
 
 namespace banjo::machines {
 // Discrete elastic rods. Jolt owns every body, contact and connector response.
@@ -11,11 +12,15 @@ public:
                     MatterBodyId first);
     void settle(double dt); // accepted steps only; may detach terminal constraints
     [[nodiscard]] bool connected() const { return attached_[0]&&attached_[1]; }
-    [[nodiscard]] unsigned circuit() const { return declaration_.at("circuit").get<unsigned>(); }
+    [[nodiscard]] unsigned circuit() const { return declaration_.value("circuit",0u); }
     [[nodiscard]] std::string branch() const { return declaration_.at("name").get<std::string>(); }
     [[nodiscard]] std::size_t bodyCount() const { return rods_.size(); }
     [[nodiscard]] std::string chargingPanel() const { return declaration_.value("solar_panel",std::string{}); }
     [[nodiscard]] double resistanceOhm() const;
+    [[nodiscard]] double maximumStep() const {
+        return declaration_.value("kind",std::string{})=="rope"
+            ? declaration_.value("segment_m",.04)/(.04*1920) : std::numeric_limits<double>::infinity();
+    }
     [[nodiscard]] bool ownsBody(MatterBodyId id) const { return id>=first_ && id-first_<rods_.size(); }
     void chargeFlow(double current_a,double dt_s);
     [[nodiscard]] nlohmann::json report() const;

@@ -26,6 +26,7 @@ MechanicalCable::MechanicalCable(JoltWorld &world,const json &input,MatterBodyId
     world_(&world),declaration_(input),ends_{a,b},first_(first) {
     if(!world.contains(a)||!world.contains(b)||input.at("name").get<std::string>().empty())
         throw std::invalid_argument("cable needs existing terminal bodies");
+    const bool rope=input.value("kind",std::string{})=="rope";
     const double conductors=positive(input,"conductor_count",1,1,2);
     if(conductors!=1&&conductors!=2)throw std::invalid_argument("cable supports one or two conductors");
     const double area=positive(input,"area_mm2",2.5,.001,100)*1e-6*conductors;
@@ -33,11 +34,12 @@ MechanicalCable::MechanicalCable(JoltWorld &world,const json &input,MatterBodyId
     if(area>=std::numbers::pi*radius_*radius_)throw std::invalid_argument("conductor exceeds cable envelope");
     const double copper=positive(input,"conductor_density_kg_m3",8960,100,30000);
     const double insulation=positive(input,"insulation_density_kg_m3",1200,100,5000);
-    line_mass_=area*copper+(std::numbers::pi*radius_*radius_-area)*insulation;
+    line_mass_=rope?std::numbers::pi*radius_*radius_*positive(input,"density_kg_m3",700,100,30000):
+        area*copper+(std::numbers::pi*radius_*radius_-area)*insulation;
     retention_=positive(input,"retention_n",15,.001,10000);
     const double bend=positive(input,"bend_rigidity_n_m2",.00002,1e-10,10);
     const double loss=positive(input,"loss_time_s",.002,0,.1);
-    const double step=positive(input,"segment_m",.04,.01,.1);
+    const double step=positive(input,"segment_m",.04,rope?.005:.01,.1);
     const double friction=positive(input,"friction",.5,0,2);
     std::vector<Vec3> nodes;const auto &path=input.at("path_m");
     if(!path.is_array()||path.size()<2||path.size()>64)throw std::invalid_argument("cable path needs 2..64 points");
@@ -77,6 +79,7 @@ MechanicalCable::MechanicalCable(JoltWorld &world,const json &input,MatterBodyId
             const double k=bend/span;d.rotation_stiffness_n_m_rad={k,k,k};
             d.translation_damping_n_s_m=d.translation_stiffness_n_m*loss;
             d.rotation_damping_n_m_s_rad=d.rotation_stiffness_n_m_rad*loss;d.inextensible_translation=true;
+            if(rope){d.velocity_iterations=64;d.position_iterations=64;}
             laws_.push_back(d);joints_.push_back(world.addFaceSpring(d));
         }
         // Only the immediate rod is embedded in its terminal's connector.
@@ -115,6 +118,7 @@ void MechanicalCable::settle(double dt){
     }
 }
 double MechanicalCable::resistanceOhm() const {
+    if(declaration_.value("kind",std::string{})=="rope")return 0;
     double span=0;for(double s:spans_)span+=s;
     return .0172*span*declaration_.value("conductor_count",1.)/declaration_.value("area_mm2",2.5);
 }
@@ -133,7 +137,7 @@ nlohmann::json MechanicalCable::report() const {
     }
     for(std::size_t i=0;i<joints_.size();++i){stored+=elasticEnergy(i);
         if(world_->hasJoint(joints_[i]))gap=std::max(gap,length(world_->faceSpringObservation(joints_[i]).displacement_cs_m));}
-    return {{"name",branch()},{"connected",connected()},{"attached",{attached_[0],attached_[1]}},
+    return {{"name",branch()},{"kind",declaration_.value("kind",std::string{"cable"})},{"connected",connected()},{"attached",{attached_[0],attached_[1]}},
         {"radius_m",radius_},{"length_m",span},{"mass_kg",mass},{"segments_m",segments},
         {"resistance_ohm",resistanceOhm()},{"charging_current_a",charging_current_a_},
         {"charging_loss_w",charging_current_a_*charging_current_a_*resistanceOhm()},

@@ -142,33 +142,84 @@
       }
     },
     {
+      "id": "easy-thread",
+      "chapter": "Level 1: Mechanics",
+      "estimated_minutes": [
+        2,
+        4
+      ],
+      "lesson_controls": {
+        "rope": [
+          "a",
+          "b",
+          "at_m",
+          "at_b_m",
+          "via"
+        ]
+      },
+      "primary_controls": {},
+      "estimate_basis": "Author review only; not yet probed and not measured human completion times.",
+      "rank": 7
+    },
+    {
       "id": "easy-tackle",
-      "rank": 7,
+      "rank": 8,
       "estimated_minutes": [
         3,
         7
       ],
       "primary_controls": {
-        "tackle": [
-          "counterweight_kg",
-          "ratio",
-          "drop_from_m"
+        "anchor": [
+          "height_m"
+        ],
+        "pulley": [
+          "height_m",
+          "radius_m",
+          "mount",
+          "load"
+        ],
+        "counterweight": [
+          "mass_kg",
+          "height_m"
         ]
       },
       "chapter": "Level 1: Mechanics",
       "lesson_controls": {
-        "tackle": [
-          "counterweight_kg",
-          "ratio",
-          "drop_from_m",
+        "anchor": [
           "x_m",
-          "z_m"
+          "z_m",
+          "height_m",
+          "yaw_deg"
+        ],
+        "pulley": [
+          "x_m",
+          "z_m",
+          "height_m",
+          "radius_m",
+          "mount",
+          "load",
+          "yaw_deg"
+        ],
+        "counterweight": [
+          "x_m",
+          "z_m",
+          "height_m",
+          "mass_kg",
+          "yaw_deg"
+        ],
+        "rope": [
+          "a",
+          "b",
+          "at_m",
+          "at_b_m",
+          "via"
         ]
-      }
+      },
+      "estimate_basis": "Author review of the new kit; not measured human completion times."
     },
     {
       "id": "easy-lens",
-      "rank": 8,
+      "rank": 9,
       "estimated_minutes": [
         3,
         9
@@ -191,7 +242,7 @@
     },
     {
       "id": "easy-cut",
-      "rank": 9,
+      "rank": 10,
       "estimated_minutes": [
         3,
         8
@@ -216,7 +267,7 @@
     },
     {
       "id": "easy-mirror",
-      "rank": 10,
+      "rank": 11,
       "estimated_minutes": [
         3,
         8
@@ -237,7 +288,7 @@
     },
     {
       "id": "easy-catapult",
-      "rank": 11,
+      "rank": 12,
       "estimated_minutes": [
         3,
         8
@@ -262,7 +313,7 @@
     },
     {
       "id": "cut",
-      "rank": 12,
+      "rank": 13,
       "estimated_minutes": [
         4,
         10
@@ -287,31 +338,63 @@
     },
     {
       "id": "tackle",
-      "rank": 13,
+      "rank": 14,
       "estimated_minutes": [
         6,
         15
       ],
       "primary_controls": {
-        "tackle": [
-          "counterweight_kg",
-          "ratio",
-          "drop_from_m"
+        "anchor": [
+          "height_m"
+        ],
+        "pulley": [
+          "height_m",
+          "radius_m",
+          "mount",
+          "load"
+        ],
+        "counterweight": [
+          "mass_kg",
+          "height_m"
         ]
       },
       "chapter": "Level 1: Mechanics",
       "lesson_controls": {
-        "tackle": [
-          "counterweight_kg",
-          "ratio",
-          "drop_from_m",
-          "x_m"
+        "anchor": [
+          "x_m",
+          "z_m",
+          "height_m",
+          "yaw_deg"
+        ],
+        "pulley": [
+          "x_m",
+          "z_m",
+          "height_m",
+          "radius_m",
+          "mount",
+          "load",
+          "yaw_deg"
+        ],
+        "counterweight": [
+          "x_m",
+          "z_m",
+          "height_m",
+          "mass_kg",
+          "yaw_deg"
+        ],
+        "rope": [
+          "a",
+          "b",
+          "at_m",
+          "at_b_m",
+          "via"
         ]
-      }
+      },
+      "estimate_basis": "Author review of the new kit; not measured human completion times."
     },
     {
       "id": "laser",
-      "rank": 14,
+      "rank": 15,
       "estimated_minutes": [
         8,
         18
@@ -332,7 +415,7 @@
     },
     {
       "id": "easy-gears",
-      "rank": 15,
+      "rank": 16,
       "estimated_minutes": [
         8,
         20
@@ -357,7 +440,7 @@
     },
     {
       "id": "easy-motor",
-      "rank": 16,
+      "rank": 17,
       "estimated_minutes": [
         1,
         3
@@ -380,7 +463,7 @@
     },
     {
       "id": "easy-bulb",
-      "rank": 17,
+      "rank": 18,
       "estimated_minutes": [
         2,
         5
@@ -401,7 +484,7 @@
     },
     {
       "id": "easy-loop",
-      "rank": 18,
+      "rank": 19,
       "estimated_minutes": [
         1,
         3
@@ -421,7 +504,7 @@
     },
     {
       "id": "advanced-resistor",
-      "rank": 19,
+      "rank": 20,
       "estimated_minutes": [
         1,
         4
@@ -442,7 +525,7 @@
     },
     {
       "id": "easy-switch",
-      "rank": 20,
+      "rank": 21,
       "estimated_minutes": [
         2,
         5
@@ -462,7 +545,7 @@
     },
     {
       "id": "easy-marble-light",
-      "rank": 21,
+      "rank": 22,
       "estimated_minutes": [
         2,
         6
@@ -482,7 +565,7 @@
     },
     {
       "id": "easy-power",
-      "rank": 22,
+      "rank": 23,
       "estimated_minutes": [
         3,
         8
@@ -509,7 +592,7 @@
     },
     {
       "id": "advanced-parallel",
-      "rank": 23,
+      "rank": 24,
       "estimated_minutes": [
         4,
         9
@@ -529,7 +612,7 @@
     },
     {
       "id": "advanced-capacitor",
-      "rank": 24,
+      "rank": 25,
       "estimated_minutes": [
         4,
         10
@@ -550,7 +633,7 @@
     },
     {
       "id": "easy-solar",
-      "rank": 25,
+      "rank": 26,
       "estimated_minutes": [
         4,
         10
@@ -583,7 +666,7 @@
     },
     {
       "id": "easy-charge-lift",
-      "rank": 26,
+      "rank": 27,
       "estimated_minutes": [
         5,
         12
@@ -615,7 +698,7 @@
     },
     {
       "id": "sun",
-      "rank": 27,
+      "rank": 28,
       "estimated_minutes": [
         8,
         20
@@ -647,7 +730,7 @@
     },
     {
       "id": "easy-water-receiver",
-      "rank": 28,
+      "rank": 29,
       "estimated_minutes": [
         2,
         5
@@ -668,7 +751,7 @@
     },
     {
       "id": "easy-river-wheel",
-      "rank": 29,
+      "rank": 30,
       "estimated_minutes": [
         2,
         5
@@ -688,7 +771,7 @@
     },
     {
       "id": "easy-water-wheel",
-      "rank": 30,
+      "rank": 31,
       "estimated_minutes": [
         2,
         6
@@ -711,7 +794,7 @@
     },
     {
       "id": "easy-river-lift",
-      "rank": 31,
+      "rank": 32,
       "estimated_minutes": [
         3,
         7
@@ -733,7 +816,7 @@
     },
     {
       "id": "easy-water-gate",
-      "rank": 32,
+      "rank": 33,
       "estimated_minutes": [
         4,
         10
@@ -767,7 +850,7 @@
     },
     {
       "id": "easy-divert-water",
-      "rank": 33,
+      "rank": 34,
       "estimated_minutes": [
         5,
         12
@@ -788,7 +871,7 @@
     },
     {
       "id": "steam",
-      "rank": 34,
+      "rank": 35,
       "estimated_minutes": [
         3,
         7
@@ -809,7 +892,7 @@
     },
     {
       "id": "easy-heat",
-      "rank": 35,
+      "rank": 36,
       "estimated_minutes": [
         4,
         10
@@ -838,7 +921,7 @@
     },
     {
       "id": "chain",
-      "rank": 36,
+      "rank": 37,
       "estimated_minutes": [
         5,
         12
@@ -863,7 +946,7 @@
     },
     {
       "id": "fire",
-      "rank": 37,
+      "rank": 38,
       "estimated_minutes": [
         6,
         15

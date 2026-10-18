@@ -40,8 +40,9 @@ import sandbox_plumbing
 import sandbox_combinations
 import sandbox_variants
 import sandbox_motion
+import sandbox_pulleys
 
-SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations, sandbox_motion)
+SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations, sandbox_motion, sandbox_pulleys)
 EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel', 'easy-river-wheel',
               'easy-spring', 'easy-gears', 'easy-weight', 'easy-motor', 'easy-power', 'easy-switch',
               'easy-bulb', 'easy-loop', 'easy-water-receiver', 'easy-divert-water', 'easy-heat', 'easy-catapult',
@@ -53,9 +54,9 @@ EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle
 # another. This metadata never participates in simulation or scoring.
 PLAYER_TASK_COUNTS = {
     'gap': 1, 'cut': 1, 'fire': 4, 'steam': 1, 'chain': 1,
-    'laser': 2, 'sun': 2, 'tackle': 1,
+    'laser': 2, 'sun': 2, 'tackle': 5, 'easy-thread': 1,
     'easy-cut': 1, 'easy-mirror': 1, 'easy-lens': 1, 'easy-solar': 2,
-    'easy-tackle': 1, 'easy-water-wheel': 1, 'easy-river-wheel': 1, 'easy-spring': 2,
+    'easy-tackle': 5, 'easy-water-wheel': 1, 'easy-river-wheel': 1, 'easy-spring': 2,
     'easy-gears': 2, 'easy-weight': 1, 'easy-motor': 1, 'easy-power': 3,
     'easy-switch': 2, 'easy-bulb': 1, 'easy-loop': 1,
     'easy-water-receiver': 1, 'easy-divert-water': 1, 'easy-heat': 3, 'easy-catapult': 1,
@@ -106,6 +107,7 @@ def load_levels():
     levels = json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['levels']
     for module in SANDBOX_MODULES:
         levels.extend(copy.deepcopy(getattr(module, 'EASY_LEVELS', [])))
+    sandbox_pulleys.configure_levels(levels)
     for level in levels:
         if level.get('difficulty') == 'easy':
             level['title'] = re.sub(r'^\d+\.\s*', '', level['title'])
@@ -720,6 +722,11 @@ def check_placements(level, placements, budget=True):
         knobs = {}
         for key, rule in t['knobs'].items():
             value = p.get(key, rule.get('legacy_default', rule.get('default')))
+            if rule.get('part_list'):
+                if not isinstance(value,list) or len(value)>2 or any(not isinstance(v,str) or len(v)>120 for v in value):
+                    problems.append(f'{what}: {key} names at most two pulley routes')
+                else: knobs[key]=list(value)
+                continue
             if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal', 'power_port')):
                 # A link's ends: a part of the machine, named.
                 if not isinstance(value, str) or not 0 <= len(value) <= 120:
@@ -820,6 +827,7 @@ def _assemble(level, placements, lenient=False):
         for pos, (i, p) in enumerate(pending):
             refs = [p.get(key, '') for key, rule in tray[p['piece']]['knobs'].items()
                     if any(rule.get(ref) for ref in ('part', 'hinge', 'terminal', 'power_port'))]
+            refs += [ref for key,rule in tray[p['piece']]['knobs'].items() if rule.get('part_list') for ref in p.get(key,[])]
             dependencies = {int(match.group(1)) - 1 for ref in refs
                             for match in [re.match(r'^your \S+ (\d+)(?:\b|:)', ref)] if match and int(match.group(1)) - 1 != i}
             if dependencies <= complete:
@@ -1543,6 +1551,16 @@ def editing_guide(level, checked, index, compiled, key):
     return guide
 
 
+def assembly_ghost(level,placements,start):
+    if not isinstance(start,int) or not 0<=start<len(placements):raise ValueError('Choose the assembly pieces')
+    _,_,_,compiled=_assemble(level,placements,lenient=True)
+    problems=compiled.get('problems',[])+clashes_of(compiled)
+    names={f'your {p["piece"]} {i+1}' for i,p in enumerate(placements) if i>=start}
+    return dict(fits=not problems,problems=problems,
+        parts=[p for p in compiled['parts'] if owner(p) in names],
+        strands=[s for s in compiled.get('strands',[]) if s['name'] in names])
+
+
 def ghost(level, placements, index, snapping=False, edit_key=None, nearby=False, snap_hold=None):
     """Piece `index` of `placements` as it would be built -- its parts where
     they would be, set down on what is there, turned as it is turned -- and
@@ -1810,6 +1828,14 @@ def pieces_energy(compiled):
         row = out.setdefault(name, {'kg': 0.0, 'j': 0.0})
         row['kg'] += kg
         row['j'] += kg * EMBODIED_J_PER_KG.get(p['material'], 20.0e6)
+    # Fabrication is a game estimate, separate from native mechanical energy.
+    # Unclassified fibre uses the existing generic 20 MJ/kg estimate rather
+    # than silently counting a massive rope as a free, massless piece.
+    for strand in compiled.get('strands',[]):
+        name=owner({'name':strand['name']})
+        if name is None:continue
+        kg=sum(math.dist(a,b) for a,b in zip(strand['path_m'],strand['path_m'][1:]))*math.pi*strand['radius_m']**2*strand['density_kg_m3']
+        row=out.setdefault(name,{'kg':0.0,'j':0.0});row['kg']+=kg;row['j']+=kg*20e6
     return {k: {'kg': round(v['kg'], 3), 'j': round(v['j'])} for k, v in out.items()}
 
 
