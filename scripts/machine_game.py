@@ -848,7 +848,10 @@ def _assemble(level, placements, lenient=False):
         merge_fragment(spec, made)
     compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
     # And the player's pieces: a mirror stands on a post, not in the air.
-    stands = hold_up(compiled['parts'], spec.get('cell_m', 0.02), only_player=level.get('custom_base', False))
+    # Wall builders supply their own actual fixed/hinge mountings to the
+    # backing. The ground support heuristic cannot recognise a cantilever's
+    # rear fixing; adding posts would change its declared contact geometry.
+    stands = [] if level.get('wall_mode') else hold_up(compiled['parts'], spec.get('cell_m', 0.02), only_player=level.get('custom_base', False))
     if stands:
         spec['parts'] += stands
         compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)

@@ -43,6 +43,10 @@ class Wall(unittest.TestCase):
             bad=wall.base();bad['parts']=[p for p in bad['parts'] if p['name']!=name]
             with self.assertRaises(ValueError):mg.requested_level(dict(level='free',base=bad))
         with self.assertRaises(mg.LevelRefused):compose([dict(piece='wall_track',x_m=2.8)])
+        lifted=compose(wall.lift_assembly()[0])
+        self.assertFalse(any(' stand' in p['name'] for p in lifted['parts']))
+        self.assertTrue(any(j.get('a')=='your wall_lift 1 outlet bracket' and
+            j.get('b')=='your wall_lift 1 outlet' and j['kind']=='fix' for j in lifted['joints']))
 
     def test_wall_builder_uses_height_and_keeps_the_board(self):
         level=mg.requested_level(dict(level='free',base=wall.base()))

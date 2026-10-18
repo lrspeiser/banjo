@@ -554,7 +554,7 @@ function syncTerminalLabels() {
   for (const device of electrical.devices || []) {
     const card = document.createElement('section'); card.className = 'terminal-label';
     card.dataset.device=device.name;card.dataset.kind=device.kind;
-    const title = document.createElement('strong'); title.textContent = device.name.replace(/^your /, '');
+    const title = document.createElement('strong'); title.textContent = playerPartTitle(device.name);
     const controls = document.createElement('div'); controls.className = 'terminal-buttons';
     const rows = [];
     for (const [key, at] of Object.entries(device.terminals || {})) {
@@ -4272,9 +4272,9 @@ function updatePowerFeedback() {
     let actual=d.input_w<-.05?`${Math.abs(d.input_w).toFixed(1)} W returned`:`${Math.max(0,d.input_w).toFixed(1)} W in`;
     if(Number.isFinite(d.voltage_v))actual+=` · ${Math.abs(d.voltage_v).toFixed(1)} V`;
     if(Number.isFinite(d.torque_n_m))actual+=` · ${Math.abs(d.torque_n_m).toFixed(1)} N·m`;
-    items.push({id:'device:'+d.name,name:d.name.replace(/^your /,''),kind:'object',priority:d.requirement==='goal'?0:1,at,
+    items.push({id:'device:'+d.name,name:playerPartTitle(d.name),kind:'object',priority:d.requirement==='goal'?0:1,at,
       displayName:solarLiftGraph()?.network.devices.some(n=>n.name===d.name&&n.kind==='bulb')?'Bulb · shared load':
-        d.requirement==='start_estimate'?`${d.part.replace(/^your /,'')} · ${d.name.replace(/^your /,'')}`:d.name.replace(/^your /,''),
+        d.requirement==='start_estimate'?`${d.part.replace(/^your /,'')} · ${playerPartTitle(d.name)}`:playerPartTitle(d.name),
       text:`${need}\n${pending?'Updating…':`${sample.preview?'Preview':'Now'} ${actual}`}`,
       low:d.exceeds_motor||((d.requirement==='goal'||d.requirement==='start_estimate')&&d.input_w<d.required_w),
       title:d.requirement==='start_estimate'?'Estimated electrical power to overcome gravity and bearing friction at rest. Acceleration, contacts, other loads and supply losses need more power.':
@@ -6181,6 +6181,7 @@ const baseObjectTray={piece:'base_object',knobs:{
   z_m:{min:-10,max:10,step:.01,default:0,label:'along Z (m)'},
   height_m:{min:-4,max:4,step:.01,default:0,label:'height change (m)'}}};
 function trayItem(piece) { return piece==='base_object'?baseObjectTray:level.tray.find(t => t.piece === piece); }
+function playerPartTitle(name) { return name.replace(/^your wall_lift\b/,'Marble lift').replace(/^your /,''); }
 
 const PIECE_INFO = {
   wall_track: ['routes','A sloping wall track with an optional stop at the high end. Drag its ends to change length or turn to change slope.'],

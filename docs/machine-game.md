@@ -7,7 +7,10 @@ Its radius, motor power and outlet stop use the existing scene editor. Native
 hinge torque, contact and gravity catch, raise and unload the marble. This is
 a single-pass carrier, not a continuous bucket elevator; Reset reloads it.
 The outlet lip can stop the carrier through contact before its hinge limit.
-The motor can remain stalled/drawing power until stopped. Bearings/supports
+The motor can remain stalled/drawing power until stopped. Declared native
+wall brackets replace the ground builder's extra floor-post heuristic in
+wall mode; the chute's actual fixed joint transfers its loads to the backing.
+Bearings/supports
 remain ideal and the motor retains the existing lumped DC/back-EMF model;
 there is no new resolved motor interior, structural failure or heat law.
 
@@ -52,18 +55,18 @@ Nominal runs requested 12 s (reported engine times 11.917 s at 240 Hz,
 
 | Ball | Step | Source | Shaft work | Heat | Coupling residual | Electrical residual |
 |---|---:|---:|---:|---:|---:|---:|
-| Glass | 1/240 s | 53.04451 | 3.50818 | 49.53982 | 0.003493 | -1.00e-11 |
-| Glass | 1/480 s | 53.17910 | 3.50770 | 49.67277 | 0.001371 | -1.01e-11 |
-| Oak | 1/240 s | 53.04463 | 2.52174 | 50.52602 | 0.003127 | -1.05e-11 |
-| Oak | 1/480 s | 53.17785 | 2.52236 | 50.65778 | 0.002293 | -1.02e-11 |
-| Iron | 1/240 s | 53.03619 | 6.44218 | 46.59844 | 0.004429 | -1.02e-11 |
-| Iron | 1/480 s | 53.17922 | 6.42993 | 46.75116 | 0.001867 | -9.74e-12 |
+| Glass | 1/240 s | 53.04367 | 3.50924 | 49.53762 | 0.003183 | -1.03e-11 |
+| Glass | 1/480 s | 53.17928 | 3.50844 | 49.67237 | 0.001528 | -1.01e-11 |
+| Oak | 1/240 s | 53.04449 | 2.52157 | 50.52606 | 0.003130 | -1.02e-11 |
+| Oak | 1/480 s | 53.17777 | 2.52246 | 50.65764 | 0.002327 | -9.90e-12 |
+| Iron | 1/240 s | 53.04083 | 6.43767 | 46.60780 | 0.004640 | -1.03e-11 |
+| Iron | 1/480 s | 53.17929 | 6.43029 | 46.75103 | 0.002033 | -9.81e-12 |
 
 Coupling residual decreases under refinement; it is not zero or thermal heat.
 These are not full-world momentum/angular-momentum/energy closure, which
 would also require gravity, support reactions, contact losses and all moving
 wire/rotor transfers. No new material/conservation law is claimed. Unpaced
-nominal 240 Hz runs cost 5.52–5.88 s locally; 480 Hz runs cost 10.22–10.76 s,
+nominal 240 Hz runs cost 5.36–5.98 s locally; 480 Hz runs cost 10.31–11.31 s,
 overlapping other verification. Logs/receipts are in ignored
 `build/feedback-test/wall-lift-*`. Broader historical wall measurements below
 describe the earlier 14-piece checkpoint.
