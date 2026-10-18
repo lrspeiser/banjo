@@ -925,6 +925,9 @@ if(BANJO_BUILD_TESTS)
                 add_test(NAME banjo_anonymous_profile_store_tests COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/anonymous_profile_tests.py)
                 set_tests_properties(banjo_anonymous_profile_store_tests PROPERTIES TIMEOUT 30 LABELS "machine;http")
+                add_test(NAME banjo_community_course_tests COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/community_course_tests.py)
+                set_tests_properties(banjo_community_course_tests PROPERTIES TIMEOUT 45 LABELS "machine;http")
                 add_test(NAME banjo_test_promotion_tests COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_promotion_tests.py)
                 set_tests_properties(banjo_test_promotion_tests PROPERTIES TIMEOUT 10 LABELS "machine;http")

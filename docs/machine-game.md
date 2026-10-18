@@ -1,5 +1,42 @@
 # Puzzles on the machine (/play)
 
+October 18 Community sharing: **Sandbox → Browse Community** opens `/community`,
+with assembled-geometry previews, title search and twelve cards per page. The
+static previews do not create or advance a native world. Private designs
+stay at the top of the ordinary Sandbox library. **Design → Share / publish**
+creates an unlisted run-only snapshot or explicitly publishes the current
+setup. The header's Share action also creates a run-only snapshot. Public
+links use `/machine?course=<UUID>` and contain no visitor credential.
+
+Visitors can change the camera, Run, Pause, Reset and operate physical
+switches/releases/valves. Build, Tune, connection editing, model-assisted
+building and private save controls stay out of this view. **Copy to my
+Sandbox** clones the initial setup and optional goal into the visitor's
+existing anonymous profile, with its own id, version history and editable
+controls. The original publication and creator's draft cannot be edited
+through that copy. No new identity provider or database service is needed.
+
+Each shared setup is immutable. Publishing a changed design replaces its
+Community card while older links keep their own setup. **Remove from
+Community** unlists the design; existing links remain playable. Share checks
+the acknowledged profile revision, reads the saved design server-side and
+validates its declaration, geometry and connections before storing it. This
+is a buildability check, not a promise that an arbitrary author's course
+reaches a goal. Physics still runs in the ordinary native engine.
+
+New compressed header links also open run-only. Historical `#build` exports
+without the new `viewOnly` flag retain their editable import behavior, as do
+the separate **Copy challenge link** puzzles, which omit the author's solution.
+
+Measured locally: six storage/HTTP tests cover ownership, immutable snapshots,
+save-revision conflicts, private-data exclusion, restart persistence, test
+isolation, search and pagination. Seven relevant CTest suites pass. The browser
+publication/run/copy/edit/unpublish flow passes at 1280×860, 390×844 and 844×390,
+including native gravity playback, reloadable old links, 44 px actions and
+scene-space checks. Existing shared base-machine playback, compressed-link
+compatibility, Sandbox ordering and Help/word-builder sharing checks also pass.
+No native physics laws changed and no new conservation claims are made.
+
 October 18 marble-lift extension: the wall library now has **15 types**.
 **Marble lift wheel** has an oak rotor/counterweight, open cradle, rear axle,
 cantilevered upper chute and a DC motor with separate plus/minus sockets.

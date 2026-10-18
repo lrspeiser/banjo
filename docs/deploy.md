@@ -126,6 +126,25 @@ evidence before changing the provisioning status above.
 
 ## Private return links
 
+Community snapshots use a separate `community.sqlite3` beside the configured
+profile database (`/data/banjo/community.sqlite3` in production), with WAL and
+synchronous FULL transactions. `/api/community` offers public browse/get and
+visitor-authorized share/mine/unpublish operations. Sharing reads only the
+identified design from that visitor's acknowledged server save. Public replies
+contain the published setup and description, never the profile, private history,
+visitor token, owner hash or private design id. A copied course is saved through
+the ordinary profile API under the copying visitor's own identity.
+
+The cohosted test build keeps its own gallery at
+`/data/test-logs/community.sqlite3`, outside replaceable packages, on the same
+mounted disk. It does not migrate or open production's profile/gallery files.
+Test courses stay on `/test`; they are not promoted as production content when
+code is released. No new hosting or database purchase is required. Snapshots
+are bounded to 1 MB each and 128 MB total, with a 160 MB SQLite page cap;
+full-storage errors leave private saves unchanged. Include the gallery and its
+WAL state in SQLite-aware backup/recovery alongside profiles. Existing backups
+remain unconfigured as noted above.
+
 The `/play?visitor=<UUID>` link is the credential for that anonymous profile:
 anyone with it can restore and change its saves. Keep it private, outside public
 screenshots, issues and shared machine links. The database indexes profiles by

@@ -4,6 +4,7 @@ import {anonymousSave, validVisitor, returnURL} from './anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from './profile-sync.mjs';
 import {renderLevelCards,createLevelMoreMenu} from './level-library.mjs';
 import {renderDesignGallery} from './design-gallery.mjs';
+import {renderCommunity} from './community-gallery.mjs';
 import {levelIntroduction} from './level-intro.mjs';
 import {sitePath} from './site-paths.mjs';
 
@@ -596,6 +597,7 @@ function syncTerminalLabels() {
   showInstrumentPanel();
 }
 async function pickTerminal(name,fromScene=false) {
+  if(readOnlyCourse())return;
   if (!level || playing || terminalBusy || (ghost && ghost.p.piece !== 'wire')) return;
   const tray = level.tray.find(t => t.piece === 'wire');
   if (!tray || (!ghost && piecesLeft(tray) <= 0)) return;
@@ -739,6 +741,7 @@ const socketTail = document.createElementNS(socketNS,'path');
 socketTail.classList.add('wire-tail'); socketSvg.append(socketTail);
 socketTail.style.display='none';
 function sceneSockets() {
+  if(readOnlyCourse())return [];
   const heater=ghost?.p.piece==='ignition'&&ghost.p.attachment_version===2;
   if (!level || playing || terminalBusy || powerBusy || rewiringBusy || pullMode || attachMode || switchDragging ||
       (ghost && !heater&&!['wire','power_cable'].includes(ghost.p.piece))) return [];
@@ -1109,6 +1112,7 @@ window.machineSolarState=()=>({
   })
 });
 async function pickPowerPort(port,fromScene=false) {
+  if(readOnlyCourse())return;
   if(ghost?.p.piece==='power_cable' && !playing && !powerBusy && !terminalBusy && level) {
     const g=ghost, sourceLevel=level;
     const selected=g.p.a_port||g.p.b_port, key=port.kind==='output'?'a_port':'b_port', other=key==='a_port'?'b_port':'a_port';
@@ -2430,6 +2434,8 @@ let levels = [], level = null, placements = [], placedCost = [], placedEnergy = 
 let generatedLevel = null;
 let freeLevel = null;
 let sandboxBase = null, sandboxTemplates = [], wallTemplate = null, activeDesign = null, sandboxObjects = [];
+let sharedCourse = null;
+const readOnlyCourse = () => Boolean(sharedCourse || activeDesign?.sharedCourse);
 function sandboxRequest() {
   const base=ghost?.baseObject ? ghost.base || ghost.originalBase : activeDesign?.draft.base, goal=level?.free&&activeDesign?.draft.goal;
   return {...(level?.free && base ? {base} : {}), ...(goal ? {goal} : {})};
@@ -2591,7 +2597,7 @@ function renderPlayMode() {
   if (box.hidden === show) box.hidden = !show;
   if (!show) return;
   const mode = currentMode();
-  $('mode-tune-tab').disabled = !ghost && !placements.length && !(level?.free && sandboxObjects.length);
+  $('mode-tune-tab').disabled = readOnlyCourse() || !ghost && !placements.length && !(level?.free && sandboxObjects.length);
   if (mode !== shownMode) {
     shownMode = mode; document.body.dataset.mode = mode;
     for (const name of ['build', 'tune', 'run']) $(name === 'run' ? 'start' : 'mode-' + name + '-tab').setAttribute('aria-pressed', String(name === mode));
@@ -2607,6 +2613,7 @@ function renderPlayMode() {
   box.classList.toggle('in-panel', !inToolbar);
 }
 function choosePlayMode(mode) {
+  if(readOnlyCourse())return;
   if (!LEVEL_MODE || !level) return;
   const now = currentMode();
   if (mode === 'run') { tuneArmed = false; if (!playing) $('start').click(); return; }
@@ -3305,6 +3312,7 @@ async function checkGhost(g) {
 // index): a ghost of it, starting where the middle of
 // the view meets the scene.
 function startGhost(p, index, keepPlace = false) {
+  if(readOnlyCourse())return;
   cancelAssembly();
   runArmed = false;
   runRequest++;
@@ -3340,6 +3348,7 @@ function startGhost(p, index, keepPlace = false) {
 // panel, or by clicking it in the scene). After a run, or during one, the
 // level goes back to its start first: pieces are placed there.
 function pickUp(i) {
+  if(readOnlyCourse())return;
   if(placements[i]?.piece==='rope'){
     const p=placements[i];startTrayAttach('rope');attaching=[{name:p.a,at:ropeAnchor(p.a,p.anchor_a)||[...p.at_m],anchor:p.anchor_a}];ropeVia=[...p.via];ropeEditing=i;showAttachStep();return;
   }
@@ -4345,7 +4354,7 @@ function updatePowerFeedback() {
   for(const item of items) {
     let row=powerFeedbackRows.get(item.id);
     if(!row) {
-      const editableWire=item.kind==='wire' && /^your (wire|power_cable) \d+$/.test(item.name);
+      const editableWire=!readOnlyCourse() && item.kind==='wire' && /^your (wire|power_cable) \d+$/.test(item.name);
       const card=document.createElement(editableWire?'button':'section');card.className='power-feedback-label '+item.kind;
       if(editableWire){card.type='button';card.setAttribute('aria-label',`Adjust ${item.name}`);card.classList.add('editable-wire');
         card.addEventListener('click',()=>{const index=Number(item.name.match(/ (\d+)$/)[1])-1;if(placements[index])pickUp(index);});}
@@ -4928,6 +4937,7 @@ function slidePoint(clientX, clientY, y) {
 const GRAB_MARGIN_PX = 40;
 let rewiringBusy=false;
 function wireCandidates(clientX,clientY,touch=false) {
+  if(readOnlyCourse())return [];
   if(ghost || rewiringBusy || pullMode || attachMode || switchDragging || !level ||
      !session || builtSetupKey!==currentSetupKey())return [];
   pointerRay(clientX,clientY);
@@ -5636,6 +5646,7 @@ function drawTieRings() {
 }
 window.machineTieRings = () => tieRings.children.map(r => r.position.toArray());
 function startTrayAttach(piece='link') {
+  if(readOnlyCourse())return;
   if (ghost) cancelGhost();
   attachPiece=piece;
   selectPhonePanel('controls');
@@ -6055,7 +6066,7 @@ const profileSync = new ProfileSync({request:profileRequest, read:() => me(),
     metadata[visitor] = {revision, base:profile, dirty:profileSync.state().dirty}; cacheSave();
   },
   onMerge:({profile,remappedDesignIds}) => {
-    const selected = activeDesign?.id;
+    const selected = readOnlyCourse()?null:activeDesign?.id;
     save.players[save.current] = profile;
     if (selected) {
       activeDesign = profile.sandbox?.items?.find(d => d.id === (remappedDesignIds[selected] || selected)) || null;
@@ -6827,7 +6838,7 @@ function renderMachineControls() {
     const card=liveCards.lastChild,release=card.querySelector('button');
     card.dataset.restraint=joint.name;release.dataset.release='true';
     const index=placements.findIndex((p,i)=>`your ${p.piece} ${i+1} restraint`===joint.name);
-    if(spring&&index>=0){
+    if(spring&&index>=0&&!readOnlyCourse()){
       const adjust=button('Adjust spring',()=>{
         if(session&&!playing&&world.t===0&&!liveControlPending)pickUp(index);
       },{className:'spring-adjust',title:'Change the stored push before releasing the latch'});
@@ -6993,7 +7004,7 @@ document.addEventListener('keydown', e => {
 // A free build's setup is synced as it changes, separately from the live world.
 function keepBuild() {
   updateHeaderShare();
-  if (!level?.free || !activeDesign) return;
+  if (!level?.free || !activeDesign || readOnlyCourse()) return;
   activeDesign.draft.placements = clone(placements);
   activeDesign.at = new Date().toISOString();
   persist(); designStatus(profileStatus(),true);
@@ -7036,6 +7047,7 @@ function checkpointDesign(d, label = '') {
   if (d.versions.length > 30) d.versions.shift();
 }
 function renderDesignControls() {
+  if(readOnlyCourse())return;
   renderBlueprints(); renderGoalControls();
   $('sandbox-controls').hidden = !level?.free;
   $('design-versions').hidden = !level?.free;
@@ -7071,12 +7083,14 @@ function showSandboxScreen(show = true) {
   document.body.classList.toggle('on-sandbox', show); renderPlayMode();
   if (!show) { resize(); return; }
   parkDesign(); showLevelsScreen(false);
+  document.body.classList.remove('on-community');setSharedCourse(null);
   history_.replaceState(null, '', appPath('/machine'));
   updateHeaderShare();
   box.replaceChildren();
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Sandbox'});
+  head.append(button('Browse Community',()=>showCommunityScreen(),{id:'community-open'}));
   const more = createLevelMoreMenu(box,{id:'design-more'}).content;
   renderReturnLink(more);
   renderDesignGallery({box,head,store:designStore(),templates:sandboxTemplates,wallTemplate,
@@ -7372,7 +7386,7 @@ function renderReturnLink(box) {
   }
 }
 function showLevelsScreen(show) {
-  if(show){parkDesign();$('test-busy').hidden=true;}
+  if(show){parkDesign();setSharedCourse(null);document.body.classList.remove('on-community');$('test-busy').hidden=true;}
   const box = $('levels-screen');
   box.hidden = !show;
   if (!show) for (const panel of box.querySelectorAll('.save-help-panel:popover-open')) panel.hidePopover();
@@ -7386,6 +7400,7 @@ function showLevelsScreen(show) {
   if (returnLinkNotice) add(box, 'p', {className: 'levels-notice', textContent: returnLinkNotice}).setAttribute('role', 'status');
   if (level) head.append(button(`Back to ${levelTitle(level)}`, async () => {
     showLevelsScreen(false);
+    if(level.free&&activeDesign?.sharedCourse){await chooseLevel('free',activeDesign);return;}
     history_.replaceState(null, '', level.free ? appPath('/machine') + '?design=' + encodeURIComponent(activeDesign.id) : appPath('/play') + '?level=' + level.id);
     await rebuildLevel(false);
   }));
@@ -7427,6 +7442,7 @@ renderer.domElement.addEventListener('pointerdown', () => {
 });
 
 async function chooseLevel(id, design = null) {
+  courseDescription='';
   cancelAssembly();
   closeLevelIntroduction();
   if($('run-help').open)$('run-help').close();
@@ -7446,6 +7462,7 @@ async function chooseLevel(id, design = null) {
   if ($('piece-picker').open) $('piece-picker').close();
   document.querySelector('main').hidden = false;
   keepBuild(); showSandboxScreen(false); showLevelsScreen(false);
+  document.body.classList.remove('on-community');setSharedCourse(null);
   level = id === 'free' && freeLevel ? {...freeLevel} : levels.find(l => l.id === id) || (generatedLevel?.id === id ? generatedLevel : levels[0]);
   $('reset').title = level.free ? 'Return your machine to time zero' : 'Start the level over; Undo recovers your pieces';
   $('phone-design-tab').textContent = 'Design';
@@ -7468,22 +7485,26 @@ async function chooseLevel(id, design = null) {
     const store = designStore();
     if (sharedBuild) {
       const shared = sharedBuild; sharedBuild = null;
-      try { const draft = await unpackBuild(shared); design = newDesign(draft.name || 'Shared design', {base: draft.base, placements: draft.placements, ...(draft.goal ? {goal: draft.goal} : {})}); }
+      try { const draft = await unpackBuild(shared);
+        const setup={base:draft.base,placements:draft.placements,...(draft.goal?{goal:draft.goal}:{})};
+        design=draft.viewOnly?courseDesign({name:draft.name,draft:setup,packed:shared}):newDesign(draft.name,setup); }
       catch { say('refused', 'That link does not hold a design this page can read.'); }
     }
     activeDesign = design || store.items.find(d => d.id === store.last) || store.items[0] || newDesign('Untitled design');
-    store.last = activeDesign.id; persist();
+    setSharedCourse(activeDesign.sharedCourse||null);
+    if(readOnlyCourse())$('phone-design-tab').hidden=true;
+    if(!readOnlyCourse()){store.last = activeDesign.id; persist();}
     if(wallDesign())Object.assign(level,{tray:clone(wallTemplate.tray),title:'Wall workshop',
       brief:'Drag mounted pieces left, right, up and down. Gravity carries the marble between them.'});
   }
-  $('scene-note').textContent=wallDesign()?'Drag pieces on the wall · Drag empty space to pan · Pinch or wheel to zoom':'Drag a ghost to move · Drag empty space to turn · Wheel or trackpad pinch to zoom';
+  $('scene-note').textContent=readOnlyCourse()?'Run this course · Drag to look around · Copy to my Sandbox to edit':wallDesign()?'Drag pieces on the wall · Drag empty space to pan · Pinch or wheel to zoom':'Drag a ghost to move · Drag empty space to turn · Wheel or trackpad pinch to zoom';
   for(const id of ['view-left','view-right','view-up','view-down']){const label=wallDesign()?`Pan ${id.slice(5)}`:({'view-left':'Turn the view left','view-right':'Turn the view right','view-up':'Look from above','view-down':'Look from the side'})[id];$(id).title=label;$(id).setAttribute('aria-label',label);}
   endGhost(); tuneArmed=false;runArmed=false;runRequest++;editorMode='move';shownMode='';gridSnapEnabled=true;objectSnapEnabled=true;lastEdited=null;closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
   for(const id of ['grid-snap','object-snap'])$(id)?.setAttribute('aria-pressed','true');
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
   undone = []; redone = []; showUndo(); setAttach(false);
   $('attach-tool').hidden = !level.free && !level.tray.some(t => t.attach);
-  history_.replaceState(null, '', level.free ? appPath('/machine') + '?design=' + encodeURIComponent(activeDesign.id) : appPath('/play') + '?level=' + level.id);
+  history_.replaceState(null, '', readOnlyCourse()?coursePath(sharedCourse):level.free ? appPath('/machine') + '?design=' + encodeURIComponent(activeDesign.id) : appPath('/play') + '?level=' + level.id);
   $('title').textContent = levelTitle(level);
   $('brief').textContent = level.brief;
   const objectives={
@@ -7521,6 +7542,7 @@ async function chooseLevel(id, design = null) {
   $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:wallDesign()?'Drag mounted pieces on the wall. Run to watch the marble.':level.free?'Build anything. Click a piece to adjust it.':objective}));
   $('pull-tool').hidden=true;$('restart-pieces').hidden=true;
   $('scene-goal').title = level.free ? 'Build anything' : `Goal within ${level.time_s} s`;
+  if(readOnlyCourse()){$('scene-goal').lastChild.textContent=sharedCourse.description||'Run this shared setup. Copy it to your Sandbox to make changes.';$('scene-goal').title='Shared course';}
   $('goal-line').textContent = level.free
     ? 'No goal: build anything and run it.'
     : `Goal: ${level.goal.title.toLowerCase()} within ${level.time_s} s, on as little energy as you can `+
@@ -7611,12 +7633,94 @@ async function askFree() {
   finally { $('send').disabled = false; $('chat-status').textContent = ''; }
 }
 
-// ---- sharing a build: all of it in a link ------------------------------------------
+// ---- public run-only snapshots and the Community ---------------------------------
+async function communityRequest(body) {
+  const response=await fetch(appPath('/api/community'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const reply=await response.json();
+  if(!response.ok||!reply.ok)throw new Error(reply.error||'Could not open Community.');
+  return reply;
+}
+function coursePath(course){return appPath('/machine')+(course.id?'?course='+encodeURIComponent(course.id):'#build='+course.packed);}
+function courseURL(course){return SHARE_SITE+'/machine'+(course.id?'?course='+encodeURIComponent(course.id):'#build='+course.packed);}
+function courseDesign(course){return {id:'shared-'+(course.id||'link'),name:course.name,draft:clone(course.draft),versions:[],sharedCourse:course};}
+function setSharedCourse(course){
+  sharedCourse=course;document.body.classList.toggle('read-only-course',Boolean(course));
+  $('course-view-bar').hidden=!course;
+  $('course-view-title').textContent=course?.name||'Shared course';$('course-view-status').textContent='';
+}
+async function openSharedCourse(id){
+  const {course}=await communityRequest({op:'get',id});
+  await chooseLevel('free',courseDesign(course));
+}
+async function showCommunityScreen(){
+  parkDesign();showLevelsScreen(false);setSharedCourse(null);
+  document.body.classList.add('on-sandbox','on-community');
+  const box=$('sandbox-screen');box.hidden=false;
+  history_.replaceState(null,'',appPath('/community'));updateHeaderShare();renderPlayMode();
+  await renderCommunity({box,request:communityRequest,openCourse:openSharedCourse,openSandbox:()=>showSandboxScreen()});
+}
+$('course-community').addEventListener('click',e=>{e.preventDefault();showCommunityScreen();});
+$('course-copy').addEventListener('click',async()=>{
+  const b=$('course-copy');b.disabled=true;
+  try{
+    const d=newDesign(activeDesign.name+' (copy)',activeDesign.sharedCourse.draft);
+    checkpointDesign(d);persist();await profileSync.flush();await chooseLevel('free',d);
+  }catch(error){$('course-view-status').textContent=error.message;}
+  finally{b.disabled=false;}
+});
+let courseDescription='';
+async function shareCurrentCourse(publish=false){
+  if(readOnlyCourse())return sharedCourse||activeDesign.sharedCourse;
+  if(!level?.free||!activeDesign)throw new Error('Open a Sandbox design first.');
+  if(ghostInTheWay())throw new Error('Place or cancel the selected piece before sharing.');
+  keepBuild();const design=activeDesign;
+  await profileSync.flush();
+  if(activeDesign!==design)throw new Error('Open the design again before sharing.');
+  const {course}=await communityRequest({op:'share',visitor:save.current,revision:profileSync.state().revision,design_id:design.id,description:courseDescription,publish});
+  return course;
+}
+$('publish-open').addEventListener('click',async()=>{
+  if(readOnlyCourse())return;
+  courseDescription='';$('course-description').value='';$('course-link').hidden=true;
+  $('course-publish-status').textContent='';$('course-unpublish').hidden=true;
+  $('publish-course').showModal();const design=activeDesign;
+  try{
+    const {courses}=await communityRequest({op:'mine',visitor:save.current});
+    if(activeDesign!==design||!$('publish-course').open)return;
+    const published=courses.find(row=>row.design_id===design.id);
+    $('course-unpublish').hidden=!published;
+    if(published){courseDescription=published.description;$('course-description').value=courseDescription;
+      $('course-publish-status').textContent='Published. Publish again to share your current setup.';}
+  }catch(error){$('course-publish-status').textContent=error.message;}
+});
+for(const [id,publish] of [['course-share-link',false],['course-publish',true]])$(id).addEventListener('click',async()=>{
+  const buttons=[$('course-share-link'),$('course-publish'),$('course-unpublish')];buttons.forEach(b=>b.disabled=true);
+  try{
+    courseDescription=$('course-description').value;
+    const course=await shareCurrentCourse(publish),url=courseURL(course),link=$('course-link');
+    link.hidden=false;link.value=url;
+    let copied=false;try{await navigator.clipboard.writeText(url);copied=true;}catch{/* The selectable link stays visible. */}
+    $('course-unpublish').hidden=!course.published;
+    $('course-publish-status').textContent=publish?'Published to Community.':copied?'Run-only link copied.':'Your run-only link is ready to copy.';
+    $('header-share').href=url;
+  }catch(error){$('course-publish-status').textContent=error.message;}
+  finally{buttons.forEach(b=>b.disabled=false);}
+});
+$('course-unpublish').addEventListener('click',async()=>{
+  const b=$('course-unpublish');b.disabled=true;
+  try{await communityRequest({op:'unpublish',visitor:save.current,design_id:activeDesign.id});
+    b.hidden=true;$('course-publish-status').textContent='Removed from Community. Existing run-only links still work.';
+  }catch(error){$('course-publish-status').textContent=error.message;}finally{b.disabled=false;}
+});
+
+// ---- sharing a build -------------------------------------------------------------
 let headerShareEpoch=0;
 async function headerShareURL() {
   if(document.body.classList.contains('on-levels'))return SHARE_SITE+'/play';
+  if(document.body.classList.contains('on-community'))return SHARE_SITE+'/community';
   if(document.body.classList.contains('on-sandbox'))return SHARE_SITE+'/machine';
-  if(level?.free && activeDesign)return SHARE_SITE+'/machine#build='+await packBuild({name:activeDesign.name,base:activeDesign.draft.base,placements,...(activeDesign.draft.goal?{goal:activeDesign.draft.goal}:{})});
+  if(readOnlyCourse())return courseURL(sharedCourse||activeDesign.sharedCourse);
+  if(level?.free && activeDesign)return SHARE_SITE+'/machine#build='+await packBuild({viewOnly:true,name:activeDesign.name,base:activeDesign.draft.base,placements,...(activeDesign.draft.goal?{goal:activeDesign.draft.goal}:{})});
   return SHARE_SITE+'/play'+(level?'?level='+encodeURIComponent(level.id):'');
 }
 function updateHeaderShare() {
@@ -7628,7 +7732,7 @@ $('header-share').addEventListener('click',async e=>{
   e.preventDefault();
   const link=$('header-share');
   try {
-    const url=await headerShareURL();link.href=url;
+    const url=level?.free&&!document.body.matches('.on-sandbox,.on-levels')?courseURL(await shareCurrentCourse()):await headerShareURL();link.href=url;
     await navigator.clipboard.writeText(url);
     link.textContent='Copied';link.title='Share link copied';
     setTimeout(()=>{link.textContent='Share';link.title='Copy a link to this setup';},2000);
@@ -7662,16 +7766,10 @@ async function unpackBuild(packed) {
   preserveLegacyWater(draft);
   // A shared goal is kept as data; the server validates it before any use.
   const goal = draft.goal && typeof draft.goal === 'object' && !Array.isArray(draft.goal) && (draft.goal.done_when?.in_zone || draft.goal.done_when?.lit_at) ? draft.goal : null;
-  return {base: draft.base || null, placements: list, name: typeof draft.name === 'string' ? draft.name.slice(0, 60) : 'Shared design', ...(goal ? {goal} : {})};
+  return {base: draft.base || null, placements: list, name: typeof draft.name === 'string' ? draft.name.slice(0, 60) : 'Shared design', viewOnly:draft.viewOnly===true,...(goal ? {goal} : {})};
 }
 $('free-share').addEventListener('click', async () => {
-  const link = `${SHARE_SITE}/machine#build=${await packBuild({name: activeDesign.name, base: activeDesign.draft.base, placements})}`;
-  const box = $('share-link');
-  box.hidden = false; box.value = link; box.select();
-  let copied = false;
-  try { await navigator.clipboard.writeText(link); copied = true; } catch { /* no clipboard: the link is shown to copy */ }
-  $('verdict').textContent = copied ? 'Design link copied. Opening it creates a separate copy, including the base machine.'
-    : 'Copy this design link. Opening it creates a separate copy, including the base machine.';
+  $('publish-open').click();
 });
 window.machineShareLink = () => $('header-share').href;
 // A shared link opened in a tab already on the page changes only its #: the
@@ -8025,11 +8123,12 @@ async function startGame() {
   // with the last puzzle's URL before the player chooses a level.
   $('page-loading').hidden = true;
   if (location.pathname === appPath('/machine')) {
-    if (params.has('design') || sharedBuild) {
+    if(params.has('course')){await openSharedCourse(params.get('course'));}
+    else if (params.has('design') || sharedBuild) {
       const d = designStore().items.find(d => d.id === params.get('design'));
       await chooseLevel('free', d);
     } else showSandboxScreen();
-  } else {
+  } else if(location.pathname===appPath('/community')){await showCommunityScreen();} else {
     if (params.get('level')) await chooseLevel(params.get('level'));
     else showLevelsScreen(true);
   }

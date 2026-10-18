@@ -88,7 +88,7 @@ export function previewGeometry(draft = {}) {
   return result;
 }
 
-function preview(document, draft) {
+export function preview(document, draft) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('design-preview'); svg.setAttribute('viewBox', '0 0 240 112');
   svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');

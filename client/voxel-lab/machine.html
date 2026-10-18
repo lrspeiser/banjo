@@ -3,6 +3,7 @@
 <section id="page-loading" class="levels-screen" role="status">Loading Banjo…</section>
 <noscript><p class="levels-screen">Enable JavaScript to choose and play a level.</p></noscript>
 <main hidden>
+<section id="course-view-bar" hidden aria-label="Shared course"><strong id="course-view-title">Shared course</strong><span>Run only</span><button id="course-copy" type="button">Copy to my Sandbox</button><a href="/community" id="course-community">Community</a><output id="course-view-status" role="status"></output></section>
 <section id="view" tabindex="-1" aria-label="The machine in 3D, as the engine calculates it">
 <output id="clock">Setting up…</output>
 <section id="test-busy" hidden role="status" aria-live="polite"><div class="test-busy-heading"><strong>Test simulation is busy</strong><button id="test-takeover" type="button">Use this browser</button></div><p>Ends the other test run. Saved designs are kept.</p></section>
@@ -109,7 +110,7 @@
 </section>
 <h1 id="title">Chain reaction</h1>
 <section id="sandbox-controls" hidden aria-label="Save this design">
-<div class="chat-actions"><button id="designs-open" type="button">All designs</button><button id="save-design" type="button">Save version</button></div>
+<div class="chat-actions"><button id="designs-open" type="button">All designs</button><button id="save-design" type="button">Save version</button><button id="publish-open" type="button">Share / publish</button></div>
 <label for="design-name">Design name</label><input id="design-name" type="text" maxlength="60">
 <output id="design-status" aria-live="polite"></output>
 <details id="design-goal"><summary>Your goal</summary><p class="legend">Pick an object and drop a green goal zone where the view is centred, or put a light target there for light to reach. Run measures whether it happens. Share it as a challenge for someone else to solve.</p><label for="goal-body">What the goal is about</label><select id="goal-body" aria-label="What the goal is about"></select><label for="goal-size">Zone size</label><select id="goal-size" aria-label="Zone size"><option value="0.25">Small (25 cm)</option><option value="0.4" selected>Medium (40 cm)</option><option value="0.8">Large (80 cm)</option></select><div class="chat-actions"><button id="goal-here" type="button">Set goal zone here</button><button id="goal-clear" type="button">Remove goal</button></div><button id="goal-share" type="button">Copy challenge link</button><output id="goal-status" aria-live="polite"></output></details>
@@ -154,6 +155,12 @@
 </main>
 <section id="levels-screen" class="levels-screen" hidden aria-label="Levels and how far you have got"></section>
 <section id="sandbox-screen" class="levels-screen" hidden aria-label="Sandbox designs"></section>
+<dialog id="publish-course" aria-labelledby="publish-course-title">
+<div class="publish-course-head"><h2 id="publish-course-title">Share your course</h2><form method="dialog"><button type="submit">Close</button></form></div><p>Friends can run this version. They can copy it to their own Sandbox to edit.</p>
+<label for="course-description">One-line description</label><input id="course-description" maxlength="240" placeholder="What makes this course fun?">
+<div class="chat-actions"><button id="course-share-link" type="button">Copy run-only link</button><button id="course-publish" type="button">Publish to Community</button><button id="course-unpublish" type="button" hidden>Remove from Community</button></div>
+<input id="course-link" class="share-link" readonly hidden aria-label="Shared course link"><output id="course-publish-status" role="status"></output>
+</dialog>
 <dialog id="guide" class="reading-dialog" aria-labelledby="guide-title">
 <div class="guide-head"><h2 id="guide-title">How to play</h2><button id="guide-done" type="button">Close</button></div>
 <div class="guide-body" tabindex="0" aria-label="Playing instructions">
@@ -176,6 +183,7 @@
 <div class="guide-head"><h2 id="recent-changes-title">Recent Changes</h2><button id="recent-changes-done" type="button">Close</button></div>
 <div class="guide-body changes-body" tabindex="0" aria-label="Game updates, newest first">
 <section aria-labelledby="changes-oct18"><h3 id="changes-oct18"><time datetime="2026-10-18">October 18, 2026</time></h3>
+<article><h4>Share a course for others to run and remix</h4><p>Open a Sandbox design and choose <strong>Design → Share / publish</strong>. Copy a run-only link, or publish the current version to the new <strong>Sandbox → Browse Community</strong> gallery. Visitors can run and reset your course, then choose <strong>Copy to my Sandbox</strong> to edit their own copy. Your draft stays yours. Publishing a newer version updates its gallery card while old links keep their original setup; <strong>Remove from Community</strong> hides the card without breaking those links.</p></article>
 <article><h4>See the marble inside its lift</h4><p>The <strong>Marble lift wheel</strong> has open guard rails on its cradle and upper chute. Their openings are smaller than the marble, so you can follow the ball while the rails keep it contained.</p></article>
 <article><h4>Ask the builder for a marble lift</h4><p>In <strong>Build on a wall → Describe a design</strong>, try “I want a wheel that catches a marble, carries it up and drops it higher.” The builder can add a cradle wheel, a marble, a battery and both wires beside your existing pieces, then check the lift in the engine. Its reply reports the measured rise and release. The new <strong>Marble lift wheel</strong> is also in the piece library: change its radius, motor power or outlet stop beside the object. It makes one lift; <strong>Reset</strong> reloads it. Wall pieces use their wall brackets without extra floor posts. The builder has clearer wiring references and can correct existing piece settings while checking rejected layouts.</p></article>
 <article><h4>Keep the wall in view when your phone turns</h4><p>The wall board keeps its framing when you switch between a wide screen and portrait, including a design that is already open. Your pan position and relative zoom are preserved.</p></article>

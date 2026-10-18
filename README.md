@@ -42,6 +42,12 @@ in a level is scripted: the game only checks whether the goal happened.
 **Play it:** <https://banjo.is/play>. It is open to anyone, with
 no login.
 
+**Sandbox → Browse Community** opens shared courses. In a design, use
+**Design → Share / publish** for a run-only link or explicitly publish its
+current setup to Community. Visitors can Run, Reset and operate mechanisms;
+**Copy to my Sandbox** makes their own editable, saved copy. Share links keep
+their original setup when the creator later edits or republishes the design.
+
 New changes are developed on branches and tested on `codex/staging` before
 promotion to `main`. The test branch runs at `/test` on the existing server,
 with its own source package and engine process. It has a yellow **TEST** badge and uses

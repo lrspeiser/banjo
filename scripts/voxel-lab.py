@@ -11,16 +11,18 @@ ROOT=Path(__file__).resolve().parents[1]
 if str(ROOT/'scripts') not in sys.path:sys.path.insert(0,str(ROOT/'scripts'))
 import access_gate
 import anonymous_profiles
+import community_courses
 from http.cookies import SimpleCookie
 from urllib.parse import urlsplit
 # The pages and what they load. /play is the game; /machine is the sandbox it is built on.
-ASSETS={'/play':'client/voxel-lab/machine.html','/machine':'client/voxel-lab/machine.html',
+ASSETS={'/play':'client/voxel-lab/machine.html','/machine':'client/voxel-lab/machine.html','/community':'client/voxel-lab/machine.html',
  '/machine.js':'client/voxel-lab/machine.js','/machine.css':'client/voxel-lab/machine.css',
  '/machine-view.mjs':'client/voxel-lab/machine-view.mjs','/machine-default.json':'client/voxel-lab/machine-default.json',
  '/anonymous-profile.mjs':'client/voxel-lab/anonymous-profile.mjs',
  '/profile-sync.mjs':'client/voxel-lab/profile-sync.mjs',
  '/level-library.mjs':'client/voxel-lab/level-library.mjs',
  '/design-gallery.mjs':'client/voxel-lab/design-gallery.mjs',
+ '/community-gallery.mjs':'client/voxel-lab/community-gallery.mjs',
  '/level-intro.mjs':'client/voxel-lab/level-intro.mjs',
  '/site-paths.mjs':'client/voxel-lab/site-paths.mjs',
  '/banjo-mark.png':'client/voxel-lab/brand/banjo-mark.png',
@@ -30,7 +32,7 @@ ASSETS={'/play':'client/voxel-lab/machine.html','/machine':'client/voxel-lab/mac
  '/manifest.webmanifest':'client/voxel-lab/manifest.webmanifest',
  '/three.module.js':'client/vendor/three.module.js','/three.core.js':'client/vendor/three.core.js'}
 GAME_ROUTES=set(ASSETS)|{'/api/checkpoint'}
-GAME_POSTS={'/login','/api/machine','/api/profile'}
+GAME_POSTS={'/login','/api/machine','/api/profile','/api/community'}
 
 def test_site_url(value):
  if not value:return None
@@ -137,6 +139,10 @@ class Server(ThreadingHTTPServer):
   self.profiles=(anonymous_profiles.RemoteProfileStore(upstream,logs.parent/'profile-proxy.sqlite3',
       namespace=profile_namespace or os.environ.get('BANJO_PROFILE_NAMESPACE') or 'test') if upstream else
       anonymous_profiles.ProfileStore(profile_db or os.environ.get('BANJO_PROFILE_DB') or logs.parent/'profiles.sqlite3'))
+  # The mounted test-logs directory survives source-package replacement. Test
+  # courses stay separate; branch code never opens the production database.
+  self.courses=community_courses.CourseStore(self.profiles.path.with_name('community.sqlite3'))
+  self.course_shares=Allowance(60,1000,'shared courses')
   import bug_reports
   self.bug_reports=bug_reports.Reports(self.profiles.path.with_name('bug-reports.sqlite3'),
    os.environ.get('LINEAR_API_KEY',''),os.environ.get('BANJO_LINEAR_PROJECT_ID',bug_reports.DEFAULT_PROJECT_ID),os.environ.get('BANJO_LINEAR_TEAM_ID'))
@@ -219,7 +225,7 @@ class Handler(BaseHTTPRequestHandler):
    return
   kind={'html':'text/html; charset=utf-8','js':'text/javascript; charset=utf-8','mjs':'text/javascript; charset=utf-8','css':'text/css; charset=utf-8','json':'application/json','webmanifest':'application/manifest+json','png':'image/png','jpg':'image/jpeg'}[ASSETS[path].rsplit('.',1)[1]]
   content=(ROOT/ASSETS[path]).read_bytes()
-  if path in ('/play','/machine'):
+  if path in ('/play','/machine','/community'):
    content=content.replace(b'<html lang="en">',f'<html lang="en" data-banjo-environment="{self.server.environment}" data-banjo-base="{self.server.base_path}">'.encode())
    if self.server.environment=='test':content=content.replace(b'id="environment-badge" hidden',b'id="environment-badge"')
    if self.server.base_path:
@@ -250,6 +256,7 @@ class Handler(BaseHTTPRequestHandler):
    if path not in GAME_POSTS:self.send(404,b'{}');return
    if path=='/api/machine':self.machine(body);return
    if path=='/api/profile':self.profile(body);return
+   if path=='/api/community':self.community(body);return
    raise ValueError('Unknown endpoint')
   except (ValueError,TypeError,KeyError,OSError) as e:self.send(400,json.dumps({'ok':False,'error':str(e)}).encode())
  def visitor(self):
@@ -292,6 +299,41 @@ class Handler(BaseHTTPRequestHandler):
    self.send(400,json.dumps({'ok':False,'error':'Invalid profile request'}).encode())
   except (OSError, sqlite3.Error):
    self.send(503,b'{"ok":false,"error":"Profile storage is unavailable; your local draft was kept"}')
+ def community(self,body):
+  try:
+   def rate(allowance):
+    try:allowance.take(self.visitor())
+    except ValueError as error:raise anonymous_profiles.ProfileRateLimited(str(error)) from None
+   rate(self.server.profile_requests)
+   data=json.loads(body,parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Invalid JSON')))
+   if not isinstance(data,dict):raise ValueError('Invalid community request')
+   op=data.get('op');store=self.server.courses
+   if op=='browse':reply=store.browse(data.get('cursor'),data.get('query',''))
+   elif op=='get':reply={'course':store.get(data.get('id'))}
+   elif op in ('share','mine','unpublish'):
+    visitor=anonymous_profiles.visitor_id(data.get('visitor'))
+    saved=self.server.profiles.open(visitor);profile=saved['profile']
+    if op=='share':
+     if type(data.get('revision')) is not int or data['revision']!=saved['revision']:
+      raise anonymous_profiles.ProfileConflict('Your save changed on another device. Reopen it before sharing.')
+     rate(self.server.course_shares)
+     sandbox=profile.get('sandbox')
+     items=sandbox.get('items',[]) if isinstance(sandbox,dict) else []
+     if not isinstance(items,list):raise anonymous_profiles.ProfileError('Save a design before sharing it.')
+     design=next((row for row in items
+                  if isinstance(row,dict) and row.get('id')==data.get('design_id')),None)
+     if design is None:raise anonymous_profiles.ProfileMissing('Save this design before sharing it.')
+     reply={'course':store.share(visitor,design,data.get('description',''),data.get('publish',False))}
+    elif op=='mine':reply={'courses':store.mine(visitor)}
+    else:store.unpublish(visitor,data.get('design_id'));reply={}
+   else:raise ValueError('Unknown community operation')
+   self.send(200,json.dumps(dict(ok=True,**reply),separators=(',',':'),ensure_ascii=False).encode())
+  except anonymous_profiles.ProfileError as error:
+   self.send(error.status,json.dumps(dict(ok=False,error=str(error)),ensure_ascii=False).encode())
+  except (ValueError,TypeError,KeyError,RecursionError):
+   self.send(400,b'{"ok":false,"error":"Invalid community request"}')
+  except (OSError,sqlite3.Error):
+   self.send(503,b'{"ok":false,"error":"Community storage is unavailable; your private design is safe"}')
  def machine(self,body):
   # One live machine world per session; every response is the engine's own
   # measured state. A refused declaration answers with its problems in words.
