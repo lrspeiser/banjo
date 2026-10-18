@@ -162,7 +162,9 @@ def lift(name,k,ctx):
     u=r/math.sqrt(2); z=PLANE
     pocket=[dict(shape='box',size_m=[.20,.025,.18],at_m=[-u,-u-.06,0]),
         *[dict(shape='box',size_m=[.025,.14,.18],at_m=[-u+side*.10,-u,0]) for side in (-1,1)],
-        *[dict(shape='box',size_m=[.20,.14,.02],at_m=[-u,-u,side*.10]) for side in (-1,1)]]
+        dict(shape='box',size_m=[.20,.14,.02],at_m=[-u,-u,-.10]),
+        *[dict(shape='box',size_m=[.20,.02,.02],at_m=[-u,-u+dy,.10]) for dy in (-.0375,.0325)],
+        *[dict(shape='box',size_m=[.012,.14,.02],at_m=[-u+side*.094,-u,.10]) for side in (-1,1)]]
     shapes=[dict(shape='cylinder',size_m=[2*r,.018,2*r],at_m=[0,0,-.20],turn_deg=[90,0,0]),
         dict(shape='box',size_m=[.035,.035,.20],at_m=[-u,-u,-.10])]+pocket
     # Counterweight stock is sized from the cradle's oak volume. It balances
@@ -177,7 +179,9 @@ def lift(name,k,ctx):
     chute=dict(name=name+' outlet',shape='compound',material='oak',fixed=True,
         at_m=[x+cx,y+.14-drop/2,z],turn_deg=[0,0,slope],parts=[
             dict(shape='box',size_m=[length,.025,.18],at_m=[0,0,0]),
-            *[dict(shape='box',size_m=[length,.12,.02],at_m=[0,.05,side*.10]) for side in (-1,1)]])
+            dict(shape='box',size_m=[length,.12,.02],at_m=[0,.05,-.10]),
+            *[dict(shape='box',size_m=[length,.02,.02],at_m=[0,dy,.10]) for dy in (.02,.09)],
+            *[dict(shape='box',size_m=[.012,.12,.02],at_m=[side*(length/2-.006),.05,.10]) for side in (-1,1)]])
     if k.get('end_stop','closed')=='closed':
         chute['parts'].append(dict(shape='box',size_m=[.025,.12,.18],at_m=[length/2-.0125,.05,0]))
     hx=x-r-.32;hy=y+.18

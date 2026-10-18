@@ -505,7 +505,8 @@ start from an empty table, "add": [{{"piece": ..., knob: value, ..., "join": {{"
 def respond_free(message, level, placements, call=None, rehearse=None):
     """The free build from words: the model says which pieces and what each
     joins to; the server works out where they go (machine_game.join_to),
-    checks the build and rehearses it once in the engine."""
+    checks the build and rehearses it. Up to three proposals can correct
+    rejected layouts, wiring or measured assembly failures before applying."""
     import machine_game as mg
     if not isinstance(message, str) or not message.strip():
         raise ValueError('Say what to build')

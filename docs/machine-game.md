@@ -3,6 +3,8 @@
 October 18 marble-lift extension: the wall library now has **15 types**.
 **Marble lift wheel** has an oak rotor/counterweight, open cradle, rear axle,
 cantilevered upper chute and a DC motor with separate plus/minus sockets.
+Open front guard rails leave 50 mm gaps, smaller than the default 60 mm
+marble, so the marble is visible while still contained by actual geometry.
 Its radius, motor power and outlet stop use the existing scene editor. Native
 hinge torque, contact and gravity catch, raise and unload the marble. This is
 a single-pass carrier, not a continuous bucket elevator; Reset reloads it.
@@ -31,8 +33,7 @@ condition. These are checks for this assembly, not proof the builder can
 verify every arbitrary natural-language goal.
 
 The configured real model accepted the owner's request in one call, added the
-lift beside the starter and retained its five pieces; native rehearsal
-measured a 42.9 cm rise and release at 3.267 s. A first provider attempt used
+lift beside the starter and retained its five pieces. A first provider attempt used
 an invalid addition format; a complete assembly JSON example and explicit
 format diagnostics corrected that failure. Mock-provider regressions exercise
 invalid wiring/overlap repair, numbered/aliased terminals, edits, and refused
@@ -42,8 +43,8 @@ The reference fixture uses a 0.40 m radius, 6 N m stall / 0.9 rad/s no-load
 motor, a finite 12 V battery, two 2 m copper wires and the same 6 cm ball
 geometry for glass, oak and iron. At 1/240 s and 0.02 m scene cells, all nine
 starts shifted -2/0/+2 mm are caught, raised and unloaded. Rise ranges are
-42.9–43.0 cm glass, 43.2–43.3 cm oak, 41.4–42.2 cm iron; release ranges
-3.117–3.367 s, 2.917–2.983 s and 3.967–6.083 s respectively. Missing the
+43.0–43.1 cm glass, 43.3–43.4 cm oak, 41.4–42.3 cm iron; release ranges
+3.067–3.333 s, 2.883–2.967 s and 3.900–5.950 s respectively. Missing the
 return wire or dropping beside the cradle fails physically. The original
 3/4 N m prototypes stalled with some iron drops; the final motor was sized
 for the heavier load, without changing material laws or check tolerances.
@@ -55,21 +56,30 @@ Nominal runs requested 12 s (reported engine times 11.917 s at 240 Hz,
 
 | Ball | Step | Source | Shaft work | Heat | Coupling residual | Electrical residual |
 |---|---:|---:|---:|---:|---:|---:|
-| Glass | 1/240 s | 53.04367 | 3.50924 | 49.53762 | 0.003183 | -1.03e-11 |
-| Glass | 1/480 s | 53.17928 | 3.50844 | 49.67237 | 0.001528 | -1.01e-11 |
-| Oak | 1/240 s | 53.04449 | 2.52157 | 50.52606 | 0.003130 | -1.02e-11 |
-| Oak | 1/480 s | 53.17777 | 2.52246 | 50.65764 | 0.002327 | -9.90e-12 |
-| Iron | 1/240 s | 53.04083 | 6.43767 | 46.60780 | 0.004640 | -1.03e-11 |
-| Iron | 1/480 s | 53.17929 | 6.43029 | 46.75103 | 0.002033 | -9.81e-12 |
+| Glass | 1/240 s | 53.04432 | 3.41488 | 49.63322 | 0.003773 | -9.88e-12 |
+| Glass | 1/480 s | 53.17912 | 3.41444 | 49.76623 | 0.001555 | -1.04e-11 |
+| Oak | 1/240 s | 53.04131 | 2.42782 | 50.61742 | 0.003931 | -1.04e-11 |
+| Oak | 1/480 s | 53.17921 | 2.42384 | 50.75707 | 0.001699 | -1.02e-11 |
+| Iron | 1/240 s | 53.03982 | 6.35112 | 46.69390 | 0.005191 | -1.02e-11 |
+| Iron | 1/480 s | 53.17862 | 6.34478 | 46.83621 | 0.002366 | -1.01e-11 |
 
 Coupling residual decreases under refinement; it is not zero or thermal heat.
 These are not full-world momentum/angular-momentum/energy closure, which
 would also require gravity, support reactions, contact losses and all moving
 wire/rotor transfers. No new material/conservation law is claimed. Unpaced
-nominal 240 Hz runs cost 5.36–5.98 s locally; 480 Hz runs cost 10.31–11.31 s,
+nominal 240 Hz runs cost 6.30–6.95 s locally; 480 Hz runs cost 10.83–13.48 s,
 overlapping other verification. Logs/receipts are in ignored
 `build/feedback-test/wall-lift-*`. Broader historical wall measurements below
 describe the earlier 14-piece checkpoint.
+
+Final local verification passes all 16 wall checks, 65 game/declaration checks
+and 31 native game regression checks. The wall builder/edit/save/undo/run
+browser check passes on desktop 1280×860, portrait 390×844 and landscape
+844×390 using CPU SwiftShader. The existing wall navigation/resize/library
+check also passes in those sizes. The native executable is unchanged:
+`a079e1b75317f3bde9ac5d85c495f1293465048b724504dc7175646adb40a344`.
+Source registration is 274/274; published Linux CI/hosted behavior is checked
+separately from these local measurements.
 
 October 18 wall workshop: **Sandbox → Build on a wall** creates a saved design
 with a 6 × 4 m backing and a 0.62 m deep retaining lane. This is a separate
