@@ -773,6 +773,16 @@ body.playing-level #view>.level-done{top:50%;transform:translate(-50%,-50%);z-in
 #piece-editor .piece-toolbar{display:flex;gap:3px}
 #piece-editor .adjustment-picker{display:flex;align-items:center}
 #piece-editor .adjustment-picker select{width:0;flex:1;font-size:13px}
+#piece-editor .direct-properties{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px}
+#piece-editor .direct-properties button{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;overflow-wrap:anywhere}
+#piece-editor .property-name{font-size:11px;line-height:13px}
+#piece-editor .property-value{font-size:13px;line-height:16px;font-weight:600}
+#play-mode button:disabled{opacity:.45;cursor:default}
+#run-preparation{position:absolute;z-index:8;top:52px;left:6px;right:6px;display:flex;align-items:center;gap:8px;padding:4px 8px;background:#142836ed;border:1px solid #63899d;border-radius:6px;font-size:12px;max-width:460px;box-sizing:border-box}
+#run-preparation[hidden]{display:none}
+#run-preparation progress{flex:1;min-width:30px;width:70px;accent-color:#64d6a1}
+#run-preparation button{min-width:44px;min-height:44px}
+body:has(#phone-toolbar.one-row) #run-preparation{top:6px}
 #piece-editor .adjustment-feedback{font-size:12px;line-height:1.25;min-height:0;white-space:normal;overflow-wrap:anywhere}
 #piece-editor .gear-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
 #piece-editor .gear-controls button{min-width:44px;min-height:44px;padding:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}

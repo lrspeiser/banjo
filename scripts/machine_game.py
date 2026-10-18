@@ -1971,6 +1971,8 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0, preview_job=None):
     hardly move (under 2 cm) are left out."""
     spec, checked, cost = compose(level, placements)
     compiled = mw.compile_spec(spec)
+    import machine_replay
+    recorder = machine_replay.Recorder() if preview_job is not None and machine_replay.eligible(level, compiled) else None
     rule = next(iter(level['goal']['station']['done_when'].values())) if level.get('goal') else None
     wanted = rule.get('part') if isinstance(rule, dict) else rule
     loose = [p['name'] for p in compiled['parts'] if not p['fixed']]
@@ -1978,13 +1980,16 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0, preview_job=None):
     loose.sort(key=lambda n: ' marble ' not in n + ' ')
     track = ([wanted] if wanted in loose else []) + [n for n in loose if n != wanted][:7]
     r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=wall_limit_s,
-                    preview_job=preview_job, track=track, after_s=0.5, flows=bool(compiled.get('light') or compiled.get('spouts') or
+                    preview_job=preview_job, recorder=recorder, track=track, after_s=0.5, flows=bool(compiled.get('light') or compiled.get('spouts') or
                         (compiled.get('ground') or {}).get('kind') == 'flume' or
                         compiled.get('circuits') or compiled.get('electrical', {}).get('wires') or
                         compiled.get('electrical', {}).get('contacts') or
                         compiled.get('electrical', {}).get('power_cables')))
     if r.get('cancelled'):
         return {'cancelled': True, 'complete': False, 'paths': [], 'hits': [], 'flow_frames': []}
+    if recorder is not None and r.get('complete') and not recorder.refused:
+        preview_job.replay_frames = recorder.frames
+        preview_job.replay_compiled = compiled
     row = (r['stations'] or [{}])[0]
     goal_at = row.get('at_s') if row.get('done') and row.get('at_s') is not None and row['at_s'] <= level['time_s'] else None
     paths = []

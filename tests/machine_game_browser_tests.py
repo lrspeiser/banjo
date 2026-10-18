@@ -2206,10 +2206,8 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js("""[...document.querySelectorAll('#viewer-zoom,#viewer-perspective,#viewer-history')].filter(n=>n.getClientRects().length).every(n=>{
                     const a=n.getBoundingClientRect(),b=document.getElementById('play-mode').getBoundingClientRect();
                     return a.right<=b.left||b.right<=a.left||a.bottom<=b.top||b.bottom<=a.top;})"""))
-                self.press('Tune')
-                self.assertEqual(self.js('window.machinePlayMode().mode'),'tune')
-                self.assertEqual(self.js('window.machinePlayMode().hint'),'Place a piece first')
-                self.press('Build')
+                self.assertTrue(self.js("document.getElementById('mode-tune-tab').disabled"))
+                self.assertEqual(self.js('window.machinePlayMode().mode'),'build')
                 self.press('Add a plank'); self.ghost()
                 self.drag_ghost_to(.3,0,touch=width!=1280)
                 self.slide('Cut to length of your plank 1',.7)
@@ -2230,6 +2228,42 @@ class Puzzles(unittest.TestCase):
                 self.js("document.getElementById('mode-build-tab').click()")
                 self.wait(f"window.machinePlayMode().mode==='build' && {READY}",30)
                 self.assertEqual(self.js('window.machinePlacements()[0].length_m'),.7,'Build returns to time zero with your pieces')
+
+    def test_new_level_clears_tune_and_restores_its_required_tray(self):
+        for width,height in ((1280,860),(390,844),(844,390),(320,568)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width!=1280)
+                self.click_visible('Add a plank');self.ghost();self.click_visible('Place');self.wait(READY,30)
+                self.click_visible('Tune');self.ghost()
+                self.assertEqual(self.js('machinePlayMode().mode'),'tune')
+                self.js("document.getElementById('levels-open').click()")
+                self.wait("!document.getElementById('levels-screen').hidden",5)
+                self.js("[...document.querySelectorAll('#levels-screen button')].find(b=>b.querySelector('strong')?.textContent==='Raise the crate').scrollIntoView({block:'center'})")
+                self.click_visible(self.js("[...document.querySelectorAll('#levels-screen button')].find(b=>b.querySelector('strong')?.textContent==='Raise the crate').getAttribute('aria-label')"))
+                self.wait(READY,30)
+                if self.js("document.getElementById('level-intro').open"):self.click_visible('GO')
+                self.assertEqual(self.js('machinePlayMode().mode'),'build')
+                self.assertTrue(self.js("document.getElementById('scene-tray').checkVisibility()"))
+                self.assertTrue(self.js("document.getElementById('mode-tune-tab').disabled"))
+                self.click_visible('Add a block and tackle');self.ghost()
+
+    def test_automatic_run_plays_its_native_preparation_and_edit_invalidates_it(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('gap',width,height,phone=width!=1280)
+                self.click_visible('Add a plank');self.ghost()
+                self.drag_ghost_to(.3,0,touch=width!=1280);self.slide('Cut to length of your plank 1',.7)
+                self.ghost();self.click_visible('Place');self.wait(READY,30)
+                self.wait('machinePreparationState().ready',30)
+                self.click_visible('Run')
+                self.wait('machinePlaybackState().prepared',15)
+                self.click_visible('Turn the view right')
+                self.wait("document.body.classList.contains('scene-win')",30)
+                self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
+                self.js("document.getElementById('mode-build-tab').click()")
+                self.wait(READY,30);self.click_piece(0);self.ghost()
+                self.slide('Cut to length of your plank 1',.4);self.ghost()
+                self.assertFalse(self.js('machinePreparationState().ready'))
 
     def test_rope_lesson_is_solved_with_a_string_through_attach_on_desktop_and_phones(self):
         # The lesson's tray offers one string: Attach shows only that join.
@@ -6349,6 +6383,8 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js("document.querySelector('#piece-editor .spring-length-value').textContent"),'70 cm')
                 self.click_visible('Place');self.wait(READY,30)
                 self.assertAlmostEqual(self.js("machineBodies()['spring load'][1]"),load[1],places=3)
+                self.assertFalse(self.js("[...document.querySelectorAll('#device-live-controls button')].some(b=>b.textContent==='Release spring'&&b.checkVisibility())"),'Build never fires the latch')
+                self.click_visible('Run');self.wait("machinePlayMode().mode==='run'&&[...document.querySelectorAll('#device-live-controls button')].some(b=>b.dataset.release&&!b.disabled&&b.checkVisibility())",30)
                 self.click_visible('Release spring');self.wait("document.body.classList.contains('scene-win')",30)
                 self.assertGreater(self.js("machineBodies()['spring load'][1]"),load[1]+.049)
 

@@ -120,6 +120,9 @@ class Server(ThreadingHTTPServer):
   self.preview_busy=threading.BoundedSemaphore(1 if self.base_path else 2)
   from machine_world import PreviewJobs
   self.preview_jobs=PreviewJobs()
+  from machine_replay import PreparedRuns
+  self.prepared_runs=PreparedRuns()
+  self.engine_digest=hashlib.sha256(native.read_bytes()).hexdigest() if native and native.is_file() else None
   self.optical_allowance=Allowance(3000,18000,'laser preview') if public else None
   if site not in ('all','game'):raise ValueError('site is all or game')
   self.site=site
@@ -361,7 +364,11 @@ class Handler(BaseHTTPRequestHandler):
     # without its goal, and the page is told what it needs.
     spec,checked,cost=machine_game.compose(level,data.get('placements') or [],leave_out_goal=True)
     needs=spec.pop('_needs',None)
-    r=host.open(spec,take_over=True) if take_over else host.open(spec)
+    prepared=None
+    if data.get('prepared_run'):
+     from machine_world import compile_spec
+     prepared=self.server.prepared_runs.take(data['prepared_run'],self.visitor(),data.get('preview_owner'),compile_spec(spec),self.server.engine_digest)
+    r=host.open(spec,take_over=take_over,prepared=prepared) if prepared else host.open(spec,take_over=True) if take_over else host.open(spec)
     r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost;r['energy']=machine_game.pieces_energy(r['machine'])
     if level.get('free'):
      import sandbox_edit
@@ -386,6 +393,10 @@ class Handler(BaseHTTPRequestHandler):
     with self.server.lock:
      with open(self.server.logs/'feedback.jsonl','a',encoding='utf-8') as f:f.write(line+'\n')
     r={'ok':True,**delivery}
+   elif op=='cancel_preparation':
+    self.server.preview_jobs.cancel(self.visitor(),data.get('preview_owner'),data.get('preview_epoch',0));r={'ok':True}
+   elif op=='preparation_status':
+    r={'ok':True,**self.server.preview_jobs.status(self.visitor(),data.get('preview_owner'))}
    elif op=='level_preview':
     # Where things will go: the level rehearsed once by the engine, unpaced,
     # with its loose bodies' paths and hits. That is engine time, so it is
@@ -395,7 +406,11 @@ class Handler(BaseHTTPRequestHandler):
     self.server.preview_jobs.cancel(self.visitor(),data.get('preview_owner'),data.get('preview_epoch',0))
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is working out other previews; trying again in a moment')
     key,job=self.server.preview_jobs.begin(self.visitor(),data.get('preview_owner'),data.get('preview_epoch',0))
-    try:r={'ok':True,**machine_game.preview(machine_game.requested_level(data),data.get('placements') or [],host.exe,host.logs,preview_job=job)}
+    try:
+     r={'ok':True,**machine_game.preview(machine_game.requested_level(data),data.get('placements') or [],host.exe,host.logs,preview_job=job)}
+     if not job.cancelled() and getattr(job,'replay_frames',None):
+      token=self.server.prepared_runs.keep(self.visitor(),data.get('preview_owner'),job.replay_compiled,job.replay_frames,self.server.engine_digest)
+      if token:r['prepared_run']=token
     finally:
      self.server.preview_jobs.end(key,job)
      self.server.preview_busy.release()

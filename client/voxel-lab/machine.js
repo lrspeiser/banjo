@@ -215,6 +215,15 @@ function paintGlow(mesh) {
   // other parts keep any glow of their own.
   const glow = mesh.userData.heatGlow || (mesh.userData.control ? CONTROL_GLOW : mesh.userData.hover ? HOVER_GLOW : mesh.userData.hint ? HINT_GLOW : 0);
   mesh.material?.emissive?.setHex(glow);
+  const interactive=Boolean(mesh.userData.control||mesh.userData.hover||mesh.userData.hint);
+  mesh.traverse(part=>{
+    if(!part.isMesh||!part.geometry)return;
+    if(interactive&&!part.pickOutline){
+      const line=new THREE.LineSegments(new THREE.EdgesGeometry(part.geometry,35),new THREE.LineBasicMaterial({color:0xffd36a,depthTest:true}));
+      line.name='interaction-outline';line.raycast=()=>{};part.add(line);part.pickOutline=line;
+    }
+    if(part.pickOutline){part.pickOutline.visible=interactive;part.pickOutline.material.color.setHex(mesh.userData.control?0x5ce1c9:0xffd36a);}
+  });
 }
 function deviceBodies(name) { return [...meshes.keys()].filter(n => n === name || n.startsWith(name + ' ')); }
 function setControlGlow(names = []) {
@@ -1769,7 +1778,8 @@ $('test-takeover').addEventListener('click',async()=>{
   finally {button.disabled=false;}
 });
 function sceneReadoutTop(rect) {
-  return Math.max(6, ...[$('clock'), $('viewer-corner')]
+  return Math.max(6, ...[$('clock'), $('viewer-corner'), $('run-preparation')]
+    .filter(Boolean)
     .filter(el => !el.hidden && el.getClientRects().length)
     .map(el => el.getBoundingClientRect().bottom - rect.top + 6));
 }
@@ -2020,7 +2030,7 @@ function recordDrawing(step) {
 }
 window.machinePlaybackState = () => ({shown_t: playback.shown, applied_t: playback.applied, newest_t: playback.newest,
   queued: playback.queue.length, rate: playback.rate, world_s_per_frame: playback.gap, received: playback.received,
-  longest_wait_ms: playback.longestWait_ms, blended: [...blendedPoses.keys()], last_run: playbackStats.lastRun || null});
+  longest_wait_ms: playback.longestWait_ms, prepared:Boolean(lastFrame?.prepared_playback), blended: [...blendedPoses.keys()], last_run: playbackStats.lastRun || null});
 async function poll(mine) {
   let last = 0;
   while (mine === polling && session) {
@@ -2029,6 +2039,7 @@ async function poll(mine) {
     wake = null;
     if (mine !== polling || !session) return;
     last = performance.now();
+    const slow=setTimeout(()=>{if(mine===polling&&playing)clockMessage('Buffering the next physics frame…');},350);
     try {
       const frame = await api({op: 'frame', session, after: receivedSeq, wait_ms: playing || cableSetupActive ? 120 : 0});
       if (mine !== polling) return;
@@ -2052,7 +2063,7 @@ async function poll(mine) {
       }
       clockMessage('Connection problem: ' + e.message);
       await new Promise(r => setTimeout(r, 1500));
-    }
+    } finally {clearTimeout(slow);}
   }
 }
 
@@ -2500,9 +2511,9 @@ let editorMode = 'move', lastEdited = null;
 // start button itself (#start: run, pause, continue); Build returns a run to
 // time zero with your pieces; Tune opens the size and setting controls of the
 // selected (or last edited) piece.
-let tuneArmed = false, shownMode = '';
+let tuneArmed = false, runArmed = false, shownMode = '', runRequest = 0;
 function currentMode() {
-  if (playing || world.t > 0) return 'run';
+  if (runArmed || playing || world.t > 0) return 'run';
   if (tuneArmed || (ghost && editorMode === 'adjust')) return 'tune';
   return 'build';
 }
@@ -2515,6 +2526,7 @@ function renderPlayMode() {
   if (box.hidden === show) box.hidden = !show;
   if (!show) return;
   const mode = currentMode();
+  $('mode-tune-tab').disabled = !ghost && !placements.length && !(level?.free && sandboxObjects.length);
   if (mode !== shownMode) {
     shownMode = mode; document.body.dataset.mode = mode;
     for (const name of ['build', 'tune', 'run']) $(name === 'run' ? 'start' : 'mode-' + name + '-tab').setAttribute('aria-pressed', String(name === mode));
@@ -2533,11 +2545,15 @@ function choosePlayMode(mode) {
   if (!LEVEL_MODE || !level) return;
   const now = currentMode();
   if (mode === 'run') { tuneArmed = false; if (!playing) $('start').click(); return; }
+  if (mode === 'tune' && !ghost && !placements.length && !(level.free && sandboxObjects.length)) return;
+  runArmed = false;
+  runRequest++;
   if (now === 'run') resetGame(true);
   tuneArmed = mode === 'tune';
   if (ghost && !ghost.baseObject) { editorMode = tuneArmed ? 'adjust' : 'move'; setLooking(false); renderGhostBar(); }
-  else if (tuneArmed && placements.length) {
-    const i = lastEdited != null && placements[lastEdited] ? lastEdited : placements.length - 1;
+  else if (tuneArmed && (placements.length || level.free && sandboxObjects.length)) {
+    const count = placements.length + (level.free ? sandboxObjects.length : 0);
+    const i = lastEdited != null && lastEdited < count ? lastEdited : count - 1;
     pickUp(i);
   }
   shownMode = ''; renderPlayMode();
@@ -3224,6 +3240,8 @@ async function checkGhost(g) {
 // index): a ghost of it, starting where the middle of
 // the view meets the scene.
 function startGhost(p, index, keepPlace = false) {
+  runArmed = false;
+  runRequest++;
   endGhost();
   editorMode=tuneArmed&&index<placements.length?'adjust':'move';lastEdited=index;
   // Prebuilt/saved placements may omit default-valued knobs. Resolve them
@@ -3508,14 +3526,32 @@ function renderGhostBar() {
   // Connections remain scene sockets even when there is no property to tune.
   if(!keys.length)keys.push(allKeys[0]||Object.keys(knobs).find(k=>pieceKnobVisible(ghost.p,k)));
   if (!keys.includes(ghost.card)) ghost.card = keys[0];
-  const chips = Object.assign(document.createElement('div'), {className: 'adjustment-picker'});
+  const chips = Object.assign(document.createElement('div'), {className: 'adjustment-picker direct-properties'});
   const adjustment=document.createElement('select');adjustment.id='adjustment-choice';adjustment.setAttribute('aria-label','Adjustment');
   for (const key of keys) {
     adjustment.append(new Option(ghost.p.piece==='gear'&&key==='module_m'?'Radius (cm)':ghost.p.piece==='lens'&&key==='radius_m'?'Focus / face radius (m)':knobs[key].label||knobName(knobs[key],key),key));
   }
   adjustment.value=ghost.card;adjustment.addEventListener('change',()=>selectGhostKnob(adjustment.value));
-  chips.append(Object.assign(document.createElement('label'),{textContent:'Adjust',htmlFor:'adjustment-choice'}),adjustment);
-  chips.hidden=keys.length===1;
+  // The exact selector stays in Precision. Ordinary editing uses labelled
+  // values beside the object, like the three gear fields.
+  const directKeys=keys.filter(k=>!knobs[k].turning&&!heightKnobs(ghost.p).includes(k));
+  if(!directKeys.length&&keys[0])directKeys.push(keys[0]);
+  const visibleKeys=directKeys.slice(0,3);
+  if(directKeys.includes(ghost.card)&&!visibleKeys.includes(ghost.card))visibleKeys[visibleKeys.length-1]=ghost.card;
+  for(const k of visibleKeys){
+    const r=knobs[k],label=ghost.p.piece==='lens'&&k==='radius_m'?'Focus':knobName(r,k).replace(/\s*\([^)]*\)$/,'');
+    const field=button('',()=>{
+      selectGhostKnob(k,true);
+      if(r.choices&&r.choices.length>2)showValueChoices(k,r,knobName(r,k),$('piece-editor').querySelector(`[data-adjust-key="${k}"]`));
+    },{ariaLabel:`Adjust ${label}`});
+    field.dataset.adjustKey=k;field.setAttribute('aria-pressed',String(ghost.card===k));
+    field.append(Object.assign(document.createElement('span'),{className:'property-name',textContent:label}),Object.assign(document.createElement('output'),{className:'property-value'}));chips.append(field);
+  }
+  if(directKeys.length>3)chips.append(button('More',()=>{
+    valueChoices.replaceChildren(Object.assign(document.createElement('strong'),{textContent:'Adjust this piece'}),...directKeys.map(k=>button(knobName(knobs[k],k),()=>{closeValueChoices();selectGhostKnob(k,true);})),button('Close',closeValueChoices));
+    valueChoices.showPopover();positionValueChoices(chips);
+  },{ariaLabel:'More adjustments'}));
+  chips.hidden=ghost.p.piece==='plank'&&!precisionOpen||ghost.p.piece==='spring'&&directKeys.length===1&&directKeys[0]==='rest_m';
   const key = ghost.card, rule = knobs[key], name = knobName(rule, key);
   let precisionChoice=null;
   const row = Object.assign(document.createElement('div'), {className: 'knob-row'});
@@ -3631,7 +3667,7 @@ function renderGhostBar() {
   $('snap-settings').replaceChildren(gridRow);
   // Keep these shared nodes connected before replacing the old inspector.
   // Otherwise a second selection discards the controls with its old content.
-  precision.append($('scene-actions'),$('view-controls'));
+  precision.append(adjustment,$('scene-actions'),$('view-controls'));
   $('help-settings-content').replaceChildren(precision,$('preview-legend'),$('flow-preview'));
   let unclipButton=null;
   if(ghost.p.piece==='ignition'&&ghost.p.attachment_version===2) {
@@ -3742,8 +3778,9 @@ function positionLiveControls(){
       card.querySelector('output').textContent='The restrained part is free to move.';
     }
     const adjust=card.querySelector('.spring-adjust');
+    if(release){release.hidden=currentMode()!=='run';release.disabled=!session||startingRun||liveControlPending||released||release.dataset.queuedRelease==='true';}
     if(adjust)adjust.disabled=!session||playing||world.t>0||liveControlPending||released||release.dataset.queuedRelease==='true';
-    card.hidden=Boolean(ghost)||document.body.matches('.on-levels,.on-sandbox,.scene-win');if(card.hidden)continue;
+    card.hidden=Boolean(ghost)||(currentMode()!=='run'&&!adjust)||document.body.matches('.on-levels,.on-sandbox,.scene-win');if(card.hidden)continue;
     const anchor=card.anchor.clone().project(camera);card.hidden=Math.abs(anchor.z)>1||Math.abs(anchor.x)>1||Math.abs(anchor.y)>1;if(card.hidden)continue;
     if(card.matches(':active')){occupied.push(card.getBoundingClientRect());continue;}
     const x=rect.left+(anchor.x+1)*rect.width/2,y=rect.top+(1-anchor.y)*rect.height/2;
@@ -3821,6 +3858,12 @@ function showGhostState() {
 
 function showGhostKnobs() {
   if (!ghost) return;
+  for(const b of document.querySelectorAll('#piece-editor [data-adjust-key]')){
+    const key=b.dataset.adjustKey,r=trayItem(ghost.p.piece).knobs[key],v=ghost.p[key];
+    const unit=(r.label||'').match(/\(([^()]*)\)\s*$/)?.[1]||'';
+    b.querySelector('output').textContent=typeof v==='number'?`${Number(v.toFixed(3))}${unit?' '+unit:''}`:choiceText(key,v);
+    b.setAttribute('aria-pressed',String(ghost.card===key));
+  }
   for(const b of ghost.gaugeButtons||[])b.setAttribute('aria-pressed',String(b.dataset.gauge===ghost.p.size));
   for(const b of ghost.choiceButtons||[])b.setAttribute('aria-pressed',String(b.dataset.value===String(ghost.p[b.dataset.key])));
   showGridSnap();
@@ -3880,6 +3923,15 @@ const FREE_COLOUR = 0x9fdcff, GOAL_COLOUR = 0x5fe08f;
 const PREVIEW_DOT = new THREE.SphereGeometry(.02, 12, 8);
 const previewEndLook = new THREE.MeshStandardMaterial({color: 0xcdeeff, transparent: true, opacity: .3, depthWrite: false});
 let previewAsk = 0, previewTimer = null, previewOn = true, previewShown = null;
+let preparedRun=null,preparingRun=null;
+const preparation=Object.assign(document.createElement('section'),{id:'run-preparation',hidden:true,ariaLabel:'Simulation preparation'});
+const preparationLabel=Object.assign(document.createElement('span'),{role:'status'});
+const preparationMeter=Object.assign(document.createElement('progress'),{max:1});
+preparationMeter.setAttribute('aria-label','Native simulation progress');
+preparation.append(preparationLabel,preparationMeter,button('Cancel',()=>{
+  previewAsk++;previewEpoch++;runRequest++;runArmed=false;preparedRun=null;clearTimeout(previewTimer);preparation.hidden=true;
+  api({op:'cancel_preparation'}).catch(()=>{});shownMode='';renderPlayMode();
+},{ariaLabel:'Cancel preparation'}));view.append(preparation);
 const flowGroup = new THREE.Group();
 scene.add(flowGroup);
 const tankWater=new THREE.Group();scene.add(tankWater);
@@ -4583,13 +4635,28 @@ async function askPreview() {
   // A ghost that does not fit, or is still being worked out: nothing to rehearse.
   if (ghost && (!ghost.answered || !ghost.fits)) { clearPreview(); return; }
   const mine = ++previewAsk, list = ghost ? ghostPlacements() : placements;
+  const key=setupKeyFor(list),work={key,promise:null};
+  preparingRun=work;
+  preparation.hidden=false;preparationLabel.textContent='Preparing your machine…';preparationMeter.removeAttribute('value');
+  const progress=setInterval(async()=>{
+    try{
+      const state=await api({op:'preparation_status'});
+      if(preparingRun!==work||mine!==previewAsk)return;
+      if(state.preparing&&state.total_s>0){preparationMeter.value=Math.min(1,state.world_s/state.total_s);preparationLabel.textContent=`Preparing · ${state.world_s.toFixed(1)} / ${state.total_s.toFixed(1)} s calculated`;}
+    }catch{/* A progress read never prevents ordinary live play. */}
+  },500);
   try {
-    const r = await api({op: 'level_preview', level: level.id, ...sandboxRequest(), placements: list});
+    work.promise=api({op: 'level_preview', level: level.id, ...sandboxRequest(), placements: list});
+    const r = await work.promise;
+    if(mine===previewAsk&&!r.cancelled&&r.prepared_run)preparedRun={key,token:r.prepared_run};
     if (mine === previewAsk && !playing && !r.cancelled) drawPreview(r);
   } catch (e) {
     if (mine !== previewAsk) return;
     clearPreview();                     // a piece the goal needs is not placed yet, or it cannot be built
     if (e.status === 503 && previewOn) previewTimer = setTimeout(() => askPreview().catch(() => {}), 2500);
+  } finally {
+    clearInterval(progress);
+    if(preparingRun===work){preparingRun=null;preparation.hidden=true;}
   }
 }
 
@@ -5262,6 +5329,7 @@ const SWITCH_MAX_N=20;
 const switchPullLine=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0xffd34d}));
 switchPullLine.visible=false;switchPullLine.frustumCulled=false;scene.add(switchPullLine);
 function switchHandleAt(x,y,touch=false) {
+  if(currentMode()!=='run')return null;
   const devices=(machine?.electrical?.devices||[]).filter(d=>d.handle&&meshes.get(d.handle.part)?.visible);
   pointerRay(x,y);
   const names=new Map([...meshes].map(([name,mesh])=>[mesh,name]));
@@ -6419,6 +6487,7 @@ function renderMachineControls() {
   };
   const action = (label, command, name, at, autoStart=false) => {
     const b = button(label, async () => {
+      if(currentMode()!=='run'||!session||startingRun)return;
       b.disabled = true;
       try {
         liveControlPending = true;
@@ -6777,8 +6846,11 @@ window.machineDesign = () => activeDesign ? clone(activeDesign) : null;
 
 let builtSetupKey = null;
 let builtCanRun = false;
-const currentSetupKey = () => JSON.stringify({level:level?.id,placements,...sandboxRequest()});
-async function rebuildLevel(start, {takeOver=false}={}) {
+const setupKeyFor = list => JSON.stringify({level:level?.id,placements:list,...sandboxRequest()});
+const currentSetupKey = () => setupKeyFor(placements);
+window.machinePreparationState=()=>({ready:Boolean(preparedRun&&preparedRun.key===setupKeyFor(ghost?ghostPlacements():placements)),pending:Boolean(preparingRun)});
+async function rebuildLevel(start, {takeOver=false,prepared=null}={}) {
+  runArmed = Boolean(start);
   const runInspection = start ? inspectedCircuit : null;
   // A rebuild still waiting to start would come after this one and undo it
   // (a Run pressed just after setting a piece down stayed unstarted).
@@ -6787,7 +6859,7 @@ async function rebuildLevel(start, {takeOver=false}={}) {
   scored = false; $('verdict').replaceChildren(); closeDone();
   try {
     const setupKey = currentSetupKey();
-    const opened = await build(null, false, {op: 'level_open', level: level.id, ...sandboxRequest(), placements, helped,...(takeOver?{take_over:true}:{})});
+    const opened = await build(null, false, {op: 'level_open', level: level.id, ...sandboxRequest(), placements, helped,...(takeOver?{take_over:true}:{}),...(prepared?{prepared_run:prepared}:{})});
     if (opened.session !== session) return;
     builtSetupKey = setupKey;
     builtCanRun = !opened.needs;
@@ -6858,6 +6930,8 @@ let advanceTimer = null;
 // Back to the level's beginning, not running: with the same pieces (to move
 // or change them) or with none.
 function startOver(keep) {
+  runRequest++;
+  tuneArmed = false; runArmed = false; editorMode = 'move';
   endGhost();
   if (!keep && (placements.length || (level.free && activeDesign?.draft.base))) remember();
   if (!keep && level.free && activeDesign) { activeDesign.draft.base = null; framedFree = false; }
@@ -7090,7 +7164,7 @@ async function chooseLevel(id, design = null) {
     activeDesign = design || store.items.find(d => d.id === store.last) || store.items[0] || newDesign('Untitled design');
     store.last = activeDesign.id; persist();
   }
-  endGhost(); gridSnapEnabled=true;objectSnapEnabled=true;lastEdited=null;closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
+  endGhost(); tuneArmed=false;runArmed=false;runRequest++;editorMode='move';shownMode='';gridSnapEnabled=true;objectSnapEnabled=true;lastEdited=null;closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
   for(const id of ['grid-snap','object-snap'])$(id)?.setAttribute('aria-pressed','true');
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
   undone = []; redone = []; showUndo(); cancelAttach();
@@ -7657,10 +7731,21 @@ function ghostInTheWay() {
 // the pieces and plays it; while it plays it pauses, then continues; after
 // the run, it runs it again.
 let startingRun = false;
+async function preparedForRun(key) {
+  const electrical=machine?.electrical||{};
+  const automatic=!level.free&&!level.release_to_start&&!(machine?.spouts?.length)&&
+    !(electrical.wires?.length)&&!(electrical.power_cables?.length)&&
+    !(electrical.devices||[]).some(d=>d.handle)&&!(machine?.circuits||[]).some(c=>c.leads?.length)&&
+    !(machine?.joints||[]).some(j=>j.name.endsWith(' restraint'));
+  if(!automatic)return null;
+  if(preparingRun?.key===key){try{await preparingRun.promise;}catch{/* Fall back to the live engine. */}}
+  return preparedRun?.key===key?preparedRun.token:null;
+}
 async function runLevel() {
   const failed = e => { clockMessage(e.message); };
   if (startingRun || rewiringBusy) return;
   startingRun = true;
+  const request=++runRequest;
   try {
     if (playing) { await setPlaying(false); return; }
     if (ghost) {
@@ -7675,7 +7760,9 @@ async function runLevel() {
         return;
       }
       // Place and start in one rebuild, so a delayed setup cannot stop it.
-      sceneIntoView(); await rebuildLevel(true); return;
+      const key=currentSetupKey(),prepared=await preparedForRun(key);
+      if(request!==runRequest||currentSetupKey()!==key)return;
+      sceneIntoView(); await rebuildLevel(true,{prepared}); return;
     }
     if (session && liveControlPending && !scored) {
       await liveControlRequest; liveControlPending = false; await setPlaying(true);
@@ -7687,7 +7774,9 @@ async function runLevel() {
       clearTimeout(rebuildTimer);
       sceneIntoView(); await setPlaying(true); return;
     }
-    sceneIntoView(); await rebuildLevel(true);
+    const key=currentSetupKey(),prepared=await preparedForRun(key);
+    if(request!==runRequest||currentSetupKey()!==key)return;
+    sceneIntoView(); await rebuildLevel(true,{prepared});
   } catch (e) { failed(e); }
   finally {
     startingRun = false;

@@ -2080,6 +2080,12 @@ class PreviewJob:
         self.event = threading.Event()
         self.lock = threading.Lock()
         self.process = None
+        self.progress_s = 0.0
+        self.total_s = 0.0
+
+    def progress(self, at_s, total_s):
+        with self.lock:
+            self.progress_s, self.total_s = at_s, total_s
 
     def cancelled(self):
         return self.event.is_set()
@@ -2114,6 +2120,14 @@ class PreviewJobs:
             return visitor, str(uuid.UUID(owner))
         except (ValueError, TypeError, AttributeError):
             return None
+
+    def status(self, visitor, owner):
+        with self.lock:
+            job = self.jobs.get(self.key(visitor, owner))
+            if job is None:
+                return {'preparing': False}
+            with job.lock:
+                return {'preparing':not job.cancelled(), 'world_s':round(job.progress_s, 3), 'total_s':job.total_s}
 
     def remember(self, key, epoch):
         if key is None or type(epoch) is not int or not 0 <= epoch <= 10**9:
@@ -2434,6 +2448,7 @@ class MachineSession:
         # For a preview (rehearse(track=...)): tracked bodies' paths and hits.
         self.trail, self.trail_turn, self.trail_hits = None, {}, []
         self.flow_trail = None
+        self.replay_recorder = None
         self.wall_compute_s = 0.0
         self.fracture_s = 0.0
         self.behind_s = 0.0
@@ -3287,6 +3302,8 @@ class MachineSession:
                         last_probe = self.t
                     self.behind_s = max(0.0, target - self.t) if self.paced else 0.0
                     self.behind_max_s = max(self.behind_max_s, self.behind_s)
+                    if self.replay_recorder is not None:
+                        self.replay_recorder.capture(self)
                     self.lock.notify_all()
                 self.journal.write(json.dumps({'t': self.t, 'events': [e for e in self.events if e['seq'] == self.seq]})
                                    + '\n')
@@ -3407,7 +3424,7 @@ class MachineSession:
 
 
 def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, after_s=0.0, flows=False,
-             *, handle_inputs=None, release_inputs=None, preview_job=None,setup_s=0):
+             *, handle_inputs=None, release_inputs=None, preview_job=None,setup_s=0,recorder=None):
     """Run a machine once, unpaced, and report what the engine measured: which
     stations happened, when, and the events. Nothing is kept and nothing is
     changed; a person still watches the real run afterwards. track: names of
@@ -3449,6 +3466,9 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
         session._capture_flows()
     started = time.perf_counter()
     try:
+        session.replay_recorder = recorder
+        if recorder is not None:
+            recorder.capture(session, force=True)
         for name in release_inputs or []:
             session.release_joint(name)
         for command in handle_inputs or []:
@@ -3460,6 +3480,8 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
         with session.lock:
             all_done_at = None
             while True:
+                if preview_job is not None:
+                    preview_job.progress(session.t, seconds)
                 if preview_job is not None and preview_job.cancelled():
                     return {'cancelled': True}
                 rows = (session.readouts or {}).get('stations', [])
@@ -3474,6 +3496,8 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
             if preview_job is not None and preview_job.cancelled():
                 return {'cancelled': True}
             done = getattr(session, '_done_at', {})
+            if recorder is not None:
+                recorder.capture(session, force=True)
             out = {'world_time_s': round(session.t, 3), 'wall_s': round(time.perf_counter() - started, 2),
                    'error': session.error, 'stations': list(rows),
                    'zone_nearest_m': {compiled['stations'][i]['title']: round(d, 4)
@@ -3494,6 +3518,8 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                     for name in sorted(getattr(session,'flow_mechanism_names',set())) if name in session.flow_starts]
                 out['complete'] = not session.error and (session.t >= seconds or
                     (all_done_at is not None and session.t >= all_done_at+after_s))
+            out['complete'] = not session.error and (session.t >= seconds or
+                (all_done_at is not None and session.t >= all_done_at+after_s))
             return out
     finally:
         session.close()
@@ -3530,16 +3556,16 @@ class MachineHost:
                 s.close()
                 del self.sessions[key]
 
-    def open(self, spec, *, take_over=False):
+    def open(self, spec, *, take_over=False, prepared=None):
         if self.exe is None:
             raise ValueError('The live world engine (banjo_live_world_run) is not built; no substitute is run')
         compiled = compile_spec(spec)
         # Serialize admission, not frame reads. An opening native process also
         # occupies capacity, and an explicit test takeover must follow it.
         with self.open_lock:
-            return self._open(compiled, take_over=take_over)
+            return self._open(compiled, take_over=take_over, prepared=prepared)
 
-    def _open(self, compiled, *, take_over=False):
+    def _open(self, compiled, *, take_over=False, prepared=None):
         with self.lock:
             self._sweep()
             if take_over:
@@ -3561,7 +3587,11 @@ class MachineHost:
                                    'Try again in a minute or two.')
                 making_room.close()
                 del self.sessions[making_room.id]
-        session = MachineSession(compiled, self.exe, self.logs)
+        if prepared:
+            from machine_replay import ReplaySession
+            session = ReplaySession(compiled, prepared)
+        else:
+            session = MachineSession(compiled, self.exe, self.logs)
         with self.lock:
             self.sessions[session.id] = session
         reply = session.frame(0, 0)

@@ -930,6 +930,9 @@ if(BANJO_BUILD_TESTS)
                 add_test(NAME banjo_machine_host_tests COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_host_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                 set_tests_properties(banjo_machine_host_tests PROPERTIES TIMEOUT 30 LABELS "machine;http")
+                add_test(NAME banjo_machine_replay_tests COMMAND ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_replay_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
+                set_tests_properties(banjo_machine_replay_tests PROPERTIES TIMEOUT 60 LABELS "machine;http")
                 add_test(NAME banjo_machine_world_tests COMMAND ${Python3_EXECUTABLE}
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_world_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                 set_tests_properties(banjo_machine_world_tests PROPERTIES TIMEOUT 300

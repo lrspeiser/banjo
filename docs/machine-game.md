@@ -1,5 +1,32 @@
 # Puzzles on the machine (/play)
 
+October 17 audit implementation, checkpoint 1:
+
+* New levels and designs clear Tune/Run intent and restore Build. Tune is
+  disabled until a player piece or editable Sandbox object exists. A Run-ready
+  spring remains in Run at time zero; selecting it returns to editing. Device
+  operating controls wait for Run, while Adjust spring remains an editing action.
+* Ordinary property selection uses labelled values beside the object (up to
+  three, with More for larger editors). Precision retains the exact selector.
+  Editable and operating highlights also draw gold/teal edges on actual meshes.
+* `machine_replay.py` records bounded native rehearsal deltas at 20 Hz and
+  supplies a normal session interface for timed playback. It preserves native
+  body geometry, topology events, readouts and scoring; the client still blends
+  between received frames. Prepared runs are scoped to the visitor/page, complete
+  compiled setup and engine digest, consumed once, expire after five minutes,
+  and have 16 MiB/run and 64 MiB/server limits. Incomplete/oversized preparations
+  fall back to live calculation. No new timestep, goal or physics law is used.
+  Manual controls, finite-water taps, Sandbox and setups with settling cords stay
+  live; the recorder is not a general device-interior or subsystem trajectory cache.
+  Preparation uses the existing preview lane and cancellation; camera changes do
+  not alter its key. The progress indicator reports simulated time, not an ETA.
+* Measured locally: four replay identity/topology/native-goal tests and 42 host
+  tests pass. Browser checks pass for new-level tray recovery at 1280×860,
+  390×844, 844×390 and 320×568, and prepared native Mind the gap playback,
+  edit invalidation and mode transitions at desktop/portrait/landscape sizes.
+  The spring editor/release regression passes all four sizes. These results
+  do not establish frame rates on a physical phone or the hosting server.
+
 October 16 playtest follow-up (the engine, every level's goal and every test
 tolerance are unchanged; Sandbox gains optional player goals):
 
