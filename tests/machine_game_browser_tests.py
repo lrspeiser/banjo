@@ -2794,6 +2794,10 @@ class Puzzles(unittest.TestCase):
                 self.wait("machineDesign()?.draft.base?.build_surface?.kind==='wall' && "+READY,60)
                 self.wait('machineCamera().settled',30)
                 self.assertEqual(self.js('machinePlacements().length'),5)
+                self.assertAlmostEqual(self.js('machineCamera().azimuth'),.38)
+                self.assertAlmostEqual(self.js('machineCamera().elevation'),.20)
+                self.assertTrue(self.js('machineWallState().ground_visible'))
+                self.click_visible('Face the wall');self.wait('machineCamera().settled',30)
                 self.assertAlmostEqual(self.js('machineCamera().azimuth'),0)
                 self.assertAlmostEqual(self.js('machineCamera().elevation'),0)
                 self.assertFalse(self.js("machineEditableObjects().some(o=>o.parts.includes('workshop backing')||o.parts.includes('workshop clear guard'))"))
@@ -2829,7 +2833,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual((turned['x_m'],turned['height_m']),(before_turn['x_m'],before_turn['height_m']))
                 self.click_visible('Throw the ghost away')
                 self.click_visible('Add a piece')
-                self.wait("document.querySelectorAll('#piece-grid .piece-card').length===15",20)
+                self.wait("document.querySelectorAll('#piece-grid .piece-card').length===14",20)
                 self.wait("[...document.querySelectorAll('#piece-grid .piece-card img')].every(img=>img.naturalWidth>0)",45)
                 self.assertTrue(self.js("[...document.querySelectorAll('#piece-grid .piece-card')].every(b=>b.getBoundingClientRect().height>=44)"))
                 self.press('Add a wall funnel');self.assertTrue(self.ghost()['fits'])
@@ -2846,15 +2850,16 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(saved['versions'][-1]['draft']['base']['build_surface']['kind'],'wall')
                 self.press('All designs');self.press('Open design '+saved['name']);self.wait(READY,60)
                 self.assertEqual(self.js('machinePlacements()'),saved['draft']['placements'])
-                self.assertAlmostEqual(self.js('machineCamera().azimuth'),0)
+                self.assertAlmostEqual(self.js('machineCamera().azimuth'),.38)
+                self.click_visible('Face the wall');self.wait('machineCamera().settled',30)
                 self.click_visible('Run')
-                self.wait("machineBodies()['your marble 1']?.[1]<1.12 && machineBodies()['your marble 1']?.[0]>.49",30)
+                self.wait("machineBodies()['your wall_marble 1']?.[1]<1.12 && machineBodies()['your wall_marble 1']?.[0]>.49",30)
                 self.click_visible('Pause')
                 proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
                 (proof/f'wall-workshop-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
                 self.assertLessEqual(self.js('document.body.scrollWidth'),width)
                 self.click_visible('Reset');self.wait(READY,30)
-                self.assertAlmostEqual(self.js("machineBodies()['your marble 1'][1]"),3.6,places=3)
+                self.assertAlmostEqual(self.js("machineBodies()['your wall_marble 1'][1]"),3.6,places=3)
                 surface=self.js('machineDesign().draft.base')
                 self.js('window.confirm=()=>true');self.press('Clear the wall');self.wait(READY,30)
                 self.assertEqual(self.js('machinePlacements()'),[])
@@ -2867,24 +2872,105 @@ class Puzzles(unittest.TestCase):
                         self.wait('machineCamera().settled',30);self.paint()
                         self.assertTrue(self.js("(()=>{const v=document.getElementById('view').getBoundingClientRect();return [[-3,0,.3],[3,4,.3]].map(machineScreenPoint).every(p=>p[0]>=v.left&&p[0]<=v.right&&p[1]>=v.top&&p[1]<=v.bottom);})()"),'Rotating an open wall must preserve the board framing')
 
-    def test_wall_wires_connect_at_scene_sockets_and_drive_the_native_motor(self):
-        import sandbox_wall
+    def test_wall_world_keeps_wall_drag_simple_and_places_regular_pieces_in_depth(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
+                if width!=1280:
+                    type(self).chrome.close();self.server.machines.close_all()
+                    type(self).chrome=chrome_driver.Chrome(width,height);type(self).page=type(self).chrome.page
+                    self.page.send('Network.enable');self.page.send('Runtime.enable')
                 self.anonymous_levels(width=width,height=height)
-                draft=dict(name='Wall circuit',base=sandbox_wall.base(),placements=[
-                    dict(piece='battery',x_m=-.8,height_m=2),dict(piece='motor',x_m=.4,height_m=2)])
+                self.press('Sandbox: build anything');self.click_visible('Build on a wall');self.wait(READY,60)
+                self.assertEqual(self.js('machineDesign().draft.base.build_surface.version'),2)
+                self.assertTrue(self.js('machineWallState().ground_visible'))
+                self.assertFalse(self.js("Boolean(machineBodies()['workshop clear guard'])"))
+                original=self.js('machinePlacements()');a=self.js('machineCamera().azimuth')
+                self.click_visible('Turn the view right')
+                self.assertGreater(self.js('machineCamera().azimuth'),a)
+                self.assertEqual(self.js('machinePlacements()'),original)
+                self.click_piece(1);before=self.ghost()['p'];self.click_visible('Move selected piece')
+                self.wait('machineCamera().settled',30)
+                start=self.js(f"machineScreenPoint([{before['x_m']},{before['height_m']},.3])")
+                end=self.js(f"machineScreenPoint([{before['x_m']+.15},{before['height_m']-.1},.3])")
+                self.assertTrue(self.js(f"document.elementFromPoint({start[0]},{start[1]})?.tagName==='CANVAS'"))
+                # The whole board fits a short landscape view: this 15 cm
+                # precision move can project below the 6 px tap guard. Begin
+                # an intentional drag, then return to the requested point.
+                via=[start[0]+16,start[1]] if math.dist(start,end)<12 else None
+                self.drag(start,end,touch=width!=1280,via=via);moved=self.ghost()['p']
+                self.assertAlmostEqual(moved['x_m'],before['x_m']+.15,delta=.02)
+                self.assertAlmostEqual(moved['height_m'],before['height_m']-.1,delta=.02)
+                self.assertNotIn('z_m',moved);self.assertTrue(self.js('machineWallState().mounted'))
+                self.click_visible('Throw the ghost away')
+                if width==1280:
+                    self.click_visible('Add a piece');self.click_visible('Show all pieces')
+                    self.wait("document.querySelectorAll('#piece-grid .piece-card').length===64",20)
+                    self.wait("[...document.querySelectorAll('#piece-grid .piece-card img')].every(img=>img.naturalWidth>0)",45)
+                self.press('Add a loose block');self.ghost();self.assertFalse(self.js('machineWallState().mounted'))
+                before=self.ghost()['p'];self.click_visible('Move selected piece')
+                self.wait('machineCamera().settled',30)
+                start=self.js(f"machineScreenPoint([{before['x_m']},.1,{before['z_m']}])")
+                end=self.js(f"machineScreenPoint([{before['x_m']+.25},.1,{before['z_m']+.4}])")
+                via=[start[0]+16,start[1]] if math.dist(start,end)<12 else None
+                self.drag(start,end,touch=width!=1280,via=via);moved=self.ghost()['p']
+                self.assertGreater(moved['z_m'],before['z_m']+.2)
+                self.assertEqual(moved['center_height_m'],before['center_height_m'])
+                self.assertTrue(self.ghost()['fits'])
+                self.click_visible('Place');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements()[1]'),original[1])
+                self.click_visible('Save version');self.anonymous_cloud_saved();saved=self.js('machineDesign()')
+                self.press('All designs');self.press('Open design '+saved['name']);self.wait(READY,60)
+                self.assertEqual(self.js('machinePlacements()'),saved['draft']['placements'])
+                self.click_visible('Run');self.wait("machineBodies()['your wall_marble 1']?.[2]>1.5",30)
+                self.click_visible('Pause')
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'wall-world-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+
+    def test_legacy_wall_opens_into_the_world_with_versions_and_undo(self):
+        import sandbox_wall
+        old=dict(name='Older wall in 3D',base=sandbox_wall.base(),placements=sandbox_wall.lift_assembly()[0])
+        packed='j'+base64.urlsafe_b64encode(json.dumps(old).encode()).decode().rstrip('=')
+        self.navigate(self.base+'/machine#build='+packed);self.wait(READY,60)
+        self.assertAlmostEqual(self.js('machineCamera().azimuth'),.38)
+        original=self.js('machineDesign().draft')
+        self.click_visible('Add 3D pieces');self.wait("machineDesign().draft.base.build_surface.version===2 && "+READY,60)
+        self.assertEqual(self.js('machinePlacements()[1].piece'),'wall_marble')
+        self.assertEqual(self.js('machinePlacements()[3].a_terminal'),'your wall_battery 3:plus')
+        self.assertEqual(self.js('machineDesign().versions.at(-1).draft'),original)
+        self.click_visible('Controls');self.click_visible('Undo');self.wait(READY,60)
+        self.assertEqual(self.js('machineDesign().draft'),original)
+        self.click_visible('Redo');self.wait(READY,60)
+        self.assertEqual(self.js('machineDesign().draft.base.build_surface.version'),2)
+        self.press('Add a loose block');self.ghost();self.assertTrue(self.ghost()['fits'])
+        self.click_visible('Throw the ghost away')
+
+    def test_wall_wires_connect_at_scene_sockets_and_drive_the_native_motor(self):
+        import sandbox_wall
+        for version,width,height in ((1,1280,860),(2,1280,860),(2,390,844),(2,844,390)):
+            with self.subTest(version=version,viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                prefix='wall_' if version==2 else ''
+                battery=f'your {prefix}battery 1';motor=f'your {prefix}motor 2'
+                draft=dict(name='Wall circuit',base=sandbox_wall.world_base() if version==2 else sandbox_wall.base(),placements=[
+                    dict(piece=prefix+'battery',x_m=-.8,height_m=2),dict(piece=prefix+'motor',x_m=.4,height_m=2)])
                 packed='j'+base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
                 self.navigate(self.base+'/machine#build='+packed);self.wait(READY,60)
                 self.wait('machineCamera().settled',30)
+                if version==2:
+                    self.click_piece(0);self.ghost();self.choose_adjustment('Height')
+                    self.assertIn('12 V',self.js("document.getElementById('adjustment-feedback').textContent"))
+                    self.click_visible('Increase Height on object');self.ghost()
+                    self.assertGreater(self.ghost()['p']['height_m'],2)
+                    self.click_visible('Place');self.wait(READY,30)
                 for side in ('plus','minus'):
-                    self.click_scene_socket('your battery 1:'+side,touch=width!=1280);self.ghost()
-                    self.click_scene_socket('your motor 2:'+side,touch=width!=1280)
+                    self.click_scene_socket(battery+':'+side,touch=width!=1280);self.ghost()
+                    self.click_scene_socket(motor+':'+side,touch=width!=1280)
                     self.wait('!machineGhostState() && '+READY,60)
                 self.assertEqual(self.js('machinePlacements().length'),4)
                 self.assertTrue(self.js("machinePlacements().filter(p=>p.piece==='wire').every(p=>p.length_m===2)"))
                 self.click_visible('Run')
-                self.wait("machineContactState().liveDevices.some(m=>m.name==='your motor 2' && m.power_w>.1)",30)
+                self.wait(f"machineContactState().liveDevices.some(m=>m.name==={json.dumps(motor)} && m.power_w>.1)",30)
                 self.click_visible('Pause')
 
     def test_wall_word_builder_adds_a_verified_lift_with_undo_save_and_scene_controls(self):
@@ -2913,7 +2999,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Throw the ghost away');self.wait(READY,30)
                 self.click_visible('Save version');self.anonymous_cloud_saved()
                 self.click_visible('Run')
-                self.wait("machineBodies()['your marble 7']?.[0]>-.5 && machineBodies()['your marble 7']?.[1]>.82",45)
+                self.wait("machineBodies()['your wall_marble 7']?.[0]>-.5 && machineBodies()['your wall_marble 7']?.[1]>.82",45)
                 self.click_visible('Pause')
                 self.click_visible('Reset');self.wait(READY,30)
 

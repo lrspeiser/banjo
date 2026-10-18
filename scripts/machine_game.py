@@ -300,10 +300,10 @@ def requested_level(data):
         level['machine'] = copy.deepcopy(base)
         level['custom_base'] = True
         if sandbox_wall.validate(base):
-            level['wall_mode'] = sandbox_wall.surface()
+            level['wall_mode'] = copy.deepcopy(base['build_surface'])
             level['title'] = 'Wall workshop'
             level['brief'] = 'Drag pieces on the wall. Gravity carries the marble between them.'
-            level['tray'] = sandbox_wall.tray()
+            level['tray'] = sandbox_wall.world_tray(level['tray']) if base['build_surface']['version']==2 else sandbox_wall.tray()
         sockets = [d for d in (base.get('electrical') or {}).get('devices',[]) if d.get('kind')=='socket']
         if len(sockets)==1 and set(sockets[0].get('terminal_parts',{}))=={'plus','minus'}:
             holder = sockets[0]
@@ -843,7 +843,10 @@ def _assemble(level, placements, lenient=False):
             for module in SANDBOX_MODULES:
                 builders.update(module.PIECES)
         if level.get('wall_mode'):
-            builders = sandbox_wall.PIECES
+            if level['wall_mode']['version']==1:builders = sandbox_wall.PIECES
+            else:builders.update(sandbox_wall.WORLD_PIECES)
+            if p['piece']=='wire' and all(str(p.get(key,'')).startswith('your wall_') for key in ('a_terminal','b_terminal')):
+                builders['wire']=sandbox_wall.PIECES['wire']
         made = builders[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)
         merge_fragment(spec, made)
     compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
@@ -851,12 +854,15 @@ def _assemble(level, placements, lenient=False):
     # Wall builders supply their own actual fixed/hinge mountings to the
     # backing. The ground support heuristic cannot recognise a cantilever's
     # rear fixing; adding posts would change its declared contact geometry.
-    stands = [] if level.get('wall_mode') else hold_up(compiled['parts'], spec.get('cell_m', 0.02), only_player=level.get('custom_base', False))
+    mounted_owners={f'your {p["piece"]} {i+1}' for i,p in enumerate(checked) if tray[p['piece']].get('wall_mounted')}
+    legacy_wall=level.get('wall_mode',{}).get('version')==1
+    stands = [] if legacy_wall else hold_up(compiled['parts'], spec.get('cell_m', 0.02),
+        only_player=level.get('custom_base', False),skip_owners=mounted_owners)
     if stands:
         spec['parts'] += stands
         compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
     if level.get('wall_mode'):
-        problems=sandbox_wall.bounds_problems(compiled)
+        problems=sandbox_wall.bounds_problems(compiled,None if legacy_wall else mounted_owners)
         if problems and not lenient:raise LevelRefused(problems)
         compiled.setdefault('problems',[]).extend(problems)
     return spec, checked, cost, compiled
@@ -1017,13 +1023,14 @@ def _stands_for(part, parts, cell=0.02):
     return chosen or nominal
 
 
-def hold_up(parts, cell=0.02, only_player=False):
+def hold_up(parts, cell=0.02, only_player=False, skip_owners=()):
     """The stands that keep every fixed part in `parts` from floating."""
     parts, stands, tried = list(parts), [], set()
     names = {p['name'] for p in parts}
     while True:
         held = held_up(parts)
         floating = [p for p in parts if p.get('fixed') and p['name'] not in held and p['name'] not in tried
+                    and owner(p) not in skip_owners
                     and (not only_player or owner(p) is not None)]
         if not floating:
             return stands

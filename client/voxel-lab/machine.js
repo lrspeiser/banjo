@@ -632,7 +632,7 @@ function positionTerminalLabels() {
   const rect = renderer.domElement.getBoundingClientRect();
   const top = Math.max(8, $('clock').getBoundingClientRect().bottom - rect.top + 8);
   const bottom = Math.min(rect.height - 8, innerHeight - rect.top - 8);
-  const occupied = [...view.querySelectorAll('#scene-mode, #clock, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, .power-pin, #piece-handles button:not([hidden])')]
+  const occupied = [...view.querySelectorAll('#scene-mode, #clock, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history,#wall-camera-view, .power-pin, #piece-handles button:not([hidden])')]
     .filter(el => !el.hidden && el.style.visibility !== 'hidden' && el.offsetWidth && el.offsetHeight).map(el => {
       const r = el.getBoundingClientRect(); return {x:r.left-rect.left, y:r.top-rect.top, w:r.width, h:r.height};
     });
@@ -1370,7 +1370,7 @@ function decodeFloats(b64) {
 }
 function syncGround(view) {
   if (terrain) { scene.remove(terrain); terrain.geometry.dispose(); terrain = null; }
-  ground.visible = grid.visible = !view && !wallDesign();
+  ground.visible = grid.visible = !view;
   wallGrid.visible=wallDesign();
   if (!view || !view.grid) return;
   const g = view.grid, heights = decodeFloats(view.heights_b64);
@@ -2091,8 +2091,25 @@ async function poll(mine) {
 
 // ---- camera -------------------------------------------------------------------
 let framedFree = false;
+let wallFront = false;
 function wallDesign() { return Boolean(level?.free && activeDesign?.draft.base?.build_surface?.kind==='wall'); }
+function worldWallDesign(){return wallDesign()&&activeDesign.draft.base.build_surface.version===2;}
+function wallPlacement(p=ghost?.p){return wallDesign()&&Boolean(p)&&(!worldWallDesign()||trayItem(p.piece)?.wall_mounted);}
+function pieceKind(p){return p?.piece?.replace(/^wall_(marble|gear|motor|battery|switch|bulb|resistor|capacitor)$/,'$1');}
 function wallPlane() { return activeDesign?.draft.base?.build_surface?.plane_z_m ?? .3; }
+function wallCameraControls(){
+  $('wall-camera-view').hidden=!wallDesign();$('wall-camera-view').textContent=wallFront?'3D':'Front';
+  $('wall-camera-view').setAttribute('aria-label',wallFront?'Explore in 3D':'Face the wall');
+  for(const id of ['view-left','view-right','view-up','view-down']){const label=wallDesign()&&wallFront?`Pan ${id.slice(5)}`:({'view-left':'Turn the view left','view-right':'Turn the view right','view-up':'Look from above','view-down':'Look from the side'})[id];$(id).title=label;$(id).setAttribute('aria-label',label);}
+}
+function syncWallTray(){
+  if(!level?.free)return;
+  const key=worldWallDesign()?'world':wallDesign()?'legacy':'ordinary';
+  if(level.wallTrayKey===key)return;
+  if(key!=='ordinary'||level.wallTrayKey)level.tray=clone(key==='world'?wallTemplate.tray:key==='legacy'?legacyWallTray:freeLevel.tray);
+  level.wallTrayKey=key;
+}
+$('wall-camera-view').addEventListener('click',()=>{wallFront=!wallFront;frameCamera(Boolean(ghost));wallCameraControls();freshView();});
 function panWall(dx,dy) {
   const scale=2*distance*Math.tan(camera.fov*Math.PI/360)/Math.max(1,renderer.domElement.clientHeight);
   goal.x-=dx*scale;goal.y+=dy*scale;target.copy(goal);
@@ -2101,7 +2118,7 @@ function overviewDesign() {
   return level?.free && activeDesign?.draft.base?.presentation?.camera === 'overview';
 }
 function frameCamera(includeGhost=false) {
-  if(wallDesign()) {
+  if(wallDesign()&&wallFront) {
     const board=activeDesign.draft.base.build_surface;
     goal.set(0,board.height_m/2,wallPlane());target.copy(goal);
     azimuth=0;elevation=0;
@@ -2152,6 +2169,12 @@ function frameCamera(includeGhost=false) {
   distance = Math.min(40, Math.max(level?.camera_min_m || (zone ? 2.2 : 1.6), 1.12 * radius / Math.sin(half)));
   const pulley=machine?.pulleys?.[0],heading=pulley?.heading||[1,0,0];
   azimuth = pulley?Math.atan2(heading[2],-heading[0])+.12:-.25; elevation = .38;
+  if(wallDesign()){
+    goal.set((lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(lo[2]+hi[2])/2);target.copy(goal);
+    azimuth=.38;elevation=.20;follow=false;$('follow').setAttribute('aria-pressed','false');
+    const radius=Math.hypot(...lo.map((low,i)=>(hi[i]-low)/2));
+    distance=Math.min(40,1.12*radius/Math.sin(half));
+  }
   if (overviewDesign()) {
     // Keep a multi-storey journey in view rather than diving into its pipes or
     // the underside of the next bridge. Fit projected corners at this angle.
@@ -2200,7 +2223,7 @@ function resize() {
   renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
   const half = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
   // Preserve the framing when the phone rotates.
-  if(wallDesign()) {
+  if(wallDesign()&&wallFront) {
     const board=activeDesign.draft.base.build_surface;
     distance=Math.min(40,distance*Math.max(board.height_m,board.width_m/camera.aspect)/Math.max(board.height_m,board.width_m/oldAspect));
   } else distance = Math.min(40, distance * Math.sin(oldHalf) / Math.sin(half));
@@ -2233,12 +2256,12 @@ function moveCameraPointer(e) {
     const [p0, q0] = before;
     const [a, b] = [...pointers.values()], gap = Math.hypot(a[0] - b[0], a[1] - b[1]);
     if (pinch) distance = Math.min(40, Math.max(.4, distance * pinch / gap));
-    if(wallDesign()){panWall(((a[0]+b[0])-(p0[0]+q0[0]))/2,((a[1]+b[1])-(p0[1]+q0[1]))/2);pinch=gap;return;}
+    if(wallDesign()&&wallFront){panWall(((a[0]+b[0])-(p0[0]+q0[0]))/2,((a[1]+b[1])-(p0[1]+q0[1]))/2);pinch=gap;return;}
     azimuth -= ((a[0] + b[0]) - (p0[0] + q0[0])) / 2 * .006;
     elevation = Math.min(1.45, Math.max(.05, elevation + ((a[1] + b[1]) - (p0[1] + q0[1])) / 2 * .006));
     pinch = gap; return;
   }
-  if(wallDesign()){panWall(e.clientX-last[0],e.clientY-last[1]);return;}
+  if(wallDesign()&&wallFront){panWall(e.clientX-last[0],e.clientY-last[1]);return;}
   azimuth -= (e.clientX - last[0]) * .006;
   elevation = Math.min(1.45, Math.max(.05, elevation + (e.clientY - last[1]) * .006));
 }
@@ -2272,7 +2295,6 @@ renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 // first frame after a change (a slow phone, a level just built), and it must
 // not aim at the view as it was before.
 function aimCamera() {
-  if(wallDesign()){azimuth=0;elevation=0;}
   $('view-zoom').value=Math.round(100*Math.log(40/distance)/Math.log(100));
   camera.position.set(target.x + distance * Math.cos(elevation) * Math.sin(azimuth), target.y + distance * Math.sin(elevation),
                       target.z + distance * Math.cos(elevation) * Math.cos(azimuth));
@@ -2433,7 +2455,7 @@ const LEVEL_MODE = true;
 let levels = [], level = null, placements = [], placedCost = [], placedEnergy = {}, helped = false, scored = false, lastRun = null, rebuildTimer = null;
 let generatedLevel = null;
 let freeLevel = null;
-let sandboxBase = null, sandboxTemplates = [], wallTemplate = null, activeDesign = null, sandboxObjects = [];
+let sandboxBase = null, sandboxTemplates = [], wallTemplate = null, legacyWallTray = [], activeDesign = null, sandboxObjects = [];
 let sharedCourse = null;
 const readOnlyCourse = () => Boolean(sharedCourse || activeDesign?.sharedCourse);
 function sandboxRequest() {
@@ -2542,7 +2564,7 @@ function heightKnobs(p) {
   return HEIGHT_KNOBS.filter(k => knobs[k] && !knobs[k].choices && pieceKnobVisible(p,k));
 }
 function viewAxis(dir) {
-  if(wallDesign())return ['left','right'].includes(dir)?['x_m',dir==='right'?1:-1]:['height_m',dir==='forward'?1:-1];
+  if(wallPlacement())return ['left','right'].includes(dir)?['x_m',dir==='right'?1:-1]:['height_m',dir==='forward'?1:-1];
   // The camera looks along (-sin a, -cos a) on the ground; its right is (cos a, -sin a).
   const [dx, dz] = {right: [Math.cos(azimuth), -Math.sin(azimuth)], left: [-Math.cos(azimuth), Math.sin(azimuth)],
                     forward: [-Math.sin(azimuth), -Math.cos(azimuth)], back: [Math.sin(azimuth), Math.cos(azimuth)]}[dir];
@@ -2720,7 +2742,7 @@ function repeatOnHold(b, act, {drag=false}={}) {
 // moved since; the server's answer then sets it down again.
 function followGhost() {
   if (!ghost || !ghost.drawnAt) return;
-  ghostGroup.position.set((ghost.p.x_m ?? 0) - ghost.drawnAt.x, wallDesign()?(ghost.p.height_m??0)-ghost.drawnAt.height:0, (ghost.p.z_m ?? 0) - ghost.drawnAt.z);
+  ghostGroup.position.set((ghost.p.x_m ?? 0) - ghost.drawnAt.x, wallPlacement()?(ghost.p.height_m??0)-ghost.drawnAt.height:0, (ghost.p.z_m ?? 0) - ghost.drawnAt.z);
 }
 function fitNewPieceInView() {
   const bounds = new THREE.Box3().setFromObject(ghostGroup);
@@ -2750,7 +2772,7 @@ function fitNewPieceInView() {
   if (extra > 0) { distance = Math.min(40, distance + extra); freshView(); }
   // A narrow phone also needs room for all three gear fields beside the
   // complete selected assembly. Do this once on Add; later zooms stay manual.
-  if(ghost.p.piece==='gear'&&view.clientWidth<360){
+  if(pieceKind(ghost.p)==='gear'&&view.clientWidth<360){
     const rect=view.getBoundingClientRect(),editor=$('piece-editor');
     const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history')]
       .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
@@ -2841,11 +2863,11 @@ const editHandleLinks=document.createElementNS('http://www.w3.org/2000/svg','svg
 const valueChoices=document.createElement('div');valueChoices.id='piece-value-choices';valueChoices.setAttribute('popover','auto');view.append(valueChoices);
 function closeValueChoices(){if(valueChoices.matches(':popover-open'))valueChoices.hidePopover();}
 function choiceText(key,value){
-  if(key==='module_m'&&ghost?.p.piece==='gear')return `${((ghost.p.teeth/2+.7)*Number(value)*100).toFixed(1)} cm radius`;
+  if(key==='module_m'&&pieceKind(ghost?.p)==='gear')return `${((ghost.p.teeth/2+.7)*Number(value)*100).toFixed(1)} cm radius`;
   if(key==='preset'&&ghost?.p.piece==='ignition')return value==='hot'?'Hot · 0.12 Ω':'Warm · 12 Ω';
   return key==='teeth'?`${value} teeth`:key==='module_m'?`${Math.round(value*1000)} mm teeth`:String(value);
 }
-function knobDisplayValue(key,value){return key==='module_m'&&ghost?.p.piece==='gear'?choiceText(key,value):String(value);}
+function knobDisplayValue(key,value){return key==='module_m'&&pieceKind(ghost?.p)==='gear'?choiceText(key,value):String(value);}
 function showValueChoices(key,rule,name,source){
   closeValueChoices();const selected=ghost;if(!selected)return;
   valueChoices.replaceChildren(Object.assign(document.createElement('strong'),{textContent:name}));
@@ -3160,7 +3182,7 @@ function updateEditGuide() {
   const x = (screen.x + 1) * view.clientWidth / 2 + 14, y = (1 - screen.y) * view.clientHeight / 2 + 16;
   // A wrapped toolbar can fill a short phone scene. Try spaces beside the
   // piece and the controls, rather than forcing the caption below every row.
-  const obstacles = [...view.querySelectorAll('#clock, #scene-mode, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend, #piece-handles button:not([hidden])')]
+  const obstacles = [...view.querySelectorAll('#clock, #scene-mode, #viewer-zoom, #viewer-perspective, #piece-editor, #viewer-history,#wall-camera-view, #move-pad, #scene-tray, .scene-actions button, .scene-actions label, .scene-actions .speed, #preview-legend, #piece-handles button:not([hidden])')]
     .filter(e => e.offsetWidth && e.offsetHeight).map(e => e.getBoundingClientRect());
   let best = null;
   for (const [cx, cy] of [[x, y], [x, y - height - 40], [x - width - 30, y], [8, maxY], [maxX, maxY], [maxX, minY]]) {
@@ -3179,13 +3201,17 @@ function updateEditGuide() {
 const pictures = new Map();
 let pictureRenderer = null;
 function trayPicture(t) {
-  const key = level.id + ':' + (wallDesign()?'wall:':'') + t.piece;
+  const key = level.id + ':' + (wallDesign()?`wall${activeDesign.draft.base.build_surface.version}:`:'') + t.piece;
   if (!pictures.has(key)) pictures.set(key, (async () => {
     const p = {piece: t.piece};
-    for (const [knob, rule] of Object.entries(t.knobs)) p[knob] = knobDefault(rule);
+    // Ordinary thumbnails use their ordinary construction context. A wall
+    // design expands placement ranges and track width; those extra knobs
+    // must not be sent to the ordinary thumbnail's stricter declaration.
+    const pictureTray=worldWallDesign()&&!wallPlacement({piece:t.piece})?freeLevel.tray.find(row=>row.piece===t.piece)||t:t;
+    for (const [knob, rule] of Object.entries(pictureTray.knobs)) p[knob] = knobDefault(rule);
     // Library thumbnails are isolated construction previews. They must not
     // depend on which five gallery examples happen to contain this piece.
-    const context = wallDesign() ? {...sandboxRequest(),thumbnail:true} : level.free ? {thumbnail:true} : sandboxRequest();
+    const context = wallPlacement({piece:t.piece}) ? {...sandboxRequest(),thumbnail:true} : level.free ? {thumbnail:true} : sandboxRequest();
     const r = await api({op: 'level_ghost', level: level.id, ...context, placements: [p], index: 0});
     const shot = new THREE.Scene(), piece = new THREE.Group();
     buildParts(piece, r.parts, kind => material(materialColor(kind), kind), null);
@@ -3338,8 +3364,9 @@ function startGhost(p, index, keepPlace = false) {
   // A copy starts beside what it copies; a new piece where the view's middle meets the scene.
   if (!ghost.was && !keepPlace) {
     const rect = renderer.domElement.getBoundingClientRect();
-    const at = wallDesign()?slidePoint(rect.left+rect.width/2,rect.top+rect.height/2,0):sceneHit(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    if (at) { setKnob(ghost.p, 'x_m', at.x); setKnob(ghost.p,wallDesign()?'height_m':'z_m',wallDesign()?at.y:at.z); showGhostKnobs(); }
+    const at = wallPlacement()?slidePoint(rect.left+rect.width/2,rect.top+rect.height/2,0):sceneHit(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    if(at&&worldWallDesign()&&!wallPlacement()&&at.z<.7)at.z=1.2;
+    if (at) { setKnob(ghost.p, 'x_m', at.x); setKnob(ghost.p,wallPlacement()?'height_m':'z_m',wallPlacement()?at.y:at.z); showGhostKnobs(); }
   }
   askGhost();
 }
@@ -3424,7 +3451,7 @@ function pulseAddPiece() {
 // of the side panel, kept in sight as the panel scrolls): on a phone the list
 // of pieces is a scroll away. One adjustment menu, a stepped flat slider
 // and an exact value keep the active setting beside Set down.
-function knobName(rule, key) { return ghost?.p.piece==='gear'&&key==='module_m'?'Radius':(rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
+function knobName(rule, key) { return pieceKind(ghost?.p)==='gear'&&key==='module_m'?'Radius':(rule.label || key).replace(/\s*\(.*\)\s*$/, ''); }
 let sliderSerial=0;
 function addSliderTicks(input,rule){
   const list=document.createElement('datalist');list.id=`slider-ticks-${++sliderSerial}`;
@@ -3437,17 +3464,17 @@ function addSliderTicks(input,rule){
 }
 function electricalEditRating(){
   if(!ghost)return '';
-  const p=ghost.p,name=ghostName(),device=ghost.electrical?.devices?.find(d=>d.name===name);
+  const p=ghost.p,kind=pieceKind(p),name=ghostName(),device=ghost.electrical?.devices?.find(d=>d.name===name);
   const battery=ghost.batteryPreview?.find(b=>b.name.startsWith(name+' '));
   let rating;
-  if(p.piece==='battery')rating=battery?`${battery.voltage_v} V · ${battery.charge_j} J / ${battery.capacity_j} J · ≤ ${p.max_power_w??200} W`:`${p.voltage_v??12} V`;
-  else if(p.piece==='bulb'&&device)rating=`${device.rated_voltage_v} V · ${device.watts} W bulb`;
-  else if(p.piece==='resistor')rating=`${p.resistance_ohm} Ω resistance`;
-  else if(p.piece==='capacitor')rating=`${p.capacitance_f} F · ${p.esr_ohm??.1} Ω internal · ${p.leakage_ohm??1000000} Ω leakage`;
-  else if(p.piece==='motor')rating=`${Math.round((p.throttle??1)*100)}% throttle · ${p.direction||'forward'}`;
+  if(kind==='battery')rating=battery?`${battery.voltage_v} V · ${battery.charge_j} J / ${battery.capacity_j} J · ≤ ${p.max_power_w??200} W`:`${p.voltage_v??12} V`;
+  else if(kind==='bulb'&&device)rating=`${device.rated_voltage_v} V · ${device.watts} W bulb`;
+  else if(kind==='resistor')rating=`${p.resistance_ohm} Ω resistance`;
+  else if(kind==='capacitor')rating=`${p.capacitance_f} F · ${p.esr_ohm??.1} Ω internal · ${p.leakage_ohm??1000000} Ω leakage`;
+  else if(kind==='motor')rating=`${Math.round((p.throttle??1)*100)}% throttle · ${p.direction||'forward'}`;
   else if(p.piece==='wire')rating=`${p.size||'standard'} wire · ${(p.length_m??5)+' m stock'}`;
   else if(p.piece==='ignition')rating=`${p.preset==='hot'?'.12':'12'} Ω heater · ${p.target?'clipped to '+p.target:'not attached'}`;
-  else if(p.piece==='switch')rating=p.mode==='paddle'?`Contact closes at ${p.threshold_deg}°`:`Starting switch: ${p.state||'open'}`;
+  else if(kind==='switch')rating=p.mode==='paddle'?`Contact closes at ${p.threshold_deg}°`:`Starting switch: ${p.state||'open'}`;
   else if(p.piece==='spring'&&p.mechanism_version===3){
     const j=ghost.spring_setup?.[0];
     if(j){const compression=j.rest_m-Math.hypot(...j.at_m.map((v,i)=>v-j.at_b_m[i]));
@@ -3467,10 +3494,10 @@ function pieceKnobVisible(p,key) {
     if(key==='height_m'&&(!p.load||p.load==='included load'))return true;
   }
   if(p.piece==='ignition'&&p.attachment_version===2&&key==='target')return false;
-  if(p.piece==='marble' && key==='height_m' && p.placement!=='at height')return false;
+  if(pieceKind(p)==='marble' && key==='height_m' && p.placement!=='at height')return false;
   if(p.piece==='pipe_elbow' && key==='fall_m' && p.plane==='downward')return false;
   if(trayItem(p.piece)?.knobs?.[key]?.hidden)return false;
-  if(p.piece==='bulb' && key==='preset' && p.size && p.size!=='preset')return false;
+  if(pieceKind(p)==='bulb' && key==='preset' && p.size && p.size!=='preset')return false;
   if(p.piece==='spring' && p.load && p.load!=='included load' && ['height_m','material','load'].includes(key))return false;
   if(p.piece==='tackle' && p.load && p.load!=='included load' && key==='load_material')return false;
   if(p.piece==='water_wheel' && p.side==='off' && ['side','discharge_l_s'].includes(key))return false;
@@ -3478,8 +3505,8 @@ function pieceKnobVisible(p,key) {
     if(p.outlet_model==='gravity' && (['outlet_model','discharge_l_s'].includes(key) || (key==='valve' && p.valve!=='closed')))return false;
     if(p.outlet_model!=='gravity' && key==='opening_percent')return false;
   }
-  if(p.piece==='switch'&&(p.mode==='paddle'?['state','handle_material'].includes(key):key==='threshold_deg'))return false;
-  return !(p.piece==='battery' && p.mount!=='contact pack' && ['height_m','yaw_deg','housing_material'].includes(key));
+  if(pieceKind(p)==='switch'&&(p.mode==='paddle'?['state','handle_material'].includes(key):key==='threshold_deg'))return false;
+  return !(pieceKind(p)==='battery' && !wallPlacement(p) && p.mount!=='contact pack' && ['height_m','yaw_deg','housing_material'].includes(key));
 }
 
 function nudgeKnob(key, by) {
@@ -3603,7 +3630,7 @@ function renderGhostBar() {
   // controls; ordinary cable editing exposes thickness/length instead.
   const connecting=['wire','power_cable'].includes(ghost.p.piece);
   const available=allKeys.filter(k=>!knobs[k].connection_target&&(!connecting||(!knobs[k].terminal&&!knobs[k].power_port)));
-  const compactGear=ghost.p.piece==='gear'&&primary&&!precisionOpen;
+  const compactGear=pieceKind(ghost.p)==='gear'&&primary&&!precisionOpen;
   const keys=compactGear?primary.filter(k=>available.includes(k)):[...available];
   if(editorMode==='turn')for(const k of available.filter(k=>knobs[k].turning))if(!keys.includes(k))keys.push(k);
   if(editorMode!=='turn'&&!precisionOpen)for(const k of heightKnobs(ghost.p))if(available.includes(k)&&!keys.includes(k))keys.push(k);
@@ -3615,7 +3642,7 @@ function renderGhostBar() {
   const chips = Object.assign(document.createElement('div'), {className: 'adjustment-picker direct-properties'});
   const adjustment=document.createElement('select');adjustment.id='adjustment-choice';adjustment.setAttribute('aria-label','Adjustment');
   for (const key of keys) {
-    adjustment.append(new Option(ghost.p.piece==='gear'&&key==='module_m'?'Radius (cm)':ghost.p.piece==='lens'&&key==='radius_m'?'Focus / face radius (m)':knobs[key].label||knobName(knobs[key],key),key));
+    adjustment.append(new Option(pieceKind(ghost.p)==='gear'&&key==='module_m'?'Radius (cm)':ghost.p.piece==='lens'&&key==='radius_m'?'Focus / face radius (m)':knobs[key].label||knobName(knobs[key],key),key));
   }
   adjustment.value=ghost.card;adjustment.addEventListener('change',()=>selectGhostKnob(adjustment.value));
   // The exact selector stays in Precision. Ordinary editing uses labelled
@@ -3653,7 +3680,7 @@ function renderGhostBar() {
     select.setAttribute('aria-label', `Its ${name}`);
     select.addEventListener('change', () => {
       ghost.p[key] = rule.choices.find(c => String(c) === select.value) ?? select.value;
-      if ((key==='mount' && ghost.p.piece==='battery')||(key==='mode'&&ghost.p.piece==='switch')||(key==='size'&&ghost.p.piece==='bulb')) {renderPlaced();renderGhostBar();}
+      if ((key==='mount' && pieceKind(ghost.p)==='battery')||(key==='mode'&&pieceKind(ghost.p)==='switch')||(key==='size'&&pieceKind(ghost.p)==='bulb')) {renderPlaced();renderGhostBar();}
       showGhostKnobs(); askGhost();
     });
     // Choices use labelled buttons; the native selector remains an exact-value fallback.
@@ -3774,7 +3801,7 @@ function renderGhostBar() {
   const needsClip=ghost.p.piece==='ignition'&&ghost.p.attachment_version===2&&!ghost.p.target;
   view.classList.toggle('choosing-attachment',Boolean(needsClip));
   const editor=$('piece-editor');editor.hidden=(connecting&&!ghost.was)||needsClip;
-  const isGear=ghost.p.piece==='gear';editor.classList.toggle('editing-gear',isGear);
+  const isGear=pieceKind(ghost.p)==='gear';editor.classList.toggle('editing-gear',isGear);
   const modes=Object.assign(document.createElement('div'),{className:'piece-modes'});
   const move=button('Move',()=>{editorMode='move';setLooking(false);},{ariaLabel:'Move selected piece'});
   const turn=button('Turn',()=>{
@@ -3803,7 +3830,7 @@ function renderGhostBar() {
   editor.append(...connectionActions,...(unclipButton?[unclipButton]:[]),setting);
   setting.hidden=isGear; // The three visible fields already show these measurements.
   if(isGear)editor.append(Object.assign(document.createElement('output'),{id:'gear-plane-feedback',className:'adjustment-feedback',ariaLive:'polite'}));
-  if(ghost.p.piece==='gear')editor.append(Object.assign(document.createElement('output'),{id:'gear-motion-feedback',className:'adjustment-feedback',textContent:'Checking gear motion…',
+  if(pieceKind(ghost.p)==='gear')editor.append(Object.assign(document.createElement('output'),{id:'gear-motion-feedback',className:'adjustment-feedback',textContent:'Checking gear motion…',
     title:'This is a replay of the engine’s predicted motion for the current placement. Radius is measured to the tooth tips; it changes tooth spacing too.'}));
   // The geometric piece editor is hidden while drawing a cable. A lesson
   // that teaches gauge still needs its three choices before the second click.
@@ -3868,7 +3895,7 @@ function updateLiveControlAvailability(){
 }
 function positionLiveControls(){
   updateLiveControlAvailability();
-  const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#piece-editor,#level-done')]
+  const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#wall-camera-view,#piece-editor,#level-done')]
     .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
   for(const card of liveCards.children){
     let leader=liveControlLeaders.get(card);
@@ -3982,7 +4009,7 @@ function showGhostKnobs() {
   const rating=electricalEditRating(),numeric=typeof ghost.p[ghost.card]==='number';
   const units=rule.turning?'°':(rule.label||'').match(/\(([^()]*)\)\s*$/)?.[1]||'';
   const shownValue=`${ghost.p[ghost.card]}${units?' '+units:''}`;
-  const feedback=$('adjustment-feedback');if(feedback)feedback.textContent=ghost.p.piece==='gear'?
+  const feedback=$('adjustment-feedback');if(feedback)feedback.textContent=pieceKind(ghost.p)==='gear'?
     `${ghost.p.teeth} teeth · ${((ghost.p.teeth/2+.7)*ghost.p.module_m*100).toFixed(1)} cm radius · ${(ghost.p.height_m*100).toFixed(0)} cm height`:
     springLength&&ghost.card==='rest_m'?rating:
     rating?(numeric?`${shownValue} · ${rating}`:rating):`${knobName(rule,ghost.card)}: ${shownValue}`;
@@ -4344,7 +4371,7 @@ function updatePowerFeedback() {
   const seen=new Set(items.map(i=>i.id));
   for(const [id,row] of powerFeedbackRows)if(!seen.has(id)){row.card.remove();row.leader.remove();powerFeedbackRows.delete(id);}
   const rect=renderer.domElement.getBoundingClientRect();
-  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#collector-status,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint,#piece-handles button:not([hidden])')]
+  const occupied=[...view.querySelectorAll('#clock,#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#wall-camera-view,#collector-status,.power-pin,.terminal-control-pin,.inspect-switch,#thermal-readout,#scene-actions,#machine-controls,#attach-card,#level-done,#scene-wire-hint,#piece-handles button:not([hidden])')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   // A power reading must not hide the connection the player is trying to
   // click, especially on a phone. Reserve the rings before placing labels.
@@ -4407,7 +4434,7 @@ function positionSceneReading(card,anchor) {
   if(!leader){leader=document.createElementNS(feedbackLeaders.namespaceURI,'line');leader.dataset.reading=card.id;feedbackLeaders.append(leader);sceneReadingLeaders.set(card.id,leader);}
   leader.setAttribute('visibility','hidden');if(card.hidden)return;
   const {width,height}=card.getBoundingClientRect(),top=sceneReadoutTop(rect);
-  const occupied=[...view.querySelectorAll('#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint,#piece-handles button:not([hidden])')]
+  const occupied=[...view.querySelectorAll('#scene-mode,#viewer-zoom,#viewer-perspective,#piece-editor, #viewer-history,#wall-camera-view,.power-pin,.terminal-control-pin,.power-feedback-label,.inspect-switch,#thermal-readout,#level-done,#scene-wire-hint,#piece-handles button:not([hidden])')]
     .filter(el=>!el.hidden&&el.getClientRects().length).map(el=>{const r=el.getBoundingClientRect();return {x:r.left-rect.left,y:r.top-rect.top,w:r.width,h:r.height};});
   occupied.push(...readoutBodyRects(rect),{x:anchor.x-18,y:anchor.y-18,w:36,h:36});
   const ys=[anchor.y-height/2,top,rect.height-height-6,...occupied.flatMap(r=>[r.y-height-6,r.y+r.h+6])];
@@ -4784,7 +4811,7 @@ function drawPreview(r) {
   flowPending=false;
   // Electrical rehearsals start at their initial state. Future current and
   // bulb light appear only if the player explicitly plays/scrubs the preview.
-  flowPlaying=ghost?.p.piece==='gear'||!(r.flow_frames||[]).some(f=>f.wires?.some(w=>w.unit==='A'));
+  flowPlaying=pieceKind(ghost?.p)==='gear'||!(r.flow_frames||[]).some(f=>f.wires?.some(w=>w.unit==='A'));
   syncFlowPlayButton();
   const zone = level.goal && level.goal.station.done_when.in_zone;
   const inZone = p => Boolean(zone) && [0, 1, 2].every(i => Math.abs(p[i] - zone.at_m[i]) <= zone.size_m[i] / 2);
@@ -4930,8 +4957,8 @@ function nearGhost(clientX, clientY, margin) {
 }
 function slidePoint(clientX, clientY, y) {
   pointerRay(clientX, clientY);
-  slidePlane.normal.set(0,wallDesign()?0:1,wallDesign()?1:0);
-  slidePlane.constant = wallDesign()?-wallPlane():-y;
+  slidePlane.normal.set(0,wallPlacement()?0:1,wallPlacement()?1:0);
+  slidePlane.constant = wallPlacement()?-wallPlane():-y;
   return raycaster.ray.intersectPlane(slidePlane, new THREE.Vector3());
 }
 const GRAB_MARGIN_PX = 40;
@@ -5074,7 +5101,7 @@ window.machineGhostScreen = () => ghostScreenBox();
 window.machineDragPoint=(x,y)=>slidePoint(x,y,ghostScreenBox()?.bottom||0)?.toArray();
 window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible, settled: target.distanceTo(goal) < 1e-3});
 window.machineWallState=()=>wallDesign()?({surface:activeDesign.draft.base.build_surface,
-  camera_target:target.toArray(),grid_visible:wallGrid.visible,guard_visible:meshes.get('workshop clear guard')?.visible}):null;
+  front_view:wallFront,mounted:wallPlacement(),ground_visible:grid.visible,camera_target:target.toArray(),grid_visible:wallGrid.visible,guard_visible:Boolean(meshes.get('workshop clear guard')?.visible)}):null;
 window.machineScenePick=(x,y)=>{const sockets=socketsAt(x,y,true),pieces=placedOwnersAt(x,y),wireHits=wireCandidates(x,y,true);return {piece:pieces[0]??-1,pieces,wire:wireHits.length>0,wires:wireHits.map(w=>w.name),socket:sockets.some(s=>s.gap<=9),ambiguous:sockets.length>1&&sockets[1].gap-sockets[0].gap<8};};
 window.machineWireScreen=(name,fraction=.5)=>{
   const wire=wires.find(w=>w.name===name);if(!wire?.line.visible)return null;
@@ -5084,7 +5111,7 @@ window.machineWireScreen=(name,fraction=.5)=>{
   return [rect.left+(at.x+1)*rect.width/2,rect.top+(1-at.y)*rect.height/2];
 };
 function alignedGridAxes() {
-  return ghost && gridSnapEnabled && (grid.visible||wallDesign()) ? ['x','z'].filter(axis=>Number.isFinite(ghost.gridLocks?.[axis])&&Math.abs(ghost.p[wallDesign()&&axis==='z'?'height_m':axis+'_m']-ghost.gridLocks[axis])<1e-6) : [];
+  return ghost && gridSnapEnabled && (grid.visible||wallDesign()) ? ['x','z'].filter(axis=>Number.isFinite(ghost.gridLocks?.[axis])&&Math.abs(ghost.p[wallPlacement()&&axis==='z'?'height_m':axis+'_m']-ghost.gridLocks[axis])<1e-6) : [];
 }
 function showGridSnap() {
   const output=$('grid-snap-status');if (!output) return;
@@ -5182,9 +5209,9 @@ renderer.domElement.addEventListener('pointermove', e => {
     if (!at) return;
     const knobs=trayItem(ghost.p.piece).knobs;
     const snapped=snapGroundPoint({x:knobs.x_m?draggingGhost.x+at.x-draggingGhost.from.x:undefined,
-      z:wallDesign()?draggingGhost.height+at.y-draggingGhost.from.y:knobs.z_m?draggingGhost.z+at.z-draggingGhost.from.z:undefined},
+      z:wallPlacement()?draggingGhost.height+at.y-draggingGhost.from.y:knobs.z_m?draggingGhost.z+at.z-draggingGhost.from.z:undefined},
       {enabled:gridSnapEnabled&&(grid.visible||wallDesign())&&!e.altKey,previous:ghost.gridLocks||{}});
-    const moved = [setKnob(ghost.p,'x_m',snapped.point.x),setKnob(ghost.p,wallDesign()?'height_m':'z_m',snapped.point.z)].some(Boolean);
+    const moved = [setKnob(ghost.p,'x_m',snapped.point.x),setKnob(ghost.p,wallPlacement()?'height_m':'z_m',snapped.point.z)].some(Boolean);
     ghost.gridLocks=snapped.locks; showGridSnap();
     if (moved) { ghost.snapNext = objectSnapEnabled&&!e.altKey; if(e.altKey)ghost.objectLock=null;followGhost(); showGhostKnobs(); askGhost(); }
   } else if (!e.buttons) view.classList.toggle('grab', movableGhost() && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
@@ -5315,13 +5342,13 @@ function updateGuides() {
   const axes=alignedGridAxes();
   gridSnapMarker.visible=Boolean(ghost&&axes.length&&(grid.visible||wallDesign()));
   if (gridSnapMarker.visible) {
-    gridSnapMarker.rotation.x=wallDesign()?Math.PI/2:0;
-    if(wallDesign())gridSnapMarker.position.set(ghost.p.x_m??0,ghost.p.height_m??0,wallPlane()+.04);
+    gridSnapMarker.rotation.x=wallPlacement()?Math.PI/2:0;
+    if(wallPlacement())gridSnapMarker.position.set(ghost.p.x_m??0,ghost.p.height_m??0,wallPlane()+.04);
     else gridSnapMarker.position.set(ghost.p.x_m??0,.005,ghost.p.z_m??0);
     for (const line of gridSnapMarker.children) line.visible=axes.includes(line.userData.axis);
   }
   // A simple plank (Precise off) shows no axis lines.
-  guides.visible = Boolean(ghost && ghostGroup.children.length) && !simplePlank() && !wallDesign();
+  guides.visible = Boolean(ghost && ghostGroup.children.length) && !simplePlank() && !wallPlacement();
   if (!guides.visible) {guideMatch=null;wheelGuideState=[];return;}
   ghostBox.setFromObject(ghostGroup);
   if (ghostBox.isEmpty()) { guides.visible = false; return; }
@@ -6266,8 +6293,13 @@ async function addTrayPiece(t) {
 }
 // Library filters: tap a category chip; Recent lists pieces you added most
 // lately. The last search and category stay until you change them.
+for(const kind of ['marble','gear','motor','battery','switch','bulb','resistor','capacitor']){
+  PIECE_INFO['wall_'+kind]=['wall',`Wall-mounted ${kind}. Drag across the mounting face; its depth stays aligned. ${PIECE_INFO[kind]?.[1]||''}`];
+}
+for(const key of Object.keys(PIECE_INFO).filter(key=>key.startsWith('wall_')))PIECE_INFO[key][0]='wall';
+PIECE_INFO.wall_marble=['wall','Place a marble at the wall tracks’ depth, then let it roll freely through the 3D world.'];
 const PIECE_GROUPS = [['all','All'],['blueprints','Blueprints'],['recent','Recent'],['structure','Supports'],['routes','Tracks'],['motion','Motion'],
-  ['power','Power'],['electrics','Wiring'],['optics','Light'],['water','Water']];
+  ['power','Power'],['electrics','Wiring'],['optics','Light'],['water','Water'],['wall','Wall mounted']];
 const PIECE_WORDS = {marble:'ball roll sphere', ring_marble:'ball sphere ring loop eye tie string swing pendulum', plank:'board beam bridge wood', block:'cube box brick step', link:'rope string tie glue pin join spring',
   loose_block:'cube box crate', tackle:'pulley rope lift crane', lens:'glass focus', mirror:'reflect bounce', solar:'sun panel',
   battery:'power cell', wire:'cable lead cord', motor:'spin turn', gear:'cog wheel teeth', switch:'button toggle', bulb:'lamp light'};
@@ -6688,7 +6720,7 @@ function renderSceneTray() {
     Object.assign(document.createElement('small'), {className:'tray-left', textContent:editIndex>=0?'Click to adjust':left <= 0 ? 'none left' : level.free ? 'Click to add' : `${left} left`}));
   card.append(picture,caption); li.append(card); ul.append(li);
 }
-function renderTray() { renderSceneTray(); }
+function renderTray() { syncWallTray();renderSceneTray(); }
 
 function button(text, onClick, extra = {}, repeat = /^[+−-](?:\s*\d|$)/.test(text)) {
   const b = Object.assign(document.createElement('button'), {type: 'button', textContent: text}, extra);
@@ -6868,7 +6900,7 @@ function ghostItem() {
     if (!pieceKnobVisible(p,key) || rule.connection_target) continue;
     const c = knobControl(p, key, rule, what, () => {
       if (key==='x_m'||key==='z_m') ghost.gridLocks=null;
-      if ((key==='mount' && p.piece==='battery')||(key==='mode'&&p.piece==='switch')||(key==='size'&&p.piece==='bulb')) {renderPlaced();renderGhostBar();}
+      if ((key==='mount' && pieceKind(p)==='battery')||(key==='mode'&&pieceKind(p)==='switch')||(key==='size'&&pieceKind(p)==='bulb')) {renderPlaced();renderGhostBar();}
       if (key !== 'x_m' && key !== 'z_m') ghost.card = key;
       followGhost(); showGhostKnobs(); askGhost();
     });
@@ -6893,6 +6925,7 @@ function ghostItem() {
 }
 
 function renderPlaced() {
+  syncWallTray();
   renderBlueprints(); renderGoalControls();
   $('placed').replaceChildren();
   $('placed-head').hidden=true;
@@ -7047,12 +7080,14 @@ function checkpointDesign(d, label = '') {
   if (d.versions.length > 30) d.versions.shift();
 }
 function renderDesignControls() {
+  syncWallTray();
   if(readOnlyCourse())return;
   renderBlueprints(); renderGoalControls();
   $('sandbox-controls').hidden = !level?.free;
   $('design-versions').hidden = !level?.free;
   $('machine-data').hidden = !level?.free;
-  $('sandbox-environment').hidden = !level?.free || wallDesign();
+  $('sandbox-environment').hidden = !level?.free || wallDesign()&&!worldWallDesign();
+  $('wall-open-world').hidden=!level?.free||!wallDesign()||worldWallDesign();
   $('free-example').hidden=wallDesign();
   $('free-clear').textContent=wallDesign()?'Clear the wall':'Clear the table';
   if(level?.free){const g=activeDesign?.draft.base?.ground;$('environment-kind').value=g?.kind==='flume'?(g.discharge_m3_s>0?'river':'channel'):'table';
@@ -7099,6 +7134,20 @@ function showSandboxScreen(show = true) {
 }
 $('sandbox-open').addEventListener('click', e => { e.preventDefault(); if (freeLevel) showSandboxScreen(); });
 $('designs-open').addEventListener('click', () => showSandboxScreen());
+$('wall-open-world').addEventListener('click',async()=>{
+  if(readOnlyCourse()||!wallDesign()||worldWallDesign()||ghostInTheWay())return;
+  const b=$('wall-open-world');b.disabled=true;
+  try{
+    const before=setupSnapshot(),design=activeDesign;
+    const r=await api({op:'wall_into_world',base:design.draft.base,placements,...(design.draft.goal?{goal:design.draft.goal}:{})});
+    if(activeDesign!==design||setupSnapshot()!==before)return;
+    checkpointDesign(design,'Before opening into the 3D world');remember();
+    design.draft=r.draft;placements=clone(r.draft.placements);framedFree=false;wallFront=false;
+    syncWallTray();renderDesignControls();renderTray();renderPlaced();wallCameraControls();
+    keepBuild();await rebuildLevel(false);
+  }catch(error){designStatus(error.message);}
+  finally{b.disabled=false;}
+});
 async function applySandboxGround(kind,flow=100){
   if(!activeDesign||!level?.free)return false;
   if(ghostInTheWay())return false;
@@ -7443,6 +7492,7 @@ renderer.domElement.addEventListener('pointerdown', () => {
 
 async function chooseLevel(id, design = null) {
   courseDescription='';
+  wallFront=false;
   cancelAssembly();
   closeLevelIntroduction();
   if($('run-help').open)$('run-help').close();
@@ -7494,11 +7544,12 @@ async function chooseLevel(id, design = null) {
     setSharedCourse(activeDesign.sharedCourse||null);
     if(readOnlyCourse())$('phone-design-tab').hidden=true;
     if(!readOnlyCourse()){store.last = activeDesign.id; persist();}
-    if(wallDesign())Object.assign(level,{tray:clone(wallTemplate.tray),title:'Wall workshop',
-      brief:'Drag mounted pieces left, right, up and down. Gravity carries the marble between them.'});
+    if(wallDesign())Object.assign(level,{title:'Wall in the world',brief:'Wall pieces snap to their mounting plane. Other pieces build in the 3D world.'});
+    syncWallTray();
+    if(worldWallDesign()){pieceFilter='wall';$('piece-search').value='';}
   }
-  $('scene-note').textContent=readOnlyCourse()?'Run this course · Drag to look around · Copy to my Sandbox to edit':wallDesign()?'Drag pieces on the wall · Drag empty space to pan · Pinch or wheel to zoom':'Drag a ghost to move · Drag empty space to turn · Wheel or trackpad pinch to zoom';
-  for(const id of ['view-left','view-right','view-up','view-down']){const label=wallDesign()?`Pan ${id.slice(5)}`:({'view-left':'Turn the view left','view-right':'Turn the view right','view-up':'Look from above','view-down':'Look from the side'})[id];$(id).title=label;$(id).setAttribute('aria-label',label);}
+  $('scene-note').textContent=readOnlyCourse()?'Run this course · Drag to look around · Copy to my Sandbox to edit':wallDesign()?'Drag wall pieces across the wall · Drag empty space to orbit · Front faces the wall':'Drag a ghost to move · Drag empty space to turn · Wheel or trackpad pinch to zoom';
+  wallCameraControls();
   endGhost(); tuneArmed=false;runArmed=false;runRequest++;editorMode='move';shownMode='';gridSnapEnabled=true;objectSnapEnabled=true;lastEdited=null;closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
   for(const id of ['grid-snap','object-snap'])$(id)?.setAttribute('aria-pressed','true');
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
@@ -7539,7 +7590,7 @@ async function chooseLevel(id, design = null) {
     'advanced-capacitor':'Increase capacitance to store enough energy before time runs out.'};
   const objective=objectives[level.variant?.family||level.id]||level.brief.split(/(?<=\.)\s+(?=[A-Z])/)[0];
   introduction=levelIntroduction(level,{title:levelTitle(level),objective});
-  $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:wallDesign()?'Drag mounted pieces on the wall. Run to watch the marble.':level.free?'Build anything. Click a piece to adjust it.':objective}));
+  $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:wallDesign()?'Wall pieces snap onto the wall. Build outward with regular 3D pieces.':level.free?'Build anything. Click a piece to adjust it.':objective}));
   $('pull-tool').hidden=true;$('restart-pieces').hidden=true;
   $('scene-goal').title = level.free ? 'Build anything' : `Goal within ${level.time_s} s`;
   if(readOnlyCourse()){$('scene-goal').lastChild.textContent=sharedCourse.description||'Run this shared setup. Copy it to your Sandbox to make changes.';$('scene-goal').title='Shared course';}
@@ -8107,8 +8158,8 @@ async function startGame() {
   // module, including when its prediction timeline changes its height.
   new ResizeObserver(() => controls.parentElement.style.setProperty('--control-height',`${controls.offsetHeight+8}px`)).observe(controls);
   for (const [id, change] of [
-    ['view-left', () => { if(wallDesign())panWall(40,0);else azimuth -= .2; }], ['view-right', () => { if(wallDesign())panWall(-40,0);else azimuth += .2; }],
-    ['view-up', () => { if(wallDesign())panWall(0,40);else elevation=Math.min(1.45,elevation+.15); }], ['view-down', () => { if(wallDesign())panWall(0,-40);else elevation=Math.max(.08,elevation-.15); }],
+    ['view-left', () => { if(wallDesign()&&wallFront)panWall(40,0);else azimuth -= .2; }], ['view-right', () => { if(wallDesign()&&wallFront)panWall(-40,0);else azimuth += .2; }],
+    ['view-up', () => { if(wallDesign()&&wallFront)panWall(0,40);else elevation=Math.min(1.45,elevation+.15); }], ['view-down', () => { if(wallDesign()&&wallFront)panWall(0,-40);else elevation=Math.max(.08,elevation-.15); }],
     ['view-in', () => { distance = Math.max(.4, distance / 1.2); }], ['view-out', () => { distance = Math.min(40, distance * 1.2); }]
   ]) $(id).addEventListener('click',()=>{follow=false;$('follow').setAttribute('aria-pressed','false');change();freshView();});
   for(const id of ['view-in','view-out'])repeatOnHold($(id),()=>{follow=false;$('follow').setAttribute('aria-pressed','false');distance=Math.max(.4,Math.min(40,distance*(id==='view-in'?1/1.2:1.2)));freshView();});
@@ -8125,7 +8176,7 @@ async function startGame() {
   }
   await openAnonymousProfile();
   const r = await api({op: 'levels'});
-  levels = r.levels; freeLevel = r.free || null; sandboxBase = r.sandbox_base; sandboxTemplates = r.sandbox || [];wallTemplate=r.wall_sandbox||null;
+  levels = r.levels; freeLevel = r.free || null; sandboxBase = r.sandbox_base; sandboxTemplates = r.sandbox || [];wallTemplate=r.wall_sandbox||null;legacyWallTray=r.wall_legacy_tray||[];
   // Browse first. A landing page does not build a world or replace /play
   // with the last puzzle's URL before the player chooses a level.
   $('page-loading').hidden = true;

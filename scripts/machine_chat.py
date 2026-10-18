@@ -434,6 +434,22 @@ def free_prompt(level):
         tray.append(f'- {t["piece"]}: {FREE_HELP.get(t["piece"], "")}. Knobs: ' + '; '.join(knobs))
     tray = '\n'.join(tray)
     if level.get('wall_mode'):
+        if level['wall_mode']['version']==2:
+            return f'''You build machines in Banjo's ordinary 3D world with a vertical mounting wall.
+The native engine decides motion. The wall spans x=-3..3, y=0..4 with its front at z=0.
+Pieces named wall_* mount at z=.30. Move those using x_m and height_m, with angle_deg for slopes.
+All other pieces are normal 3D devices. Use their x_m, z_m, height and orientation knobs;
+they can extend away from the wall or stand on the ground. Never flatten their positions onto the wall.
+There is no global front guard. Wall tracks have real rails; an ordinary 3D track can carry a marble
+away from the wall. Keep native supports, collision clearance and both electrical leads.
+For a marble-catching lift use assemblies:[{{"kind":"marble_lift"}}]; the server builds and tests it.
+Optional x_m/height_m choose its axle. It is a single-pass lift, reloaded by Reset.
+Use numbered terminal references {{"piece":N,"terminal":"plus"}} or minus/in/out, or addition IDs.
+Existing physical bounds and exact terminal IDs are in on_the_table. Do not invent connections.
+Use edit:[{{"number":N,"set":{{knob:value}}}}] for existing pieces. Preserve them unless asked to clear.
+Pieces and knobs:\n{tray}
+Return one JSON object: {{"reply":"brief description","clear":false,"assemblies":[],"edit":[],"add":[]}}.
+Give explicit coordinates for wall attachments. Native rehearsal must pass before claiming success.'''
         return f'''You build marble machines on Banjo's vertical wall. The native 3D engine decides all motion.
 The wall is 6 m wide (x=-3..3) and 4 m high (y=0..4). Every piece is mounted at the same depth.
 Use x_m for left/right and height_m for height. Do not add z or yaw/pitch/roll, and do not use join directives.
@@ -581,7 +597,8 @@ def respond_free(message, level, placements, call=None, rehearse=None):
             for x,y in positions:
                 if any(type(v) not in (int,float) or not math.isfinite(v) for v in (x,y)):
                     raise mg.LevelRefused(['The assembly position must be finite metres'])
-                rows,check=sandbox_wall.lift_assembly(x,y,len(placed))
+                assembly_builder=sandbox_wall.world_lift_assembly if level['wall_mode']['version']==2 else sandbox_wall.lift_assembly
+                rows,check=assembly_builder(x,y,len(placed))
                 try:mg.compose(level,placed+rows)
                 except (mg.LevelRefused,mw.MachineRefused) as e:
                     refusal=e

@@ -1,11 +1,13 @@
-"""Front-facing mounting board, using ordinary 3D contact and native joints.
+"""Mounting wall inside the 3D world, using native contact and joints.
 
-Only editor placement is planar. The backing and transparent front guard are
-real colliders; mounted bodies are ideal fixed supports, not a bolt model.
+Wall-specific editor placement is planar; ordinary pieces retain all axes.
+Version 2 has real track rails and no global front sheet. Historical version 1
+retains its real transparent guard. Mounts are ideal supports, not a bolt model.
 There is no runtime projection, assigned rolling speed or event sequencing.
 """
 import copy
 import math
+import re
 
 import machine_world as mw
 import sandbox_electrics as se
@@ -21,6 +23,10 @@ def surface():
                 plane_z_m=PLANE, depth_m=DEPTH)
 
 
+def world_surface():
+    return dict(surface(), version=2)
+
+
 def base():
     return dict(schema='banjo.machine.v1', title='Wall workshop', cell_m=.02,
         build_surface=surface(), presentation=dict(camera='wall'),
@@ -32,28 +38,40 @@ def base():
             a=FOUNDATION[0],b=FOUNDATION[1],at_m=[0,HEIGHT/2,0])], stations=[])
 
 
+def world_base():
+    result=base()
+    result.update(build_surface=world_surface(),presentation=dict(camera='wall_world'),title='Wall in the world')
+    result['parts']=result['parts'][:1]
+    result['joints']=[]
+    return result
+
+
 def validate(spec):
     """A saved board has a versioned, fixed physical foundation."""
     if spec.get('build_surface') is None:
         return False
-    if spec.get('build_surface') != surface():
+    if spec.get('build_surface') not in (surface(),world_surface()):
         raise ValueError('This wall workshop uses an unsupported mounting surface.')
+    expected_base=world_base() if spec['build_surface']==world_surface() else base()
     parts = {p.get('name'): p for p in spec.get('parts', [])}
-    for expected in base()['parts']:
+    if spec['build_surface']==world_surface() and FOUNDATION[1] in parts:
+        raise ValueError('The open wall world has no front retaining sheet.')
+    for expected in expected_base['parts']:
         if parts.get(expected['name']) != expected:
-            raise ValueError('The wall workshop needs its backing and clear front guard.')
-    if base()['joints'][0] not in spec.get('joints',[]):
+            raise ValueError('The wall workshop needs its declared backing and retaining parts.')
+    if any(j not in spec.get('joints',[]) for j in expected_base['joints']):
         raise ValueError('The wall workshop needs its guard mounting.')
     return True
 
 
-def bounds_problems(compiled):
+def bounds_problems(compiled, mounted_owners=None):
     problems=[]
     for p in compiled['parts']:
         if not p['name'].startswith('your '):continue
+        if mounted_owners is not None and not any(p['name']==name or p['name'].startswith(name+' ') for name in mounted_owners):continue
         points=[pt for solid in mw.solids_of(p) for pt in mw.footprint_points(solid)]
         if any(abs(pt[0])>WIDTH/2+.001 or pt[1]<0 or pt[1]>HEIGHT+.001 or
-               pt[2]<-.001 or pt[2]>DEPTH+.001 for pt in points):
+               pt[2]<-.001 or (mounted_owners is None and pt[2]>DEPTH+.001) for pt in points):
             problems.append(p['name']+' extends beyond the wall; move it inside the board')
     return problems
 
@@ -70,6 +88,8 @@ def track(name, k, ctx):
     x, y = k['x_m'], k['height_m']
     length, angle = k.get('length_m', 1.4), k.get('angle_deg', -16)
     shapes=[dict(shape='box',size_m=[length,.04,.56],at_m=[0,0,0])]
+    if (ctx or {}).get('tray',{}).get('open_world'):
+        shapes.extend(dict(shape='box',size_m=[length,.10,.02],at_m=[0,.06,side*.27]) for side in (-1,1))
     if k.get('end_stop','closed')=='closed':
         shapes.append(dict(shape='box',size_m=[.04,.28,.56],
             at_m=[(-1 if angle<=0 else 1)*(length/2-.02),.12,0]))
@@ -244,6 +264,82 @@ PIECES=dict(wall_track=track,wall_funnel=funnel,wall_cup=cup,wall_peg=peg,
     wall_lever=lever,wall_lift=lift,marble=marble,gear=gear,motor=motor,wire=wire,
     **{key:electrical(getattr(se,key)) for key in ('battery','switch','bulb','resistor','capacitor')})
 PIECES={key:mounted(builder) for key,builder in PIECES.items()}
+
+# Explicit names distinguish a wall-mounted battery/gear from the same
+# ordinary device on the floor. Legacy v1 records retain their builders.
+WORLD_ALIASES={key:'wall_'+key for key in ('marble','gear','motor','battery','switch','bulb','resistor','capacitor')}
+WORLD_PIECES={WORLD_ALIASES.get(key,key):builder for key,builder in PIECES.items() if key!='wire'}
+
+
+def world_tray(ordinary):
+    result=[]
+    for row in tray():
+        if row['piece']=='wire':continue
+        original=row['piece'];row['piece']=WORLD_ALIASES.get(original,original)
+        row['wall_mounted']=True
+        row['open_world']=True
+        if original in WORLD_ALIASES and 'wall' not in row['title'].lower().split():
+            row['title']='Wall '+row['title'].lower()
+        result.append(row)
+    normal=copy.deepcopy(ordinary)
+    for row in normal:
+        for key in ('x_m','z_m'):
+            rule=row['knobs'].get(key)
+            if rule and 'min' in rule:rule.update(min=-10,max=10)
+        for key in ('top_height_m','pivot_height_m','bore_height_m','drop_from_m','foot_height_m','center_height_m'):
+            rule=row['knobs'].get(key)
+            if rule and 'max' in rule:rule['max']=max(rule['max'],4.5)
+    next(row for row in normal if row['piece']=='track')['knobs']['width_m']=sm.number('Track width (m)',.08,.56,.18,.02)
+    # Keep the workshop's compact stock for nearby wall sockets. Stock length
+    # remains editable for connections out into the surrounding world.
+    next(row for row in normal if row['piece']=='wire')['knobs']['length_m']['default']=2
+    return result+normal
+
+
+def world_draft(base_spec,placements,goal=None):
+    """Explicit editable-copy conversion; never mutate a shared snapshot."""
+    if not validate(base_spec):raise ValueError('Choose an existing wall design to open into the 3D world.')
+    if base_spec['build_surface']==world_surface():
+        return dict(base=copy.deepcopy(base_spec),placements=copy.deepcopy(placements),**({'goal':copy.deepcopy(goal)} if goal else {}))
+    renamed={f'your {p["piece"]} {i+1}':f'your {WORLD_ALIASES.get(p["piece"],p["piece"])} {i+1}' for i,p in enumerate(placements)}
+    def references(value):
+        if isinstance(value,dict):return {key:references(item) for key,item in value.items()}
+        if isinstance(value,list):return [references(item) for item in value]
+        if isinstance(value,str):
+            return re.sub(r'^your \S+ \d+(?=\b|:)',lambda match:renamed.get(match[0],match[0]),value)
+        return value
+    rows=references(copy.deepcopy(placements))
+    for row in rows:row['piece']=WORLD_ALIASES.get(row['piece'],row['piece'])
+    foundation=references(copy.deepcopy(base_spec))
+    foundation['parts']=[p for p in foundation['parts'] if p['name']!=FOUNDATION[1]]
+    foundation['joints']=[j for j in foundation.get('joints',[]) if j.get('name')!='workshop guard mounting']
+    foundation.update(build_surface=world_surface(),presentation=dict(camera='wall_world'))
+    result=dict(base=foundation,placements=rows)
+    if goal:
+        result['goal']=references(copy.deepcopy(goal))
+        zone=result['goal'].get('done_when',{}).get('in_zone',{})
+        if zone.get('piece') in WORLD_ALIASES:zone['piece']=WORLD_ALIASES[zone['piece']]
+    return result
+
+
+def world_template(ordinary):
+    source=template();draft=world_draft(source['base'],source['placements'])
+    draft['placements']=draft['placements'][:4]+[
+        dict(piece='track',x_m=.55,z_m=.15,top_height_m=1.05,run_m=1.6,drop_m=.60,yaw_deg=-90,width_m=.56,end='stop')]
+    return dict(name='Wall in the world',description='Snap mounted pieces onto a wall, then build outward with the full 3D library.',
+                **draft,tray=world_tray(ordinary))
+
+
+def world_lift_assembly(x=0,y=1.6,offset=0):
+    rows,check=lift_assembly(x,y,offset)
+    def rename(value):
+        if isinstance(value,dict):return {key:rename(item) for key,item in value.items()}
+        if isinstance(value,list):return [rename(item) for item in value]
+        if isinstance(value,str):return re.sub(r'^your (marble|gear|motor|battery|switch|bulb|resistor|capacitor)(?= \d+)',lambda m:'your '+WORLD_ALIASES[m[1]],value)
+        return value
+    rows=rename(rows)
+    for row in rows:row['piece']=WORLD_ALIASES.get(row['piece'],row['piece'])
+    return rows,rename(check)
 
 
 def tray():

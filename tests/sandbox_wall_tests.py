@@ -258,4 +258,87 @@ class Wall(unittest.TestCase):
             else:self.assertLess(abs(delta),.01)
 
 
+class WallWorld(unittest.TestCase):
+    def setUp(self):
+        self.template=wall.world_template(mg.free_build()['tray'])
+        self.level=mg.requested_level(dict(level='free',base=self.template['base']))
+
+    def test_world_library_has_explicit_wall_mounts_and_every_ordinary_piece(self):
+        rows={row['piece']:row for row in self.level['tray']}
+        self.assertTrue({r['piece'] for r in mg.free_build()['tray']}<=set(rows))
+        self.assertEqual(len([r for r in rows.values() if r.get('wall_mounted')]),14)
+        self.assertFalse(any(p['name']==wall.FOUNDATION[1] for p in self.template['base']['parts']))
+        self.assertNotIn('z_m',rows['wall_battery']['knobs'])
+        self.assertIn('z_m',rows['battery']['knobs'])
+        spec=mg.compose(self.level,[dict(piece='loose_block',x_m=4,z_m=3),dict(piece='wall_track',x_m=-1,height_m=2)])[0]
+        block=next(p for p in spec['parts'] if p['name']=='your loose_block 1')
+        self.assertEqual(block['at_m'][2],3)
+        self.assertFalse(any('wall_track 2 stand' in p['name'] for p in spec['parts']))
+        with self.assertRaises(mg.LevelRefused):mg.compose(self.level,[dict(piece='wall_track',x_m=2.8)])
+
+    def test_explicit_conversion_preserves_original_and_rewrites_wiring(self):
+        with self.assertRaises(ValueError):wall.world_draft({},[])
+        old=wall.base();placements=wall.lift_assembly()[0];original=copy.deepcopy((old,placements))
+        draft=wall.world_draft(old,placements)
+        self.assertEqual((old,placements),original)
+        self.assertEqual(draft['placements'][1]['piece'],'wall_marble')
+        self.assertEqual(draft['placements'][3]['a_terminal'],'your wall_battery 3:plus')
+        self.assertEqual(draft['placements'][3]['b_terminal'],'your wall_lift 1:plus')
+        level=mg.requested_level(dict(level='free',base=draft['base']))
+        mg.compose(level,draft['placements'])
+        self.assertEqual(wall.world_draft(draft['base'],draft['placements']),draft)
+        roundtrip=json.loads(json.dumps(draft))
+        self.assertEqual(mg.compose(level,roundtrip['placements'])[0],mg.compose(level,draft['placements'])[0])
+
+    def test_native_route_leaves_wall_plane_for_glass_oak_iron_and_nudges(self):
+        results=[]
+        for material in ('glass','oak','iron'):
+            for nudge in (-.002,0,.002):
+                with self.subTest(material=material,nudge=nudge),tempfile.TemporaryDirectory() as logs:
+                    ps=copy.deepcopy(self.template['placements']);ps[0].update(material=material,x_m=ps[0]['x_m']+nudge)
+                    spec=mg.compose(self.level,ps)[0]
+                    r=mw.rehearse(mw.compile_spec(spec),ENGINE,logs,seconds=12,track=['your wall_marble 1'])
+                    self.assertIsNone(r['error'])
+                    points=r['paths']['your wall_marble 1']['points']
+                    names={h['other'] for h in r['hits']}
+                    self.assertTrue(all('your wall_track '+str(i)+' track' in names for i in (2,3,4)),names)
+                    self.assertIn('your track 5 stop',names)
+                    self.assertGreater(max(p[3] for p in points),1.5)
+                    self.assertGreater(points[-1][2],.45)
+                    self.assertLess(abs(points[-1][3]-1.71),.03)
+                    results.append(dict(material=material,nudge_m=nudge,dt_s=1/240,cell_m=.02,
+                        final=points[-1],max_depth_m=max(p[3] for p in points),wall_s=r['wall_s']))
+        print('WALL INTO WORLD',json.dumps(results),flush=True)
+
+    def test_missed_world_track_fails_to_carry_marble_outward(self):
+        ps=copy.deepcopy(self.template['placements']);ps[4]['x_m']=-1.4
+        with tempfile.TemporaryDirectory() as logs:
+            r=mw.rehearse(mw.compile_spec(mg.compose(self.level,ps)[0]),ENGINE,logs,seconds=9,track=['your wall_marble 1'])
+        self.assertIsNone(r['error'])
+        self.assertLess(max(p[3] for p in r['paths']['your wall_marble 1']['points']),.4)
+        self.assertFalse(any(h['other'].startswith('your track 5') for h in r['hits']))
+
+    def test_lift_works_without_a_global_front_sheet_and_reports_ledgers(self):
+        records=[]
+        for material in ('glass','oak','iron'):
+            ps,check=wall.world_lift_assembly();ps[1]['material']=material
+            with tempfile.TemporaryDirectory() as logs:
+                r=mw.rehearse(mw.compile_spec(mg.compose(self.level,ps)[0]),ENGINE,logs,seconds=12,track=[check['marble']])
+            self.assertIsNone(r['error']);measured=machine_chat.lift_checks([check],r)[0]
+            self.assertTrue(measured['happened'],measured)
+            ledger=r['readouts']['electrical']['networks'][0]['ledger']
+            self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+            records.append(dict(material=material,dt_s=1/240,cell_m=.02,check=measured,ledger=ledger,wall_s=r['wall_s']))
+        print('OPEN WALL LIFT',json.dumps(records),flush=True)
+
+    def test_builder_distinguishes_wall_and_world_and_uses_correct_terminals(self):
+        prompt=machine_chat.free_prompt(self.level)
+        self.assertIn('ordinary 3D world',prompt);self.assertIn('Never flatten',prompt)
+        rows,check=wall.world_lift_assembly(offset=5)
+        self.assertEqual(rows[3]['a_terminal'],'your wall_battery 8:plus')
+        self.assertEqual(check['marble'],'your wall_marble 7')
+        result=machine_chat.respond_free('A lift',self.level,[],call=lambda messages:(dict(reply='Lift',assemblies=[dict(kind='marble_lift')]),{}))
+        self.assertEqual(result['placements'][1]['piece'],'wall_marble')
+
+
 if __name__=='__main__':unittest.main(verbosity=2)

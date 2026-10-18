@@ -387,7 +387,11 @@ class Handler(BaseHTTPRequestHandler):
        mode=data.get('mode','hint'),last_run=data.get('last_run'),rehearse=host.rehearse,ui=data.get('ui'))
      else:r=machine_chat.respond(data.get('message'),data.get('spec'),data.get('history'),rehearse=host.rehearse if data.get('rehearse',True) else None)
     finally:self.server.chat_busy.release()
-   elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build()),'sandbox':machine_game.sandbox_templates(),'sandbox_base':machine_game.free_build()['machine'],'wall_sandbox':machine_game.sandbox_wall.template()}
+   elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build()),'sandbox':machine_game.sandbox_templates(),'sandbox_base':machine_game.free_build()['machine'],'wall_sandbox':machine_game.sandbox_wall.world_template(machine_game.free_build()['tray']),'wall_legacy_tray':machine_game.sandbox_wall.tray()}
+   elif op=='wall_into_world':
+    draft=machine_game.sandbox_wall.world_draft(data.get('base',{}),data.get('placements',[]),data.get('goal'))
+    machine_game.compose(machine_game.requested_level(dict(level='free',**draft)),draft['placements'])
+    r=dict(ok=True,draft=draft)
    elif op=='easy_variant':
     if self.server.trial_allowance:self.server.trial_allowance.take(self.visitor())
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is testing other challenges; try again shortly')

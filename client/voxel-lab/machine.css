@@ -1107,3 +1107,4 @@ body.read-only-course.panel-tabs #toolbar-right{grid-column:3;grid-row:1}
 .community-search input{min-width:0;flex:1;min-height:44px}
 .community-card-action{color:#9fdec2}
 @media(max-width:520px){#course-view-bar{gap:6px;font-size:.85rem;padding:6px}#course-view-bar strong{flex-basis:65%}#course-copy{flex:1}#publish-course .chat-actions button{flex:1 1 100%}}
+#wall-camera-view{position:absolute;right:8px;top:56px;z-index:7;min-width:44px;min-height:44px;padding:6px;border:1px solid #7195a7;border-radius:8px;background:#285064;color:#eff8ff;font:inherit;cursor:pointer}

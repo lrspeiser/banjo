@@ -1,5 +1,68 @@
 # Puzzles on the machine (/play)
 
+October 18 wall in the 3D world: **Sandbox → Build on a wall** now creates
+`build_surface.version=2`: a 6 × 4 m backing inside the normal ground scene,
+without version 1's global transparent front sheet. The default camera is
+oblique and freely orbits. **Front** is an optional straight-on editing view
+with pan; **3D** returns to the world view. The ground remains visible.
+
+The library includes fourteen explicit wall-mounted types plus all 53 ordinary
+Sandbox types (67 declarations, 64 visible cards; existing attachment/legacy
+recipes stay hidden, with the ordinary Wire shared by both). The initial
+**Wall mounted** category keeps easy placement close at hand; **All** and the
+ordinary categories expose the rest. Wall-specific aliases such as
+`wall_marble`, `wall_motor` and `wall_battery` distinguish their X/height knobs
+from ordinary devices' X/Z/height and orientation. Wall attachments keep their
+mounting depth at 0.30 m while moving; camera mode does not change these axes.
+Ordinary pieces can extend away from the board or stand elsewhere, and use
+their existing physical floor supports. Mounted devices use their declared
+wall brackets without extra floor posts. Ground and river editing is available.
+Blueprint group placement remains hidden on wall designs pending group support.
+
+The starter has three railed wall tracks, a marble and an ordinary 0.56 m wide
+track turning outward along Z, with a real end barrier. There is no invisible
+global front collider. Tracks/rails, native contact and gravity determine the
+route; no position projection, imposed rolling speed or transfer script is used.
+The board bounds apply only to wall attachments, not ordinary world pieces.
+Dedicated wall versions of plumbing and optics are not added: those remain
+ordinary 3D pieces with their existing controls and laws.
+
+Historical version 1 saves and immutable shared courses retain their original
+foundation and piece declarations. An editable older design offers **Design →
+Add 3D pieces**: strict validation runs first, a saved version keeps the original,
+then the conversion removes the global sheet, uses the railed tracks, rewrites
+piece/terminal names and switches to the full library. Undo/Redo also restores
+the foundation and matching library. Shared visitors must **Copy to my Sandbox**
+before making this change; published snapshots are unchanged.
+
+Native qualification: all 22 `sandbox_wall_tests.py` cases pass with the existing
+Windows engine `c185b7eca2792b3a84bc9913bd701b6e6dba4d31679b1c72b0e116b9054b1e57`.
+At dt = 1/240 s and 0.02 m cells, glass/oak/iron marbles with −2/0/+2 mm
+start nudges contact all three wall tracks and the ordinary track/stop. They
+reach Z = 1.7086–1.7091 m and finish at Y = 0.5085–0.5094 m after 7.75–10.983 s;
+each requested 12 s run costs 0.43–0.46 s unpaced locally. Moving the world
+track away keeps maximum marble Z below 0.40 m and misses the outlet by contact
+geometry. The open-world lift separately raises glass/oak/iron by
+0.431/0.433/0.417 m and unloads at 3.250/2.933/5.033 s. Its existing electrical
+ledger closes within 1.04e−11 J, thermal residual is at most 1.69e−7 J and
+mechanical/electrical coupling residual is 0.00377–0.00520 J. These are subsystem
+ledgers, not full-world energy/momentum closure; fixed supports and gravity
+exchange work/momentum with the environment. Ideal mounts, rectangular gear
+teeth and lumped motor internals retain their prior limits. No native laws,
+level goals or tolerances changed.
+
+Browser qualification passes at 1280×860, 390×844 and 844×390: default 3D orbit,
+optional Front/pan, wall XY drag, ordinary XZ drag at unchanged height, native
+outward marble travel, save/reopen, mounted controls and live socket wiring.
+All 64 visible library cards have loaded geometry previews. Wall wiring keeps
+2 m default stock (editable for longer world connections); both electrical
+leads are required to drive the native motor.
+Conversion preserves the prior version and supports Undo/Redo. Existing wall
+word-builder lift/run and shared-course inspection/copy transitions also pass.
+CPU SwiftShader is used for local automated rendering. The ordinary ground
+placement/camera and header checks pass; existing game declaration, mechanics
+and Community suites pass. Source registration remains 274/274.
+
 October 18 Community sharing: **Sandbox → Browse Community** opens `/community`,
 with assembled-geometry previews, title search and twelve cards per page. The
 static previews do not create or advance a native world. Private designs
@@ -45,7 +108,7 @@ tests, including glass/oak/iron and nudged placements. Local portable sharing
 and same-page wired-course/copy transitions have their own browser regressions.
 No native physics laws changed and no new conservation claims are made.
 
-October 18 marble-lift extension: the wall library now has **15 types**.
+October 18 marble-lift extension (historical version 1 library: **15 types**).
 **Marble lift wheel** has an oak rotor/counterweight, open cradle, rear axle,
 cantilevered upper chute and a DC motor with separate plus/minus sockets.
 Open front guard rails leave 50 mm gaps, smaller than the default 60 mm
@@ -126,7 +189,7 @@ check also passes in those sizes. The native executable is unchanged:
 Source registration is 274/274; published Linux CI/hosted behavior is checked
 separately from these local measurements.
 
-October 18 wall workshop: **Sandbox → Build on a wall** creates a saved design
+October 18 original wall workshop (historical version 1): **Build on a wall** created a saved design
 with a 6 × 4 m backing and a 0.62 m deep retaining lane. This is a separate
 creation action beside Add New Design; the five example cards and existing
 3D saves remain available. Its versioned `build_surface` declaration preserves

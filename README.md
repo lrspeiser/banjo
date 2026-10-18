@@ -2,10 +2,13 @@
 
 **A Rube Goldberg game where the physics decides what happens.**
 
-**Sandbox → Build on a wall** opens a front-facing mounting board. Place its
-15 compatible pieces in left/right and height, turn tracks in the board's
-plane, then run the native 3D physics. It includes a working marble route,
-Undo and saved design versions. Ordinary 3D designs remain available.
+**Sandbox → Build on a wall** puts a mounting wall inside the ordinary 3D world.
+Wall pieces drag left/right and up/down at a fixed mounting depth; the full
+Sandbox library remains available to build outward and onto the ground. Orbit
+normally or choose **Front** for straight-on editing. Its starter marble run
+turns off the wall onto a 3D track. Undo and saved design versions work here too.
+Older wall saves offer **Design → Add 3D pieces**, preserving a version first;
+copy a shared course to your Sandbox before changing it.
 
 Ask **Describe a design** for a wheel that catches a marble, lifts it and drops
 it higher. The builder expands a single-pass **Marble lift wheel**, a marble,
