@@ -2012,7 +2012,9 @@ class Puzzles(unittest.TestCase):
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
                 # Once the run stops, the drawing reaches the last frame exactly.
-                if self.js("document.getElementById('start').textContent.includes('Pause')"):self.click_visible('Pause')
+                # Scoring can finish its automatic pause between separate
+                # browser calls. Never turn the resulting Run back on.
+                self.js("(()=>{const b=document.getElementById('start');if(b.textContent.includes('Pause'))b.click();})()")
                 self.wait("machinePlaybackState().queued===0 && machinePlaybackState().blended.length===0 && "
                           "machinePlaybackState().shown_t===machinePlaybackState().newest_t",30)
                 drawn,applied=self.js('machineDrawnBodies()'),self.js('machineBodies()')
@@ -4760,7 +4762,7 @@ class Puzzles(unittest.TestCase):
                     self.press('Back to sandbox')
 
     def test_thread_pulley_uses_scene_rings_and_native_rope_on_desktop_and_phones(self):
-        for width,height in ((1280,860),(390,844),(844,390)):
+        for width,height in ((1280,860),(390,844),(844,390),(320,568)):
             with self.subTest(viewport=(width,height)):
                 self.open('easy-thread',width,height,phone=width!=1280)
                 self.click_visible('Add a rope')
@@ -4774,6 +4776,15 @@ class Puzzles(unittest.TestCase):
                 self.assertNotIn('Try again',self.js("document.getElementById('level-done').textContent"))
                 self.assertFalse(self.js("window.machineBlueprints().some(b=>b.source==='easy-thread')"),
                                  'a one-rope win does not clutter the reusable assembly library')
+                self.paint()
+                layout=self.js("""(() => {const card=document.getElementById('level-done'),box=card.getBoundingClientRect();return {
+                    fits:card.scrollWidth<=card.clientWidth,
+                    buttons:[...card.querySelectorAll('button')].map(b=>{const r=b.getBoundingClientRect();return {
+                      label:b.getAttribute('aria-label')||b.textContent,w:r.width,h:r.height,
+                      inside:r.left>=box.left&&r.right<=box.right&&r.top>=box.top&&r.bottom<=box.bottom,
+                      hit:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})};})()""")
+                self.assertTrue(layout['fits'],layout)
+                self.assertTrue(all(b['w']>=44 and b['h']>=44 and b['inside'] and b['hit'] for b in layout['buttons']),layout)
 
     def test_blueprint_saves_your_pieces_and_drops_them_into_another_design(self):
         for width,height in ((1280,860),(390,844)):

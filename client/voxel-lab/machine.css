@@ -953,6 +953,13 @@ body.panel-tabs #view #clock{top:50px;bottom:auto;left:6px;width:auto;max-width:
   #viewer-corner #viewer-zoom{width:89px}
 }
 body.playing-level #view>.level-done:not(.retry-result){top:54px;bottom:auto;transform:translateX(-50%);max-height:calc(100% - 66px)}
+#view>.level-done:not(.retry-result) .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+#view>.level-done:not(.retry-result) .actions button{min-width:0;white-space:normal}
+@media(min-width:600px) and (max-height:430px){
+  body.playing-level #view>.level-done:not(.retry-result){display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:12px;width:min(680px,calc(100% - 24px))}
+  #view>.level-done:not(.retry-result)>h2,#view>.level-done:not(.retry-result)>p{grid-column:1}
+  #view>.level-done:not(.retry-result) .actions{grid-column:2;grid-row:1/span 8;align-self:center;margin:0;padding-right:36px}
+}
 #test-busy{position:absolute;z-index:9;top:54px;left:50%;transform:translateX(-50%);width:min(390px,calc(100% - 16px));max-height:calc(100% - 66px);overflow:auto;padding:8px;background:#25303af5;border:1px solid #e0bb68;border-radius:8px}
 .test-busy-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}
 #test-busy strong{font-size:16px;line-height:1.2}

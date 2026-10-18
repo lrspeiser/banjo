@@ -1,5 +1,12 @@
 # Puzzles on the machine (/play)
 
+October 18 result layout: completion actions use two columns. On short landscape
+screens the score summary and actions sit side by side. The Thread a pulley
+browser check verifies every result action is visible, unobstructed and at least
+44 px at 1280×860, 390×844, 844×390 and 320×568, with no horizontal overflow.
+The interpolation audit pauses with one atomic label-check/click, avoiding a
+race with scoring's own pause; its measured-frame and pose tolerances are unchanged.
+
 October 17 audit implementation, checkpoint 2:
 
 * Individual Rope anchor, Pulley wheel, Counterweight and Rope through pulleys
