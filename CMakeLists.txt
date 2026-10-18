@@ -958,6 +958,12 @@ if(BANJO_BUILD_TESTS)
                     set_tests_properties(banjo_machine_game_tests_${game_shard} PROPERTIES TIMEOUT 600
                         ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
                 endforeach()
+                foreach(apparatus_shard RANGE 0 3)
+                    add_test(NAME banjo_sandbox_apparatus_tests_${apparatus_shard} COMMAND ${Python3_EXECUTABLE}
+                        ${CMAKE_CURRENT_SOURCE_DIR}/tests/sandbox_apparatus_tests.py --shard=${apparatus_shard}/4)
+                    set_tests_properties(banjo_sandbox_apparatus_tests_${apparatus_shard} PROPERTIES
+                        TIMEOUT 600 LABELS "machine;apparatus")
+                endforeach()
                 foreach(sandbox_suite mechanics water_launch combinations motion)
                     add_test(NAME banjo_sandbox_${sandbox_suite}_tests COMMAND ${Python3_EXECUTABLE}
                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sandbox_${sandbox_suite}_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)

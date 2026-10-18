@@ -66,6 +66,28 @@ def shape_points(part):
     return [[at[i]+v for i,v in enumerate(rotate(point,turn))] for point in local]
 
 
+def segment_intersects_bounds(p,q,o):
+    # Most visibility-graph edges are far from a given obstacle. This is a
+    # conservative rejection only; near faces/edges use the original slab
+    # calculation and its unchanged parametric tolerances.
+    lower,upper=o
+    for i in range(3):
+        if (p[i]<lower[i]-1e-12 and q[i]<lower[i]-1e-12 or
+                p[i]>upper[i]+1e-12 and q[i]>upper[i]+1e-12):return False
+    lo,hi=0.,1.
+    for i in range(3):
+        d=q[i]-p[i]
+        if abs(d)<1e-12:
+            if p[i]<=lower[i]+1e-8 or p[i]>=upper[i]-1e-8:return False
+        else:
+            x,y=(lower[i]-p[i])/d,(upper[i]-p[i])/d
+            if x>y:x,y=y,x
+            if x>lo:lo=x
+            if y<hi:hi=y
+            if hi-lo<1e-8:return False
+    return hi>1e-8 and lo<1-1e-8
+
+
 def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupied=(),lift=0,side_shift=0,point_budget=64,route_cache=None):
     # Different leads must not be manufactured on the exact same obstacle
     # corner. The native simulation may bring them back together later.
@@ -89,17 +111,7 @@ def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupie
                     if not any(inside(q,z) for z in boxes) and not blocked:options.append(q)
         if not options:raise ValueError('Cable terminal is buried inside overlapping solids')
         return min(options,key=lambda q:length(q,p))
-    def intersects(p,q,o):
-        lo,hi=0.,1.
-        for i in range(3):
-            d=q[i]-p[i]
-            if abs(d)<1e-12:
-                if p[i]<=o[0][i]+1e-8 or p[i]>=o[1][i]-1e-8:return False
-            else:
-                x,y=sorted(((o[0][i]-p[i])/d,(o[1][i]-p[i])/d))
-                lo=max(lo,x);hi=min(hi,y)
-                if hi-lo<1e-8:return False
-        return hi>1e-8 and lo<1-1e-8
+    intersects=segment_intersects_bounds
     start,end=escape(a),escape(b)
     def route():
         nodes=[start,end]

@@ -21,6 +21,32 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_cable_obstacle_broad_phase_preserves_slab_decisions(self):
+        import random
+        def oracle(p,q,o):
+            lo,hi=0.,1.
+            for i in range(3):
+                d=q[i]-p[i]
+                if abs(d)<1e-12:
+                    if p[i]<=o[0][i]+1e-8 or p[i]>=o[1][i]-1e-8:return False
+                else:
+                    x,y=sorted(((o[0][i]-p[i])/d,(o[1][i]-p[i])/d))
+                    lo=max(lo,x);hi=min(hi,y)
+                    if hi-lo<1e-8:return False
+            return hi>1e-8 and lo<1-1e-8
+        rng=random.Random(181026);bounds=([0,0,0],[1,1,1])
+        cases=[(list(a),list(b),bounds) for a,b in
+               [([-1,.5,.5],[2,.5,.5]),([0,0,0],[1,0,0]),
+                ([1e-10,.5,.5],[1e-10,.8,.8]),([-.00000000001,.5,.5],[0,.5,.5]),
+                ([.5,.5,.5],[.5,.5,.5]),([-1,-1,0],[0,0,1])]]
+        for _ in range(20000):
+            low=[rng.uniform(-10,10) for _ in range(3)]
+            high=[v+rng.uniform(.000001,3) for v in low]
+            cases.append(([rng.uniform(-12,12) for _ in range(3)],
+                          [rng.uniform(-12,12) for _ in range(3)],(low,high)))
+        for p,q,box in cases:
+            self.assertEqual(e.mechanical_cables.segment_intersects_bounds(p,q,box),oracle(p,q,box),(p,q,box))
+
     def test_cable_clearance_broad_phase_preserves_exact_distance_decisions(self):
         import random
         rng=random.Random(16328)

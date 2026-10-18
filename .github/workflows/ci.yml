@@ -51,7 +51,7 @@ jobs:
           --output-junit ${{ github.workspace }}/ctest-results.xml
           --test-output-size-passed 20000000 --test-output-size-failed 20000000
           -LE "long|performance"
-          -E "^banjo_machine_game_browser_tests_[0-3]$|^banjo_machine_game_tests_[0-1]$|^banjo_(machine_world|sandbox_(mechanics|water_launch|combinations|motion)|battery_socket|mechanical_switch)_tests$|^banjo_sandbox_electrics_tests_[0-1]$|^banjo_sandbox_variants_tests_[0-5]$"
+          -E "^banjo_machine_game_browser_tests_[0-3]$|^banjo_machine_game_tests_[0-1]$|^banjo_sandbox_apparatus_tests_[0-3]$|^banjo_(machine_world|sandbox_(mechanics|water_launch|combinations|motion)|battery_socket|mechanical_switch)_tests$|^banjo_sandbox_electrics_tests_[0-1]$|^banjo_sandbox_variants_tests_[0-5]$"
 
       - name: Keep the test and floating-point evidence
         if: always()
@@ -148,6 +148,21 @@ jobs:
             timeout 600s python3 -u "tests/${suite}_tests.py" --engine "$BANJO_LIVE_ENGINE" "${args[@]}"
           done
 
+  apparatus-tests:
+    needs: source-registration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Move and remove prepared apparatus batch ${{ matrix.shard }} of 4
+        # Geometry, references and cable construction use the ordinary Python
+        # compiler. Every group is checked once; no native build is required.
+        run: timeout 600s python3 -u tests/sandbox_apparatus_tests.py --shard=${{ matrix.shard }}/4
+
   recipe-tests:
     needs: source-registration
     runs-on: ubuntu-24.04
@@ -172,7 +187,7 @@ jobs:
 
   build-and-test:
     if: ${{ always() }}
-    needs: [source-registration, native-tests, browser-tests, game-integration-tests, recipe-tests]
+    needs: [source-registration, native-tests, browser-tests, game-integration-tests, apparatus-tests, recipe-tests]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every native check and every browser batch
@@ -181,6 +196,7 @@ jobs:
           NATIVE_RESULT: ${{ needs['native-tests'].result }}
           BROWSER_RESULT: ${{ needs['browser-tests'].result }}
           INTEGRATION_RESULT: ${{ needs['game-integration-tests'].result }}
+          APPARATUS_RESULT: ${{ needs['apparatus-tests'].result }}
           RECIPE_RESULT: ${{ needs['recipe-tests'].result }}
         run: |
           set -euo pipefail
@@ -188,5 +204,6 @@ jobs:
           test "$NATIVE_RESULT" = success
           test "$BROWSER_RESULT" = success
           test "$INTEGRATION_RESULT" = success
+          test "$APPARATUS_RESULT" = success
           test "$RECIPE_RESULT" = success
-          echo "Source registration, native checks, sixteen browser batches, five game integration groups and six recipe batches passed."
+          echo "Source registration, native checks, sixteen browser batches, six game integration groups, four apparatus batches and six recipe batches passed."

@@ -14,13 +14,15 @@ not a new structural deformation or flexible track model.
 
 | Example | Native parts | Nominal last station (s) | Nominal unpaced wall (s) |
 | --- | ---: | ---: | ---: |
-| Marble skyscraper | 103 | 13.667 | 0.81 |
-| Waterworks express | 69 | 10.850 | 1.12 |
-| Solar pinball factory | 68 | 6.617 | 2.65 |
-| Light the fuse | 86 | 10.283 | 9.59 |
-| Electric marble relay | 117 | 13.883 | 17.98 |
+| Marble skyscraper | 103 | 13.667 | 0.94 |
+| Waterworks express | 69 | 10.850 | 1.44 |
+| Solar pinball factory | 68 | 7.817 | 6.28 |
+| Light the fuse | 86 | 10.283 | 11.58 |
+| Electric marble relay | 117 | 14.717 | 30.32 |
 
-Measurements include another 0.25 s after all stations complete. The native
+This final rerun shared the CPU with independent edit/browser audits; wall
+times vary with that load. Measurements include another 0.25 s after all
+stations complete. The native
 outer step is 1/240 s, cell size 0.02 m; existing coupled rope/cable solvers
 retain their finer internal steps. Reference plus two 1.5 mm native nudges
 complete every station in order in all five machines. Recorded traveller
@@ -82,6 +84,37 @@ with the rope-end regression and curated-gallery declarations, the three
 checks pass in 260.145 s locally. Source registration remains 274/274 and the
 client geometry/interpolation checks pass. The tighter overview fits each
 body's actual bounds rather than empty corners of the combined world box.
+The original combined edit audit exceeded its 600 s deadline on the Linux CI
+runner during the electrical relay edits; it reported no failed edit assertion.
+The same 419 independent move/remove cases now run in four disjoint CTest/CI
+batches of 104 or 105 groups. Each keeps the 600 s deadline and every geometry,
+material, reference and immutability assertion. Coverage checks require the
+partitions' union to equal the complete apparatus list without duplication;
+the aggregate publishing check requires all four batches.
+The relay also exposed a browser build timeout on the Linux runner: repeatedly
+checking its cable visibility graph exceeded the 90 s opening deadline.
+Construction now rejects edges whose axis bounds are entirely outside an
+obstacle before running the existing slab intersection test. Its tolerances,
+route search, stock fitting and native cable model are unchanged. An independent
+copy of the original slab oracle agrees on 20,006 boundary/random cases;
+all five compiled examples have byte-for-byte equal cable path/settings data.
+Relay compilation measured 4.194 s before and 2.749 s after locally. All 18
+electrical graph regressions pass; no physical tolerance or loading deadline
+was increased.
+The repeated browser run also caught the relay marble jumping its first
+hairpin after cable settling changed the carrier's arrival speed. The powered
+courses now have 0.50 m physical sidewalls (other courses retain 0.20 m),
+without changing checkpoints or assigning velocities. Relay runs after 2 s
+and 8 s of native cable setup complete all eight stations; the last stations
+occur at 13.833 s and 14.700 s. All five finish and save their unchanged bases
+through the ordinary browser controls in 133.790 s with CPU SwiftShader
+rendering. The electrical browser run measures 33.923 s compute for 14.517 s
+world time under concurrent CPU audit load; this is still the expensive example.
+The final native showcase suite passes all four checks in 283.573 s (15
+reference/nudged journeys, two settled relay runs, five blocked inputs and
+glass/oak/iron tower comparisons). All 419 apparatus edits/removals pass again
+with the taller sidewalls in 210.200 s. These local receipts supersede the
+earlier content timings; hosted CI is checked separately before delivery.
 
 October 18 result actions: level wins offer Next level (when one remains),
 Play again and All levels. Manual assembly saving stays in Sandbox under

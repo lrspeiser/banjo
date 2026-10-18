@@ -148,10 +148,21 @@ class MarbleShowcases(unittest.TestCase):
             if os.environ.get('BANJO_MACHINE_ENGINE') == 'required':self.fail('native engine required')
             self.skipTest('native engine unavailable')
 
-    def run_machine(self,spec,seconds=20):
+    def run_machine(self,spec,seconds=20,setup_s=0):
         with tempfile.TemporaryDirectory() as logs:
             return mw.rehearse(spec,ENGINE,Path(logs),seconds=seconds,wall_limit_s=120,
-                               track=['traveller'],after_s=.25)
+                               track=['traveller'],after_s=.25,setup_s=setup_s)
+
+    def test_electrical_relay_finishes_after_cords_have_settled(self):
+        row=next(t for t in mg.sandbox_templates() if t['name']=='Electric marble relay')
+        compiled=mw.compile_spec(row['base'])
+        for setup in (2,8):
+            with self.subTest(setup_s=setup):
+                result=self.run_machine(compiled,setup_s=setup)
+                self.assertIsNone(result['error'])
+                self.assertTrue(all(s['done'] for s in result['stations']),result['stations'])
+                print('MARBLE SETTLED',setup,'stations',[s['at_s'] for s in result['stations']],
+                      'wall_s',result['wall_s'],flush=True)
 
     def test_five_marble_journeys_finish_in_order_with_native_nudges(self):
         for row in mg.sandbox_templates():

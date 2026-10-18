@@ -15,8 +15,6 @@ import time
 import sys
 import tempfile
 import unittest
-import multiprocessing
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,32 +42,6 @@ def need_engine(test):
         return test(self)
     wrapped.__name__ = test.__name__
     return wrapped
-
-
-def audit_sandbox_apparatus(task):
-    """Independent setup edits; workers run the same compiler and assertions."""
-    import sandbox_edit
-    base,initial,obj=task
-    check=unittest.TestCase();before=copy.deepcopy(base)
-    old={p['name']:p for p in initial['parts']}
-    # Meshing teeth cannot move into their neighbour. Three whole cells also
-    # preserve thin optical glass's voxel phase, unlike a 5 cm translation.
-    for delta in ([.06,0,0],[-.06,0,0],[0,0,.06],[0,0,-.06],[0,.06,0]):
-        try:
-            moved,selected,compiled=sandbox_edit.edit(base,obj['id'],delta,compiled=initial)
-            break
-        except mw.MachineRefused:check.assertEqual(base,before)
-    else:check.fail((base['title'],obj['name'],'no clear edit'))
-    for part in compiled['parts']:
-        previous=old[part['name']]
-        expected=[v+(delta[i] if part['name'] in selected['parts'] else 0) for i,v in enumerate(previous['at_m'])]
-        for a,b in zip(part['at_m'],expected):check.assertAlmostEqual(a,b,places=6,msg=(base['title'],obj['name']))
-        check.assertEqual(mg._volume(part),mg._volume(previous))
-        check.assertEqual(part['material'],previous['material'])
-    removed,_,after=sandbox_edit.edit(base,obj['id'],remove=True,compiled=initial)
-    check.assertFalse(set(selected['parts']) & {p['name'] for p in after['parts']})
-    check.assertEqual(base,before,'Editing must not mutate a shared template')
-    return 1
 
 
 LEVELS = mg.load_levels()
@@ -357,20 +329,12 @@ class Tray(unittest.TestCase):
         self.assertFalse(bad['fits']);self.assertIn('into two',bad['problems'][0])
         self.assertEqual(base['parts'][0]['at_m'],[0,.1,0])
 
-    def test_sandbox_apparatus_moves_and_removes_without_dangling_base_references(self):
-        import sandbox_edit
-        count=0
-        # The larger gallery has hundreds of independent groups. Keep every
-        # edit/removal and physical validation, distribute their CPU work.
-        with ProcessPoolExecutor(max_workers=min(4,os.cpu_count() or 1),
-                mp_context=multiprocessing.get_context('spawn')) as pool:
-            for template in mg.sandbox_templates():
-                if not template['base']:continue
-                base=template['base'];initial=mw.compile_spec(base)
-                tasks=[(base,initial,obj) for obj in sandbox_edit.objects(base,compiled=initial)]
-                count+=sum(pool.map(audit_sandbox_apparatus,tasks))
-                print('SANDBOX APPARATUS',template['name'],'cumulative groups',count,flush=True)
-        self.assertGreater(count,100,'The five marble journeys expose their apparatus for editing')
+    def test_sandbox_apparatus_batches_cover_every_prepared_group(self):
+        import sandbox_apparatus_tests as apparatus
+        batches=apparatus.partitions()
+        keys=lambda rows:{(base['title'],obj['id']) for base,_,obj in rows}
+        self.assertEqual(set.union(*(keys(batch) for batch in batches)),keys(apparatus.cases()))
+        self.assertEqual(sum(map(len,batches)),len(apparatus.cases()))
 
     def test_sandbox_kit_translation_preserves_glass_oak_iron_mass_geometry_and_pivots(self):
         import sandbox_edit

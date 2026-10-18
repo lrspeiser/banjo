@@ -86,9 +86,9 @@ def checkpoint(spec, title, ball, at, size=(.38, .35, .38)):
 
 
 class Course:
-    def __init__(self, spec, start, heading=0, width=.22, prefix='track'):
+    def __init__(self, spec, start, heading=0, width=.22, prefix='track', rail_height=.20):
         self.spec, self.at, self.heading, self.width = spec, list(start), heading, width
-        self.prefix, self.count = prefix, 0
+        self.prefix, self.count, self.rail_height = prefix, 0, rail_height
 
     def _add(self, parts):
         self.count += 1
@@ -96,8 +96,8 @@ class Course:
         for i,part in enumerate(parts):
             part['name']=name if not i else name+f' panel {i}'
             if i%3:
-                part['size_m'][1]+=.14
-                part['at_m'][1]+=.07
+                part['size_m'][1]+=self.rail_height-.06
+                part['at_m'][1]+=(self.rail_height-.06)/2
             self.spec['parts'].append(part)
         # Uprights terminate at the track's underside, below the marble lane.
         for side in (0,):
@@ -159,8 +159,8 @@ def switchback():
     return spec
 
 
-def coaster(spec, start, ball='traveller', heading=0, length=2.4, prefix='coaster', drops=(.30,.17,.32,.15,.12),width=.22):
-    course=Course(spec,start,heading=heading,prefix=prefix,width=width)
+def coaster(spec, start, ball='traveller', heading=0, length=2.4, prefix='coaster', drops=(.30,.17,.32,.15,.12),width=.22,rail_height=.20):
+    course=Course(spec,start,heading=heading,prefix=prefix,width=width,rail_height=rail_height)
     course.straight(length,drops[0])
     checkpoint(spec,'Across the upper bridge',ball,[*course.at[:1],course.at[1]+.06,course.at[2]])
     course.bend(radius=.45,turn=180,drop=drops[1])
@@ -240,7 +240,9 @@ def solar_factory():
     start=Course(spec,[-.15,1.8,0],heading=180,width=.4,prefix='factory slide')
     start.straight(1.8,.4)
     checkpoint(spec,'Slide off the powered carrier','traveller',[-1.8,1.52,0],(.6,.4,.45))
-    coaster(spec,start.at,heading=180,length=2.1,width=.4)
+    # The powered carrier can feed the first bend at different speeds after
+    # cords settle. Real taller sidewalls contain that higher-energy arrival.
+    coaster(spec,start.at,heading=180,length=2.1,width=.4,rail_height=.50)
     return spec
 
 
