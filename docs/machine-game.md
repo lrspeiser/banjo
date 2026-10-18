@@ -33,9 +33,11 @@ link to banjo.is, because a local course id does not exist in hosted storage.
 Measured locally: six storage/HTTP tests cover ownership, immutable snapshots,
 save-revision conflicts, private-data exclusion, restart persistence, test
 isolation, search and pagination. Seven relevant CTest suites pass. The browser
-publication/run/copy/edit/unpublish flow passes at 1280×860, 390×844 and 844×390,
-including native gravity playback, reloadable old links, 44 px actions and
-scene-space checks. Existing shared base-machine playback, compressed-link
+publication/run/copy/edit/unpublish flow passes at 1280×860, 390×844 and 844×390.
+Each complete screen-size flow uses a fresh owned browser; the long combined
+run exhausted Chrome's module/network buffers on its last reload. Checks include
+native gravity playback, reloadable old links, 44 px actions and scene space.
+Existing shared base-machine playback, compressed-link
 compatibility, Sandbox ordering and Help/word-builder sharing checks also pass.
 Wired-course inspection labels regain their editing actions after Copy.
 The rebuilt, unchanged native physics also passes all sixteen wall qualification

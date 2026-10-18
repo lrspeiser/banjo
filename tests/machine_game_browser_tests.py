@@ -5250,6 +5250,13 @@ class Puzzles(unittest.TestCase):
     def test_community_publish_run_only_copy_and_unpublish_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
+                # Each flow includes many full-document imports and WebGL
+                # worlds. Keep its browser/module resources out of the next
+                # viewport; cross-device persistence is in the real store.
+                if width!=1280:
+                    type(self).chrome.close();self.server.machines.close_all()
+                    type(self).chrome=chrome_driver.Chrome(width,height);type(self).page=type(self).chrome.page
+                    self.page.send('Network.enable');self.page.send('Runtime.enable')
                 self.page.send('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':width!=1280})
                 self.page.send('Emulation.setTouchEmulationEnabled',{'enabled':width!=1280,'maxTouchPoints':5})
                 owner=str(uuid.uuid4());design_id=str(uuid.uuid4());name=f'Community marble {width}'
