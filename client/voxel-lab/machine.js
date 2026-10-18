@@ -82,12 +82,19 @@ grid.add(fineGrid,majorGrid);
 scene.add(grid);
 // A small board grid in the wall's actual XY plane, not an endless floor.
 const wallGrid=new THREE.Group();wallGrid.visible=false;
-for(const [step,color,opacity] of [[.05,0xeee0c5,.13],[.5,0xeee0c5,.4]]) {
+let wallGridKey='';
+function syncWallGrid(){
+  const boards=wallDesign()?wallPanels():[],key=JSON.stringify(boards);
+  wallGrid.visible=Boolean(boards.length);if(key===wallGridKey)return;wallGridKey=key;
+  for(const child of [...wallGrid.children]){wallGrid.remove(child);child.geometry.dispose();child.material.dispose();}
+  for(const board of boards)for(const [step,color,opacity] of [[.05,0xeee0c5,.13],[.5,0xeee0c5,.4]]) {
   const points=[];
-  for(let x=-3;x<=3.001;x+=step)points.push(new THREE.Vector3(x,0,.003),new THREE.Vector3(x,4,.003));
-  for(let y=0;y<=4.001;y+=step)points.push(new THREE.Vector3(-3,y,.003),new THREE.Vector3(3,y,.003));
+  const left=board.x_m-board.width_m/2,right=board.x_m+board.width_m/2,z=board.z_m+.003;
+  for(let x=left;x<=right+.001;x+=step)points.push(new THREE.Vector3(x,0,z),new THREE.Vector3(x,board.height_m,z));
+  for(let y=0;y<=board.height_m+.001;y+=step)points.push(new THREE.Vector3(left,y,z),new THREE.Vector3(right,y,z));
   wallGrid.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points),
     new THREE.LineBasicMaterial({color,transparent:true,opacity,depthWrite:false})));
+  }
 }
 scene.add(wallGrid);
 let gridSnapEnabled=true;
@@ -1371,7 +1378,7 @@ function decodeFloats(b64) {
 function syncGround(view) {
   if (terrain) { scene.remove(terrain); terrain.geometry.dispose(); terrain = null; }
   ground.visible = grid.visible = !view;
-  wallGrid.visible=wallDesign();
+  syncWallGrid();
   if (!view || !view.grid) return;
   const g = view.grid, heights = decodeFloats(view.heights_b64);
   const width = (g.nx - 1) * g.cell_m, depth = (g.nz - 1) * g.cell_m;
@@ -2092,11 +2099,15 @@ async function poll(mine) {
 // ---- camera -------------------------------------------------------------------
 let framedFree = false;
 let wallFront = false;
+let activeWallId='workshop backing';
 function wallDesign() { return Boolean(level?.free && activeDesign?.draft.base?.build_surface?.kind==='wall'); }
 function worldWallDesign(){return wallDesign()&&activeDesign.draft.base.build_surface.version===2;}
 function wallPlacement(p=ghost?.p){return wallDesign()&&Boolean(p)&&(!worldWallDesign()||trayItem(p.piece)?.wall_mounted);}
+function wallPanels(){const base=ghost?.baseObject?.wall&&ghost.base?ghost.base:activeDesign?.draft.base;
+  return base?.build_surface?.panels||[{id:'workshop backing',width_m:6,height_m:4,x_m:0,z_m:0}];}
+function wallPanel(p=ghost?.p){const rows=wallPanels();return rows.find(row=>row.id===(p?.wall||activeWallId))||rows[0];}
 function pieceKind(p){return p?.piece?.replace(/^wall_(marble|gear|motor|battery|switch|bulb|resistor|capacitor)$/,'$1');}
-function wallPlane() { return activeDesign?.draft.base?.build_surface?.plane_z_m ?? .3; }
+function wallPlane(p=ghost?.p) { return worldWallDesign()?wallPanel(p).z_m+.3:activeDesign?.draft.base?.build_surface?.plane_z_m??.3; }
 function wallCameraControls(){
   $('wall-camera-view').hidden=!wallDesign();$('wall-camera-view').textContent=wallFront?'3D':'Front';
   $('wall-camera-view').setAttribute('aria-label',wallFront?'Explore in 3D':'Face the wall');
@@ -2105,9 +2116,11 @@ function wallCameraControls(){
 function syncWallTray(){
   if(!level?.free)return;
   const key=worldWallDesign()?'world':wallDesign()?'legacy':'ordinary';
-  if(level.wallTrayKey===key)return;
+  const stamp=JSON.stringify([key,activeDesign?.draft.base?.build_surface?.panels]);
+  if(level.wallTrayKey===stamp)return;
   if(key!=='ordinary'||level.wallTrayKey)level.tray=clone(key==='world'?wallTemplate.tray:key==='legacy'?legacyWallTray:freeLevel.tray);
-  level.wallTrayKey=key;
+  if(key==='world')for(const row of level.tray.filter(row=>row.wall_mounted))row.knobs.wall={choices:wallPanels().map(p=>p.id),default:wallPanels()[0].id,hidden:true};
+  level.wallTrayKey=stamp;
 }
 $('wall-camera-view').addEventListener('click',()=>{wallFront=!wallFront;frameCamera(Boolean(ghost));wallCameraControls();freshView();});
 function panWall(dx,dy) {
@@ -2119,8 +2132,8 @@ function overviewDesign() {
 }
 function frameCamera(includeGhost=false) {
   if(wallDesign()&&wallFront) {
-    const board=activeDesign.draft.base.build_surface;
-    goal.set(0,board.height_m/2,wallPlane());target.copy(goal);
+    const board=wallPanel();
+    goal.set(board.x_m,board.height_m/2,wallPlane());target.copy(goal);
     azimuth=0;elevation=0;
     distance=1.08*Math.max(board.height_m,board.width_m/camera.aspect)/2/Math.tan(camera.fov*Math.PI/360);
     follow=false;$('follow').setAttribute('aria-pressed','false');return;
@@ -2224,7 +2237,7 @@ function resize() {
   const half = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
   // Preserve the framing when the phone rotates.
   if(wallDesign()&&wallFront) {
-    const board=activeDesign.draft.base.build_surface;
+    const board=wallPanel();
     distance=Math.min(40,distance*Math.max(board.height_m,board.width_m/camera.aspect)/Math.max(board.height_m,board.width_m/oldAspect));
   } else distance = Math.min(40, distance * Math.sin(oldHalf) / Math.sin(half));
   positionLevelIntroduction();
@@ -2483,8 +2496,8 @@ const TURN_KEYS = {q: ['yaw_deg', 1], e: ['yaw_deg', -1], r: ['pitch_deg', 1], f
 
 function ghostName() { return ghost?.baseObject?.name || (ghost ? `your ${ghost.p.piece} ${ghost.index + 1}` : ''); }
 // The piece picked up is hidden while its ghost is out; Cancel shows it again.
-function hiddenPiece(name) { return wallDesign()&&name==='workshop clear guard' || (ghost?.baseObject ? ghost.baseObject.parts.includes(name) : Boolean(ghost && ghost.was) && (name === ghostName() || name.startsWith(ghostName() + ' '))); }
-function ghostPlacements() { const list = placements.slice(); if(!ghost.baseObject)list[ghost.index] = ghost.p; return list; }
+function hiddenPiece(name) { return wallDesign()&&name==='workshop clear guard' || (ghost?.baseObject ? (ghost.wallParts||ghost.baseObject.parts).includes(name) : Boolean(ghost && ghost.was) && (name === ghostName() || name.startsWith(ghostName() + ' '))); }
+function ghostPlacements() { const list = (ghost?.wallPlacements||placements).slice(); if(!ghost.baseObject)list[ghost.index] = ghost.p; return list; }
 
 // A knob set as its slider would set it: on its step, within its range.
 function setKnob(p, key, v, exact=false) {
@@ -3266,15 +3279,17 @@ function askGhost() {
 }
 async function checkGhost(g) {
   const sent = {x: g.p.x_m ?? 0, z: g.p.z_m ?? 0,height:g.p.height_m??0}, snapping = Boolean(g.snapNext);
-  const setupStamp = JSON.stringify([ghostPlacements(),g.baseObject?[g.p.x_m,g.p.height_m,g.p.z_m]:null]);
+  const setupStamp = JSON.stringify([ghostPlacements(),g.baseObject?g.p:null]);
   g.busy = true; g.again = false; g.snapNext = false;
   try {
-    const r = await api(g.baseObject ? {op:'sandbox_object',level:'free',base:g.originalBase,object:g.baseObject.id,
+    const r = await api(g.baseObject?.wall?{op:'wall_edit',base:g.originalBase,placements,wall:g.baseObject.wall.id,
+      changes:{x_m:g.p.x_m,z_m:g.p.z_m,width_m:g.p.width_m,height_m:g.p.wall_height_m},edit_key:g.card}:g.baseObject ? {op:'sandbox_object',level:'free',base:g.originalBase,object:g.baseObject.id,
       delta:[g.p.x_m-g.baseObject.at_m[0],g.p.height_m,g.p.z_m-g.baseObject.at_m[2]],placements,
       snap:snapping&&objectSnapEnabled,nearby_snap:true,snap_hold:g.objectLock} : {op: 'level_ghost', level: level.id, ...sandboxRequest(), placements: ghostPlacements(), index: g.index,
       snap: snapping && objectSnapEnabled, nearby_snap:true, snap_hold:g.objectLock, edit_key: g.card});
     if (ghost !== g) return;
     if(g.baseObject)g.base=r.base;
+    if(g.baseObject?.wall){g.wallPlacements=r.placements;g.wallParts=r.selected.parts;syncWallGrid();}
     // Moved by hand near where it connects to another piece: put where the
     // two connect, and asked about again there.
     if (r.snap && r.snap.moved && snapping && objectSnapEnabled && !g.again) {
@@ -3346,7 +3361,11 @@ function startGhost(p, index, keepPlace = false) {
   editorMode=tuneArmed&&index<placements.length?'adjust':'move';lastEdited=index;
   // Prebuilt/saved placements may omit default-valued knobs. Resolve them
   // before editing so range controls and selectors show the compiled setup.
-  for (const [key, rule] of Object.entries(trayItem(p.piece).knobs)) {
+  if(worldWallDesign()&&trayItem(p.piece)?.wall_mounted){
+    if(index>=placements.length&&!keepPlace)p.wall=activeWallId;
+    else if(!p.wall)p.wall='workshop backing';
+  }
+  for (const [key, rule] of Object.entries(trayItem(p.piece,p).knobs)) {
     if (p[key] == null) p[key] = index < placements.length && rule.legacy_default != null ? rule.legacy_default : knobDefault(rule);
   }
   selectPhonePanel('controls');
@@ -3355,6 +3374,8 @@ function startGhost(p, index, keepPlace = false) {
            frameOnAdd:index>=placements.length};
   updateLiveControlAvailability();
   if(p.piece==='base_object')Object.assign(ghost,{baseObject:sandboxObjects.find(o=>o.id===p.object),originalBase:clone(activeDesign.draft.base || sandboxBase)});
+  if(ghost.baseObject?.wall)activeWallId=ghost.baseObject.wall.id;
+  else if(wallPlacement())activeWallId=ghost.p.wall||'workshop backing';
   view.classList.add('placing'); view.classList.remove('pickable', 'looking');
   looking = false;
   renderTray(); renderPlaced(); renderGhostBar();
@@ -3365,6 +3386,11 @@ function startGhost(p, index, keepPlace = false) {
   if (!ghost.was && !keepPlace) {
     const rect = renderer.domElement.getBoundingClientRect();
     const at = wallPlacement()?slidePoint(rect.left+rect.width/2,rect.top+rect.height/2,0):sceneHit(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    if(at&&wallPlacement()){
+      const board=wallPanel();
+      if(Math.abs(at.x-board.x_m)>Math.max(0,board.width_m/2-.9))at.x=board.x_m;
+      at.y=Math.max(.35,Math.min(board.height_m-.35,at.y));
+    }
     if(at&&worldWallDesign()&&!wallPlacement()&&at.z<.7)at.z=1.2;
     if (at) { setKnob(ghost.p, 'x_m', at.x); setKnob(ghost.p,wallPlacement()?'height_m':'z_m',wallPlacement()?at.y:at.z); showGhostKnobs(); }
   }
@@ -3382,7 +3408,8 @@ function pickUp(i) {
   if(level?.free && i>=placements.length){
     const object=sandboxObjects[i-placements.length];if(!object)return;
     if(playing||world.t>0)rebuildLevel(false).then(()=>pickUp(i)).catch(()=>{});
-    else startGhost({piece:'base_object',object:object.id,x_m:object.at_m[0],z_m:object.at_m[2],height_m:0},placements.length,true);
+    else startGhost(object.wall?{piece:'base_object',object:object.id,x_m:object.wall.x_m,z_m:object.wall.z_m,width_m:object.wall.width_m,wall_height_m:object.wall.height_m}:
+      {piece:'base_object',object:object.id,x_m:object.at_m[0],z_m:object.at_m[2],height_m:0},placements.length,true);
     return;
   }
   if (!placements[i]) return;
@@ -3395,6 +3422,7 @@ function endGhost() {
   $('socket-choices').hidden=true;
   clearTimeout(solarTimer);solarTimer=null;solarWanted='';solarStamp='';solarResult=null;solarVersion++;solarPending=false;solarError='';
   ghost = null; draggingGhost = null; pressedAt = null;pendingPieceReference=null;handleDrag=null;drawAirflows();
+  syncWallGrid();
   view.classList.remove('grabbing', 'grab');
   terminalStart = null; powerMessage('');
   clearGhostMeshes(); ghostGroup.position.set(0, 0, 0); drawPorts([]);
@@ -3412,7 +3440,7 @@ function cancelGhost() { if (!ghost) return; endGhost(); renderTray(); renderPla
 function placeGhost() {
   if (!ghost || !ghost.fits || ghost.busy || !ghost.answered) return false;
   remember();
-  if(ghost.baseObject)activeDesign.draft.base=ghost.base;
+  if(ghost.baseObject){activeDesign.draft.base=ghost.base;if(ghost.wallPlacements)placements=ghost.wallPlacements;}
   else if (ghost.was) placements[ghost.index] = ghost.p; else placements.push(ghost.p);
   endGhost(); renderTray(); renderPlaced();
   return true;
@@ -3746,7 +3774,9 @@ function renderGhostBar() {
     another.append(Object.assign(document.createElement('span'), {className: 'add-another-mark', textContent: '+'}),
       Object.assign(document.createElement('span'), {className: 'add-another-label', textContent: ' Add another'}));
   }
-  if(ghost.baseObject || ghost.was)actions.insertBefore(button('Delete piece',()=>removeSelectedObject(),{ariaLabel:'Delete selected piece'}),throwAway);
+  if((ghost.baseObject || ghost.was)&&!ghost.baseObject?.wall)actions.insertBefore(button('Delete piece',()=>removeSelectedObject(),{ariaLabel:'Delete selected piece'}),throwAway);
+  if(ghost.baseObject?.wall)another=button('Add wall piece',()=>{if(placeGhost()){pieceFilter='wall';$('piece-search').value='';scheduleRebuild(0);openPiecePicker();}},
+    {className:'add-another wall-piece-action',ariaLabel:'Add a piece to this wall',disabled:!ghost.fits||ghost.busy});
   if(ghost.rewireKey) actions.insertBefore(button('Disconnect wire',()=>{
     if(!ghost?.rewireKey || terminalBusy || powerBusy)return;
     const index=ghost.index;
@@ -3802,6 +3832,7 @@ function renderGhostBar() {
   view.classList.toggle('choosing-attachment',Boolean(needsClip));
   const editor=$('piece-editor');editor.hidden=(connecting&&!ghost.was)||needsClip;
   const isGear=pieceKind(ghost.p)==='gear';editor.classList.toggle('editing-gear',isGear);
+  editor.classList.toggle('editing-wall',Boolean(ghost.baseObject?.wall));
   const modes=Object.assign(document.createElement('div'),{className:'piece-modes'});
   const move=button('Move',()=>{editorMode='move';setLooking(false);},{ariaLabel:'Move selected piece'});
   const turn=button('Turn',()=>{
@@ -3828,7 +3859,7 @@ function renderGhostBar() {
   if(rule.choices&&(!isGear||!['teeth','module_m','height_m'].includes(key)))editor.append(row);
   else if(rule.part||rule.hinge)editor.append(sceneReferenceControl(ghost.p,key,rule,()=>{renderGhostBar();showGhostKnobs();askGhost();}));
   editor.append(...connectionActions,...(unclipButton?[unclipButton]:[]),setting);
-  setting.hidden=isGear; // The three visible fields already show these measurements.
+  setting.hidden=isGear||Boolean(ghost.baseObject?.wall); // Visible fields already show these measurements.
   if(isGear)editor.append(Object.assign(document.createElement('output'),{id:'gear-plane-feedback',className:'adjustment-feedback',ariaLive:'polite'}));
   if(pieceKind(ghost.p)==='gear')editor.append(Object.assign(document.createElement('output'),{id:'gear-motion-feedback',className:'adjustment-feedback',textContent:'Checking gear motion…',
     title:'This is a replay of the engine’s predicted motion for the current placement. Radius is measured to the tooth tips; it changes tooth spacing too.'}));
@@ -6218,7 +6249,10 @@ const baseObjectTray={piece:'base_object',knobs:{
   x_m:{min:-10,max:10,step:.01,default:0,label:'along X (m)'},
   z_m:{min:-10,max:10,step:.01,default:0,label:'along Z (m)'},
   height_m:{min:-4,max:4,step:.01,default:0,label:'height change (m)'}}};
-function trayItem(piece) { return piece==='base_object'?baseObjectTray:level.tray.find(t => t.piece === piece); }
+const wallObjectTray={piece:'base_object',focus_knob:'width_m',knobs:{
+  x_m:{min:-16,max:16,step:.05,default:0,label:'Ground X (m)'},z_m:{min:-16,max:16,step:.05,default:0,label:'Ground Z (m)'},
+  width_m:{min:.5,max:12,step:.1,default:6,label:'Width (m)'},wall_height_m:{min:.5,max:10,step:.1,default:4,label:'Height (m)'}}};
+function trayItem(piece,p=ghost?.p) { return piece==='base_object'?(sandboxObjects.find(o=>o.id===p?.object)?.wall?wallObjectTray:baseObjectTray):level.tray.find(t => t.piece === piece); }
 function playerPartTitle(name) { return name.replace(/^your wall_lift\b/,'Marble lift').replace(/^your /,''); }
 
 const PIECE_INFO = {
@@ -7088,6 +7122,7 @@ function renderDesignControls() {
   $('machine-data').hidden = !level?.free;
   $('sandbox-environment').hidden = !level?.free || wallDesign()&&!worldWallDesign();
   $('wall-open-world').hidden=!level?.free||!wallDesign()||worldWallDesign();
+  $('wall-add').hidden=!worldWallDesign();
   $('free-example').hidden=wallDesign();
   $('free-clear').textContent=wallDesign()?'Clear the wall':'Clear the table';
   if(level?.free){const g=activeDesign?.draft.base?.ground;$('environment-kind').value=g?.kind==='flume'?(g.discharge_m3_s>0?'river':'channel'):'table';
@@ -7147,6 +7182,20 @@ $('wall-open-world').addEventListener('click',async()=>{
     keepBuild();await rebuildLevel(false);
   }catch(error){designStatus(error.message);}
   finally{b.disabled=false;}
+});
+$('wall-add').addEventListener('click',async()=>{
+  if(readOnlyCourse()||!worldWallDesign()||ghostInTheWay())return;
+  const design=activeDesign,stamp=setupSnapshot();$('wall-add').disabled=true;
+  try{
+    const r=await api({op:'wall_edit',base:design.draft.base,placements,add:true});
+    if(activeDesign!==design||setupSnapshot()!==stamp)return;
+    if(!r.fits)throw new Error(r.problems.join(' · '));
+    remember();design.draft.base=r.base;activeWallId=r.wall.id;framedFree=false;
+    keepBuild();renderDesignControls();await rebuildLevel(false);
+    const index=sandboxObjects.findIndex(o=>o.wall?.id===r.wall.id);
+    if(index>=0)pickUp(placements.length+index);
+  }catch(error){designStatus(error.message);}
+  finally{$('wall-add').disabled=false;}
 });
 async function applySandboxGround(kind,flow=100){
   if(!activeDesign||!level?.free)return false;
@@ -7493,6 +7542,7 @@ renderer.domElement.addEventListener('pointerdown', () => {
 async function chooseLevel(id, design = null) {
   courseDescription='';
   wallFront=false;
+  activeWallId='workshop backing';
   cancelAssembly();
   closeLevelIntroduction();
   if($('run-help').open)$('run-help').close();

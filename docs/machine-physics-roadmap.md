@@ -17,6 +17,12 @@ were also reviewed. These are proposed experiments, not new runtime models.
 See the [comparison and qualification plan](physics-solvers.md).
 
 October 18 wall-in-world update: only wall-specific placement uses a plane.
+Backing walls can now be resized and translated on the ground, with additional
+parallel panels. Their actual oak boxes, mounted fixtures, joint anchors and
+electrical sockets change in the setup declaration. Native gravity/contact
+still owns subsequent motion; panel editing adds no force or pose projection.
+The backings and brackets remain ideal grounded supports, not tested structural
+bolts or breakable mounting assemblies.
 Version 2 removes the global front guard, adds real track rails and admits the
 ordinary 3D library beside fourteen wall-specific types. Normal 3D contact can
 carry a marble off the wall onto a track extending outward. Historical version

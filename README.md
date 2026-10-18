@@ -9,6 +9,10 @@ normally or choose **Front** for straight-on editing. Its starter marble run
 turns off the wall onto a 3D track. Undo and saved design versions work here too.
 Older wall saves offer **Design → Add 3D pieces**, preserving a version first;
 copy a shared course to your Sandbox before changing it.
+Click an open area of a wall to select it. Choose **Width** or **Height** and
+drag its gold edge handles, then **Place**. **Add wall** creates another grounded
+wall; drag it across the ground, and use **Add wall piece** on its selection to
+build on that wall. Its mounted pieces follow when the wall is moved.
 
 Ask **Describe a design** for a wheel that catches a marble, lifts it and drops
 it higher. The builder expands a single-pass **Marble lift wheel**, a marble,

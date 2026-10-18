@@ -341,4 +341,56 @@ class WallWorld(unittest.TestCase):
         self.assertEqual(result['placements'][1]['piece'],'wall_marble')
 
 
+class EditableWalls(unittest.TestCase):
+    def test_resize_has_real_dimensions_and_refuses_to_strand_fixtures(self):
+        template=wall.world_template(mg.free_build()['tray']);saved=copy.deepcopy(template)
+        r=wall.edit_panel(template['base'],template['placements'],wall.FOUNDATION[0],dict(width_m=8,height_m=5),edit_key='wall_height_m')
+        self.assertTrue(r['fits'],r['problems'])
+        backing=next(p for p in r['parts'] if p['name']==wall.FOUNDATION[0])
+        self.assertEqual(backing['size_m'],[8,5,.02]);self.assertEqual(backing['at_m'],[0,2.5,-.01])
+        self.assertEqual(r['edit_guide']['arrows'][0]['at'],[0,5,0])
+        self.assertEqual(r['placements'],template['placements']);self.assertEqual(template,saved)
+        smaller=wall.edit_panel(template['base'],template['placements'],wall.FOUNDATION[0],dict(height_m=2))
+        self.assertFalse(smaller['fits']);self.assertIn('extends beyond the wall',' '.join(smaller['problems']))
+        with self.assertRaises(ValueError):wall.edit_panel(template['base'],[],wall.FOUNDATION[0],dict(width_m=.1))
+        tampered=copy.deepcopy(r['base']);tampered['parts'][-1]['size_m'][0]=7
+        with self.assertRaises(ValueError):mg.requested_level(dict(level='free',base=tampered))
+
+    def test_second_wall_owns_its_mounts_and_translates_only_its_own_pieces(self):
+        base=wall.world_base();ps=[dict(piece='wall_battery',x_m=-1,height_m=2),dict(piece='loose_block',x_m=0,z_m=5)]
+        added=wall.edit_panel(base,ps,None,add=True);self.assertTrue(added['fits'],added['problems'])
+        second=added['wall'];ps += [dict(piece='wall_battery',wall=second['id'],x_m=second['x_m'],height_m=2)]
+        changed=wall.edit_panel(added['base'],ps,second['id'],dict(z_m=2,x_m=second['x_m']+1))
+        self.assertTrue(changed['fits'],changed['problems'])
+        self.assertEqual(changed['placements'][:2],ps[:2])
+        self.assertEqual(changed['placements'][2]['x_m'],second['x_m']+1)
+        level=mg.requested_level(dict(level='free',base=changed['base']))
+        spec=mg.compose(level,changed['placements'])[0]
+        devices=spec['electrical']['devices']
+        self.assertAlmostEqual(devices[1]['terminals']['plus'][2]-devices[0]['terminals']['plus'][2],2)
+        restored=json.loads(json.dumps(dict(base=changed['base'],placements=changed['placements'])))
+        self.assertEqual(mg.compose(mg.requested_level(dict(level='free',base=restored['base'])),restored['placements'])[0],spec)
+        with self.assertRaises(ValueError):wall.edit_panel(added['base'],[],second['id'],dict(x_m=0,z_m=0))
+
+    def test_relocated_second_wall_lift_has_native_contacts_and_power_for_three_materials(self):
+        added=wall.edit_panel(wall.world_base(),[],None,add=True);second=added['wall']
+        moved=wall.edit_panel(added['base'],[],second['id'],dict(z_m=2,width_m=4,height_m=4))
+        rows,check=wall.world_lift_assembly(second['x_m'],1.6)
+        for p in rows:
+            if p['piece']!='wire':p['wall']=second['id']
+        records=[]
+        for material in ('glass','oak','iron'):
+            ps=copy.deepcopy(rows);ps[1]['material']=material
+            spec=mg.compose(mg.requested_level(dict(level='free',base=moved['base'])),ps)[0]
+            with tempfile.TemporaryDirectory() as logs:
+                result=mw.rehearse(mw.compile_spec(spec),ENGINE,logs,seconds=12,track=[check['marble']])
+            self.assertIsNone(result['error']);measured=machine_chat.lift_checks([check],result)[0]
+            self.assertTrue(measured['happened'],measured)
+            self.assertTrue(all(p[3]>2 for p in result['paths'][check['marble']]['points']))
+            ledger=result['readouts']['electrical']['networks'][0]['ledger']
+            self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+            records.append(dict(material=material,check=measured,ledger=ledger,wall_s=result['wall_s']))
+        print('SECOND WALL LIFT',json.dumps(records),flush=True)
+
+
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -170,7 +170,8 @@ body.reading-guide{overflow:hidden}
 .feedback form{display:grid;gap:.35rem;margin-top:.35rem}
 .feedback label{font-size:.85rem}
 .feedback textarea{width:100%;box-sizing:border-box;font:14px system-ui}
-#sandbox-build-description{min-height:44px;padding:8px 14px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;font:14px system-ui;cursor:pointer}
+#sandbox-build-description,#wall-add{min-height:44px;padding:8px 14px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;font:14px system-ui;cursor:pointer}
+.read-only-course #wall-add{display:none!important}
 /* How the run went. */
 .level-done{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;width:min(360px,calc(100% - 24px));box-sizing:border-box;padding:16px 18px;text-align:center;background:#142836f5;border:1px solid #5fe08f;border-radius:12px;box-shadow:0 10px 30px #000a}
 .level-done[hidden]{display:none}
@@ -1064,6 +1065,7 @@ body.panel-tabs:has(#phone-toolbar.one-row) #view #clock{top:6px}
 /* A short screen has no room for another row beside the piece (it would
    reach the camera row); opening the library places the piece first anyway. */
 @media(max-height:500px){#piece-editor>.add-another{display:none}}
+@media(max-height:500px){#piece-editor.editing-wall{width:212px}#piece-editor.editing-wall .piece-toolbar{flex-direction:row}#piece-editor>.wall-piece-action{display:block}}
 /* Live controls on a machine (Release spring, valves) are teal, like the
    glow on the part they work, apart from the blue editing controls. */
 .device-live-card{border-color:#46c2b0}

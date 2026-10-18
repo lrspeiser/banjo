@@ -1,5 +1,52 @@
 # Puzzles on the machine (/play)
 
+October 18 editable walls: a version 2 wall can now be selected through an
+uncovered part of its backing. **Width** and **Height** remain together beside
+the selection; gold edge handles drag or step the dimensions, and **Place**
+commits the edit. Move drags change ground X/Z. The wall stays upright and
+grounded. **Add wall** creates a second panel in clear ground space and selects
+it for placement. **Add wall piece** opens the wall library with that panel as
+the target. Front view frames the selected panel. Each panel's own grid follows
+its actual size and position. These are parallel panels; turning/tilting walls,
+wall removal and deformable/failing wall fasteners are not added.
+
+Optional `build_surface.panels` records stable backing ids, widths, heights and
+ground X/Z. Physical oak backing boxes must match those records. Wall-specific
+placements name their panel in a hidden `wall` knob, defaulting to the original
+backing for existing saves. Moving a panel translates only its wall-mounted
+placements; their physical brackets, joints, sockets and handles are rebuilt at
+the new depth before native physics runs. Ordinary world pieces remain in place.
+The edit preview checks native declarations, collisions and each panel's bounds;
+shrinking below a fixture refuses Place rather than losing the fixture. Wall
+overlap, nonfinite values and mismatched physical backing declarations are refused.
+Wall sizes are 0.5–12 m wide and 0.5–10 m tall in 0.1 m steps, ground centres
+within ±16 m, with up to eight panels. Existing version 1 shared foundations
+retain their old behavior until an editable copy uses **Add 3D pieces**.
+
+Local native qualification adds three cases to the previous 22 wall tests:
+actual resized geometry and edge guide positions, atomic invalid shrink,
+per-wall movement and socket depths, saved JSON round trips, and a powered
+lift on a second panel at X = 5 m / front Z = 2 m. Glass/oak/iron comparisons
+use the unchanged engine at 1/240 s and 0.02 m cells. The lift still uses native
+contact, hinge torque and electrical leads; no runtime pose or velocity is
+assigned. The substrate and brackets retain ideal fixed supports. No new native
+law, wall strength/fracture model or full-world conservation claim is introduced.
+The three materials rise 0.431/0.433/0.417 m and unload at
+3.250/2.933/5.033 s. Per-run compute is 5.99–6.23 s locally for a requested
+12 s. Electrical residual magnitude is at most 1.20e−11 J, thermal residual
+at most 1.74e−7 J and coupling residual 0.00377–0.00522 J. Existing native
+source/shaft/heat ledgers are recorded in the test output; they do not close
+whole-world contact/gravity/support exchanges. The native executable SHA is
+the same `c185b7...b1e57` identified below.
+
+Browser tests pass at 1280×860, 390×844 and 844×390 using CPU SwiftShader:
+selecting a backing, dragging both dimension handles, Undo/Redo, adding and
+moving a second wall, placing a fixture on its face, and saving/reopening all
+wall and piece data. The short landscape editor retains its Add wall piece
+action. The pre-existing world-placement, conversion and live socket-wiring
+checks also pass. Game declaration and Community CTest suites pass; source
+registration remains 274/274. No engine C++ or puzzle goal changed.
+
 October 18 wall in the 3D world: **Sandbox → Build on a wall** now creates
 `build_surface.version=2`: a 6 × 4 m backing inside the normal ground scene,
 without version 1's global transparent front sheet. The default camera is

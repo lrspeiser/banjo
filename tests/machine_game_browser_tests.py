@@ -2927,6 +2927,43 @@ class Puzzles(unittest.TestCase):
                 (proof/f'wall-world-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
                 self.assertLessEqual(self.js('document.body.scrollWidth'),width)
 
+    def test_walls_resize_move_and_accept_pieces_on_a_second_wall(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.click_visible('Build on a wall');self.wait(READY,60)
+                original=self.js('machineDesign().draft')
+                self.click_piece(self.js('machinePlacements().length'));self.ghost()
+                for label,key in (('Width','width_m'),('Height','wall_height_m')):
+                    self.click_visible('Adjust '+label);self.ghost();self.paint()
+                    point=self.js(f"(()=>{{const h=document.querySelector('[aria-label=\"Increase {label} on object\"]'),r=h.getBoundingClientRect();return {{start:[r.x+r.width/2,r.y+r.height/2],dx:Number(h.dataset.dx),dy:Number(h.dataset.dy)}};}})()")
+                    before=self.ghost()['p'][key]
+                    self.drag(point['start'],[point['start'][0]+point['dx']*24,point['start'][1]+point['dy']*24],touch=width!=1280)
+                    self.assertGreater(self.ghost()['p'][key],before+.3);self.assertTrue(self.ghost()['fits'])
+                self.click_visible('Place');self.wait(READY,60)
+                resized=self.js('machineDesign().draft')
+                self.assertGreater(resized['base']['build_surface']['width_m'],6)
+                self.assertGreater(resized['base']['build_surface']['height_m'],4)
+                self.click_visible('Undo');self.wait(READY,60);self.assertEqual(self.js('machineDesign().draft'),original)
+                self.click_visible('Redo');self.wait(READY,60)
+                self.click_visible('Add wall');self.ghost();self.assertEqual(self.js('machineWallState().surface.panels.length'),2)
+                second=self.ghost()['p'];self.drag_ghost_to(second['x_m']+.4,second['z_m']+.8,touch=width!=1280)
+                self.assertAlmostEqual(self.ghost()['p']['z_m'],second['z_m']+.8,delta=.05)
+                self.click_visible('Place');self.wait(READY,60)
+                self.assertEqual(self.js('machinePlacements()'),original['placements'])
+                wall_index=self.js('machineEditableObjects().find(o=>o.wall?.id.startsWith("mounting wall ")).index')
+                self.click_piece(wall_index);self.ghost();self.click_visible('Add a piece to this wall')
+                self.press('Add a wall track');self.ghost();self.assertTrue(self.ghost()['fits'])
+                self.assertTrue(self.ghost()['p']['wall'].startswith('mounting wall '))
+                self.click_visible('Place');self.wait(READY,60)
+                self.assertAlmostEqual(self.js("machineBodies()['your wall_track 6 track'][2]"),1.1,delta=.05)
+                self.click_visible('Save version');self.anonymous_cloud_saved();saved=self.js('machineDesign()')
+                self.press('All designs');self.press('Open design '+saved['name']);self.wait(READY,60)
+                self.assertEqual(self.js('machineDesign().draft'),saved['draft'])
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'editable-walls-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+
     def test_legacy_wall_opens_into_the_world_with_versions_and_undo(self):
         import sandbox_wall
         old=dict(name='Older wall in 3D',base=sandbox_wall.base(),placements=sandbox_wall.lift_assembly()[0])

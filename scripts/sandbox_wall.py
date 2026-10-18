@@ -46,15 +46,57 @@ def world_base():
     return result
 
 
+def panels(spec):
+    """Editable parallel mounting faces; old saves keep their original wall."""
+    return copy.deepcopy(spec.get('build_surface',{}).get('panels') or [
+        dict(id=FOUNDATION[0],width_m=WIDTH,height_m=HEIGHT,x_m=0,z_m=0)])
+
+
+def panel_part(panel):
+    return sm.box(panel['id'],[panel['width_m'],panel['height_m'],.02],
+                  [panel['x_m'],panel['height_m']/2,panel['z_m']-.01],'oak')
+
+
+def panel_surface(rows):
+    first=rows[0]
+    return dict(world_surface(),width_m=first['width_m'],height_m=first['height_m'],
+                plane_z_m=first['z_m']+PLANE,panels=copy.deepcopy(rows))
+
+
+def _validate_panels(rows):
+    if not isinstance(rows,list) or not 1<=len(rows)<=8:raise ValueError('Use one to eight mounting walls.')
+    seen=set()
+    for row in rows:
+        if not isinstance(row,dict) or set(row)!={'id','width_m','height_m','x_m','z_m'}:
+            raise ValueError('A mounting wall needs its size and ground position.')
+        if not isinstance(row['id'],str) or not re.fullmatch(r'workshop backing|mounting wall [2-9]\d*',row['id']) or row['id'] in seen:
+            raise ValueError('Every mounting wall needs a unique id.')
+        seen.add(row['id'])
+        for key,lo,hi in (('width_m',.5,12),('height_m',.5,10),('x_m',-16,16),('z_m',-16,16)):
+            value=row[key]
+            if type(value) not in (int,float) or not math.isfinite(value) or not lo<=value<=hi:
+                raise ValueError(f'Wall {key} must be {lo} to {hi} metres.')
+    for i,a in enumerate(rows):
+        for b in rows[i+1:]:
+            if abs(a['z_m']-b['z_m'])<.021 and abs(a['x_m']-b['x_m'])<(a['width_m']+b['width_m'])/2+.001:
+                raise ValueError('The mounting walls overlap; move them apart.')
+
+
 def validate(spec):
     """A saved board has a versioned, fixed physical foundation."""
     if spec.get('build_surface') is None:
         return False
-    if spec.get('build_surface') not in (surface(),world_surface()):
+    declared=spec['build_surface']
+    editable=declared.get('version')==2 and 'panels' in declared
+    if editable:
+        _validate_panels(declared['panels'])
+        if declared!=panel_surface(declared['panels']):raise ValueError('The wall size and mounting faces disagree.')
+    elif declared not in (surface(),world_surface()):
         raise ValueError('This wall workshop uses an unsupported mounting surface.')
-    expected_base=world_base() if spec['build_surface']==world_surface() else base()
+    expected_base=world_base() if declared['version']==2 else base()
+    if editable:expected_base['parts']=[panel_part(row) for row in declared['panels']]
     parts = {p.get('name'): p for p in spec.get('parts', [])}
-    if spec['build_surface']==world_surface() and FOUNDATION[1] in parts:
+    if declared['version']==2 and FOUNDATION[1] in parts:
         raise ValueError('The open wall world has no front retaining sheet.')
     for expected in expected_base['parts']:
         if parts.get(expected['name']) != expected:
@@ -64,16 +106,76 @@ def validate(spec):
     return True
 
 
-def bounds_problems(compiled, mounted_owners=None):
+def bounds_problems(compiled, mounted_owners=None, panel_rows=None):
     problems=[]
     for p in compiled['parts']:
         if not p['name'].startswith('your '):continue
         if mounted_owners is not None and not any(p['name']==name or p['name'].startswith(name+' ') for name in mounted_owners):continue
+        panel=dict(width_m=WIDTH,height_m=HEIGHT,x_m=0,z_m=0)
+        if isinstance(mounted_owners,dict) and panel_rows:
+            owner=next(name for name in mounted_owners if p['name']==name or p['name'].startswith(name+' '))
+            panel=next(row for row in panel_rows if row['id']==mounted_owners[owner])
         points=[pt for solid in mw.solids_of(p) for pt in mw.footprint_points(solid)]
-        if any(abs(pt[0])>WIDTH/2+.001 or pt[1]<0 or pt[1]>HEIGHT+.001 or
-               pt[2]<-.001 or (mounted_owners is None and pt[2]>DEPTH+.001) for pt in points):
+        if any(abs(pt[0]-panel['x_m'])>panel['width_m']/2+.001 or pt[1]<0 or pt[1]>panel['height_m']+.001 or
+               pt[2]<panel['z_m']-.001 or (mounted_owners is None and pt[2]>DEPTH+.001) for pt in points):
             problems.append(p['name']+' extends beyond the wall; move it inside the board')
     return problems
+
+
+def place_on_panel(fragment,panel):
+    """Translate declared fixtures, anchors and electrical sockets before running."""
+    dz=panel['z_m']
+    rows=[row for value in fragment.values() if isinstance(value,list) for row in value]
+    devices=fragment.get('electrical',{}).get('devices',[])
+    mw.shift_rows([0,0,dz],rows+devices)
+    for device in devices:
+        device['terminals']={key:[at[0],at[1],at[2]+dz] for key,at in device.get('terminals',{}).items()}
+        if device.get('handle'):mw.shift_rows([0,0,dz],[device['handle']])
+    return fragment
+
+
+def edit_panel(base_spec,placements,panel_id,changes=None,add=False,edit_key=None):
+    """An undoable setup edit, leaving the running world and input untouched."""
+    import machine_game as mg
+    if not validate(base_spec) or base_spec['build_surface']['version']!=2:
+        raise ValueError('Open this wall into the 3D world before editing its size.')
+    result=copy.deepcopy(base_spec);rows=panels(result);placed=copy.deepcopy(placements)
+    if add:
+        used={row['id'] for row in rows};number=2
+        while 'mounting wall '+str(number) in used:number+=1
+        panel_id='mounting wall '+str(number)
+        right=max(row['x_m']+row['width_m']/2 for row in rows)
+        rows.append(dict(id=panel_id,width_m=3.,height_m=3.,x_m=right+2,z_m=rows[-1]['z_m']))
+    selected=next((row for row in rows if row['id']==panel_id),None)
+    if selected is None:raise ValueError('Choose a mounting wall in this design.')
+    old=copy.deepcopy(selected)
+    if changes:
+        if not isinstance(changes,dict) or set(changes)-{'x_m','z_m','width_m','height_m'}:
+            raise ValueError('Change wall width, height or ground position.')
+        selected.update(changes)
+    _validate_panels(rows)
+    wall_types=set(WORLD_PIECES)
+    for p in placed:
+        if p['piece'] in wall_types and p.get('wall',FOUNDATION[0])==panel_id:
+            p['x_m']=p.get('x_m',0)+selected['x_m']-old['x_m']
+    names={row['id'] for row in rows}
+    result['parts']=[p for p in result.get('parts',[]) if p['name'] not in names]+[panel_part(row) for row in rows]
+    result['build_surface']=panel_surface(rows)
+    level=mg.requested_level(dict(level='free',base=result))
+    _,checked,_,compiled=mg._assemble(level,placed,lenient=True)
+    problems=compiled.get('problems',[])+mg.clashes_of(compiled)
+    owners={f'your {p["piece"]} {i+1}' for i,p in enumerate(checked)
+            if p['piece'] in wall_types and p.get('wall',FOUNDATION[0])==panel_id}
+    parts=[p for p in compiled['parts'] if p['name']==panel_id or mg.owner(p) in owners]
+    guide=None
+    if edit_key in ('width_m','wall_height_m'):
+        x,z=selected['x_m'],selected['z_m'];w,h=selected['width_m'],selected['height_m']
+        arrows=([dict(at=[x+w/2,h/2,z],direction=[1,0,0]),dict(at=[x-w/2,h/2,z],direction=[-1,0,0])]
+                if edit_key=='width_m' else [dict(at=[x,h,z],direction=[0,1,0]),dict(at=[x,0,z],direction=[0,-1,0])])
+        guide=dict(key=edit_key,focus=[panel_id],arrows=arrows,marker=None)
+    return dict(base=result,placements=placed,parts=parts,selected=dict(id='wall:'+panel_id,parts=[p['name'] for p in parts]),
+        wall=selected,fits=not problems,problems=problems[:4],cost=0,sun=[],edit_guide=guide,
+        electrical_preview=compiled.get('electrical',{}),battery_preview=compiled.get('batteries',[]))
 
 
 def mount(name, x, y, rear):
@@ -271,13 +373,17 @@ WORLD_ALIASES={key:'wall_'+key for key in ('marble','gear','motor','battery','sw
 WORLD_PIECES={WORLD_ALIASES.get(key,key):builder for key,builder in PIECES.items() if key!='wire'}
 
 
-def world_tray(ordinary):
+def world_tray(ordinary,base_spec=None):
+    boards=panels(base_spec or {})
     result=[]
     for row in tray():
         if row['piece']=='wire':continue
         original=row['piece'];row['piece']=WORLD_ALIASES.get(original,original)
         row['wall_mounted']=True
         row['open_world']=True
+        row['knobs']['wall']=dict(choices=[p['id'] for p in boards],default=boards[0]['id'],hidden=True)
+        row['knobs']['x_m'].update(min=-22,max=22)
+        row['knobs']['height_m'].update(max=10)
         if original in WORLD_ALIASES and 'wall' not in row['title'].lower().split():
             row['title']='Wall '+row['title'].lower()
         result.append(row)
@@ -299,7 +405,7 @@ def world_tray(ordinary):
 def world_draft(base_spec,placements,goal=None):
     """Explicit editable-copy conversion; never mutate a shared snapshot."""
     if not validate(base_spec):raise ValueError('Choose an existing wall design to open into the 3D world.')
-    if base_spec['build_surface']==world_surface():
+    if base_spec['build_surface']['version']==2:
         return dict(base=copy.deepcopy(base_spec),placements=copy.deepcopy(placements),**({'goal':copy.deepcopy(goal)} if goal else {}))
     renamed={f'your {p["piece"]} {i+1}':f'your {WORLD_ALIASES.get(p["piece"],p["piece"])} {i+1}' for i,p in enumerate(placements)}
     def references(value):

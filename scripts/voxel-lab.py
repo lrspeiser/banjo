@@ -392,6 +392,9 @@ class Handler(BaseHTTPRequestHandler):
     draft=machine_game.sandbox_wall.world_draft(data.get('base',{}),data.get('placements',[]),data.get('goal'))
     machine_game.compose(machine_game.requested_level(dict(level='free',**draft)),draft['placements'])
     r=dict(ok=True,draft=draft)
+   elif op=='wall_edit':
+    r=dict(ok=True,**machine_game.sandbox_wall.edit_panel(data.get('base',{}),data.get('placements',[]),
+        data.get('wall'),data.get('changes'),bool(data.get('add')),data.get('edit_key')))
    elif op=='easy_variant':
     if self.server.trial_allowance:self.server.trial_allowance.take(self.visitor())
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is testing other challenges; try again shortly')
@@ -418,7 +421,11 @@ class Handler(BaseHTTPRequestHandler):
     r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost;r['energy']=machine_game.pieces_energy(r['machine'])
     if level.get('free'):
      import sandbox_edit
-     r['sandbox_objects']=[o for o in sandbox_edit.objects(level['machine']) if not level.get('wall_mode') or not any(n in machine_game.sandbox_wall.FOUNDATION for n in o['parts'])]
+     walls=machine_game.sandbox_wall.panels(level['machine']) if level.get('wall_mode',{}).get('version')==2 else []
+     wall_names={p['id'] for p in walls}
+     r['sandbox_objects']=[o for o in sandbox_edit.objects(level['machine']) if not any(n in wall_names or level.get('wall_mode') and n in machine_game.sandbox_wall.FOUNDATION for n in o['parts'])]
+     r['sandbox_objects'] += [dict(id='wall:'+p['id'],name='Mounting wall '+str(i+1),parts=[p['id']],
+        at_m=[p['x_m'],p['height_m']/2,p['z_m']-.01],wall=p) for i,p in enumerate(walls)]
     if needs:r['needs']=needs
     host.get(r['session']).game={'level':level['id'],'definition':level,'checked':checked,'cost':cost,'helped':bool(data.get('helped'))}
    elif op=='feedback':

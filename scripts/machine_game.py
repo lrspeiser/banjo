@@ -303,7 +303,7 @@ def requested_level(data):
             level['wall_mode'] = copy.deepcopy(base['build_surface'])
             level['title'] = 'Wall workshop'
             level['brief'] = 'Drag pieces on the wall. Gravity carries the marble between them.'
-            level['tray'] = sandbox_wall.world_tray(level['tray']) if base['build_surface']['version']==2 else sandbox_wall.tray()
+            level['tray'] = sandbox_wall.world_tray(level['tray'],base) if base['build_surface']['version']==2 else sandbox_wall.tray()
         sockets = [d for d in (base.get('electrical') or {}).get('devices',[]) if d.get('kind')=='socket']
         if len(sockets)==1 and set(sockets[0].get('terminal_parts',{}))=={'plus','minus'}:
             holder = sockets[0]
@@ -848,13 +848,16 @@ def _assemble(level, placements, lenient=False):
             if p['piece']=='wire' and all(str(p.get(key,'')).startswith('your wall_') for key in ('a_terminal','b_terminal')):
                 builders['wire']=sandbox_wall.PIECES['wire']
         made = builders[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)
+        if level.get('wall_mode',{}).get('version')==2 and tray[p['piece']].get('wall_mounted'):
+            panel=next(row for row in sandbox_wall.panels(level['machine']) if row['id']==p['wall'])
+            made=sandbox_wall.place_on_panel(made,panel)
         merge_fragment(spec, made)
     compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
     # And the player's pieces: a mirror stands on a post, not in the air.
     # Wall builders supply their own actual fixed/hinge mountings to the
     # backing. The ground support heuristic cannot recognise a cantilever's
     # rear fixing; adding posts would change its declared contact geometry.
-    mounted_owners={f'your {p["piece"]} {i+1}' for i,p in enumerate(checked) if tray[p['piece']].get('wall_mounted')}
+    mounted_owners={f'your {p["piece"]} {i+1}':p.get('wall',sandbox_wall.FOUNDATION[0]) for i,p in enumerate(checked) if tray[p['piece']].get('wall_mounted')}
     legacy_wall=level.get('wall_mode',{}).get('version')==1
     stands = [] if legacy_wall else hold_up(compiled['parts'], spec.get('cell_m', 0.02),
         only_player=level.get('custom_base', False),skip_owners=mounted_owners)
@@ -862,7 +865,7 @@ def _assemble(level, placements, lenient=False):
         spec['parts'] += stands
         compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
     if level.get('wall_mode'):
-        problems=sandbox_wall.bounds_problems(compiled,None if legacy_wall else mounted_owners)
+        problems=sandbox_wall.bounds_problems(compiled,None if legacy_wall else mounted_owners,sandbox_wall.panels(level['machine']))
         if problems and not lenient:raise LevelRefused(problems)
         compiled.setdefault('problems',[]).extend(problems)
     return spec, checked, cost, compiled
@@ -1611,7 +1614,7 @@ def ghost(level, placements, index, snapping=False, edit_key=None, nearby=False,
         reply['water_setup'] = compiled['spouts']
     # Draw the compiled terminals while placing a device, including its
     # prepared socket leads. This does not advance the engine.
-    if checked[index]['piece'] in ('battery', 'switch', 'bulb', 'motor', 'ignition', 'wire', 'cannon', 'resistor', 'capacitor'):
+    if checked[index]['piece'].removeprefix('wall_') in ('battery', 'switch', 'bulb', 'motor', 'ignition', 'wire', 'cannon', 'resistor', 'capacitor'):
         reply['electrical_preview'] = compiled.get('electrical', {})
         reply['battery_preview'] = compiled.get('batteries', [])
     if checked[index]['piece'] == 'wire':
