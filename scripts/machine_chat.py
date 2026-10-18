@@ -210,6 +210,8 @@ def level_prompt(level, mode):
                 knobs.append(f'{key} ({rule.get("label", key)}): one of {rule["choices"]}')
             elif 'min' in rule and 'max' in rule:
                 knobs.append(f'{key} ({rule.get("label", key)}): {rule["min"]} to {rule["max"]}')
+            elif rule.get('part_list'):
+                knobs.append(f'{key}: ordered list of at most two existing pulley wheel names, each ending :over or :under; the player taps these wheels in the scene')
             else:
                 kind = next((ref for ref in ('power_port', 'terminal', 'hinge', 'part', 'point') if rule.get(ref)), 'connection')
                 knobs.append(f'{key} ({rule.get("label", key)}): existing {kind} reference; default {rule.get("default", "")}')
@@ -280,6 +282,10 @@ output and b_port for the receiver input. Base power ports: {json.dumps(level['m
 
 
 PIECE_HELP = {
+    'anchor':'a fixed rope anchor with a gold attachment ring under its bracket; the stand stays behind the rope path',
+    'pulley':'one real wheel on an axle. Fixed mounting redirects a rope; Moving mounting lets two rope spans support the wheel and its load. Choose Load in the scene to align and bolt the moving carrier to a loose box. Radius and Axle height are direct controls. The rope must actually pass under or over its wheel; native contact supplies torque and slip.',
+    'counterweight':'an iron counterweight with Mass and Centre height controls. Its size follows its material density. Gravity supplies energy as it falls; once it reaches the ground it cannot supply more travel.',
+    'rope':'a massive native fibre strand. Add a rope, choose its first gold attachment ring, tap up to two pulley wheels in order, then choose the last ring. Each wheel offers Over/Under; use Under on a moving wheel when building a tackle. A two-span moving wheel lifts about half as far as the counterweight falls. Build edits update body-relative attachments and manufacture the route again; runtime rods keep their lengths and can slip or detach under too much tension.',
     'gear': 'one independent mounted toothed wheel. Its main controls are Teeth, Radius and Axle height. '
             'Radius is the UI display of (teeth / 2 + 0.7) * module_m at the outer tooth face; changing it '
             'also changes tooth spacing, so bigger is not automatically a better fit. Axles must line up '
@@ -363,13 +369,16 @@ FREE_HELP = {
 }
 
 
+FREE_HELP.update({key:PIECE_HELP[key] for key in ('anchor','pulley','counterweight','rope')})
+
+
 def free_prompt(level):
     """The free build for the model: the table, the pieces and their knobs,
     and how to join one piece to another so the server works out where it
     goes."""
     tray = []
     for t in level['tray']:
-        if t.get('attach'):
+        if t.get('attach') and t['piece']!='rope':
             continue
         knobs = []
         for key, rule in t['knobs'].items():
@@ -377,6 +386,8 @@ def free_prompt(level):
                 knobs.append(f'{key}: one of {rule["choices"]}')
             elif 'min' in rule:
                 knobs.append(f'{key} ({rule.get("label", key)}): {rule["min"]} to {rule["max"]}')
+            elif rule.get('part_list'):
+                knobs.append(f'{key}: ordered existing wheel names with :over or :under suffixes, at most two')
             else:
                 kind = next((ref for ref in ('power_port', 'terminal', 'hinge', 'part', 'point') if rule.get(ref)), 'connection')
                 knobs.append(f'{key}: existing {kind} reference; default {rule.get("default", "")}')

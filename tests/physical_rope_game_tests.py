@@ -10,12 +10,20 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import machine_game as game
 import machine_world as world
+import machine_chat as chat
 
 parser=argparse.ArgumentParser();parser.add_argument('--engine',required=True)
 args,remaining=parser.parse_known_args();ENGINE=pathlib.Path(args.engine).resolve()
 
 
 class RoutedRopes(unittest.TestCase):
+    def test_help_explains_scene_routing_without_the_private_solution(self):
+        level=game.level_by_id('easy-tackle');prompt=chat.level_prompt(level,'hint')
+        self.assertIn('ordered list of at most two',prompt)
+        self.assertIn('gold attachment ring',prompt)
+        self.assertNotIn(str(level['solution']),prompt)
+        self.assertIn('- rope:',chat.free_prompt(game.free_build()))
+
     def test_lessons_have_physical_routes_and_keep_the_original_goal_and_deadline(self):
         for identity,seconds in [('easy-thread',2),('easy-tackle',2),('tackle',8)]:
             level=game.level_by_id(identity)
