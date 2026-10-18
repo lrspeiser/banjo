@@ -166,6 +166,7 @@ def configure_levels(levels):
         # Distinct wheels share a tray card; both remain independently editable.
         next(t for t in kit if t['piece']=='pulley')['knobs']['load'].update(default='')
         level['tray']=kit
+        level['assembly_tutorial']=True
         if identity=='easy-tackle':level['par_energy_j']=1320000000  # Rebuilt kit, including strand fabrication estimate, rounded up.
         else:level['par_energy_j']=1430000000
         level['solution']=[dict(piece='anchor',x_m=x-c,z_m=plane,height_m=height),
@@ -174,6 +175,7 @@ def configure_levels(levels):
             dict(piece='counterweight',x_m=x+3*c,z_m=plane,height_m=counter_y,mass_kg=mass),
             dict(piece='rope',a='your anchor 1',b='your counterweight 4',at_m=[x-c,height-.04,plane],
                 at_b_m=[x+3*c,counter_y+(mass/7870)**(1/3)/2,plane],
+                anchor_a=[0,-.5,0],anchor_b=[0,.5,0],
                 via=['your pulley 2 wheel:under','your pulley 3 wheel:over'])]
         level['wrong']=copy.deepcopy(level['solution'])
         level['wrong'][3]['mass_kg']=2

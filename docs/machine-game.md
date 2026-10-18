@@ -28,8 +28,10 @@ October 17 audit implementation, checkpoint 2:
   New rope ends store body-relative surface coordinates, so editing a device's
   position or size rebuilds its manufactured route from the new attachment.
   Older absolute endpoints remain readable. Runtime length, contact and tension
-  remain native. Winning keeps a starter from the player's actual placed pieces, with a
-  separate Save assembly action. Levels offer only inventory-compatible groups.
+  remain native. Winning a lift-building lesson keeps a starter from the player's
+  actual placed pieces when the library has room; automatic starters never evict
+  a saved assembly. A separate Save assembly action remains available after a win.
+  Levels offer only inventory-compatible groups.
 * Manual switches enter Run ready at time zero. Dragging starts native time;
   pressing Run again explicitly runs without that input. Build cannot release
   a spring latch. Tanks offer Adjust tap while building, with live opening in Run.

@@ -59,7 +59,7 @@ POLICIES = {
 }
 
 LEGACY_POLICIES=copy.deepcopy(POLICIES)
-POLICIES['easy-tackle']=('piece','counterweight','height_m',(.9,.95,1,1.05))
+POLICIES['easy-tackle']=('piece','counterweight','height_m',(.85,.9,1,1.05))
 for family in ('easy-water-wheel','easy-water-gate'):
     POLICIES[family]=('piece','water_tank','fill_l',(3.5,4.5,5,5.5))
 POLICIES['easy-spring']=('piece','spring','stiffness_n_m',(180,200,220,240))

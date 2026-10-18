@@ -36,6 +36,10 @@ class RoutedRopes(unittest.TestCase):
             if identity=='tackle':self.assertEqual(level['goal']['station']['done_when']['in_zone'],
                 {'part':'crate','at_m':[.4,.65,0],'size_m':[.3,.2,.3]})
 
+    def test_only_lift_building_lessons_offer_automatic_assembly_starters(self):
+        self.assertEqual({level['id'] for level in game.load_levels()
+                          if game.public(level).get('assembly_tutorial')},{'easy-tackle','tackle'})
+
     def test_new_routes_win_when_nudged_and_wrong_routes_or_weights_fail(self):
         with tempfile.TemporaryDirectory() as directory:
             for identity in ('easy-thread','easy-tackle','tackle'):

@@ -2101,9 +2101,10 @@ class Engine(unittest.TestCase):
         flat = [{k: v for k, v in sun['solution'][0].items() if k not in ('yaw_deg', 'pitch_deg')}, *sun['solution'][1:]]
         shaded = [dict(sun['solution'][0], x_m=-0.8, z_m=0.6), *sun['solution'][1:]]
         # The counterweight hung too low: it reaches the ground before the
-        # crate, rising a third as far, reaches the shelf.
+        # crate, supported by two rope spans, reaches the shelf.
         tackle = mg.level_by_id('tackle')
-        low = [dict(tackle['solution'][0], drop_from_m=1.4)]
+        low = copy.deepcopy(tackle['solution'])
+        next(p for p in low if p['piece']=='counterweight')['height_m']=.45
         with tempfile.TemporaryDirectory() as logs:
             for lv, placed in ((level, high), (fire, weak), (laser, laser['solution'][:1]), (sun, flat), (sun, shaded),
                                (tackle, low)):

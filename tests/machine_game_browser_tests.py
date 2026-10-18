@@ -861,10 +861,11 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             self.anonymous_levels(width=width,height=height)
             ids=self.js("[...document.querySelectorAll('#levels-screen .level-card')].map(n=>n.dataset.level)")
-            self.assertEqual(len(ids),37);self.assertEqual(ids[0],'easy-weight');self.assertEqual(ids[-1],'fire')
+            self.assertEqual(len(ids),38);self.assertEqual(ids[0],'easy-weight');self.assertEqual(ids[-1],'fire')
+            self.assertLess(ids.index('easy-thread'),ids.index('easy-tackle'))
             self.assertLess(ids.index('easy-mirror'),ids.index('laser'))
             self.assertLess(ids.index('easy-loop'),ids.index('advanced-parallel'))
-            self.assertEqual(self.js("document.querySelectorAll('.level-time-estimate').length"),37)
+            self.assertEqual(self.js("document.querySelectorAll('.level-time-estimate').length"),38)
             self.assertTrue(self.js(r"[...document.querySelectorAll('.level-time-estimate')].every(n=>/^Est\. [0-9]+–[0-9]+ min$/.test(n.textContent)&&n.title.includes('not measured human'))"))
             self.assertLessEqual(self.js('document.documentElement.scrollWidth'),width)
             self.open('easy-weight',width,height,phone=width!=1280)
@@ -1277,17 +1278,43 @@ class Puzzles(unittest.TestCase):
                 self.press('Pause')
 
 
+    def place_lift_kit(self, identity):
+        """Build the known native fixture through the same controls as a player."""
+        import machine_game
+        answer=machine_game.level_by_id(identity)['solution']
+        labels={'anchor':'rope anchor','pulley':'pulley wheel','counterweight':'counterweight'}
+        for index,placement in enumerate(answer[:-1]):
+            piece=placement['piece']
+            for _ in range(5):
+                if self.js("document.getElementById('tray-add')?.dataset.piece")==piece:break
+                self.press('Next piece')
+            self.press('Add a '+labels[piece]);self.ghost()
+            for key,value in placement.items():
+                if key=='piece':continue
+                label=self.js(f"document.querySelector('#precision-controls [data-knob={json.dumps(key)}]')?.getAttribute('aria-label')")
+                self.assertIsNotNone(label,(piece,key))
+                self.slide(label,value);self.ghost()
+            self.click_visible('Place');self.wait(f'window.machinePlacements().length==={index+1} && {READY}',30)
+        self.press('Add a rope')
+        for label in ('Attach rope to your anchor 1','Route rope around your pulley 2 wheel',
+                      'Route rope around your pulley 3 wheel','Attach rope to your counterweight 4'):
+            self.click_visible(label)
+        self.wait(f'window.machinePlacements().length===5 && {READY}',30)
+        self.assertEqual(self.js('machinePlacements()[4].via'),['your pulley 2 wheel:under','your pulley 3 wheel:over'])
+
     def test_lift_lessons_start_with_the_load_and_the_added_device_lifts_that_same_body(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             for ident,piece,target,control,value in [('easy-spring','spring','spring load','Its Relaxed length',.7),
-                    ('easy-tackle','block and tackle','crate','Its Counterweight preset',4.7)]:
+                    ('easy-tackle',None,'crate',None,None)]:
                 with self.subTest(viewport=(width,height),level=ident):
                     self.open(ident,width,height,phone=width!=1280)
                     before=self.js(f'window.machineBodies()[{json.dumps(target)}]')
                     self.assertIsNotNone(before)
-                    self.press('Add a '+piece);self.ghost()
-                    self.slide(control,value);self.ghost()
-                    self.assertEqual(self.ghost()['p']['load'],target)
+                    if ident=='easy-tackle':self.place_lift_kit(ident)
+                    else:
+                        self.press('Add a '+piece);self.ghost()
+                        self.slide(control,value);self.ghost()
+                        self.assertEqual(self.ghost()['p']['load'],target)
                     self.click_visible('Controls');self.click_visible('Run')
                     if ident=='easy-spring':
                         self.wait("document.getElementById('clock').textContent.includes('Release spring')",30)
@@ -2246,7 +2273,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('machinePlayMode().mode'),'build')
                 self.assertTrue(self.js("document.getElementById('scene-tray').checkVisibility()"))
                 self.assertTrue(self.js("document.getElementById('mode-tune-tab').disabled"))
-                self.click_visible('Add a block and tackle');self.ghost()
+                self.click_visible('Add a rope anchor');self.ghost()
 
     def test_automatic_run_plays_its_native_preparation_and_edit_invalidates_it(self):
         for width,height in ((1280,860),(390,844),(844,390)):
@@ -2895,18 +2922,12 @@ class Puzzles(unittest.TestCase):
         for width, height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.open('tackle', width, height, phone=width != 1280)
-                self.press('Add a block and tackle'); self.ghost()
-                for label, value in [('counterweight (kg)',4.7),('pulleys',3),('hangs at x',-.5),('hung at height',1.75)]:
-                    self.slide(f'{label} of your tackle 1', value)
-                self.ghost(); self.press('Set it down'); self.wait(READY,60)
+                self.place_lift_kit('tackle')
                 setup = self.js('window.machinePlacements()')
                 self.wait('window.machineCamera().settled', 30)
-                for point in ((-.5,1.88,0),(.4,.06,0)):
-                    x,y = self.screen_point(point)
-                    self.assertTrue(self.js(f"document.elementFromPoint({x},{y}).tagName==='CANVAS'"), (point,x,y))
-                    self.mouse('mousePressed',x,y); self.mouse('mouseReleased',x,y)
-                    self.wait('Boolean(window.machineGhostState())',5)
-                    self.assertEqual(self.ghost()['p'], setup[0])
+                for index in range(4):
+                    self.click_piece(index)
+                    self.assertEqual(self.ghost()['p'], setup[index])
                     self.assertTrue(self.js(READY), 'selecting a device never starts the live simulation')
                     for label in ('Run','Reset','Turn the view left','Zoom in','Place','Throw the ghost away'):
                         self.reveal_control(f"[...document.querySelectorAll('button')].find(b=>(b.getAttribute('aria-label')||b.textContent).trim()==={json.dumps(label)})")
@@ -2917,17 +2938,18 @@ class Puzzles(unittest.TestCase):
                     camera=self.js('machineCamera().distance')
                     self.click_visible('Zoom in')
                     self.assertLess(self.js('machineCamera().distance'),camera)
-                    self.assertEqual(self.ghost()['p'],setup[0],'Zoom does not move the piece')
+                    self.assertEqual(self.ghost()['p'],setup[index],'Zoom does not move the piece')
                     self.click_visible('Zoom out')
                     self.press('Cancel'); self.wait('!window.machineGhostState()',5)
                 self.press('Run'); self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('verdict').textContent"))
                 # Results stay in Controls, so the device is still clickable.
-                self.slide('Adjust a piece','0'); self.ghost(); self.wait(READY,30)
-                self.assertEqual(self.ghost()['p'],setup[0])
-                self.press('Change its pulleys'); self.slide('Its pulleys',2); self.ghost()
+                self.slide('Adjust a piece','3'); self.ghost(); self.wait(READY,30)
+                self.assertEqual(self.ghost()['p'],setup[3])
+                self.slide('Mass (kg) of your counterweight 4',11); self.ghost()
                 self.click_visible('✓ Set down'); self.wait(READY,30)
-                self.assertEqual(self.js('window.machinePlacements()[0].ratio'),2)
+                self.assertEqual(self.js('window.machinePlacements()[3].mass_kg'),11)
+                self.assertTrue(self.js("machineBlueprints().some(b=>b.source==='tackle')"))
                 self.assertTrue(self.js(READY))
 
     def test_cable_power_and_load_estimates_update_while_editing_and_running(self):
@@ -4741,6 +4763,8 @@ class Puzzles(unittest.TestCase):
                 self.wait("window.machineContactCircuitState().wires.some(c=>c.mechanical?.kind==='rope')",10)
                 self.press('Run');self.wait("document.getElementById('verdict').textContent.includes('★')",30)
                 self.assertNotIn('Try again',self.js("document.getElementById('level-done').textContent"))
+                self.assertFalse(self.js("window.machineBlueprints().some(b=>b.source==='easy-thread')"),
+                                 'a one-rope win does not clutter the reusable assembly library')
 
     def test_blueprint_saves_your_pieces_and_drops_them_into_another_design(self):
         for width,height in ((1280,860),(390,844)):
@@ -6112,7 +6136,7 @@ class Puzzles(unittest.TestCase):
         self.wait("!document.getElementById('levels-screen').hidden",10)
         self.assertEqual(self.js("[...document.querySelectorAll('.level-chapter h2')].map(x=>x.textContent)"),
                          ['Level 1: Mechanics','Level 2: Electricity','Level 3: Water','Level 4: Heat and chain reactions'])
-        self.assertEqual(self.js("document.querySelectorAll('.level-card').length"),37)
+        self.assertEqual(self.js("document.querySelectorAll('.level-card').length"),38)
         self.assertEqual(self.js("document.querySelectorAll('.level-card-details').length"),0)
         self.assertEqual(self.js("document.querySelectorAll('#levels-screen select').length"),0)
 

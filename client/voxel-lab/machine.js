@@ -6051,7 +6051,7 @@ function bestStars(id) { return record(id).stars || 0; }
 const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
                     mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens', flipflop: 'flip-flop'};
 // A piece's name on its button: as the tray calls it, but a flip-flop has its hyphen.
-function pieceLabel(piece) { return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({door:'hinged door',trampoline:'spring trampoline',wind:'open airflow',loose_block:'loose block',flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',ring_marble:'ring marble',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'heating coil',power_cable:'power cable'})[piece] || piece; }
+function pieceLabel(piece) { return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({anchor:'rope anchor',pulley:'pulley wheel',door:'hinged door',trampoline:'spring trampoline',wind:'open airflow',loose_block:'loose block',flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',ring_marble:'ring marble',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'heating coil',power_cable:'power cable'})[piece] || piece; }
 function toolsOf(player) {
   if (!player.tools) {
     player.tools = {};
@@ -6291,6 +6291,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&assemblyDraft){canc
 window.machineAssembly=()=>assemblyDraft&&({at:assemblyDraft.at,lift:assemblyDraft.lift,turn:assemblyDraft.turn,fits:assemblyDraft.fits,busy:assemblyDraft.busy,rows:assemblyDraft.rows});
 function blueprints() { return Array.isArray(me().blueprints) ? me().blueprints : []; }
 function saveAssembly(name,indices,source=null){
+  if(source&&blueprints().length>=MAX_BLUEPRINTS)return null;
   const row={id:crypto.randomUUID(),name,...makeBlueprint(placements,indices,blueprintRules(),machine.parts),at:new Date().toISOString(),source};
   me().blueprints=[row,...blueprints()].slice(0,MAX_BLUEPRINTS);persist();renderBlueprints();return row;
 }
@@ -6543,7 +6544,7 @@ $('piece-picker').addEventListener('keydown', e => {
 let trayLevel = null, trayDesign = null, trayPiece = null;
 function browseTray(direction) {
   if (!level || ghost) return;
-  const items = level.tray.filter(t => !t.attach && !t.legacy && (level.free || piecesLeft(t)>0));
+  const items = level.tray.filter(t => (!t.attach || !level.free) && !t.legacy && (level.free || piecesLeft(t)>0));
   if (items.length < 2) return;
   const index = Math.max(0, items.findIndex(t => t.piece === trayPiece));
   trayPiece = items[(index + direction + items.length) % items.length].piece;
@@ -7203,7 +7204,7 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     actions.append(button('Play again', () => { closeDone(); startOver(true); }, {className: 'primary', ariaLabel: 'Play this level again'}),
                    allLevels);
   } else if (r.earned.goal) {
-    if(placements.length&&!blueprints().some(b=>b.source===level.id))saveAssembly(`Starter · ${levelTitle(level)}`,placements.map((_,i)=>i),level.id);
+    if(level.assembly_tutorial&&placements.length&&!blueprints().some(b=>b.source===level.id))saveAssembly(`Starter · ${levelTitle(level)}`,placements.map((_,i)=>i),level.id);
     // The win, and what it took: less energy is better.
     // A first win with a tool is an achievement; a win again is the level.
     const unlocked = (kept.unlocked || []).map(toolName);

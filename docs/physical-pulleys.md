@@ -77,4 +77,9 @@ physical-phone performance need measurement; no real-time guarantee is made.
 
 Old `tackle`, tie and drum recipes keep their published laws. Easy tackle v3
 uses individual parts; v1/v2 shared recipes reconstruct the old apparatus.
+The four v3 counterweight-height variants (0.85, 0.90, 1.00 and 1.05 m) use
+body-relative rope ends. All twelve nudged solutions lift the crate at
+0.817–0.833 s; all empty and underweight controls fail without engine errors.
+The advanced lift's separate low-weight-height control bottoms out before the
+crate reaches its original shelf goal. Neither deadline nor goal was relaxed.
 The new tutorial estimates are author review, not the previous blind probe.
