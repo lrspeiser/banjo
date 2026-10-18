@@ -1,0 +1,250 @@
+"""Front-facing mounting board, using ordinary 3D contact and native joints.
+
+Only editor placement is planar. The backing and transparent front guard are
+real colliders; mounted bodies are ideal fixed supports, not a bolt model.
+There is no runtime projection, assigned rolling speed or event sequencing.
+"""
+import copy
+import math
+
+import machine_world as mw
+import sandbox_electrics as se
+import sandbox_mechanics as sm
+
+PLANE = .30
+WIDTH, HEIGHT, DEPTH = 6., 4., .62
+FOUNDATION = ('workshop backing', 'workshop clear guard')
+
+
+def surface():
+    return dict(kind='wall', version=1, width_m=WIDTH, height_m=HEIGHT,
+                plane_z_m=PLANE, depth_m=DEPTH)
+
+
+def base():
+    return dict(schema='banjo.machine.v1', title='Wall workshop', cell_m=.02,
+        build_surface=surface(), presentation=dict(camera='wall'),
+        parts=[sm.box(FOUNDATION[0], [WIDTH, HEIGHT, .02], [0, HEIGHT/2, -.01], 'oak'),
+               dict(name=FOUNDATION[1], shape='compound', material='glass', fixed=True,
+                    at_m=[0, HEIGHT/2, DEPTH+.006], parts=[dict(shape='box',
+                         size_m=[WIDTH, HEIGHT, .012], at_m=[0, 0, 0])])],
+        kits=[], joints=[dict(name='workshop guard mounting',kind='fix',
+            a=FOUNDATION[0],b=FOUNDATION[1],at_m=[0,HEIGHT/2,0])], stations=[])
+
+
+def validate(spec):
+    """A saved board has a versioned, fixed physical foundation."""
+    if spec.get('build_surface') is None:
+        return False
+    if spec.get('build_surface') != surface():
+        raise ValueError('This wall workshop uses an unsupported mounting surface.')
+    parts = {p.get('name'): p for p in spec.get('parts', [])}
+    for expected in base()['parts']:
+        if parts.get(expected['name']) != expected:
+            raise ValueError('The wall workshop needs its backing and clear front guard.')
+    if base()['joints'][0] not in spec.get('joints',[]):
+        raise ValueError('The wall workshop needs its guard mounting.')
+    return True
+
+
+def bounds_problems(compiled):
+    problems=[]
+    for p in compiled['parts']:
+        if not p['name'].startswith('your '):continue
+        points=[pt for solid in mw.solids_of(p) for pt in mw.footprint_points(solid)]
+        if any(abs(pt[0])>WIDTH/2+.001 or pt[1]<0 or pt[1]>HEIGHT+.001 or
+               pt[2]<-.001 or pt[2]>DEPTH+.001 for pt in points):
+            problems.append(p['name']+' extends beyond the wall; move it inside the board')
+    return problems
+
+
+def mount(name, x, y, rear):
+    # The rear of every bracket touches the backing; it ends just inside the
+    # supported solid. Internal overlap belongs to the same apparatus.
+    depth = max(.02, rear+.01)
+    return dict(name=name,shape='compound',material='iron',fixed=True,at_m=[x,y,depth/2],
+                parts=[dict(shape='box',size_m=[.04,.04,depth],at_m=[0,0,0])])
+
+
+def track(name, k, ctx):
+    x, y = k['x_m'], k['height_m']
+    length, angle = k.get('length_m', 1.4), k.get('angle_deg', -16)
+    shapes=[dict(shape='box',size_m=[length,.04,.56],at_m=[0,0,0])]
+    if k.get('end_stop','closed')=='closed':
+        shapes.append(dict(shape='box',size_m=[.04,.28,.56],
+            at_m=[(-1 if angle<=0 else 1)*(length/2-.02),.12,0]))
+    return {'parts': [dict(name=name+' track', shape='compound', material='oak', fixed=True,
+        at_m=[x,y,PLANE], turn_deg=[0,0,angle], parts=shapes), mount(name+' bracket',x,y,.02)]}
+
+
+def funnel(name, k, ctx):
+    x,y=k['x_m'],k['height_m']; width=k.get('width_m',.7)
+    run=(width-.14)/2; drop=.24; length=math.hypot(run,drop)
+    angle=math.degrees(math.atan2(drop,run))
+    shapes=[dict(shape='box',size_m=[length,.04,.56],
+        at_m=[side*(width+.14)/4,0,0],turn_deg=[0,0,side*angle]) for side in (-1,1)]
+    # A rear crossbar makes the two sloping faces one connected fixture.
+    # It is behind the marble lane rather than filling the outlet hole.
+    shapes.append(dict(shape='box',size_m=[width,.04,.04],at_m=[0,drop/2,-.26]))
+    return {'parts':[dict(name=name+' funnel',shape='compound',material='oak',fixed=True,
+        at_m=[x,y,PLANE],parts=shapes),mount(name+' bracket',x-width/3,y,.02)]}
+
+
+def cup(name,k,ctx):
+    x,y=k['x_m'],k['height_m'];width=k.get('width_m',.6)
+    return {'parts':[dict(name=name+' cup',shape='compound',material='oak',fixed=True,
+        at_m=[x,y,PLANE],parts=[dict(shape='box',size_m=[width,.04,.56],at_m=[0,0,0])]+
+        [dict(shape='box',size_m=[.04,.36,.56],at_m=[side*(width-.04)/2,.16,0]) for side in (-1,1)]),
+        mount(name+' bracket',x,y,.02)]}
+
+
+def peg(name,k,ctx):
+    x,y=k['x_m'],k['height_m']; diameter=k.get('diameter_m',.16)
+    return {'parts':[dict(name=name+' peg',shape='compound',material=k.get('material','oak'),
+        fixed=True,at_m=[x,y,PLANE],parts=[dict(shape='cylinder',size_m=[diameter,.24,diameter],
+        at_m=[0,0,0],turn_deg=[90,0,0])]),mount(name+' bracket',x,y,PLANE-.12)]}
+
+
+def lever(name,k,ctx):
+    x,y=k['x_m'],k['height_m'];length=k.get('length_m',.7)
+    initial=k.get('angle_deg',0)
+    return {'parts':[mount(name+' bracket',x,y,PLANE-.14),
+        dict(name=name+' lever',shape='compound',material='oak',at_m=[x,y,PLANE],
+             turn_deg=[0,0,initial],parts=[dict(shape='box',
+             size_m=[length,.04,.24],at_m=[0,0,0])])],
+        'joints':[dict(name=name+' axle',kind='hinge',a=name+' bracket',b=name+' lever',
+            at_m=[x,y,PLANE],axis=[0,0,1],lower_deg=-35-initial,upper_deg=35-initial,friction_n_m=.001)]}
+
+
+def marble(name,k,ctx):
+    d=k.get('diameter_m',.08)
+    return {'parts':[dict(name=name,shape='sphere',material=k.get('material','glass'),
+        size_m=[d]*3,at_m=[k['x_m'],k['height_m'],PLANE])]}
+
+
+def gear(name,k,ctx):
+    result=sm.gear(name,dict(k,z_m=PLANE),ctx)
+    result['parts'][0]=mount(name+' post',k['x_m'],k['height_m'],PLANE-.04)
+    return result
+
+
+def motor(name,k,ctx):
+    result=gear(name,k,ctx)
+    x,y=k['x_m'],k['height_m']
+    # Surface jacks above the rotor's swept disk; fixed rear housing takes
+    # reaction torque. Electrical torque uses the existing native DC model.
+    radius=k.get('teeth',12)*k.get('module_m',.024)/2+.02
+    part=name+' housing'; jy=y+radius+.12
+    result['parts'] += [sm.box(part,[.2,.12,.14],[x,jy,.10],'concrete'),
+                         mount(name+' housing mount',x,jy,.03)]
+    result['electrical']={'devices':[dict(name=name,kind='motor',part=part,
+        terminals={key:[x+side*.07,jy,.175] for key,side in [('plus',-1),('minus',1)]},
+        terminal_normals={'plus':[0,0,1],'minus':[0,0,1]},hinge=name+' axle',
+        stall_torque_n_m=.08,no_load_rad_s=8,command=k.get('throttle',1),
+        brake_torque_n_m=0,gear_ratio=1)]}
+    return result
+
+
+def wire(name,k,ctx):
+    result=se.wire(name,k,ctx)
+    result['electrical']['wires'][0]['mechanical']=dict(construction_plane='xy')
+    return result
+
+
+def electrical(builder):
+    def build(name,k,ctx):
+        # Native declarations retain actual terminal positions, contact pads,
+        # handle points and joint anchors when lifted onto the board.
+        result=builder(name,dict(k,z_m=PLANE,height_m=.24),ctx)
+        dy=k['height_m']-.08
+        rows=[p for key,value in result.items() if isinstance(value,list) for p in value]
+        rows += result.get('electrical',{}).get('devices',[])
+        mw.shift_rows([0,dy,0],rows)
+        for device in result.get('electrical',{}).get('devices',[]):
+            for key,at in device.get('terminals',{}).items():
+                device['terminals'][key]=[at[0],at[1]+dy,at[2]]
+            if device.get('handle'):
+                mw.shift_rows([0,dy,0],[device['handle']])
+        for p in list(result.get('parts',[]))[:1]:
+            if p.get('fixed'):
+                depth=p.get('size_m',[.1,.1,.16])[2]
+                result['parts'].append(mount(p['name']+' bracket',p['at_m'][0],p['at_m'][1],p['at_m'][2]-depth/2))
+        return result
+    return build
+
+
+def mounted(builder):
+    def build(name,k,ctx):
+        result=builder(name,k,ctx)
+        fixed=[p for p in result.get('parts',[]) if p.get('fixed') and p['shape']=='compound']
+        if fixed:
+            # Precise compound input currently has no anchored-body flag.
+            # Pin it through the native fixed-joint law to a physical bracket;
+            # never freeze its pose in playback or assign compensating forces.
+            anchor=name+' wall bolts'
+            result['parts'].append(sm.box(anchor,[.04,.04,.04],[k['x_m'],k['height_m'],.02],'iron'))
+            for p in fixed:
+                result.setdefault('joints',[]).append(dict(name=p['name']+' mounting',kind='fix',
+                    a=anchor,b=p['name'],at_m=p['at_m']))
+        return result
+    return build
+
+
+PIECES=dict(wall_track=track,wall_funnel=funnel,wall_cup=cup,wall_peg=peg,
+    wall_lever=lever,marble=marble,gear=gear,motor=motor,wire=wire,
+    **{key:electrical(getattr(se,key)) for key in ('battery','switch','bulb','resistor','capacitor')})
+PIECES={key:mounted(builder) for key,builder in PIECES.items()}
+
+
+def tray():
+    names=dict(wall_track='Wall track',wall_funnel='Wall funnel',wall_cup='Catching cup',
+        wall_peg='Deflector peg',wall_lever='Wall seesaw',marble='Marble',gear='Wall gear',
+        motor='Powered wall gear',battery='Battery',switch='Switch',bulb='Light bulb',
+        wire='Wire',resistor='Resistor',capacitor='Capacitor')
+    knobs=dict(
+        wall_track=dict(length_m=sm.number('Track length (m)',.3,2,1.4),angle_deg=sm.number('Slope (°)',-70,70,-16,1),
+            end_stop=sm.choice('High-end stop',['closed','open'],'closed')),
+        wall_funnel=dict(width_m=sm.number('Funnel width (m)',.3,1.4,.7)),
+        wall_cup=dict(width_m=sm.number('Cup width (m)',.2,1.2,.6)),
+        wall_peg=dict(diameter_m=sm.number('Peg diameter (m)',.08,.4,.16)),
+        wall_lever=dict(length_m=sm.number('Seesaw length (m)',.3,1.2,.7),angle_deg=sm.number('Starting tilt (°)',-30,30,0,1)),
+        marble=dict(diameter_m=sm.choice('Diameter (m)',[.06,.08,.1],.08),material=sm.choice('Material',['glass','oak','iron'],'glass')),
+        gear=dict(teeth=sm.number('Teeth',6,32,12,1),module_m=sm.number('Tooth size (m)',.012,.04,.024,.002),
+            phase_deg=sm.number('Tooth alignment (°)',-180,180,0,1)),
+        motor=dict(teeth=sm.number('Teeth',6,32,12,1),module_m=sm.number('Tooth size (m)',.012,.04,.024,.002),
+            phase_deg=sm.number('Tooth alignment (°)',-180,180,0,1),throttle=sm.number('Motor power',-1,1,1,.1)))
+    original={row['piece']:copy.deepcopy(row) for row in se.TRAY}
+    result=[]
+    for piece,title in names.items():
+        if piece in knobs:
+            row=dict(piece=piece,title=title,knobs=knobs[piece])
+        else:
+            row=original[piece];row['title']=title
+            # Wall mounting replaces ground coordinates and selectable remote
+            # fixtures; the same electrical ratings and wiring remain.
+            for key in ('x_m','z_m','height_m','mount','hinge'):
+                row['knobs'].pop(key,None)
+            if piece=='switch':
+                row['knobs']['mode']=dict(choices=['manual','paddle'],default='paddle',label='Switch handle')
+        if piece!='wire':
+            row['knobs'].update(x_m=sm.number('Left / right (m)',-2.8,2.8,0),
+                height_m=sm.number('Height (m)',.1,3.9,2))
+        if piece=='marble':
+            row['knobs']['placement']=dict(choices=['at height'],default='at height',hidden=True)
+        if piece=='wire':row['knobs']['length_m']['default']=2
+        for key,rule in row['knobs'].items():
+            if key in ('angle_deg','phase_deg'):rule['turning']=True
+        row.update(across=False,turning=False,sandbox_builder=True,cost=0,count=30)
+        if piece=='gear':row['primary_knobs']=['teeth','module_m','height_m']
+        result.append(row)
+    return result
+
+
+def template():
+    return dict(name='Wall workshop',description='Build a marble machine by dragging mounted pieces left, right, up and down.',
+        base=base(),placements=[
+            dict(piece='marble',x_m=-1.9,height_m=3.6),
+            dict(piece='wall_track',x_m=-1.15,height_m=3.15,length_m=1.9,angle_deg=-16),
+            dict(piece='wall_track',x_m=.40,height_m=2.45,length_m=1.6,angle_deg=16),
+            dict(piece='wall_track',x_m=-.70,height_m=1.65,length_m=1.9,angle_deg=-16),
+            dict(piece='wall_cup',x_m=.85,height_m=.75,width_m=.8)],tray=tray())

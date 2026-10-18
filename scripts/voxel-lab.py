@@ -345,7 +345,7 @@ class Handler(BaseHTTPRequestHandler):
        mode=data.get('mode','hint'),last_run=data.get('last_run'),rehearse=host.rehearse,ui=data.get('ui'))
      else:r=machine_chat.respond(data.get('message'),data.get('spec'),data.get('history'),rehearse=host.rehearse if data.get('rehearse',True) else None)
     finally:self.server.chat_busy.release()
-   elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build()),'sandbox':machine_game.sandbox_templates(),'sandbox_base':machine_game.free_build()['machine']}
+   elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build()),'sandbox':machine_game.sandbox_templates(),'sandbox_base':machine_game.free_build()['machine'],'wall_sandbox':machine_game.sandbox_wall.template()}
    elif op=='easy_variant':
     if self.server.trial_allowance:self.server.trial_allowance.take(self.visitor())
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is testing other challenges; try again shortly')
@@ -372,7 +372,7 @@ class Handler(BaseHTTPRequestHandler):
     r['level']=machine_game.public(level);r['placements']=checked;r['cost']=cost;r['energy']=machine_game.pieces_energy(r['machine'])
     if level.get('free'):
      import sandbox_edit
-     r['sandbox_objects']=sandbox_edit.objects(level['machine'])
+     r['sandbox_objects']=[o for o in sandbox_edit.objects(level['machine']) if not level.get('wall_mode') or not any(n in machine_game.sandbox_wall.FOUNDATION for n in o['parts'])]
     if needs:r['needs']=needs
     host.get(r['session']).game={'level':level['id'],'definition':level,'checked':checked,'cost':cost,'helped':bool(data.get('helped'))}
    elif op=='feedback':
@@ -428,6 +428,8 @@ class Handler(BaseHTTPRequestHandler):
     import sandbox_edit
     level=machine_game.requested_level(data)
     if not level.get('free'):raise ValueError('Only Sandbox apparatus can be edited')
+    if level.get('wall_mode') and data.get('object') in ('part:'+n for n in machine_game.sandbox_wall.FOUNDATION):
+     raise ValueError('The wall and its guard are the mounting surface. Add, move or remove the pieces mounted on it.')
     if data.get('remove'):
      base,selected,compiled=sandbox_edit.edit(level['machine'],data.get('object'),remove=True)
      before=sandbox_edit.mw.compile_spec(level['machine'])
@@ -445,7 +447,7 @@ class Handler(BaseHTTPRequestHandler):
     # A piece before it is set down: what it would be and where, and why it
     # could not go there. Compiled only, never run, so it is not rationed.
     level=machine_game.requested_level(data)
-    if data.get('thumbnail') and level.get('free'):
+    if data.get('thumbnail') and level.get('free') and not level.get('wall_mode'):
      # Only the picture's construction context changes, never the saved
      # design or running world. Water apparatus needs its declared flume.
      import copy,sandbox_water_launch

@@ -27,9 +27,11 @@ function hull(points) {
 // are marked at declared anchors; no guessed bodies or simulated state.
 export function previewGeometry(draft = {}) {
   const result = [], base = draft?.base || {};
-  const marker = (point, name) => { if (vector(point)) result.push({kind: 'marker', point: [point[0], point[2]], name}); };
+  const wall = base.build_surface?.kind === 'wall';
+  const project = point => [point[0], wall ? -point[1] : point[2]];
+  const marker = (point, name) => { if (vector(point)) result.push({kind: 'marker', point: project(point), name}); };
   const line = (points, name, color = '#9ac8e4') => {
-    if (points.length > 1 && points.every(vector)) result.push({kind: 'line', points: points.map(p => [p[0], p[2]]), name, color});
+    if (points.length > 1 && points.every(vector)) result.push({kind: 'line', points: points.map(project), name, color});
   };
   const ground = base.ground;
   if (ground?.kind === 'flume' && Number.isFinite(ground.nx) && ground.nx > 0 && Number.isFinite(ground.cell_m)
@@ -50,7 +52,7 @@ export function previewGeometry(draft = {}) {
     }
     if (!vector(part.size_m) || !part.size_m.every(value => value > 0)) { marker(at, part.name); return; }
     if (part.shape === 'sphere') {
-      result.push({kind: 'circle', point: [at[0], at[2]], radius: part.size_m[0] / 2, name: part.name, color}); return;
+      result.push({kind: 'circle', point: project(at), radius: part.size_m[0] / 2, name: part.name, color}); return;
     }
     const vertices = [];
     if (part.shape === 'cylinder') {
@@ -60,10 +62,10 @@ export function previewGeometry(draft = {}) {
       for (const x of [-.5, .5]) for (const y of [-.5, .5]) for (const z of [-.5, .5])
         vertices.push([x * part.size_m[0], y * part.size_m[1], z * part.size_m[2]]);
     } else { marker(at, part.name); return; }
-    const points = hull(vertices.map(vertex => add(at, apply(matrix, vertex))).map(p => [p[0], p[2]]));
+    const points = hull(vertices.map(vertex => project(add(at, apply(matrix, vertex)))));
     result.push({kind: 'polygon', points, name: part.name, color});
   }
-  for (const part of rows(base.parts)) partGeometry(part);
+  for (const part of rows(base.parts)) if (!wall || !['workshop backing','workshop clear guard'].includes(part.name)) partGeometry(part);
   for (const kit of rows(base.kits)) {
     if (vector(kit.top_m) && vector(kit.bottom_m)) line([kit.top_m, kit.bottom_m], kit.name);
     else marker([kit.at_m, kit.pivot_m, kit.post_m, kit.centre_m, kit.start_m].find(vector), kit.name);
@@ -80,8 +82,8 @@ export function previewGeometry(draft = {}) {
   }
   for (const placement of rows(draft?.placements)) {
     if (vector(placement.at_m)) marker(placement.at_m, placement.piece);
-    else if (Number.isFinite(placement.x_m) && Number.isFinite(placement.z_m))
-      marker([placement.x_m, 0, placement.z_m], placement.piece);
+    else if (Number.isFinite(placement.x_m) && Number.isFinite(wall ? placement.height_m : placement.z_m))
+      marker([placement.x_m, wall ? placement.height_m : 0, wall ? .3 : placement.z_m], placement.piece);
   }
   return result;
 }
@@ -112,7 +114,7 @@ function preview(document, draft) {
   return svg;
 }
 
-export function renderDesignGallery({box, head, store, templates, openDesign, createDesign}) {
+export function renderDesignGallery({box, head, store, templates, wallTemplate, openDesign, createDesign}) {
   const document = box.ownerDocument;
   const element = (tag, properties = {}) => Object.assign(document.createElement(tag), properties);
   const gallery = element('section', {className: 'design-gallery'});
@@ -126,6 +128,13 @@ export function renderDesignGallery({box, head, store, templates, openDesign, cr
   newButton.setAttribute('aria-label', 'Add New Design');
   newButton.addEventListener('click', () => invoke(newButton, async () => openDesign(await createDesign('Untitled design', {base: null, placements: []}))));
   head.append(newButton);
+  if (wallTemplate) {
+    const wallButton=element('button',{type:'button',className:'gallery-add',textContent:'Build on a wall'});
+    wallButton.id='new-wall-design';
+    wallButton.addEventListener('click',()=>invoke(wallButton,async()=>openDesign(await createDesign(wallTemplate.name,
+      {base:wallTemplate.base,placements:wallTemplate.placements},wallTemplate))));
+    head.append(wallButton);
+  }
   gallery.append(status); box.append(gallery);
   const entries = [
     {key: 'owned', label: 'Your designs', id: 'saved-designs', rows: [...rows(store?.items)].sort((a,b)=>String(b.at).localeCompare(String(a.at)))},

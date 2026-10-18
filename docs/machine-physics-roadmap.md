@@ -10,6 +10,14 @@ Some device laws remain lumped or ideal, and the coupling/calibration limits
 below matter. Heavy impacts or cuts can run slower than real time; the page's
 clock says when.
 
+October 18 wall workshop: only the editor is planar. A real backing and clear
+front guard contain native 3D bodies; real fixed/hinge joints mount tracks,
+pegs, seesaws and gears. No pose projection or prescribed rolling speed is
+added. Mounts are ideal constraints, and exact compounds retain their existing
+no-fracture/no-thermal-interior limits. The first wall library has 14 types;
+wall plumbing, optics, structural bolts and group blueprint placement remain
+future work. See the opening wall qualification in `machine-game.md`.
+
 October 17: new individual pulley wheels and routed fibre strands use native
 Jolt contact, mass and passive bending. Their mechanical advantage follows the
 route rather than an assigned ratio; both revised lifting lessons retain their

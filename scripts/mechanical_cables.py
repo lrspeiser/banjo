@@ -88,7 +88,7 @@ def segment_intersects_bounds(p,q,o):
     return hi>1e-8 and lo<1-1e-8
 
 
-def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupied=(),lift=0,side_shift=0,point_budget=64,route_cache=None):
+def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupied=(),lift=0,side_shift=0,point_budget=64,route_cache=None,coil_plane='xz'):
     # Different leads must not be manufactured on the exact same obstacle
     # corner. The native simulation may bring them back together later.
     clearance=radius+.008+lane*.012
@@ -176,8 +176,16 @@ def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupie
                     (p[2]+q[2])/2+side*min(.35+lane*.4,max(.12,(stock_length-current)*.3))]
             for turns in range(1,6):
                 def wound(r):
-                    coil=[[center[0]+r*math.cos(2*math.pi*k/12),center[1]+.014*k/12,
-                           center[2]+r*math.sin(2*math.pi*k/12)] for k in range(12*turns+1)]
+                    if coil_plane=='xy':
+                        # Manufacture a clear service loop beside wall sockets.
+                        # This is initial stock geometry only; native gravity
+                        # and contact subsequently move every rod in 3D.
+                        coil=[[(p[0]+q[0])/2+side_shift+r*math.cos(2*math.pi*k/12),
+                            (p[1]+q[1])/2+side*(.18+lane*.12+lift)+r*math.sin(2*math.pi*k/12),
+                            (p[2]+q[2])/2+.014*k/12] for k in range(12*turns+1)]
+                    else:
+                        coil=[[center[0]+r*math.cos(2*math.pi*k/12),center[1]+.014*k/12,
+                               center[2]+r*math.sin(2*math.pi*k/12)] for k in range(12*turns+1)]
                     return path[:index+1]+coil+path[index+1:]
                 def span(points):return sum(length(x,y) for x,y in zip(points,points[1:]))
                 low,high=.025,.4
@@ -242,6 +250,8 @@ def connection(name,a,pa,b,pb,parts,lane=0,settings=None,area=2.5,stock_length=N
     if settings is True:settings={}
     if not isinstance(settings,dict):raise ValueError('mechanical cable settings must be an object')
     settings=dict(settings);settings.setdefault('segment_m',.08)
+    coil_plane=settings.pop('construction_plane','xz')
+    if coil_plane not in ('xz','xy'):raise ValueError('Cable construction plane must be xz or xy')
     # Locking power plugs have a declared 50 N retention rating. Native pullout
     # still uses the instantaneous solved terminal force; no grace interval.
     settings.setdefault('retention_n',50)
@@ -259,7 +269,7 @@ def connection(name,a,pa,b,pb,parts,lane=0,settings=None,area=2.5,stock_length=N
                 try:
                     path=construction_path(start,end,parts,lane,radius,
                         None if stock_length is None else stock_length-tails,occupied,lift,side_shift,
-                        64-int(length(pa,start)>1e-8)-int(length(pb,end)>1e-8),route_cache)
+                        64-int(length(pa,start)>1e-8)-int(length(pb,end)>1e-8),route_cache,coil_plane)
                     break
                 except ValueError as exc:problem=exc
             if path:break

@@ -393,6 +393,19 @@ def free_prompt(level):
                 knobs.append(f'{key}: existing {kind} reference; default {rule.get("default", "")}')
         tray.append(f'- {t["piece"]}: {FREE_HELP.get(t["piece"], "")}. Knobs: ' + '; '.join(knobs))
     tray = '\n'.join(tray)
+    if level.get('wall_mode'):
+        return f'''You build marble machines on Banjo's vertical wall. The native 3D engine decides all motion.
+The wall is 6 m wide (x=-3..3) and 4 m high (y=0..4). Every piece is mounted at the same depth.
+Use x_m for left/right and height_m for height. Do not add z or yaw/pitch/roll, and do not use join directives.
+Tracks use length_m and angle_deg: negative slopes down to the right; positive slopes down to the left.
+Their high-end stop is a real barrier; leave clearance for arriving marbles and the edges of the board.
+Wall funnels have a central open outlet; cups catch the ball. A wall seesaw moves on a free hinge.
+Battery and motor need both explicit terminal wires. Wires have mass, slack and contact, and may pull out.
+Use only these pieces and knobs:
+{tray}
+Answer one JSON object: {{"reply":"one or two sentences", "clear":false, "add":[{{"piece":..., "x_m":..., "height_m":..., knob:value}}]}}.
+clear=true removes existing placed pieces, preserving the wall. Keep existing pieces unless asked to start over.
+Never claim success before an engine rehearsal. The server refuses collisions and out-of-board placements.'''
     return f"""You build marble runs and contraptions on the free build table in Banjo, a physics game. The engine
 calculates everything: you never decide an outcome. Metres; y is up and the ground is at y = 0; the table runs from
 -2 to 2 m in x and z.
@@ -473,7 +486,7 @@ def respond_free(message, level, placements, call=None, rehearse=None):
     wide = copy.deepcopy(level)
     for t in wide['tray']:
         for key in ('x_m', 'z_m'):
-            if key in t['knobs']:
+            if key in t['knobs'] and not level.get('wall_mode'):
                 t['knobs'][key] = dict(t['knobs'][key], min=-mw.WORLD_HALF_M, max=mw.WORLD_HALF_M)
 
     def built(answer):
@@ -486,7 +499,7 @@ def respond_free(message, level, placements, call=None, rehearse=None):
             join = p.get('join')
             if isinstance(join, dict) and isinstance(join.get('to'), int) and 1 <= join['to'] < len(placed):
                 placed = mg.join_to(wide, placed, len(placed) - 1, join['to'] - 1, str(join.get('port')))
-        if not mine:
+        if not mine and not level.get('wall_mode'):
             placed = mg.centred(wide, placed)
         spec, checked, _ = mg.compose(level, placed)
         return [{k: v for k, v in p.items() if k != 'cost'} for p in checked], mw.compile_spec(spec)

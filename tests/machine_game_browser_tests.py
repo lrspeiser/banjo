@@ -2786,6 +2786,102 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js("Boolean(document.getElementById('saved-designs').compareDocumentPosition(document.getElementById('prebuilt-designs')) & Node.DOCUMENT_POSITION_FOLLOWING)"))
                 self.assertLessEqual(self.js('document.body.scrollWidth'),width)
 
+    def test_wall_workshop_drag_pan_undo_save_and_run_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.click_visible('Build on a wall')
+                self.wait("machineDesign()?.draft.base?.build_surface?.kind==='wall' && "+READY,60)
+                self.wait('machineCamera().settled',30)
+                self.assertEqual(self.js('machinePlacements().length'),5)
+                self.assertAlmostEqual(self.js('machineCamera().azimuth'),0)
+                self.assertAlmostEqual(self.js('machineCamera().elevation'),0)
+                self.assertFalse(self.js("machineEditableObjects().some(o=>o.parts.includes('workshop backing')||o.parts.includes('workshop clear guard'))"))
+                self.assertFalse(self.js('machineWallState().guard_visible'))
+                self.assertTrue(self.js('machineWallState().grid_visible'))
+                camera_target=self.js('machineWallState().camera_target')
+                self.click_visible('Pan right');self.wait('machineCamera().settled',30)
+                self.assertGreater(self.js('machineWallState().camera_target[0]'),camera_target[0])
+                self.assertAlmostEqual(self.js('machineCamera().azimuth'),0)
+                self.click_visible('Pan left');self.wait('machineCamera().settled',30)
+                original=self.js('machinePlacements()[1]')
+                self.click_piece(1);before=self.ghost()['p']
+                self.click_visible('Move selected piece')
+                start=self.js(f"machineScreenPoint([{before['x_m']},{before['height_m']},.3])")
+                end=self.js(f"machineScreenPoint([{before['x_m']+.2},{before['height_m']-.15},.3])")
+                self.assertTrue(self.js(f"document.elementFromPoint({start[0]},{start[1]})?.tagName==='CANVAS'"))
+                self.drag(start,end,touch=width!=1280)
+                moved=self.ghost()['p']
+                self.assertAlmostEqual(moved['x_m'],before['x_m']+.2,delta=.015)
+                self.assertAlmostEqual(moved['height_m'],before['height_m']-.15,delta=.015)
+                self.assertNotIn('z_m',moved)
+                self.assertTrue(self.ghost()['fits'])
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'wall-edit-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Place');self.wait(READY,30)
+                self.click_visible('Undo');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements()[1]'),original)
+                self.click_piece(1);self.click_visible('Turn selected piece');before_turn=self.ghost()['p']
+                start=self.js(f"machineScreenPoint([{before_turn['x_m']},{before_turn['height_m']},.3])")
+                self.drag(start,[start[0]+30,start[1]],touch=width!=1280)
+                turned=self.ghost()['p']
+                self.assertNotEqual(turned['angle_deg'],before_turn['angle_deg'])
+                self.assertEqual((turned['x_m'],turned['height_m']),(before_turn['x_m'],before_turn['height_m']))
+                self.click_visible('Throw the ghost away')
+                self.click_visible('Add a piece')
+                self.wait("document.querySelectorAll('#piece-grid .piece-card').length===14",20)
+                self.wait("[...document.querySelectorAll('#piece-grid .piece-card img')].every(img=>img.naturalWidth>0)",45)
+                self.assertTrue(self.js("[...document.querySelectorAll('#piece-grid .piece-card')].every(b=>b.getBoundingClientRect().height>=44)"))
+                self.press('Add a wall funnel');self.assertTrue(self.ghost()['fits'])
+                self.click_visible('Place');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements().length'),6)
+                self.click_piece(5);self.ghost();self.click_visible('Delete selected piece');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements().length'),5)
+                self.click_visible('Undo');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements().length'),6)
+                self.click_visible('Redo');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements().length'),5)
+                self.click_visible('Save version');self.anonymous_cloud_saved()
+                saved=self.js('machineDesign()')
+                self.assertEqual(saved['versions'][-1]['draft']['base']['build_surface']['kind'],'wall')
+                self.press('All designs');self.press('Open design '+saved['name']);self.wait(READY,60)
+                self.assertEqual(self.js('machinePlacements()'),saved['draft']['placements'])
+                self.assertAlmostEqual(self.js('machineCamera().azimuth'),0)
+                self.click_visible('Run')
+                self.wait("machineBodies()['your marble 1']?.[1]<1.12 && machineBodies()['your marble 1']?.[0]>.49",30)
+                self.click_visible('Pause')
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'wall-workshop-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+                self.click_visible('Reset');self.wait(READY,30)
+                self.assertAlmostEqual(self.js("machineBodies()['your marble 1'][1]"),3.6,places=3)
+                surface=self.js('machineDesign().draft.base')
+                self.js('window.confirm=()=>true');self.press('Clear the wall');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements()'),[])
+                self.assertEqual(self.js('machineDesign().draft.base'),surface)
+                self.click_visible('Undo');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements()'),saved['draft']['placements'])
+
+    def test_wall_wires_connect_at_scene_sockets_and_drive_the_native_motor(self):
+        import sandbox_wall
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                draft=dict(name='Wall circuit',base=sandbox_wall.base(),placements=[
+                    dict(piece='battery',x_m=-.8,height_m=2),dict(piece='motor',x_m=.4,height_m=2)])
+                packed='j'+base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
+                self.navigate(self.base+'/machine#build='+packed);self.wait(READY,60)
+                self.wait('machineCamera().settled',30)
+                for side in ('plus','minus'):
+                    self.click_scene_socket('your battery 1:'+side,touch=width!=1280);self.ghost()
+                    self.click_scene_socket('your motor 2:'+side,touch=width!=1280)
+                    self.wait('!machineGhostState() && '+READY,60)
+                self.assertEqual(self.js('machinePlacements().length'),4)
+                self.assertTrue(self.js("machinePlacements().filter(p=>p.piece==='wire').every(p=>p.length_m===2)"))
+                self.click_visible('Run')
+                self.wait("machineContactState().liveDevices.some(m=>m.name==='your motor 2' && m.power_w>.1)",30)
+                self.click_visible('Pause')
+
     def test_marble_showcases_load_run_reset_and_fit_the_three_screen_shapes(self):
         expected=['Marble skyscraper','Waterworks express','Solar pinball factory','Light the fuse','Electric marble relay']
         for width,height,name,stages in ((1280,860,expected[0],6),(390,844,expected[1],6),(844,390,expected[0],6)):

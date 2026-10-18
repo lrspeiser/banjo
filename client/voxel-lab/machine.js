@@ -79,6 +79,16 @@ majorGrid.material.transparent=true; majorGrid.material.opacity=.65; majorGrid.m
 fineGrid.position.y=.0005; majorGrid.position.y=.001;
 grid.add(fineGrid,majorGrid);
 scene.add(grid);
+// A small board grid in the wall's actual XY plane, not an endless floor.
+const wallGrid=new THREE.Group();wallGrid.visible=false;
+for(const [step,color,opacity] of [[.05,0xeee0c5,.13],[.5,0xeee0c5,.4]]) {
+  const points=[];
+  for(let x=-3;x<=3.001;x+=step)points.push(new THREE.Vector3(x,0,.003),new THREE.Vector3(x,4,.003));
+  for(let y=0;y<=4.001;y+=step)points.push(new THREE.Vector3(-3,y,.003),new THREE.Vector3(3,y,.003));
+  wallGrid.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points),
+    new THREE.LineBasicMaterial({color,transparent:true,opacity,depthWrite:false})));
+}
+scene.add(wallGrid);
 let gridSnapEnabled=true;
 let objectSnapEnabled=true;
 const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 200);
@@ -191,6 +201,9 @@ function syncMeshes(changed) {
     }
     if (!mesh) { mesh = makeMesh(b); meshes.set(b.name, mesh); }
     place(mesh, b);
+    // This clear physical retaining pane is present in native contact, but
+    // stays out of picking and labels so it cannot cover the wall editor.
+    mesh.visible = !(wallDesign() && b.name==='workshop clear guard');
   }
   const heat = new Map((readouts.heat || []).map(h => [h.name, h.temperature_k]));
   $('heat-legend').hidden = !(readouts.heat || []).some(h => h.temperature_k > 320);
@@ -1353,7 +1366,8 @@ function decodeFloats(b64) {
 }
 function syncGround(view) {
   if (terrain) { scene.remove(terrain); terrain.geometry.dispose(); terrain = null; }
-  ground.visible = grid.visible = !view;
+  ground.visible = grid.visible = !view && !wallDesign();
+  wallGrid.visible=wallDesign();
   if (!view || !view.grid) return;
   const g = view.grid, heights = decodeFloats(view.heights_b64);
   const width = (g.nx - 1) * g.cell_m, depth = (g.nz - 1) * g.cell_m;
@@ -2073,10 +2087,23 @@ async function poll(mine) {
 
 // ---- camera -------------------------------------------------------------------
 let framedFree = false;
+function wallDesign() { return Boolean(level?.free && activeDesign?.draft.base?.build_surface?.kind==='wall'); }
+function wallPlane() { return activeDesign?.draft.base?.build_surface?.plane_z_m ?? .3; }
+function panWall(dx,dy) {
+  const scale=2*distance*Math.tan(camera.fov*Math.PI/360)/Math.max(1,renderer.domElement.clientHeight);
+  goal.x-=dx*scale;goal.y+=dy*scale;target.copy(goal);
+}
 function overviewDesign() {
   return level?.free && activeDesign?.draft.base?.presentation?.camera === 'overview';
 }
 function frameCamera(includeGhost=false) {
+  if(wallDesign()) {
+    const board=activeDesign.draft.base.build_surface;
+    goal.set(0,board.height_m/2,wallPlane());target.copy(goal);
+    azimuth=0;elevation=0;
+    distance=1.08*Math.max(board.height_m,board.width_m/camera.aspect)/2/Math.tan(camera.fov*Math.PI/360);
+    follow=false;$('follow').setAttribute('aria-pressed','false');return;
+  }
   // A free build's table corners mark where pieces can go; the view is of what is built.
   const pts = [];
   for (const body of world.bodies.values()) {
@@ -2198,10 +2225,12 @@ function moveCameraPointer(e) {
     const [p0, q0] = before;
     const [a, b] = [...pointers.values()], gap = Math.hypot(a[0] - b[0], a[1] - b[1]);
     if (pinch) distance = Math.min(40, Math.max(.4, distance * pinch / gap));
+    if(wallDesign()){panWall(((a[0]+b[0])-(p0[0]+q0[0]))/2,((a[1]+b[1])-(p0[1]+q0[1]))/2);pinch=gap;return;}
     azimuth -= ((a[0] + b[0]) - (p0[0] + q0[0])) / 2 * .006;
     elevation = Math.min(1.45, Math.max(.05, elevation + ((a[1] + b[1]) - (p0[1] + q0[1])) / 2 * .006));
     pinch = gap; return;
   }
+  if(wallDesign()){panWall(e.clientX-last[0],e.clientY-last[1]);return;}
   azimuth -= (e.clientX - last[0]) * .006;
   elevation = Math.min(1.45, Math.max(.05, elevation + (e.clientY - last[1]) * .006));
 }
@@ -2224,7 +2253,7 @@ view.addEventListener('wheel', e => {
     const at = pointers.get(draggingGhost.id);
     const from = at && slidePoint(at[0], at[1], draggingGhost.y);
     if (!from) { distance = previous; return; }
-    Object.assign(draggingGhost, {from, x: ghost.p.x_m ?? 0, z: ghost.p.z_m ?? 0});
+    Object.assign(draggingGhost, {from, x: ghost.p.x_m ?? 0, z: ghost.p.z_m ?? 0,height:ghost.p.height_m??0});
   }
 }, {passive: false});
 renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
@@ -2235,6 +2264,7 @@ renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 // first frame after a change (a slow phone, a level just built), and it must
 // not aim at the view as it was before.
 function aimCamera() {
+  if(wallDesign()){azimuth=0;elevation=0;}
   $('view-zoom').value=Math.round(100*Math.log(40/distance)/Math.log(100));
   camera.position.set(target.x + distance * Math.cos(elevation) * Math.sin(azimuth), target.y + distance * Math.sin(elevation),
                       target.z + distance * Math.cos(elevation) * Math.cos(azimuth));
@@ -2395,7 +2425,7 @@ const LEVEL_MODE = true;
 let levels = [], level = null, placements = [], placedCost = [], placedEnergy = {}, helped = false, scored = false, lastRun = null, rebuildTimer = null;
 let generatedLevel = null;
 let freeLevel = null;
-let sandboxBase = null, sandboxTemplates = [], activeDesign = null, sandboxObjects = [];
+let sandboxBase = null, sandboxTemplates = [], wallTemplate = null, activeDesign = null, sandboxObjects = [];
 function sandboxRequest() {
   const base=ghost?.baseObject ? ghost.base || ghost.originalBase : activeDesign?.draft.base, goal=level?.free&&activeDesign?.draft.goal;
   return {...(level?.free && base ? {base} : {}), ...(goal ? {goal} : {})};
@@ -2421,7 +2451,7 @@ const TURN_KEYS = {q: ['yaw_deg', 1], e: ['yaw_deg', -1], r: ['pitch_deg', 1], f
 
 function ghostName() { return ghost?.baseObject?.name || (ghost ? `your ${ghost.p.piece} ${ghost.index + 1}` : ''); }
 // The piece picked up is hidden while its ghost is out; Cancel shows it again.
-function hiddenPiece(name) { return ghost?.baseObject ? ghost.baseObject.parts.includes(name) : Boolean(ghost && ghost.was) && (name === ghostName() || name.startsWith(ghostName() + ' ')); }
+function hiddenPiece(name) { return wallDesign()&&name==='workshop clear guard' || (ghost?.baseObject ? ghost.baseObject.parts.includes(name) : Boolean(ghost && ghost.was) && (name === ghostName() || name.startsWith(ghostName() + ' '))); }
 function ghostPlacements() { const list = placements.slice(); if(!ghost.baseObject)list[ghost.index] = ghost.p; return list; }
 
 // A knob set as its slider would set it: on its step, within its range.
@@ -2502,6 +2532,7 @@ function heightKnobs(p) {
   return HEIGHT_KNOBS.filter(k => knobs[k] && !knobs[k].choices && pieceKnobVisible(p,k));
 }
 function viewAxis(dir) {
+  if(wallDesign())return ['left','right'].includes(dir)?['x_m',dir==='right'?1:-1]:['height_m',dir==='forward'?1:-1];
   // The camera looks along (-sin a, -cos a) on the ground; its right is (cos a, -sin a).
   const [dx, dz] = {right: [Math.cos(azimuth), -Math.sin(azimuth)], left: [-Math.cos(azimuth), Math.sin(azimuth)],
                     forward: [-Math.sin(azimuth), -Math.cos(azimuth)], back: [Math.sin(azimuth), Math.cos(azimuth)]}[dir];
@@ -2678,7 +2709,7 @@ function repeatOnHold(b, act, {drag=false}={}) {
 // moved since; the server's answer then sets it down again.
 function followGhost() {
   if (!ghost || !ghost.drawnAt) return;
-  ghostGroup.position.set((ghost.p.x_m ?? 0) - ghost.drawnAt.x, 0, (ghost.p.z_m ?? 0) - ghost.drawnAt.z);
+  ghostGroup.position.set((ghost.p.x_m ?? 0) - ghost.drawnAt.x, wallDesign()?(ghost.p.height_m??0)-ghost.drawnAt.height:0, (ghost.p.z_m ?? 0) - ghost.drawnAt.z);
 }
 function fitNewPieceInView() {
   const bounds = new THREE.Box3().setFromObject(ghostGroup);
@@ -3137,13 +3168,13 @@ function updateEditGuide() {
 const pictures = new Map();
 let pictureRenderer = null;
 function trayPicture(t) {
-  const key = level.id + ':' + t.piece;
+  const key = level.id + ':' + (wallDesign()?'wall:':'') + t.piece;
   if (!pictures.has(key)) pictures.set(key, (async () => {
     const p = {piece: t.piece};
     for (const [knob, rule] of Object.entries(t.knobs)) p[knob] = knobDefault(rule);
     // Library thumbnails are isolated construction previews. They must not
     // depend on which five gallery examples happen to contain this piece.
-    const context = level.free ? {thumbnail:true} : sandboxRequest();
+    const context = wallDesign() ? {...sandboxRequest(),thumbnail:true} : level.free ? {thumbnail:true} : sandboxRequest();
     const r = await api({op: 'level_ghost', level: level.id, ...context, placements: [p], index: 0});
     const shot = new THREE.Scene(), piece = new THREE.Group();
     buildParts(piece, r.parts, kind => material(materialColor(kind), kind), null);
@@ -3197,7 +3228,7 @@ function askGhost() {
   return g.check;
 }
 async function checkGhost(g) {
-  const sent = {x: g.p.x_m ?? 0, z: g.p.z_m ?? 0}, snapping = Boolean(g.snapNext);
+  const sent = {x: g.p.x_m ?? 0, z: g.p.z_m ?? 0,height:g.p.height_m??0}, snapping = Boolean(g.snapNext);
   const setupStamp = JSON.stringify([ghostPlacements(),g.baseObject?[g.p.x_m,g.p.height_m,g.p.z_m]:null]);
   g.busy = true; g.again = false; g.snapNext = false;
   try {
@@ -3295,8 +3326,8 @@ function startGhost(p, index, keepPlace = false) {
   // A copy starts beside what it copies; a new piece where the view's middle meets the scene.
   if (!ghost.was && !keepPlace) {
     const rect = renderer.domElement.getBoundingClientRect();
-    const at = sceneHit(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    if (at) { setKnob(ghost.p, 'x_m', at.x); setKnob(ghost.p, 'z_m', at.z); showGhostKnobs(); }
+    const at = wallDesign()?slidePoint(rect.left+rect.width/2,rect.top+rect.height/2,0):sceneHit(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    if (at) { setKnob(ghost.p, 'x_m', at.x); setKnob(ghost.p,wallDesign()?'height_m':'z_m',wallDesign()?at.y:at.z); showGhostKnobs(); }
   }
   askGhost();
 }
@@ -4886,7 +4917,8 @@ function nearGhost(clientX, clientY, margin) {
 }
 function slidePoint(clientX, clientY, y) {
   pointerRay(clientX, clientY);
-  slidePlane.constant = -y;
+  slidePlane.normal.set(0,wallDesign()?0:1,wallDesign()?1:0);
+  slidePlane.constant = wallDesign()?-wallPlane():-y;
   return raycaster.ray.intersectPlane(slidePlane, new THREE.Vector3());
 }
 const GRAB_MARGIN_PX = 40;
@@ -5027,6 +5059,8 @@ window.machineGhostScreen = () => ghostScreenBox();
 // Read-only camera/plane projection for input regression fixtures.
 window.machineDragPoint=(x,y)=>slidePoint(x,y,ghostScreenBox()?.bottom||0)?.toArray();
 window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible, settled: target.distanceTo(goal) < 1e-3});
+window.machineWallState=()=>wallDesign()?({surface:activeDesign.draft.base.build_surface,
+  camera_target:target.toArray(),grid_visible:wallGrid.visible,guard_visible:meshes.get('workshop clear guard')?.visible}):null;
 window.machineScenePick=(x,y)=>{const sockets=socketsAt(x,y,true),pieces=placedOwnersAt(x,y),wireHits=wireCandidates(x,y,true);return {piece:pieces[0]??-1,pieces,wire:wireHits.length>0,wires:wireHits.map(w=>w.name),socket:sockets.some(s=>s.gap<=9),ambiguous:sockets.length>1&&sockets[1].gap-sockets[0].gap<8};};
 window.machineWireScreen=(name,fraction=.5)=>{
   const wire=wires.find(w=>w.name===name);if(!wire?.line.visible)return null;
@@ -5036,7 +5070,7 @@ window.machineWireScreen=(name,fraction=.5)=>{
   return [rect.left+(at.x+1)*rect.width/2,rect.top+(1-at.y)*rect.height/2];
 };
 function alignedGridAxes() {
-  return ghost && gridSnapEnabled && grid.visible ? ['x','z'].filter(axis=>Number.isFinite(ghost.gridLocks?.[axis])&&Math.abs(ghost.p[axis+'_m']-ghost.gridLocks[axis])<1e-6) : [];
+  return ghost && gridSnapEnabled && (grid.visible||wallDesign()) ? ['x','z'].filter(axis=>Number.isFinite(ghost.gridLocks?.[axis])&&Math.abs(ghost.p[wallDesign()&&axis==='z'?'height_m':axis+'_m']-ghost.gridLocks[axis])<1e-6) : [];
 }
 function showGridSnap() {
   const output=$('grid-snap-status');if (!output) return;
@@ -5099,7 +5133,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
     }
     if(!movableGhost())return;
     const box = ghostScreenBox(), y = box ? box.bottom : 0, from = slidePoint(e.clientX, e.clientY, y);
-    if (from) draggingGhost = {id: e.pointerId, y, from, x: ghost.p.x_m ?? 0, z: ghost.p.z_m ?? 0, active: false};
+    if (from) draggingGhost = {id: e.pointerId, y, from, x: ghost.p.x_m ?? 0, z: ghost.p.z_m ?? 0,height:ghost.p.height_m??0, active: false};
   }
 });
 renderer.domElement.addEventListener('pointermove', e => {
@@ -5134,8 +5168,9 @@ renderer.domElement.addEventListener('pointermove', e => {
     if (!at) return;
     const knobs=trayItem(ghost.p.piece).knobs;
     const snapped=snapGroundPoint({x:knobs.x_m?draggingGhost.x+at.x-draggingGhost.from.x:undefined,
-      z:knobs.z_m?draggingGhost.z+at.z-draggingGhost.from.z:undefined},{enabled:gridSnapEnabled&&grid.visible&&!e.altKey,previous:ghost.gridLocks||{}});
-    const moved = [setKnob(ghost.p,'x_m',snapped.point.x),setKnob(ghost.p,'z_m',snapped.point.z)].some(Boolean);
+      z:wallDesign()?draggingGhost.height+at.y-draggingGhost.from.y:knobs.z_m?draggingGhost.z+at.z-draggingGhost.from.z:undefined},
+      {enabled:gridSnapEnabled&&(grid.visible||wallDesign())&&!e.altKey,previous:ghost.gridLocks||{}});
+    const moved = [setKnob(ghost.p,'x_m',snapped.point.x),setKnob(ghost.p,wallDesign()?'height_m':'z_m',snapped.point.z)].some(Boolean);
     ghost.gridLocks=snapped.locks; showGridSnap();
     if (moved) { ghost.snapNext = objectSnapEnabled&&!e.altKey; if(e.altKey)ghost.objectLock=null;followGhost(); showGhostKnobs(); askGhost(); }
   } else if (!e.buttons) view.classList.toggle('grab', movableGhost() && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
@@ -5264,13 +5299,15 @@ guideFoot.rotation.x = -Math.PI / 2;
 guides.add(guideFoot);
 function updateGuides() {
   const axes=alignedGridAxes();
-  gridSnapMarker.visible=Boolean(ghost&&axes.length&&grid.visible);
+  gridSnapMarker.visible=Boolean(ghost&&axes.length&&(grid.visible||wallDesign()));
   if (gridSnapMarker.visible) {
-    gridSnapMarker.position.set(ghost.p.x_m??0,.005,ghost.p.z_m??0);
+    gridSnapMarker.rotation.x=wallDesign()?Math.PI/2:0;
+    if(wallDesign())gridSnapMarker.position.set(ghost.p.x_m??0,ghost.p.height_m??0,wallPlane()+.04);
+    else gridSnapMarker.position.set(ghost.p.x_m??0,.005,ghost.p.z_m??0);
     for (const line of gridSnapMarker.children) line.visible=axes.includes(line.userData.axis);
   }
   // A simple plank (Precise off) shows no axis lines.
-  guides.visible = Boolean(ghost && ghostGroup.children.length) && !simplePlank();
+  guides.visible = Boolean(ghost && ghostGroup.children.length) && !simplePlank() && !wallDesign();
   if (!guides.visible) {guideMatch=null;wheelGuideState=[];return;}
   ghostBox.setFromObject(ghostGroup);
   if (ghostBox.isEmpty()) { guides.visible = false; return; }
@@ -6083,7 +6120,7 @@ function bestStars(id) { return record(id).stars || 0; }
 const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
                     mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens', flipflop: 'flip-flop'};
 // A piece's name on its button: as the tray calls it, but a flip-flop has its hyphen.
-function pieceLabel(piece) { return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({anchor:'rope anchor',pulley:'pulley wheel',door:'hinged door',trampoline:'spring trampoline',wind:'open airflow',loose_block:'loose block',flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',ring_marble:'ring marble',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'heating coil',power_cable:'power cable'})[piece] || piece; }
+function pieceLabel(piece) { if(wallDesign()){const name=level.tray.find(t=>t.piece===piece)?.title;if(name)return name.toLowerCase();} return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({anchor:'rope anchor',pulley:'pulley wheel',door:'hinged door',trampoline:'spring trampoline',wind:'open airflow',loose_block:'loose block',flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',ring_marble:'ring marble',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'heating coil',power_cable:'power cable'})[piece] || piece; }
 function toolsOf(player) {
   if (!player.tools) {
     player.tools = {};
@@ -6142,6 +6179,11 @@ const baseObjectTray={piece:'base_object',knobs:{
 function trayItem(piece) { return piece==='base_object'?baseObjectTray:level.tray.find(t => t.piece === piece); }
 
 const PIECE_INFO = {
+  wall_track: ['routes','A sloping wall track with an optional stop at the high end. Drag its ends to change length or turn to change slope.'],
+  wall_funnel: ['routes','Two sloping faces gather marbles through a central opening.'],
+  wall_cup: ['routes','Catch marbles in a wall-mounted cup.'],
+  wall_peg: ['structure','A round mounted peg deflects falling marbles through contact.'],
+  wall_lever: ['motion','A freely hinged seesaw. A marble’s weight and contact tip the board.'],
   marble: ['motion', 'A ball to roll, drop, or set a machine moving.'],
   ring_marble: ['motion', 'A marble with an iron ring fixed on top for tying a string. The ring is wider than the ball, so it lurches and stops instead of rolling true.'],
   track: ['routes', 'A straight, sloping track with rails and an optional gate.'],
@@ -6235,6 +6277,8 @@ const assemblyGroup=new THREE.Group();scene.add(assemblyGroup);
 const assemblyCard=Object.assign(document.createElement('section'),{id:'assembly-editor',hidden:true});view.append(assemblyCard);
 const blueprintRules=()=>Object.fromEntries(level.tray.map(t=>[t.piece,t.knobs]));
 function blueprintAvailable(b){
+  if(wallDesign())return false;
+  if(b.placements?.some(p=>p.piece.startsWith('wall_')))return false;
   if(level?.free)return true;const counts={};for(const p of b.placements||[])counts[p.piece]=(counts[p.piece]||0)+1;
   return Object.entries(counts).every(([piece,n])=>{const row=trayItem(piece);return row&&piecesLeft(row)>=n;});
 }
@@ -6329,8 +6373,8 @@ function saveAssembly(name,indices,source=null){
 }
 function renderBlueprints() {
   const box = $('design-blueprints'); if (!box) return;
-  box.hidden = !level?.free;
-  if (!level?.free) return;
+  box.hidden = !level?.free || wallDesign();
+  if (!level?.free || wallDesign()) return;
   let selection=$('blueprint-selection');
   if(!selection){selection=document.createElement('details');selection.id='blueprint-selection';$('save-blueprint').before(selection);}
   const stamp=JSON.stringify(placements.map(p=>p.piece));
@@ -6990,7 +7034,9 @@ function renderDesignControls() {
   $('sandbox-controls').hidden = !level?.free;
   $('design-versions').hidden = !level?.free;
   $('machine-data').hidden = !level?.free;
-  $('sandbox-environment').hidden = !level?.free;
+  $('sandbox-environment').hidden = !level?.free || wallDesign();
+  $('free-example').hidden=wallDesign();
+  $('free-clear').textContent=wallDesign()?'Clear the wall':'Clear the table';
   if(level?.free){const g=activeDesign?.draft.base?.ground;$('environment-kind').value=g?.kind==='flume'?(g.discharge_m3_s>0?'river':'channel'):'table';
     $('river-flow').value=(g?.discharge_m3_s||.1)*1000;}
   if (!level?.free || !activeDesign) return;
@@ -7027,7 +7073,7 @@ function showSandboxScreen(show = true) {
   add(head, 'h1', {textContent: 'Sandbox'});
   const more = createLevelMoreMenu(box,{id:'design-more'}).content;
   renderReturnLink(more);
-  renderDesignGallery({box,head,store:designStore(),templates:sandboxTemplates,
+  renderDesignGallery({box,head,store:designStore(),templates:sandboxTemplates,wallTemplate,
     openDesign:d=>chooseLevel('free',d),
     createDesign:(name,draft,template)=>{const d=newDesign(name,draft);if(template){checkpointDesign(d);persist();}return d;}});
 }
@@ -7190,7 +7236,7 @@ function startOver(keep) {
   tuneArmed = false; runArmed = false; editorMode = 'move';
   endGhost();
   if (!keep && (placements.length || (level.free && activeDesign?.draft.base))) remember();
-  if (!keep && level.free && activeDesign) { activeDesign.draft.base = null; framedFree = false; }
+  if (!keep && level.free && activeDesign) { if(!wallDesign())activeDesign.draft.base = null; framedFree = false; }
   if (!keep) { placements = []; placedCost = []; placedEnergy = {}; helped = false; }
   renderTray(); renderPlaced();
   return rebuildLevel(false).then(() => {
@@ -7421,7 +7467,11 @@ async function chooseLevel(id, design = null) {
     }
     activeDesign = design || store.items.find(d => d.id === store.last) || store.items[0] || newDesign('Untitled design');
     store.last = activeDesign.id; persist();
+    if(wallDesign())Object.assign(level,{tray:clone(wallTemplate.tray),title:'Wall workshop',
+      brief:'Drag mounted pieces left, right, up and down. Gravity carries the marble between them.'});
   }
+  $('scene-note').textContent=wallDesign()?'Drag pieces on the wall · Drag empty space to pan · Pinch or wheel to zoom':'Drag a ghost to move · Drag empty space to turn · Wheel or trackpad pinch to zoom';
+  for(const id of ['view-left','view-right','view-up','view-down']){const label=wallDesign()?`Pan ${id.slice(5)}`:({'view-left':'Turn the view left','view-right':'Turn the view right','view-up':'Look from above','view-down':'Look from the side'})[id];$(id).title=label;$(id).setAttribute('aria-label',label);}
   endGhost(); tuneArmed=false;runArmed=false;runRequest++;editorMode='move';shownMode='';gridSnapEnabled=true;objectSnapEnabled=true;lastEdited=null;closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
   for(const id of ['grid-snap','object-snap'])$(id)?.setAttribute('aria-pressed','true');
   placements = []; placedCost = []; placedEnergy = {}; helped = false; lastRun = null; framedFree = false;
@@ -7462,7 +7512,7 @@ async function chooseLevel(id, design = null) {
     'advanced-capacitor':'Increase capacitance to store enough energy before time runs out.'};
   const objective=objectives[level.variant?.family||level.id]||level.brief.split(/(?<=\.)\s+(?=[A-Z])/)[0];
   introduction=levelIntroduction(level,{title:levelTitle(level),objective});
-  $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:level.free?'Build anything. Click a piece to adjust it.':objective}));
+  $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:wallDesign()?'Drag mounted pieces on the wall. Run to watch the marble.':level.free?'Build anything. Click a piece to adjust it.':objective}));
   $('pull-tool').hidden=true;$('restart-pieces').hidden=true;
   $('scene-goal').title = level.free ? 'Build anything' : `Goal within ${level.time_s} s`;
   $('goal-line').textContent = level.free
@@ -7512,7 +7562,7 @@ $('sandbox-build-description').addEventListener('click',()=>{selectPhonePanel('h
 
 // A free build's own buttons: clear the table, or set out the example.
 $('free-clear').addEventListener('click', () => {
-  if ((!placements.length && !activeDesign?.draft.base) || confirm('Take every piece and the base machine off the table? Saved versions are kept.')) {
+  if ((!placements.length && !activeDesign?.draft.base) || confirm(wallDesign()?'Take the pieces off the wall? Saved versions and the wall are kept.':'Take every piece and the base machine off the table? Saved versions are kept.')) {
     startOver(false);
   }
 });
@@ -7938,8 +7988,8 @@ async function startGame() {
   // module, including when its prediction timeline changes its height.
   new ResizeObserver(() => controls.parentElement.style.setProperty('--control-height',`${controls.offsetHeight+8}px`)).observe(controls);
   for (const [id, change] of [
-    ['view-left', () => { azimuth -= .2; }], ['view-right', () => { azimuth += .2; }],
-    ['view-up', () => { elevation=Math.min(1.45,elevation+.15); }], ['view-down', () => { elevation=Math.max(.08,elevation-.15); }],
+    ['view-left', () => { if(wallDesign())panWall(40,0);else azimuth -= .2; }], ['view-right', () => { if(wallDesign())panWall(-40,0);else azimuth += .2; }],
+    ['view-up', () => { if(wallDesign())panWall(0,40);else elevation=Math.min(1.45,elevation+.15); }], ['view-down', () => { if(wallDesign())panWall(0,-40);else elevation=Math.max(.08,elevation-.15); }],
     ['view-in', () => { distance = Math.max(.4, distance / 1.2); }], ['view-out', () => { distance = Math.min(40, distance * 1.2); }]
   ]) $(id).addEventListener('click',()=>{follow=false;$('follow').setAttribute('aria-pressed','false');change();freshView();});
   for(const id of ['view-in','view-out'])repeatOnHold($(id),()=>{follow=false;$('follow').setAttribute('aria-pressed','false');distance=Math.max(.4,Math.min(40,distance*(id==='view-in'?1/1.2:1.2)));freshView();});
@@ -7956,7 +8006,7 @@ async function startGame() {
   }
   await openAnonymousProfile();
   const r = await api({op: 'levels'});
-  levels = r.levels; freeLevel = r.free || null; sandboxBase = r.sandbox_base; sandboxTemplates = r.sandbox || [];
+  levels = r.levels; freeLevel = r.free || null; sandboxBase = r.sandbox_base; sandboxTemplates = r.sandbox || [];wallTemplate=r.wall_sandbox||null;
   // Browse first. A landing page does not build a world or replace /play
   // with the last puzzle's URL before the player chooses a level.
   $('page-loading').hidden = true;

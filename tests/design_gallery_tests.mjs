@@ -3,6 +3,16 @@ import assert from 'node:assert/strict';
 import {previewGeometry} from '../client/voxel-lab/design-gallery.mjs';
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-10, `${a} != ${b}`);
+
+test('wall thumbnails look at the front and leave the retaining surface out',()=>{
+  const geometry=previewGeometry({base:{build_surface:{kind:'wall'},parts:[
+    {name:'workshop backing',shape:'box',at_m:[0,2,0],size_m:[6,4,.02]},
+    {name:'cup',shape:'box',at_m:[1,.5,.3],size_m:[.5,.1,.5]}]},
+    placements:[{piece:'marble',x_m:-1,height_m:3}]});
+  assert.equal(geometry.length,2);
+  assert.deepEqual(geometry[1],{kind:'marker',point:[-1,-3],name:'marble'});
+  near(Math.min(...geometry[0].points.map(p=>p[1])),-.55);
+});
 test('part thumbnails use declared dimensions, position and the same Rx Ry Rz pose convention', () => {
   const draft = {base: {parts: [{name: 'plank', shape: 'box', material: 'oak', at_m: [2, 3, -1],
     size_m: [2, .1, .4], turn_deg: [0, 90, 0]}]}, placements: []};

@@ -41,6 +41,7 @@ import sandbox_combinations
 import sandbox_variants
 import sandbox_motion
 import sandbox_pulleys
+import sandbox_wall
 
 SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations, sandbox_motion, sandbox_pulleys)
 EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel', 'easy-river-wheel',
@@ -298,6 +299,11 @@ def requested_level(data):
             raise ValueError('Names starting with "your " are reserved for tray pieces')
         level['machine'] = copy.deepcopy(base)
         level['custom_base'] = True
+        if sandbox_wall.validate(base):
+            level['wall_mode'] = sandbox_wall.surface()
+            level['title'] = 'Wall workshop'
+            level['brief'] = 'Drag pieces on the wall. Gravity carries the marble between them.'
+            level['tray'] = sandbox_wall.tray()
         sockets = [d for d in (base.get('electrical') or {}).get('devices',[]) if d.get('kind')=='socket']
         if len(sockets)==1 and set(sockets[0].get('terminal_parts',{}))=={'plus','minus'}:
             holder = sockets[0]
@@ -836,6 +842,8 @@ def _assemble(level, placements, lenient=False):
             builders = dict(PIECES)
             for module in SANDBOX_MODULES:
                 builders.update(module.PIECES)
+        if level.get('wall_mode'):
+            builders = sandbox_wall.PIECES
         made = builders[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)
         merge_fragment(spec, made)
     compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
@@ -844,6 +852,10 @@ def _assemble(level, placements, lenient=False):
     if stands:
         spec['parts'] += stands
         compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
+    if level.get('wall_mode'):
+        problems=sandbox_wall.bounds_problems(compiled)
+        if problems and not lenient:raise LevelRefused(problems)
+        compiled.setdefault('problems',[]).extend(problems)
     return spec, checked, cost, compiled
 
 
@@ -2166,7 +2178,7 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
 def public(level):
     """What the page needs to show a level: never its solution."""
     result = {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
-                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding','release_to_start','camera_min_m','water_controls','assembly_tutorial') if k in level}
+                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding','release_to_start','camera_min_m','water_controls','assembly_tutorial','wall_mode') if k in level}
     if not level.get('free'):
         # Setup guidance exposes counts only, never positions or adjustments.
         required = {}

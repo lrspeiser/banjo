@@ -964,7 +964,7 @@ if(BANJO_BUILD_TESTS)
                     set_tests_properties(banjo_sandbox_apparatus_tests_${apparatus_shard} PROPERTIES
                         TIMEOUT 600 LABELS "machine;apparatus")
                 endforeach()
-                foreach(sandbox_suite mechanics water_launch combinations motion)
+                foreach(sandbox_suite mechanics water_launch combinations motion wall)
                     add_test(NAME banjo_sandbox_${sandbox_suite}_tests COMMAND ${Python3_EXECUTABLE}
                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sandbox_${sandbox_suite}_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                     set_tests_properties(banjo_sandbox_${sandbox_suite}_tests PROPERTIES TIMEOUT 600

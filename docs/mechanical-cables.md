@@ -1,5 +1,11 @@
 # Physical electrical leads — October 16, 2026
 
+October 18 wall construction adds an opt-in XY service-coil layout. It changes
+only the initially manufactured path, retaining stock length, native mass,
+resistance, self/contact constraints and pull-out. Ordinary 3D stock keeps its
+XZ construction layout. The wall motor's two 2 m leads sag and stay connected
+over the 2 s native regression; the missing return leaves its motor stopped.
+
 ## Delivered scope
 
 All explicit electrical graph wires, solar charging cords and the old

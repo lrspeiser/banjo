@@ -1,5 +1,63 @@
 # Puzzles on the machine (/play)
 
+October 18 wall workshop: **Sandbox → Build on a wall** creates a saved design
+with a 6 × 4 m backing and a 0.62 m deep retaining lane. This is a separate
+creation action beside Add New Design; the five example cards and existing
+3D saves remain available. Its versioned `build_surface` declaration preserves
+the wall across save, share, reopen, Undo and Clear. Clear removes placed
+pieces and keeps the board. Foundation bodies cannot be picked up. A saved
+surface missing its backing, guard or mounting is refused.
+
+The front camera pans instead of orbiting. Dragging a piece changes X and
+height together, at fixed Z = 0.30 m; wheel/pinch still zooms. The 5 cm grid is
+on the wall. Track/seesaw rotation is about Z. Size and slope controls use the
+existing direct handles and exact-value fallback. Controls on all ordinary
+3D designs retain their previous axes. The wall library has 14 piece types:
+wall track (length, slope, high-end stop), funnel (mouth width), catching cup
+(width), peg (diameter), seesaw (length, starting tilt), marble (diameter,
+material), individual gear (teeth, tooth size, tooth alignment, height), powered gear (same
+size controls, motor command), battery, switch, bulb, wire, resistor and
+capacitor. Electrical ratings retain the existing DC models. Wires default
+to 2 m stock; clear service loops are manufactured in the XY plane near the
+sockets, then native rods fall under gravity, collide and can disconnect.
+The powered gear uses a declared 0.08 N m stall / 8 rad/s motor rather than
+the larger bench motor; this stays inside the native coupling step bound.
+The wall builder prompt uses explicit X/height coordinates and these pieces.
+Reusable 3D blueprints are hidden in wall mode pending planar group placement;
+wall versions and complete shared designs already preserve their assemblies.
+
+Physical qualification: `sandbox_wall_tests.py` composes every piece, opens
+native shapes and checks mounted fixtures drift less than 1 mm over 1 s at
+1/240 s. The starter's 0.08 m glass, oak and iron marbles all contact each of
+three tracks and the cup, with starts shifted −2/0/+2 mm (nine runs). They
+settle in the cup at about 6.88–7.02 s, costing 0.29–0.34 s unpaced per 10 s
+run locally. Moving the starting track away sends the marble to the ground.
+The open funnel passes a marble to a cup; a falling marble visibly tips the
+free seesaw while the unloaded seesaw stays balanced. The paired wall motor
+test turns 2.475 rad in 2 s with both leads, and stays still with a missing
+return. The wires retain their 2 m material length, sag and stay connected;
+12-tooth gears with 24 mm module, 15° receiving-wheel phase and 0.30 m centre
+spacing transmit torque through native contact; at 0.60 m spacing the passive
+wheel stays still. The existing rectangular teeth can jam when too close;
+they are not an involute profile and there is no imposed gear-ratio joint.
+largest measured joint gap was 0.765 mm. Native DC source energy 1.071799 J,
+shaft work 0.154358 J, heat 0.918141 J, coupling residual 0.0006994 J,
+electrical residual −8.22e−13 J. These are the existing electrical/coupling
+ledgers, not full-world momentum or energy closure (contacts, supports and
+gravity exchange energy/momentum with the environment). No native laws or
+existing level goals/tolerances changed. Exact compounds do not honour a
+declaration's fixed flag; this mode therefore adds actual native fixed joints
+to anchored brackets, including the clear front guard. Mounts remain ideal
+supports, not a bolt failure or wall-deformation model. The guard stays out
+of picking and rendering so it cannot cover the editor. Depth confinement is
+physical 3D contact; runtime positions and velocities are never projected
+onto the wall plane. Sources, plumbing and optics are not in this first wall
+library. This is not an all-components wall mode or an exact 2D solver.
+
+Browser checks cover desktop 1280×860 and phone 390×844 / 844×390: planar
+dragging, front-facing pan, Undo, 14 thumbnails, save/reopen, Run and Reset.
+Headless local checks use CPU SwiftShader under the shared GPU queue policy.
+
 October 18 Sandbox marble journeys: the five gallery cards are now full
 editable machines built in `scripts/sandbox_showcases.py`. Stations only
 observe native motion, contact, electrical load and destination volumes; no
