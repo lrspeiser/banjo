@@ -2861,6 +2861,11 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('machineDesign().draft.base'),surface)
                 self.click_visible('Undo');self.wait(READY,30)
                 self.assertEqual(self.js('machinePlacements()'),saved['draft']['placements'])
+                if width==1280:
+                    for rotated_width,rotated_height in ((390,844),(844,390),(1280,860)):
+                        self.page.send('Emulation.setDeviceMetricsOverride',dict(width=rotated_width,height=rotated_height,deviceScaleFactor=1,mobile=rotated_width!=1280))
+                        self.wait('machineCamera().settled',30);self.paint()
+                        self.assertTrue(self.js("(()=>{const v=document.getElementById('view').getBoundingClientRect();return [[-3,0,.3],[3,4,.3]].map(machineScreenPoint).every(p=>p[0]>=v.left&&p[0]<=v.right&&p[1]>=v.top&&p[1]<=v.bottom);})()"),'Rotating an open wall must preserve the board framing')
 
     def test_wall_wires_connect_at_scene_sockets_and_drive_the_native_motor(self):
         import sandbox_wall

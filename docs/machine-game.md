@@ -57,6 +57,11 @@ library. This is not an all-components wall mode or an exact 2D solver.
 Browser checks cover desktop 1280×860 and phone 390×844 / 844×390: planar
 dragging, front-facing pan, Undo, 14 thumbnails, save/reopen, Run and Reset.
 Headless local checks use CPU SwiftShader under the shared GPU queue policy.
+Manual desktop-to-phone rotation exposed an aspect-fit error that fresh-phone
+loads did not show. Wall resize now preserves the ratio to the board's own
+width/height fit, retaining the player's pan and relative zoom. The browser
+regression rotates an already-open board through portrait, landscape and
+desktop, checking both opposite board corners remain within the scene.
 
 October 18 Sandbox marble journeys: the five gallery cards are now full
 editable machines built in `scripts/sandbox_showcases.py`. Stations only

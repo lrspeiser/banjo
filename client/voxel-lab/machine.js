@@ -2191,11 +2191,15 @@ function resize() {
   const w = view.clientWidth, h = view.clientHeight;
   if (!w || !h) return;
   const vertical = camera.fov * Math.PI / 360;
+  const oldAspect=camera.aspect;
   const oldHalf = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
   renderer.setSize(w, h, false); camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
   const half = Math.min(vertical, Math.atan(Math.tan(vertical) * camera.aspect));
   // Preserve the framing when the phone rotates.
-  distance = Math.min(40, distance * Math.sin(oldHalf) / Math.sin(half));
+  if(wallDesign()) {
+    const board=activeDesign.draft.base.build_surface;
+    distance=Math.min(40,distance*Math.max(board.height_m,board.width_m/camera.aspect)/Math.max(board.height_m,board.width_m/oldAspect));
+  } else distance = Math.min(40, distance * Math.sin(oldHalf) / Math.sin(half));
   positionLevelIntroduction();
 }
 addEventListener('resize', resize);
