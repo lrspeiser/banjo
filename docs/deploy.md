@@ -432,3 +432,11 @@ The electrical integration group now partitions its 49 existing methods into
 hit that deadline after 48 passing methods on one CI runner, although the prior
 complete Linux run passed. Combinations have their own integration runner.
 No test is removed and the unbatched CLI retains all 49 methods.
+
+October 17 routed-rope checkpoint: the authored game group reached its 600 s
+deadline near the end of its 94 cases on Linux. Game checks now run in two
+disjoint batches (engine scenarios; declaration, free-build and goal checks),
+each retaining the 600 s deadline. A partition regression verifies every case
+runs exactly once. CMake and CI use the same partition; the unbatched CLI still
+runs everything, as does the test-package job. No physical timestep, goal,
+negative control or assertion tolerance changed in this scheduling correction.

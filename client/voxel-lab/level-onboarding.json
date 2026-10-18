@@ -154,6 +154,8 @@
           "b",
           "at_m",
           "at_b_m",
+          "anchor_a",
+          "anchor_b",
           "via"
         ]
       },
@@ -212,6 +214,8 @@
           "b",
           "at_m",
           "at_b_m",
+          "anchor_a",
+          "anchor_b",
           "via"
         ]
       },
@@ -387,6 +391,8 @@
           "b",
           "at_m",
           "at_b_m",
+          "anchor_a",
+          "anchor_b",
           "via"
         ]
       },

@@ -35,6 +35,10 @@ October 17 audit implementation, checkpoint 2:
 * Manual switches enter Run ready at time zero. Dragging starts native time;
   pressing Run again explicitly runs without that input. Build cannot release
   a spring latch. Tanks offer Adjust tap while building, with live opening in Run.
+  Already-closed hand switches start normally on the first Run. Control cards
+  apply mode visibility synchronously when created or editing begins, rather
+  than waiting for an animation frame. The rope lesson's interaction data also
+  retains the surface anchors produced by ring selection.
   Preparation progress appears only while waiting to run, outside the workspace;
   background preparation does not add height to the controls panel.
 * Measured locally: 30 native rope/contact/reaction/refinement scenarios pass;

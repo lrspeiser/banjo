@@ -3703,8 +3703,14 @@ class Puzzles(unittest.TestCase):
                 before=self.js("window.machineSwitchState().handles.find(h=>h.name==='control').at_m")
                 self.assertTrue(self.js("document.querySelector('[aria-label=\"Drag control handle\"]').disabled"),'Build cannot operate a switch')
                 x,y=self.switch_handle_target()
+                self.wait("machineCableSetupState().t>0",10)
+                self.page.send('Network.enable');self.page.events.clear()
                 self.click_visible('Drag control handle')
-                self.assertEqual(self.js('machineCableSetupState().t'),0,'a simple tap does not start the machine')
+                requests=[e['params']['request'] for e in self.page.events if e['method']=='Network.requestWillBeSent']
+                self.assertFalse(any(json.loads(r['postData']).get('op')=='mechanical_switch_pull'
+                    for r in requests if r['url'].endswith('/api/machine') and 'postData' in r),
+                    'a simple tap never applies handle force')
+                self.assertTrue(self.js("machineSwitchState().handles.find(h=>h.name==='control').closed"))
                 self.assertIsNone(self.js('window.machineSwitchState().drag'))
                 x,y=self.switch_handle_target()
                 self.drag([x,y],[x,y-85],touch=width!=1280,steps=12)

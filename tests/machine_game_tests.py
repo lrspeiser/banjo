@@ -49,6 +49,16 @@ EMPTY_START_LEVELS = ('easy-river-wheel',)
 
 
 class Tray(unittest.TestCase):
+    def test_game_batches_are_disjoint_and_cover_every_case(self):
+        batches=game_test_batches()
+        ids=[{test.id() for test in batch} for batch in batches]
+        full=unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
+        expected={test.id() for group in full for test in group}
+        self.assertFalse(ids[0]&ids[1])
+        self.assertEqual(ids[0]|ids[1],expected)
+        self.assertTrue(all(type(test) is Engine for test in batches[0]))
+        self.assertTrue(all(type(test) is not Engine for test in batches[1]))
+
     def test_setup_requirements_expose_only_piece_counts(self):
         self.assertEqual(mg.public(mg.level_by_id('easy-power'))['required_pieces'],{'battery':1,'wire':2})
         self.assertEqual(mg.public(mg.level_by_id('laser'))['required_pieces'],{'mirror':2})
@@ -2157,5 +2167,22 @@ class Engine(unittest.TestCase):
                     self.assertTrue(all(r['error'] is None for r in t['results']), t['results'])
 
 
+def game_test_batches():
+    cases=[test for cls in list(globals().values())
+           if isinstance(cls,type) and issubclass(cls,unittest.TestCase)
+           for test in unittest.defaultTestLoader.loadTestsFromTestCase(cls)]
+    return [[test for test in cases if type(test) is Engine],
+            [test for test in cases if type(test) is not Engine]]
+
+
 if __name__ == '__main__':
+    shard=next((arg for arg in sys.argv[1:] if arg.startswith('--shard=')),None)
+    if shard:
+        index,count=map(int,shard.split('=',1)[1].split('/'))
+        if count!=2 or not 0<=index<count:raise SystemExit('game batches use INDEX/2')
+        sys.argv.remove(shard)
+        batches=game_test_batches()
+        print(f'Game batch {index+1}/2: {len(batches[index])} of {sum(map(len,batches))} cases',flush=True)
+        result=unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(batches[index]))
+        raise SystemExit(0 if result.wasSuccessful() else 1)
     unittest.main(verbosity=2)

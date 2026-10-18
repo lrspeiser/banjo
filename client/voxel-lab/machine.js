@@ -3259,6 +3259,7 @@ function startGhost(p, index, keepPlace = false) {
   ghost = {p, index, was: index < placements.length ? placements[index] : null, fits: true, problems: [],
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {},card:trayItem(p.piece).focus_knob,
            frameOnAdd:index>=placements.length};
+  updateLiveControlAvailability();
   if(p.piece==='base_object')Object.assign(ghost,{baseObject:sandboxObjects.find(o=>o.id===p.object),originalBase:clone(activeDesign.draft.base || sandboxBase)});
   view.classList.add('placing'); view.classList.remove('pickable', 'looking');
   looking = false;
@@ -3781,13 +3782,8 @@ function sceneControlObstacles(rect) {
   }
   return boxes;
 }
-function positionLiveControls(){
-  const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#piece-editor,#level-done')]
-    .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
+function updateLiveControlAvailability(){
   for(const card of liveCards.children){
-    let leader=liveControlLeaders.get(card);
-    if(!leader){leader=document.createElementNS(controlLeaders.namespaceURI,'line');controlLeaders.append(leader);liveControlLeaders.set(card,leader);}
-    leader.style.display='none';
     const released=card.dataset.restraint && readouts.joints?.some(j=>j.name===card.dataset.restraint&&j.attached===false);
     const release=card.querySelector('[data-release]');
     if(released) {
@@ -3798,7 +3794,18 @@ function positionLiveControls(){
     if(release){release.hidden=currentMode()!=='run';release.disabled=currentMode()!=='run'||!session||startingRun||liveControlPending||released||release.dataset.queuedRelease==='true';}
     if(adjust)adjust.disabled=!session||playing||world.t>0||liveControlPending||released||release.dataset.queuedRelease==='true';
     for(const operation of card.querySelectorAll('button:not(.spring-adjust),label'))operation.hidden=currentMode()!=='run';
-    card.hidden=Boolean(ghost)||(currentMode()!=='run'&&!adjust)||document.body.matches('.on-levels,.on-sandbox,.scene-win');if(card.hidden)continue;
+    card.hidden=Boolean(ghost)||(currentMode()!=='run'&&!adjust)||document.body.matches('.on-levels,.on-sandbox,.scene-win');
+  }
+}
+function positionLiveControls(){
+  updateLiveControlAvailability();
+  const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#piece-editor,#level-done')]
+    .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
+  for(const card of liveCards.children){
+    let leader=liveControlLeaders.get(card);
+    if(!leader){leader=document.createElementNS(controlLeaders.namespaceURI,'line');controlLeaders.append(leader);liveControlLeaders.set(card,leader);}
+    leader.style.display='none';
+    if(card.hidden)continue;
     const anchor=card.anchor.clone().project(camera);card.hidden=Math.abs(anchor.z)>1||Math.abs(anchor.x)>1||Math.abs(anchor.y)>1;if(card.hidden)continue;
     if(card.matches(':active')){occupied.push(card.getBoundingClientRect());continue;}
     const x=rect.left+(anchor.x+1)*rect.width/2,y=rect.top+(1-anchor.y)*rect.height/2;
@@ -6754,6 +6761,7 @@ function renderMachineControls() {
     }
   }
   controls.hidden = true; controls.open = false; $('machine-control-status').textContent = '';
+  updateLiveControlAvailability();
 }
 
 function describeKnobs(p, t) {
@@ -7099,7 +7107,7 @@ async function rebuildLevel(start, {takeOver=false,prepared=null}={}) {
     // Its goal is about a piece not placed yet: shown, not run.
     if (opened.needs) $('verdict').textContent = opened.needs;
     else if (start && level.release_to_start) clockMessage('Ready · press Release spring beside the spring');
-    else if(start && (machine?.electrical?.devices||[]).some(d=>d.handle)) clockMessage('Ready · drag a highlighted handle to start, or choose Run again');
+    else if(start && waitingForManualHandle()) clockMessage('Ready · drag a highlighted handle to start, or choose Run again');
     else if (start) await setPlaying(true);
     if (!start) schedulePreview(200);
   } catch (e) {
@@ -7960,6 +7968,9 @@ function ghostInTheWay() {
 // the pieces and plays it; while it plays it pauses, then continues; after
 // the run, it runs it again.
 let startingRun = false;
+// Closed switches already complete their path. Only an initially open hand
+// control needs time zero held for the player's first physical operation.
+function waitingForManualHandle(){return (machine?.electrical?.devices||[]).some(d=>d.handle&&!d.closed);}
 async function preparedForRun(key) {
   const electrical=machine?.electrical||{};
   const automatic=!level.free&&!level.release_to_start&&!(machine?.spouts?.length)&&
@@ -8000,7 +8011,7 @@ async function runLevel() {
       return;
     }
     if (session && world.t > 0 && !scored) { await setPlaying(true); return; }
-    const manualHandle=(machine?.electrical?.devices||[]).some(d=>d.handle);
+    const manualHandle=waitingForManualHandle();
     if(session&&runArmed&&world.t===0&&builtSetupKey===currentSetupKey()&&manualHandle){await setPlaying(true);return;}
     if (session && cableSetupActive && builtCanRun && world.t === 0 && !scored && builtSetupKey === currentSetupKey() && !level.release_to_start&&!manualHandle) {
       clearTimeout(rebuildTimer);
