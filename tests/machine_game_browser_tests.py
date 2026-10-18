@@ -2786,6 +2786,60 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js("Boolean(document.getElementById('saved-designs').compareDocumentPosition(document.getElementById('prebuilt-designs')) & Node.DOCUMENT_POSITION_FOLLOWING)"))
                 self.assertLessEqual(self.js('document.body.scrollWidth'),width)
 
+    def test_marble_showcases_load_run_reset_and_fit_the_three_screen_shapes(self):
+        expected=['Marble skyscraper','Waterworks express','Solar pinball factory','Light the fuse','Electric marble relay']
+        for width,height,name,stages in ((1280,860,expected[0],6),(390,844,expected[1],6),(844,390,expected[0],6)):
+            with self.subTest(viewport=(width,height),machine=name):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything')
+                self.wait("document.getElementById('sandbox-screen').hidden===false",30)
+                self.assertEqual(self.js("[...document.querySelectorAll('#prebuilt-designs button')].map(b=>b.getAttribute('aria-label').replace('Start from ',''))"),expected)
+                self.press('Start from '+name);self.wait(READY,90)
+                initial=self.js('machineBodies().traveller')
+                self.wait('machineCamera().settled',30)
+                camera=self.js('machineCamera()')
+                self.assertAlmostEqual(camera['elevation'],.65,places=5)
+                self.assertEqual(self.js('machinePlacements().length'),0)
+                self.assertGreater(self.js('Object.keys(machineBodies()).length'),60)
+                self.assertEqual(self.js("document.querySelectorAll('#stations li').length"),stages)
+                self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+                for ident in ('start','reset'):
+                    self.assertTrue(self.js(f"(()=>{{const b=document.getElementById('{ident}'),r=b.getBoundingClientRect();return r.height>=44&&r.width>=44&&r.top>=0&&r.bottom<=innerHeight&&b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}})()"))
+                self.click_visible('Run')
+                self.wait(f"document.querySelectorAll('#stations li.done').length==={stages}",60)
+                self.assertAlmostEqual(self.js('machineCamera().distance'),camera['distance'],places=5,
+                    msg='The overview must not zoom inside the apparatus during a run')
+                if self.js("document.getElementById('start').textContent==='Pause'"):self.click_visible('Pause')
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'marble-showcase-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Reset');self.wait(READY,90)
+                self.assertEqual(self.js('machineBodies().traveller'),initial)
+                self.assertEqual(self.js('machineDesign().draft.base.title'),name)
+
+    def test_each_new_marble_showcase_runs_and_saves_its_prepared_base(self):
+        self.anonymous_levels();self.press('Sandbox: build anything')
+        for name,count in (('Marble skyscraper',6),('Waterworks express',6),('Solar pinball factory',6),
+                           ('Light the fuse',5),('Electric marble relay',8)):
+            with self.subTest(machine=name):
+                self.press('Start from '+name);self.wait(READY,90)
+                self.wait('machineCamera().settled',30)
+                before=self.js('machineDesign().draft.base')
+                drawn=set(self.js('machineRenderedBodies()'))
+                self.assertGreater(len(drawn),60)
+                self.click_visible('Run')
+                self.wait(f"document.querySelectorAll('#stations li.done').length==={count}",90)
+                if self.js("document.getElementById('start').textContent==='Pause'"):self.click_visible('Pause')
+                rendered=set(self.js('machineRenderedBodies()'))
+                self.assertIn('traveller',rendered)
+                supports={n for n in drawn if n.startswith(('track ','coaster ','relay coaster ','factory slide ','optical bridge ','switch approach '))}
+                self.assertTrue(supports<=rendered,'The course remains visible; consumed cord may disappear')
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/('marble-'+name.lower().replace(' ','-')+'.png')).write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Save version');self.anonymous_cloud_saved()
+                self.assertEqual(self.js('machineDesign().draft.base'),before)
+                self.assertEqual(self.js('machineDesign().versions.at(-1).draft.base'),before)
+            self.press('All designs')
+
     def test_level_details_and_more_are_opt_in_without_starting_a_world(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

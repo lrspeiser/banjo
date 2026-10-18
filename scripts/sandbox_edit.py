@@ -9,8 +9,9 @@ import math
 import machine_world as mw
 
 
-def objects(base):
-    compiled = mw.compile_spec(base)
+def objects(base, *, compiled=None):
+    # Internal callers may reuse the already validated, unchanged setup.
+    if compiled is None:compiled = mw.compile_spec(base)
     groups = {('kit:' + k['name']): {'name': k['name'], 'parts': []}
               for k in base.get('kits', [])}
     for p in compiled['parts']:
@@ -38,13 +39,13 @@ def references(value, names):
     return False
 
 
-def edit(base, object_id, delta=None, remove=False):
+def edit(base, object_id, delta=None, remove=False, *, compiled=None):
     original = copy.deepcopy(base)
-    rows = objects(original)
+    if compiled is None:compiled = mw.compile_spec(original)
+    rows = objects(original,compiled=compiled)
     selected = next((r for r in rows if r['id'] == object_id), None)
     if not selected: raise ValueError('That Sandbox object is no longer in the design.')
     names = set(selected['parts'])
-    compiled = mw.compile_spec(original)
     kit_names = {p['kit'] for p in compiled['parts'] if p['name'] in names and p.get('kit')}
     if remove:
         original['parts'] = [p for p in original.get('parts', []) if p['name'] not in names]
@@ -92,6 +93,13 @@ def edit(base, object_id, delta=None, remove=False):
                 for endpoint, point in (('a', 'over_a_m'), ('b', 'over_b_m')):
                     if j.get(endpoint) in names and point in j:
                         j[point] = [a+b for a, b in zip(j[point], delta)]
+        for strand in original.get('strands',[]):
+            a,b=strand.get('a_body') in names,strand.get('b_body') in names
+            points=strand['path_m']
+            # Construction endpoints follow their own body. Interior routing
+            # points stay at their guides unless the whole rope is translated.
+            indices=range(len(points)) if a and b else ([0] if a else [-1] if b else [])
+            for i in indices:points[i]=[v+d for v,d in zip(points[i],delta)]
         for section in [original] + [original[k] for k in ('electrical', 'light', 'thermo') if isinstance(original.get(k), dict)]:
             for key, values in section.items():
                 if key in ('parts', 'kits', 'joints') or not isinstance(values, list): continue

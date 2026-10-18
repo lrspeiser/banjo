@@ -142,4 +142,64 @@ class SolarLift(unittest.TestCase):
                           'shaft_j', ledger['shaft_j'], 'coupling_j', ledger['coupling_residual_j'])
 
 
+class MarbleShowcases(unittest.TestCase):
+    def setUp(self):
+        if not ENGINE.is_file():
+            if os.environ.get('BANJO_MACHINE_ENGINE') == 'required':self.fail('native engine required')
+            self.skipTest('native engine unavailable')
+
+    def run_machine(self,spec,seconds=20):
+        with tempfile.TemporaryDirectory() as logs:
+            return mw.rehearse(spec,ENGINE,Path(logs),seconds=seconds,wall_limit_s=120,
+                               track=['traveller'],after_s=.25)
+
+    def test_five_marble_journeys_finish_in_order_with_native_nudges(self):
+        for row in mg.sandbox_templates():
+            compiled=mw.compile_spec(row['base'])
+            self.assertLessEqual(len(compiled['parts']),mw.MAX_PARTS)
+            for seed in (0,1,2):
+                with self.subTest(machine=row['name'],seed=seed):
+                    result=self.run_machine(mg.nudged(compiled,seed) if seed else compiled)
+                    self.assertIsNone(result['error'],result)
+                    self.assertTrue(result['complete'],result['world_time_s'])
+                    self.assertTrue(all(s['done'] for s in result['stations']),result['stations'])
+                    times=[s['at_s'] for s in result['stations']]
+                    self.assertEqual(times,sorted(times),'Stations observe the causal sequence')
+                    pts=result['paths']['traveller']['points']
+                    length=sum(math.dist(a[1:],b[1:]) for a,b in zip(pts,pts[1:]))
+                    self.assertGreater(length,8,'The marble must travel through the machine')
+                    print('MARBLE JOURNEY',row['name'],seed,'stations',times,'path_m',round(length,2),
+                          'sim_s',result['world_time_s'],'wall_s',result['wall_s'],flush=True)
+
+    def test_removing_the_driving_input_stops_the_physical_handoff(self):
+        for row in mg.sandbox_templates():
+            spec=row['base']
+            if row['name']=='Waterworks express':spec['spouts'][0]['valve_open']=False
+            elif row['name']=='Solar pinball factory':spec['sun']['irradiance_w_m2']=0
+            elif row['name']=='Light the fuse':spec['batteries'][0]['charge_j']=0
+            else:
+                ball=next(p for p in spec['parts'] if p['name']==('starter marble' if row['name']=='Electric marble relay' else 'traveller'))
+                ball['at_m'][2]+=4
+            with self.subTest(machine=row['name']):
+                result=self.run_machine(mw.compile_spec(spec),seconds=16)
+                self.assertIsNone(result['error'])
+                self.assertFalse(result['stations'][-1]['done'],result['stations'])
+                release=next(s for s in result['stations'] if any(word in s['title'] for word in
+                    ('swinging door','starting gate','carrier rises','draws the gate','metal contact')))
+                self.assertFalse(release['done'],result['stations'])
+                print('MARBLE BLOCKED',row['name'],'wall_s',result['wall_s'],flush=True)
+
+    def test_same_tower_geometry_for_glass_oak_and_iron(self):
+        import sandbox_showcases
+        for material in ('glass','oak','iron'):
+            spec=sandbox_showcases.switchback()
+            next(p for p in spec['parts'] if p['name']=='traveller')['material']=material
+            result=self.run_machine(mw.compile_spec(spec))
+            self.assertIsNone(result['error'])
+            self.assertTrue(result['stations'][2]['done'],result['stations'])
+            # Same size, route, timestep and gravity. Door/domino outcomes may
+            # differ with material mass; do not relabel all three as glass.
+            print('MARBLE MATERIAL',material,'dt_s',mw.DT_S,'stations',result['stations'],flush=True)
+
+
 if __name__ == '__main__': unittest.main()

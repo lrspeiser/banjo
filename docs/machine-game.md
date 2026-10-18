@@ -1,5 +1,83 @@
 # Puzzles on the machine (/play)
 
+October 18 Sandbox marble journeys: the five gallery cards are now full
+editable machines built in `scripts/sandbox_showcases.py`. Stations only
+observe native motion, contact, electrical load and destination volumes; no
+station operates a gate, teleports a marble or assigns a velocity. The four
+storey tower has three descending hairpins, a low swinging door and five
+dominoes. The other journeys connect a finite header tank/wheel/drum/glass
+tube, solar charging/motor/contact gears/carrier, optical cord failure and a
+falling weight/native fibre strand/sliding gate, and a second marble released
+by a physical switch/resistor/capacitor/motor branch. Floors and rails remain
+individual contact bodies on anchored supports. These are prepared apparatus,
+not a new structural deformation or flexible track model.
+
+| Example | Native parts | Nominal last station (s) | Nominal unpaced wall (s) |
+| --- | ---: | ---: | ---: |
+| Marble skyscraper | 103 | 13.667 | 0.81 |
+| Waterworks express | 69 | 10.850 | 1.12 |
+| Solar pinball factory | 68 | 6.617 | 2.65 |
+| Light the fuse | 86 | 10.283 | 9.59 |
+| Electric marble relay | 117 | 13.883 | 17.98 |
+
+Measurements include another 0.25 s after all stations complete. The native
+outer step is 1/240 s, cell size 0.02 m; existing coupled rope/cable solvers
+retain their finer internal steps. Reference plus two 1.5 mm native nudges
+complete every station in order in all five machines. Recorded traveller
+paths are 11.1–17.7 m. Widening the carrier's receiving course to 0.40 m fixes
+the relay's lateral drift at a narrow track entrance; no goal volume or
+numerical tolerance changed. Removing the starting marble, closing the tank,
+removing sunlight, emptying the laser supply or removing the switch marble
+prevents the respective downstream handoff. The optical gate's 4 N sliding
+friction holds against the unburned strand's weight but releases under the
+falling load, with a physical slot in the rails for the sliding bar.
+
+Under identical tower geometry, 0.08 m spheres and 1/240 s outer steps, glass,
+oak and iron all cross the three upper floors and finish the domino chain.
+Their last station times are 13.667, 14.933 and 12.950 s respectively. This is
+a comparative geometry/content regression, not a new material calibration or
+full-pipeline momentum/energy closure result. No native laws changed; no new
+conservation residual is claimed. The existing cable, optics, thermo and
+electrical approximations still apply, including anchored fixtures, lumped
+DC components, prescribed sunlight, simplified channel flow and the optical
+source's declared internal energy feed. These examples do not demonstrate
+every library family or model a device's internals. Optical/electrical chains
+cost more than the tower; the table is local unpaced measurement, not a hosted
+real-time guarantee.
+Waterworks retains the existing ideal winding-drum constraint; its winding
+lead is not a native deformable fibre strand. Light the fuse uses the native
+fibre strand model for its falling-weight/gate connection. No new drum/cable,
+optics, fluid or structural law is claimed by these content changes.
+
+The gallery keeps exactly five cards and leaves saved designs/shared links
+intact. Historical examples remain in compatibility tests and shared-design
+imports, rather than returning as extra cards. Gallery declarations are cached
+per process and copied before use; player edits cannot mutate another copy.
+The prepared designs carry an overview presentation hint. Their initial view
+fits the projected apparatus bounds at a higher angle, and starts with camera
+following off, preventing a phone's view from moving inside the tank or a
+bridge. Explicit camera turn, zoom and following controls still work normally.
+Browser runs complete and reset the tower on desktop/landscape and Waterworks
+on phone portrait with visible 44 px actions and no horizontal overflow.
+The authored-level regression still completes every lesson's reference setup
+in three runs and rejects empty setups; the archived nine-stage Chain reaction
+also completes in order (both checks together: 110.473 s locally).
+All five also complete through ordinary browser Run controls and preserve
+their exact bases in saved versions (106.824 s together). The electrical
+relay's browser run measured 20.408 s compute for 15.567 s world time,
+5.650 s maximum backlog; this remains the expensive example. The Windows
+engine used throughout has SHA-256
+`dc3878fd08e6d8431708becd0ad49bbcce04420059bc65a73efdb27519573c5b`.
+Moving a prepared native strand endpoint now translates only that body's
+endpoint; moving both translates the entire construction route. Unmoved guide
+points remain fixed, and the ordinary surface/solid checks still reject bad
+routes. The focused gate edit regression passes in 0.198 s. The apparatus
+audit uses whole-cell 6 cm translations so thin lens holders retain their
+voxel phase (5 cm can legitimately introduce a 5 mm construction shift).
+Its position, volume, material, reference-pruning and immutability assertions
+are unchanged. Independent apparatus edits run on up to four worker processes;
+the native simulations retain their original timesteps and goals.
+
 October 18 result actions: level wins offer Next level (when one remains),
 Play again and All levels. Manual assembly saving stays in Sandbox under
 Design → Blueprints → Save as blueprint, with reuse through Add a piece → Blueprints.
@@ -374,9 +452,9 @@ construction sample, not a hosted runtime benchmark).
 
 **Knock it off** and **Chain reaction** use 32 V heater supplies to account for
 their real wire loss. Their target zones and deadlines are unchanged.
-Sandbox now shows five combined examples: **Sun powers the flag**, **Chain
-reaction**, **River powers a lift**, **Charge and release**, and **Light, heat
-and gravity**. User designs remain at the top; the full piece library remains
+Sandbox now shows five marble journeys: **Marble skyscraper**, **Waterworks
+express**, **Solar pinball factory**, **Light the fuse**, and **Electric marble
+relay**. User designs remain at the top; the full piece library remains
 available. Historical designs and shared links retain their component support.
 See [the cable model and qualification](mechanical-cables.md) and
 [the release level audit](level-release-audit-2026-10-16.md).

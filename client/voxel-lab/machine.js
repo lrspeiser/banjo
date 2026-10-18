@@ -2073,6 +2073,9 @@ async function poll(mine) {
 
 // ---- camera -------------------------------------------------------------------
 let framedFree = false;
+function overviewDesign() {
+  return level?.free && activeDesign?.draft.base?.presentation?.camera === 'overview';
+}
 function frameCamera(includeGhost=false) {
   // A free build's table corners mark where pieces can go; the view is of what is built.
   const pts = [];
@@ -2114,6 +2117,23 @@ function frameCamera(includeGhost=false) {
   distance = Math.min(40, Math.max(level?.camera_min_m || (zone ? 2.2 : 1.6), 1.12 * radius / Math.sin(half)));
   const pulley=machine?.pulleys?.[0],heading=pulley?.heading||[1,0,0];
   azimuth = pulley?Math.atan2(heading[2],-heading[0])+.12:-.25; elevation = .38;
+  if (overviewDesign()) {
+    // Keep a multi-storey journey in view rather than diving into its pipes or
+    // the underside of the next bridge. Fit projected corners at this angle.
+    goal.set((lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(lo[2]+hi[2])/2);target.copy(goal);
+    azimuth=-.65;elevation=.65;
+    const forward=new THREE.Vector3(Math.cos(elevation)*Math.sin(azimuth),Math.sin(elevation),Math.cos(elevation)*Math.cos(azimuth));
+    const right=new THREE.Vector3(Math.cos(azimuth),0,-Math.sin(azimuth));
+    const up=new THREE.Vector3().crossVectors(forward,right);
+    const vertical=Math.tan(camera.fov*Math.PI/360),horizontal=vertical*camera.aspect;
+    let fit=1.6;
+    for(const x of [lo[0],hi[0]])for(const y of [lo[1],hi[1]])for(const z of [lo[2],hi[2]]){
+      const q=new THREE.Vector3(x,y,z).sub(goal);
+      fit=Math.max(fit,q.dot(forward)+Math.max(Math.abs(q.dot(right))/horizontal,Math.abs(q.dot(up))/vertical));
+    }
+    distance=Math.min(40,fit*1.12);
+    follow=false;$('follow').setAttribute('aria-pressed','false');
+  }
 }
 
 // A scripted view, for scripts/film_machine.py: where the camera looks from

@@ -15,6 +15,8 @@ import time
 import sys
 import tempfile
 import unittest
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +44,32 @@ def need_engine(test):
         return test(self)
     wrapped.__name__ = test.__name__
     return wrapped
+
+
+def audit_sandbox_apparatus(task):
+    """Independent setup edits; workers run the same compiler and assertions."""
+    import sandbox_edit
+    base,initial,obj=task
+    check=unittest.TestCase();before=copy.deepcopy(base)
+    old={p['name']:p for p in initial['parts']}
+    # Meshing teeth cannot move into their neighbour. Three whole cells also
+    # preserve thin optical glass's voxel phase, unlike a 5 cm translation.
+    for delta in ([.06,0,0],[-.06,0,0],[0,0,.06],[0,0,-.06],[0,.06,0]):
+        try:
+            moved,selected,compiled=sandbox_edit.edit(base,obj['id'],delta,compiled=initial)
+            break
+        except mw.MachineRefused:check.assertEqual(base,before)
+    else:check.fail((base['title'],obj['name'],'no clear edit'))
+    for part in compiled['parts']:
+        previous=old[part['name']]
+        expected=[v+(delta[i] if part['name'] in selected['parts'] else 0) for i,v in enumerate(previous['at_m'])]
+        for a,b in zip(part['at_m'],expected):check.assertAlmostEqual(a,b,places=6,msg=(base['title'],obj['name']))
+        check.assertEqual(mg._volume(part),mg._volume(previous))
+        check.assertEqual(part['material'],previous['material'])
+    removed,_,after=sandbox_edit.edit(base,obj['id'],remove=True,compiled=initial)
+    check.assertFalse(set(selected['parts']) & {p['name'] for p in after['parts']})
+    check.assertEqual(base,before,'Editing must not mutate a shared template')
+    return 1
 
 
 LEVELS = mg.load_levels()
@@ -72,11 +100,18 @@ class Tray(unittest.TestCase):
         examples=mg.sandbox_templates()
         self.assertEqual(len(examples),5)
         self.assertEqual(len({r['name'] for r in examples}),5)
-        self.assertEqual(examples[1]['name'],'Chain reaction')
+        self.assertEqual([row['name'] for row in examples],['Marble skyscraper','Waterworks express',
+            'Solar pinball factory','Light the fuse','Electric marble relay'])
+        self.assertTrue(set(p for row in examples for p in row['pieces'])<=
+                        {t['piece'] for t in mg.free_build()['tray']})
         for row in examples:
             level=mg.requested_level(dict(level='free',base=row['base']))
             compiled=mw.compile_spec(mg.compose(level,row['placements'])[0])
             self.assertGreater(len(compiled['parts']),3,row['name'])
+            self.assertFalse(any(any(p['velocity_m_s']) for p in compiled['parts']))
+        pristine=copy.deepcopy(examples[0])
+        examples[0]['base']['parts'].clear()
+        self.assertEqual(mg.sandbox_templates()[0],pristine,'A player edit cannot mutate cached examples')
 
     def test_every_authored_tray_has_a_reviewed_lesson_control_set(self):
         for level in LEVELS:
@@ -325,26 +360,17 @@ class Tray(unittest.TestCase):
     def test_sandbox_apparatus_moves_and_removes_without_dangling_base_references(self):
         import sandbox_edit
         count=0
-        for template in mg.sandbox_templates():
-            if not template['base']:continue
-            base=template['base'];before=copy.deepcopy(base)
-            for obj in sandbox_edit.objects(base):
-                moved,selected,compiled=sandbox_edit.edit(base,obj['id'],[.05,0,0])
-                initial=mw.compile_spec(base)
-                old={p['name']:p for p in initial['parts']}
-                for part in compiled['parts']:
-                    previous=old[part['name']]
-                    expected=[previous['at_m'][0]+(.05 if part['name'] in selected['parts'] else 0),*previous['at_m'][1:]]
-                    for a,b in zip(part['at_m'],expected):self.assertAlmostEqual(a,b,places=6,msg=(template['name'],obj['name']))
-                    self.assertEqual(mg._volume(part),mg._volume(previous))
-                    self.assertEqual(part['material'],previous['material'])
-                removed,_,after=sandbox_edit.edit(base,obj['id'],remove=True)
-                self.assertFalse(set(selected['parts']) & {p['name'] for p in after['parts']})
-                self.assertEqual(base,before,'Editing must not mutate a shared template')
-                count+=1
-        # The owner's five-showcase gallery has 35 independently editable
-        # apparatus groups; the old 80+ floor covered the removed demo list.
-        self.assertEqual(count,35)
+        # The larger gallery has hundreds of independent groups. Keep every
+        # edit/removal and physical validation, distribute their CPU work.
+        with ProcessPoolExecutor(max_workers=min(4,os.cpu_count() or 1),
+                mp_context=multiprocessing.get_context('spawn')) as pool:
+            for template in mg.sandbox_templates():
+                if not template['base']:continue
+                base=template['base'];initial=mw.compile_spec(base)
+                tasks=[(base,initial,obj) for obj in sandbox_edit.objects(base,compiled=initial)]
+                count+=sum(pool.map(audit_sandbox_apparatus,tasks))
+                print('SANDBOX APPARATUS',template['name'],'cumulative groups',count,flush=True)
+        self.assertGreater(count,100,'The five marble journeys expose their apparatus for editing')
 
     def test_sandbox_kit_translation_preserves_glass_oak_iron_mass_geometry_and_pivots(self):
         import sandbox_edit
@@ -358,6 +384,16 @@ class Tray(unittest.TestCase):
                 for a,b,d in zip(old['at_m'],new['at_m'],[.2,.1,-.15]):self.assertAlmostEqual(a+d,b)
             for old,new in zip(original['parts'],compiled['parts']):
                 self.assertEqual(old['size_m'],new['size_m']);self.assertEqual(old['turn_deg'],new['turn_deg'])
+
+    def test_prepared_native_rope_endpoint_follows_only_its_moved_body(self):
+        import sandbox_edit,sandbox_showcases
+        base=sandbox_showcases.optical_launch();before=copy.deepcopy(base)
+        moved,_,compiled=sandbox_edit.edit(base,'part:release ramp gate',[0,0,.06])
+        old=base['strands'][0]['path_m'];new=moved['strands'][0]['path_m']
+        self.assertEqual(new[0],old[0],'The hanging weight has not moved')
+        for i in range(3):self.assertAlmostEqual(new[-1][i],old[-1][i]+(.06 if i==2 else 0))
+        self.assertEqual(compiled['strands'][0]['path_m'],new)
+        self.assertEqual(base,before,'A refused or accepted edit cannot mutate the shared base')
 
     def test_every_level_starts_with_an_object_or_visible_goal_area(self):
         for level in LEVELS:
@@ -1663,7 +1699,7 @@ class Engine(unittest.TestCase):
 
     @need_engine
     def test_sandbox_chain_runs_the_same_declaration_with_live_readings(self):
-        template = mg.sandbox_templates()[1]
+        template = next(t for t in mg.archived_sandbox_templates() if t['name']=='Chain reaction')
         spec, _, _ = mg.compose(mg.requested_level({'level': 'free', 'base': template['base']}), [])
         compiled = mw.compile_spec(spec)
         with tempfile.TemporaryDirectory() as logs:

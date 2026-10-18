@@ -334,20 +334,8 @@ def archived_sandbox_templates():
 
 def sandbox_templates():
     """Five complete examples; copying one never edits a player's own saves."""
-    archive={row['name']:row for row in archived_sandbox_templates()}
-    laser=level_by_id('laser')
-    optical=compose(laser,laser['solution'])[0]
-    def prepared(value):
-        if isinstance(value,dict):return {k:prepared(v) for k,v in value.items()}
-        if isinstance(value,list):return [prepared(v) for v in value]
-        if isinstance(value,str) and value.startswith('your '):return 'prepared '+value[5:]
-        return value
-    optical=prepared(optical)
-    return [archive['Sun powers the flag'],archive['Chain reaction'],
-            archive['River powers a lift'],archive['Charge and release'],
-            dict(name='Light, heat and gravity',
-                 description='Two mirrors carry the laser around an obstacle. Its heat burns through an oak cord and releases the hanging load.',
-                 base=optical,placements=[],pieces=['mirror'])]
+    import sandbox_showcases
+    return sandbox_showcases.templates()
 
 
 # ---- the pieces ---------------------------------------------------------------

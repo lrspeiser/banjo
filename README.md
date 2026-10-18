@@ -171,8 +171,11 @@ mesh their teeth. A separate wired battery/motor supplies power. **Turn the big
 wheel** teaches bridging a gap between a powered gear and a larger target;
 the **Fast wheel slow wheel** example uses the same contact-driven apparatus.
 Older saved gear pairs retain their original ideal coupling.
-The gallery has five editable combined examples: Sun powers the flag, Chain
-reaction, River powers a lift, Charge and release, and Light, heat and gravity.
+The gallery has five editable marble machines: Marble skyscraper, Waterworks
+express, Solar pinball factory, Light the fuse, and Electric marble relay.
+They combine stacked tracks and hairpins with doors/dominoes, water wheels and
+glass plumbing, solar charging and meshing gears, light-burned cord release,
+and a marble-operated switch driving a resistor/capacitor/motor circuit.
 Older saved examples and shared designs remain supported. The river's current pushes submerged wheel paddles;
 connect the wheel's drum rope to a load to lift it.
 In Sandbox, **Load to lift** lists available objects by name, with **Pick in
