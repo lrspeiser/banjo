@@ -370,6 +370,46 @@ FREE_HELP = {
 
 
 FREE_HELP.update({key:PIECE_HELP[key] for key in ('anchor','pulley','counterweight','rope')})
+FREE_HELP.update(wall_track='a mounted sloping track; angle_deg changes slope, not depth',
+    wall_funnel='two slopes with an open central outlet',wall_cup='a fixed catching cup',
+    wall_peg='a round mounted deflector',wall_lever='a freely hinged wall seesaw',
+    wall_lift='a motor-driven single-pass wheel with a real cradle and raised unloading chute; needs both battery wires; Reset reloads it')
+
+
+def free_context(level,placements):
+    """Actual connections and occupied bounds, instead of guessed device names."""
+    import machine_game as mg
+    spec,_,_,compiled=mg._assemble(level,placements,lenient=True)
+    devices=compiled.get('electrical',{}).get('devices',[])
+    rows=[]
+    for i,p in enumerate(placements):
+        name=f'your {p["piece"]} {i+1}'
+        solids=[solid for part in compiled['parts'] if mg.owner(part)==name for solid in mw.solids_of(part)]
+        points=[pt for solid in solids for pt in mw.footprint_points(solid)]
+        row=dict(p,number=i+1,name=name)
+        if points:row['bounds_m']=dict(low=[round(min(pt[a] for pt in points),3) for a in range(3)],
+            high=[round(max(pt[a] for pt in points),3) for a in range(3)])
+        row['terminals']=[dict(id=d['name']+':'+key,at_m=at) for d in devices
+            if d['name']==name for key,at in d.get('terminals',{}).items()]
+        rows.append(row)
+    return rows
+
+
+def lift_checks(checks,rehearsal):
+    """Observe native paths/contact order. Never operate the mechanism."""
+    result=[]
+    for check in checks:
+        name=check['marble'];points=(rehearsal.get('paths',{}).get(name) or {}).get('points') or []
+        hits=[h for h in rehearsal.get('hits',[]) if h.get('body')==name]
+        carrier=next((h['t'] for h in hits if h.get('other')==check['carrier']),None)
+        outlet=next((h['t'] for h in hits if h.get('other')==check['outlet'] and
+                     carrier is not None and h['t']>carrier),None)
+        start=check['initial_height_m']
+        raised=max((p[2] for p in points),default=start)-start
+        finished=bool(points and points[-1][2]>start+.12)
+        result.append(dict(marble=name,lifted_m=round(raised,3),released_at_s=outlet,
+            happened=carrier is not None and outlet is not None and raised>.25 and finished))
+    return result
 
 
 def free_prompt(level):
@@ -401,9 +441,24 @@ Tracks use length_m and angle_deg: negative slopes down to the right; positive s
 Their high-end stop is a real barrier; leave clearance for arriving marbles and the edges of the board.
 Wall funnels have a central open outlet; cups catch the ball. A wall seesaw moves on a free hinge.
 Battery and motor need both explicit terminal wires. Wires have mass, slack and contact, and may pull out.
+An ordinary gear/motor cannot carry a marble: it has no cradle. For a catch/lift/drop request use
+assemblies:[{{"kind":"marble_lift"}}]. The server finds a clear location, expands a tested single-pass
+lift wheel, a falling marble, battery and both real wires into editable pieces, and measures the result.
+Optional x_m/height_m choose a specific axle position; omit both to let the server find room.
+It lifts once then unloads into its raised chute. Reset reloads it; do not claim continuous bucket operation.
+For custom wiring, use a_terminal:{{"piece":N,"terminal":"plus"}} (or minus/in/out as appropriate),
+and b_terminal in the same form. N is the final 1-based placement number, including existing pieces.
+You may give additions an id, e.g. "id":"drive", and refer to "drive:plus" instead.
+The on_the_table context lists exact existing terminal IDs and physical bounds. Never invent a terminal.
+Use edit:[{{"number":N,"set":{{knob:value}}}}] to change an existing piece without clearing the board.
+Do not place tracks inside a rotor's swept circle. Keep entry/exit lanes and wire sockets clear.
 Use only these pieces and knobs:
 {tray}
-Answer one JSON object: {{"reply":"one or two sentences", "clear":false, "add":[{{"piece":..., "x_m":..., "height_m":..., knob:value}}]}}.
+Answer one JSON object with these top-level fields:
+{{"reply":"one or two sentences", "clear":false, "assemblies":[], "edit":[], "add":[]}}.
+For the requested marble lift, a complete answer is:
+{{"reply":"Added a single-pass marble lift with a wired battery.","clear":false,"assemblies":[{{"kind":"marble_lift"}}],"edit":[],"add":[]}}.
+Use add ONLY for individual pieces, e.g. {{"piece":"wall_track","x_m":0,"height_m":2}}.
 clear=true removes existing placed pieces, preserving the wall. Keep existing pieces unless asked to start over.
 Never claim success before an engine rehearsal. The server refuses collisions and out-of-board placements.'''
     return f"""You build marble runs and contraptions on the free build table in Banjo, a physics game. The engine
@@ -462,9 +517,9 @@ def respond_free(message, level, placements, call=None, rehearse=None):
             raise ChatUnavailable('No model is configured on this server (OPENAI_API_KEY)')
         call = lambda messages: _call(api_key, model, messages, want='reply')
     tray = {t['piece']: t for t in level['tray'] if not t.get('attach')}
+    context=free_context(level,placements)
     messages = [{'role': 'system', 'content': free_prompt(level)},
-                {'role': 'user', 'content': json.dumps({'request': message, 'on_the_table': [
-                    dict(p, number=i + 1) for i, p in enumerate(placements)]})}]
+                {'role': 'user', 'content': json.dumps({'request': message, 'on_the_table': context})}]
 
     def fit(p):
         out = {'piece': p['piece']}
@@ -490,24 +545,113 @@ def respond_free(message, level, placements, call=None, rehearse=None):
                 t['knobs'][key] = dict(t['knobs'][key], min=-mw.WORLD_HALF_M, max=mw.WORLD_HALF_M)
 
     def built(answer):
+        if not isinstance(answer.get('clear',False),bool):
+            raise mg.LevelRefused(['clear must be true or false'])
         placed = [] if answer.get('clear') else [dict(p) for p in placements]
+        edits=answer.get('edit') or [];assemblies=answer.get('assemblies') or [];add=answer.get('add') or []
+        if not all(isinstance(rows,list) for rows in (edits,assemblies,add)) or len(edits)>60 or len(add)>60 or len(assemblies)>3:
+            raise mg.LevelRefused(['Use lists: at most 60 edits/additions and 3 assemblies'])
+        # Accept the natural alternate tool spelling, while keeping the same
+        # small whitelist and parameter validation as the documented format.
+        lifted=[p for p in add if isinstance(p,dict) and 'piece' not in p and
+                p.get('assembly',p.get('kind'))=='marble_lift']
+        assemblies=list(assemblies)+[dict(kind='marble_lift',**{k:v for k,v in p.items() if k not in ('kind','assembly')}) for p in lifted]
+        add=[p for p in add if p not in lifted]
+        if len(assemblies)>3:raise mg.LevelRefused(['At most 3 assemblies per request'])
+        for edit in edits:
+            number=edit.get('number') if isinstance(edit,dict) else None
+            if type(number) is not int or not 1<=number<=len(placed) or not isinstance(edit.get('set'),dict):
+                raise mg.LevelRefused(['edit needs an existing piece number and a set object'])
+            row=placed[number-1];knobs=edit['set']
+            if set(knobs)-set(tray[row['piece']]['knobs']):
+                raise mg.LevelRefused(['Only the existing piece\'s declared knobs may be edited'])
+            placed[number-1]=fit(dict(row,**knobs))
+        checks=[]
+        for assembly in assemblies:
+            if not level.get('wall_mode') or not isinstance(assembly,dict) or assembly.get('kind')!='marble_lift':
+                raise mg.LevelRefused(['The available assembly is marble_lift on the wall workshop'])
+            if set(assembly)-{'kind','x_m','height_m'}:
+                raise mg.LevelRefused(['marble_lift takes kind and optional x_m/height_m'])
+            import sandbox_wall
+            if 'x_m' in assembly or 'height_m' in assembly:
+                positions=[(assembly.get('x_m',0),assembly.get('height_m',1.6))]
+            else:
+                positions=[(0,1.6),(-1.2,.8),(1.4,2.8),(-1.2,2.8),(1.6,1.2),(0,2.8),(-.6,1.1)]
+            for x,y in positions:
+                if any(type(v) not in (int,float) or not math.isfinite(v) for v in (x,y)):
+                    raise mg.LevelRefused(['The assembly position must be finite metres'])
+                rows,check=sandbox_wall.lift_assembly(x,y,len(placed))
+                try:mg.compose(level,placed+rows)
+                except (mg.LevelRefused,mw.MachineRefused) as e:
+                    refusal=e
+                    continue
+                placed+=rows;checks.append(check)
+                break
+            else:
+                raise mg.LevelRefused(['The lift needs a clear area about 2.5 m wide and 1.1 m high; '
+                    'move existing pieces or choose another axle position.']+refusal.problems[:3])
         mine = len(placed)
-        for p in answer.get('add') or []:
+        aliases={}
+        planned=list(placed)
+        for number,p in enumerate(add,mine+1):
             if not isinstance(p, dict) or p.get('piece') not in tray:
-                raise mg.LevelRefused([f'{p.get("piece") if isinstance(p, dict) else p!s} is not a piece'])
-            placed.append(fit(p))
+                name=p.get('piece') if isinstance(p,dict) else p
+                raise mg.LevelRefused([f'{name!s} is not a piece; each add entry needs a piece field. '
+                    'A marble lift uses assemblies:[{"kind":"marble_lift"}], not add.'])
+            planned.append(fit(p))
+            if 'id' in p:
+                alias=p['id']
+                if not isinstance(alias,str) or not re.fullmatch(r'[a-zA-Z][\w-]{0,39}',alias) or alias in aliases:
+                    raise mg.LevelRefused(['Give each addition a different short id, such as drive or supply'])
+                aliases[alias]=f'your {p["piece"]} {number}'
+        for index,p in enumerate(add,mine):
+            row=fit(p)
+            for key,rule in tray[p['piece']]['knobs'].items():
+                value=row.get(key)
+                if not rule.get('terminal') or value is None:continue
+                if isinstance(value,dict):
+                    number=value.get('piece');port=value.get('terminal')
+                    if type(number) is not int or not 1<=number<=len(planned) or not isinstance(port,str):
+                        raise mg.LevelRefused(['A wire endpoint needs an existing piece number and terminal name'])
+                    value=f'your {planned[number-1]["piece"]} {number}:'+port
+                elif isinstance(value,str) and ':' in value:
+                    owner,port=value.rsplit(':',1)
+                    value=aliases.get(owner,owner)+':'+port
+                row[key]=value
+            placed.append(row)
             join = p.get('join')
-            if isinstance(join, dict) and isinstance(join.get('to'), int) and 1 <= join['to'] < len(placed):
-                placed = mg.join_to(wide, placed, len(placed) - 1, join['to'] - 1, str(join.get('port')))
+            if isinstance(join, dict) and isinstance(join.get('to'), int) and 1 <= join['to'] <= index:
+                placed = mg.join_to(wide, placed, index, join['to'] - 1, str(join.get('port')))
         if not mine and not level.get('wall_mode'):
             placed = mg.centred(wide, placed)
-        spec, checked, _ = mg.compose(level, placed)
-        return [{k: v for k, v in p.items() if k != 'cost'} for p in checked], mw.compile_spec(spec)
+        try:
+            spec, checked, _ = mg.compose(level, placed)
+        except (mg.LevelRefused,mw.MachineRefused) as refused:
+            try:refused.connection_context=free_context(level,placed)
+            except (ValueError,KeyError,TypeError):pass
+            raise
+        return [{k: v for k, v in p.items() if k != 'cost'} for p in checked], mw.compile_spec(spec), checks
     answer, usage = call(messages)
     answer = _placements_answer(answer)
+    rehearsal=None;required_checks=0
     for attempt in range(3):
         try:
-            placed, compiled = built(answer)
+            placed, compiled, checks = built(answer)
+            required_checks=max(required_checks,len(checks))
+            if len(checks)<required_checks:
+                raise mg.LevelRefused(['Keep the requested lift assembly while correcting its layout'])
+            if rehearse is not None:
+                marbles=[p for p in compiled['parts'] if p['shape']=='sphere' and not p['fixed']]
+                r=rehearse(compiled,track=[p['name'] for p in marbles],**({'seconds':12} if checks else {}))
+                measured=lift_checks(checks,r)
+                if r.get('error') or any(not c['happened'] for c in measured):
+                    raise mg.LevelRefused(['The engine could not verify this machine: '+str(r.get('error') or measured)])
+                ended=[]
+                for p in marbles:
+                    points=(r.get('paths',{}).get(p['name']) or {}).get('points') or []
+                    if points:ended.append(dict(marble=p['name'],on=mg.resting_on(compiled,points[-1][1:4],.5*p['size_m'][0]),
+                        at_m=[round(v,2) for v in points[-1][1:4]]))
+                rehearsal=dict(events=[e['text'] for e in r['events'][:20]],error=None,ended=ended,checks=measured)
             break
         except (mg.LevelRefused, mw.MachineRefused) as e:
             if attempt == 2:
@@ -515,22 +659,15 @@ def respond_free(message, level, placements, call=None, rehearse=None):
             # Again, with what the server refused.
             messages += [{'role': 'assistant', 'content': json.dumps(answer)},
                          {'role': 'user', 'content': json.dumps({'refused': e.problems[:6],
-                                                                 'ask': 'Change the build so it fits and answer again.'})}]
+                            'existing_connections':getattr(e,'connection_context',context),
+                            'ask': 'Fix the proposed build, including every connection. Keep the original request '
+                                   'and existing pieces. Use the tested assembly for a marble lift, or edit numbered '
+                                   'pieces to make room. Do not claim a successful run without engine evidence.'})}]
             answer, more = call(messages)
             answer = _placements_answer(answer)
             usage = _added(usage, more)
     out = {'ok': True, 'reply': answer['reply'], 'placements': placed, 'usage': usage}
-    if rehearse is not None:
-        # Rehearsed once: where each marble ended, and on what.
-        marbles = [p for p in compiled['parts'] if p['shape'] == 'sphere' and not p['fixed']]
-        r = rehearse(compiled, track=[p['name'] for p in marbles])
-        ended = []
-        for p in marbles:
-            points = (r.get('paths', {}).get(p['name']) or {}).get('points') or []
-            if points:
-                ended.append({'marble': p['name'], 'on': mg.resting_on(compiled, points[-1][1:4], 0.5 * p['size_m'][0]),
-                              'at_m': [round(v, 2) for v in points[-1][1:4]]})
-        out['rehearsal'] = {'events': [e['text'] for e in r['events'][:20]], 'error': r.get('error'), 'ended': ended}
+    if rehearsal is not None:out['rehearsal']=rehearsal
     return out
 
 

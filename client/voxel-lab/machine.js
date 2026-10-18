@@ -6188,6 +6188,7 @@ const PIECE_INFO = {
   wall_cup: ['routes','Catch marbles in a wall-mounted cup.'],
   wall_peg: ['structure','A round mounted peg deflects falling marbles through contact.'],
   wall_lever: ['motion','A freely hinged seesaw. A marble’s weight and contact tip the board.'],
+  wall_lift: ['motion','A single-pass marble lift. Wire both motor terminals to a battery. Its cradle raises the marble and tips it onto the upper chute; Reset reloads it.'],
   marble: ['motion', 'A ball to roll, drop, or set a machine moving.'],
   ring_marble: ['motion', 'A marble with an iron ring fixed on top for tying a string. The ring is wider than the ball, so it lurches and stops instead of rolling true.'],
   track: ['routes', 'A straight, sloping track with rails and an optional gate.'],
@@ -7592,7 +7593,10 @@ async function askFree() {
     placements = r.placements.map(p => ({...p}));
     renderTray(); renderPlaced();
     const ended = (r.rehearsal && r.rehearsal.ended) || [];
-    if (ended.length) {
+    const checks=r.rehearsal?.checks||[];
+    if(checks.length) {
+      say('model',checks.map(c=>`The marble rose ${Math.round(c.lifted_m*100)} cm and dropped onto the raised chute at ${describeTime(c.released_at_s)}.`).join(' ')+' Choose Run to watch.');
+    } else if (ended.length) {
       const onPieces = ended.filter(e => e.on && e.on !== 'the ground');
       // A marble that opens a gate is spent on the floor: most on a piece is a build that works.
       say(2 * onPieces.length > ended.length ? 'model' : 'refused', `Rehearsed once in the engine: ${onPieces.length} of ${ended.length} ` +
@@ -7821,7 +7825,12 @@ async function askLevel(mode, {popup=false,message:requestedMessage}={}) {
       endGhost(); remember();
       placements = r.placements.map(p => { const q = {...p}; delete q.cost; return q; });
       helped = true; renderTray(); renderPlaced();
-      if (r.rehearsal && level.free) say(r.rehearsal.error?'refused':'model',r.rehearsal.error?`Engine check: ${r.rehearsal.error}`:'Built and checked in the engine. Choose Run to watch.');
+      if (r.rehearsal && level.free) {
+        const checks=r.rehearsal.checks||[];
+        say(r.rehearsal.error?'refused':'model',r.rehearsal.error?`Engine check: ${r.rehearsal.error}`:
+          checks.length?checks.map(c=>`The marble rose ${Math.round(c.lifted_m*100)} cm and dropped onto the raised chute at ${describeTime(c.released_at_s)}.`).join(' ')+' Choose Run to watch.':
+          'Built and checked in the engine. Choose Run to watch.');
+      }
       else if (r.rehearsal) say(r.rehearsal.manual_input_required || r.rehearsal.goal_at_s != null ? 'model' : 'refused', r.rehearsal.manual_input_required
         ? `Setup checked. ${r.rehearsal.manual_input_label || 'Drag the field handle'} to try the machine.` : r.rehearsal.goal_at_s != null
         ? `Rehearsed once in the engine: the goal happened at ${describeTime(r.rehearsal.goal_at_s)}.`

@@ -151,6 +151,51 @@ def wire(name,k,ctx):
     return result
 
 
+def lift(name,k,ctx):
+    """One electrically driven, limited-travel carrier with an open cradle.
+
+    Rotation, retention and unloading are ordinary hinge/contact/gravity.
+    The rear rotor leaves a separate depth lane for the cantilevered chute.
+    A physical stop prevents the carrier swinging into its own outlet.
+    """
+    x,y=k['x_m'],k['height_m'];r=k.get('radius_m',.4)
+    u=r/math.sqrt(2); z=PLANE
+    pocket=[dict(shape='box',size_m=[.20,.025,.18],at_m=[-u,-u-.06,0]),
+        *[dict(shape='box',size_m=[.025,.14,.18],at_m=[-u+side*.10,-u,0]) for side in (-1,1)],
+        *[dict(shape='box',size_m=[.20,.14,.02],at_m=[-u,-u,side*.10]) for side in (-1,1)]]
+    shapes=[dict(shape='cylinder',size_m=[2*r,.018,2*r],at_m=[0,0,-.20],turn_deg=[90,0,0]),
+        dict(shape='box',size_m=[.035,.035,.20],at_m=[-u,-u,-.10])]+pocket
+    # Counterweight stock is sized from the cradle's oak volume. It balances
+    # the apparatus; the source still supplies the marble's gravitational work.
+    volume=sum(math.prod(p['size_m']) for p in pocket)
+    shapes.append(dict(shape='box',size_m=[.16,.16,volume/(.16*.16)],at_m=[u,u,-.20]))
+    rotor=dict(name=name+' wheel',shape='compound',material='oak',at_m=[x,y,z],parts=shapes)
+    # Inside the swept rim at the left; leaves at the right below the final
+    # raised cradle. Front lane clears the rear disk and counterweight.
+    start=-.16;end=r+.55;drop=.12;length=math.hypot(end-start,drop)
+    slope=-math.degrees(math.atan2(drop,end-start));cx=(start+end)/2
+    chute=dict(name=name+' outlet',shape='compound',material='oak',fixed=True,
+        at_m=[x+cx,y+.14-drop/2,z],turn_deg=[0,0,slope],parts=[
+            dict(shape='box',size_m=[length,.025,.18],at_m=[0,0,0]),
+            *[dict(shape='box',size_m=[length,.12,.02],at_m=[0,.05,side*.10]) for side in (-1,1)]])
+    if k.get('end_stop','closed')=='closed':
+        chute['parts'].append(dict(shape='box',size_m=[.025,.12,.18],at_m=[length/2-.0125,.05,0]))
+    hx=x-r-.32;hy=y+.18
+    housing=sm.box(name+' housing',[.18,.14,.14],[hx,hy,.10],'concrete')
+    return dict(parts=[sm.box(name+' axle bracket',[.04,.04,.08],[x,y,.04],'iron'),rotor,chute,
+        sm.box(name+' outlet bracket',[.04,.04,.21],[x+end-.08,y+.03,.105],'iron'),housing,
+        mount(name+' housing bracket',hx,hy,.03)],
+        joints=[dict(name=name+' axle',kind='hinge',a=name+' axle bracket',b=name+' wheel',
+            at_m=[x,y,.10],axis=[0,0,1],lower_deg=-180,upper_deg=0,friction_n_m=.002),
+            dict(name=name+' outlet mounting',kind='fix',a=name+' outlet bracket',b=name+' outlet',
+                at_m=[x+end-.08,y+.03,.21])],
+        electrical=dict(devices=[dict(name=name,kind='motor',part=housing['name'],
+            terminals={key:[hx+side*.055,hy,.175] for key,side in [('plus',-1),('minus',1)]},
+            terminal_normals={'plus':[0,0,1],'minus':[0,0,1]},hinge=name+' axle',
+            stall_torque_n_m=6,no_load_rad_s=.9,command=-k.get('throttle',1),
+            brake_torque_n_m=0,gear_ratio=1)]))
+
+
 def electrical(builder):
     def build(name,k,ctx):
         # Native declarations retain actual terminal positions, contact pads,
@@ -176,7 +221,8 @@ def electrical(builder):
 def mounted(builder):
     def build(name,k,ctx):
         result=builder(name,k,ctx)
-        fixed=[p for p in result.get('parts',[]) if p.get('fixed') and p['shape']=='compound']
+        fixed=[p for p in result.get('parts',[]) if p.get('fixed') and p['shape']=='compound'
+               and not any(j.get('kind')=='fix' and j.get('b')==p['name'] for j in result.get('joints',[]))]
         if fixed:
             # Precise compound input currently has no anchored-body flag.
             # Pin it through the native fixed-joint law to a physical bracket;
@@ -191,7 +237,7 @@ def mounted(builder):
 
 
 PIECES=dict(wall_track=track,wall_funnel=funnel,wall_cup=cup,wall_peg=peg,
-    wall_lever=lever,marble=marble,gear=gear,motor=motor,wire=wire,
+    wall_lever=lever,wall_lift=lift,marble=marble,gear=gear,motor=motor,wire=wire,
     **{key:electrical(getattr(se,key)) for key in ('battery','switch','bulb','resistor','capacitor')})
 PIECES={key:mounted(builder) for key,builder in PIECES.items()}
 
@@ -199,6 +245,7 @@ PIECES={key:mounted(builder) for key,builder in PIECES.items()}
 def tray():
     names=dict(wall_track='Wall track',wall_funnel='Wall funnel',wall_cup='Catching cup',
         wall_peg='Deflector peg',wall_lever='Wall seesaw',marble='Marble',gear='Wall gear',
+        wall_lift='Marble lift wheel',
         motor='Powered wall gear',battery='Battery',switch='Switch',bulb='Light bulb',
         wire='Wire',resistor='Resistor',capacitor='Capacitor')
     knobs=dict(
@@ -208,6 +255,9 @@ def tray():
         wall_cup=dict(width_m=sm.number('Cup width (m)',.2,1.2,.6)),
         wall_peg=dict(diameter_m=sm.number('Peg diameter (m)',.08,.4,.16)),
         wall_lever=dict(length_m=sm.number('Seesaw length (m)',.3,1.2,.7),angle_deg=sm.number('Starting tilt (°)',-30,30,0,1)),
+        wall_lift=dict(radius_m=sm.number('Lift radius (m)',.35,.55,.4,.025),
+            throttle=sm.number('Motor power',0,1,1,.1),
+            end_stop=sm.choice('Outlet stop',['closed','open'],'closed')),
         marble=dict(diameter_m=sm.choice('Diameter (m)',[.06,.08,.1],.08),material=sm.choice('Material',['glass','oak','iron'],'glass')),
         gear=dict(teeth=sm.number('Teeth',6,32,12,1),module_m=sm.number('Tooth size (m)',.012,.04,.024,.002),
             phase_deg=sm.number('Tooth alignment (°)',-180,180,0,1)),
@@ -248,3 +298,22 @@ def template():
             dict(piece='wall_track',x_m=.40,height_m=2.45,length_m=1.6,angle_deg=16),
             dict(piece='wall_track',x_m=-.70,height_m=1.65,length_m=1.9,angle_deg=-16),
             dict(piece='wall_cup',x_m=.85,height_m=.75,width_m=.8)],tray=tray())
+
+
+def lift_assembly(x=0,y=1.6,offset=0):
+    """Reusable apparatus, expanded into normal editable placements and wires.
+
+    This declares geometry/connections only. The caller must rehearse the
+    resulting scene before reporting that the marble was actually lifted.
+    """
+    lift_name=f'your wall_lift {offset+1}'
+    battery_name=f'your battery {offset+3}'
+    rows=[dict(piece='wall_lift',x_m=x,height_m=y),
+        dict(piece='marble',diameter_m=.06,material='glass',x_m=x-.4/math.sqrt(2),
+             height_m=y-.4/math.sqrt(2)+.14),
+        dict(piece='battery',x_m=x-1.3,height_m=y-.4),
+        dict(piece='wire',a_terminal=battery_name+':plus',b_terminal=lift_name+':plus',length_m=2),
+        dict(piece='wire',a_terminal=battery_name+':minus',b_terminal=lift_name+':minus',length_m=2)]
+    check=dict(marble=f'your marble {offset+2}',carrier=lift_name+' wheel',outlet=lift_name+' outlet',
+        initial_height_m=rows[1]['height_m'])
+    return rows,check

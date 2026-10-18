@@ -3,9 +3,14 @@
 **A Rube Goldberg game where the physics decides what happens.**
 
 **Sandbox → Build on a wall** opens a front-facing mounting board. Place its
-14 compatible pieces in left/right and height, turn tracks in the board's
+15 compatible pieces in left/right and height, turn tracks in the board's
 plane, then run the native 3D physics. It includes a working marble route,
 Undo and saved design versions. Ordinary 3D designs remain available.
+
+Ask **Describe a design** for a wheel that catches a marble, lifts it and drops
+it higher. The builder expands a single-pass **Marble lift wheel**, a marble,
+battery and two physical wires, finds room and checks the native result before
+applying it. Reset reloads the cradle. See [the qualification](docs/machine-game.md).
 
 Visible electrical wires and charging cords now have native Jolt mass,
 bending, contact and terminal pull-out, including during placement. See [the cable model and qualification](docs/mechanical-cables.md)

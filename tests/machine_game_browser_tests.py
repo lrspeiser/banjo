@@ -2829,7 +2829,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual((turned['x_m'],turned['height_m']),(before_turn['x_m'],before_turn['height_m']))
                 self.click_visible('Throw the ghost away')
                 self.click_visible('Add a piece')
-                self.wait("document.querySelectorAll('#piece-grid .piece-card').length===14",20)
+                self.wait("document.querySelectorAll('#piece-grid .piece-card').length===15",20)
                 self.wait("[...document.querySelectorAll('#piece-grid .piece-card img')].every(img=>img.naturalWidth>0)",45)
                 self.assertTrue(self.js("[...document.querySelectorAll('#piece-grid .piece-card')].every(b=>b.getBoundingClientRect().height>=44)"))
                 self.press('Add a wall funnel');self.assertTrue(self.ghost()['fits'])
@@ -2886,6 +2886,36 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run')
                 self.wait("machineContactState().liveDevices.some(m=>m.name==='your motor 2' && m.power_w>.1)",30)
                 self.click_visible('Pause')
+
+    def test_wall_word_builder_adds_a_verified_lift_with_undo_save_and_scene_controls(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.click_visible('Build on a wall')
+                self.wait("machineDesign()?.draft.base?.build_surface?.kind==='wall' && "+READY,60)
+                original=self.js('machinePlacements()')
+                self.click_visible('Describe a design')
+                self.slide('Your question','I want a wheel that the marble falls in and it carries it up and drops it higher')
+                answer=dict(reply='Added a marble lift with a cradle and wired battery.',assemblies=[dict(kind='marble_lift')])
+                with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')),patch('machine_chat._call',return_value=(answer,{})):
+                    self.press('Build it')
+                    self.wait("machinePlacements().some(p=>p.piece==='wall_lift') && "+READY,90)
+                self.assertEqual(self.js('machinePlacements().length'),10)
+                self.assertIn('The marble rose',self.js("document.getElementById('chat-log').textContent"))
+                self.click_visible('Controls');self.click_visible('Undo');self.wait(READY,30)
+                self.assertEqual(self.js('machinePlacements()'),original)
+                self.click_visible('Redo');self.wait(READY,30)
+                self.click_piece(5);self.ghost()
+                self.assertTrue(self.js("document.getElementById('piece-editor').checkVisibility()"))
+                self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'wall-lift-edit-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Throw the ghost away');self.wait(READY,30)
+                self.click_visible('Save version');self.anonymous_cloud_saved()
+                self.click_visible('Run')
+                self.wait("machineBodies()['your marble 7']?.[0]>-.5 && machineBodies()['your marble 7']?.[1]>.82",45)
+                self.click_visible('Pause')
+                self.click_visible('Reset');self.wait(READY,30)
 
     def test_marble_showcases_load_run_reset_and_fit_the_three_screen_shapes(self):
         expected=['Marble skyscraper','Waterworks express','Solar pinball factory','Light the fuse','Electric marble relay']

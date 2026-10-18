@@ -35,7 +35,7 @@ class Wall(unittest.TestCase):
         self.assertEqual(compose(t['placements'],t['base']),compose(restored['placements'],restored['base']))
         self.assertEqual(t,before)
         rows=mg.requested_level(dict(level='free',base=t['base']))['tray']
-        self.assertEqual(len(rows),14)
+        self.assertEqual(len(rows),15)
         self.assertTrue(all('z_m' not in t['knobs'] for t in rows))
         self.assertFalse(any('wall_' in t['piece'] for t in mg.free_build()['tray']))
         self.assertEqual(len(mg.sandbox_templates()),5)
@@ -55,6 +55,102 @@ class Wall(unittest.TestCase):
         self.assertEqual(result['placements'][0]['x_m'],-1)
         self.assertEqual(result['placements'][0]['height_m'],2.2)
         self.assertEqual(level['machine']['build_surface'],wall.surface())
+
+    def test_builder_expands_a_lift_and_preserves_existing_pieces(self):
+        level=mg.requested_level(dict(level='free',base=wall.base()))
+        before=wall.template()['placements'];saved=copy.deepcopy(before)
+        answer=dict(reply='Added a wired marble lift.',assemblies=[dict(kind='marble_lift')])
+        result=machine_chat.respond_free('A wheel catches a marble and lifts it higher',level,before,
+            call=lambda messages:(answer,{}))
+        self.assertEqual(result['placements'][:5],
+            [{k:v for k,v in p.items() if k!='cost'} for p in mg.check_placements(level,before)[0]])
+        self.assertEqual(before,saved)
+        added=result['placements'][5:]
+        self.assertEqual([p['piece'] for p in added],['wall_lift','marble','battery','wire','wire'])
+        self.assertEqual(added[3]['a_terminal'],'your battery 8:plus')
+        self.assertEqual(added[3]['b_terminal'],'your wall_lift 6:plus')
+        context=machine_chat.free_context(level,result['placements'])
+        self.assertEqual([t['id'] for t in context[5]['terminals']],['your wall_lift 6:plus','your wall_lift 6:minus'])
+        self.assertIn('bounds_m',context[5])
+
+    def test_builder_resolves_numbered_and_named_wire_ends_and_edits(self):
+        level=mg.requested_level(dict(level='free',base=wall.base()))
+        before=[dict(piece='battery',x_m=-.8,height_m=2)]
+        answer=dict(reply='Connected both leads.',edit=[dict(number=1,set=dict(x_m=-1))],add=[
+            dict(piece='motor',id='drive',x_m=.4,height_m=2),
+            dict(piece='wire',a_terminal=dict(piece=1,terminal='plus'),b_terminal='drive:plus',length_m=2),
+            dict(piece='wire',a_terminal=dict(piece=1,terminal='minus'),b_terminal='drive:minus',length_m=2)])
+        result=machine_chat.respond_free('Wire the motor',level,before,call=lambda m:(answer,{}))
+        self.assertEqual(result['placements'][0]['x_m'],-1)
+        self.assertEqual(before[0]['x_m'],-.8)
+        self.assertEqual(result['placements'][2]['b_terminal'],'your motor 2:plus')
+        self.assertEqual(result['placements'][3]['a_terminal'],'your battery 1:minus')
+
+    def test_builder_repairs_overlap_and_bad_terminals_using_actual_context(self):
+        level=mg.requested_level(dict(level='free',base=wall.base()))
+        bad=dict(reply='Lift.',add=[dict(piece='wall_track'),dict(piece='motor'),
+            dict(piece='wire',a_terminal='battery:plus',b_terminal='motor:plus')])
+        good=dict(reply='Added a physical lift.',assemblies=[dict(kind='marble_lift')])
+        asked=[]
+        def call(messages):
+            asked.append(copy.deepcopy(messages))
+            return (bad if len(asked)==1 else good),{}
+        result=machine_chat.respond_free('A marble lift',level,[],call=call)
+        self.assertEqual(len(asked),2)
+        repair=json.loads(asked[1][-1]['content'])
+        self.assertTrue(any('overlap' in p for p in repair['refused']))
+        self.assertIn('existing_connections',repair)
+        self.assertEqual(repair['existing_connections'][1]['terminals'][0]['id'],'your motor 2:plus')
+        self.assertEqual(result['placements'][0]['piece'],'wall_lift')
+
+    def test_engine_failure_is_repaired_and_never_applied_after_exhaustion(self):
+        level=mg.requested_level(dict(level='free',base=wall.base()));before=[]
+        answer=dict(reply='Lift.',assemblies=[dict(kind='marble_lift')]);calls=[]
+        def call(messages):calls.append(copy.deepcopy(messages));return answer,{}
+        def engine(compiled,**kwargs):return dict(error='test-only failed native trial',events=[])
+        with self.assertRaisesRegex(mg.LevelRefused,'failed native trial'):
+            machine_chat.respond_free('Lift',level,before,call=call,rehearse=engine)
+        self.assertEqual(len(calls),3)
+        self.assertEqual(before,[])
+
+    def test_lift_catches_raises_and_unloads_glass_oak_iron_with_nudges(self):
+        results=[]
+        for material in ('glass','oak','iron'):
+            for offset in (-.002,0,.002):
+                with self.subTest(material=material,offset=offset):
+                    ps,check=wall.lift_assembly();ps[1].update(material=material,x_m=ps[1]['x_m']+offset)
+                    r=self.rehearse(compose(ps),seconds=12,track=[check['marble']])
+                    self.assertIsNone(r['error'])
+                    measured=machine_chat.lift_checks([check],r)[0]
+                    self.assertTrue(measured['happened'],measured)
+                    ledger=r['readouts']['electrical']['networks'][0]['ledger']
+                    self.assertGreater(ledger['source_j'],0)
+                    self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+                    self.assertTrue(all(c['connected'] for c in r['readouts']['mechanical_cables']))
+                    results.append(dict(material=material,offset=offset,dt_s=1/240,cell_m=.02,
+                        check=measured,ledger=ledger,wall_s=r['wall_s']))
+        print('WALL LIFT',json.dumps(results),flush=True)
+
+    def test_lift_without_a_return_or_with_a_missed_cradle_does_not_lift(self):
+        for missing in ('return','cradle'):
+            ps,check=wall.lift_assembly()
+            if missing=='return':ps.pop()
+            else:ps[1]['x_m']=-.65
+            r=self.rehearse(compose(ps),seconds=12,track=[check['marble']])
+            self.assertIsNone(r['error'])
+            self.assertFalse(machine_chat.lift_checks([check],r)[0]['happened'])
+            if missing=='return':
+                self.assertLess(abs(r['readouts']['machines']['motors'][0]['turned_rad']),.01)
+
+    def test_builder_rehearses_the_added_lift_in_the_existing_wall(self):
+        level=mg.requested_level(dict(level='free',base=wall.base()))
+        def run(compiled,**more):
+            with tempfile.TemporaryDirectory() as logs:return mw.rehearse(compiled,ENGINE,logs,**more)
+        result=machine_chat.respond_free('I want a wheel that a marble falls in and carries it up and drops it higher',
+            level,wall.template()['placements'],call=lambda m:(dict(reply='Added the lift.',
+                assemblies=[dict(kind='marble_lift')]),{}),rehearse=run)
+        self.assertTrue(result['rehearsal']['checks'][0]['happened'])
+        self.assertEqual(result['placements'][5]['x_m'],-1.2)
 
     def test_each_mount_stays_put_and_native_shapes_open(self):
         level=mg.requested_level(dict(level='free',base=wall.base()))

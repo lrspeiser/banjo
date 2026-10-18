@@ -1,5 +1,73 @@
 # Puzzles on the machine (/play)
 
+October 18 marble-lift extension: the wall library now has **15 types**.
+**Marble lift wheel** has an oak rotor/counterweight, open cradle, rear axle,
+cantilevered upper chute and a DC motor with separate plus/minus sockets.
+Its radius, motor power and outlet stop use the existing scene editor. Native
+hinge torque, contact and gravity catch, raise and unload the marble. This is
+a single-pass carrier, not a continuous bucket elevator; Reset reloads it.
+The outlet lip can stop the carrier through contact before its hinge limit.
+The motor can remain stalled/drawing power until stopped. Bearings/supports
+remain ideal and the motor retains the existing lumped DC/back-EMF model;
+there is no new resolved motor interior, structural failure or heat law.
+
+**Describe a design** supports a bounded `assemblies:[{"kind":"marble_lift"}]`
+request on the wall. The server expands ordinary editable placements (wheel,
+6 cm glass marble, battery and two physical wires), checks up to seven clear
+positions or an explicit axle position, and preserves existing pieces. The
+builder receives occupied bounds and real terminal IDs. It can edit numbered
+pieces using `edit:[{"number":N,"set":{...}}]`, and wire by numbered endpoints
+(`{"piece":N,"terminal":"plus"}`) or short addition IDs (`drive:plus`).
+Names are resolved before strict existing geometry/electrical validation;
+unknown or duplicate endpoints are still refused. Native runtime errors and
+failed lift observations go back to the model, with at most three proposals.
+Exhaustion leaves the current design unchanged. The lift observer measures
+carrier contact, a rise over 25 cm, later outlet contact and a final position
+over 12 cm above the drop start. It never changes a body, motor or winning
+condition. These are checks for this assembly, not proof the builder can
+verify every arbitrary natural-language goal.
+
+The configured real model accepted the owner's request in one call, added the
+lift beside the starter and retained its five pieces; native rehearsal
+measured a 42.9 cm rise and release at 3.267 s. A first provider attempt used
+an invalid addition format; a complete assembly JSON example and explicit
+format diagnostics corrected that failure. Mock-provider regressions exercise
+invalid wiring/overlap repair, numbered/aliased terminals, edits, and refused
+native runs without changing the player's placements.
+
+The reference fixture uses a 0.40 m radius, 6 N m stall / 0.9 rad/s no-load
+motor, a finite 12 V battery, two 2 m copper wires and the same 6 cm ball
+geometry for glass, oak and iron. At 1/240 s and 0.02 m scene cells, all nine
+starts shifted -2/0/+2 mm are caught, raised and unloaded. Rise ranges are
+42.9–43.0 cm glass, 43.2–43.3 cm oak, 41.4–42.2 cm iron; release ranges
+3.117–3.367 s, 2.917–2.983 s and 3.967–6.083 s respectively. Missing the
+return wire or dropping beside the cradle fails physically. The original
+3/4 N m prototypes stalled with some iron drops; the final motor was sized
+for the heavier load, without changing material laws or check tolerances.
+A penetrated dynamic outlet bracket also failed the 1 mm mount check; an
+anchored, face-seated bracket and its explicit chute fixing correct it.
+
+Nominal runs requested 12 s (reported engine times 11.917 s at 240 Hz,
+11.942 s at 480 Hz). Existing circuit ledgers, in joules:
+
+| Ball | Step | Source | Shaft work | Heat | Coupling residual | Electrical residual |
+|---|---:|---:|---:|---:|---:|---:|
+| Glass | 1/240 s | 53.04451 | 3.50818 | 49.53982 | 0.003493 | -1.00e-11 |
+| Glass | 1/480 s | 53.17910 | 3.50770 | 49.67277 | 0.001371 | -1.01e-11 |
+| Oak | 1/240 s | 53.04463 | 2.52174 | 50.52602 | 0.003127 | -1.05e-11 |
+| Oak | 1/480 s | 53.17785 | 2.52236 | 50.65778 | 0.002293 | -1.02e-11 |
+| Iron | 1/240 s | 53.03619 | 6.44218 | 46.59844 | 0.004429 | -1.02e-11 |
+| Iron | 1/480 s | 53.17922 | 6.42993 | 46.75116 | 0.001867 | -9.74e-12 |
+
+Coupling residual decreases under refinement; it is not zero or thermal heat.
+These are not full-world momentum/angular-momentum/energy closure, which
+would also require gravity, support reactions, contact losses and all moving
+wire/rotor transfers. No new material/conservation law is claimed. Unpaced
+nominal 240 Hz runs cost 5.52–5.88 s locally; 480 Hz runs cost 10.22–10.76 s,
+overlapping other verification. Logs/receipts are in ignored
+`build/feedback-test/wall-lift-*`. Broader historical wall measurements below
+describe the earlier 14-piece checkpoint.
+
 October 18 wall workshop: **Sandbox → Build on a wall** creates a saved design
 with a 6 × 4 m backing and a 0.62 m deep retaining lane. This is a separate
 creation action beside Add New Design; the five example cards and existing

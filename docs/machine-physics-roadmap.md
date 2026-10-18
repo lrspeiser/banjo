@@ -20,7 +20,7 @@ October 18 wall workshop: only the editor is planar. A real backing and clear
 front guard contain native 3D bodies; real fixed/hinge joints mount tracks,
 pegs, seesaws and gears. No pose projection or prescribed rolling speed is
 added. Mounts are ideal constraints, and exact compounds retain their existing
-no-fracture/no-thermal-interior limits. The first wall library has 14 types;
+no-fracture/no-thermal-interior limits. The wall library now has 15 types;
 wall plumbing, optics, structural bolts and group blueprint placement remain
 future work. See the opening wall qualification in `machine-game.md`.
 
