@@ -3086,7 +3086,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run');self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal',self.js("document.getElementById('level-done').textContent"))
                 self.assertTrue(self.js("document.getElementById('view').contains(document.getElementById('level-done'))"),'The win card belongs over the scene')
-                self.assertGreater(self.js("document.getElementById('level-done').getBoundingClientRect().height"),150,'The result card must retain its natural height inside the scroll pane')
+                self.assert_completion_layout()
                 self.click_visible('Play this level again');self.wait(READY,60)
                 self.click_visible('Inspect switch');self.click_visible('Run');self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Pressure switch: closed',self.js("document.getElementById('contact-circuit-readings').textContent"))
@@ -4761,6 +4761,22 @@ class Puzzles(unittest.TestCase):
                     self.assertEqual([p['piece'] for p in self.js('window.machineDesign().draft.placements')],['plank','marble'])
                     self.press('Back to sandbox')
 
+    def assert_completion_layout(self):
+        self.paint()
+        layout=self.js("""(() => {const card=document.getElementById('level-done'),box=card.getBoundingClientRect();return {
+          fits:card.scrollWidth<=card.clientWidth,
+          summaryCount:card.querySelectorAll(':scope>h2,:scope>.stars,:scope>#level-done-score>.energy').length,
+          elements:[...card.querySelectorAll(':scope>h2,:scope>.stars,:scope>#level-done-score>p,button')].map(e=>{
+            const r=e.getBoundingClientRect(),button=e.tagName==='BUTTON';return {
+              label:e.getAttribute('aria-label')||e.textContent,button,w:r.width,h:r.height,
+              inside:r.left>=box.left&&r.right<=box.right&&r.top>=box.top&&r.bottom<=box.bottom,
+              unclipped:e.scrollHeight<=Math.ceil(r.height),
+              hit:!button||e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})};})()""")
+        self.assertTrue(layout['fits'],layout)
+        self.assertEqual(layout['summaryCount'],3,layout)
+        self.assertTrue(all(e['inside'] and e['hit'] and e['unclipped'] and
+            (e['w']>=44 and e['h']>=44 if e['button'] else e['h']>0) for e in layout['elements']),layout)
+
     def test_thread_pulley_uses_scene_rings_and_native_rope_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390),(320,568)):
             with self.subTest(viewport=(width,height)):
@@ -4776,15 +4792,7 @@ class Puzzles(unittest.TestCase):
                 self.assertNotIn('Try again',self.js("document.getElementById('level-done').textContent"))
                 self.assertFalse(self.js("window.machineBlueprints().some(b=>b.source==='easy-thread')"),
                                  'a one-rope win does not clutter the reusable assembly library')
-                self.paint()
-                layout=self.js("""(() => {const card=document.getElementById('level-done'),box=card.getBoundingClientRect();return {
-                    fits:card.scrollWidth<=card.clientWidth,
-                    buttons:[...card.querySelectorAll('button')].map(b=>{const r=b.getBoundingClientRect();return {
-                      label:b.getAttribute('aria-label')||b.textContent,w:r.width,h:r.height,
-                      inside:r.left>=box.left&&r.right<=box.right&&r.top>=box.top&&r.bottom<=box.bottom,
-                      hit:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})};})()""")
-                self.assertTrue(layout['fits'],layout)
-                self.assertTrue(all(b['w']>=44 and b['h']>=44 and b['inside'] and b['hit'] for b in layout['buttons']),layout)
+                self.assert_completion_layout()
 
     def test_blueprint_saves_your_pieces_and_drops_them_into_another_design(self):
         for width,height in ((1280,860),(390,844)):

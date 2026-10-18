@@ -6,6 +6,10 @@ browser check verifies every result action is visible, unobstructed and at least
 44 px at 1280×860, 390×844, 844×390 and 320×568, with no horizontal overflow.
 The interpolation audit pauses with one atomic label-check/click, avoiding a
 race with scoring's own pause; its measured-frame and pose tolerances are unchanged.
+The Chain reaction result check now measures the visible, unclipped score and
+unobstructed 44 px actions instead of requiring the older stacked card's height
+to exceed 150 px. This keeps the collapse regression without prescribing one
+layout's height; it does not change any physical goal or numerical tolerance.
 
 October 17 audit implementation, checkpoint 2:
 
