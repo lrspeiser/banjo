@@ -7257,9 +7257,6 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     const actions = add('div', {className: 'actions'});
     if (next) actions.append(button('Next level ▶', () => { closeDone(); chooseLevel(next.id).catch(() => {}); },
                                     {className: 'primary', ariaLabel: 'Next level'}));
-    if(placements.length)actions.append(button('Save assembly',()=>{
-      saveAssembly(`My ${levelTitle(level)}`,placements.map((_,i)=>i));$('verdict').textContent='Assembly saved in Blueprints.';
-    },{ariaLabel:'Save this machine as an assembly'}));
     actions.append(button('Play again', () => { closeDone(); startOver(true); }, {ariaLabel: 'Play this level again'}),
                    allLevels);
   } else {

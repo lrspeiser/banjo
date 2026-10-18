@@ -1,9 +1,15 @@
 # Puzzles on the machine (/play)
 
-October 18 result layout: completion actions use two columns. On short landscape
+October 18 result actions: level wins offer Next level (when one remains),
+Play again and All levels. Manual assembly saving stays in Sandbox under
+Design → Blueprints → Save as blueprint, with reuse through Add a piece → Blueprints.
+The completion actions use two columns. On short landscape
 screens the score summary and actions sit side by side. The Thread a pulley
 browser check verifies every result action is visible, unobstructed and at least
 44 px at 1280×860, 390×844, 844×390 and 320×568, with no horizontal overflow.
+The simplified win card and Sandbox blueprint save/reuse checks pass together
+in 13.057 s; Sandbox reuse covers desktop and phone portrait. This is an
+interface change with no engine, scoring or physical-tolerance changes.
 The interpolation audit pauses with one atomic label-check/click, avoiding a
 race with scoring's own pause; its measured-frame and pose tolerances are unchanged.
 The Chain reaction result check now measures the visible, unclipped score and
@@ -41,7 +47,8 @@ October 17 audit implementation, checkpoint 2:
   Older absolute endpoints remain readable. Runtime length, contact and tension
   remain native. Winning a lift-building lesson keeps a starter from the player's
   actual placed pieces when the library has room; automatic starters never evict
-  a saved assembly. A separate Save assembly action remains available after a win.
+  a saved assembly. Manual saving is available in Sandbox's Design → Blueprints;
+  level completion has no separate assembly-saving action.
   Levels offer only inventory-compatible groups.
 * Manual switches enter Run ready at time zero. Dragging starts native time;
   pressing Run again explicitly runs without that input. Build cannot release
