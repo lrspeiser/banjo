@@ -3650,6 +3650,8 @@ class Puzzles(unittest.TestCase):
         self.assertIn('Goal', self.js("document.getElementById('level-done').textContent"))
 
     def switch_handle_target(self,name='control'):
+        if self.js("machinePlayMode().mode!=='run'"):
+            self.click_visible('Run');self.wait("document.getElementById('start').textContent==='Pause'",30)
         label=f'Drag {name} handle'
         self.wait(f"[...document.querySelectorAll('button')].some(b=>b.getAttribute('aria-label')==={json.dumps(label)}&&!b.disabled&&b.offsetParent!==null)",15)
         self.wait('window.machineCamera().settled',30)
@@ -6227,10 +6229,10 @@ class Puzzles(unittest.TestCase):
         self.open('easy-water-receiver')
         self.press('Add a water tank');self.ghost();self.slide('Its tap opening',100);self.ghost()
         self.click_visible('Place');self.wait(READY,30)
+        self.click_visible('Run');self.wait("document.getElementById('start').textContent==='Pause'",30)
         slider=self.js("(()=>{const el=document.querySelector('#device-live-controls input'),r=el.getBoundingClientRect();return {l:r.left+12,r:r.right-12,y:r.y+r.height/2,visible:el.checkVisibility()};})()")
         self.assertTrue(slider['visible']);self.drag([slider['r'],slider['y']],[slider['l'],slider['y']])
-        self.wait("document.querySelector('.device-control-status').textContent.includes('queued')",10)
-        self.click_visible('Run')
+        self.wait("document.querySelector('.device-control-status').textContent.includes('Applying')",10)
         self.wait("machineWaterDisplay().some(s=>s.opening===0)",10)
         self.assertEqual(self.js('machinePlacements()[0].opening_percent'),100,'live state does not silently rewrite saved initial settings')
         self.click_visible('Pause');self.click_visible('Reset');self.wait(READY,30)

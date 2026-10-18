@@ -778,7 +778,7 @@ body.playing-level #view>.level-done{top:50%;transform:translate(-50%,-50%);z-in
 #piece-editor .property-name{font-size:11px;line-height:13px}
 #piece-editor .property-value{font-size:13px;line-height:16px;font-weight:600}
 #play-mode button:disabled{opacity:.45;cursor:default}
-#run-preparation{position:absolute;z-index:8;top:52px;left:6px;right:6px;display:flex;align-items:center;gap:8px;padding:4px 8px;background:#142836ed;border:1px solid #63899d;border-radius:6px;font-size:12px;max-width:460px;box-sizing:border-box}
+#run-preparation{position:static;display:flex;align-items:center;gap:8px;padding:4px 8px;margin:4px 0;background:#142836ed;border:1px solid #63899d;border-radius:6px;font-size:12px;box-sizing:border-box}
 #run-preparation[hidden]{display:none}
 #run-preparation progress{flex:1;min-width:30px;width:70px;accent-color:#64d6a1}
 #run-preparation button{min-width:44px;min-height:44px}

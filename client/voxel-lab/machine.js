@@ -3928,10 +3928,10 @@ const preparation=Object.assign(document.createElement('section'),{id:'run-prepa
 const preparationLabel=Object.assign(document.createElement('span'),{role:'status'});
 const preparationMeter=Object.assign(document.createElement('progress'),{max:1});
 preparationMeter.setAttribute('aria-label','Native simulation progress');
-preparation.append(preparationLabel,preparationMeter,button('Cancel',()=>{
+preparation.append(preparationLabel,preparationMeter,button('Stop preview',()=>{
   previewAsk++;previewEpoch++;runRequest++;runArmed=false;preparedRun=null;clearTimeout(previewTimer);preparation.hidden=true;
   api({op:'cancel_preparation'}).catch(()=>{});shownMode='';renderPlayMode();
-},{ariaLabel:'Cancel preparation'}));view.append(preparation);
+},{ariaLabel:'Cancel preparation'}));$('control-panel').prepend(preparation);
 const flowGroup = new THREE.Group();
 scene.add(flowGroup);
 const tankWater=new THREE.Group();scene.add(tankWater);
