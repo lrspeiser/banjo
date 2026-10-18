@@ -3792,7 +3792,7 @@ function updateLiveControlAvailability(){
     }
     const adjust=card.querySelector('.spring-adjust');
     if(release){release.hidden=currentMode()!=='run';release.disabled=currentMode()!=='run'||!session||startingRun||liveControlPending||released||release.dataset.queuedRelease==='true';}
-    if(adjust)adjust.disabled=!session||playing||world.t>0||liveControlPending||released||release.dataset.queuedRelease==='true';
+    if(adjust)adjust.disabled=!session||playing||world.t>0||liveControlPending||released||release?.dataset.queuedRelease==='true';
     for(const operation of card.querySelectorAll('button:not(.spring-adjust),label'))operation.hidden=currentMode()!=='run';
     card.hidden=Boolean(ghost)||(currentMode()!=='run'&&!adjust)||document.body.matches('.on-levels,.on-sandbox,.scene-win');
   }

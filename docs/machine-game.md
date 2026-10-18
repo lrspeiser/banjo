@@ -39,6 +39,9 @@ October 17 audit implementation, checkpoint 2:
   apply mode visibility synchronously when created or editing begins, rather
   than waiting for an animation frame. The rope lesson's interaction data also
   retains the surface anchors produced by ring selection.
+  Tap adjustment cards have no release button; their availability check handles
+  that explicitly. A held-resume navigation regression still verifies that a
+  queued pause cannot act on the next design after changing scenes.
   Preparation progress appears only while waiting to run, outside the workspace;
   background preparation does not add height to the controls panel.
 * Measured locally: 30 native rope/contact/reaction/refinement scenarios pass;

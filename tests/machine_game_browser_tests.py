@@ -3779,6 +3779,9 @@ class Puzzles(unittest.TestCase):
 
     def test_queued_pause_cannot_operate_a_new_design_after_navigation(self):
         self.open_manual_circuit()
+        # The already-closed circuit starts on Run. Hold a subsequent resume
+        # reply so navigation still races the queued pause, not mode arming.
+        self.switch_handle_target();self.press('Pause')
         self.js("""window.realPlayFetch=window.fetch;window.playCommands=[];window.holdFirstPlay=true;
             window.playResponseGate=new Promise(resolve=>window.releasePlayResponse=resolve);
             window.fetch=async (...args)=>{const body=args[1]?.body && JSON.parse(args[1].body);
