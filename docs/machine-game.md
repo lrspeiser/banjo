@@ -19,6 +19,16 @@ restarting the native world. Cable taps retain their existing removal behavior;
 select a cable through its placed-wire control to edit gauge and inspect it.
 No geometry, material, collision, circuit law or native force changes.
 
+Setup selection and inspection also use the displayed, interpolated mechanism
+preview when it replaces a hidden starting mesh. The table's selected glass
+preview is ignored for selection, and a visible object in front of a selected
+frame wins the depth test. Physical Pull/Attach hit points still use the native
+setup geometry. Browser body-position/hit-point probes follow the visible
+mechanism too, and the Pinball regression requires an active paddle preview
+before exercising table-to-bumper-to-paddle selection.
+The final visible-preview selection, held Pinball control and solar/winch
+inspection cases pass in 175.858 s, covering desktop and both phone orientations.
+
 Focused browser qualification covers current and metadata-free older covers
 at 1280×860, 390×844 and 844×390. It selects the table first, then interior
 bumpers and both flippers, checks one device's readings, preserves geometry

@@ -2662,14 +2662,20 @@ function ghostHit(clientX, clientY) {
   pointerRay(clientX, clientY);
   return raycaster.intersectObjects(ghostGroup.children, true).some(h => h.object.isMesh);
 }
+function sceneBodyMeshes(){
+  const drawn=new Map(meshes);
+  if(flowGroup.visible)for(const [name,mesh] of flowMechanismMeshes)if(mesh.visible)drawn.set(name,mesh);
+  return new Map([...drawn].filter(([,mesh])=>mesh.visible));
+}
 function ghostInFront(clientX,clientY){
   pointerRay(clientX,clientY);
-  const selected=raycaster.intersectObjects(ghostGroup.children,true).find(hit=>{
+  const drawn=sceneBodyMeshes();
+  const selected=raycaster.intersectObjects([...ghostGroup.children,...[...drawn].filter(([name])=>hiddenPiece(name)).map(([,mesh])=>mesh)],true).find(hit=>{
     if(!hit.object.isMesh)return false;
     let o=hit.object;while(o&&!o.userData.partName)o=o.parent;
     return !pickThroughCover(o?.userData.partName);
   });
-  const other=raycaster.intersectObjects([...meshes.values()].filter(m=>m.visible),true).find(h=>h.object.isMesh);
+  const other=raycaster.intersectObjects([...drawn].filter(([name])=>!hiddenPiece(name)).map(([,mesh])=>mesh),true).find(h=>h.object.isMesh);
   return selected&&(!other||selected.distance<=other.distance+.001);
 }
 
@@ -5525,7 +5531,7 @@ function placedOwnersAt(clientX, clientY) {
     const m = name?.match(/^your (\S+) (\d+)(?: |$)/), i = m ? Number(m[2]) - 1 : -1;
     return i >= 0 && placements[i]?.piece === m[1] ? i : -1;
   };
-  const nameOf = new Map([...meshes].map(([name, m]) => [m, name]));
+  const nameOf = new Map([...sceneBodyMeshes()].map(([name, m]) => [m, name]));
   // A pulley device includes its drawn rope and its connected load. A load
   // shared by several devices is ambiguous; click the owning device instead.
   const loadOwners = new Map();
@@ -5544,7 +5550,8 @@ function placedOwnersAt(clientX, clientY) {
     if(i<0){const attached=loadOwners.get(name);if(attached?.size===1)i=[...attached][0];}
     if(i>=0&&!indices.includes(i))indices.push(i);
     const material=hit.object.material;
-    if(!material?.transparent || material.opacity>=.95)break;
+    // Preview translucency is an illustration, not another selectable layer.
+    if(flowGroup.visible&&flowMechanismMeshes.get(name)===o || !material?.transparent || material.opacity>=.95)break;
   }
   return indices;
 }
@@ -5584,7 +5591,7 @@ async function selectScenePiece(index){
 }
 // For tests: where a body is on the page (the middle of its mesh).
 window.machineBodyScreen = name => {
-  const mesh = meshes.get(name);
+  const mesh = sceneBodyMeshes().get(name)||meshes.get(name);
   if (!mesh) return null;
   freshView();
   const c = new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()).project(camera), rect = renderer.domElement.getBoundingClientRect();
@@ -5760,7 +5767,7 @@ renderer.domElement.addEventListener('pointerup', e => {
     else setLooking(true);
   }
   else if (!ghost && click && !pullMode && !attachMode) {
-    const hit=partAt(e.clientX,e.clientY);inspectElectricalPart(hit?.name);
+    const hit=partAt(e.clientX,e.clientY,true);inspectElectricalPart(hit?.name);
     if(currentMode()==='run'||readOnlyCourse()){
       draggingGhost=null;pressedAt=null;if(!pointers.size)cameraGesture=false;view.classList.remove('grabbing');return;
     }
@@ -6124,9 +6131,9 @@ window.machineSwitchState=()=>({drag:switchDragging&&{name:switchDragging.device
 let attachMode = false, attaching = [], stringEnd = null, attachPiece='link',ropeVia=[],ropeEditing=null;
 const attachMark = new THREE.Group();
 scene.add(attachMark);
-function partAt(clientX, clientY) {
+function partAt(clientX, clientY, visiblePreview=false) {
   pointerRay(clientX, clientY);
-  const nameOf = new Map([...meshes].map(([name, m]) => [m, name]));
+  const nameOf = new Map([...(visiblePreview?sceneBodyMeshes():meshes)].map(([name, m]) => [m, name]));
   const hit = raycaster.intersectObjects([...nameOf.keys()].filter(m => m.visible), true).find(h => h.object.isMesh);
   let o = hit && hit.object;
   while (o && !nameOf.has(o)) o = o.parent;
@@ -7547,7 +7554,7 @@ window.machineEditableObjects=()=>[
 // QA can click actual rendered solids, rather than the empty center of a
 // hollow pipe or compound ramp. This reads geometry and changes no setup.
 window.machineBodyHitPoints=name=>{
-  freshView();const mesh=meshes.get(name)||ropes.find(r=>r.name===name)?.line,rect=renderer.domElement.getBoundingClientRect(),points=[];
+  freshView();const mesh=sceneBodyMeshes().get(name)||meshes.get(name)||ropes.find(r=>r.name===name)?.line,rect=renderer.domElement.getBoundingClientRect(),points=[];
   mesh?.traverse(part=>{
     if(part.isLine){const data=part.geometry.attributes.position;for(let i=1;i<data.count;i++){const p=new THREE.Vector3().fromBufferAttribute(data,i).lerp(new THREE.Vector3().fromBufferAttribute(data,i-1),.5).applyMatrix4(part.matrixWorld).project(camera);points.push([rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2]);}return;}
     if(!part.isMesh||!part.geometry)return;

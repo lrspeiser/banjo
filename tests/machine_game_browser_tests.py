@@ -3147,6 +3147,7 @@ class Puzzles(unittest.TestCase):
                     self.press('Sandbox: build anything');self.click_visible('Pinball')
                     self.wait("machineDesign()?.name==='Pinball' && "+READY,90)
                     self.wait('machineCamera().settled',30)
+                    self.wait("machineFlowPreviewState()?.drawn?.mechanisms?.some(m=>m.name==='left flipper paddle')",60)
                     visible="[...document.querySelectorAll('.power-feedback-label,.terminal-label,.power-label')].filter(e=>e.checkVisibility())"
                     self.assertEqual(self.js(visible+'.length'),0)
                     before=self.js('machineDesign().draft.base')
