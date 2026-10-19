@@ -2895,6 +2895,9 @@ class Puzzles(unittest.TestCase):
         self.open(ident,width,height,phone=touch,dismiss_intro=False)
         self.assertGreater(len(self.js("document.getElementById('level-intro-works').textContent")),20)
         self.click_visible('GO')
+        self.assertTrue(self.js('machineWallState().front_view'),ident)
+        self.assertAlmostEqual(self.js('machineCamera().azimuth'),0)
+        self.assertAlmostEqual(self.js('machineCamera().elevation'),0)
         for placed in level['solution']:
             piece=placed['piece']
             if piece=='wire':
@@ -2957,6 +2960,28 @@ class Puzzles(unittest.TestCase):
             for key in ('resistor','capacitor','solar','parallel'):
                 with self.subTest(level=key,viewport=(width,height)):
                     self.play_wall_activity('easy-wall-'+key,width,height)
+
+    def test_wall_reset_restores_the_front_view_after_orbit(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for ident in ('easy-wall-drop','easy-wall-gears','easy-wall-generator'):
+                with self.subTest(level=ident,viewport=(width,height)):
+                    self.open(ident,width,height,phone=width!=1280)
+                    self.assertTrue(self.js('machineWallState().front_view'))
+                    self.click_visible('Explore in 3D');self.wait('machineCamera().settled',30)
+                    self.assertFalse(self.js('machineWallState().front_view'))
+                    self.click_visible('Reset');self.wait(READY,60)
+                    self.wait('machineCamera().settled',30)
+                    self.assertTrue(self.js('machineWallState().front_view'))
+                    self.assertAlmostEqual(self.js('machineCamera().azimuth'),0)
+                    self.assertAlmostEqual(self.js('machineCamera().elevation'),0)
+
+    def test_browser_batches_cover_every_case_once(self):
+        expected={t.id() for t in unittest.defaultTestLoader.loadTestsFromTestCase(Puzzles)}
+        for count in (1,4,16):
+            batches=browser_test_batches(count)
+            actual=[t.id() for batch in batches for t in batch]
+            self.assertEqual(set(actual),expected)
+            self.assertEqual(len(actual),len(expected))
 
     def test_pinball_starter_live_buttons_launch_pause_reset_and_save(self):
         for width,height in ((1280,860),(390,844),(844,390)):
@@ -3034,7 +3059,7 @@ class Puzzles(unittest.TestCase):
         packed='j'+base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
         self.navigate(self.base+'/machine#build='+packed);self.wait(READY,60)
         self.click_visible('Add a piece');self.click_visible('Show all pieces')
-        self.wait("(()=>{const cards=[...document.querySelectorAll('#piece-grid .piece-card')].filter(b=>b.dataset.piece.startsWith('wall_water_'));return cards.length===3&&cards.every(b=>b.querySelector('img')?.naturalWidth>0);})()",45)
+        self.wait("(()=>{const cards=[...document.querySelectorAll('#piece-grid .piece-card')].filter(b=>b.dataset.piece.startsWith('wall_water_'));return cards.length===4&&cards.every(b=>b.querySelector('img')?.naturalWidth>0);})()",45)
         self.press('Add a wall water tank');tank=self.ghost()
         self.assertTrue(tank['fits'],tank['problems'])
         self.assertEqual(self.js('machineDesign().draft.base.ground.kind'),'flume')
@@ -7543,14 +7568,27 @@ class Puzzles(unittest.TestCase):
                 self.assertGreater(self.js("machineBodies()['spring load'][1]"),load[1]+.049)
 
 
+def browser_test_batches(count):
+    tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Puzzles))
+    added={'test_wall_reset_restores_the_front_view_after_orbit','test_browser_batches_cover_every_case_once'}
+    batches=[[] for _ in range(count)]
+    for i,test in enumerate(t for t in tests if t._testMethodName not in added):
+        # Keep the previous distribution, but move the 21-play wall pack away
+        # from the expensive Plinko builder. Retain the 1200-second deadline.
+        bucket=1 if count==16 and test._testMethodName=='test_wall_optics_spring_and_contact_mechanisms_use_scene_controls' else i%count
+        batches[bucket].append(test)
+    batches[11%count].extend(t for t in tests if t._testMethodName in added)
+    return batches
+
+
 if __name__ == '__main__':
     shard=next((a for a in sys.argv[1:] if a.startswith('--shard=')),None)
     if shard:
         index,count=map(int,shard.split('=',1)[1].split('/'))
         if not 0<=index<count<=16:raise SystemExit('shard must be INDEX/COUNT with 0 <= INDEX < COUNT <= 16')
-        tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Puzzles))
-        suite=unittest.TestSuite(test for i,test in enumerate(tests) if i%count==index)
-        print(f'Browser batch {index+1}/{count}: {suite.countTestCases()} of {len(tests)} cases',flush=True)
+        batches=browser_test_batches(count)
+        suite=unittest.TestSuite(batches[index])
+        print(f'Browser batch {index+1}/{count}: {suite.countTestCases()} of {sum(map(len,batches))} cases',flush=True)
         result=unittest.TextTestRunner(verbosity=2,resultclass=LiveBrowserResult).run(suite)
         raise SystemExit(0 if result.wasSuccessful() else 1)
     unittest.main(verbosity=2,testRunner=unittest.TextTestRunner(verbosity=2,resultclass=LiveBrowserResult))

@@ -4,6 +4,12 @@ The wall is a placement surface inside the 3D world. It removes the depth
 decision while building; it does not flatten trajectories or override gravity,
 contacts, torque, electric current, heat or pressure during a run.
 
+Wall lessons open facing that surface; Reset returns to the front after a
+3D inspection. Sandbox can still orbit freely. The beginner gear lesson uses
+a narrower-toothed idler with more flank clearance and a prealigned starting
+phase; the goal, finite motor and native contact law are unchanged. See the
+cross-platform nudge and material measurements in [machine-game.md](machine-game.md).
+
 This catalogue separates the complete set of currently supported mechanism
 families from physics that still needs a model. A mechanism being listed is
 not a promise that its internal material structure has been resolved.

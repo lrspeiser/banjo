@@ -2173,6 +2173,35 @@ class Engine(unittest.TestCase):
             self.assertGreater(end[1], 0.05, 'on the track, not the ground')
 
     @need_engine
+    def test_wall_gear_clearance_survives_extra_nudges_and_keeps_legacy_teeth(self):
+        level=mg.level_by_id('easy-wall-gears')
+        compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+        wheel=next(p for p in compiled['parts'] if p['name']=='your wall_gear 1 wheel')
+        self.assertTrue(all(abs(p['size_m'][1]-.0216)<1e-12 for p in wheel['parts'][1:13]))
+        legacy=mg.sandbox_wall.gear('legacy',dict(x_m=0,height_m=1.5,teeth=12,module_m=.024),{})
+        self.assertTrue(all(abs(p['size_m'][1]-.0264)<1e-12 for p in legacy['parts'][1]['parts'][1:13]))
+        with tempfile.TemporaryDirectory() as logs:
+            good=mg.trial(level,level['solution'],ENGINE,Path(logs),runs=9)
+            wrong=mg.trial(level,level['wrong'],ENGINE,Path(logs),runs=9)
+        self.assertEqual(good['worked'],9,good)
+        self.assertEqual(wrong['worked'],0,wrong)
+        materials=[]
+        for material in ('aluminum','glass','oak','iron'):
+            spec=mg.compose(level,level['solution'])[0]
+            spec['physics_dt_s']=1/480
+            for part in spec['parts']:
+                if part['name'].endswith(' wheel'):part['material']=material
+            with tempfile.TemporaryDirectory() as logs:
+                run=mw.rehearse(mw.compile_spec(spec),ENGINE,Path(logs),seconds=8.5,wall_limit_s=120)
+            self.assertIsNone(run['error'],material)
+            self.assertTrue(run['stations'][0]['done'],material)
+            ledger=run['readouts']['electrical']['networks'][0]['ledger']
+            self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+            materials.append(dict(material=material,dt_s=1/480,cell_m=.02,
+                goal_at_s=run['stations'][0]['at_s'],ledger=ledger))
+        print('WALL GEAR MATERIALS '+json.dumps(materials),flush=True)
+
+    @need_engine
     def test_every_level_is_solved_by_its_solution_every_time_and_not_without_pieces(self):
         with tempfile.TemporaryDirectory() as logs:
             for level in LEVELS:

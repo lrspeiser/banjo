@@ -1,5 +1,41 @@
 # Puzzles on the machine (/play)
 
+## Wall view and hosted qualification repairs — October 19
+
+All 26 wall activities start facing their mounting wall. They use ordinary
+3D solids and motion; only placement is planar. The optional 3D view lets a
+player inspect depth. Reset now restores the straight-on view in wall levels,
+including after that inspection; Sandbox retains its camera behavior. Nine
+desktop/phone reset cases pass across gravity, gears and water generation.
+
+The first hosted pack was withheld after the wall gear reference jammed in
+one Linux nudge. Its beginner idler now has 21.6 mm tooth width at a 24 mm
+module (ratio 0.9), instead of the legacy 26.4 mm width, and starts at 10°.
+This adds physical flank clearance; its 180° / 8 s goal and motor ratings
+stay fixed. The reference passes nine nudges on Windows and Linux, while
+nine misplaced controls fail. Existing wall/free gear stock keeps ratio 1.1.
+The smaller idler weighs 9.748 kg and its measured scoring estimate is
+1,085,290,273 J on both platforms. The unpublished par tightens from 1.12 GJ
+to 1.09 GJ, rounded above the new reference.
+
+At 1/480 s and 20 mm cells, the same geometry and source turn aluminum,
+glass, oak and iron wheels to the goal in 1.733, 1.633, 1.133 and 2.500 s
+on Linux. Electrical residuals are at most 3.13e-12 J; separately recorded
+shaft-coupling residuals are 0.0313–0.0449 J. At the lesson's 1/240 s,
+aluminum, glass and iron pass; oak is refused by the electrical coupling's
+0.0035635 s step bound. This is a numerical validity limit, not a claim that
+wood cannot transmit torque. The finer-step four-material regression is
+retained. These observations are not a full mechanical conservation proof.
+
+Every Pinball adjustment now has a player-facing label. A missing heading
+label could previously stop its rail editor. The wall laser is classified
+with the other mounted tools, and the water-library check includes the new
+water-powered lift. All five focused browser cases pass in 237.457 s,
+including the complete editable catalogue and three viewport layouts.
+The 21-play wall optics/contact batch moves away from the expensive Plinko
+builder; coverage checks retain every case exactly once at 1/4/16 batches
+and the existing 1200 s deadline. Hosted deployment remains gated on CI.
+
 ## Pinball and the expanded wall curriculum — October 19
 
 **Sandbox → Pinball** creates an editable saved table with an angled oak deck,

@@ -2441,6 +2441,7 @@ $('start').addEventListener('click', () => {
 function resetGame(keep) {
   runRequest++;runArmed=false;tuneArmed=false;editorMode='move';
   endGhost(); cancelAttach(); stopSwitchDrag();
+  if(!keep && !level?.free && wallDesign()){wallFront=true;wallCameraControls();}
   if (!keep) return startOver(false);
   return rebuildLevel(false);
 }
@@ -6518,6 +6519,7 @@ const PIECE_INFO = {
   wall_lift: ['motion','A single-pass marble lift. Wire both motor terminals to a battery. Its cradle raises the marble and tips it onto the upper chute; Reset reloads it.'],
   wall_water_lift: ['water','Falling water turns paddles on the cradle’s solid shaft. It lifts and unloads a marble once; Reset reloads it.'],
   wall_generator: ['electrics','Water turns a paddle rotor and DC generator. Wire its two terminals to a load. Drawing current resists the shaft; no charged battery is included.'],
+  wall_laser: ['wall','A wall-mounted laser source. Aim its native light rays along the mounting face.'],
   wall_air: ['power','An external airflow pushes through native drag. Change air speed and direction; this is a supplied air region, not a battery-powered fan.'],
   wall_pendulum: ['motion','A rear-mounted hinged pendulum. Its raised bob swings under gravity and strikes other pieces.'],
   wall_trapdoor: ['motion','A hinged flap opens under its own weight when hinge resistance is low enough.'],
@@ -6853,7 +6855,7 @@ window.machineGoalState = () => ({goal: activeDesign?.draft.goal ? clone(activeD
   verdict: $('verdict').textContent + ' ' + $('goal-status').textContent, link: $('goal-share').dataset.url || null});
 function renderPieceChips() {
   const box = $('piece-category'), tray = level.tray.filter(t => !t.attach && !t.legacy);
-  const present = new Set(tray.map(t => (PIECE_INFO[t.piece] || ['structure'])[0]));
+  const present = new Set(tray.map(t => t.wall_mounted?'wall':(PIECE_INFO[t.piece] || ['structure'])[0]));
   const recent = recentPieces.filter(p => tray.some(t => t.piece === p));
   const hasBlueprints = blueprints().some(blueprintAvailable);
   if (pieceFilter === 'recent' && !recent.length) pieceFilter = 'all';
@@ -6889,7 +6891,8 @@ function renderPiecePicker() {
   const query = $('piece-search').value.trim().toLowerCase(), category = pieceFilter;
   const words = query.split(/\s+/).filter(Boolean);
   let items = level.tray.filter(t => !t.attach && !t.legacy).filter(t => {
-    const [group, description] = PIECE_INFO[t.piece] || ['structure', 'Add this piece to your machine.'];
+    const [baseGroup, description] = PIECE_INFO[t.piece] || ['structure', 'Add this piece to your machine.'];
+    const group=t.wall_mounted?'wall':baseGroup;
     const groupLabel = PIECE_GROUPS.find(([value]) => value === group)?.[1] || '';
     const text = `${pieceLabel(t.piece)} ${t.piece} ${description} ${groupLabel} ${PIECE_WORDS[t.piece] || ''}`.toLowerCase();
     return (category === 'all' || category === group || (category === 'recent' && recentPieces.includes(t.piece))) && words.every(w => text.includes(w));
@@ -7235,7 +7238,7 @@ function ghostItem() {
     if (!rule.turning) { li.append(c.label); continue; }
     // − and + by 15 degrees either side of the slider; the slider for the rest.
     const row = Object.assign(document.createElement('div'), {className: 'turn-row'});
-    const word = rule.label.split(' ')[0];
+    const word = (rule.label || key.replaceAll('_',' ')).split(' ')[0];
     row.append(button('−15°', () => turnGhost(key, -15), {ariaLabel: `${word} back 15 degrees`}), c.label,
                button('+15°', () => turnGhost(key, 15), {ariaLabel: `${word} on 15 degrees`}));
     turning.append(row);

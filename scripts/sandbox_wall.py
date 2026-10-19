@@ -328,6 +328,14 @@ def water_collector(name,k,ctx):
 
 def gear(name,k,ctx):
     result=sm.gear(name,dict(k,z_m=PLANE),ctx)
+    # Authored stock can leave more flank clearance without changing pitch,
+    # tooth count or the native contact law. Existing tools keep their width.
+    if 'tooth_width_ratio' in k:
+        width=k['tooth_width_ratio']
+        if isinstance(width,bool) or not isinstance(width,(int,float)) or not math.isfinite(width) or not .6<=width<=1.1:
+            raise ValueError('Gear tooth width / module must be 0.6..1.1')
+        for tooth in result['parts'][1]['parts'][1:1+int(k.get('teeth',12))]:
+            tooth['size_m'][1]=k.get('module_m',.024)*width
     # Native anchored box, with no tiny dynamic bracket inertia in series
     # with the shaft. The motor's reaction still goes into this support.
     result['parts'][0]=sm.box(name+' post',[.04,.04,.26],[k['x_m'],k['height_m'],.13],'iron')

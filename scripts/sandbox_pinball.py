@@ -183,6 +183,12 @@ POS=dict(x_m=dict(min=-3,max=3,step=.01,default=0,label='across (m)'),
 
 
 def row(piece,title,knobs,description):
+    labels=dict(side='Flipper side',length_m='Length (m)',width_m='Width (m)',
+        torque_n_m='Stall torque (N m)',return_n_m='Return spring (N/m)',
+        stiffness_n_m='Spring stiffness (N/m)',radius_m='Radius (m)',
+        angle_deg='Rail heading (degrees)',diameter_m='Ball diameter (m)',material='Material')
+    knobs=copy.deepcopy(knobs)
+    for key,rule in knobs.items():rule.setdefault('label',labels[key])
     return dict(piece=piece,title=title,description=description,cost=0,count=20,
                 sandbox_builder=True,across=False,turning=False,knobs=dict(copy.deepcopy(POS),**knobs))
 

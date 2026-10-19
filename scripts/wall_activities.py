@@ -146,10 +146,13 @@ def levels():
     _fixture(gears,'wall_battery','supply',x_m=-1.1,height_m=.6)
     for key in ('plus','minus'):
         _fixture(gears,'wire','motor '+key,a_terminal='supply:'+key,b_terminal='drive:'+key,length_m=2)
+    gear_row=_tray('wall_gear',[-.8,2.4],module_m=.024)
+    gear_row['knobs']['phase_deg']['default']=10
+    gear_row['knobs']['tooth_width_ratio']=dict(default=.9,min=.9,max=.9,hidden=True,label='Tooth width / module')
     activity('gears','Connect the wall gears',
         'Place one gear in the gap between the powered small gear and the big wheel. Match height and teeth so contacts transfer torque. Your gear has no motor of its own.',
-        gears,_tray('wall_gear',[-.8,2.4],module_m=.024),dict(turned_deg=dict(joint='target axle',deg=180)),
-        dict(x_m=0,height_m=1.5,teeth=12,phase_deg=15),dict(x_m=0,height_m=2.4,teeth=12,phase_deg=15),['target wheel'],seconds=8)
+        gears,gear_row,dict(turned_deg=dict(joint='target axle',deg=180)),
+        dict(x_m=0,height_m=1.5,teeth=12,phase_deg=10),dict(x_m=0,height_m=2.4,teeth=12,phase_deg=10),['target wheel'],seconds=8)
 
     pipe=_board('Roll through a wall pipe')
     _fixture(pipe,'wall_marble','marble',x_m=-.8,height_m=2.2,diameter_m=.08,material='glass')
@@ -230,7 +233,7 @@ def levels():
     next(l for l in result if l['id']=='easy-wall-gears')['tray'][0]['turns']=['phase_deg']
     pars=dict(lift=4250000,**{'water-lift':545000000},generator=293000000,air=687000000,
         steam=6710000000,trapdoor=104000000,pendulum=84400000,spring=352000000,
-        mirror=817000000,lens=333000000,gears=1120000000,pipe=992000000,
+        mirror=817000000,lens=333000000,gears=1090000000,pipe=992000000,
         resistor=265000000,capacitor=315000000,solar=228000000,parallel=2.1)
     for lv in result:
         lv['teaches']=lv['title'].lower()

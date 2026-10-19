@@ -48,6 +48,7 @@ class Pinball(unittest.TestCase):
         self.assertEqual(len({r['piece'] for r in pinball.TRAY}),8)
         level=mg.requested_level(dict(level='free',base=template['base']))
         for row in pinball.TRAY:
+            self.assertTrue(all(rule.get('label') for rule in row['knobs'].values()),row['piece'])
             self.assertIn(row['piece'],[t['piece'] for t in level['tray']])
             fragment=pinball.PIECES[row['piece']]('test '+row['piece'],
                 {k:r['default'] for k,r in row['knobs'].items()}, {})
