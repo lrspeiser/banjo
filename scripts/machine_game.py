@@ -42,6 +42,7 @@ import sandbox_variants
 import sandbox_motion
 import sandbox_pulleys
 import sandbox_wall
+import wall_lessons
 
 SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations, sandbox_motion, sandbox_pulleys)
 EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel', 'easy-river-wheel',
@@ -64,6 +65,7 @@ PLAYER_TASK_COUNTS = {
     'easy-marble-light': 1, 'easy-water-gate': 3, 'easy-charge-lift': 2,
     'easy-river-lift': 2, 'advanced-resistor':1,'advanced-parallel':4,'advanced-capacitor':1,
     'easy-roll': 1, 'easy-block': 1, 'easy-rope': 2,
+    'easy-wall-track': 1, 'easy-wall-peg': 1, 'easy-wall-wheel': 1,
 }
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,6 +110,7 @@ def load_levels():
     levels = json.loads(LEVELS_PATH.read_text(encoding='utf-8'))['levels']
     for module in SANDBOX_MODULES:
         levels.extend(copy.deepcopy(getattr(module, 'EASY_LEVELS', [])))
+    levels.extend(wall_lessons.levels())
     sandbox_pulleys.configure_levels(levels)
     for level in levels:
         if level.get('difficulty') == 'easy':
@@ -844,7 +847,7 @@ def _assemble(level, placements, lenient=False):
                 builders.update(module.PIECES)
         if level.get('wall_mode'):
             if level['wall_mode']['version']==1:builders = sandbox_wall.PIECES
-            else:builders.update(sandbox_wall.WORLD_PIECES)
+            else:builders = dict(builders, **sandbox_wall.WORLD_PIECES)
             if p['piece']=='wire' and all(str(p.get(key,'')).startswith('your wall_') for key in ('a_terminal','b_terminal')):
                 builders['wire']=sandbox_wall.PIECES['wire']
         made = builders[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)

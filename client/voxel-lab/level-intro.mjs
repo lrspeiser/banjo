@@ -5,12 +5,17 @@ const pieces={plank:'a plank',ramp:'a ramp',knife:'a swinging knife',mirror:'mir
   switch:'a switch',resistor:'a resistor',capacitor:'a capacitor',water_tank:'a water tank',
   water_wheel:'a water wheel',water_chute:'a water chute',steam:'a boiler and piston',
   ignition:'a heating coil',cannon:'a cannon',catapult:'a counterweight catapult',
-  marble:'a marble',block:'a block',link:'a string'};
+  marble:'a marble',block:'a block',link:'a string',rope:'a rope',wall_track:'a wall track',
+  wall_peg:'a round deflector peg',wall_water_wheel:'a paddle wheel'};
 export const LEVEL_MECHANISMS=Object.freeze({
   'easy-weight':'A falling weight pushes one end of the lever down, turning it around its pivot.',
   'easy-roll':'Gravity pulls the marble down a slope, and it keeps rolling along the floor. On flat ground nothing makes it start.',
+  'easy-wall-track':'The track attaches to the wall. Gravity rolls the marble down its slope and into the waiting cup. Drag the track left/right and up/down; its depth and slope are already set.',
+  'easy-wall-peg':'A round peg deflects a falling marble. A hit on its right shoulder pushes the marble toward the cup. Drag the peg across the wall to line up that contact.',
+  'easy-wall-wheel':'The falling marble pushes a paddle and turns the wheel around its axle. Hitting beside the axle supplies torque; a miss leaves the wheel still. Drag the wheel across the wall to line up a paddle.',
   'easy-block':'A block stays where you set it and holds up whatever rolls over it. Its top must be level with the tables.',
   'easy-rope':'A string pulls but never pushes. It stops the falling marble moving away from the knot, so the marble swings around it.',
+  'easy-thread':'A rope over a pulley redirects the pull. Connect the crate’s gold ring, go over the wheel, and finish on the counterweight. The falling counterweight then lifts the crate.',
   'easy-spring':'A compressed spring stores energy. Its latch holds a push plate until you release it; the plate must touch the box to lift it.',
   gap:'The marble rolls along supported surfaces. Your plank can bridge the gap between the tables.',
   'easy-tackle':'A falling counterweight pulls a rope through pulleys to lift the waiting crate.',
@@ -48,11 +53,11 @@ export const LEVEL_MECHANISMS=Object.freeze({
 function goalDescription(level,fallback){
   const rule=level.goal?.station?.done_when||{},family=level.variant?.family||level.id;
   if(rule.turned_deg){
-    const target={'easy-weight':'lever','easy-gears':'big wheel','easy-river-wheel':'wheel','easy-water-wheel':'wheel'}[family];
+    const target={'easy-weight':'lever','easy-gears':'big wheel','easy-river-wheel':'wheel','easy-water-wheel':'wheel','easy-wall-wheel':'paddle wheel'}[family];
     if(target)return `Turn the ${target} at least ${rule.turned_deg.deg}°.`;
   }
   if(rule.rose_m){
-    const target={'easy-spring':'box','easy-tackle':'glass crate','easy-charge-lift':'flag','easy-river-lift':'gate','easy-water-gate':'gate'}[family];
+    const target={'easy-spring':'box','easy-tackle':'glass crate','easy-thread':'glass crate','easy-charge-lift':'flag','easy-river-lift':'gate','easy-water-gate':'gate'}[family];
     if(target)return `Lift the ${target} at least ${Number((rule.rose_m.m*100).toFixed(3))} cm.`;
   }
   if(rule.hinge_beyond_deg)return `Turn the axle past ${rule.hinge_beyond_deg.deg}° in the required direction.`;
@@ -63,6 +68,8 @@ function goalDescription(level,fallback){
   if(rule.water_in_zone_l){const r=rule.water_in_zone_l;return `Collect at least ${r.l} litres in the receiver and keep it there for ${r.for_s} s.`;}
   if(rule.parted)return 'Heat the cord until it breaks and releases the weight.';
   const zones={gap:'Roll the marble into the cup.','easy-roll':'Roll the marble into the cup.',
+    'easy-wall-track':'Roll the marble along the wall track into the green cup.',
+    'easy-wall-peg':'Deflect the falling marble off the peg into the green cup.',
     'easy-block':'Roll the ball across the trench into the cup.','easy-rope':'Swing the marble into the green zone.','easy-catapult':'Launch the marble into the receiving bin.',
     'easy-cut':'Cut the cord so the weight falls into the bin.',cut:'Cut the cord so the weight falls into the bin.',
     tackle:'Raise the crate to the shelf mark.',laser:'Burn through the cord so the weight falls into the bin.',

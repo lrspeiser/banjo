@@ -1,5 +1,12 @@
 # Level onboarding audit — October 13, 2026
 
+October 18 note: **Roll along the wall**, **Bounce off a peg** and **Turn a wall wheel**
+now occupy Mechanics ranks 3–5, immediately after **Roll the ball**. They remove
+depth/orientation editing and offer one mounted piece with two movement axes.
+Their 1–3 / 2–4 / 2–4 minute ranges are author estimates only; these lessons
+were not in the blind probe or a timed human trial. The historical ranks below
+are unchanged. See [wall lessons](machine-game.md#beginner-wall-lessons-october-18).
+
 October 17 note: three starter lessons (Roll the ball, Fill the trench, Swing on a rope) were added at ranks 2, 3 and 5 after this audit and were not probed. Their estimates come from author review only, and every later rank moved down by three; see [the starter lessons](machine-game.md#starter-lessons-ball-block-and-string-october-17). The numbering below is the audit's own.
 
 All 34 authored challenges were assessed before their order changed. The table gives estimated newcomer planning/placement/retry time, measured native execution time and blind solver outcomes. No humans were recruited or timed. Native execution seconds and simulated goal seconds are separate from player completion time.

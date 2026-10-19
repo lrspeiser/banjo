@@ -2788,6 +2788,53 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js("Boolean(document.getElementById('saved-designs').compareDocumentPosition(document.getElementById('prebuilt-designs')) & Node.DOCUMENT_POSITION_FOLLOWING)"))
                 self.assertLessEqual(self.js('document.body.scrollWidth'),width)
 
+    def test_beginner_wall_lessons_use_planar_drag_and_solve_on_desktop_and_phones(self):
+        import machine_game
+        for width, height in ((1280, 860), (390, 844), (844, 390)):
+            for ident, add in (('easy-wall-track', 'Add a wall track'),
+                               ('easy-wall-peg', 'Add a deflector peg'),
+                               ('easy-wall-wheel', 'Add a wall water wheel')):
+                with self.subTest(level=ident, viewport=(width, height)):
+                    self.open(ident, width, height, phone=width != 1280, dismiss_intro=False)
+                    self.assertTrue(self.js("document.getElementById('level-intro-works').textContent.length>20"))
+                    self.click_visible('GO')
+                    self.assertTrue(self.js('machineWallState().front_view'))
+                    self.assertEqual(self.js('machineWallState().surface.panels[0].width_m'), 3)
+                    self.assertAlmostEqual(self.js('machineCamera().azimuth'), 0)
+                    self.assertAlmostEqual(self.js('machineCamera().elevation'), 0)
+                    self.assertFalse(self.js("document.getElementById('wall-add').checkVisibility()"))
+                    self.assertEqual(self.js('machineEditableObjects().length'), 0, 'Level fixtures stay fixed')
+                    self.press(add)
+                    p = self.ghost()['p']
+                    self.assertNotIn('z_m', p)
+                    self.assertTrue(self.js('machineWallState().mounted'))
+                    self.click_visible('Move selected piece')
+                    self.wait('machineCamera().settled', 30)
+                    self.paint()
+                    start = self.js('(()=>{const b=machineGhostScreen();return [(b.x0+b.x1)/2,(b.y0+b.y1)/2]})()')
+                    self.assertEqual(self.js(f'document.elementFromPoint({start[0]},{start[1]})?.tagName'), 'CANVAS')
+                    at = self.js(f'machineDragPoint({start[0]},{start[1]})')
+                    solution = machine_game.level_by_id(ident)['solution'][0]
+                    end = self.screen_point([at[0]+solution['x_m']-p['x_m'], at[1]+solution['height_m']-p['height_m'], at[2]])
+                    self.drag(start, end, touch=width != 1280)
+                    held = self.ghost()
+                    self.assertAlmostEqual(held['p']['x_m'], solution['x_m'], delta=.025)
+                    self.assertAlmostEqual(held['p']['height_m'], solution['height_m'], delta=.025)
+                    self.assertTrue(held['fits'], held['problems'])
+                    self.assertAlmostEqual(self.js('machineCamera().azimuth'), 0, 'A wall drag must not orbit')
+                    self.click_visible('Place')
+                    self.wait('machinePlacements().length===1 && '+READY, 60)
+                    self.click_visible('Undo')
+                    self.wait('machinePlacements().length===0 && '+READY, 60)
+                    self.click_visible('Redo')
+                    self.wait('machinePlacements().length===1 && '+READY, 60)
+                    self.click_visible('Run')
+                    self.wait("document.body.classList.contains('scene-win')", 60)
+                    self.assertLessEqual(self.js('document.body.scrollWidth'), width)
+                    proof = ROOT/'build/ui-proof'
+                    proof.mkdir(parents=True, exist_ok=True)
+                    (proof/f'{ident}-{width}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot', {'format': 'png'})['data']))
+
     def test_wall_workshop_drag_pan_undo_save_and_run_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

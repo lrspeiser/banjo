@@ -1,5 +1,70 @@
 # Puzzles on the machine (/play)
 
+## Beginner wall lessons — October 18
+
+Three single-piece lessons follow **Roll the ball** in Level 1: Mechanics:
+
+| Lesson | Player action and measured goal | Estimated newcomer minutes |
+| --- | --- | --- |
+| Roll along the wall | Move a railed slope under the marble; catch it in the offset green cup | 1–3 |
+| Bounce off a peg | Move a round peg so its right shoulder deflects the marble into the cup | 2–4 |
+| Turn a wall wheel | Move a passive paddle wheel under the marble; turn its native hinge at least 90° | 2–4 |
+
+These estimates and relative order come from author review, not timed people
+or a new blind solver probe. Each opens facing a 3×3 m wall with a visible
+marble and destination/mechanism, an introduction dismissed with GO, and
+one tray piece. Dragging edits only x and height. Depth, stock dimensions
+and orientation are fixed for these introductory lessons; Sandbox keeps the
+full controls. Front/3D view, normal placement, Undo/Redo, Reset, Run and
+scoring remain available. Fixed lesson fixtures cannot be edited as Sandbox
+objects. The positional guide's shaft no longer intercepts a Move drag
+inside a piece's screen bounds; its exposed arrow still offers axis dragging.
+
+Declarations live in `scripts/wall_lessons.py` and reuse the normal mounted
+track, peg and water-wheel builders. Native marbles are free 3D bodies; there
+is no planar motion projection or front sheet. Real track rails retain the
+ball. Ideal fixed mountings hold fixtures to the backing; hinge/contact
+torque drives the wheel without a motor, assigned spin or event script.
+The cup goals are observed in the same existing native position zone as
+other catching lessons; regression additionally checks that the marble is
+still caught at 6 s. A missed track/peg fails and an unstruck wheel remains
+at 0°. Missing required pieces cannot win.
+
+At 1/240 s and 20 mm cells, each reference solution passes nominal plus two
+1.5 mm loose-body nudges for **glass, oak and iron** (27/27). Measured goal
+times in simulated seconds:
+
+| Lesson | Glass | Oak | Iron | Reference energy / par (MJ) |
+| --- | --- | --- | --- | --- |
+| Roll along the wall | 1.350–1.367 | 1.367–1.383 | 1.350–1.383 | 413.642 / 414 |
+| Bounce off a peg | 0.933–0.950 | 0.933 | 0.933 | 291.964 / 292 |
+| Turn a wall wheel | 1.167 | 2.283–2.583 | 0.817 | 192.052 / 193 |
+
+Initial local comparative trials took approximately 0.39–0.56 s wall time
+per three 6.5 s runs on this computer. Deliberately misplaced pieces fail
+all three trials without engine errors. This qualifies the authored stock
+and positions, not every possible alignment or material change; for example,
+some near-central wheel contacts can stall. Native physics and the binary
+are unchanged. Ideal mounts/bearings and rigid nonfracturing compounds retain
+their existing limits. No new full-pipeline contact momentum/energy residual
+or conservation claim is provided by these level/layout checks.
+
+The three lessons pass ordinary pointer/touch drag, Place, Undo/Redo and
+winning playback at 1280×860, 390×844 and 844×390. Screenshots are in ignored
+`build/ui-proof/easy-wall-{track,peg,wheel}-{1280,390,844}.png`.
+
+All 41 authored solutions pass three runs each (123/123), the no-piece
+negative checks pass, and every reference energy remains within 1% below
+its published par. The 46 declaration/catalogue tests and all 40 wall
+regressions pass. Three additional shared editor browser cases pass,
+covering the existing wall workshop, dimension-arrow drags and ordinary
+3D movement/camera gestures. The introduction coverage test found the
+older **Thread a pulley** entry missing; it now explains the physical rope
+route and the existing 15 cm lift target. Introduction coverage passes for
+all 41 levels. No goals or assertion tolerances were weakened.
+
+## Wall sandbox updates — October 18
+
 October 18 water-wheel Plinko: tested the exact request “Replace the current
 parts with a bunch of water wheels along this wall and have a marble Plinko
 down them into a catcher.” The initial in-game attempt failed because the

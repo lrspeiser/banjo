@@ -2140,11 +2140,12 @@ async function poll(mine) {
 let framedFree = false;
 let wallFront = false;
 let activeWallId='workshop backing';
-function wallDesign() { return Boolean(level?.free && activeDesign?.draft.base?.build_surface?.kind==='wall'); }
-function worldWallDesign(){return wallDesign()&&activeDesign.draft.base.build_surface.version===2;}
+function wallSurface(){return level?.free?activeDesign?.draft.base?.build_surface:level?.wall_mode;}
+function wallDesign() { return wallSurface()?.kind==='wall'; }
+function worldWallDesign(){return wallDesign()&&wallSurface().version===2;}
 function wallPlacement(p=ghost?.p){return wallDesign()&&Boolean(p)&&(!worldWallDesign()||trayItem(p.piece)?.wall_mounted);}
 function wallPanels(){const base=ghost?.baseObject?.wall&&ghost.base?ghost.base:activeDesign?.draft.base;
-  return base?.build_surface?.panels||[{id:'workshop backing',width_m:6,height_m:4,x_m:0,z_m:0}];}
+  return base?.build_surface?.panels||wallSurface()?.panels||[{id:'workshop backing',width_m:6,height_m:4,x_m:0,z_m:0}];}
 function wallPanel(p=ghost?.p){const rows=wallPanels();return rows.find(row=>row.id===(p?.wall||activeWallId))||rows[0];}
 function wallWorldPoint(x,y,depth=.3,board=wallPanel()){
   const a=(board.yaw_deg||0)*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
@@ -2153,7 +2154,7 @@ function wallWorldPoint(x,y,depth=.3,board=wallPanel()){
 function wallWidthAxis(board=wallPanel()){const a=(board.yaw_deg||0)*Math.PI/180;return new THREE.Vector3(Math.cos(a),0,-Math.sin(a));}
 function wallNormal(board=wallPanel()){const a=(board.yaw_deg||0)*Math.PI/180;return new THREE.Vector3(Math.sin(a),0,Math.cos(a));}
 function pieceKind(p){return p?.piece?.replace(/^wall_(marble|gear|motor|battery|switch|bulb|resistor|capacitor)$/,'$1');}
-function wallPlane(p=ghost?.p) { return worldWallDesign()?wallPanel(p).z_m+.3:activeDesign?.draft.base?.build_surface?.plane_z_m??.3; }
+function wallPlane(p=ghost?.p) { return worldWallDesign()?wallPanel(p).z_m+.3:wallSurface()?.plane_z_m??.3; }
 function wallCameraControls(){
   $('wall-camera-view').hidden=!wallDesign();$('wall-camera-view').textContent=wallFront?'3D':'Front';
   $('wall-camera-view').setAttribute('aria-label',wallFront?'Explore in 3D':'Face the wall');
@@ -3373,7 +3374,7 @@ function updateEditGuide() {
 const pictures = new Map();
 let pictureRenderer = null;
 function trayPicture(t) {
-  const key = level.id + ':' + (wallDesign()?`wall${activeDesign.draft.base.build_surface.version}:`:'') + t.piece;
+  const key = level.id + ':' + (wallDesign()?`wall${wallSurface().version}:`:'') + t.piece;
   if (!pictures.has(key)) pictures.set(key, (async () => {
     const p = {piece: t.piece};
     // Ordinary thumbnails use their ordinary construction context. A wall
@@ -5308,7 +5309,7 @@ window.machineGhostScreen = () => ghostScreenBox();
 // Read-only camera/plane projection for input regression fixtures.
 window.machineDragPoint=(x,y)=>slidePoint(x,y,ghostScreenBox()?.bottom||0)?.toArray();
 window.machineCamera = () => ({azimuth, elevation, distance, guides: guides.visible, settled: target.distanceTo(goal) < 1e-3});
-window.machineWallState=()=>wallDesign()?({surface:activeDesign.draft.base.build_surface,
+window.machineWallState=()=>wallDesign()?({surface:wallSurface(),
   front_view:wallFront,mounted:wallPlacement(),ground_visible:grid.visible,camera_target:target.toArray(),grid_visible:wallGrid.visible,guard_visible:Boolean(meshes.get('workshop clear guard')?.visible)}):null;
 window.machineScenePick=(x,y)=>{const sockets=socketsAt(x,y,true),pieces=placedOwnersAt(x,y),wireHits=wireCandidates(x,y,true);return {piece:pieces[0]??-1,pieces,wire:wireHits.length>0,wires:wireHits.map(w=>w.name),socket:sockets.some(s=>s.gap<=9),ambiguous:sockets.length>1&&sockets[1].gap-sockets[0].gap<8};};
 window.machineWireScreen=(name,fraction=.5)=>{
@@ -5377,7 +5378,11 @@ renderer.domElement.addEventListener('pointerdown', e => {
   draggingGhost = null;
   if (!ghost || e.button !== 0 || e.ctrlKey) return;
   const arrowGrip=editArrowAt(e.clientX,e.clientY);
-  if(arrowGrip){draggingGhost={id:e.pointerId,kind:'axis-adjust',key:arrowGrip.key,initial:Number(ghost.p[arrowGrip.key]),screenX:e.clientX,screenY:e.clientY,dx:arrowGrip.dx,dy:arrowGrip.dy,active:false};return;}
+  // A positional guide starts at the piece. Its shaft must not turn a grab
+  // on the piece itself into the numeric adjustment's pixels-per-step drag.
+  // Outside the piece, its arrow remains an explicit single-axis handle.
+  const moveFromPiece=editorMode==='move'&&['x_m','z_m','height_m'].includes(arrowGrip?.key)&&nearGhost(e.clientX,e.clientY,0);
+  if(arrowGrip&&!moveFromPiece){draggingGhost={id:e.pointerId,kind:'axis-adjust',key:arrowGrip.key,initial:Number(ghost.p[arrowGrip.key]),screenX:e.clientX,screenY:e.clientY,dx:arrowGrip.dx,dy:arrowGrip.dy,active:false};return;}
   if (nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX)) {
     if(editorMode!=='move'){
       const key=ghost.card,rule=trayItem(ghost.p.piece).knobs[key];
@@ -7308,7 +7313,7 @@ function renderDesignControls() {
   $('machine-data').hidden = !level?.free;
   $('sandbox-environment').hidden = !level?.free || wallDesign()&&!worldWallDesign();
   $('wall-open-world').hidden=!level?.free||!wallDesign()||worldWallDesign();
-  $('wall-add').hidden=!worldWallDesign();
+  $('wall-add').hidden=!level?.free||!worldWallDesign();
   $('free-example').hidden=wallDesign();
   $('free-clear').textContent=wallDesign()?'Clear the wall':'Clear the table';
   if(level?.free){const g=activeDesign?.draft.base?.ground;$('environment-kind').value=g?.kind==='flume'?(g.discharge_m3_s>0?'river':'channel'):'table';
@@ -7371,7 +7376,7 @@ $('wall-open-world').addEventListener('click',async()=>{
   finally{b.disabled=false;}
 });
 $('wall-add').addEventListener('click',async()=>{
-  if(readOnlyCourse()||!worldWallDesign()||ghostInTheWay())return;
+  if(!level?.free||readOnlyCourse()||!worldWallDesign()||ghostInTheWay())return;
   const design=activeDesign,stamp=setupSnapshot();$('wall-add').disabled=true;
   try{
     const r=await api({op:'wall_edit',base:design.draft.base,placements,add:true});
@@ -7773,6 +7778,7 @@ async function chooseLevel(id, design = null) {
     persist();
   }
   activeDesign = null;
+  wallFront=Boolean(!level.free&&level.wall_mode);
   sandboxObjects=[];
   if (level.free) {
     const store = designStore();
@@ -7804,6 +7810,9 @@ async function chooseLevel(id, design = null) {
   const objectives={
     gap:'Bridge the gap with a plank so the marble reaches the cup.',
     'easy-roll':'Set the marble on the slope so gravity rolls it into the cup.',
+    'easy-wall-track':'Slide the track under the marble to roll it into the green cup.',
+    'easy-wall-peg':'Deflect the falling marble off the peg into the green cup.',
+    'easy-wall-wheel':'Line up a paddle so the falling marble turns the wheel by 90°.',
     'easy-block':'Fill the trench with a block as high as the tables.',
     'easy-rope':'Place the ring marble, then drag a string from the beam’s gold ring onto the marble’s ring.',
     cut:'Swing the knife through the cord and drop the weight into the bin.',
@@ -7833,7 +7842,7 @@ async function chooseLevel(id, design = null) {
     'advanced-capacitor':'Increase capacitance to store enough energy before time runs out.'};
   const objective=objectives[level.variant?.family||level.id]||level.brief.split(/(?<=\.)\s+(?=[A-Z])/)[0];
   introduction=levelIntroduction(level,{title:levelTitle(level),objective});
-  $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:wallDesign()?'Wall pieces snap onto the wall. Build outward with regular 3D pieces.':level.free?'Build anything. Click a piece to adjust it.':objective}));
+  $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:level.free?(wallDesign()?'Wall pieces snap onto the wall. Build outward with regular 3D pieces.':'Build anything. Click a piece to adjust it.'):objective}));
   $('pull-tool').hidden=true;$('restart-pieces').hidden=true;
   $('scene-goal').title = level.free ? 'Build anything' : `Goal within ${level.time_s} s`;
   if(readOnlyCourse()){$('scene-goal').lastChild.textContent=sharedCourse.description||'Run this shared setup. Copy it to your Sandbox to make changes.';$('scene-goal').title='Shared course';}
