@@ -1,5 +1,37 @@
 # Puzzles on the machine (/play)
 
+## Selection and electrical inspection — October 19
+
+Clicks pass through fixed thin glass panes, including saved Pinball covers
+without `selection_passthrough` metadata. The pane remains in the physical
+machine. Ordinary glass balls and movable glass pieces stay selectable.
+Click another placed object to switch its editor directly. An unchanged
+existing selection keeps the native session and Undo history; a changed valid
+placement is saved using ordinary Place/rebuild before switching. An invalid
+placement must be repaired or cancelled first.
+
+Electrical ratings, measured device/cable readings, contact outlines and solar
+badges follow the selected object. Unselected devices no longer add data cards
+to the scene or Controls panel. Terminal rings and actual current indicators
+remain available; filtering readings does not change circuit flow rendering.
+While Run is active, clicking a device inspects it without picking it up or
+restarting the native world. Cable taps retain their existing removal behavior;
+select a cable through its placed-wire control to edit gauge and inspect it.
+No geometry, material, collision, circuit law or native force changes.
+
+Focused browser qualification covers current and metadata-free older covers
+at 1280×860, 390×844 and 844×390. It selects the table first, then interior
+bumpers and both flippers, checks one device's readings, preserves geometry
+and the unchanged native session, and inspects the supply during live Run.
+Related checks cover saved Above/Below placement, held Pinball controls,
+capacitor charging/reset, lamp wire gauges and edge leaders, direct terminal
+connections, solar/winch ratings and wiring, switch contact operation, and
+read-only shared cables becoming editable after copying. Run clicks inspect;
+the editing test helper now explicitly chooses Tune before picking up a piece.
+These are focused UI/native integration checks, not a repeat of all level
+solution trials or new material/conservation qualification. Source registration
+remains 274/274; the verified native binary is unchanged.
+
 ## Contextual surface layers — October 19
 
 Sandbox marbles, planks and blocks offer **Above / Below** beside the selected

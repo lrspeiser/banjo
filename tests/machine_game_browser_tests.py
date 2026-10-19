@@ -492,6 +492,10 @@ class Puzzles(unittest.TestCase):
         if self.js("document.getElementById('recent-changes').open"):self.click_visible('Close')
 
     def click_piece(self,index):
+        # Run clicks inspect. Explicit Tune returns to setup for editing.
+        if self.js("machinePlayMode().mode==='run'"):
+            self.click_visible('Tune')
+            self.wait("machinePlayMode().mode!=='run'",60)
         if self.js(f"machineGhostState()?.index==={index}"):return self.ghost()
         self.click_visible('Controls')
         self.wait('machineCamera().settled',30)
@@ -540,6 +544,16 @@ class Puzzles(unittest.TestCase):
 
     def screen_point(self, point):
         return self.js(f'window.machineScreenPoint({json.dumps(point)})')
+
+    def inspect_body(self,name):
+        self.reveal_control("document.querySelector('#view canvas')")
+        self.wait('machineCamera().settled',30)
+        point=self.js(f"""(()=>{{for(const p of machineBodyHitPoints({json.dumps(name)})){{
+            if(document.elementFromPoint(...p)?.tagName!=='CANVAS')continue;
+            const hit=machineScenePick(...p);if(!hit.wire&&!hit.socket)return p;
+        }}return null;}})()""")
+        self.assertIsNotNone(point)
+        self.mouse('mousePressed',*point);self.mouse('mouseReleased',*point)
 
     def mouse(self, kind, x, y):
         extra = {'button': 'left', 'clickCount': 1} if kind != 'mouseMoved' else {}
@@ -1074,6 +1088,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("document.getElementById('flow-play').getClientRects().length && /^(Play|Pause) preview$/.test(document.getElementById('flow-play').textContent)",10)
                 if self.js("document.getElementById('flow-play').textContent==='Play preview'"):
                     self.click_visible('Play preview')
+                self.inspect_body('lamp bulb')
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='lamp'&&/8\\.8 V/.test(r.text))",30)
                 self.assert_wire_gauges_readable('Thin','0.01 mm²')
                 self.assertTrue(self.js("window.machinePowerFeedbackState().labels.some(r=>r.device==='lamp'&&/1\\.6 W/.test(r.text))"))
@@ -1087,6 +1102,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("document.getElementById('flow-play').getClientRects().length && /^(Play|Pause) preview$/.test(document.getElementById('flow-play').textContent)",10)
                 if self.js("document.getElementById('flow-play').textContent==='Play preview'"):
                     self.click_visible('Play preview')
+                self.inspect_body('lamp bulb')
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='lamp'&&/11\\.9 V/.test(r.text))",30)
                 self.assert_wire_gauges_readable('Standard','0.5 mm²')
                 self.assertTrue(self.js("window.machinePowerFeedbackState().labels.some(r=>r.device==='lamp'&&/3\\.0 W/.test(r.text))"))
@@ -1109,9 +1125,9 @@ class Puzzles(unittest.TestCase):
                     label=self.js(f"[...document.querySelectorAll('#wire-adjustments button')].find(b=>b.textContent.startsWith('Wire {count} ')).getAttribute('aria-label')")
                     self.click_visible(label);self.ghost();self.click_visible('Standard wire');self.ghost()
                     self.click_visible('Place');self.wait(READY,30)
-                # The always-open dock leaves less space in landscape. Optional
-                # wire cards may yield; the lamp rating must stay readable.
-                label_count='machineReadoutCallouts().labels.length'+('>=1' if height<500 else '===3')
+                # Only the last selected wire has a numeric callout. Other
+                # wiring and the lamp remain visible without data cards.
+                label_count='machineReadoutCallouts().labels.length===1'
                 self.wait(label_count,30)
                 self.assertIsNone(self.js("document.getElementById('panel-toggle')"))
                 self.wait('machineCamera().settled',30)
@@ -1132,7 +1148,7 @@ class Puzzles(unittest.TestCase):
                         resolve({layout,view,anchors});
                     }))''',await_promise=True)
                     layout=snapshot['layout']
-                    self.assertTrue(any(label.get('device')=='lamp' for label in layout['labels']),layout)
+                    self.assertEqual([label.get('wire') for label in layout['labels']],['your wire 3'])
                     for label in layout['labels']:
                         self.assertTrue(label['x']<=8 or label['x']+label['w']>=layout['width']-8,(label,layout))
                         self.assertTrue(label['leader'],label)
@@ -1148,6 +1164,10 @@ class Puzzles(unittest.TestCase):
                             view=snapshot['view']
                             self.assertAlmostEqual(label['from'][0]+view['x'],anchor[0],delta=2)
                             self.assertAlmostEqual(label['from'][1]+view['y'],anchor[1],delta=2)
+                point=self.js("machineBodyScreen('lamp bulb')")
+                self.mouse('mousePressed',*point);self.mouse('mouseReleased',*point)
+                self.wait("machinePowerFeedbackState().labels.some(r=>r.device==='lamp')",20)
+                self.assertEqual(self.js('machinePowerFeedbackState().labels.map(r=>r.device)'),['lamp'])
 
     def place_contact_battery(self, placement, charge=None):
         self.press('Add a battery'); self.ghost()
@@ -3116,6 +3136,44 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Previous object actions');self.click_visible('Pause')
                 self.wait("[...document.querySelectorAll('#player-controls [data-control]')].every(b=>b.disabled)",10)
 
+    def test_pinball_selection_through_glass_and_readings_only_for_the_selected_device(self):
+        import sandbox_pinball
+        for legacy in (False,True):
+            template=sandbox_pinball.template()
+            if legacy:template['base']['presentation'].pop('selection_passthrough',None)
+            for width,height in ((1280,860),(390,844),(844,390)):
+                with self.subTest(legacy=legacy,viewport=(width,height)),patch.object(sandbox_pinball,'template',return_value=template):
+                    self.anonymous_levels(width=width,height=height)
+                    self.press('Sandbox: build anything');self.click_visible('Pinball')
+                    self.wait("machineDesign()?.name==='Pinball' && "+READY,90)
+                    self.wait('machineCamera().settled',30)
+                    visible="[...document.querySelectorAll('.power-feedback-label,.terminal-label,.power-label')].filter(e=>e.checkVisibility())"
+                    self.assertEqual(self.js(visible+'.length'),0)
+                    before=self.js('machineDesign().draft.base')
+                    session_before=self.js('machineCableSetupState().session')
+                    # Real scene clicks, including switching with an editor open.
+                    for part in ('pinball table frame','upper bumper','right bumper','left flipper paddle','right flipper paddle'):
+                        index=self.js(f"machineEditableObjects().find(o=>o.parts.includes({json.dumps(part)})).index")
+                        self.click_piece(index);self.ghost()
+                        self.wait(f"machineGhostState()?.p.object===machineEditableObjects().find(o=>o.parts.includes({json.dumps(part)})).id",30)
+                        if 'flipper' in part:
+                            name=part.replace(' paddle','')
+                            self.wait(f"machinePowerFeedbackState().labels.some(r=>r.device==={json.dumps(name)})",20)
+                            self.assertEqual(self.js('machinePowerFeedbackState().labels.map(r=>r.device)'),[name])
+                        else:self.assertEqual(self.js(visible+'.length'),0)
+                    self.assertEqual(self.js('machineDesign().draft.base'),before,'Changing selection must not change geometry')
+                    self.assertEqual(self.js('machineCableSetupState().session'),session_before,'An unchanged selection must not rebuild the world')
+                    self.click_visible('Throw the ghost away')
+                    self.wait(visible+'.length===0',20)
+                    self.click_visible('Run');self.wait("document.getElementById('start').textContent==='Pause'",20)
+                    self.wait(visible+'.length===0',20)
+                    point=self.js("machineBodyScreen('pinball supply housing')")
+                    self.mouse('mousePressed',*point);self.mouse('mouseReleased',*point)
+                    self.wait("machinePowerFeedbackState().labels.some(r=>r.device==='pinball supply')",20)
+                    self.assertEqual(self.js("document.getElementById('start').textContent"),'Pause','Inspection must keep the simulation running')
+                    self.click_visible('Pause')
+                    self.assertFalse(self.js('document.documentElement.scrollWidth>innerWidth+1'))
+
     def test_contextual_above_below_placement_on_desktop_and_phone(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
@@ -4048,6 +4106,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Power output of your solar 1');self.click_visible('Power input of winch')
                 self.wait(f'window.machinePlacements().length===2 && {READY}',60)
                 self.wait('window.machineFlowPreviewState()?.sample?.wires?.some(w=>w.unit===\'W\'&&w.value>40)',60)
+                self.inspect_body('winch drum')
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>r.device==='winch motor'&&r.text.includes('14.3 W')&&r.text.includes('3.1 N·m'))",10)
                 def peak():return self.js("Math.max(...window.machineFlowPreviewState().sample.wires.filter(w=>w.unit==='W').map(w=>Math.abs(w.value)))")
                 self.assertGreater(peak(),40)
@@ -4061,6 +4120,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run')
                 # On short screens optional wire cards yield to the device
                 # and its required power. Native current still drives dots.
+                self.inspect_body('winch drum')
                 self.wait("window.machinePowerFeedbackState().labels.some(r=>(r.wire||r.device==='winch motor')&&/ W/.test(r.text)&&!r.text.includes('Preview')&&!r.text.includes('Updating')) && window.machinePowerFeedbackState().dots>0",20)
                 geometry=self.js("""(() => {const view=document.getElementById('view').getBoundingClientRect(),run=document.getElementById('start').getBoundingClientRect();
                     const rows=[...document.querySelectorAll('#power-feedback-labels section')].filter(e=>!e.hidden).map(e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,w:r.width,h:r.height}});
@@ -4327,7 +4387,7 @@ class Puzzles(unittest.TestCase):
                 area=self.js("(()=>{const view=document.getElementById('view').getBoundingClientRect();return [...document.querySelectorAll('.power-pin')].filter(e=>e.getClientRects().length&&!e.hidden).reduce((sum,e)=>{const r=e.getBoundingClientRect();return sum+r.width*r.height;},0)/(view.width*view.height);})()")
                 self.assertLess(area,.03,'The always-visible solar meter uses less than 3% of the scene')
                 self.wait('machineFlowPreviewState()?.frames>2',30)
-                self.assertGreater(self.js('machinePowerFeedbackState().labels.length'),0,'Compact power and load readings remain visible while building')
+                self.assertEqual(self.js('machinePowerFeedbackState().labels.length'),0,'Unselected loads must not add scene readings')
                 self.click_visible('Connect wires');self.assert_power_layout()
                 self.click_visible('Power output of your solar 1');self.click_visible('Power input of winch')
                 self.wait(f'machinePlacements().length===2 && {READY}',60)
@@ -6293,16 +6353,23 @@ class Puzzles(unittest.TestCase):
         self.server.profiles.create(owner,dict(sandbox=dict(items=[design],last=design_id)))
         self.server.courses.share(owner,design,publish=True)
         self.navigate(f'{self.base}/machine?visitor={owner}&design={design_id}');self.wait(READY,60)
-        self.wait("document.querySelectorAll('#power-feedback-labels button').length===2",30)
+        self.assertEqual(self.js("document.querySelectorAll('#power-feedback-labels button').length"),0)
+        index=self.js("machinePlacements().findIndex(p=>p.piece==='wire')")
+        self.click_piece(index);self.ghost()
+        self.wait("document.querySelectorAll('#power-feedback-labels button').length===1",30)
+        self.click_visible('Throw the ghost away')
         self.click_visible('All designs');self.click_visible('Browse Community')
         self.wait("Boolean(document.querySelector('#community-courses button'))",15)
         self.click_visible('Run course Community wired lift')
         self.wait("document.body.classList.contains('read-only-course') && "+READY,60)
-        self.wait("document.querySelectorAll('#power-feedback-labels .wire').length===2",30)
+        self.assertEqual(self.js("document.querySelectorAll('#power-feedback-labels .wire').length"),0)
+        self.click_existing_wire('your wire '+str(index+1))
+        self.wait("document.querySelectorAll('#power-feedback-labels .wire').length===1",30)
         self.assertEqual(self.js("document.querySelectorAll('#power-feedback-labels button').length"),0)
         self.click_visible('Copy to my Sandbox')
         self.wait("!document.body.classList.contains('read-only-course') && "+READY,60)
-        self.wait("document.querySelectorAll('#power-feedback-labels button').length===2",30)
+        self.click_piece(index);self.ghost()
+        self.wait("document.querySelectorAll('#power-feedback-labels button').length===1",30)
 
     def test_local_course_share_carries_its_setup_without_a_hosted_database_id(self):
         previous=self.server.environment

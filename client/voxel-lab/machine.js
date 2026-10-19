@@ -149,6 +149,19 @@ function api(body) {
 // ---- meshes: one per body, drawn from the engine's own record --------------
 const stripeLook = new THREE.MeshStandardMaterial({color: 0xf1d38a, roughness: .7, metalness: 0});
 
+function pickThroughCover(name) {
+  if(activeDesign?.draft.base?.presentation?.selection_passthrough?.includes(name))return true;
+  // Older saves and shared copies need no presentation flag. A fixed, thin
+  // glass pane is a cover; glass balls and movable glass pieces stay pickable.
+  const p=machine?.parts?.find(p=>p.name===name);
+  if(!p?.fixed||p.material!=='glass')return false;
+  const solids=p.shape==='compound'?p.parts:[p];
+  return solids.length>0&&solids.every(s=>{
+    if(s.shape!=='box')return false;
+    const d=[...s.size_m].sort((a,b)=>a-b);return d[0]<=d[1]*.08;
+  });
+}
+
 function makeMesh(b) {
   const hex = materialColor(b.material, b.color_rgba);
   const look = () => material(hex, b.material).clone();
@@ -186,7 +199,7 @@ function makeMesh(b) {
   } else mesh = new THREE.Mesh(new THREE.BoxGeometry(...b.dimensions_m), look());
   mesh.userData = {revision: b.revision, cells: b.cells_local_m ? b.cells_local_m.length : 0, base: hex};
   mesh.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  if(activeDesign?.draft.base?.presentation?.selection_passthrough?.includes(b.name))
+  if(pickThroughCover(b.name))
     mesh.traverse(o=>{if(o.isMesh){o.raycast=()=>{};if(o.material.transparent){
       o.material.opacity=Math.min(o.material.opacity,.12);o.material.depthWrite=false;o.castShadow=false;
       const rim=new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry),new THREE.LineBasicMaterial({color:0x8fbfd1,transparent:true,opacity:.6}));
@@ -479,6 +492,7 @@ function syncContactCircuits() {
 function inspectContactCircuit(name) {
   const row=contactCircuitRows.get(name);if(!row)return;
   const diagram=switchDiagram(row);if(!diagram)return;
+  inspectElectricalPart(row.device?.part||row.circuit?.switch?.touch?.[0]);
   if(!inspectedCircuit)inspectionFollow=follow;
   inspectedCircuit=name;follow=false;$('follow').setAttribute('aria-pressed','false');
   const box=new THREE.Box3().setFromPoints(diagram.contactCenters.map(p=>new THREE.Vector3(...p))).expandByScalar(.12);
@@ -500,6 +514,7 @@ $('inspect-switch').addEventListener('click',()=>{
 function updateContactCircuitReadings() {
   const frame=flowGroup.visible&&previewShown?.flow_frames?.[flowIndex];
   for(const [name,row] of contactCircuitRows) {
+    row.status.parentElement.hidden=!electricalLabelSelected(name,row.device?.part||row.circuit?.switch?.touch?.[0]);
     row.inspect.hidden=contactCircuitRows.size===1 || inspectedCircuit===name;
     const measured=switchReading(name,row,frame);
     const state=typeof measured?.closed==='boolean'?(measured.closed?'closed':'open'):'not measured';
@@ -509,7 +524,7 @@ function updateContactCircuitReadings() {
       `Pressure switch: ${state} · ${amps} A · Coil: ${watts} W → ${row.circuit.coil.heats}`);
   }
   for(const outline of contactCircuitOutlines) {
-    outline.update();outline.visible=!flowGroup.visible;
+    outline.update();outline.visible=!flowGroup.visible&&electricalLabelSelected(outline.userData.circuit,outline.userData.part);
     const measured=switchReading(outline.userData.circuit,contactCircuitRows.get(outline.userData.circuit));
     outline.material.color.setHex(measured?.closed?0x5fe08f:0xffad66);
   }
@@ -658,9 +673,9 @@ function positionTerminalLabels() {
   const physical=shownElectrical().devices?.some(d=>d.kind==='socket');
   for (const {card: reading, overlay: card, controls, rows, device, feedback,handle,handleLeader} of terminalLabels.values()) {
     if(handleLeader)handleLeader.style.display='none';
-    reading.hidden = false;
+    reading.hidden = !electricalLabelSelected(device.name,device.part);
     controls.hidden = playing || !wiringMode;
-    feedback.hidden=false;
+    feedback.hidden=!electricalLabelSelected(device.name,device.part);
     {
       const prefix=snapshot.preview?'Preview · ':'';
       if (device.kind==='battery') {
@@ -695,7 +710,7 @@ function positionTerminalLabels() {
     if (handle) {
       handle.hidden=currentMode()!=='run';handle.disabled=currentMode()!=='run'||Boolean(ghost||pullMode||attachMode||!session);
       const measured=snapshot.devices.find(d=>d.name===device.name);
-      feedback.hidden=false;feedback.textContent=(snapshot.preview?'Preview · ':'')+(measured?`${measured.closed?'Closed':'Open'} · ${Math.abs(measured.current_a||0).toFixed(3)} A`:'Drag to operate');
+      feedback.hidden=!electricalLabelSelected(device.name,device.part);feedback.textContent=(snapshot.preview?'Preview · ':'')+(measured?`${measured.closed?'Closed':'Open'} · ${Math.abs(measured.current_a||0).toFixed(3)} A`:'Drag to operate');
       const guided=switchLesson()&&currentMode()==='run'&&!measured?.closed&&!scored;
       handle.classList.toggle('switch-lesson-handle',guided);
       handle.textContent=guided?'↓ Drag down':device.handle.label||'↕';
@@ -1113,7 +1128,7 @@ function updatePowerLabels() {
         battery && battery.charge_j >= battery.capacity_j ? 'Store full' : '',
         cable ? 'Cable connected' : 'Output not wired'].filter(Boolean).join(' · ');
     } else state.textContent = cable ? 'Cable connected' : 'Waiting for a cable';
-    badge.hidden = port.kind !== 'output' || (wiringMode && !playing);
+    badge.hidden = port.kind !== 'output' || !electricalLabelSelected(port.name,port.part) || (wiringMode && !playing);
     if (control) {
       control.hidden = playing || (!wiringMode && !pickedPowerPort);
       control.disabled = playing || powerBusy || Boolean(ghost);
@@ -1232,14 +1247,15 @@ function positionPowerLabels() {
   // Place the larger meters first, then fit receiver buttons beside them.
   const rows = [...powerLabels.values()].sort((a,b) => (a.port.kind === 'input') - (b.port.kind === 'input'));
   for (const {port, card: reading, pin: card, badge, control, leader, dot} of rows) {
-    badge.hidden = port.kind !== 'output' || (wiringMode && !playing);
+    badge.hidden = port.kind !== 'output' || !electricalLabelSelected(port.name,port.part) || (wiringMode && !playing);
     if (control) control.hidden = playing || (!wiringMode && !pickedPowerPort);
     const at = powerPortAt(port);
     if (!at) { card.hidden = true; continue; }
     const p = new THREE.Vector3(...at).project(camera);
-    reading.hidden = false;
+    const selected=electricalLabelSelected(port.name,port.part);
+    reading.hidden = !selected;
     const editingThisPanel = ghost?.p.piece === 'solar' && port.solar_panel === `your solar ${ghost.index + 1}`;
-    card.hidden = editingThisPanel || (port.kind === 'input' && (playing || (!wiringMode && !pickedPowerPort))) || p.z > 1 || p.z < -1 || Math.abs(p.x) > 1.4 || Math.abs(p.y) > 1.4;
+    card.hidden = editingThisPanel || (!selected&&!wiringMode&&!pickedPowerPort) || (port.kind === 'input' && (playing || (!wiringMode && !pickedPowerPort))) || p.z > 1 || p.z < -1 || Math.abs(p.x) > 1.4 || Math.abs(p.y) > 1.4;
     if (leader) { leader.style.display = dot.style.display = card.hidden ? 'none' : ''; }
     if (card.hidden) continue;
     const width = card.offsetWidth, height = card.offsetHeight;
@@ -2581,6 +2597,26 @@ function sandboxRequest() {
 // (green is the level's own: where the goal is).
 // Only when it is set down does the engine build it.
 let ghost = null, pressedAt = null, draggingGhost = null;
+let electricalInspection = null, sceneSelectionBusy = false;
+
+function electricalLabelSelected(name,part) {
+  const scope=ghost?{name:ghostName(),parts:ghost.baseObject?.parts||[]}:electricalInspection;
+  if(!scope)return inspectedCircuit===name;
+  const matches=s=>s&&(s===scope.name||s.startsWith(scope.name+' ')||scope.parts?.includes(s));
+  const device=shownElectrical().devices?.find(d=>d.name===name);
+  const circuit=machine?.circuits?.find(c=>c.name===name);
+  const hinge=machine?.joints?.find(j=>j.name===(device?.hinge||circuit?.motor?.hinge));
+  const port=shownElectrical().power_ports?.find(p=>p.name===name);
+  const panel=(ghost?.solar_setup||machine?.solar_panels||[]).find(p=>p.name===(port?.solar_panel||name));
+  return [name,part,device?.part,...(device?.touch||[]),panel?.part,hinge?.a,hinge?.b,...(circuit?.switch?.touch||[])].some(matches);
+}
+
+function inspectElectricalPart(part) {
+  if(!part){electricalInspection=null;return;}
+  const owner=part.match(/^your \S+ \d+(?= |$)/)?.[0];
+  const object=sandboxObjects.find(o=>o.parts.includes(part));
+  electricalInspection={name:owner||part,parts:object?.parts||[part]};
+}
 const raycaster = new THREE.Raycaster();
 const ghostLook = {
   fits: new THREE.MeshStandardMaterial({color: 0x6cc6ff, transparent: true, opacity: .35, depthWrite: false, roughness: .6}),
@@ -2625,6 +2661,16 @@ function sceneHit(clientX, clientY) {
 function ghostHit(clientX, clientY) {
   pointerRay(clientX, clientY);
   return raycaster.intersectObjects(ghostGroup.children, true).some(h => h.object.isMesh);
+}
+function ghostInFront(clientX,clientY){
+  pointerRay(clientX,clientY);
+  const selected=raycaster.intersectObjects(ghostGroup.children,true).find(hit=>{
+    if(!hit.object.isMesh)return false;
+    let o=hit.object;while(o&&!o.userData.partName)o=o.parent;
+    return !pickThroughCover(o?.userData.partName);
+  });
+  const other=raycaster.intersectObjects([...meshes.values()].filter(m=>m.visible),true).find(h=>h.object.isMesh);
+  return selected&&(!other||selected.distance<=other.distance+.001);
 }
 
 // Where the other pieces connect, while a piece is placed: a dot at each --
@@ -3574,6 +3620,7 @@ function startGhost(p, index, keepPlace = false) {
   }
   selectPhonePanel('controls');
   ghost = {p, index, was: index < placements.length ? placements[index] : null, fits: true, problems: [],
+           originalPlacement:JSON.stringify(p),
            drawnAt: null, busy: false, again: false, cost: null, answered: false, inputs: {},card:trayItem(p.piece).focus_knob,
            frameOnAdd:index>=placements.length};
   updateLiveControlAvailability();
@@ -3630,7 +3677,7 @@ function endGhost() {
   closeValueChoices();
   $('socket-choices').hidden=true;
   clearTimeout(solarTimer);solarTimer=null;solarWanted='';solarStamp='';solarResult=null;solarVersion++;solarPending=false;solarError='';
-  ghost = null; draggingGhost = null; pressedAt = null;pendingPieceReference=null;handleDrag=null;drawAirflows();
+  ghost = null; electricalInspection=null; draggingGhost = null; pressedAt = null;pendingPieceReference=null;handleDrag=null;drawAirflows();
   syncWallGrid();
   view.classList.remove('grabbing', 'grab');
   terminalStart = null; powerMessage('');
@@ -3648,10 +3695,12 @@ function cancelGhost() { if (!ghost) return; endGhost(); renderTray(); renderPla
 
 function placeGhost() {
   if (!ghost || !ghost.fits || ghost.busy || !ghost.answered) return false;
+  const inspection={name:ghostName(),parts:ghost.baseObject?.parts||[]};
   remember();
   if(ghost.baseObject){activeDesign.draft.base=ghost.base;if(ghost.wallPlacements)placements=ghost.wallPlacements;}
   else if (ghost.was) placements[ghost.index] = ghost.p; else placements.push(ghost.p);
   endGhost(); renderTray(); renderPlaced();
+  electricalInspection=inspection;
   return true;
 }
 function setGhostDown() {
@@ -4663,7 +4712,7 @@ function feedbackCurve(w) {
 function updatePowerFeedback() {
   updateSolarLiftGuide();
   updateWireAdjustments();
-  const host=$('power-feedback-labels'),sample=powerFeedbackSnapshot(),items=[];
+  const host=$('power-feedback-labels'),sample=powerFeedbackSnapshot();let items=[];
   const pending=!(world?.t>0)&&!playing&&Boolean(flowPending||ghost&&!ghost.answered);
   powerFlowDots.count=0;
   if(!machine||document.body.matches('.on-levels,.on-sandbox')) {host.hidden=true;return;}
@@ -4679,6 +4728,15 @@ function updatePowerFeedback() {
     const compact=Number.isFinite(ghost.p[ghost.card])?`Proposed ${ghost.p[ghost.card]}${unit?' '+unit:''}`:rating;
     items.push({id:'proposed-setting',name:`Adjust ${pieceLabel(ghost.p.piece)}`,kind:'object',priority:-1,at:proposed.at_m,text:compact,
       title:rating+(ghost.p.piece==='spring'?'. Proposed spring settings; the engine measures motion after release.':'. Measured voltage, current and power remain separate.')});
+  }
+  for(const d of shownElectrical().devices||[]){
+    if(d.kind!=='battery'||!electricalLabelSelected(d.name,d.part))continue;
+    const store=machine.batteries?.find(b=>b.name===d.battery),snapshot=contactSnapshot();
+    const measured=snapshot.batteries.find(b=>b.name===d.battery),at=shownBody(d.part)?.position_m;
+    if(!store||!at)continue;
+    items.push({id:'device:'+d.name,name:playerPartTitle(d.name),kind:'object',at,
+      text:`${store.voltage_v} V · ${pending?'Updating…':measured?`${measured.charge_j.toFixed(1)} J · ${Math.round(100*measured.charge_j/measured.capacity_j)}% charged`:'Charge measured on Run'}`,
+      title:'Supply voltage and stored electrical energy measured by the engine.'});
   }
   for(const d of sample.devices) {
     const at=shownBody(d.part)?.position_m||d.at_m;if(!at)continue;
@@ -4770,6 +4828,13 @@ function updatePowerFeedback() {
         (w.mechanical?.segments_m?' This cable has native mass, gravity, bending and contact. A terminal opens when its measured force exceeds its retention.':'' )});
   }
   powerFlowDots.instanceMatrix.needsUpdate=true;
+  // Keep flow visible in the physical circuit. Numeric cards belong only
+  // to the selected device/cable, including while tuning its proposed setup.
+  items=items.filter(item=>{
+    const name=item.id.replace(/^(device|contact):/,'');
+    return item.id==='proposed-setting'||electricalLabelSelected(name.startsWith('wire:')||name.startsWith('route:')?item.name:name,
+      sample.devices.find(d=>d.name===name)?.part);
+  });
   // Keep the current edit and the measured objective readable when edge
   // labels compete for a small screen; optional wire readings come after.
   const labelPriority=item=>item.priority??(item.kind==='object'?1:2);
@@ -5376,7 +5441,6 @@ function slidePoint(clientX, clientY, y) {
 const GRAB_MARGIN_PX = 40;
 let rewiringBusy=false;
 function wireCandidates(clientX,clientY,touch=false) {
-  if(readOnlyCourse())return [];
   if(ghost || rewiringBusy || pullMode || attachMode || switchDragging || !level ||
      !session || builtSetupKey!==currentSetupKey())return [];
   pointerRay(clientX,clientY);
@@ -5488,11 +5552,35 @@ function placedAt(x,y){return placedOwnersAt(x,y)[0]??-1;}
 function chooseScenePiece(indices,x,y){
   const choice=$('socket-choices');choice.replaceChildren();
   for(const index of indices){const name=placements[index]?`${pieceLabel(placements[index].piece)} ${index+1}`:sandboxObjects[index-placements.length]?.name;
-    const b=button(`Adjust ${name}`,()=>{choice.hidden=true;pickUp(index);});b.dataset.pieceIndex=index;choice.append(b);}
+    const b=button(`Adjust ${name}`,()=>{choice.hidden=true;selectScenePiece(index);});b.dataset.pieceIndex=index;choice.append(b);}
   choice.append(button('Cancel',()=>{choice.hidden=true;}));choice.hidden=false;
   const rect=renderer.domElement.getBoundingClientRect();
   choice.style.left=`${Math.max(6,Math.min(rect.width-choice.offsetWidth-6,x-rect.left+12))}px`;
   choice.style.top=`${Math.max(6,Math.min(rect.height-choice.offsetHeight-6,y-rect.top+12))}px`;
+}
+
+async function selectScenePiece(index){
+  if(sceneSelectionBusy)return;
+  const sourceLevel=level,objectId=sandboxObjects[index-placements.length]?.id;
+  if(ghost){
+    const checked=ghost;
+    try{
+      sceneSelectionBusy=true;
+      while(ghost===checked&&checked.busy)await checked.check;
+      if(ghost!==checked||level!==sourceLevel)return;
+      if((checked.was||checked.baseObject)&&JSON.stringify(checked.p)===checked.originalPlacement){
+        // Looking at another object must not rebuild its unchanged world or
+        // add an Undo entry. Changed, checked placements use the normal save.
+        cancelGhost();
+      }else{
+        if(!placeGhost()){powerMessage('Place this piece in a clear spot, or cancel it, before selecting another.');return;}
+        const opened=await rebuildLevel(false);if(!opened||level!==sourceLevel)return;
+        if(objectId)index=placements.length+sandboxObjects.findIndex(o=>o.id===objectId);
+        if(objectId&&!sandboxObjects.some(o=>o.id===objectId))return;
+      }
+    }finally{sceneSelectionBusy=false;}
+  }
+  return pickUp(index);
 }
 // For tests: where a body is on the page (the middle of its mesh).
 window.machineBodyScreen = name => {
@@ -5649,6 +5737,9 @@ renderer.domElement.addEventListener('pointerup', e => {
     socketPress=null;draggingGhost=null;pressedAt=null;return;
   }
   socketPress=null;
+  if(click&&!ghost&&readOnlyCourse()&&pressedWires?.length){
+    electricalInspection={name:pressedWires[0].name,parts:[]};draggingGhost=null;pressedAt=null;return;
+  }
   if(click && !ghost && !e.ctrlKey && clickExistingWire(e.clientX,e.clientY,e.pointerType==='touch',pressedWires)) {
     draggingGhost=null;pressedAt=null;return;
   }
@@ -5662,11 +5753,20 @@ renderer.domElement.addEventListener('pointerup', e => {
       ref.key==='battery'?(machine?.batteries||[]).find(b=>b.in===name&&ref.allowed.includes(b.name))?.name:name;
     if(endpoint&&ref.allowed.includes(endpoint)){ref.p[ref.key]=endpoint;alignPulleyLoad(ref.p,ref.key);pendingPieceReference=null;closeValueChoices();ref.changed();}
     else $('adjustment-feedback').textContent='Choose a compatible object in the scene. Default connections and exact endpoints are in Changes → Settings.';
-  } else if (ghost && click) setLooking(true);
+  } else if (ghost && click) {
+    const choices=ghostInFront(e.clientX,e.clientY)?[]:placedOwnersAt(e.clientX,e.clientY);
+    if(choices.length>1)chooseScenePiece(choices,e.clientX,e.clientY);
+    else if(choices.length)selectScenePiece(choices[0]);
+    else setLooking(true);
+  }
   else if (!ghost && click && !pullMode && !attachMode) {
+    const hit=partAt(e.clientX,e.clientY);inspectElectricalPart(hit?.name);
+    if(currentMode()==='run'||readOnlyCourse()){
+      draggingGhost=null;pressedAt=null;if(!pointers.size)cameraGesture=false;view.classList.remove('grabbing');return;
+    }
     const choices=placedOwnersAt(e.clientX,e.clientY);
     if(choices.length>1)chooseScenePiece(choices,e.clientX,e.clientY);
-    else if(choices.length){setHoverGlow(-1);pickUp(choices[0]);}
+    else if(choices.length){setHoverGlow(-1);selectScenePiece(choices[0]);}
     else if(!playing)hintInteractive();
   }
   draggingGhost = null; pressedAt = null;
@@ -5922,6 +6022,7 @@ function switchHandleAt(x,y,touch=false) {
 }
 function startSwitchDrag(device,e) {
   if(currentMode()!=='run'||switchDragging||ghost||pullMode||attachMode||!session||cameraGesture||pointers.size>1||e.button!==0||e.ctrlKey)return false;
+  inspectElectricalPart(device.handle.part);
   const mesh=meshes.get(device.handle.part),grip=terminalAt({name:device.name,part:device.handle.part},'',device.handle.at_m);
   if(!mesh||!grip)return false;
   pointerRay(e.clientX,e.clientY);
@@ -7375,6 +7476,7 @@ renderer.domElement.addEventListener('pointerdown',e=>{
   let object=raycaster.intersectObjects([...named.keys()].filter(m=>m.visible),true)[0]?.object;
   while(object&&!named.has(object))object=object.parent;
   const control=(machine?.player_controls||[]).find(c=>c.part===named.get(object));if(!control)return;
+  inspectElectricalPart(control.part);
   e.preventDefault();e.stopImmediatePropagation();renderer.domElement.setPointerCapture(e.pointerId);
   sceneControlPointers.set(e.pointerId,control.name);
   holdPlayerControl(control,playerControlButton(control.name));
