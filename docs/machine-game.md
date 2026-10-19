@@ -47,6 +47,14 @@ proof. The new pipe's unpublished energy par is 992 MJ, rounded up from its
 991.13 MJ reference after adding its actual mounting brackets; existing
 published goals, pars and tolerances were not relaxed.
 
+Named exact-body contacts are observed separately from damage impacts. Only
+explicit `touches` stations add those observations to the bounded player
+event log. This prevents a large glass breakage's fragment contacts from
+evicting a legitimate ordinary impact before its station reads the batch.
+The archived Chain reaction again completes all nine stages in order, ending
+with the weight/glass contact at 21.779 s (20.104 s wall time in its isolated
+check). This changes reporting, not collision response or the goal.
+
 ## Electricity and water in Wall Basics — October 19
 
 The next wall pack brings the catalogue to 48 challenges. **Level 1: Wall

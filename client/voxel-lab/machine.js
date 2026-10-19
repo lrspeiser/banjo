@@ -2694,6 +2694,7 @@ function renderPlayMode() {
   if (box.hidden === show) box.hidden = !show;
   if (!show) return;
   const mode = currentMode();
+  terminalPins.visible=!(pinballDesign()&&mode==='run');
   $('mode-tune-tab').disabled = readOnlyCourse() || !ghost && !placements.length && !(level?.free && sandboxObjects.length);
   if (mode !== shownMode) {
     shownMode = mode; document.body.dataset.mode = mode;

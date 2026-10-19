@@ -82,6 +82,12 @@ energy. A circuit residual is not a full-system mechanical conservation proof;
 the current contact/constraint dissipation is not a complete thermal ledger.
 The qualification must not be described as that proof.
 
+Named contact events enter the player log only for explicitly watched
+`touches` stations. Fragment-to-fragment observations must not evict the
+ordinary impact events used by older machines. The archived Chain reaction
+regression confirms all nine stages, including the falling weight hitting
+glass at 21.779 s, after this reporting correction.
+
 ## Qualification — October 19
 
 The six native Pinball checks cover compilation of all eight tools, bounded

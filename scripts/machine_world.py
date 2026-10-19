@@ -2728,9 +2728,14 @@ class MachineSession:
             # millimetres, and the pour's ledger.
             self.parcels = reply['parcels']
         seen=getattr(self,'_first_body_contact',set());self._first_body_contact=seen
+        # Only explicit contact stations need this extra observation stream.
+        # Fragments touching one another can otherwise fill the bounded player
+        # event log before its ordinary impact stations get to read a batch.
+        watched={tuple(sorted(s['done_when']['touches'])) for s in self.compiled['stations']
+                 if isinstance(s.get('done_when'),dict) and 'touches' in s['done_when']}
         for contact in reply.get('named_contacts',[]) or []:
             pair=tuple(sorted((contact['a'],contact['b'])))
-            if pair in seen:continue
+            if pair not in watched or pair in seen:continue
             seen.add(pair)
             self._event('body_contact',f'{pair[0]} touches {pair[1]}',a=pair[0],b=pair[1],
                         contact_at_s=contact['at_s'],speed_m_s=contact['closing_speed_m_s'])

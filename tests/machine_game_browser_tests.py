@@ -2969,6 +2969,9 @@ class Puzzles(unittest.TestCase):
                 self.assertIn('Hold the launcher',self.js("document.getElementById('scene-goal').textContent"))
                 self.click_visible('Run')
                 self.wait("document.getElementById('player-controls').checkVisibility() && !document.querySelector('#player-controls button').disabled",30)
+                self.assertFalse(self.js("document.getElementById('scene-sockets').checkVisibility()"))
+                self.assertLess(self.js("machineBodyScreen('left flipper paddle')[0]"),
+                                self.js("machineBodyScreen('right flipper paddle')[0]"))
                 session=self.server.machines.get(self.js('machineCableSetupState().session'))
                 def hold(label):
                     self.reveal_control(self.button_expression(label));self.paint()
