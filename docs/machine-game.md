@@ -69,6 +69,8 @@ covers resizing again after switching through Move. The catalogue's opt-in
 details test now expects the intended five chapters instead of four.
 Tall edge callouts can dock immediately beside a small corner button in a
 short landscape scene, avoiding the previously covered Undo/Move targets.
+Exact edge docking remains the first choice whenever a clear position fits;
+the small inset beside a corner button is a fallback for insufficient height.
 The switch-guide camera regression uses a real visible click and waits for
 the rendered projection before comparing its SVG ring; a DOM-only click
 could previously inspect the old frame on the faster Linux browser runner.

@@ -34,6 +34,9 @@ for(const [width,height] of [[390,554],[320,310],[844,207]]){
   const at=pieceToolbarPosition(scene,piece,size,[undo,camera],{edgeOnly:true});
   assert.ok(at.x>=undo.right&&at.x+size.width<=piece.left,'a tall callout can dock beside Undo in landscape');
   assert.ok(at.y>=scene.top&&at.y+size.height<=scene.bottom);
+  const taller={...scene,bottom:360};
+  const edge=pieceToolbarPosition(taller,piece,size,[undo,camera],{edgeOnly:true});
+  assert.ok(edge.x===6||edge.x+size.width===taller.right-6,'keep exact edge docking whenever a clear edge position fits');
 }
 
 const heated={body:'cord',at_m:[0,.5,1],local_m:[0,.02,0],cell_m:.02,temperature_k:573.15,how:'chars',cut_w:100,held_j:400,needed_j:1000};

@@ -363,8 +363,9 @@ export function pieceToolbarPosition(scene, piece, size, obstacles=[], {edgeOnly
     candidates=xs.flatMap(x=>ys.map(y=>[x,y]));
   }
   const ranked=candidates.map(bound).map(at=>({...at,penalty:(overlaps(at,piece)?100000:0)+obstacles.filter(o=>overlaps(at,o)).length*10000,
+    edgeInset:edgeOnly?Math.min(Math.abs(at.x-scene.left-6),Math.abs(scene.right-at.x-w-6)):0,
     distance:Math.hypot(at.x+w/2-(piece.left+piece.right)/2,at.y+h/2-(piece.top+piece.bottom)/2)}));
-  return ranked.sort((a,b)=>a.penalty-b.penalty||a.distance-b.distance)[0];
+  return ranked.sort((a,b)=>a.penalty-b.penalty||a.edgeInset-b.edgeInset||a.distance-b.distance)[0];
 }
 
 // A pose part of the way between two measured poses: the position on the
