@@ -157,6 +157,47 @@ class Pinball(unittest.TestCase):
         print('PINBALL FLIPPER CONTACT '+json.dumps(outcomes),flush=True)
 
     @unittest.skipUnless(ENGINE.is_file(),'native engine required')
+    def test_outer_lane_routes_material_balls_into_flipper_reach(self):
+        """A joined guide deflects through contact, rather than plugging a drain."""
+        records=[]
+        for material in ['glass','oak','iron']:
+            for dt in [1/480,1/960]:
+                for original in [False,True]:
+                    with self.subTest(material=material,dt=dt,original=original),tempfile.TemporaryDirectory() as logs:
+                        spec=pinball.template()['base']
+                        next(p for p in spec['parts'] if p['name']=='pinball').update(
+                            pinball.ball('pinball',dict(x_m=-.72,z_m=.35,material=material),{})['parts'][0])
+                        if original:
+                            next(p for p in spec['parts'] if p['name']=='left inlane guide').update(
+                                pinball.rail('left inlane guide',dict(x_m=-.34,z_m=-.25,length_m=.40,angle_deg=45),{})['parts'][0])
+                        spec['stations']=[dict(title='Guide contact',focus=['pinball','left inlane guide'],
+                            done_when={'touches':['pinball','left inlane guide']})]
+                        session=mw.MachineSession(mw.compile_spec(spec),ENGINE,Path(logs),paced=False)
+                        try:
+                            angle=math.radians(pinball.SLOPE);crossing=None
+                            for _ in range(160):
+                                advance(session,.05,dt)
+                                x,y,z=session.bodies['pinball']['position_m']
+                                local_z=math.sin(angle)*(y-pinball.HEIGHT)+math.cos(angle)*z
+                                if local_z<=-.70:
+                                    crossing=x;break
+                            contacts=[e for e in session.events if e['kind']=='body_contact' and
+                                {e['a'],e['b']}=={'pinball','left inlane guide'}]
+                            ledger=session.readouts['electrical']['networks'][0]['ledger']
+                            records.append(dict(material=material,dt_s=dt,original=original,
+                                crossing_x_m=crossing,time_s=session.t,guide_contacts=len(contacts),ledger=ledger))
+                            print('PINBALL OUTER LANE '+json.dumps(records[-1]),flush=True)
+                            self.assertIsNotNone(crossing,'A retained ball must continue downhill, not wedge against a rail end')
+                            if original:self.assertLess(crossing,-.65)
+                            else:
+                                self.assertGreater(crossing,-.43,'The ball must enter the flipper sweep')
+                                self.assertLess(crossing,-.02)
+                                self.assertTrue(contacts)
+                            self.assertFalse(session._test_pulled)
+                            self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+                        finally:session.close()
+
+    @unittest.skipUnless(ENGINE.is_file(),'native engine required')
     def test_a_lost_button_lease_stops_its_force(self):
         import time
         with tempfile.TemporaryDirectory() as logs:

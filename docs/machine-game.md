@@ -1,5 +1,16 @@
 # Puzzles on the machine (/play)
 
+## Pinball side-lane correction — October 19
+
+New **Sandbox → Pinball** designs have a guide from the outer rail toward
+the flipper instead of the open route past its bearing. The guide ends above
+the paddle's sweep, leaving the spring launcher lane clear. Existing saved
+designs retain their geometry. Native comparisons include glass, oak and iron,
+two timesteps and the old guide as a physical negative control; see the
+[Pinball measurements and missing replay-loop components](pinball.md).
+The workshop still reloads through Reset: a repeatable ball-return assembly
+has not been implemented or qualified.
+
 ## Wall view and hosted qualification repairs — October 19
 
 All 26 wall activities start facing their mounting wall. They use ordinary

@@ -7,6 +7,23 @@ Build edits the setup, Run advances the native machine, and Reset reloads its
 original setup. Saved versions, Undo and run-only course sharing use the normal
 Sandbox paths. This pack does not add training levels yet.
 
+October 19 side-lane correction: the guide opposite the shooter lane now
+joins the outer rail upstream of the flipper (0.72 m at 55 degrees), directing
+an edge-running ball into the paddle's reach. It extends into the fixed side
+rail so its exposed end cannot wedge the ball against that rail, and ends
+above the powered paddle's sweep. The shooter lane stays clear. New Pinball
+designs use the corrected guide; saved bases remain unchanged. No ball
+position, speed or contact impulse is assigned.
+
+The return assembly is still missing. A complete replay loop needs a retained
+drain trough, a repeatable elevator or powered ejector with a physical guide,
+and a feed into the spring launcher's waiting position. A powered version
+also needs a real held/contact switch, both supply leads and a finite energy
+source. The existing one-pass wall cradle stops after a half-turn; it cannot
+serve as a cycling ball return unchanged. Future qualification must recover
+the same ball and launch it again over several cycles, with an empty-supply
+negative control. Reset currently restores the initial setup instead.
+
 ## Play and controls
 
 Choose Run. Hold **Pull launcher · release to shoot**, then release it.
@@ -90,7 +107,23 @@ glass at 21.779 s, after this reporting correction.
 
 ## Qualification — October 19
 
-The six native Pinball checks cover compilation of all eight tools, bounded
+For the side-guide comparison, a ball begins at rest at table coordinates
+x = -0.72 m, z = 0.35 m on the unchanged 5-degree oak surface. Glass, oak and
+iron at both 1/480 and 1/960 s make native guide contact and cross z = -0.70 m
+at x = -0.139 to -0.152 m after 2.50 s, within flipper reach. Six otherwise
+identical old-guide controls cross at x = -0.720 m after 1.90 s, outside its
+reach. The positive cases must keep moving rather
+than wedge at the guide end. This is a routing comparison, not a full
+mechanical energy or momentum conservation audit. The source and contact
+laws are unchanged; the fixture uses gravity, without player force or
+electrical source work. Its largest electrical residual is 1.65e-23 J.
+Full paddle travel and spring return remain required. All seven native checks
+pass on Windows in 98.821 s and Linux in 93.980 s, including the 12 side-lane
+cases. The desktop, phone portrait and phone landscape live-control browser
+check passes in 26.482 s. The supervisor's eight cohosting/recovery checks
+also pass after integrating the production recovery release.
+
+The original six native Pinball checks cover compilation of all eight tools, bounded
 controls, actual switch contact, powered motion and spring return, zero-charge
 negative controls, launcher/material comparisons, ball/flipper contact and
 abandoned-input expiry. Ordinary browser play covers 1280×860, 390×844 and

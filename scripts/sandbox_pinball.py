@@ -224,8 +224,10 @@ def template():
         (plunger,'launcher',{}),
         (rail,'launch lane',dict(x_m=.51,z_m=-.275,length_m=1.85,angle_deg=90)),
         (rail,'launch turn',dict(x_m=.49,z_m=1.08,length_m=.60,angle_deg=45)),
+        # Meet the outer rail opposite the launcher upstream of the flipper.
+        # The launch-lane side must leave the shooter lane unobstructed.
         (rail,'right inlane guide',dict(x_m=.34,z_m=-.25,length_m=.40,angle_deg=-45)),
-        (rail,'left inlane guide',dict(x_m=-.34,z_m=-.25,length_m=.40,angle_deg=45)),
+        (rail,'left inlane guide',dict(x_m=-.56,z_m=-.16,length_m=.72,angle_deg=55)),
         (bumper,'upper bumper',dict(x_m=0,z_m=.65)),
         (bumper,'left bumper',dict(x_m=-.31,z_m=.20,radius_m=.11)),
         (bumper,'right bumper',dict(x_m=.26,z_m=.05,radius_m=.11)),
