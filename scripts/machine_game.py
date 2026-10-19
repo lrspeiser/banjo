@@ -1464,7 +1464,8 @@ def editing_guide(level, checked, index, compiled, key):
     mine = [q for q in compiled['parts'] if owner(q) == name and not q['name'].endswith(' stand')]
     if not mine:
         return None
-    guide = {'key': key, 'label': rule.get('label', key), 'arrows': [], 'focus': [], 'marker': None}
+    guide = {'key': key, 'label': rule.get('label', key), 'arrows': [], 'focus': [], 'marker': None,
+             'resizes': False}
     if p['piece']=='spring' and key=='rest_m':
         joint=next((j for j in compiled.get('joints',[]) if j['kind']=='spring' and j['name']==name+' spring'),None)
         if joint:
@@ -1482,6 +1483,7 @@ def editing_guide(level, checked, index, compiled, key):
         centre=wheel['at_m'];radius=p['teeth']*p['module_m']/2+.7*p['module_m']
         guide['focus']=[wheel['name']]
         if key in ('teeth','module_m'):
+            guide['resizes'] = True
             for dx,dy in ((1,0),(-1,0),(0,1),(0,-1)):
                 guide['arrows'].append({'at':[centre[0]+dx*radius,centre[1]+dy*radius,centre[2]],'direction':[dx,dy,0]})
         elif key=='phase_deg':
@@ -1534,6 +1536,10 @@ def editing_guide(level, checked, index, compiled, key):
             continue
         guide['focus'].append(q['name'])
         for before, changed in zip(mw.solids_of(q), mw.solids_of(after)):
+            # A size handle remains a deliberate resize grip even where it
+            # crosses the body's Move grab margin. Translation/turn guides
+            # can yield to grabbing the body without swallowing resizing.
+            guide['resizes'] |= before['size_m'] != changed['size_m']
             a_axes, a_half = mw._axes(before), mw._half(before)
             b_axes, b_half = mw._axes(changed), mw._half(changed)
             resizing = before['turn_deg'] == changed['turn_deg'] and before['size_m'] != changed['size_m']

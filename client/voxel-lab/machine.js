@@ -5378,10 +5378,10 @@ renderer.domElement.addEventListener('pointerdown', e => {
   draggingGhost = null;
   if (!ghost || e.button !== 0 || e.ctrlKey) return;
   const arrowGrip=editArrowAt(e.clientX,e.clientY);
-  // In Move, guides crossing the piece's grab margin must not steal a free
-  // drag for a numeric adjustment. Tune still offers the dimension arrows;
-  // arrows outside the grab margin remain explicit adjustment handles.
-  const moveFromPiece=editorMode==='move'&&nearGhost(e.clientX,e.clientY,GRAB_MARGIN_PX);
+  // Translation/turn guides crossing the Move grab margin yield to a free
+  // drag. Actual size arrows remain resize grips, including numeric choices
+  // whose editor mode is Move. The compiled geometry identifies those.
+  const moveFromPiece=editorMode==='move'&&!ghost.editGuide?.resizes&&nearGhost(e.clientX,e.clientY,GRAB_MARGIN_PX);
   if(arrowGrip&&!moveFromPiece){draggingGhost={id:e.pointerId,kind:'axis-adjust',key:arrowGrip.key,initial:Number(ghost.p[arrowGrip.key]),screenX:e.clientX,screenY:e.clientY,dx:arrowGrip.dx,dy:arrowGrip.dy,active:false};return;}
   if (nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX)) {
     if(editorMode!=='move'){

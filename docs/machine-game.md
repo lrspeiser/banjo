@@ -50,6 +50,19 @@ simulation tolerances are unchanged. These checks establish these authored
 layouts, not a complete rigid-contact momentum/energy ledger or new bearing,
 mounting-strength, fracture, air-drag or material-calibration models.
 
+Local release verification passed the full 116-test game suite, including
+132 nominal/nudged solution runs across all 44 levels. All 44 catalogue
+openings passed at desktop, phone portrait and phone landscape (132 checks),
+and each wall lesson passed real pointer/touch placement, Undo/Redo and
+successful playback at all three sizes (18 checks). These are automated
+solvability and layout checks, not measured newcomer completion times.
+
+The shared Move grab margin now yields to actual size arrows, distinguished
+from position/turn guides by the compiled before/after solid dimensions.
+This preserves dragging a loose block's width and scaffolding's height on
+phones while keeping near-body dragging and zoom-during-drag stable. The
+annotation changes no native setup, forces, goal or scoring rule.
+
 ## Beginner wall lessons — October 18
 
 Three single-piece lessons follow **Roll the ball** in Level 1: Mechanics:

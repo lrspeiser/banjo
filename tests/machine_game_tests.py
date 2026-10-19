@@ -400,6 +400,19 @@ class Tray(unittest.TestCase):
         self.assertEqual(len(guide['arrows']), 2)
         self.assertEqual(sorted(a['direction'][0] for a in guide['arrows']), [-1, 1])
         self.assertEqual(sorted(round(a['at'][0], 6) for a in guide['arrows']), [-.3, .3])
+        self.assertTrue(guide['resizes'])
+        for piece, key, resizes in (('loose_block', 'width_m', True),
+                                    ('scaffold', 'height_m', True),
+                                    ('wall_marble', 'height_m', False),
+                                    ('mirror', 'angle_deg', False),
+                                    ('plank', 'x_m', False)):
+            with self.subTest(piece=piece, key=key):
+                context = mg.level_by_id('easy-wall-drop') if piece == 'wall_marble' else free
+                probe_placement = {'piece': piece, 'x_m': 0}
+                if context is free:
+                    probe_placement['z_m'] = 0
+                annotation = mg.ghost(context, [probe_placement], 0, edit_key=key)['edit_guide']
+                self.assertEqual(annotation['resizes'], resizes)
         for yaw, pitch in ((90, 0), (37, 25), (-65, -35)):
             turned = [dict(placement[0], yaw_deg=yaw, pitch_deg=pitch)]
             guide = mg.ghost(free, turned, 0, edit_key='length_m')['edit_guide']
