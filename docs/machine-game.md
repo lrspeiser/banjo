@@ -1,5 +1,22 @@
 # Puzzles on the machine (/play)
 
+## Pinball flipper response and interior placement — October 19
+
+New Pinball tables use a hollow aluminum paddle and below-deck return crank,
+shorter-travel physical contacts, close-fitting shaft holes and guides that
+drain missed balls without crossing the shooter lane. The ordinary Marble
+tool sets its exact sphere below the retained glass cover, including in older
+Pinball saves. The glass has an edge outline. Saved hardware stays as built;
+choose Sandbox → Pinball for a new table. See [the construction, timing,
+material comparisons and remaining limits](pinball.md#flipper-drain-and-marble-placement-correction--october-19).
+
+The material action-test fixture now supports its heaviest iron press handle
+with a 250 N/m return spring and a 25 cm initial local centre height. Its old
+150 N/m support let the handle's own weight press the new short-travel button
+before player input. Identical geometry and support are used for glass, oak and
+iron, and the upward-force and empty-supply negative controls remain required.
+No goal or tolerance was loosened.
+
 ## A readable pendulum task — October 19
 
 **Swing into the target** (same `easy-wall-pendulum` link and saved progress)

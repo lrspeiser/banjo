@@ -187,7 +187,11 @@ function makeMesh(b) {
   mesh.userData = {revision: b.revision, cells: b.cells_local_m ? b.cells_local_m.length : 0, base: hex};
   mesh.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   if(activeDesign?.draft.base?.presentation?.selection_passthrough?.includes(b.name))
-    mesh.traverse(o=>{if(o.isMesh){o.raycast=()=>{};if(o.material.transparent){o.material.opacity=Math.min(o.material.opacity,.12);o.material.depthWrite=false;o.castShadow=false;}}});
+    mesh.traverse(o=>{if(o.isMesh){o.raycast=()=>{};if(o.material.transparent){
+      o.material.opacity=Math.min(o.material.opacity,.12);o.material.depthWrite=false;o.castShadow=false;
+      const rim=new THREE.LineSegments(new THREE.EdgesGeometry(o.geometry),new THREE.LineBasicMaterial({color:0x8fbfd1,transparent:true,opacity:.6}));
+      rim.name='cover-edge';rim.raycast=()=>{};o.add(rim);
+    }}});
   scene.add(mesh);
   return mesh;
 }
@@ -7040,7 +7044,7 @@ function renderPiecePicker() {
     const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
     picture.append(img); pictureInto(img, t);
     card.append(picture, Object.assign(document.createElement('strong'), {textContent: pieceLabel(t.piece)}),
-      Object.assign(document.createElement('span'), {className: 'piece-description', textContent: PIECE_INFO[t.piece]?.[1] || 'Add this piece to your machine.'}));
+      Object.assign(document.createElement('span'), {className: 'piece-description', textContent: t.piece==='marble'&&pinballDesign()?'Place on the playfield beneath the glass cover.':PIECE_INFO[t.piece]?.[1] || 'Add this piece to your machine.'}));
     if (!level.free || left <= 0) card.append(Object.assign(document.createElement('span'), {className: 'piece-count', textContent: left > 0 ? `${left} left` : 'none left'}));
     const example = level.free && sandboxTemplates.find(example => (example.pieces || example.placements?.map(p => p.piece) || []).includes(t.piece));
     if (!example) return card;

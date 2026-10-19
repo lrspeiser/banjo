@@ -49,12 +49,14 @@ class ObjectActions(unittest.TestCase):
             x,z=.96,-.85
             mount=pinball.rigid('press guide',[x+.10,.40,z],[.16,.04,.08],'iron')
             handle=dict(name='press handle',shape='compound',material=material,fixed=False,
-                at_m=[x+.045,.28,z],parts=[dict(shape='box',at_m=[0,0,0],size_m=[.04,.06,.06])])
+                at_m=[x+.045,.25,z],parts=[dict(shape='box',at_m=[0,0,0],size_m=[.04,.06,.06])])
             fixture=pinball.finish(dict(parts=[mount,handle],joints=[
-                dict(name='press slide',kind='slide',a='press guide',b='press handle',at_m=[x+.045,.28,z],
+                dict(name='press slide',kind='slide',a='press guide',b='press handle',at_m=[x+.045,.25,z],
                     axis=[0,1,0],lower_m=-.14,upper_m=.01,friction_n=.05),
                 dict(name='press return',kind='spring',a='press guide',b='press handle',
-                    at_m=[x+.045,.38,z],at_b_m=[x+.045,.31,z],rest_m=.03,stiffness_n_m=150,damping_n_s_m=1.5)]),{})
+                    # Support the iron handle's weight without letting it
+                    # operate the shorter-throw contact before player input.
+                    at_m=[x+.045,.38,z],at_b_m=[x+.045,.28,z],rest_m=.03,stiffness_n_m=250,damping_n_s_m=1.5)]),{})
             mg.merge_fragment(base,fixture)
         base['batteries'][0]['charge_j']=charge
         return mg.requested_level(dict(level='free',base=base))
@@ -153,6 +155,92 @@ class ObjectActions(unittest.TestCase):
 
 
 class Pinball(unittest.TestCase):
+    def test_ordinary_marble_tool_is_placed_inside_the_cover_in_new_and_saved_tables(self):
+        for old in [False,True]:
+            spec=pinball.template()['base']
+            if old:spec['presentation'].pop('placement_inside')
+            level=mg.requested_level(dict(level='free',base=spec))
+            compiled=mg._assemble(level,[dict(piece='marble',x_m=0,z_m=-.2)])[3]
+            parts={p['name']:p for p in compiled['parts']}
+            ball=parts['your marble 1'];cover=parts['pinball table glass cover']
+            self.assertEqual(ball['shape'],'compound')
+            self.assertEqual(ball['parts'][0]['shape'],'sphere')
+            self.assertLess(ball['at_m'][1],cover['at_m'][1]-.10)
+            self.assertEqual(cover,mw.compile_spec(spec)['parts'][1], 'Placement must keep the actual glass collider')
+            ordinary=mg._assemble(mg.free_build(),[dict(piece='marble',x_m=0,z_m=0)])[3]
+            self.assertEqual(next(p for p in ordinary['parts'] if p['name']=='your marble 1')['shape'],'sphere')
+
+    @unittest.skipUnless(ENGINE.is_file(),'native engine required')
+    def test_marble_tool_contacts_the_deck_and_the_cover_still_retains_an_above_ball(self):
+        angle=math.radians(pinball.SLOPE)
+        for material in ['glass','oak','iron']:
+            for above in [False,True]:
+                spec=pinball.template()['base']
+                level=mg.requested_level(dict(level='free',base=spec))
+                k=dict(piece='marble',x_m=0,z_m=-.2,material=material)
+                compiled=mg._assemble(level,[k])[3]
+                name='your marble 1';ball=next(p for p in compiled['parts'] if p['name']==name)
+                if above:
+                    ball['at_m'][1]=pinball.HEIGHT+(.272+ball['at_m'][2]*math.sin(angle))/math.cos(angle)
+                hit='pinball table glass cover' if above else 'pinball table frame'
+                compiled['stations']=[dict(title='Physical support',focus=[name,hit],done_when={'touches':[name,hit]})]
+                with self.subTest(material=material,above=above),tempfile.TemporaryDirectory() as logs:
+                    session=mw.MachineSession(compiled,ENGINE,Path(logs),paced=False)
+                    try:
+                        advance(session,.5)
+                        x,y,z=session.bodies[name]['position_m']
+                        local_y=math.cos(angle)*(y-pinball.HEIGHT)-math.sin(angle)*z
+                        self.assertTrue(any(e['kind']=='body_contact' and {e['a'],e['b']}=={name,hit} for e in session.events))
+                        if above:self.assertGreater(local_y,.25)
+                        else:self.assertTrue(.03<local_y<.08,local_y)
+                        print('PINBALL COVER '+json.dumps(dict(material=material,above=above,local_y_m=local_y)),flush=True)
+                    finally:session.close()
+
+    @unittest.skipUnless(ENGINE.is_file(),'native engine required')
+    def test_short_throw_buttons_and_hollow_paddles_respond_then_return(self):
+        with tempfile.TemporaryDirectory() as logs:
+            session=mw.MachineSession(mw.compile_spec(pinball.template()['base']),ENGINE,Path(logs),paced=False)
+            try:
+                advance(session,.25)
+                self.assertLess(session.bodies['left flipper paddle']['mass_kg'],1.3)
+                rows=[]
+                for cycle in range(3):
+                    session.player_control('left button',True);session.player_control('right button',True)
+                    start=session.t;first_contact=None;full=None
+                    for _ in range(16):
+                        r=advance(session,.01)
+                        devices={d['name']:d for d in r['electrical']['devices']}
+                        joints={j['name']:j for j in r['joints']}
+                        if first_contact is None and all(devices[n]['closed'] for n in ['left button','right button']):first_contact=session.t-start
+                        if full is None and min(abs(joints[n]['degrees']) for n in ['left flipper axle','right flipper axle'])>=50:full=session.t-start
+                    self.assertIsNotNone(first_contact);self.assertLess(first_contact,.04)
+                    self.assertIsNotNone(full);self.assertLess(full,.16)
+                    session.player_control('left button',False);session.player_control('right button',False)
+                    r=advance(session,.7)
+                    self.assertTrue(all(abs(j['degrees'])<4 for j in r['joints'] if j['name'].endswith('flipper axle')))
+                    ledger=r['electrical']['networks'][0]['ledger']
+                    self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+                    rows.append(dict(cycle=cycle,contact_s=first_contact,travel_s=full,ledger=ledger))
+                print('PINBALL RESPONSE '+json.dumps(rows),flush=True)
+            finally:session.close()
+
+    @unittest.skipUnless(ENGINE.is_file(),'native engine required')
+    def test_balls_behind_either_flipper_reach_the_drain_without_a_spring_anchor_trap(self):
+        for material in ['glass','oak','iron']:
+            for dt in [1/480,1/960]:
+                for side in [-1,1]:
+                    spec=pinball.template()['base']
+                    next(p for p in spec['parts'] if p['name']=='pinball').update(
+                        pinball.ball('pinball',dict(x_m=side*.43,z_m=-.94,material=material),{})['parts'][0])
+                    with self.subTest(material=material,dt=dt,side=side),tempfile.TemporaryDirectory() as logs:
+                        session=mw.MachineSession(mw.compile_spec(spec),ENGINE,Path(logs),paced=False)
+                        try:
+                            advance(session,4,dt)
+                            pos=session.bodies['pinball']['position_m']
+                            self.assertLess(pos[1],.2,'A missed ball must drain, not rest against a return linkage')
+                            print('PINBALL DRAIN '+json.dumps(dict(material=material,dt_s=dt,side=side,position_m=pos)),flush=True)
+                        finally:session.close()
+
     def test_editable_starter_and_all_eight_tools_compile(self):
         template=pinball.template();before=copy.deepcopy(template)
         compiled=mw.compile_spec(template['base'])

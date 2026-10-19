@@ -7,6 +7,63 @@ Build edits the setup, Run advances the native machine, and Reset reloads its
 original setup. Saved versions, Undo and run-only course sharing use the normal
 Sandbox paths. This pack does not add training levels yet.
 
+## Flipper, drain and marble placement correction — October 19
+
+New tables replace the solid 3.39 kg aluminum paddle with a 1.258 kg assembly:
+a closed 3 mm box section, shaft and below-deck return crank. Its actual
+material volumes determine mass and inertia. The bearing has a shaft opening
+and an explicit fixing to a grounded mounting; the deck's shaft openings are
+44 mm wide. Motor terminals face outward and leads clear the crank's sweep.
+The return-spring anchor is below the deck, where a ball cannot lodge against
+it. Drain guides join the outer rail or shooter-lane wall and slope toward the
+open centre drain. The shooter path remains open.
+
+The contact button's initial metal gap is now 7.5 mm instead of 57.5 mm.
+In a paired-button trial at 1/480 s, physical contacts close within 40 ms and
+both paddles reach at least 50° within 160 ms for three press/release cycles;
+they return within the existing 4° tolerance after release. The previous
+solid-paddle apparatus took about 281 ms to reach its stop. The battery is
+not current-limited in this comparison: capacitors would not correct the
+mechanical delay. Capacitors remain available elsewhere in the catalogue.
+The stock actuator is still a lumped DC motor, not a resolved solenoid.
+
+The ordinary Marble tool places its exact sphere on the playfield under the
+lid. `presentation.placement_inside` names the lid excluded from automatic
+set-down support; the cover remains unchanged in the compiled physical world.
+Older Pinball saves use their existing clear-cover declaration. An explicit
+At height placement is still respected. Native glass/oak/iron comparisons
+check deck contact for a ball placed inside and glass contact for a ball placed
+above. A visible edge outline makes the transparent cover easier to recognize.
+
+Hardware changes apply to newly created tables; saved user geometry is kept.
+Create another table with Sandbox → Pinball to use the new mechanism. Ordinary
+Marble placement is corrected for both old and new Pinball designs.
+
+The response and drain trials keep the existing 1e-8 J electrical residual
+limit and report shaft-coupling residual separately. They do not establish
+full-system mechanical/thermal conservation. Drain comparisons use identical
+40 mm glass, oak and iron spheres at both 1/480 and 1/960 s behind either
+paddle. A miss must physically leave through the drain, rather than stick or
+be teleported back to the shooter. Automatic ball return remains unfinished.
+
+On one CPU, three identical 3 s launcher/flipper trials take 2.930–2.952 s
+of local compute. This is near real time locally, not a hosted-server guarantee.
+An experimental exact electrical-trial cache changed the median by only 0.3%
+and was not retained. It produced identical final pose hashes in that comparison.
+No timestep, physics law, contact tolerance or update cadence was reduced.
+
+Verification: all 16 native Pinball checks pass in 172.098 s, including six
+inside/above-cover cases and twelve behind-paddle drains. Contact closes in
+31.25 ms and both paddles reach 50° in 125 ms in all three cycles. At the end
+of those cycles, the accumulated electrical residual is 4.65e-11 J and the
+separate shaft-coupling residual is 0.63594 J on 239.12581 J of source work.
+The latter is a measured numerical residual, not physical heat. All 73 tray
+and free-build tests and 46 host tests pass in 59.940 and 9.534 s. Two browser
+cases pass in 22.875 s, each at desktop 1280×860, portrait 390×844 and landscape
+844×390; they cover ordinary Marble placement, Undo, independent held inputs,
+spring launch, Pause, Reset and saved identity. Source registration remains
+274/274. No new native force law was introduced.
+
 October 19 side-lane correction: the guide opposite the shooter lane now
 joins the outer rail upstream of the flipper (0.72 m at 55 degrees), directing
 an edge-running ball into the paddle's reach. It extends into the fixed side
@@ -54,7 +111,7 @@ even though its transparent surface allows selecting the mechanisms beneath it.
 | Pinball playfield | 1.5 × 2.6 m oak deck at 5°, rails, drain, four legs, a clear guard and two bearing apertures; width and length | Gravity and contact carry the ball downhill. The drain is an opening, not a trigger teleport. |
 | Smooth pinball | 40 mm iron sphere; diameter and glass/oak/iron material | Exact homogeneous sphere, density-derived mass, analytical spherical inertia, native friction and impact. It starts with zero imposed spin and velocity. |
 | Pinball spring launcher | One rigid aluminum rod/nose in a slide, 400 N/m axial spring, 0.28 m draw and a retaining throat; spring stiffness | A bounded 120 N operator force draws the rod. Release removes that force; the spring pushes the ball through contact. No launch impulse is inserted. |
-| Powered pinball flipper | Aluminum paddle on a grounded bearing, native hinge stops, coupled DC actuator and axial return spring; left/right, length, stall torque and return stiffness | Circuit current supplies torque, with back EMF and reaction on the bearing. Opening the switch removes power and the spring returns the paddle. |
+| Powered pinball flipper | Hollow aluminum paddle, shaft and below-deck crank on a fixed bearing, native hinge stops, coupled DC actuator and axial return spring; left/right, length, stall torque and return stiffness | Circuit current supplies torque, with back EMF and reaction on the bearing. Opening the switch removes power and the spring returns the paddle. |
 | Spring-return button | Hinged aluminum contact cap, fixed iron output pad and compression return spring | Operator force closes actual metal contact. The flexible input attaches at the pivot so it does not have to follow a sliding cap. |
 | Rubber pinball bumper | Passive spherical rubber fixture; radius | Contact can return existing impact energy. It has no hidden powered kick. |
 | Pinball guide rail | Solid mounted rail; length and heading | The launch turn and inlane guides deflect the ball through contact and keep the flipper sweep clear. |
@@ -64,8 +121,8 @@ The starter includes a finite 24 V, 10 kJ supply with a 1 kW limit, two parallel
 button/actuator loops and six 2.5 mm² copper leads. Each external terminal and
 return path is explicit. Cables have the existing native mass, bending, gravity,
 collision and terminal pullout. Their declared 200 N locking terminations and
-below-deck service routes are part of the apparatus. Leads pass through actual
-bearing holes; the rotating paddles do not sweep through their connectors.
+below-deck service routes are part of the apparatus. Leads leave the bearing's
+outer face, clear of the rotating return crank; shafts pass through actual deck holes.
 The cable collision rods are 80 mm long in this starter.
 
 ## Numerical scope and limits

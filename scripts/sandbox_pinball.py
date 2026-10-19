@@ -38,19 +38,26 @@ def finish(spec, k):
 def field(name,k,ctx):
     width=k.get('width_m',1.5); length=k.get('length_m',2.6)
     x,z=k.get('x_m',0),k.get('z_m',0)
-    # Two actual bearing apertures admit the actuator wiring below the board.
-    parts=[rigid(name+' upper surface',[x,0,z+(length/2-.68)/2],[width,.06,length/2+.68]),
-           rigid(name+' lower surface',[x,0,z+(-length/2-.84)/2],[width,.06,length/2-.84]),
-           rigid(name+' centre surface',[x,0,z-.76],[.72,.06,.16]),
-           rigid(name+' left surface',[x-(width/2+.50)/2,0,z-.76],[width/2-.50,.06,.16]),
-           rigid(name+' right surface',[x+(width/2+.50)/2,0,z-.76],[width/2-.50,.06,.16]),
+    # Close-fitting shaft holes; motor terminals and return linkages live
+    # below the deck. A ball cannot drop into an oversized bearing opening.
+    parts=[rigid(name+' upper surface',[x,0,z+(length/2-.738)/2],[width,.06,length/2+.738]),
+           rigid(name+' lower surface',[x,0,z+(-length/2-.782)/2],[width,.06,length/2-.782]),
+           rigid(name+' centre surface',[x,0,z-.76],[.816,.06,.044]),
+           rigid(name+' left surface',[x-(width/2+.452)/2,0,z-.76],[width/2-.452,.06,.044]),
+           rigid(name+' right surface',[x+(width/2+.452)/2,0,z-.76],[width/2-.452,.06,.044]),
            rigid(name+' left rail',[x-width/2-.025,.10,z],[.05,.26,length+.10]),
            rigid(name+' right rail',[x+width/2+.025,.10,z],[.05,.26,length+.10]),
            rigid(name+' back rail',[x,.10,z+length/2+.025],[width,.26,.05])]
-    # Open near edge is the drain. Side aprons return missed shots toward it.
+    # Slopes face the centre drain, with their outer ends joined to the rails.
+    # An exposed end or the opposite slope traps balls behind the paddles.
     for side in [-1,1]:
-        parts.append(rigid(name+f' drain guide {side}',[x+side*.33,.10,z-1.17],[.40,.18,.04],
-                           turn=[0,side*25,0]))
+        # The positive-x edge contains the shooter lane; join its inner wall
+        # instead of putting a barrier across the spring launcher's path.
+        run=(min(width/2+.03,.53) if side==1 else width/2+.03)-.10
+        guide_length=run/math.cos(math.radians(25))
+        guide_z=-length/2-.02+run*math.tan(math.radians(25))/2
+        parts.append(rigid(name+f' drain guide {side}',[x+side*(.10+run/2),.10,z+guide_z],
+                           [guide_length,.18,.04],turn=[0,-side*25,0]))
     cover=dict(name=name+' glass cover',shape='compound',material='glass',fixed=True,color_rgba=0xccecff18,
         at_m=[x,.24,z],parts=[dict(shape='box',at_m=[0,0,0],size_m=[width,.02,length])])
     frame=dict(name=name+' frame',shape='compound',material='oak',fixed=True,at_m=[x,0,z],parts=[
@@ -74,44 +81,58 @@ def flipper(name,k,ctx):
     x,z=k.get('x_m',-.43),k.get('z_m',-.76)
     side=1 if k.get('side','left')=='left' else -1
     length=k.get('length_m',.40)
-    # Local origin is the bearing; exact paddle extends inwards from it.
+    # A closed 3 mm aluminum box section, not a solid three-kilogram bar.
+    # Its shaft and return crank extend through the real deck aperture.
+    wall=.003; height=.04; width=.075
+    shell=[dict(shape='box',at_m=[side*length/2,sy*(height-wall)/2,0],
+                size_m=[length,wall,width]) for sy in [-1,1]]
+    shell += [dict(shape='box',at_m=[side*length/2,0,sz*(width-wall)/2],
+                   size_m=[length,height-2*wall,wall]) for sz in [-1,1]]
+    shell += [dict(shape='box',at_m=[side*(wall/2 if end==0 else length-wall/2),0,0],
+                   size_m=[wall,height-2*wall,width-2*wall]) for end in [0,1]]
     paddle=dict(name=name+' paddle',shape='compound',material='aluminum',fixed=False,
-        at_m=[x,.06,z],parts=[dict(shape='box',at_m=[side*length/2,0,0],size_m=[length,.04,.075]),
-            dict(shape='cylinder',at_m=[0,-.032,0],size_m=[.04,.044,.04])],turn_deg=[0,side*20,0])
-    housing=dict(name=name+' bearing',shape='box',material='iron',fixed=True,
-                 at_m=[x,-.04,z],size_m=[.12,.08,.12])
-    parts=[housing,paddle,rigid(name+' spring anchor',[x,.06,z-.27],[.035,.04,.035],'iron')]
+        at_m=[x,.06,z],parts=shell+[
+            dict(shape='cylinder',at_m=[0,-.112,0],size_m=[.028,.184,.028]),
+            dict(shape='box',at_m=[side*.08,-.21,0],size_m=[.16,.012,.04])],turn_deg=[0,side*20,0])
+    housing=dict(name=name+' bearing',shape='compound',material='iron',fixed=True,
+                 at_m=[x,-.08,z],parts=[
+                     dict(shape='box',at_m=[sx*.039,0,0],size_m=[.042,.08,.12]) for sx in [-1,1]]+[
+                     dict(shape='box',at_m=[0,0,sz*.039],size_m=[.036,.08,.042]) for sz in [-1,1]])
+    mount=rigid(name+' mounting',[x,-.10,z+.08],[.12,.04,.04],'iron')
+    parts=[housing,paddle,mount,rigid(name+' spring anchor',[x,-.15,z-.27],[.035,.04,.035],'iron')]
     hinge=name+' axle'
     # The fixed bearing reacts against the actuator, not against world velocity.
-    joints=[dict(name=hinge,kind='hinge',a=housing['name'],b=paddle['name'],at_m=[x,.06,z],
+    joints=[dict(name=name+' bearing fixing',kind='fix',a=mount['name'],b=housing['name'],
+                 at_m=[x,-.10,z+.06]),
+            dict(name=hinge,kind='hinge',a=housing['name'],b=paddle['name'],at_m=[x,.06,z],
                  axis=[0,1,0],lower_deg=-55 if side==1 else 0,upper_deg=0 if side==1 else 55,
                  friction_n_m=.004),
             dict(name=name+' return spring',kind='spring',a=name+' spring anchor',b=paddle['name'],
-                 at_m=[x,.06,z-.27],at_b_m=[x+side*.12,.06,z-.044],rest_m=.20,
+                 at_m=[x,-.15,z-.27],at_b_m=[x+side*.12,-.15,z-.044],rest_m=.20,
                  stiffness_n_m=k.get('return_n_m',35),damping_n_s_m=.3)]
     # Sockets face outward, outside the paddle's sweep.
-    terminals={key:[x-side*.03,-.086,z+offset] for key,offset in [('plus',-.035),('minus',.035)]}
+    terminals={key:[x-side*.066,-.08,z+offset] for key,offset in [('plus',-.035),('minus',.035)]}
     return finish(dict(parts=parts,joints=joints,electrical=dict(devices=[dict(name=name,kind='motor',
         part=housing['name'],hinge=hinge,terminals=terminals,
-        terminal_normals={key:[0,-1,0] for key in terminals},
+        terminal_normals={key:[-side,0,0] for key in terminals},
         stall_torque_n_m=k.get('torque_n_m',12),no_load_rad_s=30,command=-side,
         brake_torque_n_m=0,gear_ratio=1)])),k)
 
 
 def button(name,k,ctx):
     x,z=k.get('x_m',-.94),k.get('z_m',-.85)
-    base=rigid(name+' base',[x,.06,z],[.14,.08,.16],'ceramic')
-    pad=rigid(name+' pad',[x+.045,.1275,z],[.04,.02,.14],'iron')
+    base=rigid(name+' base',[x,.08,z],[.14,.175,.16],'ceramic')
+    pad=rigid(name+' pad',[x+.045,.1775,z],[.04,.02,.14],'iron')
     cap=dict(name=name+' button',shape='compound',material='aluminum',fixed=False,at_m=[x+.01,.20,z],
              parts=[dict(shape='box',at_m=[0,0,0],size_m=[.12,.01,.08])])
     post=rigid(name+' pivot post',[x-.09,.15,z],[.04,.12,.04],'iron')
     joints=[dict(name=name+' button hinge',kind='hinge',a=post['name'],b=cap['name'],
                  at_m=[x-.05,.20,z],axis=[0,0,1],lower_deg=-35,upper_deg=0,friction_n_m=.001),
             dict(name=name+' return spring',kind='spring',a=base['name'],b=cap['name'],
-                 at_m=[x+.06,.10,z],at_b_m=[x+.06,.20,z],rest_m=.12,stiffness_n_m=150,damping_n_s_m=.7)]
+                 at_m=[x+.06,.1675,z],at_b_m=[x+.06,.20,z],rest_m=.0525,stiffness_n_m=150,damping_n_s_m=.7)]
     device=dict(name=name,kind='switch',part=base['name'],closed=False,
         touch=[cap['name'],pad['name']],terminal_parts={'in':cap['name'],'out':pad['name']},
-        terminals={'in':[x-.05,.20,z-.044],'out':[x+.045,.1275,z+.075]},
+        terminals={'in':[x-.05,.20,z-.044],'out':[x+.045,.1775,z+.075]},
         terminal_normals={'in':[0,0,-1],'out':[0,0,1]})
     return finish(dict(parts=[base,pad,cap,post],joints=joints,electrical=dict(devices=[device]),
         **hold(name,cap['name'],[0,-30,0],k.get('label','Press button'),k.get('key',''))),k)
@@ -214,7 +235,8 @@ def template():
     import machine_game as mg
     spec=dict(schema=mw.SCHEMA,title='Pinball',cell_m=.02,physics_dt_s=1/480,parts=[],joints=[],batteries=[],
               electrical=dict(devices=[],wires=[]),stations=[],presentation={'camera':'overview','activity':'pinball',
-                'selection_passthrough':['pinball table glass cover']})
+                'selection_passthrough':['pinball table glass cover'],
+                'placement_inside':['pinball table glass cover']})
     for build,name,k in [(field,'pinball table',{}),
         (flipper,'left flipper',dict(x_m=.43,z_m=-.76,side='right')),
         (flipper,'right flipper',dict(x_m=-.43,z_m=-.76,side='left')),

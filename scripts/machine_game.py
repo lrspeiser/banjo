@@ -310,6 +310,18 @@ def requested_level(data):
             raise ValueError('Names starting with "your " are reserved for tray pieces')
         level['machine'] = copy.deepcopy(base)
         level['custom_base'] = True
+        # An explicit interior placement surface means “set it on the deck”,
+        # not on its transparent lid. This changes setup only: the cover stays
+        # in the compiled machine and still collides throughout the run.
+        presentation=base.get('presentation') if isinstance(base.get('presentation'),dict) else {}
+        covers=presentation.get('placement_inside',[])
+        if presentation.get('activity')=='pinball' and not covers:
+            covers=presentation.get('selection_passthrough',[])  # older saved tables
+        if isinstance(covers,list) and covers and all(isinstance(n,str) for n in covers):
+            marble=next(t for t in level['tray'] if t['piece']=='marble')
+            marble['placement_inside']=list(covers)
+            marble['exact_sphere']=True
+            marble['description']='Place on the playfield beneath its glass cover. Gravity moves the ball after Run.'
         if sandbox_wall.validate(base):
             level['wall_mode'] = copy.deepcopy(base['build_surface'])
             level['title'] = 'Wall workshop'
@@ -591,7 +603,12 @@ def _marble(name, k, ctx):
     d = k.get('diameter_m', 0.04)
     part = {'name': name, 'shape': 'sphere', 'material': k.get('material', 'iron'), 'size_m': [d, d, d],
             'at_m': [k['x_m'], 0.0, k.get('z_m', 0.0)], 'turn_deg': [0.0, 0.0, 0.0], 'fixed': False}
-    part['at_m'][1] = round(k['height_m'] if k.get('placement')=='at height' else rest_height(part, ctx['parts']), 4)
+    covers=ctx['tray'].get('placement_inside',[])
+    supports=[p for p in ctx['parts'] if p['name'] not in covers]
+    part['at_m'][1] = round(k['height_m'] if k.get('placement')=='at height' else rest_height(part, supports), 4)
+    if ctx['tray'].get('exact_sphere'):
+        size=part.pop('size_m')
+        part.update(shape='compound',parts=[dict(shape='sphere',at_m=[0,0,0],size_m=size)])
     return {'parts': [part]}
 
 
