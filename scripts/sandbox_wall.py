@@ -464,17 +464,22 @@ def world_lift_assembly(x=0,y=1.6,offset=0):
     return rows,rename(check)
 
 
-def peg_field_assembly(base_spec,placements,panel_id=None,rows=4,columns=5):
+def peg_field_assembly(base_spec,placements,panel_id=None,rows=None,columns=5):
     """Lay out existing tools on one mounting face; physics is rehearsed later."""
     import machine_game as mg
     if base_spec.get('build_surface',{}).get('version')!=2:
         raise ValueError('Open the wall into the 3D world before adding a peg field.')
-    if type(rows) is not int or type(columns) is not int or not 3<=rows<=6 or not 3<=columns<=7:
+    if (rows is not None and (type(rows) is not int or not 3<=rows<=6)) or type(columns) is not int or not 3<=columns<=7:
         raise ValueError('A peg field uses 3..6 rows and 3..7 columns.')
     board=next((p for p in panels(base_spec) if p['id']==(panel_id or FOUNDATION[0])),None)
     if not board:raise ValueError('Choose an existing wall for the peg field.')
     width,height=board['width_m'],board['height_m']
     if width<2 or height<2:raise ValueError('A peg field needs a wall at least 2 m wide and 2 m high.')
+    # Keep the default row spacing near half a metre as the wall grows.
+    # Four rows on a 4 m wall left large vertical gaps and a mostly free fall.
+    # This changes declared geometry only; every outcome is rehearsed below
+    # the chat transaction, with the same three-contact/catcher requirement.
+    if rows is None:rows=max(3,min(6,math.ceil(1+height*.49/.5)))
     level=mg.requested_level(dict(level='free',base=base_spec));before=len(placements);placed=copy.deepcopy(placements)
     mg.compose(level,placed)
     omitted=[];pegs=[];cups=[]
@@ -492,10 +497,13 @@ def peg_field_assembly(base_spec,placements,panel_id=None,rows=4,columns=5):
     for i in range(bins):
         cups.append(add('wall_cup',x_m=board['x_m']-width/2+(i+.5)*width/bins,height_m=.3,width_m=bin_width))
     step=(width-.8)/(columns-.5);left=board['x_m']-width/2+.4
+    # Wider boards spread the same stock farther apart. Use larger ordinary
+    # pegs there so impacts visibly deflect the ball rather than graze a pin.
+    diameter=min(.4,.12+max(0,width-3)*.1)
     for r in range(rows):
         for c in range(columns):
             x=left+(c+(r%2)*.5)*step;y=height*(.83-r*.49/(rows-1))
-            row=dict(piece='wall_peg',wall=board['id'],x_m=x,height_m=y,diameter_m=.12)
+            row=dict(piece='wall_peg',wall=board['id'],x_m=x,height_m=y,diameter_m=diameter)
             try:mg.compose(level,placed+[row])
             except (mg.LevelRefused,mw.MachineRefused) as exc:
                 if not all(' goes ' in p or 'extends beyond the wall' in p for p in exc.problems):raise

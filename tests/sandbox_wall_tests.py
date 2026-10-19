@@ -462,6 +462,46 @@ class WallPatterns(unittest.TestCase):
         self.assertEqual(result['patterns'][0]['added'],18)
         self.assertEqual(len(result['patterns'][0]['omitted']),2)
 
+    def test_repair_echo_cannot_duplicate_or_replace_the_assembly_verification(self):
+        level=mg.requested_level(dict(level='free',base=wall.world_base()))
+        expanded,check,_=wall.peg_field_assembly(level['machine'],[])
+        echo={k:v for k,v in check.items() if k not in ('kind','radius_m')}
+        echo['via']=echo['via'][:3];echo['finish']=list(reversed(echo['finish']))
+        calls=[];runs=[]
+        def call(messages):
+            calls.append(copy.deepcopy(messages))
+            return (dict(reply='Proposed',clear=True,assemblies=[dict(kind='peg_field')],verify=[echo]) if len(calls)==1
+                else dict(reply='Repair',verify=[echo])),{}
+        def run(compiled,**kw):runs.append(kw);return dict(paths={},hits=[],events=[],error=None)
+        with self.assertRaises(mg.LevelRefused) as refused:
+            machine_chat.respond_free('Replace with Plinko',level,[],call=call,rehearse=run)
+        self.assertEqual(len(runs),machine_chat.BUILD_ATTEMPTS)
+        for messages in calls[1:]:
+            retained=json.loads(messages[-1]['content'])['required_verify']
+            self.assertEqual(len(retained),1)
+            self.assertEqual(retained[0]['via'],check['via'])
+        self.assertNotIn('Required verify',str(refused.exception))
+        self.assertIn('0 of 3',refused.exception.builder_feedback[0])
+
+    def test_replacing_a_six_metre_wall_keeps_the_wall_and_passes_material_nudges(self):
+        base=wall.world_base();level=mg.requested_level(dict(level='free',base=base))
+        added,check,_=wall.peg_field_assembly(base,[])
+        self.assertEqual(sum(p['piece']=='wall_peg' for p in added),25)
+        self.assertTrue(all(p['diameter_m']==.4 for p in added if p['piece']=='wall_peg'))
+        records=[]
+        for material in ('glass','oak','iron'):
+            ps=copy.deepcopy(added);ps[-1]['material']=material
+            compiled=mw.compile_spec(mg.compose(level,ps)[0])
+            for seed in (0,1,2):
+                scene=mg.nudged(compiled,seed) if seed else compiled
+                with tempfile.TemporaryDirectory() as logs:r=mw.rehearse(scene,ENGINE,Path(logs),seconds=15,track=[check['marble']])
+                measured=machine_chat.measure_courses([check],r,scene)[0]
+                self.assertIsNone(r['error']);self.assertTrue(measured['happened'],(material,seed,measured))
+                points=r['paths'][check['marble']]['points'];span=max(p[1] for p in points)-min(p[1] for p in points)
+                self.assertGreater(span,.25,'the marble must visibly bounce sideways, not graze vertically aligned pins')
+                records.append(dict(material=material,seed=seed,dt_s=1/240,cell_m=.02,check=measured,lateral_span_m=span,wall_s=r['wall_s']))
+        print('PLINKO REPLACEMENT',json.dumps(records),flush=True)
+
     def test_peg_field_material_comparison_and_rotated_wall_use_actual_contacts(self):
         fixture=json.loads((ROOT/'tests/fixtures/chat-built-plinko-wall.json').read_text(encoding='utf-8'))
         board=fixture['active_wall'];base=fixture['base'];before=fixture['before']

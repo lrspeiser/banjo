@@ -479,8 +479,10 @@ pieces. Include a real catching cup and a marble above the pegs, or reuse the ex
 PREFERRED START for a Plinko request: assemblies:[{"kind":"peg_field","wall":environment.active_wall.id}].
 This reusable assembly fits visible side rails, staggered rows of existing wall pegs, bottom catching cups
 and a new marble to that wall. It skips occupied peg slots and preserves the existing design. Optional
-rows (3..6) and columns (3..7) choose density; default 4×5. The wall needs at least 2×2 m. It supplies its own
-native verification, so verify may be []. Every resulting tool remains separately editable. You can use
+rows (3..6) and columns (3..7) choose density; omit them to fit row spacing to the wall's height, with five columns.
+The wall needs at least 2×2 m. It supplies its own
+native verification: use verify:[] for its marble, including during repairs. Do not invent addition IDs
+for an assembly or copy the direct-addition example below. Every resulting tool remains separately editable. You can use
 edit on its expanded pieces to repair a measured failure. Do not add the assembly again during repair.
 Use verify with order='any', minimum_contacts=3 and via:['pattern_id:*', existing peg numbers...] for a
 deflector field: the marble must hit at least three different listed pieces and settle in a named finish.
@@ -500,7 +502,7 @@ Add mechanisms because they serve the requested chain. A new marble course shoul
 to retain a downhill gradient through every bend; do not let the last track slope below the ground.
 Describe a proposal, not an observed success: the server will report what its rehearsal measured.
 
-For a marble course, include verify:[{"marble":"ball","via":["entry","turn","finish"],
+For a marble course made directly with add/patterns (rather than an assembly), include verify:[{"marble":"ball","via":["entry","turn","finish"],
 "finish":"finish","seconds":15}]. Give each addition a short unique id, such as ball or entry.
 References in verify may be those IDs or final 1-based piece numbers. via is an ordered list of at least
 two different pieces that the SAME marble must physically touch. finish is the piece that must catch it
@@ -631,6 +633,40 @@ def course_checks(rows, placements, compiled, aliases):
         checks.append(check)
     if len({c['seconds'] for c in checks})>1:
         raise mg.LevelRefused(['Use one shared rehearsal duration for all verify routes'])
+    return checks
+
+
+def builder_goal(check):
+    """A proof obligation, independent of set ordering and measured geometry."""
+    goal={k:v for k,v in check.items() if k not in ('radius_m','initial_height_m')}
+    if goal.get('kind')=='course':
+        goal.setdefault('order','ordered')
+        goal.setdefault('minimum_contacts',len(goal['via']))
+        if goal['order']=='any':goal['via']=sorted(goal['via'])
+        goal['finish']=sorted(goal['finish'] if isinstance(goal['finish'],list) else [goal['finish']])
+    return json.dumps(goal,sort_keys=True)
+
+
+def merge_builder_checks(retained,proposed):
+    """Retain server proof obligations; model echoes cannot multiply them.
+
+    An assembly's unordered field already tests any three of its pegs and
+    every prepared catcher. An echo naming a subset is not another course.
+    Different deadlines, thresholds and ordered routes remain distinct and
+    are rejected by the transaction's contract when repairing a proposal.
+    """
+    checks=copy.deepcopy(retained)
+    for candidate in proposed:
+        def echo(existing):
+            if builder_goal(existing)==builder_goal(candidate):return True
+            return (existing.get('kind')==candidate.get('kind')=='course' and
+                existing.get('order')==candidate.get('order')=='any' and
+                existing['marble']==candidate['marble'] and existing['seconds']==candidate['seconds'] and
+                existing['minimum_contacts']==candidate['minimum_contacts'] and
+                set(candidate['via'])<=set(existing['via']) and
+                set(candidate['finish'] if isinstance(candidate['finish'],list) else [candidate['finish']])<=
+                set(existing['finish'] if isinstance(existing['finish'],list) else [existing['finish']]))
+        if not any(echo(c) for c in checks):checks.append(copy.deepcopy(candidate))
     return checks
 
 
@@ -855,7 +891,7 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
         focus='\nSELECTED MOUNTING FACE FOR THIS REQUEST: '+json.dumps(selected)+'.\nExact coordinate limits: '+json.dumps(environment['wall_coordinates'])+'.\nUse these actual coordinates, not a wall centered at zero.\nRemaining wall_peg inventory: '+str(environment['remaining_counts'].get('wall_peg',0))+'. Remaining native part slots: '+str(environment['remaining_part_slots'])+'. Each peg uses its peg, bracket and mounting bolts. Leave room for the catchers.\n'
     messages = [{'role': 'system', 'content': free_prompt(level)+focus},
                 {'role': 'user', 'content': json.dumps({'request': message, 'on_the_table': context,'environment':environment})}]
-    scratch=[dict(p) for p in placements];scratch_aliases={};pattern_reports={};assembly_checks=[]
+    scratch=[dict(p) for p in placements];scratch_aliases={};pattern_reports={};assembly_checks=[];retained_checks=[]
 
     def fit(p):
         out = {'piece': p['piece']}
@@ -919,7 +955,7 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
                     raise mg.LevelRefused(['peg_field takes a wall id and optional rows/columns on a wall design'])
                 import sandbox_wall
                 try:rows,check,report=sandbox_wall.peg_field_assembly(level['machine'],placed,
-                    assembly.get('wall',environment['active_wall']['id']),assembly.get('rows',4),assembly.get('columns',5))
+                    assembly.get('wall',environment['active_wall']['id']),assembly.get('rows'),assembly.get('columns',5))
                 except ValueError as exc:raise mg.LevelRefused([str(exc)]) from None
                 placed+=rows;checks.append(check);pattern_reports[report['id']]=report
                 continue
@@ -1071,24 +1107,29 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
             except (ValueError,KeyError,TypeError):pass
             raise
         compiled=mw.compile_spec(spec)
+        # The server owns the accepted proof obligations for this transaction.
+        # A repair can omit their JSON, but can never remove or weaken them.
+        checks=merge_builder_checks(retained_checks,checks)
+        checks=merge_builder_checks(checks,course_checks(answer.get('verify',[]),checked,compiled,aliases))
         for check in checks:
             ball=next((p for p in compiled['parts'] if p['name']==check['marble'] and p['shape']=='sphere' and not p['fixed']),None)
             if not ball:raise mg.LevelRefused(['Keep the assembly marble as a freely moving sphere'])
-            if check.get('kind')=='course':check['radius_m']=ball['size_m'][0]/2
+            if check.get('kind')=='course':
+                # Revalidate retained names against the proposed machine too;
+                # clear/rebuild must not leave a proof pointing at old pieces.
+                row={k:v for k,v in check.items() if k not in ('kind','radius_m')}
+                course_checks([row],checked,compiled,{})
+                check['radius_m']=ball['size_m'][0]/2
             else:check['initial_height_m']=ball['at_m'][1]
-        checks+=course_checks(answer.get('verify',[]),checked,compiled,aliases)
         return [{k: v for k, v in p.items() if k != 'cost'} for p in checked], compiled, checks
     answer, usage = call(messages)
     answer = _placements_answer(answer)
-    rehearsal=None;required_checks=0;required_routes=int(course_requested);required_stages=0;goal_contract=None
+    rehearsal=None;goal_contract=None;last_observations=[]
     # Geometry corrections should not consume every chance before the first
     # native rehearsal. All attempts remain one unapplied transaction.
     for attempt in range(BUILD_ATTEMPTS):
         try:
             placed, compiled, checks = built(answer)
-            required_checks=max(required_checks,len(checks))
-            if len(checks)<required_checks:
-                raise mg.LevelRefused(['Keep the requested assembly and route checks while correcting the layout'])
             courses=[c for c in checks if c.get('kind')=='course']
             if field_requested and not any(c.get('order')=='any' and c.get('minimum_contacts',0)>=3 for c in courses):
                 raise mg.LevelRefused(['Verify the Plinko marble hits at least three different pegs in any order and settles in a real catcher'])
@@ -1097,20 +1138,20 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
                     p.get('wall','workshop backing')==environment['active_wall']['id']]
                 if len(catchers)>1 and any(not isinstance(c['finish'],list) or not set(catchers)<=set(c['finish']) for c in courses):
                     raise mg.LevelRefused(['The Plinko request can finish in any prepared cup. Before rehearsal, list all its catchers in verify.finish: '+json.dumps(catchers)])
-            if len(courses)<required_routes or sum(len(c['via']) for c in courses)<required_stages:
+            if course_requested and not courses:
                 raise mg.LevelRefused(['Keep all route checks and stages while repairing the course'])
-            required_routes=max(required_routes,len(courses))
-            required_stages=max(required_stages,sum(len(c['via']) for c in courses))
-            proposed_goals=[{k:c[k] for k in ('marble','via','finish','seconds','order','minimum_contacts') if k in c} for c in courses]
-            if goal_contract is None and courses:goal_contract=copy.deepcopy(proposed_goals)
-            elif goal_contract is not None and proposed_goals!=goal_contract:
-                raise mg.LevelRefused(['Keep the original route targets, order and deadline; repair the piece settings instead. Required verify: '+json.dumps(goal_contract)])
+            proposed_goals=sorted(builder_goal(c) for c in checks)
+            if goal_contract is not None and proposed_goals!=goal_contract:
+                raise mg.LevelRefused(['Keep the original route targets, order and deadline; repair the piece settings instead. The server retains required_verify automatically; use verify:[] during repairs.'])
+            goal_contract=proposed_goals
+            retained_checks[:]=copy.deepcopy(checks)
             if rehearse is not None:
                 marbles=[p for p in compiled['parts'] if p['shape']=='sphere' and not p['fixed']]
                 seconds=max((c.get('seconds',12) for c in checks),default=25)
                 r=rehearse(compiled,track=[p['name'] for p in marbles],seconds=seconds)
                 measured=lift_checks([c for c in checks if c.get('kind')!='course'],r)
                 measured+=measure_courses([c for c in checks if c.get('kind')=='course'],r,compiled)
+                last_observations=measured
                 if r.get('error') or any(not c['happened'] for c in measured):
                     raise mg.LevelRefused(['The engine could not verify this machine: '+str(r.get('error') or measured)])
                 variations=[]
@@ -1119,6 +1160,7 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
                         variant=mg.nudged(compiled,seed)
                         trial=rehearse(variant,track=[p['name'] for p in marbles],seconds=seconds)
                         observed=measure_courses(courses,trial,variant)
+                        last_observations=observed
                         if trial.get('error') or any(not c['happened'] for c in observed):
                             raise mg.LevelRefused(['The course failed a small placement variation; repair it without changing its goals: '+
                                 str(dict(seed=seed,error=trial.get('error'),checks=observed))])
@@ -1133,6 +1175,14 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
             break
         except (mg.LevelRefused, mw.MachineRefused) as e:
             if attempt == BUILD_ATTEMPTS-1:
+                # Preserve full diagnostics for tests/repair callers. The HTTP
+                # response uses concise feedback, never an internal goal dump.
+                feedback=[]
+                for c in last_observations:
+                    if c.get('kind')=='course' and not c.get('happened'):
+                        feedback.append(f'The marble touched {len(c["stages"])} of {c["expected"]} required pieces.' if len(c['stages'])<c['expected'] else
+                            'The marble did not settle in a catcher.')
+                e.builder_feedback=feedback[:2] or ['Try a smaller change, such as moving the marble or spacing the pegs.']
                 raise
             # Again, with what the server refused.
             messages += [{'role': 'assistant', 'content': json.dumps(answer)},
@@ -1141,12 +1191,14 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
                             'original_on_the_table':context,
                             'environment':free_environment(level,scratch,active_wall),
                             'existing_connections':getattr(e,'connection_context',context),
+                            'required_verify':copy.deepcopy(merge_builder_checks(retained_checks,assembly_checks)),
                             'ask': 'Fix the proposed build, including every connection. Keep the original request '
                                    'and the player\'s original pieces. on_the_table is the current staged proposal, not yet '
                                    'applied to the player. Edit those numbered pieces to repair it. Use clear only if the '
                                    'original request asked to replace the design. Do not add duplicates or repeat expanded patterns. Addition ids from this proposal still '
                                    'resolve in verify and wiring. Assemblies are already expanded into these editable pieces; '
-                                   'edit them instead of adding the same assembly again. Keep every route stage. '
+                                   'edit them instead of adding the same assembly again. required_verify is retained by the server; '
+                                   'use verify:[] when required_verify is supplied. Repair geometry/settings, not verification. '
                                    'Do not claim success without engine evidence.'})}]
             answer, more = call(messages)
             answer = _placements_answer(answer)

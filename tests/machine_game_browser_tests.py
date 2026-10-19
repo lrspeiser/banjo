@@ -3219,6 +3219,48 @@ class Puzzles(unittest.TestCase):
                 self.assertAlmostEqual(at[1],.36,delta=.006)
                 self.assertLessEqual(self.js('document.body.scrollWidth'),width)
 
+    def test_words_replace_the_reported_wall_with_plinko_and_keep_failed_builds_atomic(self):
+        fixture=json.loads((ROOT/'tests/fixtures/chat-replaced-plinko-wall.json').read_text(encoding='utf-8'))
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                draft=dict(name='Replace this wall',base=fixture['base'],placements=fixture['before'])
+                packed='j'+base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
+                self.navigate(self.base+'/machine#build='+packed)
+                self.wait('machinePlacements().length===5',60)
+                original=self.js('machinePlacements()')
+                self.click_visible('Describe a design');self.slide('Your question',fixture['request'])
+                if width==1280:
+                    bad=dict(reply='Invalid proposal',clear=True,add=[dict(piece='imaginary_piece')])
+                    with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')),patch('machine_chat._call',return_value=(bad,{})):
+                        self.click_visible('Build it')
+                        self.wait("document.getElementById('chat-log').textContent.includes('Your design has not changed')",30)
+                    self.assertEqual(self.js('machinePlacements()'),original)
+                    chat=self.js("document.getElementById('chat-log').textContent")
+                    self.assertNotIn('Required verify:',chat)
+                    self.slide('Your question',fixture['request'])
+                responses=[(p,{}) for p in fixture['proposals']]
+                with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')),patch('machine_chat._call',side_effect=responses) as provider:
+                    self.click_visible('Build it')
+                    self.wait('machinePlacements().length===33 && '+READY,90)
+                self.assertEqual(provider.call_count,len(responses))
+                chat=self.js("document.getElementById('chat-log').textContent")
+                self.assertIn('Passed 3 physics trials',chat)
+                final=self.js('machinePlacements()')
+                self.assertEqual(final,fixture['placements'])
+                self.click_visible('Controls');self.click_visible('Save version');self.anonymous_cloud_saved()
+                self.click_visible('Undo');self.wait('machinePlacements().length===5',45)
+                self.assertEqual(self.js('machinePlacements()'),original)
+                self.click_visible('Redo');self.wait('machinePlacements().length===33 && '+READY,60)
+                self.click_visible('Face the wall');self.wait('machineCamera().settled',20)
+                self.click_visible('Run')
+                self.wait("/World (?:[89]|1[0-5])\\./.test(document.getElementById('clock').textContent)",25)
+                self.click_visible('Pause')
+                self.assertAlmostEqual(self.js("machineBodies()['your wall_marble 33'][1]"),.36,delta=.006)
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'plinko-replacement-{width}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+
     def test_marble_showcases_load_run_reset_and_fit_the_three_screen_shapes(self):
         expected=['Marble skyscraper','Waterworks express','Solar pinball factory','Light the fuse','Electric marble relay']
         for width,height,name,stages in ((1280,860,expected[0],6),(390,844,expected[1],6),(844,390,expected[0],6)):

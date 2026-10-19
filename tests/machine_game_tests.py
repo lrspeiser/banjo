@@ -989,10 +989,38 @@ class FreeBuild(unittest.TestCase):
             calls.append(copy.deepcopy(messages))
             return (answer if len(calls)==1 else dict(answer,verify=[])),{}
         def run(compiled,**kw):return dict(paths={},hits=[],events=[],error=None)
-        with self.assertRaisesRegex(mg.LevelRefused,'Keep'):
+        with self.assertRaisesRegex(mg.LevelRefused,'could not verify'):
             mc.respond_free('Build a marble course',self.FREE,[],call=call,rehearse=run)
         self.assertEqual(len(calls),mc.BUILD_ATTEMPTS)
         self.assertIn('could not verify',calls[1][-1]['content'])
+        self.assertTrue(json.loads(calls[1][-1]['content'])['required_verify'],
+            'the server retains the checks, so omission cannot bypass physical failure')
+
+    def test_repair_can_omit_its_route_json_but_still_has_to_pass_the_same_physics_checks(self):
+        answer=self.course_proposal();calls=[];observed=[]
+        def call(messages):
+            calls.append(copy.deepcopy(messages))
+            return (answer if len(calls)==1 else dict(reply='Repair settings',edit=[],verify=[])),{}
+        def run(compiled,**kw):
+            observed.append(kw)
+            return dict(paths={},hits=[],events=[],error=None)
+        with self.assertRaisesRegex(mg.LevelRefused,'could not verify'):
+            mc.respond_free('Build a marble course',self.FREE,[],call=call,rehearse=run)
+        self.assertEqual(len(observed),mc.BUILD_ATTEMPTS)
+        contracts=[json.loads(rows[-1]['content'])['required_verify'] for rows in calls[1:]]
+        self.assertTrue(all(c==contracts[0] for c in contracts))
+
+    def test_builder_check_identity_deduplicates_unordered_sets_without_changing_ordered_routes(self):
+        check=dict(kind='course',marble='ball',via=['a','b','c'],finish=['left','right'],seconds=15,
+            order='any',minimum_contacts=3,radius_m=.04)
+        echo=dict(check,via=['c','b','a'],finish=['right','left'],radius_m=.05)
+        self.assertEqual(mc.merge_builder_checks([check],[echo]),[check])
+        subset=dict(check,via=['a','b','c'],finish='left')
+        self.assertEqual(mc.merge_builder_checks([check],[subset]),[check])
+        for change in (dict(seconds=25),dict(minimum_contacts=2),dict(finish='other'),dict(order='ordered')):
+            self.assertEqual(len(mc.merge_builder_checks([check],[dict(check,**change)])),2)
+        ordered=dict(check,order='ordered')
+        self.assertEqual(len(mc.merge_builder_checks([ordered],[dict(ordered,via=['c','b','a'])])),2)
 
     def test_bad_route_metadata_can_be_corrected_without_preserving_invalid_stages(self):
         answer=self.course_proposal();calls=[]

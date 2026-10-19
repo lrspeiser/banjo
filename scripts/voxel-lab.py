@@ -526,8 +526,11 @@ class Handler(BaseHTTPRequestHandler):
     finally:self.server.chat_busy.release()
    else:raise ValueError('Unknown machine operation')
    self.send(200,json.dumps(r,separators=(',',':'),allow_nan=False).encode())
-  except MachineRefused as e:self.send(422,json.dumps({'ok':False,'error':'This machine cannot be built as written','problems':e.problems}).encode())
-  except machine_game.LevelRefused as e:self.send(422,json.dumps({'ok':False,'error':'Those pieces do not fit this level','problems':e.problems}).encode())
+  except (MachineRefused,machine_game.LevelRefused) as e:
+   if hasattr(e,'builder_feedback'):
+    self.send(422,json.dumps({'ok':False,'error':'The builder could not verify a working design. Your design has not changed',
+     'problems':e.builder_feedback}).encode())
+   else:self.send(422,json.dumps({'ok':False,'error':'Those pieces do not fit this level' if isinstance(e,machine_game.LevelRefused) else 'This machine cannot be built as written','problems':e.problems}).encode())
   except LookupError as e:self.send(410,json.dumps({'ok':False,'error':str(e),'code':'session_expired'}).encode())
   except machine_chat.ChatUnavailable as e:self.send(503,json.dumps({'ok':False,'error':str(e)}).encode())
   except SiteBusy as e:self.send(503,json.dumps({'ok':False,'error':str(e),'code':'site_busy'}).encode())

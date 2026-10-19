@@ -1,5 +1,53 @@
 # Puzzles on the machine (/play)
 
+October 18 Plinko replacement repair: reproduced the reported request
+“replace the current parts with a plinko style marble game” against its
+6×4 m wall and five original placements (including an existing backing
+overlap). The original four-row, 12 cm peg field touched only two pegs.
+Repair replies then added a second, narrower route beside the assembly's
+own check; comparing the two JSON lists locked the transaction into an
+unrepairable goal conflict.
+
+The server now retains validated proof obligations through repair attempts.
+Identical checks and unordered subset echoes of an existing field are
+deduplicated, retaining the original full field. A changed ordered route,
+deadline, contact threshold or different catcher remains a conflicting
+goal; omission cannot bypass the retained checks. Unordered target/catcher
+list order is immaterial. Retained references are revalidated against the
+proposed geometry, and marble radius/start height are refreshed from its
+declaration. The model receives `required_verify` as structured context and
+can repair settings with `verify:[]`. Only a completed verified transaction
+replaces the design; failed HTTP builds show concise feedback, not internal
+goal JSON. Original diagnostics remain on the refusal for repair/tests.
+
+The default peg-field row count now keeps vertical spacing near 0.5 m
+(3..6 rows), with five columns. Peg diameter is 0.12 m up to a 3 m wall,
+then grows 0.1 m per extra metre of width, capped at 0.4 m. These are ordinary
+editable declared tool settings; no forces, trajectories or contact laws
+change. Explicit rows/columns still override density, subject to stock and
+native resource checks. Every requested build still needs native rehearsal.
+
+A real configured-model proposal is captured in
+`tests/fixtures/chat-replaced-plinko-wall.json`, without profile identifiers.
+It replaced the reported five pieces with 25 pegs, two side tracks, five
+cups and one marble: 33 placements and 98 native parts, keeping the backing.
+At dt=1/240 s, 20 mm cells and 15 s per trial, glass/oak/iron each passed
+nominal plus two nudged runs (9/9). Glass hit 5/5/4 different pegs;
+oak and iron hit 5/5/5. Lateral travel spanned 1.20–3.56 m, with real settled
+catches; local rehearsal wall time was 1.41–1.81 s under concurrent tests.
+The original three-contact threshold, 15 s deadline, support/settling
+tolerances and engine binary are unchanged. This is contact/path and
+workflow qualification, not a new full-pipeline conservation audit or a
+guarantee for every board size and occupied layout.
+
+The replacement browser regression uses the captured real model proposal,
+but runs HTTP validation, all three native rehearsals, normal Run playback,
+cloud save and Undo/Redo without mocking the engine. It passes at 1280×860,
+390×844 and 844×390. An intentionally invalid build is kept atomic and its
+HTTP error contains the short feedback rather than verification internals.
+The existing moved-wall add-to-design fixture also retains its 11 original
+pieces and passes the native/material qualification.
+
 October 18 wall-builder patterns and Plinko: the chat request includes the
 selected wall id, actual environment bounds, existing collision problems,
 remaining inventory and native part slots. For a moved wall, x_m is explicitly
@@ -18,7 +66,8 @@ IDs name every expanded piece. The existing 60-addition, 120-native-part and
 cell limits are retained. Row/grid tests include cups as well as pegs.
 
 The reusable `peg_field` assembly uses existing wall pegs, wall tracks,
-wall cups and wall marble. Default density is 4×5; it preserves existing
+wall cups and wall marble. The original density was 4×5 (now height-dependent,
+as described above); it preserves existing
 placements and omits occupied peg slots. A new marble starts 18 cm left of
 the wall centre (other clear launch offsets are fallback placements). Two
 continuous visible vertical track barriers contain sideward bounces. Mounted
