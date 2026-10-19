@@ -1620,8 +1620,36 @@ function syncZones() {
     box.add(new THREE.LineSegments(new THREE.EdgesGeometry(box.geometry), new THREE.LineBasicMaterial({color: 0x5fe08f})));
     scene.add(box); zones.push(box);
   }
+  syncLessonGuides();
 }
 window.machineGoalGuideState=()=>zones.map(z=>({at_m:z.position.toArray(),textLabels:z.children.filter(c=>c.isSprite).length}));
+
+// Authored editing landmarks. These are annotations, never collision bodies
+// or goal observers. A bound ring follows the actual rendered target pose.
+const lessonGuideMarkers=[];
+function syncLessonGuides(){
+  for(const marker of lessonGuideMarkers){scene.remove(marker);marker.geometry.dispose();marker.material.dispose();}
+  lessonGuideMarkers.length=0;
+  for(const guide of level?.setup_guides||[]){
+    const geometry=guide.kind==='mark'?new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0,-guide.height_m/2,0),new THREE.Vector3(0,guide.height_m/2,0)]):
+      new THREE.BufferGeometry().setFromPoints(Array.from({length:49},(_,i)=>new THREE.Vector3(
+        guide.radius_m*Math.cos(i*Math.PI/24),guide.radius_m*Math.sin(i*Math.PI/24),0)));
+    const marker=new THREE.Line(geometry,new THREE.LineBasicMaterial({color:guide.color,depthTest:false,transparent:true,opacity:.95}));
+    marker.position.set(...guide.at_m);marker.renderOrder=8;marker.userData.guide=guide;
+    scene.add(marker);lessonGuideMarkers.push(marker);
+  }
+}
+function updateLessonGuides(){
+  for(const marker of lessonGuideMarkers){
+    const guide=marker.userData.guide;
+    marker.visible=!document.body.matches('.on-levels,.on-sandbox')&&(!guide.when_missing||currentMode()!=='run'&&!placements.some(p=>p.piece===guide.when_missing));
+    const body=guide.part&&meshes.get(guide.part);
+    if(body)marker.position.set(body.position.x,body.position.y,guide.at_m[2]);
+  }
+}
+window.machineLessonGuideState=()=>lessonGuideMarkers.map(m=>({kind:m.userData.guide.kind,part:m.userData.guide.part||null,
+  at_m:m.position.toArray(),visible:m.visible,color:m.material.color.getHexString()}));
 
 // Gas pushing a piston (steam under a piston, a cannon's breech): its column,
 // where the engine says it is, tinted by its measured temperature. Not drawn
@@ -2184,9 +2212,11 @@ function pinballDesign(){return level?.free&&activeDesign?.draft.base?.presentat
 function frameCamera(includeGhost=false) {
   if(wallDesign()&&wallFront) {
     const board=wallPanel();
-    goal.copy(wallWorldPoint(board.x_m,board.height_m/2,.3,board));target.copy(goal);
+    const area=!level?.free&&level?.camera_area;
+    const focused=area?.at_m?.length===3&&area?.size_m?.length===3&&area.at_m.every(Number.isFinite)&&area.size_m.every(n=>Number.isFinite(n)&&n>0);
+    goal.copy(focused?new THREE.Vector3(...area.at_m):wallWorldPoint(board.x_m,board.height_m/2,.3,board));target.copy(goal);
     azimuth=(board.yaw_deg||0)*Math.PI/180;elevation=0;
-    distance=1.08*Math.max(board.height_m,board.width_m/camera.aspect)/2/Math.tan(camera.fov*Math.PI/360);
+    distance=1.08*Math.max(focused?area.size_m[1]:board.height_m,(focused?area.size_m[0]:board.width_m)/camera.aspect)/2/Math.tan(camera.fov*Math.PI/360);
     follow=false;$('follow').setAttribute('aria-pressed','false');return;
   }
   // A free build's table corners mark where pieces can go; the view is of what is built.
@@ -4223,6 +4253,11 @@ function updateLiveControlAvailability(){
   for(const b of view.querySelectorAll('[data-control]'))b.disabled=!playing||!session||startingRun;
   pagePlayerControls();
   for(const card of liveCards.children){
+    if(card.lessonGuide){
+      const guide=card.lessonGuide;
+      card.hidden=document.body.matches('.on-levels,.on-sandbox,.scene-win')||Boolean(guide.when_missing&&(currentMode()==='run'||placements.some(p=>p.piece===guide.when_missing)));
+      continue;
+    }
     const released=card.dataset.restraint && readouts.joints?.some(j=>j.name===card.dataset.restraint&&j.attached===false);
     const release=card.querySelector('[data-release]');
     if(released) {
@@ -4238,6 +4273,7 @@ function updateLiveControlAvailability(){
 }
 function positionLiveControls(){
   updateLiveControlAvailability();
+  updateLessonGuides();
   const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#wall-camera-view,#piece-editor,#level-done,#player-controls')]
     .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
   for(const card of liveCards.children){
@@ -7241,6 +7277,14 @@ function renderMachineControls() {
     const card=liveCards.lastChild;card.classList.add('object-action-card');card.actionPart=control.part;
     card.querySelector('strong').textContent=playerPartTitle(control.part);
   }
+  for(const guide of level?.setup_guides||[]){
+    if(!guide.title)continue;
+    const text=Object.assign(document.createElement('span'),{textContent:guide.text||''});
+    beside(text,guide.part||'',guide.at_m);
+    const card=liveCards.lastChild;card.lessonGuide=guide;card.actionPart=guide.part;
+    card.classList.add('lesson-guide-card');card.style.borderColor=guide.color;
+    card.querySelector('strong').textContent=guide.title;card.querySelector('output').remove();
+  }
   const action = (label, command, name, at, autoStart=false) => {
     const b = button(label, async () => {
       if(currentMode()!=='run'||!session||startingRun)return;
@@ -8034,7 +8078,7 @@ async function chooseLevel(id, design = null) {
     'easy-wall-generator':'Open a tank over the right paddles to generate power and light the lamp.',
     'easy-wall-air':'Increase air speed to roll the marble along the level track into its cup.',
     'easy-wall-steam':'Increase firebox heat to raise the piston by 10 cm.',
-    'easy-wall-pendulum':'Raise the release angle so the bob pushes the guided marble 15 cm.',
+    'easy-wall-pendulum':'Raise the bob to the right, then Run: hit the blue target left past the green mark.',
     'easy-wall-trapdoor':'Reduce hinge resistance so the flap opens by 60°.',
     'easy-wall-spring':'Place and tension the spring, then Run and Release to lift the marble 30 cm.',
     'easy-wall-mirror':'Turn a mirror in the beam to send light up to the sensor.',

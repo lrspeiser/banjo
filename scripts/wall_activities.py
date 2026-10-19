@@ -94,19 +94,28 @@ def levels():
         dict(x_m=0,height_m=1.4,friction_n_m=0),dict(x_m=0,height_m=1.4,friction_n_m=10),
         ['your wall_trapdoor 1 leaf','catcher cup'])
 
-    swing=_board('Release a wall pendulum')
+    swing=_board('Swing into the target')
     _fixture(swing,'wall_marble','target marble',x_m=-.2,height_m=1.55,diameter_m=.12,material='glass')
     swing['parts'].append(dict(name='target slide rail',shape='box',material='iron',fixed=True,
         size_m=[1.2,.04,.04],at_m=[-.5,1.55,.08]))
     swing['parts'].append(wall.mount('target slide bracket',-.5,1.55,.07))
     swing['joints'].append(dict(name='target slide',kind='slide',a='target slide rail',b='target marble',
         at_m=[-.2,1.55,.3],axis=[1,0,0],lower_m=-.9,upper_m=.1,friction_n=0))
-    activity('pendulum','Release a wall pendulum',
-        'Place the pendulum and pull its starting angle away from vertical. Gravity swings its bob into the waiting marble. A hanging vertical pendulum has no starting push.',
+    pendulum=activity('pendulum','Swing into the target',
+        'Add the pendulum at the gold mount; its position is already lined up. Increase Release angle to raise the square bob to the right, then Place and Run. It swings left and hits the blue target along its rail, past the green mark.',
         swing,_tray('wall_pendulum',[0,2.2],length_m=.7,material='oak',friction_n_m=.001),
         dict(moved_m=dict(part='target marble',m=.15)),
         dict(x_m=0,height_m=2.2,start_deg=50),dict(x_m=0,height_m=2.2,start_deg=0),
         ['your wall_pendulum 1 arm','target marble'])
+    # Editing annotations only. Neither the target body nor the native slide,
+    # contact, goal, deadline or energy par is changed by these guides.
+    pendulum['camera_area']=dict(at_m=[-.15,1.95,.3],size_m=[2,1.25,.5])
+    pendulum['setup_guides']=[
+        dict(kind='ring',at_m=[0,2.2,.4],radius_m=.07,color='#ffd36a',
+             title='Hang the pivot here',text='Add the pendulum; raise its bob to the right.',when_missing='wall_pendulum'),
+        dict(kind='ring',part='target marble',at_m=[-.2,1.55,.4],radius_m=.09,color='#65d9ff',
+             title='Push the blue target left',text='Centre past green mark · 15 cm.'),
+        dict(kind='mark',at_m=[-.35,1.55,.42],height_m=.26,color='#5fe08f')]
 
     spring=_board('Release the wall spring')
     _fixture(spring,'wall_marble','marble',x_m=0,height_m=1.38,diameter_m=.08,material='glass')

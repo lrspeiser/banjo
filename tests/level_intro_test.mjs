@@ -13,6 +13,9 @@ for(const level of levels){
   assert.deepEqual(levelIntroduction({...level,solution:[{secret:'DO NOT SHOW'}],wrong:[],solution_releases:['SECRET']}),info,'Private answers do not affect the introduction');
 }
 assert.equal(levelIntroduction({free:true}),null,'Sandbox has no forced level briefing');
+const pendulum=levelIntroduction(levels.find(l=>l.id==='easy-wall-pendulum'));
+for(const word of ['rail','gold mount','Release angle','square bob','right','Place and Run','left'])assert.ok(pendulum.works.includes(word),word);
+assert.ok(pendulum.place.includes('square weight'),'Name the visible bob instead of assuming pendulum vocabulary');
 const legacy=levelIntroduction({id:'old-spring',variant:{family:'easy-spring',version:2},title:'Spring',brief:'Lift the load.',tray:[{piece:'spring',knobs:{mechanism_version:{default:1}}}]});
 assert.ok(!legacy.works.includes('latch'),'Old shared springs do not promise a release control');
 const heat=levelIntroduction(levels.find(l=>l.id==='easy-heat'));

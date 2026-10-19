@@ -37,7 +37,7 @@ their previous order. Sixteen further activities cover these connections:
 | Air pushes the marble | Air speed | Native drag from an explicitly external air supply |
 | Steam raises the piston | Firebox heat | Boiling water, vapour pressure and piston work |
 | Open the wall trapdoor | Free/braked hinge | Gravity overcomes bearing resistance |
-| Release a wall pendulum | Release angle | Stored gravitational energy pushes a marble along a slide |
+| Swing into the target | Release angle | Stored gravitational energy pushes a marble along a slide |
 | Release the wall spring | Placement and relaxed length | A latch releases a spring-loaded plate against a separate marble |
 | Reflect light up the wall | Mirror position and face angle | Native reflected rays reaching the sensor |
 | Focus light on the wall | Lens position and curvature | Refraction through the actual lens faces |
@@ -51,7 +51,11 @@ their previous order. Sixteen further activities cover these connections:
 The trapdoor goal measures its hinge opening, rather than crediting a marble
 that happens to bounce off the closed flap. Its cup demonstrates the released
 path. The pendulum's target has a visible horizontal guide and a native slide;
-the player must move it 15 cm. The boiler has a height marker before placement.
+the player must move it 15 cm. A focused front view, a blue target ring, gold
+mounting ring and green centre-travel mark make those roles visible before
+adding the pendulum. It starts at the aligned mount; raise its square bob
+right with Release angle, Place and Run to swing left. These are editing
+annotations, not colliders or extra forces. The boiler has a height marker before placement.
 Spring release is a field action after Run, not an automatic preview action.
 
 ## Building blocks and combinations

@@ -1,5 +1,28 @@
 # Puzzles on the machine (/play)
 
+## A readable pendulum task — October 19
+
+**Swing into the target** (same `easy-wall-pendulum` link and saved progress)
+now opens on the working area rather than the whole wall. Its blue ring marks
+the existing sliding target, gold ring shows the pendulum pivot and green line
+marks 15 cm of target-centre travel. Labels sit at the scene edges with leaders.
+Add the pendulum at its already aligned default position, increase **Release
+angle** to raise the square bob right, then **Place** and **Run**. Gravity swings
+it left into the target. The introduction distinguishes the sliding target
+from the bob; there is no separate field release button in this lesson.
+
+The camera area and `setup_guides` are public editing annotations. Removing
+them produces an identical compiled physical machine: target size/material,
+slide, pendulum, contact law, 15 cm goal, 6 s limit and 84.4 MJ par are unchanged.
+Native reference nudges win 3/3; a vertical bob and a 70 cm horizontal miss each
+fail 3/3. Glass and oak targets pass at 0.567 and 0.533 s with 20 mm cells and
+1/240 s steps; the same iron target still misses with this fixed oak pendulum.
+No new force, momentum transfer or conservation model is introduced. Browser
+play passes at 1280×860, 390×844 and 844×390, including visible initial landmarks,
+edge labels clear of the target, default mounting, angle adjustment, win and
+Reset. The two browser cases complete in 12.467 s; native guidance/material
+regressions complete in 12.588 s locally.
+
 ## Reusable object actions — October 19
 
 Sandbox now has **Design → Object actions · advanced**, and **Actions** beside

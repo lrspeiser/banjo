@@ -7,14 +7,14 @@ const pieces={plank:'a plank',ramp:'a ramp',knife:'a swinging knife',mirror:'mir
   ignition:'a heating coil',cannon:'a cannon',catapult:'a counterweight catapult',
   marble:'a marble',block:'a block',link:'a string',rope:'a rope',wall_track:'a wall track',
   wall_peg:'a round deflector peg',wall_water_wheel:'a paddle wheel',wall_marble:'a marble',
-  wall_funnel:'a wall funnel',wall_lever:'a wall seesaw',wall_water_tank:'a wall water tank'};
+  wall_funnel:'a wall funnel',wall_lever:'a wall seesaw',wall_water_tank:'a wall water tank',wall_pendulum:'a hinged arm with a square weight (the bob)'};
 export const LEVEL_MECHANISMS=Object.freeze({
   'easy-wall-lift':'The wired motor turns a cradle wheel. Put the marble in the low cradle; contact carries it upward and gravity tips it onto the upper track. Reset reloads this one-pass mechanism.',
   'easy-wall-water-lift':'Water pushes paddles on the same solid shaft as the cradle. Move the tank over the right paddles and open its tap. The wheel lifts and unloads the marble without an electric motor.',
   'easy-wall-generator':'Falling water turns a wheel and DC generator. Current in its two wires lights the indicator lamp and applies opposing torque to the shaft. There is no charged battery supplying the circuit.',
   'easy-wall-air':'An external air supply pushes the marble by drag. Increase Air speed to roll it along the level track and into the cup. With no wind, the level track gives it no starting push.',
   'easy-wall-steam':'Firebox heat boils the boiler’s water. Added vapour raises pressure under the piston and pushes it upward. The boiler starts at boiling temperature; increase Firebox heat to supply energy.',
-  'easy-wall-pendulum':'A raised bob stores gravitational energy. Increase Release angle so it swings into the waiting marble. A vertical pendulum starts with no swing.',
+  'easy-wall-pendulum':'The blue target stays on its rail. Add the pendulum at the gold mount. Increase Release angle to raise its square bob right, then Place and Run. Gravity swings it left into the target.',
   'easy-wall-trapdoor':'The hinged flap can hold the marble or open under gravity. Lower Hinge resistance until it opens and lets the marble fall into the cup.',
   'easy-wall-spring':'The latch holds a compressed spring and push plate. Increase Relaxed length, place the plate under the marble, select Run and press Release spring beside it. The plate lifts the marble by contact.',
   'easy-wall-mirror':'The mirror reflects the horizontal laser beam upward. Move it into the beam and turn its face; the traced rays show where the light actually goes.',

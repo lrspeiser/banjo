@@ -2955,6 +2955,40 @@ class Puzzles(unittest.TestCase):
                 with self.subTest(level=key,viewport=(width,height)):
                     self.play_wall_activity('easy-wall-'+key,width,height)
 
+    def test_pendulum_starts_with_visible_target_mount_and_finish_mark(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-wall-pendulum',width,height,phone=width!=1280,dismiss_intro=False)
+                self.assertIn('square weight',self.js("document.getElementById('level-intro-place').textContent"))
+                self.assertIn('gold mount',self.js("document.getElementById('level-intro-works').textContent"))
+                self.click_visible('GO');self.wait('machineCamera().settled',30)
+                self.assertTrue(self.js('machineWallState().front_view'))
+                self.assertEqual(self.js('machineWallState().camera_target'),[-.15,1.95,.3])
+                self.wait("[...document.querySelectorAll('.lesson-guide-card')].filter(n=>n.checkVisibility()).length===2",30)
+                markers=self.js('machineLessonGuideState()')
+                self.assertEqual([m['color'] for m in markers],['ffd36a','65d9ff','5fe08f'])
+                self.assertTrue(all(m['visible'] for m in markers))
+                # The fixed target is visible before adding anything, with a
+                # legible halo and no callout over the contact area.
+                target=self.screen_point([-.2,1.55,.3])
+                bounds=self.js("(()=>{const v=document.getElementById('view').getBoundingClientRect();return {view:{left:v.left,right:v.right,top:v.top,bottom:v.bottom},cards:[...document.querySelectorAll('.lesson-guide-card')].filter(c=>c.checkVisibility()).map(c=>{const b=c.getBoundingClientRect();return {left:b.left,right:b.right,top:b.top,bottom:b.bottom}})}})()")
+                v=bounds['view'];self.assertTrue(v['left']<target[0]<v['right'] and v['top']<target[1]<v['bottom'])
+                for b in bounds['cards']:self.assertFalse(b['left']<=target[0]<=b['right'] and b['top']<=target[1]<=b['bottom'],bounds)
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'pendulum-visible-start-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Add a wall pendulum');held=self.ghost()
+                self.assertEqual([held['p']['x_m'],held['p']['height_m']],[0,2.2])
+                self.assertTrue(held['fits'],held['problems'])
+                for _ in range(10):self.click_visible('Increase Release angle on object');self.ghost()
+                self.assertEqual(self.ghost()['p']['start_deg'],50)
+                self.click_visible('Place');self.wait(READY,60)
+                self.wait("[...document.querySelectorAll('.lesson-guide-card')].filter(n=>n.checkVisibility()).length===1",30)
+                self.click_visible('Run');self.wait("document.body.classList.contains('scene-win')",30)
+                self.assertIn('★★★',self.js("document.getElementById('level-done').textContent"))
+                self.click_visible('Reset');self.wait(READY,60);self.wait('machineCamera().settled',30)
+                self.assertAlmostEqual(self.js("machineBodies()['target marble'][0]"),-.2,places=3)
+                self.assertTrue(all(m['visible'] for m in self.js('machineLessonGuideState()')))
+
     def test_wall_electronic_components_and_solar_use_scene_controls(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             for key in ('resistor','capacitor','solar','parallel'):
@@ -7671,7 +7705,8 @@ def browser_test_batches(count):
     tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Puzzles))
     added={'test_wall_reset_restores_the_front_view_after_orbit','test_browser_batches_cover_every_case_once',
            'test_sandbox_object_actions_edit_save_undo_and_drive_the_real_button',
-           'test_object_action_dock_pages_keep_touch_buttons_inside_the_scene'}
+           'test_object_action_dock_pages_keep_touch_buttons_inside_the_scene',
+           'test_pendulum_starts_with_visible_target_mount_and_finish_mark'}
     batches=[[] for _ in range(count)]
     for i,test in enumerate(t for t in tests if t._testMethodName not in added):
         # Keep the previous distribution, but move the 21-play wall pack away

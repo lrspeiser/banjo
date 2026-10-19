@@ -2213,7 +2213,7 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
 def public(level):
     """What the page needs to show a level: never its solution."""
     result = {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
-                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding','release_to_start','camera_min_m','camera_area','water_controls','assembly_tutorial','wall_mode') if k in level}
+                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding','release_to_start','camera_min_m','camera_area','setup_guides','water_controls','assembly_tutorial','wall_mode') if k in level}
     if not level.get('free'):
         # Setup guidance exposes counts only, never positions or adjustments.
         required = {}

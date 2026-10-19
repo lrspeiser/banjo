@@ -1105,6 +1105,9 @@ body.panel-tabs:has(#phone-toolbar.one-row) #view #clock{top:6px}
 .object-action-card{width:160px}
 .object-action-card button{touch-action:none;user-select:none}
 .object-action-card button[aria-pressed=true]{background:#d58b18;color:#111}
+.lesson-guide-card{width:190px;font-size:12px;pointer-events:none}
+.lesson-guide-card strong{white-space:normal;font-size:13px}
+@media(max-width:600px){.lesson-guide-card{width:140px}}
 #object-action-dialog .guide-body{display:flex;flex-direction:column;gap:8px}
 #object-action-dialog input,#object-action-dialog select{width:100%;min-height:44px;box-sizing:border-box;background:#0d202b;color:#e4edf4;border:1px solid #63899d;border-radius:6px;padding:8px}
 .object-action-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}

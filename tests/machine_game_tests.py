@@ -2574,6 +2574,24 @@ class Engine(unittest.TestCase):
         print('WALL GENERATOR',json.dumps(measurements),flush=True)
 
     @need_engine
+    def test_pendulum_landmarks_change_only_presentation_and_keep_physical_misses(self):
+        level=mg.level_by_id('easy-wall-pendulum')
+        plain=copy.deepcopy(level);plain.pop('camera_area');plain.pop('setup_guides')
+        self.assertEqual(mw.compile_spec(mg.compose(level,level['solution'])[0]),mw.compile_spec(mg.compose(plain,plain['solution'])[0]))
+        public=mg.public(level)
+        self.assertNotIn('solution',public)
+        self.assertEqual(public['setup_guides'][0]['at_m'],[0,2.2,.4])
+        self.assertEqual(public['setup_guides'][1]['part'],'target marble')
+        self.assertAlmostEqual(abs(public['setup_guides'][2]['at_m'][0]+.2),level['goal']['station']['done_when']['moved_m']['m'])
+        with tempfile.TemporaryDirectory() as logs:
+            for label,placements,wins in [('raised',level['solution'],3),('vertical',level['wrong'],0),
+                    ('miss',[dict(level['solution'][0],x_m=.7)],0)]:
+                result=mg.trial(level,placements,ENGINE,Path(logs),runs=3)
+                self.assertEqual(result['worked'],wins,(label,result))
+                self.assertTrue(all(r['error'] is None for r in result['results']))
+                print('PENDULUM GUIDANCE',label,json.dumps(result),flush=True)
+
+    @need_engine
     def test_wall_expansion_compares_materials_under_the_same_conditions(self):
         measurements=[]
         with tempfile.TemporaryDirectory() as logs:
