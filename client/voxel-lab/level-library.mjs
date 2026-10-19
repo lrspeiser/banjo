@@ -43,6 +43,7 @@ export function renderLevelCards(list, levels, {
     card.setAttribute('aria-label', `Play level ${index + 1}, ${level.title}`);
     card.addEventListener('click', () => onChoose(level));
     append(card, 'strong', 'level-card-title', level.title);
+    if(level.project)append(card,'span','project-step',`Pinball · Step ${level.project.step} of ${level.project.total}`);
     append(card, 'span', 'task-count', `${level.task_count} ${level.task_count === 1 ? 'thing' : 'things'} to do`);
     if(level.onboarding?.estimated_minutes?.length===2){
       const [lo,hi]=level.onboarding.estimated_minutes;

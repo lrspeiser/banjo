@@ -1,5 +1,24 @@
 # Puzzles on the machine (/play)
 
+## Build a Pinball Machine — October 19
+
+The chooser's Pinball project card and its ten-step chapter teach an angled
+deck, containment guide, spring launch, return guide, unpowered returning
+paddle, physical button contact, wired motor, independent parallel flippers,
+passive bumper/target and complete table. Each starts with GO guidance and
+only its lesson controls; the table opens overhead. Run exposes bounded held
+actions. Let go to release the launcher or return a button/paddle.
+
+Wins save the learner's settings and an accumulating **My Pinball project**
+in Sandbox, with version checkpoints and the normal anonymous cross-device
+save. Open it from a result or Sandbox to edit/share it. These are fixed
+practice rigs per lesson; arbitrary Sandbox edits are not imported into
+scored levels. Earlier replays do not overwrite a later project. The native
+goal predicates observe ordered contact, electrical and hinge measurements.
+Fixtures use declared ideal table mountings; those mountings keep the
+apparatus independently editable rather than merging the whole table into
+one selectable object. See [sequence, measurements and limits](pinball.md).
+
 ## Selection and electrical inspection — October 19
 
 Clicks pass through fixed thin glass panes, including saved Pinball covers

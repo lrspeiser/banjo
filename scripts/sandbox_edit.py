@@ -21,6 +21,9 @@ def objects(base, *, compiled=None):
     # ropes and drums connect independently placeable apparatus instead.
     for j in compiled['joints']:
         if j['kind'] not in ('hinge', 'slide', 'weld', 'fix'): continue
+        # A setup mounting is rebolted when its apparatus is edited; it does
+        # not turn the whole table and every fixture into one editor group.
+        if j['name'] in base.get('presentation',{}).get('assembly_mounts',[]):continue
         owners = [k for k, g in groups.items() if j.get('a') in g['parts'] or j.get('b') in g['parts']]
         if len(owners) > 1:
             first = owners[0]
@@ -85,6 +88,8 @@ def edit(base, object_id, delta=None, remove=False, *, compiled=None):
         for j in original.get('joints', []):
             a, b = j.get('a') in names, j.get('b') in names
             if a and b: mw.shift_rows(delta, [j])
+            elif b and j['name'] in original.get('presentation',{}).get('assembly_mounts',[]):
+                mw.shift_rows(delta,[j])
             elif j.get('drum') in kit_names or j.get('drum') in names:
                 j['centre_m'] = [a+b for a, b in zip(j['centre_m'], delta)]
             if j.get('load') in names and 'load_point_m' in j:

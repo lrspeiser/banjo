@@ -1264,6 +1264,28 @@ public:
         }
         // Something that moves under it: the couple acts on both, against how
         // the two turn relative to each other, and turns neither the other way.
+        if (!supported) {
+            // A table held by joints is Dynamic in Jolt even when its legs
+            // support it. Such contacts still have a rolling threshold. Do
+            // not let displacement-based sleep freeze a sphere while the
+            // measured support load cannot balance its gravitational couple.
+            // This changes only sleep eligibility, never forces or velocity;
+            // the moving-contact loop below retains both reaction impulses.
+            Vec3 support_normal{};
+            double support_limit=0.0;
+            for (std::size_t k=0;k<contacts.size();++k) {
+                const auto &contact=*contacts[k];
+                if (!touched[k].found || !touched[k].moving || !(contact.normal_force_n>0.0)) continue;
+                support_normal+=contact.normal_force_n*contact.normal;
+                support_limit+=coefficient[k]*contact.normal_force_n*r;
+            }
+            if (lengthSquared(support_normal)>1.0e-18) {
+                const Vec3 n=normalized(support_normal,lead.normal);
+                const Vec3 turning=ball.torque+cross(r*n,ball.mass*gravity_m_s2_+ball.force);
+                if (length(turning-dot(turning,n)*n)>support_limit)
+                    not_at_rest.push_back(lead.sphere_body);
+            }
+        }
         std::vector<double> applied_moving(contacts.size(), 0.0);
         std::vector<double> work_moving(contacts.size(), 0.0);
         for (std::size_t k = 0; k < contacts.size(); ++k) {

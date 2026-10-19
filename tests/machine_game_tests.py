@@ -557,7 +557,7 @@ class Tray(unittest.TestCase):
         import wall_activities
         self.assertEqual(unprobed,{'easy-roll','easy-block','easy-rope','easy-thread',
                                   'easy-wall-drop','easy-wall-track','easy-wall-funnel','easy-wall-peg','easy-wall-seesaw','easy-wall-wheel',
-                                  'easy-wall-loop','easy-wall-switch','easy-wall-fill','easy-wall-current'}|{l['id'] for l in wall_activities.levels()})
+                                  'easy-wall-loop','easy-wall-switch','easy-wall-fill','easy-wall-current'}|{l['id'] for l in wall_activities.levels()}|set(mg.pinball_lessons.IDS))
         self.assertEqual({r['id'] for r in receipt['levels']},{l['id'] for l in LEVELS}-unprobed)
         for level in LEVELS:
             exported=audit.packet(level)
@@ -730,8 +730,9 @@ class Tray(unittest.TestCase):
                             knob_default(rule) if rule.get('turning') or any(rule.get(k) for k in ('part', 'terminal', 'hinge', 'power_port')) else rule[end])
                     tries.append([p])
             for placements in tries:
-                parts = mg._assemble(level, placements, lenient=True)[3]['parts']
-                held = mg.held_up(parts)
+                compiled=mg._assemble(level, placements, lenient=True)[3]
+                parts=compiled['parts']
+                held = mg.held_up(parts,compiled['joints'])
                 with self.subTest(level=level['id'], placements=placements):
                     self.assertEqual([p['name'] for p in parts if p.get('fixed') and p['name'] not in held], [])
         # The stand is the piece's: shown with its ghost, standing on the ground.
@@ -2249,7 +2250,7 @@ class Engine(unittest.TestCase):
             for level in LEVELS:
                 with self.subTest(level=level['id']):
                     t = mg.trial(level, level['solution'], ENGINE, Path(logs), runs=3,
-                                 handle_inputs=level.get('solution_inputs'), release_inputs=level.get('solution_releases'))
+                                 handle_inputs=level.get('solution_inputs'), release_inputs=level.get('solution_releases'),action_inputs=level.get('solution_actions'))
                     print(f"\n  {level['id']}: works {t['worked']} of 3, goal at {[r['goal_at_s'] for r in t['results']]}")
                     self.assertEqual(t['worked'], 3, t['results'])
                     try:
@@ -2313,7 +2314,7 @@ class Engine(unittest.TestCase):
         with tempfile.TemporaryDirectory() as logs:
             for level in LEVELS:
                 m = mg.measure_energy(level, level['solution'], ENGINE, Path(logs),
-                                      handle_inputs=level.get('solution_inputs'), release_inputs=level.get('solution_releases'))
+                                      handle_inputs=level.get('solution_inputs'), release_inputs=level.get('solution_releases'),action_inputs=level.get('solution_actions'))
                 with self.subTest(level=level['id']):
                     self.assertIsNotNone(m['goal_at_s'])
                     self.assertLessEqual(m['j'], level['par_energy_j'])
@@ -2492,7 +2493,7 @@ class Engine(unittest.TestCase):
             for lv, placed in ((level, high), (fire, weak), (laser, laser['solution'][:1]), (sun, flat), (sun, shaded),
                                (tackle, low)):
                 t = mg.trial(lv, placed, ENGINE, Path(logs), runs=1,
-                             handle_inputs=lv.get('solution_inputs'), release_inputs=lv.get('solution_releases'))
+                             handle_inputs=lv.get('solution_inputs'), release_inputs=lv.get('solution_releases'),action_inputs=lv.get('solution_actions'))
                 self.assertEqual(t['worked'], 0, lv['id'])
 
     @need_engine
@@ -2562,7 +2563,7 @@ class Engine(unittest.TestCase):
                 if level['id'] not in identities:continue
                 with self.subTest(level=level['id']):
                     wrong=mg.trial(level,level['wrong'],ENGINE,Path(logs),runs=3,
-                        release_inputs=level.get('solution_releases'))
+                        release_inputs=level.get('solution_releases'),action_inputs=level.get('solution_actions'))
                     self.assertEqual(wrong['worked'],0,wrong)
                     self.assertTrue(all(r['error'] is None for r in wrong['results']),wrong)
             spring=mg.level_by_id('easy-wall-spring')
@@ -2748,6 +2749,129 @@ class Engine(unittest.TestCase):
                     t = mg.trial(ring, [dict(piece='ring_marble', x_m=x)], ENGINE, Path(logs), runs=3)
                     self.assertEqual(t['worked'], 0, t['results'])
                     self.assertTrue(all(r['error'] is None for r in t['results']), t['results'])
+
+
+class PinballProject(unittest.TestCase):
+    @need_engine
+    def test_completed_saved_project_really_launches_and_collects_with_nudges(self):
+        records={identity:mg.level_by_id(identity)['solution'] for identity in mg.pinball_lessons.IDS}
+        spec=mg.pinball_lessons.project_build(records,10)['base']
+        level=mg.level_by_id('pinball-10')
+        def rename(value):
+            if isinstance(value,str):return value.replace('your pinball_ball 1','pinball')
+            if isinstance(value,list):return [rename(v) for v in value]
+            if isinstance(value,dict):return {k:rename(v) for k,v in value.items()}
+            return value
+        spec['stations']=[rename(dict(level['goal']['station'],title=level['title']))]+rename(level['goal']['checkpoints'])
+        compiled=mw.compile_spec(spec)
+        with tempfile.TemporaryDirectory() as logs:
+            for seed in range(3):
+                run=mw.rehearse(mg.nudged(compiled,seed) if seed else compiled,ENGINE,Path(logs),
+                    seconds=25,action_inputs=level['solution_actions'])
+                self.assertIsNone(run['error'])
+                self.assertTrue(run['stations'][0]['done'],run['stations'])
+                print('SAVED PINBALL',seed,run['stations'][0]['at_s'],flush=True)
+
+    def test_sandbox_guides_and_bumpers_fit_on_the_learners_table(self):
+        level=mg.requested_level(dict(level='free',base=mg.sandbox_pinball.template()['base']))
+        for piece in ('pinball_rail','pinball_bumper'):
+            spec,checked,_=mg.compose(level,[dict(piece=piece,x_m=0 if piece=='pinball_rail' else -.55,z_m=.95 if piece=='pinball_rail' else .4)])
+            self.assertFalse(mg.clashes_of(mw.compile_spec(spec)))
+            self.assertEqual(checked[0].get('mount_version',checked[0].get('profile')),2 if piece=='pinball_rail' else 'diamond')
+
+    @need_engine
+    def test_pinball_material_comparison_and_electrical_accounting(self):
+        receipts=[]
+        with tempfile.TemporaryDirectory() as logs:
+            for identity in ('pinball-01','pinball-03'):
+                for material in ('glass','oak','iron'):
+                    l=mg.level_by_id(identity);spec=mg.compose(l,l['solution'])[0]
+                    ball=next(q for q in spec['parts'] if q['name'] in ('your pinball_ball 1','lesson ball'))
+                    ball['material']=material
+                    r=mw.rehearse(mw.compile_spec(spec),ENGINE,Path(logs),seconds=l['time_s'],action_inputs=l['solution_actions'])
+                    self.assertIsNone(r['error'])
+                    self.assertTrue(r['stations'][0]['done'])
+                    receipts.append(dict(level=identity,material=material,goal_at_s=r['stations'][0]['at_s'],dt_s=1/480,pulls=r['readouts'].get('pulls')))
+            for identity in ('pinball-06','pinball-08'):
+                l=mg.level_by_id(identity);spec=mg.compose(l,l['solution'])[0]
+                r=mw.rehearse(mw.compile_spec(spec),ENGINE,Path(logs),seconds=4,action_inputs=l['solution_actions'])
+                self.assertTrue(r['stations'][0]['done'])
+                for net in r['readouts']['electrical']['networks']:
+                    self.assertLess(abs(net['ledger']['electrical_residual_j']),1e-8)
+                    receipts.append(dict(level=identity,ledger=net['ledger']))
+        print('PINBALL PROJECT MATERIALS AND LEDGERS',json.dumps(receipts),flush=True)
+
+    @need_engine
+    def test_ten_native_lesson_solutions_with_nudges_and_physical_negative_controls(self):
+        receipts=[]
+        with tempfile.TemporaryDirectory() as logs:
+            for l in [row for row in mg.load_levels() if row.get('project')]:
+                with self.subTest(level=l['id']):
+                    positive=mg.trial(l,l['solution'],ENGINE,Path(logs),runs=3,action_inputs=l['solution_actions'])
+                    self.assertEqual(positive['worked'],3,positive)
+                    # Geometry lessons keep identical operator inputs. Held
+                    # contact/independence lessons require the real intervention.
+                    manual=l['project']['step'] in (5,6,8)
+                    negative=mg.trial(l,l['wrong'],ENGINE,Path(logs),runs=1,
+                        action_inputs=None if manual else l['solution_actions'])
+                    self.assertEqual(negative['worked'],0,negative)
+                    self.assertTrue(all(r['error'] is None for r in negative['results']))
+                    receipts.append(dict(level=l['id'],wins=positive['results'],negative=negative['results']))
+                    print('PINBALL LESSON',json.dumps(receipts[-1]),flush=True)
+
+    @need_engine
+    def test_pinball_contact_release_parallel_independence_and_empty_supply(self):
+        with tempfile.TemporaryDirectory() as logs:
+            for identity in ('pinball-05','pinball-06','pinball-08'):
+                l=mg.level_by_id(identity)
+                held=[dict(a,at_s=a['at_s']+tick*.3) for a in l['solution_actions'] if a['pressed']
+                      for tick in range(math.ceil(l['time_s']/.3))]
+                result=mg.trial(l,l['solution'],ENGINE,Path(logs),runs=1,action_inputs=held)
+                self.assertEqual(result['worked'],0,'Holding forever must not teach release')
+            l=mg.level_by_id('pinball-08')
+            for excluded in ('left button','right button'):
+                result=mg.trial(l,l['solution'],ENGINE,Path(logs),runs=1,
+                    action_inputs=[a for a in l['solution_actions'] if a['name']!=excluded])
+                self.assertEqual(result['worked'],0)
+            for identity in ('pinball-06','pinball-07','pinball-08'):
+                l=mg.level_by_id(identity);spec=mg.compose(l,l['solution'])[0]
+                for b in spec['batteries']:b['charge_j']=0
+                result=mw.rehearse(mw.compile_spec(spec),ENGINE,Path(logs),seconds=l['time_s'],action_inputs=l['solution_actions'])
+                self.assertFalse(result['stations'][0]['done'])
+
+    def test_ten_lessons_have_limited_controls_and_editable_cumulative_snapshots(self):
+        lessons=[l for l in mg.load_levels() if l.get('project')]
+        self.assertEqual([l['project']['step'] for l in lessons],list(range(1,11)))
+        records={}
+        for l in lessons:
+            self.assertEqual(l['onboarding']['chapter'],'Project: Build a Pinball Machine')
+            self.assertNotIn('solution_actions',mg.public(l))
+            self.assertTrue(l['goal']['focus'])
+            records[l['id']]=l['solution']
+            before=copy.deepcopy(records)
+            draft=mg.pinball_lessons.project_build(records,l['project']['step'])
+            self.assertEqual(records,before)
+            self.assertFalse(any(q['name'].startswith(('your ','lesson ')) for q in draft['base']['parts']))
+            compiled=mw.compile_spec(mg.compose(mg.requested_level(dict(level='free',**draft)),[])[0])
+            self.assertFalse(compiled['stations'])
+            self.assertEqual(compiled['physics_dt_s'],1/480)
+        import sandbox_edit
+        objects=sandbox_edit.objects(draft['base'])
+        self.assertGreater(len(objects),6,'Mounting fixtures must not merge the whole table into one editor object')
+        bumper=next(o for o in objects if o['name']=='upper bumper')
+        edited,_,_=sandbox_edit.edit(draft['base'],bumper['id'],[.05,0,0])
+        old=next(q for q in draft['base']['parts'] if q['name']=='pinball table frame')
+        self.assertEqual(next(q for q in edited['parts'] if q['name']==old['name']),old)
+        mount=next(j for j in edited['joints'] if j['name']=='upper bumper table mounting')
+        self.assertAlmostEqual(mount['at_m'][0],next(q for q in edited['parts'] if q['name']=='upper bumper')['at_m'][0])
+        self.assertEqual(len(compiled['electrical']['wires']),6)
+        self.assertEqual(len(compiled['player_controls']),3)
+
+    def test_project_export_rejects_invalid_steps_and_unavailable_settings(self):
+        for step in (0,11,True,'10'):
+            with self.assertRaises(ValueError):mg.pinball_lessons.project_build({},step)
+        with self.assertRaises(mg.LevelRefused):
+            mg.pinball_lessons.project_build({'pinball-01':[dict(piece='cannon')]},1)
 
 
 def game_test_batches():

@@ -501,6 +501,8 @@ class Puzzles(unittest.TestCase):
         self.wait('machineCamera().settled',30)
         candidate=self.js(f"machineEditableObjects().find(o=>o.index==={index})")
         self.assertIsNotNone(candidate)
+        if candidate['name'].startswith('your spring ') and self.js("document.querySelectorAll('.spring-adjust:not([hidden])').length===1"):
+            self.click_visible('Adjust spring');return self.ghost()
         selected=f"machineGhostState()?.p.object==={json.dumps(candidate['id'])}" if candidate.get('id') else f"machineGhostState()?.index==={index}&&!machineGhostState()?.p.object"
         if re.match(r'^your (wire|power_cable) ',candidate['name']):
             label='Adjust '+candidate['name']
@@ -631,7 +633,7 @@ class Puzzles(unittest.TestCase):
         if label=='Keep my pieces':
             self.click_visible('Try again');self.ghost();return self.press('Cancel')
         if label=='Start over':label='Reset'
-        if label.startswith('Adjust ') and label!='Adjust a piece':
+        if label.startswith('Adjust ') and label!='Adjust a piece' and not self.js(f"Boolean({self.button_expression(label)}?.checkVisibility())"):
             index=self.js(f"machineEditableObjects().find(o=>o.name.startsWith('your ')&&o.name.split(' ')[1]==={json.dumps(label[7:].replace(' ','_'))})?.index")
             if index is not None:return self.click_piece(index)
         """Hit the actual visible target, rather than invoking its DOM handler."""
@@ -3207,6 +3209,54 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('machineDesign().draft.placements[0].support_layer'),1)
                 self.assertFalse(self.js('document.documentElement.scrollWidth>innerWidth+1'))
 
+    def test_pinball_project_intro_drag_win_save_and_reopen_on_desktop_and_phones(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('pinball-01',width,height,phone=width!=1280,dismiss_intro=False)
+                self.assertIn('Pinball 1 of 10',self.js("document.getElementById('level-intro-title').textContent"))
+                self.click_visible('GO')
+                self.assertGreater(self.js('machineCamera().elevation'),.9)
+                self.press('Add a smooth pinball');self.ghost()
+                moved=self.drag_ghost_to(0,.8,touch=width!=1280)
+                self.assertAlmostEqual(moved['p']['x_m'],0,delta=.025)
+                self.assertTrue(moved['fits'],moved['problems'])
+                self.click_visible('Place');self.wait(READY,60)
+                self.click_visible('Run');self.wait("document.body.classList.contains('scene-win')",60)
+                self.wait("document.getElementById('pinball-project-status')?.textContent.includes('saved in Sandbox')",30)
+                self.click_visible('Open my Pinball project')
+                self.wait("machineDesign()?.project==='pinball' && "+READY,90)
+                saved=self.js('machineDesign().id')
+                self.assertGreaterEqual(self.js('machineDesign().projectStep'),1)
+                self.assertTrue(self.js("machineDesign().versions.some(v=>v.label==='Pinball · step 1 of 10')"))
+                self.anonymous_cloud_saved()
+                self.page.send('Page.reload',{});self.wait(READY,90)
+                self.assertEqual(self.js('machineDesign().id'),saved)
+                self.assertFalse(self.js('document.documentElement.scrollWidth>innerWidth+1'))
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'pinball-project-{width}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
+    def test_every_pinball_lesson_opens_and_contact_lesson_requires_live_hold_and_release(self):
+        import pinball_lessons
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for identity in pinball_lessons.IDS:
+                self.open(identity,width,height,phone=width!=1280,dismiss_intro=False)
+                self.assertTrue(self.js("document.getElementById('level-intro-works').textContent.length>20"))
+                self.click_visible('GO')
+                self.assertFalse(self.js('document.documentElement.scrollWidth>innerWidth+1'))
+        for width,height in ((1280,860),(390,844),(844,390)):
+            self.open('pinball-06',width,height,phone=width!=1280)
+            self.press('Add a spring-return button');self.ghost()
+            self.click_visible('Place');self.wait(READY,60)
+            self.click_visible('Run')
+            self.wait("document.getElementById('player-controls').checkVisibility()",30)
+            self.reveal_control(self.button_expression('Press button'));self.paint()
+            point=self.js(f"(()=>{{const r={self.button_expression('Press button')}.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];}})()")
+            self.mouse('mousePressed',*point)
+            self.wait("machineProjectState().stations.some(r=>r.title==='Light the indicator'&&r.done)",15)
+            self.assertFalse(self.js("document.body.classList.contains('scene-win')"))
+            self.mouse('mouseReleased',*point)
+            self.wait("document.body.classList.contains('scene-win')",30)
+
     def test_pinball_starter_live_buttons_launch_pause_reset_and_save(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
@@ -4308,7 +4358,7 @@ class Puzzles(unittest.TestCase):
                 self.assertTrue(self.js("document.getElementById('solar-out-connect').disabled"))
                 self.assertFalse(self.js("document.getElementById('sun-bearing').hidden"))
                 self.assertIn('20 degrees',self.js("document.getElementById('sun-bearing').getAttribute('aria-label')"))
-                self.assertIn('Bulb · shared load',self.js("document.getElementById('power-feedback-labels').textContent"))
+                self.assertNotIn('Bulb · shared load',self.js("document.getElementById('power-feedback-labels').textContent"),'Unselected devices keep their data labels hidden')
                 self.press('Add a solar panel');self.ghost()
                 for label,value in [('turn',-90),('tip',70)]:self.slide(f'{label} of your solar 1',value)
                 self.assertTrue(self.ghost()['fits'])
@@ -4671,6 +4721,8 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run')
                 self.wait("/World [1-9]/.test(document.getElementById('clock').textContent)",30)
                 self.click_visible('Pause')
+                self.click_visible('Tune');self.wait(READY,60)
+                self.click_piece(0);self.ghost()
                 self.js("""window.solarRebuildFetch=window.fetch;
                     window.solarRebuildGate=new Promise(resolve=>window.releaseSolarRebuild=resolve);
                     window.fetch=async (...args)=>{const response=await window.solarRebuildFetch(...args);
@@ -4678,16 +4730,14 @@ class Puzzles(unittest.TestCase):
                         window.solarRebuildHeld=true;await window.solarRebuildGate;
                       }return response;};""")
                 try:
-                    self.click_piece(0)
+                    self.click_visible('Place')
                     self.wait('window.solarRebuildHeld===true',30)
                     self.assertEqual(set(self.js('machineRenderedBodies()')),initial,
                         'The old scene must remain present until the replacement is ready')
                 finally:self.js('window.releaseSolarRebuild();window.fetch=window.solarRebuildFetch')
-                self.wait(READY,30);self.ghost()
+                self.wait(READY,30)
                 self.assertEqual(set(self.js('machineRenderedBodies()')),initial)
-                self.assertEqual(self.ghost()['p']['piece'],'solar')
-                self.click_visible('Place');self.wait(READY,30)
-                self.assertEqual(set(self.js('machineRenderedBodies()')),initial)
+                self.assertEqual(self.js('machinePlacements()[0].piece'),'solar')
 
     def test_solar_cable_click_removes_from_either_end_and_undo_restores_it_even_live(self):
         for width,height in ((1280,860),(390,844),(844,390)):
@@ -4779,7 +4829,8 @@ class Puzzles(unittest.TestCase):
                 self.slide('along (m) of your switch 1', 0); self.slide('across (m) of your switch 1', 0)
                 self.assertTrue(self.ghost()['fits'])
                 self.assertEqual(self.js('window.machineWiringState().ghostWires'),3)
-                self.wait("[...document.querySelectorAll('.terminal-label')].length===3 && [...document.querySelectorAll('.terminal-label')].every(c=>!c.hidden)", 10)
+                self.wait("[...document.querySelectorAll('.terminal-label')].some(c=>!c.hidden)",10)
+                self.assertLess(self.js("[...document.querySelectorAll('.terminal-label')].filter(c=>!c.hidden).length"),3,'Only the selected switch exposes terminal data')
                 self.click_visible('Run')
                 self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertEqual(len(self.js('window.machineWiringState().wires')),3)
@@ -5072,6 +5123,7 @@ class Puzzles(unittest.TestCase):
                     self.wait('!window.machineGhostState() && '+READY,60)
                 self.assertEqual(len(self.js('window.machineWiringState().wires')),2)
                 self.click_visible('Run')
+                self.inspect_body('your ignition 1 housing')
                 self.wait("document.getElementById('power-feedback-labels').textContent.includes('Material')",20)
                 self.wait("!document.getElementById('level-done').hidden",45)
                 self.assertRegex(self.js("document.getElementById('level-done').textContent"),'Level Complete|Achievement Unlocked')
@@ -7136,7 +7188,7 @@ class Puzzles(unittest.TestCase):
         self.press('Move it right')
         self.assertAlmostEqual(self.ghost()['p']['z_m'], z - 0.02, places=4)
         # Level 1 gives one plank: set down, there is none left to add. While
-        # it runs, a click on it picks it up, and the level goes back to its start.
+        # Run clicks inspect. Tune explicitly returns to setup for editing.
         self.open('gap')
         self.press('Add a plank')
         self.ghost()
@@ -7153,9 +7205,7 @@ class Puzzles(unittest.TestCase):
         self.assertTrue(self.js("document.getElementById('scene-tray').hidden"))
         self.press('Run')
         self.wait("/calculating live/.test(document.getElementById('clock').textContent)", 30)
-        x, y = self.js("window.machineBodyScreen('your plank 1')")
-        self.mouse('mousePressed', x, y)
-        self.mouse('mouseReleased', x, y)
+        self.click_piece(0)
         g = self.ghost()
         self.assertEqual(g['index'], 0, 'the plank set down is a ghost again')
         self.wait(READY, 60)

@@ -2226,9 +2226,9 @@ function panWall(dx,dy) {
   goal.addScaledVector(wallWidthAxis(),-dx*scale);goal.y+=dy*scale;target.copy(goal);
 }
 function overviewDesign() {
-  return level?.free && activeDesign?.draft.base?.presentation?.camera === 'overview';
+  return level?.project?.id==='pinball'||level?.free && activeDesign?.draft.base?.presentation?.camera === 'overview';
 }
-function pinballDesign(){return level?.free&&activeDesign?.draft.base?.presentation?.activity==='pinball';}
+function pinballDesign(){return level?.project?.id==='pinball'||level?.free&&activeDesign?.draft.base?.presentation?.activity==='pinball';}
 function frameCamera(includeGhost=false) {
   if(wallDesign()&&wallFront) {
     const board=wallPanel();
@@ -6693,7 +6693,7 @@ function bestStars(id) { return record(id).stars || 0; }
 const TOOL_NAMES = {plank: 'plank', knife: 'knife', cannon: 'cannon', steam: 'steam engine', ramp: 'ramp',
                     mirror: 'mirror', solar: 'solar panel', tackle: 'block and tackle', lens: 'lens', flipflop: 'flip-flop'};
 // A piece's name on its button: as the tray calls it, but a flip-flop has its hyphen.
-function pieceLabel(piece) { if(wallDesign()){const name=level.tray.find(t=>t.piece===piece)?.title;if(name)return name.toLowerCase();} return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({anchor:'rope anchor',pulley:'pulley wheel',door:'hinged door',trampoline:'spring trampoline',wind:'open airflow',loose_block:'loose block',flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',ring_marble:'ring marble',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'heating coil',power_cable:'power cable'})[piece] || piece; }
+function pieceLabel(piece) { if(wallDesign()||pinballDesign()){const name=level.tray.find(t=>t.piece===piece)?.title;if(name)return name.toLowerCase();} return piece==='base_object' ? ghost?.baseObject?.name || 'object' : ({anchor:'rope anchor',pulley:'pulley wheel',door:'hinged door',trampoline:'spring trampoline',wind:'open airflow',loose_block:'loose block',flipflop:'flip-flop',water_wheel:'water wheel',water_tank:'water tank',water_chute:'water chute',water_collector:'water collector',pipe:'straight pipe',pipe_elbow:'pipe elbow',pipe_reducer:'pipe reducer',ring_marble:'ring marble',scaffold:'scaffolding',solar:'solar panel',tackle:'block and tackle',ignition:'heating coil',power_cable:'power cable'})[piece] || piece; }
 function toolsOf(player) {
   if (!player.tools) {
     player.tools = {};
@@ -6715,11 +6715,30 @@ function keepResult(id, r) {
   if (r.stars > (row.stars || 0)) row.stars = r.stars;
   if (lessEnergy) row.energy_j = r.energy_j;
   if (r.earned.goal && !row.won_at) row.won_at = new Date().toISOString();
+  if(r.earned.goal&&level.project?.id==='pinball')row.project_placements=clone(placements);
   me().last = id;
   persist();
   return {was, better: lessEnergy || r.stars > (was.stars || 0), unlocked};
 }
+let pinballProjectSave=Promise.resolve();
+function savePinballProject(step){
+  const records=Object.fromEntries(levels.filter(l=>l.project?.id==='pinball'&&l.project.step<=step&&record(l.id).project_placements)
+    .map(l=>[l.id,clone(record(l.id).project_placements)]));
+  const visitor=save.current;
+  const run=async()=>{
+    const r=await api({op:'pinball_project',step,records});
+    if(save.current!==visitor)throw new Error('The active save changed; reopen your project from this profile.');
+    let d=designStore().items.find(d=>d.project==='pinball');
+    if(!d){d=newDesign('My Pinball project',r.draft);d.project='pinball';}
+    // Replaying an earlier lesson keeps the newest table and its versions.
+    if(step>=(d.projectStep||0)){d.draft=clone(r.draft);d.projectStep=step;
+      checkpointDesign(d,`Pinball · step ${step} of 10`);d.at=new Date().toISOString();persist();}
+    return d;
+  };
+  const task=pinballProjectSave.catch(()=>{}).then(run);pinballProjectSave=task;return task;
+}
 window.machineSave = () => JSON.parse(JSON.stringify(save));
+window.machineProjectState = () => ({project:clone(level?.project||null),stations:clone(readouts.stations||[])});
 window.machineProfileState = () => profileSync.state();
 
 // Energy as a person reads it: joules, kilo-, mega-, giga-.
@@ -7985,6 +8004,13 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
     actions.append(button('Play again', () => { closeDone(); startOver(true); }, {className: 'primary', ariaLabel: 'Play this level again'}),
                    allLevels);
   } else if (r.earned.goal) {
+    let projectReady=null;
+    if(level.project?.id==='pinball'){
+      const message=add('p',{id:'pinball-project-status',textContent:'Saving this step to your Pinball project…'});
+      projectReady=savePinballProject(level.project.step);
+      projectReady.then(()=>{message.textContent=`Pinball step ${level.project.step} saved in Sandbox.`;})
+        .catch(e=>{message.textContent=`Your level win is saved. Project save needs another try: ${e.message}`;});
+    }
     if(level.assembly_tutorial&&placements.length&&!blueprints().some(b=>b.source===level.id))saveAssembly(`Starter · ${levelTitle(level)}`,placements.map((_,i)=>i),level.id);
     // The win, and what it took: less energy is better.
     // A first win with a tool is an achievement; a win again is the level.
@@ -8028,8 +8054,12 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
           : 'Win on less energy for more stars: smaller or lighter pieces, cheaper materials, less fuel.'});
     }
     const actions = add('div', {className: 'actions'});
-    if (next) actions.append(button('Next level ▶', () => { closeDone(); chooseLevel(next.id).catch(() => {}); },
+    if (next&&(!level.project||next.project?.id===level.project.id)) actions.append(button(level.project?'Next Pinball step ▶':'Next level ▶', () => { closeDone(); chooseLevel(next.id).catch(() => {}); },
                                     {className: 'primary', ariaLabel: 'Next level'}));
+    if(projectReady)actions.append(button('Open my Pinball project',async()=>{
+      try{const d=await projectReady;closeDone();await chooseLevel('free',d);}
+      catch(e){$('pinball-project-status').textContent=e.message;}
+    }));
     actions.append(button('Play again', () => { closeDone(); startOver(true); }, {ariaLabel: 'Play this level again'}),
                    allLevels);
   } else {
@@ -8099,6 +8129,14 @@ function showLevelsScreen(show) {
     add(free, 'strong', {textContent: 'Sandbox'});
     add(free, 'span', {className: 'teaches', textContent: 'Your designs and examples'});
     box.append(free);
+  }
+  const pinballSteps=levels.filter(l=>l.project?.id==='pinball');
+  if(pinballSteps.length){
+    const nextStep=pinballSteps.find(l=>!bestStars(l.id))||pinballSteps.at(-1);
+    const card=button('',()=>chooseLevel(nextStep.id).catch(()=>{}),{className:'ls-card ls-free',ariaLabel:'Build a Pinball Machine'});
+    add(card,'strong',{textContent:'Build a Pinball Machine'});
+    add(card,'span',{className:'teaches',textContent:`10 steps · ${pinballSteps.filter(l=>bestStars(l.id)>0).length} complete · Continue at step ${nextStep.project.step}`});
+    box.append(card);
   }
   const freshStatus = add(more, 'p', {role: 'status'});
   if (me().freshChallenges?.length) {

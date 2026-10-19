@@ -5,7 +5,8 @@ The five existing showcase machines remain. The Pinball category in the piece
 library contains eight reusable tools; the starter is assembled from them.
 Build edits the setup, Run advances the native machine, and Reset reloads its
 original setup. Saved versions, Undo and run-only course sharing use the normal
-Sandbox paths. This pack does not add training levels yet.
+Sandbox paths. **Levels → Build a Pinball Machine** opens its ten-step
+construction project; see the teaching sequence below.
 
 ## Flipper, drain and marble placement correction — October 19
 
@@ -224,13 +225,26 @@ contact-reporting correction. The Pinball test runner resolves its native
 executable path before launching from a temporary directory; the Linux
 package gate caught the relative-path portability error before publication.
 
-## Training sequence after the workshop is qualified
+## Ten-step construction project — October 19, 2026
 
-Each lesson should expose only its essential controls, start with a visible
-target, include an introductory GO overlay, and qualify its own solution in
-three nudged runs with a physical negative control. Keep the completed parts
-between lessons in a saved Pinball blueprint; introduce depth only after the
-player understands the two-axis surface.
+The `pinball-01` through `pinball-10` lessons form a separate chapter after
+the introductory physics chapters. The chooser also has a **Build a Pinball
+Machine** card that resumes its first unfinished step. All lessons remain
+available individually. Each has a GO introduction, an overhead table view,
+scene controls limited to its task, a visible catcher, target or measured
+goal, and ordinary native Run controls. These are subsystem construction
+lessons: bearing/paddle/spring and launcher internals are assembled kits,
+not a screw-by-screw manufacturing editor.
+
+A win records that lesson's actual setup in the anonymous synced profile.
+It creates or advances **My Pinball project** in Sandbox, with a labelled
+saved version for each completed step. Guides, spring settings, button
+position, paddle length and bumper adjustments are retained in the table.
+Practice catchers are excluded. Later lessons use authored practice rigs;
+they do not silently import arbitrary Sandbox edits into scored puzzles.
+Players can open the cumulative project from the result, edit it using
+normal Sandbox tools and share a run-only course. Replaying an earlier step
+does not replace an already more advanced project.
 
 | Lesson | Player builds or changes | Observable goal |
 | --- | --- | --- |
@@ -240,10 +254,51 @@ player understands the two-axis surface.
 | 4. Guide the return | Place a launch turn and inlane rail | Route a ball from the launch lane toward a paddle tip. |
 | 5. Make a returning paddle | Add a bearing, paddle and return spring | Operate it by hand and observe its return; no electricity yet. |
 | 6. Close a real contact | Add a momentary button, supply and indicator | Hold the button to light the lamp; release opens the circuit. |
-| 7. Power the first flipper | Wire the contact and actuator with both leads | Hit an approaching ball into a visible target during Run. |
+| 7. Power the first flipper | Add the missing return lead to a prepared contact/actuator loop | Hit the ball into the visible green region during Run. |
 | 8. Two independent flippers | Add a second parallel loop | Operate either paddle without powering the other. |
 | 9. Add bumpers and targets | Position passive bumpers and hanging targets | Hit a target, with no hidden energy source in the bumper. |
-| 10. Your own table | Assemble and save a complete layout | Qualify a launch, a controlled return and a drain; share a run-only copy. |
+| 10. Your own table | Load the accumulated table, then edit/share it in Sandbox | Reach the upper marker and then drain through the open bottom; Reset reloads. |
+
+The indicator must first receive power and then go dark on release. The
+paddle must first pass 40 degrees and then return within four degrees.
+The parallel lesson checks each paddle raised while the other rests, in
+sequence, and then the second return. Ordered station prerequisites only
+observe engine measurements; they do not assign positions, velocities,
+contact states or power. Reference tests schedule the same bounded held
+actions used by the HTTP live controls in simulated time. They are never
+supplied to a player's preview or Run.
+
+The final layout includes a solid two-sided return gutter below its front
+edge. It catches either front lane and slopes toward a central opening;
+it does not teleport or elevate the ball. The short optional right inlane
+guide is left out of this beginner layout because its junction can form a
+resting pocket. Final qualification uses actual repeated flipper presses,
+then releases them, rather than treating the table as an automatic machine.
+The authored goal remains the upper marker followed by the original central
+drain region within 25 seconds. The three reference/nudged trials reach it at
+6.317, 6.600 and 4.350 seconds. These are reference play sequences, not measured human
+completion times.
+
+Training mountings explicitly fix stationary fixtures to the grounded table
+frame. They are ideal rigid mounts, not resolved screws, brackets or stress
+models. Moving paddle, button, rod and ball bodies remain dynamic. Guides
+sit above the deck rather than penetrating it. The lesson's diamond-shaped
+rubber deflector is a fixed voxel block; the workshop's older round bumpers
+remain available separately. Springs, DC motors and cable models retain
+the qualifications and limits above; no new native material law is added.
+
+The native rolling check now prevents displacement-based sleep on a jointed
+support while measured load and the existing material rolling threshold
+predict continued motion. It does not assign velocity or apply another
+contact response. On the same jointed oak deck at 0.2 degrees and 1/480 s,
+glass and iron move 0.033818 m in three seconds; oak moves 0.000073 m and
+remains below its rolling threshold. The reported rolling losses are
+0.0000690 J, 0.0002172 J and 0.0000000293 J respectively; masses stay
+unchanged. The existing rolling level, energy, ground slope, ramp, normal
+force and valley checks pass, as do rigid component transfer and step-work
+checks. This does not certify full Pinball momentum/energy conservation.
+The separate circuit ledger remains checked to 1e-8 J; shaft coupling and
+operator work retain their separate accounts.
 
 Advanced extensions should teach RC-driven pulse timing, energy-limited
 solenoids and a physical ball elevator only after those mechanisms have their

@@ -612,6 +612,36 @@ void inTheValleyTheBallByTheRiverStaysOnTheSand() {
     require(wall_s / 10.0 <= 1.1, "the valley with its balls runs inside the owner's 1.1x realtime rule");
 }
 
+void aJointedDeckDoesNotSleepAwayTheRollingThreshold() {
+    const auto surface=makeReferenceMaterial(MaterialPreset::Oak);
+    const double theta=radians(.2),dt=1./480.;
+    const Vec3 down{std::cos(theta),-std::sin(theta),0};
+    const Vec3 normal{std::sin(theta),std::cos(theta),0};
+    for(const auto preset:{MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        JoltWorld world(0,{},RigidJobExecution::Inline);world.setGravity({0,-kG,0});
+        auto material=makeReferenceMaterial(preset);
+        const Quat tilt{std::cos(theta/2),0,0,-std::sin(theta/2)};
+        world.addBox({2,{.2,.2,.2},surface,{{0,1,0},{},{},{}},true});
+        world.addBox({3,{8,.06,1},surface,{{0,2,0},tilt,{},{}},false});
+        (void)world.addFixing({.a=2,.b=3,.point_world_m={0,2,0}});
+        world.addBall({.body_id=1,.radius_m=.02,.material=material,
+            .position_world_m=Vec3{0,2,0}-1.5*down+.0501*normal});
+        for(int i=0;i<48;++i)world.step(dt);
+        const auto before=world.mechanicalState(1);
+        const auto loss0=world.rollingLossJ(1);
+        for(int i=0;i<1440;++i)world.step(dt);
+        const auto after=world.mechanicalState(1);
+        const double moved=dot(after.motion.center_of_mass_world_m-before.motion.center_of_mass_world_m,down);
+        const double coefficient=material.rolling_resistance+surface.rolling_resistance;
+        const bool rolls=std::tan(theta)>coefficient;
+        std::printf("  jointed oak deck, %s, theta .2 deg, dt 1/480 s: moved %.8g m, c %.6g, rolling loss %.8g J\n",
+            material.name.c_str(),moved,coefficient,world.rollingLossJ(1)-loss0);
+        require(rolls?moved>.01:std::abs(moved)<.002,
+            "Jointed support must retain the material rolling threshold instead of numerical sleep");
+        require(before.mass_kg==after.mass_kg,"Sleep eligibility cannot change material mass");
+    }
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -621,6 +651,7 @@ int main(int argc, char **argv) {
         {"ground-slope", onTheGroundABallRestsBelowAtanCAndRollsAbove},
         {"ramp", onAnAnchoredRampABallRestsJustBelowAtanCAndRollsJustAbove},
         {"normal-force", theNormalForceIsTheSolversOwn},
+        {"jointed-deck", aJointedDeckDoesNotSleepAwayTheRollingThreshold},
         {"valley", inTheValleyTheBallByTheRiverStaysOnTheSand},
     };
     const std::string_view only = argc > 1 ? std::string_view(argv[1]) : std::string_view();

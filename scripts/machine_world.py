@@ -2006,6 +2006,12 @@ def _compile_spec_uncached(spec, lenient=False):
             elif kind == 'hinge_beyond_deg':
                 if not isinstance(arg, dict) or arg.get('joint') not in hinge_names or                         not isinstance(arg.get('deg'), (int, float)):
                     problems.append(f'{what}: hinge_beyond_deg needs a hinge joint name and deg')
+            elif kind == 'joints_in_range':
+                if not isinstance(arg,list) or not arg or any(not isinstance(r,dict) or
+                        r.get('joint') not in hinge_names or
+                        not all(isinstance(r.get(k),(int,float)) and math.isfinite(r[k]) for k in ('min_deg','max_deg')) or
+                        r['min_deg']>r['max_deg'] for r in arg):
+                    problems.append(f'{what}: joints_in_range needs hinge names and ordered finite degree bounds')
             elif kind == 'turned_deg':
                 if not isinstance(arg, dict) or arg.get('joint') not in hinge_names or \
                         not isinstance(arg.get('deg'), (int, float)):
@@ -2023,7 +2029,7 @@ def _compile_spec_uncached(spec, lenient=False):
                     if any(v<=0 for v in size):problems.append(what+': water region size must be positive')
                     _num(arg,'l',what,problems,0,.001,1000)
                     _num(arg,'for_s',what,problems,0,0,60)
-            elif kind == 'load_power_w':
+            elif kind in ('load_power_w','load_power_below_w'):
                 targets=arg.get('devices',[arg.get('device')]) if isinstance(arg,dict) else []
                 if not isinstance(arg, dict) or not isinstance(targets,list) or not targets or \
                         any(not isinstance(target,str) or target not in {d['name'] for d in electrical.get('devices', [])} for target in targets) or \
@@ -2078,7 +2084,16 @@ def _compile_spec_uncached(spec, lenient=False):
         elif rule is not None:
             problems.append(f'{what}: done_when is one rule, or null for a station not built yet')
         focus = [f for f in (s.get('focus') or []) if isinstance(f, str) and f in names]
-        stations.append({k: s.get(k) for k in ('title', 'shows', 'law', 'maturity', 'done_when')} | {'focus': focus})
+        stations.append({k: s.get(k) for k in ('title', 'shows', 'law', 'maturity', 'done_when', 'after')} | {'focus': focus})
+    titles=[s['title'] for s in stations]
+    for s in stations:
+        after=s.get('after') or []
+        if not isinstance(after,list) or any(t not in titles or t==s['title'] for t in after):
+            problems.append('Station prerequisites must name other existing stations')
+    def cyclic(title,seen):
+        if title in seen:return True
+        return any(cyclic(t,seen|{title}) for s in stations if s['title']==title for t in s.get('after') or [])
+    if any(cyclic(t,set()) for t in titles):problems.append('Station prerequisites cannot contain a cycle')
     checked_water_regions=[]
     region_rows=spec.get('water_regions',[])
     if not isinstance(region_rows,list):
@@ -2799,6 +2814,8 @@ class MachineSession:
         done = getattr(self, '_done_at', {})
         for i, st in enumerate(self.compiled['stations']):
             rule = st.get('done_when')
+            if any(not any(j in done and s['title']==title for j,s in enumerate(self.compiled['stations']))
+                   for title in st.get('after') or []):continue
             if not isinstance(rule, dict) or 'hits' not in rule or i in done:
                 continue
             a, b = rule['hits']
@@ -2823,9 +2840,18 @@ class MachineSession:
         cannon ball that is gone in a twentieth of a second is timed when it
         went."""
         crossed = self.__dict__.setdefault('_crossed', {})
+        done=getattr(self,'_done_at',{})
+        def crossed_at(index,station):
+            crossed[index]=self.t
+            if station.get('after'):
+                times=self.__dict__.setdefault('_crossing_times',{}).setdefault(index,[])
+                times.append(self.t)
+                if len(times)>4096:del times[:1024]
         for i, st in enumerate(self.compiled['stations']):
             rule = st.get('done_when')
-            if i in crossed or not isinstance(rule, dict) or not ('rose_m' in rule or 'moved_m' in rule
+            # Ordered criteria retain measured crossing times even when the
+            # slower readout probe has not yet observed their prerequisite.
+            if i in done or i in crossed and not st.get('after') or not isinstance(rule, dict) or not ('rose_m' in rule or 'moved_m' in rule
                                                                   or 'in_zone' in rule):
                 continue
             if 'in_zone' in rule:
@@ -2841,7 +2867,7 @@ class MachineSession:
                                         for k in range(3)))
                     nearest[i] = min(nearest.get(i, gap), gap)
                     if gap == 0.0:
-                        crossed[i] = self.t
+                        crossed_at(i,st)
                         break
                 continue
             r = rule.get('rose_m') or rule.get('moved_m')
@@ -2850,7 +2876,7 @@ class MachineSession:
             if start and now:
                 gone = now[1] - start[1] if 'rose_m' in rule else math.dist(now, start)
                 if gone >= r['m']:
-                    crossed[i] = self.t
+                    crossed_at(i,st)
 
     def _cut_summary(self):
         """Each edge against each part (its pieces counted as it): whether
@@ -3249,16 +3275,25 @@ class MachineSession:
         rows = []
         for i, s in enumerate(self.compiled['stations']):
             rule = s.get('done_when')
+            dependencies=[next(j for j,st in enumerate(self.compiled['stations']) if st['title']==title)
+                          for title in s.get('after') or []]
+            ready=all(j in done_at for j in dependencies)
+            after_s=max((done_at[j] for j in dependencies if j in done_at),default=0)
             if i not in done_at and isinstance(rule, dict):
                 hit = None
                 if 'touches' in rule:
                     pair=tuple(sorted(rule['touches']))
-                    hit=next((e['contact_at_s'] for e in self.events if e['kind']=='body_contact' and (e['a'],e['b'])==pair),None)
+                    hit=next((e['contact_at_s'] for e in self.events if e['kind']=='body_contact' and (e['a'],e['b'])==pair and e['contact_at_s']>=after_s),None)
                 elif 'hits' in rule:
                     a, b = rule['hits']
                     hit = next((e['t'] for e in self.events if e['kind'] == 'impact' and
-                                ((same(e['by'], a) and same(e['struck'], b)) or (same(e['by'], b) and same(e['struck'], a)))),
+                                e['t']>=after_s and ((same(e['by'], a) and same(e['struck'], b)) or (same(e['by'], b) and same(e['struck'], a)))),
                                None)
+                elif 'joints_in_range' in rule:
+                    joints={j['name']:j for j in out['joints']}
+                    if all(isinstance(joints.get(r['joint'],{}).get('degrees'),(int,float)) and
+                           r['min_deg']<=joints[r['joint']]['degrees']<=r['max_deg'] for r in rule['joints_in_range']):
+                        hit=self.t
                 elif 'turned_deg' in rule:
                     r = rule['turned_deg']
                     j = next((j for j in out['joints'] if j['name'] == r.get('joint')), None)
@@ -3275,11 +3310,13 @@ class MachineSession:
                         self._power_since.setdefault(i,self.t)
                         if self.t-self._power_since[i]>=r.get('for_s',0):hit=self.t
                     else:self._power_since.pop(i,None)
-                elif 'load_power_w' in rule:
-                    r = rule['load_power_w']
+                elif 'load_power_w' in rule or 'load_power_below_w' in rule:
+                    below='load_power_below_w' in rule
+                    r = rule['load_power_below_w' if below else 'load_power_w']
                     targets=r.get('devices',[r.get('device')])
                     devices={d['name']:d for d in out.get('electrical',{}).get('devices',[])}
-                    if all(devices.get(name,{}).get('power_w',0)>=r['at_least_w'] for name in targets):
+                    if ready and all((devices.get(name,{}).get('power_w',0)<r['at_least_w'] if below else
+                                      devices.get(name,{}).get('power_w',0)>=r['at_least_w']) for name in targets):
                         self._power_since.setdefault(i, self.t)
                         if self.t - self._power_since[i] >= r.get('for_s', 0): hit = self.t
                     else: self._power_since.pop(i, None)
@@ -3322,14 +3359,15 @@ class MachineSession:
                     hit = next((e['t'] for e in self.events if e['kind'] == 'severed' and same(e.get('body'), rule['cut'])),
                                None)
                 elif 'rose_m' in rule or 'moved_m' in rule or 'in_zone' in rule:
-                    hit = getattr(self, '_crossed', {}).get(i)
+                    hit = next((t for t in getattr(self,'_crossing_times',{}).get(i,[]) if t>=after_s),None) \
+                        if dependencies else getattr(self, '_crossed', {}).get(i)
                 elif 'dented' in rule:
                     hit = next((e['t'] for e in self.events if e['kind'] == 'dent' and same(e.get('body'), rule['dented'])),
                                None)
                 elif 'broke' in rule:
                     hit = next((e['t'] for e in self.events if e['kind'] == 'broke' and same(e.get('body'), rule['broke'])),
                                None)
-                if hit is not None:
+                if hit is not None and ready and hit>=max((done_at[j] for j in dependencies),default=0):
                     done_at[i] = round(hit, 3)
             rows.append({'title': s['title'], 'maturity': s.get('maturity'),
                          'done': i in done_at, 'at_s': done_at.get(i)})
@@ -3433,6 +3471,11 @@ class MachineSession:
             try:
                 started = time.perf_counter()
                 with self.lock:
+                    # Offline verification uses the same bounded player actions
+                    # as HTTP, scheduled in simulated time. Never in live play.
+                    while getattr(self,'_reference_actions',[]) and self._reference_actions[0]['at_s']<=self.t+1e-9:
+                        action=self._reference_actions.pop(0)
+                        self.player_control(action['name'],action['pressed'])
                     queued, self._pull_queue = self._pull_queue, {}
                     for body,deadline in list(self._switch_force_until.items()):
                         if time.monotonic()>deadline:
@@ -3642,7 +3685,7 @@ class MachineSession:
 
 
 def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, after_s=0.0, flows=False,
-             *, handle_inputs=None, release_inputs=None, preview_job=None,setup_s=0,recorder=None):
+             *, handle_inputs=None, release_inputs=None, action_inputs=None, preview_job=None,setup_s=0,recorder=None):
     """Run a machine once, unpaced, and report what the engine measured: which
     stations happened, when, and the events. Nothing is kept and nothing is
     changed; a person still watches the real run afterwards. track: names of
@@ -3690,6 +3733,12 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
         session._capture_flows()
     started = time.perf_counter()
     try:
+        session._reference_actions=sorted(copy.deepcopy(action_inputs or []),key=lambda r:r['at_s'])
+        for action in session._reference_actions:
+            if not isinstance(action.get('at_s'),(int,float)) or not math.isfinite(action['at_s']) or action['at_s']<0:
+                raise ValueError('Reference action time must be finite and nonnegative')
+            if not isinstance(action.get('pressed'),bool) or action.get('name') not in {c['name'] for c in compiled.get('player_controls',[])}:
+                raise ValueError('Reference actions must operate declared player controls')
         session.replay_recorder = recorder
         if recorder is not None:
             recorder.capture(session, force=True)

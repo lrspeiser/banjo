@@ -9,6 +9,16 @@ const pieces={plank:'a plank',ramp:'a ramp',knife:'a swinging knife',mirror:'mir
   wall_peg:'a round deflector peg',wall_water_wheel:'a paddle wheel',wall_marble:'a marble',
   wall_funnel:'a wall funnel',wall_lever:'a wall seesaw',wall_water_tank:'a wall water tank',wall_pendulum:'a hinged arm with a square weight (the bob)'};
 export const LEVEL_MECHANISMS=Object.freeze({
+  'pinball-01':'Gravity pulls the ball down the angled deck. Rolling contact converts height into motion; the green catcher shows where it must arrive.',
+  'pinball-02':'A solid rail changes the marble’s direction through contact. Join its upstream end to the side lane so the marble cannot wedge behind it.',
+  'pinball-03':'Holding the launcher compresses an axial spring. Release removes your hand force; the spring pushes the rod into the ball.',
+  'pinball-04':'A diagonal guide redirects the launched ball through physical contact. Its position and heading determine whether the ball returns toward the playfield.',
+  'pinball-05':'Your hand turns the bearing-mounted paddle. Let go and the return spring pulls it back. This lesson has no powered motor.',
+  'pinball-06':'Holding the button closes two metal contacts and completes the indicator’s circuit. Its spring separates them when you release it.',
+  'pinball-07':'Current needs both the supply and return leads. Holding the real button powers the motor; the paddle strikes the ball through contact.',
+  'pinball-08':'Parallel circuits share a supply but each has its own physical button. One paddle can move while the other rests; both springs return after release.',
+  'pinball-09':'The rubber bumper redirects the ball using material contact. It adds no energy. The hanging target swings only when struck.',
+  'pinball-10':'The spring launcher, wired flippers, passive bumpers and guides work together on an inclined deck. The open drain ends a ball; Reset reloads it.',
   'easy-wall-lift':'The wired motor turns a cradle wheel. Put the marble in the low cradle; contact carries it upward and gravity tips it onto the upper track. Reset reloads this one-pass mechanism.',
   'easy-wall-water-lift':'Water pushes paddles on the same solid shaft as the cradle. Move the tank over the right paddles and open its tap. The wheel lifts and unloads the marble without an electric motor.',
   'easy-wall-generator':'Falling water turns a wheel and DC generator. Current in its two wires lights the indicator lamp and applies opposing torque to the shaft. There is no charged battery supplying the circuit.',
@@ -109,6 +119,10 @@ export function levelIntroduction(level,{title,objective}={}) {
   const names=(level.tray||[]).map(t=>t.piece==='mirror'&&t.count===1?'a mirror':pieces[t.piece]||t.title||t.piece.replaceAll('_',' '));
   const joined=names.length>1?names.slice(0,-1).join(', ')+' and '+names.at(-1):names[0]||'the available pieces';
   let works=LEVEL_MECHANISMS[family]||'Place the available pieces so their movement reaches the level’s goal.';
+  if(level.project?.id==='pinball')return {
+    title:`Pinball ${level.project.step} of ${level.project.total}: ${title||level.title}`,
+    place:joined.charAt(0).toUpperCase()+joined.slice(1)+'.',works,
+    goal:level.brief+' Your completed parts are saved in your Sandbox project.'};
   if(family==='easy-spring'&&level.tray?.[0]?.knobs?.mechanism_version?.default!==3)
     works='A spring pushes or pulls its attached load toward its relaxed length. Its guide keeps the load on one axis.';
   if(family==='easy-heat'&&level.tray?.[0]?.knobs?.attachment_version?.default!==2)

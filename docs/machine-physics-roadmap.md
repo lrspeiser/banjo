@@ -1,5 +1,15 @@
 # Physics for the machine: what there is, what to add
 
+October 19 Pinball construction project: ten authored subsystem lessons and
+a cumulative saved table now use the existing native mechanisms. Ideal table
+mounts explicitly ground stationary fixtures, and a real sloping drain gutter
+collects the ball. A numerical sleep guard preserves the existing rolling
+threshold on jointed supports; it adds no force, velocity or energy source.
+Glass/oak/iron comparisons and the retained rolling/step-work regressions are
+documented in [the Pinball measurements](pinball.md). Motor windings,
+coiled-wire spring stress, powered bumpers and automatic ball elevators remain
+outside this pack.
+
 October 19 object actions: a shared Sandbox/word-builder binding exposes bounded
 held operator force on existing hinged/sliding handles. The compiler validates
 one action per handle and distinct keys; no scripted motion or automatic event

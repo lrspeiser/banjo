@@ -45,6 +45,7 @@ import sandbox_wall
 import sandbox_pinball
 import object_actions
 import wall_lessons
+import pinball_lessons
 
 SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations, sandbox_motion, sandbox_pulleys, sandbox_pinball, object_actions)
 EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel', 'easy-river-wheel',
@@ -57,6 +58,8 @@ EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle
 # piece is one task; a separate cable, field operation or drum connection adds
 # another. This metadata never participates in simulation or scoring.
 PLAYER_TASK_COUNTS = {
+    'pinball-01':1,'pinball-02':1,'pinball-03':2,'pinball-04':2,'pinball-05':2,
+    'pinball-06':2,'pinball-07':2,'pinball-08':3,'pinball-09':1,'pinball-10':3,
     'gap': 1, 'cut': 1, 'fire': 4, 'steam': 1, 'chain': 1,
     'laser': 2, 'sun': 2, 'tackle': 5, 'easy-thread': 1,
     'easy-cut': 1, 'easy-mirror': 1, 'easy-lens': 1, 'easy-solar': 2,
@@ -119,6 +122,7 @@ def load_levels():
     for module in SANDBOX_MODULES:
         levels.extend(copy.deepcopy(getattr(module, 'EASY_LEVELS', [])))
     levels.extend(wall_lessons.levels())
+    levels.extend(pinball_lessons.levels())
     sandbox_pulleys.configure_levels(levels)
     for level in levels:
         if level.get('difficulty') == 'easy':
@@ -918,6 +922,9 @@ def _assemble(level, placements, lenient=False):
             panel=next(row for row in sandbox_wall.panels(level['machine']) if row['id']==p['wall'])
             made=sandbox_wall.place_on_panel(made,panel)
         merge_fragment(spec, made)
+    if level.get('project',{}).get('id')=='pinball':
+        pinball_lessons.connect_lesson(level,spec,checked)
+        pinball_lessons.mount(spec)
     compiled = mw.compile_spec(dict(spec, stations=[]), lenient=lenient)
     # And the player's pieces: a mirror stands on a post, not in the air.
     # Wall builders supply their own actual fixed/hinge mountings to the
@@ -925,7 +932,7 @@ def _assemble(level, placements, lenient=False):
     # rear fixing; adding posts would change its declared contact geometry.
     mounted_owners={f'your {p["piece"]} {i+1}':p.get('wall',sandbox_wall.FOUNDATION[0]) for i,p in enumerate(checked) if tray[p['piece']].get('wall_mounted')}
     legacy_wall=level.get('wall_mode',{}).get('version')==1
-    stands = [] if legacy_wall else hold_up(compiled['parts'], spec.get('cell_m', 0.02),
+    stands = [] if legacy_wall or level.get('project',{}).get('id')=='pinball' else hold_up(compiled['parts'], spec.get('cell_m', 0.02),
         only_player=level.get('custom_base', False),skip_owners=mounted_owners)
     if stands:
         spec['parts'] += stands
@@ -979,7 +986,7 @@ def _gap(a, b):
                - sum(hb[j] * abs(sum(ab[j][k] * ax[k] for k in range(3))) for j in range(3)) for ax in axes)
 
 
-def held_up(parts):
+def held_up(parts,joints=()):
     """The names of the fixed parts that are held up: on the ground, or
     touching one that is, by a chain of them."""
     fixed = [p for p in parts if p.get('fixed')]
@@ -993,7 +1000,8 @@ def held_up(parts):
     while todo:
         name = todo.pop()
         for p in fixed:
-            if p['name'] not in held and near(name, p['name']):
+            bolted=any(j['kind']=='fix' and {j['a'],j['b']}=={name,p['name']} for j in joints)
+            if p['name'] not in held and (near(name, p['name']) or bolted):
                 held.add(p['name'])
                 todo.append(p['name'])
     return held
@@ -1854,6 +1862,8 @@ def compose(level, placements, leave_out_goal=False):
         | {d['name'] for d in compiled.get('electrical', {}).get('devices', [])} \
         | {s['name'] for s in (compiled.get('light') or {}).get('photocells', [])}
     missing = [name for name in _named(goal) if name not in available]
+    missing += [name for checkpoint in level['goal'].get('checkpoints',[])
+                for name in _named(checkpoint['done_when']) if name not in available]
     if missing:
         wanted = missing[0]
         needs = level['goal'].get('needs', f'the goal is about {wanted}, which is not here yet')
@@ -1863,6 +1873,7 @@ def compose(level, placements, leave_out_goal=False):
     else:
         spec['stations'] = [dict(level['goal']['station'], done_when=goal, title=level['goal']['title'],
                                  focus=level['goal'].get('focus', []))]
+        spec['stations'].extend(copy.deepcopy(level['goal'].get('checkpoints',[])))
     # The steps on the way, after the goal: shown on the page as the chain's
     # stations, and what the engine's search steers by. One about a part
     # that is not placed yet is left out.
@@ -1882,6 +1893,8 @@ def _named(rule):
             out.append(value)
         elif isinstance(value, list):
             out += [v for v in value if isinstance(v, str)]
+            for v in value:
+                if isinstance(v,dict):out += _named({'nested':v})
         elif isinstance(value, dict):
             out += [value[k] for k in ('part', 'joint', 'photocell', 'battery', 'device', 'spout') if isinstance(value.get(k), str)]
     return out
@@ -1977,13 +1990,13 @@ def energy_of(compiled, readouts, t_s=0.0):
     return {'j': made + run['j'], 'pieces_j': made, 'pieces': pieces, 'run': run}
 
 
-def measure_energy(level, placements, exe, logs, *, handle_inputs=None, release_inputs=None):
+def measure_energy(level, placements, exe, logs, *, handle_inputs=None, release_inputs=None,action_inputs=None):
     """A rehearsal to the goal: when it happened and what the win took (a
     level's par is its own solution's)."""
     spec, _, _ = compose(level, placements)
     compiled = mw.compile_spec(spec)
     r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=120,
-                    handle_inputs=handle_inputs, release_inputs=release_inputs)
+                    handle_inputs=handle_inputs, release_inputs=release_inputs,action_inputs=action_inputs)
     row = (r['stations'] or [{}])[0]
     return dict(energy_of(compiled, r.get('readouts'), r['world_time_s']),
                 goal_at_s=row.get('at_s') if row.get('done') else None)
@@ -2020,7 +2033,7 @@ def nudged(compiled, seed, metres=0.0015):
     return out
 
 
-def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None, release_inputs=None,setup_s=0):
+def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None, release_inputs=None,action_inputs=None,setup_s=0):
     """Run the machine `runs` times, nudged, and say in how many the goal
     happened in time. Unpaced: as fast as the engine goes."""
     spec, checked, cost = compose(level, placements)
@@ -2028,7 +2041,7 @@ def trial(level, placements, exe, logs, runs=3, *, handle_inputs=None, release_i
     results = []
     for seed in range(runs):
         r = mw.rehearse(nudged(compiled, seed + 1) if seed else compiled, exe, logs,
-                        seconds=level['time_s'] + 0.5, wall_limit_s=120, handle_inputs=handle_inputs, release_inputs=release_inputs,setup_s=setup_s)
+                        seconds=level['time_s'] + 0.5, wall_limit_s=120, handle_inputs=handle_inputs, release_inputs=release_inputs,action_inputs=action_inputs,setup_s=setup_s)
         row = r['stations'][0] if r['stations'] else {}
         at = row.get('at_s') if row.get('done') else None
         results.append({'goal_at_s': at, 'error': r.get('error'),
@@ -2101,7 +2114,8 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0, preview_job=None):
     # With no goal, the marbles first: they are what a free build is about.
     loose.sort(key=lambda n: ' marble ' not in n + ' ')
     track = ([wanted] if wanted in loose else []) + [n for n in loose if n != wanted][:7]
-    r = mw.rehearse(compiled, exe, logs, seconds=level['time_s'] + 0.3, wall_limit_s=wall_limit_s,
+    preview_seconds=min(3,level['time_s']+.3) if level.get('project') and level.get('solution_actions') else level['time_s']+.3
+    r = mw.rehearse(compiled, exe, logs, seconds=preview_seconds, wall_limit_s=wall_limit_s,
                     preview_job=preview_job, recorder=recorder, track=track, after_s=0.5, flows=bool(compiled.get('light') or compiled.get('spouts') or
                         (compiled.get('ground') or {}).get('kind') == 'flume' or
                         compiled.get('circuits') or compiled.get('electrical', {}).get('wires') or
@@ -2131,8 +2145,8 @@ def preview(level, placements, exe, logs, wall_limit_s=30.0, preview_job=None):
             hits.append(h)
         last[key] = h['t']
     return {'paths': paths, 'hits': hits, 'goal_at_s': goal_at, 'world_time_s': r['world_time_s'],
-            'manual_input_required': bool(level.get('solution_inputs') or level.get('solution_releases')),
-            'manual_input_label': 'Release spring' if level.get('solution_releases') else 'drag the handle',
+            'manual_input_required': bool(level.get('solution_inputs') or level.get('solution_releases') or level.get('solution_actions')),
+            'manual_input_label': 'use the held controls in Run' if level.get('solution_actions') else 'Release spring' if level.get('solution_releases') else 'drag the handle',
             'flow_frames': r.get('flow_frames', []), 'complete': r.get('complete', not r['error']),
             'mechanism_shapes':r.get('mechanism_shapes',[]),
             'wall_s': r['wall_s'], 'error': r['error'], 'zone': rule if 'at_m' in (rule if isinstance(rule, dict) else {}) else None}
@@ -2274,7 +2288,7 @@ def refine(level, placements, rehearse, budget=24, scatter=0, seed=1):
 def public(level):
     """What the page needs to show a level: never its solution."""
     result = {k: level[k] for k in ('id', 'title', 'brief', 'teaches', 'time_s', 'budget', 'par', 'style_pieces',
-                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding','release_to_start','camera_min_m','camera_area','setup_guides','water_controls','assembly_tutorial','wall_mode') if k in level}
+                                  'tray', 'goal', 'hints', 'par_energy_j', 'free', 'example', 'difficulty', 'onboarding','release_to_start','camera_min_m','camera_area','setup_guides','water_controls','assembly_tutorial','wall_mode','project') if k in level}
     if not level.get('free'):
         # Setup guidance exposes counts only, never positions or adjustments.
         required = {}

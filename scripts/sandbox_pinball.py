@@ -170,13 +170,17 @@ def plunger(name,k,ctx):
 def bumper(name,k,ctx):
     x,z=k.get('x_m',0),k.get('z_m',.5);radius=k.get('radius_m',.13)
     # A passive rubber bumper: material contact returns only impact energy.
-    part=dict(name=name,shape='sphere',material='rubber',fixed=True,at_m=[x,.10,z],size_m=[2*radius]*3)
+    if k.get('profile')=='diamond':
+        part=rigid(name,[x,.112,z],[radius*1.4,.16,radius*1.4],'rubber',turn=[0,45,0])
+    else:part=dict(name=name,shape='sphere',material='rubber',fixed=True,
+        at_m=[x,.032+radius if 'profile' in k else .10,z],size_m=[2*radius]*3)
     return finish(dict(parts=[part]),k)
 
 
 def rail(name,k,ctx):
-    return finish(dict(parts=[rigid(name,[k.get('x_m',0),.11,k.get('z_m',0)],
-        [k.get('length_m',.5),.20,.04],turn=[0,k.get('angle_deg',0),0])]),k)
+    raised=k.get('mount_version',1)==2
+    return finish(dict(parts=[rigid(name,[k.get('x_m',0),.13 if raised else .11,k.get('z_m',0)],
+        [k.get('length_m',.5),.196 if raised else .20,.04],turn=[0,k.get('angle_deg',0),0])]),k)
 
 
 def ball(name,k,ctx):
@@ -207,6 +211,7 @@ def row(piece,title,knobs,description):
         torque_n_m='Stall torque (N m)',return_n_m='Return spring (N/m)',
         stiffness_n_m='Spring stiffness (N/m)',radius_m='Radius (m)',
         angle_deg='Rail heading (degrees)',diameter_m='Ball diameter (m)',material='Material')
+    labels.update(profile='Bumper shape',mount_version='Guide mounting')
     knobs=copy.deepcopy(knobs)
     for key,rule in knobs.items():rule.setdefault('label',labels[key])
     return dict(piece=piece,title=title,description=description,cost=0,count=20,
@@ -222,9 +227,11 @@ TRAY=[
     row('pinball_button','Spring-return button',{}, 'A hinged metal button closes real conductor contacts while you hold it.'),
     row('pinball_plunger','Pinball spring launcher',dict(stiffness_n_m=dict(default=400,min=100,max=500,step=20)),
         'Hold to compress the spring; release to launch through contact with the ball.'),
-    row('pinball_bumper','Rubber pinball bumper',dict(radius_m=dict(default=.13,min=.08,max=.2,step=.01)),
+    row('pinball_bumper','Rubber pinball bumper',dict(radius_m=dict(default=.13,min=.08,max=.2,step=.01),
+        profile=dict(default='diamond',choices=['diamond','round'],hidden=True)),
         'A passive material bumper. It cannot add energy to an impact.'),
     row('pinball_rail','Pinball guide rail',dict(length_m=dict(default=.5,min=.1,max=1.5,step=.05),
+        mount_version=dict(default=2,choices=[1,2],hidden=True),
         angle_deg=dict(default=0,min=-180,max=180,step=5,turning=True)), 'A solid guide on the inclined surface.'),
     row('pinball_ball','Smooth pinball',dict(diameter_m=dict(default=.04,min=.03,max=.08,step=.005),
         material=dict(default='iron',choices=['iron','glass','oak'])), 'An exact rigid sphere with material-derived mass and inertia.'),

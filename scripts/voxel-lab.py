@@ -389,6 +389,8 @@ class Handler(BaseHTTPRequestHandler):
      else:r=machine_chat.respond(data.get('message'),data.get('spec'),data.get('history'),rehearse=host.rehearse if data.get('rehearse',True) else None)
     finally:self.server.chat_busy.release()
    elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build()),'sandbox':machine_game.sandbox_templates(),'sandbox_base':machine_game.free_build()['machine'],'wall_sandbox':machine_game.sandbox_wall.world_template(machine_game.free_build()['tray']),'wall_legacy_tray':machine_game.sandbox_wall.tray(),'pinball_sandbox':machine_game.sandbox_pinball.template()}
+   elif op=='pinball_project':
+    r=dict(ok=True,draft=machine_game.pinball_lessons.project_build(data.get('records'),data.get('step')))
    elif op=='wall_into_world':
     draft=machine_game.sandbox_wall.world_draft(data.get('base',{}),data.get('placements',[]),data.get('goal'))
     machine_game.compose(machine_game.requested_level(dict(level='free',**draft)),draft['placements'])

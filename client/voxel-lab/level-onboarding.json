@@ -1565,6 +1565,224 @@
           "b_terminal"
         ]
       }
+    },
+    {
+      "id": "pinball-01",
+      "rank": 65,
+      "chapter": "Project: Build a Pinball Machine",
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "estimate_basis": "Authored construction lesson; not yet probed by the blind assessor; not measured human completion times.",
+      "lesson_controls": {
+        "pinball_ball": [
+          "x_m",
+          "z_m"
+        ]
+      },
+      "primary_controls": {
+        "pinball_ball": [
+          "x_m",
+          "z_m"
+        ]
+      }
+    },
+    {
+      "id": "pinball-02",
+      "rank": 66,
+      "chapter": "Project: Build a Pinball Machine",
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "estimate_basis": "Authored construction lesson; not yet probed by the blind assessor; not measured human completion times.",
+      "lesson_controls": {
+        "pinball_rail": [
+          "x_m",
+          "z_m",
+          "angle_deg"
+        ]
+      },
+      "primary_controls": {
+        "pinball_rail": [
+          "x_m",
+          "z_m",
+          "angle_deg"
+        ]
+      }
+    },
+    {
+      "id": "pinball-03",
+      "rank": 67,
+      "chapter": "Project: Build a Pinball Machine",
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "estimate_basis": "Authored construction lesson; not yet probed by the blind assessor; not measured human completion times.",
+      "lesson_controls": {
+        "pinball_plunger": [
+          "z_m"
+        ]
+      },
+      "primary_controls": {
+        "pinball_plunger": [
+          "z_m"
+        ]
+      }
+    },
+    {
+      "id": "pinball-04",
+      "rank": 68,
+      "chapter": "Project: Build a Pinball Machine",
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "estimate_basis": "Authored construction lesson; not yet probed by the blind assessor; not measured human completion times.",
+      "lesson_controls": {
+        "pinball_rail": [
+          "x_m",
+          "z_m",
+          "angle_deg"
+        ]
+      },
+      "primary_controls": {
+        "pinball_rail": [
+          "x_m",
+          "z_m",
+          "angle_deg"
+        ]
+      }
+    },
+    {
+      "id": "pinball-05",
+      "rank": 69,
+      "chapter": "Project: Build a Pinball Machine",
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "estimate_basis": "Authored construction lesson; not yet probed by the blind assessor; not measured human completion times.",
+      "lesson_controls": {
+        "pinball_flipper": [
+          "return_n_m"
+        ]
+      },
+      "primary_controls": {
+        "pinball_flipper": [
+          "return_n_m"
+        ]
+      }
+    },
+    {
+      "id": "pinball-06",
+      "rank": 70,
+      "chapter": "Project: Build a Pinball Machine",
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "estimate_basis": "Authored construction lesson; not yet probed by the blind assessor; not measured human completion times.",
+      "lesson_controls": {
+        "pinball_button": [
+          "x_m"
+        ]
+      },
+      "primary_controls": {
+        "pinball_button": [
+          "x_m"
+        ]
+      }
+    },
+    {
+      "id": "pinball-07",
+      "rank": 71,
+      "chapter": "Project: Build a Pinball Machine",
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "estimate_basis": "Authored construction lesson; not yet probed by the blind assessor; not measured human completion times.",
+      "lesson_controls": {
+        "wire": [
+          "a_terminal",
+          "b_terminal"
+        ]
+      },
+      "primary_controls": {
+        "wire": [
+          "a_terminal",
+          "b_terminal"
+        ]
+      }
+    },
+    {
+      "id": "pinball-08",
+      "rank": 72,
+      "chapter": "Project: Build a Pinball Machine",
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "estimate_basis": "Authored construction lesson; not yet probed by the blind assessor; not measured human completion times.",
+      "lesson_controls": {
+        "pinball_flipper": [
+          "length_m"
+        ]
+      },
+      "primary_controls": {
+        "pinball_flipper": [
+          "length_m"
+        ]
+      }
+    },
+    {
+      "id": "pinball-09",
+      "rank": 73,
+      "chapter": "Project: Build a Pinball Machine",
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "estimate_basis": "Authored construction lesson; not yet probed by the blind assessor; not measured human completion times.",
+      "lesson_controls": {
+        "pinball_bumper": [
+          "x_m",
+          "z_m",
+          "radius_m"
+        ]
+      },
+      "primary_controls": {
+        "pinball_bumper": [
+          "x_m",
+          "z_m",
+          "radius_m"
+        ]
+      }
+    },
+    {
+      "id": "pinball-10",
+      "rank": 74,
+      "chapter": "Project: Build a Pinball Machine",
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "estimate_basis": "Authored construction lesson; not yet probed by the blind assessor; not measured human completion times.",
+      "lesson_controls": {
+        "pinball_ball": [
+          "x_m",
+          "z_m"
+        ]
+      },
+      "primary_controls": {
+        "pinball_ball": [
+          "x_m",
+          "z_m"
+        ]
+      }
     }
   ],
   "controls_review_date": "2026-10-14"
