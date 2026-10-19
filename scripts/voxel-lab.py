@@ -355,6 +355,7 @@ class Handler(BaseHTTPRequestHandler):
     r=host.get(data.get('session')).play(bool(data.get('running')),data.get('speed'))
    elif op=='pull':r={'ok':True,**host.get(data.get('session')).pull(data.get('body'),data.get('at'),data.get('force'))}
    elif op=='mechanical_switch_pull':r={'ok':True,**host.get(data.get('session')).mechanical_switch_pull(data.get('name'),data.get('body'),data.get('at'),data.get('force'))}
+   elif op=='player_control':r={'ok':True,**host.get(data.get('session')).player_control(data.get('name'),data.get('pressed'))}
    elif op=='electrical_switch':
     if type(data.get('closed')) is not bool:raise ValueError('Switch state must be true or false')
     r={'ok':True,**host.get(data.get('session')).electrical_switch(data.get('name'),data['closed'])}
@@ -387,7 +388,7 @@ class Handler(BaseHTTPRequestHandler):
        mode=data.get('mode','hint'),last_run=data.get('last_run'),rehearse=host.rehearse,ui=data.get('ui'))
      else:r=machine_chat.respond(data.get('message'),data.get('spec'),data.get('history'),rehearse=host.rehearse if data.get('rehearse',True) else None)
     finally:self.server.chat_busy.release()
-   elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build()),'sandbox':machine_game.sandbox_templates(),'sandbox_base':machine_game.free_build()['machine'],'wall_sandbox':machine_game.sandbox_wall.world_template(machine_game.free_build()['tray']),'wall_legacy_tray':machine_game.sandbox_wall.tray()}
+   elif op=='levels':r={'ok':True,'levels':[machine_game.public(l) for l in machine_game.load_levels()],'free':machine_game.public(machine_game.free_build()),'sandbox':machine_game.sandbox_templates(),'sandbox_base':machine_game.free_build()['machine'],'wall_sandbox':machine_game.sandbox_wall.world_template(machine_game.free_build()['tray']),'wall_legacy_tray':machine_game.sandbox_wall.tray(),'pinball_sandbox':machine_game.sandbox_pinball.template()}
    elif op=='wall_into_world':
     draft=machine_game.sandbox_wall.world_draft(data.get('base',{}),data.get('placements',[]),data.get('goal'))
     machine_game.compose(machine_game.requested_level(dict(level='free',**draft)),draft['placements'])

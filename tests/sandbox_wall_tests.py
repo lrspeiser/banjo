@@ -297,7 +297,7 @@ class WallWorld(unittest.TestCase):
     def test_world_library_has_explicit_wall_mounts_and_every_ordinary_piece(self):
         rows={row['piece']:row for row in self.level['tray']}
         self.assertTrue({r['piece'] for r in mg.free_build()['tray']}<=set(rows))
-        self.assertEqual(len([r for r in rows.values() if r.get('wall_mounted')]),17)
+        self.assertEqual(len([r for r in rows.values() if r.get('wall_mounted')]),31)
         self.assertFalse(any(p['name']==wall.FOUNDATION[1] for p in self.template['base']['parts']))
         self.assertNotIn('z_m',rows['wall_battery']['knobs'])
         self.assertIn('z_m',rows['battery']['knobs'])

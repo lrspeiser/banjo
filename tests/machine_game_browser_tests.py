@@ -2889,6 +2889,141 @@ class Puzzles(unittest.TestCase):
                     proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
                     (proof/f'{ident}-{width}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
 
+    def play_wall_activity(self,ident,width,height):
+        import machine_game
+        level=machine_game.level_by_id(ident);touch=width!=1280
+        self.open(ident,width,height,phone=touch,dismiss_intro=False)
+        self.assertGreater(len(self.js("document.getElementById('level-intro-works').textContent")),20)
+        self.click_visible('GO')
+        for placed in level['solution']:
+            piece=placed['piece']
+            if piece=='wire':
+                self.click_scene_socket(placed['a_terminal'],touch=touch);self.ghost()
+                self.click_scene_socket(placed['b_terminal'],touch=touch)
+                self.wait('!machineGhostState() && '+READY,60)
+                continue
+            if piece=='power_cable':
+                self.click_visible('Power output of '+placed['a_port'].removesuffix(':power'))
+                self.click_visible('Power input of '+placed['b_port'].removesuffix(':power'))
+                self.wait('!machineGhostState() && '+READY,60)
+                continue
+            row=next(r for r in level['tray'] if r['piece']==piece)
+            self.click_visible('Add a '+row['title'].lower());p=self.ghost()['p']
+            if any(abs(placed.get(k,p[k])-p[k])>.005 for k in ('x_m','height_m')):
+                self.click_visible('Move selected piece');self.wait('machineCamera().settled',30);self.paint()
+                start=self.js('(()=>{const b=machineGhostScreen();return [(b.x0+b.x1)/2,(b.y0+b.y1)/2]})()')
+                at=self.js(f'machineDragPoint({start[0]},{start[1]})')
+                end=self.screen_point([at[0]+placed['x_m']-p['x_m'],at[1]+placed['height_m']-p['height_m'],at[2]])
+                self.drag(start,end,touch=touch);self.ghost()
+            for key,value in placed.items():
+                if key in ('piece','x_m','height_m') or self.ghost()['p'].get(key)==value:continue
+                self.slide('Adjustment',key);self.ghost()
+                rule=row['knobs'][key]
+                if rule.get('choices'):
+                    label=self.js("document.querySelector('#piece-editor button[aria-label^=\"Toggle \"]').getAttribute('aria-label')")
+                    self.click_visible(label);self.ghost()
+                else:
+                    current=self.ghost()['p'][key];step=rule['step'];sign=1 if value>current else -1
+                    label=self.js(f"document.querySelector('#piece-handles button[aria-label^=\"{'Increase' if sign>0 else 'Decrease'} \"]').getAttribute('aria-label')")
+                    for _ in range(round(abs(value-current)/step)):
+                        self.click_visible(label);self.ghost()
+                self.assertAlmostEqual(self.ghost()['p'][key],value,places=4)
+            held=self.ghost();self.assertTrue(held['fits'],held['problems'])
+            self.click_visible('Place');self.wait('!machineGhostState() && '+READY,60)
+        self.click_visible('Run')
+        if ident=='easy-wall-spring':
+            self.wait("!machinePlayMode().starting && [...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Release spring'&&!b.disabled&&b.checkVisibility())",30)
+            self.click_visible('Release spring')
+        self.wait("document.body.classList.contains('scene-win')",90)
+        self.assertIn('★★★',self.js("document.getElementById('level-done').textContent"))
+        self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+        proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+        (proof/f'{ident}-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
+    def test_wall_power_air_heat_and_lifts_use_scene_controls(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for key in ('lift','water-lift','generator','air','steam'):
+                with self.subTest(level=key,viewport=(width,height)):
+                    self.play_wall_activity('easy-wall-'+key,width,height)
+
+    def test_wall_optics_spring_and_contact_mechanisms_use_scene_controls(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for key in ('pendulum','trapdoor','spring','mirror','lens','gears','pipe'):
+                with self.subTest(level=key,viewport=(width,height)):
+                    self.play_wall_activity('easy-wall-'+key,width,height)
+
+    def test_wall_electronic_components_and_solar_use_scene_controls(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for key in ('resistor','capacitor','solar','parallel'):
+                with self.subTest(level=key,viewport=(width,height)):
+                    self.play_wall_activity('easy-wall-'+key,width,height)
+
+    def test_pinball_starter_live_buttons_launch_pause_reset_and_save(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.click_visible('Pinball')
+                self.wait("machineDesign()?.name==='Pinball' && "+READY,90)
+                self.wait('machineCamera().settled',30)
+                saved=self.js('machineDesign().id')
+                self.assertIn('Hold the launcher',self.js("document.getElementById('scene-goal').textContent"))
+                self.click_visible('Run')
+                self.wait("document.getElementById('player-controls').checkVisibility() && !document.querySelector('#player-controls button').disabled",30)
+                session=self.server.machines.get(self.js('machineCableSetupState().session'))
+                def hold(label):
+                    self.reveal_control(self.button_expression(label));self.paint()
+                    b=self.js(f"(()=>{{const b={self.button_expression(label)},r=b.getBoundingClientRect();return {{x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height,hit:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}};}})()")
+                    self.assertGreaterEqual(b['w'],44);self.assertGreaterEqual(b['h'],44);self.assertTrue(b['hit'],b)
+                    if width==1280:self.mouse('mousePressed',b['x'],b['y'])
+                    else:self.page.send('Input.dispatchTouchEvent',dict(type='touchStart',touchPoints=[dict(x=b['x'],y=b['y'],id=5)]))
+                    self.wait(f"{self.button_expression(label)}.getAttribute('aria-pressed')==='true'",10)
+                    return b
+                def release(b):
+                    if width==1280:self.mouse('mouseReleased',b['x'],b['y'])
+                    else:self.page.send('Input.dispatchTouchEvent',dict(type='touchEnd',touchPoints=[]))
+                def native_until(predicate):
+                    deadline=time.monotonic()+15
+                    while time.monotonic()<deadline:
+                        with session.lock:
+                            self.assertIsNone(session.error)
+                            if predicate(session):return
+                        time.sleep(.03)
+                    self.fail('Native Pinball action did not finish')
+                b=hold('Left flipper')
+                native_until(lambda s:any(j['name']=='left flipper axle' and j['degrees']>35 for j in s.readouts.get('joints',[])))
+                with session.lock:
+                    self.assertLess(abs(next(j for j in session.readouts['joints'] if j['name']=='right flipper axle')['degrees']),3)
+                if width!=1280:
+                    right=self.js(f"(()=>{{const r={self.button_expression('Right flipper')}.getBoundingClientRect();return {{x:r.x+r.width/2,y:r.y+r.height/2}};}})()")
+                    self.page.send('Input.dispatchTouchEvent',dict(type='touchStart',touchPoints=[
+                        dict(x=b['x'],y=b['y'],id=5),dict(x=right['x'],y=right['y'],id=6)]))
+                    native_until(lambda s:any(j['name']=='right flipper axle' and j['degrees']<-35 for j in s.readouts.get('joints',[])))
+                release(b)
+                native_until(lambda s:any(j['name']=='left flipper axle' and abs(j['degrees'])<4 for j in s.readouts.get('joints',[])))
+                if width==1280:
+                    self.page.send('Input.dispatchKeyEvent',dict(type='keyDown',key='ArrowRight',code='ArrowRight',windowsVirtualKeyCode=39))
+                    native_until(lambda s:any(j['name']=='right flipper axle' and j['degrees']<-35 for j in s.readouts.get('joints',[])))
+                    self.page.send('Input.dispatchKeyEvent',dict(type='keyUp',key='ArrowRight',code='ArrowRight',windowsVirtualKeyCode=39))
+                    native_until(lambda s:any(j['name']=='right flipper axle' and abs(j['degrees'])<4 for j in s.readouts.get('joints',[])))
+                    point=self.js("machineBodyScreen('right button button')")
+                    self.mouse('mousePressed',*point)
+                    native_until(lambda s:any(j['name']=='right flipper axle' and j['degrees']<-35 for j in s.readouts.get('joints',[])))
+                    self.mouse('mouseReleased',*point)
+                b=hold('Pull launcher · release to shoot')
+                native_until(lambda s:any(j['name']=='launcher guide' and j.get('metres',0)<-.24 for j in s.readouts.get('joints',[])))
+                release(b)
+                native_until(lambda s:s.bodies.get('pinball',{}).get('position_m',[0,0,-2])[2]>.1)
+                self.assertFalse(session._test_pulled,'Playing the declared controls is part of the machine')
+                self.click_visible('Pause')
+                self.wait("document.querySelectorAll('#player-controls [aria-pressed=true]').length===0",10)
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'pinball-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Reset');self.wait(READY,90)
+                self.assertEqual(self.js('machineDesign().id'),saved)
+                self.assertEqual(self.js('machineCableSetupState().t'),0)
+                self.assertEqual(self.js('document.querySelectorAll("#player-controls [aria-pressed=true]").length'),0)
+                self.assertFalse(self.js('document.documentElement.scrollWidth>innerWidth+1'))
+
     def test_wall_water_tools_add_the_channel_and_keep_sandbox_designs_editable(self):
         import sandbox_wall
         self.anonymous_levels(width=390,height=844)

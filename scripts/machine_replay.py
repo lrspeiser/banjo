@@ -17,7 +17,7 @@ CACHE_BYTES = 64 * 1024 * 1024
 
 def eligible(level, compiled):
     graph = compiled.get('electrical') or {}
-    return not (level.get('free') or level.get('release_to_start') or compiled.get('spouts') or
+    return not (level.get('free') or level.get('release_to_start') or compiled.get('spouts') or compiled.get('player_controls') or
                 compiled.get('ropes') or compiled.get('strands') or graph.get('wires') or graph.get('power_cables') or
                 any(c.get('leads') for c in compiled.get('circuits', [])) or
                 any(d.get('handle') for d in graph.get('devices', [])) or
@@ -153,6 +153,6 @@ class ReplaySession:
         self.frames = []
 
     def __getattr__(self, name):
-        if name in ('pull','mechanical_switch_pull','electrical_switch','water_opening','water_valve','release_joint'):
+        if name in ('pull','mechanical_switch_pull','player_control','electrical_switch','water_opening','water_valve','release_joint'):
             raise ValueError('This recorded run has no live controls. Return to Build to change the machine.')
         raise AttributeError(name)

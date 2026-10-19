@@ -225,8 +225,370 @@
       "estimate_basis": "Author interface review only; not yet probed by a blind solver and not measured human completion times."
     },
     {
-      "id": "easy-weight",
+      "id": "easy-wall-lift",
       "rank": 11,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_marble": [
+          "x_m",
+          "height_m"
+        ]
+      },
+      "primary_controls": {
+        "wall_marble": [
+          "x_m",
+          "height_m"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-water-lift",
+      "rank": 12,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_water_tank": [
+          "x_m",
+          "height_m",
+          "opening_percent"
+        ]
+      },
+      "primary_controls": {
+        "wall_water_tank": [
+          "x_m",
+          "height_m",
+          "opening_percent"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-generator",
+      "rank": 13,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_water_tank": [
+          "x_m",
+          "height_m",
+          "opening_percent"
+        ]
+      },
+      "primary_controls": {
+        "wall_water_tank": [
+          "x_m",
+          "height_m",
+          "opening_percent"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-air",
+      "rank": 14,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_air": [
+          "speed_m_s"
+        ]
+      },
+      "primary_controls": {
+        "wall_air": [
+          "speed_m_s"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-steam",
+      "rank": 15,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_boiler": [
+          "heat_kw"
+        ]
+      },
+      "primary_controls": {
+        "wall_boiler": [
+          "heat_kw"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-trapdoor",
+      "rank": 16,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_trapdoor": [
+          "friction_n_m"
+        ]
+      },
+      "primary_controls": {
+        "wall_trapdoor": [
+          "friction_n_m"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-pendulum",
+      "rank": 17,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_pendulum": [
+          "start_deg"
+        ]
+      },
+      "primary_controls": {
+        "wall_pendulum": [
+          "start_deg"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-spring",
+      "rank": 18,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_spring": [
+          "x_m",
+          "height_m",
+          "rest_m",
+          "stiffness_n_m"
+        ]
+      },
+      "primary_controls": {
+        "wall_spring": [
+          "x_m",
+          "height_m",
+          "rest_m",
+          "stiffness_n_m"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-mirror",
+      "rank": 19,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_mirror": [
+          "x_m",
+          "height_m",
+          "angle_deg"
+        ]
+      },
+      "primary_controls": {
+        "wall_mirror": [
+          "x_m",
+          "height_m",
+          "angle_deg"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-pipe",
+      "rank": 20,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_pipe": [
+          "x_m",
+          "height_m"
+        ]
+      },
+      "primary_controls": {
+        "wall_pipe": [
+          "x_m",
+          "height_m"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-resistor",
+      "rank": 21,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_resistor": [
+          "resistance_ohm"
+        ]
+      },
+      "primary_controls": {
+        "wall_resistor": [
+          "resistance_ohm"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-capacitor",
+      "rank": 22,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_capacitor": [
+          "capacitance_f"
+        ]
+      },
+      "primary_controls": {
+        "wall_capacitor": [
+          "capacitance_f"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-lens",
+      "rank": 23,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_lens": [
+          "x_m",
+          "height_m",
+          "radius_m"
+        ]
+      },
+      "primary_controls": {
+        "wall_lens": [
+          "x_m",
+          "height_m",
+          "radius_m"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-gears",
+      "rank": 24,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_gear": [
+          "x_m",
+          "height_m",
+          "teeth",
+          "phase_deg"
+        ]
+      },
+      "primary_controls": {
+        "wall_gear": [
+          "x_m",
+          "height_m",
+          "teeth",
+          "phase_deg"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-solar",
+      "rank": 25,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wall_solar": [
+          "tilt_deg"
+        ],
+        "power_cable": [
+          "a_port",
+          "b_port"
+        ]
+      },
+      "primary_controls": {
+        "wall_solar": [
+          "tilt_deg"
+        ],
+        "power_cable": [
+          "a_port",
+          "b_port"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-parallel",
+      "rank": 26,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "chapter": "Level 1: Wall Basics",
+      "lesson_controls": {
+        "wire": [
+          "a_terminal",
+          "b_terminal"
+        ]
+      },
+      "primary_controls": {
+        "wire": [
+          "a_terminal",
+          "b_terminal"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-weight",
+      "rank": 27,
       "estimated_minutes": [
         2,
         4
@@ -249,7 +611,7 @@
     },
     {
       "id": "easy-roll",
-      "rank": 12,
+      "rank": 28,
       "estimated_minutes": [
         1,
         3
@@ -270,7 +632,7 @@
     },
     {
       "id": "easy-block",
-      "rank": 13,
+      "rank": 29,
       "estimated_minutes": [
         2,
         4
@@ -293,7 +655,7 @@
     },
     {
       "id": "gap",
-      "rank": 14,
+      "rank": 30,
       "estimated_minutes": [
         2,
         5
@@ -314,7 +676,7 @@
     },
     {
       "id": "easy-rope",
-      "rank": 15,
+      "rank": 31,
       "estimated_minutes": [
         2,
         5
@@ -344,7 +706,7 @@
     },
     {
       "id": "easy-spring",
-      "rank": 16,
+      "rank": 32,
       "estimated_minutes": [
         2,
         5
@@ -383,11 +745,11 @@
       },
       "primary_controls": {},
       "estimate_basis": "Author review only; not yet probed and not measured human completion times.",
-      "rank": 17
+      "rank": 33
     },
     {
       "id": "easy-tackle",
-      "rank": 18,
+      "rank": 34,
       "estimated_minutes": [
         3,
         7
@@ -445,7 +807,7 @@
     },
     {
       "id": "easy-lens",
-      "rank": 19,
+      "rank": 35,
       "estimated_minutes": [
         3,
         9
@@ -468,7 +830,7 @@
     },
     {
       "id": "easy-cut",
-      "rank": 20,
+      "rank": 36,
       "estimated_minutes": [
         3,
         8
@@ -493,7 +855,7 @@
     },
     {
       "id": "easy-mirror",
-      "rank": 21,
+      "rank": 37,
       "estimated_minutes": [
         3,
         8
@@ -514,7 +876,7 @@
     },
     {
       "id": "easy-catapult",
-      "rank": 22,
+      "rank": 38,
       "estimated_minutes": [
         3,
         8
@@ -539,7 +901,7 @@
     },
     {
       "id": "cut",
-      "rank": 23,
+      "rank": 39,
       "estimated_minutes": [
         4,
         10
@@ -564,7 +926,7 @@
     },
     {
       "id": "tackle",
-      "rank": 24,
+      "rank": 40,
       "estimated_minutes": [
         6,
         15
@@ -622,7 +984,7 @@
     },
     {
       "id": "laser",
-      "rank": 25,
+      "rank": 41,
       "estimated_minutes": [
         8,
         18
@@ -643,7 +1005,7 @@
     },
     {
       "id": "easy-gears",
-      "rank": 26,
+      "rank": 42,
       "estimated_minutes": [
         8,
         20
@@ -668,7 +1030,7 @@
     },
     {
       "id": "easy-motor",
-      "rank": 27,
+      "rank": 43,
       "estimated_minutes": [
         1,
         3
@@ -691,7 +1053,7 @@
     },
     {
       "id": "easy-bulb",
-      "rank": 28,
+      "rank": 44,
       "estimated_minutes": [
         2,
         5
@@ -712,7 +1074,7 @@
     },
     {
       "id": "easy-loop",
-      "rank": 29,
+      "rank": 45,
       "estimated_minutes": [
         1,
         3
@@ -732,7 +1094,7 @@
     },
     {
       "id": "advanced-resistor",
-      "rank": 30,
+      "rank": 46,
       "estimated_minutes": [
         1,
         4
@@ -753,7 +1115,7 @@
     },
     {
       "id": "easy-switch",
-      "rank": 31,
+      "rank": 47,
       "estimated_minutes": [
         2,
         5
@@ -773,7 +1135,7 @@
     },
     {
       "id": "easy-marble-light",
-      "rank": 32,
+      "rank": 48,
       "estimated_minutes": [
         2,
         6
@@ -793,7 +1155,7 @@
     },
     {
       "id": "easy-power",
-      "rank": 33,
+      "rank": 49,
       "estimated_minutes": [
         3,
         8
@@ -820,7 +1182,7 @@
     },
     {
       "id": "advanced-parallel",
-      "rank": 34,
+      "rank": 50,
       "estimated_minutes": [
         4,
         9
@@ -840,7 +1202,7 @@
     },
     {
       "id": "advanced-capacitor",
-      "rank": 35,
+      "rank": 51,
       "estimated_minutes": [
         4,
         10
@@ -861,7 +1223,7 @@
     },
     {
       "id": "easy-solar",
-      "rank": 36,
+      "rank": 52,
       "estimated_minutes": [
         4,
         10
@@ -894,7 +1256,7 @@
     },
     {
       "id": "easy-charge-lift",
-      "rank": 37,
+      "rank": 53,
       "estimated_minutes": [
         5,
         12
@@ -926,7 +1288,7 @@
     },
     {
       "id": "sun",
-      "rank": 38,
+      "rank": 54,
       "estimated_minutes": [
         8,
         20
@@ -958,7 +1320,7 @@
     },
     {
       "id": "easy-water-receiver",
-      "rank": 39,
+      "rank": 55,
       "estimated_minutes": [
         2,
         5
@@ -979,7 +1341,7 @@
     },
     {
       "id": "easy-river-wheel",
-      "rank": 40,
+      "rank": 56,
       "estimated_minutes": [
         2,
         5
@@ -999,7 +1361,7 @@
     },
     {
       "id": "easy-water-wheel",
-      "rank": 41,
+      "rank": 57,
       "estimated_minutes": [
         2,
         6
@@ -1022,7 +1384,7 @@
     },
     {
       "id": "easy-river-lift",
-      "rank": 42,
+      "rank": 58,
       "estimated_minutes": [
         3,
         7
@@ -1044,7 +1406,7 @@
     },
     {
       "id": "easy-water-gate",
-      "rank": 43,
+      "rank": 59,
       "estimated_minutes": [
         4,
         10
@@ -1078,7 +1440,7 @@
     },
     {
       "id": "easy-divert-water",
-      "rank": 44,
+      "rank": 60,
       "estimated_minutes": [
         5,
         12
@@ -1099,7 +1461,7 @@
     },
     {
       "id": "steam",
-      "rank": 45,
+      "rank": 61,
       "estimated_minutes": [
         3,
         7
@@ -1120,7 +1482,7 @@
     },
     {
       "id": "easy-heat",
-      "rank": 46,
+      "rank": 62,
       "estimated_minutes": [
         4,
         10
@@ -1149,7 +1511,7 @@
     },
     {
       "id": "chain",
-      "rank": 47,
+      "rank": 63,
       "estimated_minutes": [
         5,
         12
@@ -1174,7 +1536,7 @@
     },
     {
       "id": "fire",
-      "rank": 48,
+      "rank": 64,
       "estimated_minutes": [
         6,
         15

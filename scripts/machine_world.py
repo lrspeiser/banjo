@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = 'banjo.machine.v1'
 MATERIALS = ('glass', 'oak', 'iron', 'concrete', 'ceramic', 'ice', 'aluminum', 'rubber')
 SHAPES = ('box', 'sphere', 'cone', 'compound')
-SUB_SHAPES = ('box', 'cylinder')
+SUB_SHAPES = ('box', 'cylinder', 'sphere')
 JOINT_KINDS = ('hinge', 'fix', 'tie', 'spring', 'slide', 'drum', 'gear', 'pulley')
 DT_S = 1.0 / 240.0
 STEPS_PER_CALL = 4
@@ -364,7 +364,7 @@ def solids_of(part):
         size = list(sub['size_m'])
         if sub['shape'] == 'cylinder':   # [diameter, length, diameter] about its own y
             size = [size[0], size[1], size[0]]
-        out.append({'name': part['name'], 'shape': 'box', 'size_m': size, 'at_m': at,
+        out.append({'name': part['name'], 'shape': 'sphere' if sub['shape']=='sphere' else 'box', 'size_m': size, 'at_m': at,
                     'turn_deg': turn_of(_mat_mul(outer, rotation(sub['turn_deg'])))})
     return out
 
@@ -1604,11 +1604,13 @@ def _compile_spec_uncached(spec, lenient=False):
             for k, sub in enumerate(p.get('parts') or []):
                 swhat = f'{what} piece {k + 1}'
                 if not isinstance(sub, dict) or sub.get('shape', 'box') not in SUB_SHAPES:
-                    problems.append(f'{swhat}: shape is box or cylinder')
+                    problems.append(f'{swhat}: shape is box, cylinder or sphere')
                     continue
                 ssize = _vec(sub.get('size_m'), 3, swhat + ' size_m', problems)
                 if min(ssize) <= 0.0 or max(ssize) > 8.0:
                     problems.append(f'{swhat}: sizes between 0 and 8 m')
+                if sub.get('shape')=='sphere' and max(ssize)-min(ssize)>1e-9:
+                    problems.append(f'{swhat}: a sphere has equal diameters on all three axes')
                 subs.append({'shape': sub.get('shape', 'box'), 'size_m': ssize,
                              'at_m': _vec(sub.get('at_m', [0, 0, 0]), 3, swhat + ' at_m', problems),
                              'turn_deg': _vec(sub.get('turn_deg', [0, 0, 0]), 3, swhat + ' turn_deg', problems)})
@@ -1992,10 +1994,12 @@ def _compile_spec_uncached(spec, lenient=False):
         # misspelt name would leave it waiting forever with no reason given.
         if isinstance(rule, dict) and len(rule) == 1:
             kind, arg = next(iter(rule.items()))
-            if kind == 'hits':
+            if kind in ('hits','touches'):
                 ok = isinstance(arg, list) and len(arg) == 2 and all(a in names or a == 'the ground' for a in arg)
                 if not ok:
-                    problems.append(f'{what}: hits names two parts (or "the ground"); {arg!s} does not')
+                    problems.append(f'{what}: {kind} names two parts (or "the ground" for hits); {arg!s} does not')
+                elif kind=='touches' and ('the ground' in arg or arg[0]==arg[1]):
+                    problems.append(f'{what}: touches needs two different named bodies')
             elif kind in ('parted', 'broke'):
                 if arg not in names:
                     problems.append(f'{what}: {kind} names a part; {arg!s} is not one')
@@ -2117,6 +2121,28 @@ def _compile_spec_uncached(spec, lenient=False):
     compound_shapes=sum(len(p.get('parts',[])) for p in checked if p['shape']=='compound')
     if compound_shapes>MAX_COMPOUND_SHAPES:
         problems.append(f'This design uses {compound_shapes} compound collision shapes; the engine supports {MAX_COMPOUND_SHAPES}. Use fewer compound tools or fewer paddles/teeth.')
+    controls = []
+    physics_dt = spec.get('physics_dt_s',1/240)
+    if type(physics_dt) not in (int,float) or physics_dt not in (1/240,1/480,1/960,1/1920):
+        problems.append('physics_dt_s is 1/240, 1/480, 1/960 or 1/1920 seconds')
+    for c in spec.get('player_controls', []) or []:
+        if not isinstance(c, dict):
+            problems.append('A player control needs a name, moving part and force'); continue
+        name = c.get('name')
+        body = next((p for p in checked if p['name'] == c.get('part')), None)
+        force = _vec(c.get('force_n'), 3, 'player control force_n', problems)
+        if not isinstance(name, str) or not name or any(r['name'] == name for r in controls):
+            problems.append('Player control names must be unique and nonempty'); continue
+        if not body or body['fixed'] or not any(j.get('b') == body['name'] and j['kind'] in ('hinge','slide') for j in joint_rows):
+            problems.append(f'Player control {name}: choose a moving hinged or sliding handle')
+        if not 0 < math.hypot(*force) <= 120:
+            problems.append(f'Player control {name}: force must be positive and at most 120 N')
+        key = c.get('key', '')
+        if key not in ('', 'ArrowLeft', 'ArrowRight', 'Space'):
+            problems.append(f'Player control {name}: unsupported keyboard key')
+        controls.append(dict(name=name, part=c.get('part'), force_n=force,
+                             label=str(c.get('label',name))[:60], key=key))
+    if len(controls) > 12: problems.append('At most twelve player controls')
     if problems and not lenient:
         raise MachineRefused(problems)
     return ({'problems': problems} if lenient else {}) | {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
@@ -2125,7 +2151,8 @@ def _compile_spec_uncached(spec, lenient=False):
             'plasticity': bool(spec.get('plasticity', False)), 'sun': sun, 'solar_panels': solar_panels,
             'thermo': {key: rows for key, rows in thermo.items() if rows}, 'blades': checked_blades, 'ropes': ropes,
             'light': light,'water_regions':checked_water_regions,'airflows':airflows,
-            'strands':strands,'pulleys':copy.deepcopy(spec.get('pulleys',[]))}
+            'strands':strands,'pulleys':copy.deepcopy(spec.get('pulleys',[])), 'player_controls':controls,
+            'physics_dt_s':physics_dt}
 
 
 def scene_of(compiled):
@@ -2700,6 +2727,13 @@ class MachineSession:
             # Poured water in the air, every reply: each parcel's centre in
             # millimetres, and the pour's ledger.
             self.parcels = reply['parcels']
+        seen=getattr(self,'_first_body_contact',set());self._first_body_contact=seen
+        for contact in reply.get('named_contacts',[]) or []:
+            pair=tuple(sorted((contact['a'],contact['b'])))
+            if pair in seen:continue
+            seen.add(pair)
+            self._event('body_contact',f'{pair[0]} touches {pair[1]}',a=pair[0],b=pair[1],
+                        contact_at_s=contact['at_s'],speed_m_s=contact['closing_speed_m_s'])
         for imp in reply.get('impacts', []) or []:
             if self.trail is not None:
                 # Every hit a tracked body takes part in, for a preview.
@@ -3186,7 +3220,10 @@ class MachineSession:
             rule = s.get('done_when')
             if i not in done_at and isinstance(rule, dict):
                 hit = None
-                if 'hits' in rule:
+                if 'touches' in rule:
+                    pair=tuple(sorted(rule['touches']))
+                    hit=next((e['contact_at_s'] for e in self.events if e['kind']=='body_contact' and (e['a'],e['b'])==pair),None)
+                elif 'hits' in rule:
                     a, b = rule['hits']
                     hit = next((e['t'] for e in self.events if e['kind'] == 'impact' and
                                 ((same(e['by'], a) and same(e['struck'], b)) or (same(e['by'], b) and same(e['struck'], a)))),
@@ -3377,7 +3414,8 @@ class MachineSession:
                 for body, (at, force) in queued.items():
                     self.engine.op(op='pull', body=body, at=at, force=force)
                     self._pulled = True
-                reply = self.engine.op(op='step', dt=DT_S, n=STEPS_PER_CALL, moved=True)
+                step=min(DT_S,self.compiled.get('physics_dt_s',DT_S))
+                reply = self.engine.op(op='step', dt=step, n=round(DT_S*STEPS_PER_CALL/step), moved=True)
                 # Something is about to break or bend. Played live, its run
                 # goes onto the engine's worker and the world keeps going while
                 # the pair that met is held still -- but for no more than
@@ -3493,6 +3531,27 @@ class MachineSession:
             self.last_used=self.last_action=time.monotonic()
             self.lock.notify_all()
         return dict(name=name,body=body,force_n=list(force))
+
+    def player_control(self, name, pressed):
+        """Hold a declared handle with a bounded force, never assign its pose.
+
+        The native pull ledger records operator work. A one-second lease stops
+        an abandoned button; clients renew while held. This is also safe when
+        a browser disconnects without sending pointerup.
+        """
+        if not isinstance(pressed, bool): raise ValueError('pressed must be boolean')
+        control = next((c for c in self.compiled.get('player_controls',[]) if c['name']==name),None)
+        if not control: raise ValueError('Choose an existing player control')
+        with self.lock:
+            if self.error: raise ValueError(self.error)
+            body = self.bodies.get(control['part'])
+            if not body or body.get('anchored'): raise ValueError('This handle no longer moves')
+            force = control['force_n'] if pressed else [0.,0.,0.]
+            self._pull_queue[body['name']] = (list(body['position_m']),list(force))
+            if pressed: self._switch_force_until[body['name']] = time.monotonic()+1.
+            else: self._switch_force_until.pop(body['name'],None)
+            self.last_used=self.last_action=time.monotonic(); self.lock.notify_all()
+        return dict(name=name,pressed=pressed,force_n=list(force))
 
     def play(self, running, speed=None):
         with self.lock:

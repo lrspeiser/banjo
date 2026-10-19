@@ -1,5 +1,52 @@
 # Puzzles on the machine (/play)
 
+## Pinball and the expanded wall curriculum — October 19
+
+**Sandbox → Pinball** creates an editable saved table with an angled oak deck,
+an exact iron ball, a spring launcher, two independently wired powered flippers,
+physical spring-return contacts, passive bumpers, solid guides and hinged
+targets. During Run, hold/release the launcher and hold the flipper buttons;
+Space and the arrow keys operate the same bounded forces. Pause releases held
+inputs and Reset reloads the ball. The eight Pinball tools are also in Add a
+piece. Existing Sandbox examples and saves remain available. See
+[Pinball's laws, qualification and ten proposed lessons](pinball.md); those
+training lessons are a plan, not additional shipped levels.
+
+Sixteen more wall activities bring **Level 1: Wall Basics** to 26 lessons and
+the game to 64 challenges. They cover motor/water marble lifts, generation,
+air, steam, a trapdoor, pendulum, spring, mirror, lens, gears, pipe, resistor,
+capacitor, solar and parallel lamps. The first ten retain their previous order;
+the other chapters retain IDs, relative ordering and saved progress. The wall
+Sandbox now offers 31 mounted tools. The complete
+[wall catalogue](wall-physics-catalogue.md) records controls, available laws and
+unsupported mechanisms, including the one-pass limit of the marble lifts.
+
+All 64 reference solutions passed their nominal and two 1.5 mm nudged runs
+(192 wins). The 16 added wrong-setting controls fail in all three runs (48
+physical negative cases). Ordinary browser play passed the 16 new activities
+at 1280×860, 390×844 and 844×390 (48 distinct plays), including socket wiring,
+tap adjustment and field spring release. A spring browser fixture now waits
+for Run startup and its visible enabled Release control before clicking it;
+the failed early fixture clicked while the native session was still starting.
+These are authored solutions and estimates, not measured newcomer times.
+
+At 20 mm cells and 1/240 s, the motor lift carries glass, oak and iron to the
+upper catcher in 3.867, 3.517 and 5.750 s respectively. Water lift, supplied air
+and the pendulum reach their targets with glass/oak but can miss with the same
+iron geometry and sources; the heavier-load failures are retained. Water lift
+times are 2.917/2.583 s, supplied air 3.567/1.633 s, and pendulum 0.567/0.533 s.
+No material law is changed to make these comparisons pass.
+
+A four-second loaded water generator run at 1/240 s reports zero battery
+source energy, 0.050586 J emitted, 0.48997 J winding/connection heat and
+−0.54107 J shaft work; electrical residual is 8.25e-13 J and coupling residual
+is about −0.000512 J. The 1/480 s comparison also checks opposing torque,
+negative shaft work and finite volume. The eight-litre source balance stays
+within 1e-10 m³. These ledgers are not a full water/rigid/global conservation
+proof. The new pipe's unpublished energy par is 992 MJ, rounded up from its
+991.13 MJ reference after adding its actual mounting brackets; existing
+published goals, pars and tolerances were not relaxed.
+
 ## Electricity and water in Wall Basics — October 19
 
 The next wall pack brings the catalogue to 48 challenges. **Level 1: Wall

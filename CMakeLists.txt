@@ -386,6 +386,10 @@ add_library(banjo_fastlattice_scene src/fastlattice/TileImpactScene.cpp
 src/fastlattice/PreciseRigidScene.cpp)
 target_link_libraries(banjo_fastlattice_scene PUBLIC banjo_fastlattice banjo_runtime banjo_thermo banjo_environment banjo_circuits banjo_optics PRIVATE nlohmann_json::nlohmann_json)
 banjo_enable_warnings(banjo_fastlattice_scene)
+if(MSVC)
+    # LiveWorld's native solver adapters exceed COFF's small object section count.
+    target_compile_options(banjo_fastlattice_scene PRIVATE /bigobj)
+endif()
 
 # A live scene, driven a line at a time: the playground talks to this instead
 # of asking for a recording and playing it back.
@@ -967,7 +971,7 @@ if(BANJO_BUILD_TESTS)
                     set_tests_properties(banjo_sandbox_apparatus_tests_${apparatus_shard} PROPERTIES
                         TIMEOUT 600 LABELS "machine;apparatus")
                 endforeach()
-                foreach(sandbox_suite mechanics water_launch combinations motion wall)
+                foreach(sandbox_suite mechanics water_launch combinations motion wall pinball)
                     add_test(NAME banjo_sandbox_${sandbox_suite}_tests COMMAND ${Python3_EXECUTABLE}
                         ${CMAKE_CURRENT_SOURCE_DIR}/tests/sandbox_${sandbox_suite}_tests.py --engine $<TARGET_FILE:banjo_live_world_run>)
                     set_tests_properties(banjo_sandbox_${sandbox_suite}_tests PROPERTIES TIMEOUT 600

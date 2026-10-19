@@ -1399,6 +1399,9 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
     if (!only_moved) last_elastics.clear();
     for (auto it = cells_sent_at.begin(); it != cells_sent_at.end();)
         it = present.count(it->first) ? std::next(it) : cells_sent_at.erase(it);
+    nlohmann::json named_contacts = nlohmann::json::array();
+    for(const auto &contact:world.bodyContacts())
+        named_contacts.push_back({{"a",contact.a},{"b",contact.b},{"closing_speed_m_s",contact.closing_speed_m_s},{"at_s",contact.at_s}});
     nlohmann::json impacts = nlohmann::json::array();
     for (const LiveImpact &impact : world.impacts()) {
         nlohmann::json said = {{"struck", impact.struck}, {"by", impact.by},
@@ -1420,7 +1423,7 @@ nlohmann::json describe(LiveWorld &world, bool with_geometry, bool only_moved = 
             // many the world holds either way.
             {"partial", trim}, {"count", count}, {"gone", std::move(gone)},
             {"held", world.held()}, {"bodies", std::move(bodies)},
-            {"impacts", std::move(impacts)}, {"breakable", world.breakable()},
+            {"impacts", std::move(impacts)}, {"named_contacts",std::move(named_contacts)}, {"breakable", world.breakable()},
             // What is being worked out right now, if anything. A host that asks
             // for a second fracture while one is running gets nothing, so it
             // needs to know.

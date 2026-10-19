@@ -122,6 +122,43 @@ void aCylinderWeighsAndTurnsAsACylinder() {
     }
 }
 
+void aSphereHasItsMaterialMassAndSphericalInertia() {
+    for (MaterialPreset preset : {MaterialPreset::Glass,MaterialPreset::Oak,MaterialPreset::Iron}) {
+        const auto ball=one(R"([{"name":"ball","material":")"+sceneName(preset)+
+            R"(","position_m":[0,1,0],"parts":[{"shape":"sphere","dimensions_m":[0.04,0.04,0.04],"center_local_m":[0,0,0]}]}])");
+        const double mass=density(preset)*4.0/3*kPi*.02*.02*.02;
+        require(close(ball.mass_kg,mass,1e-12),name(preset)+": exact sphere mass");
+        for (unsigned axis=0;axis<3;++axis)
+            require(close(ball.inertia.m[axis][axis],.4*mass*.02*.02,1e-12),name(preset)+": spherical inertia");
+        require(ball.parts[0].geometry.kind==PrimitiveKind::Sphere,"sphere became a box");
+    }
+    require(refused(R"([{"name":"ball","material":"iron","position_m":[0,1,0],"parts":[{"shape":"sphere","dimensions_m":[0.04,0.05,0.04],"center_local_m":[0,0,0]}]}])",
+        "same diameter"),"non-spherical diameters accepted");
+}
+
+void exactBodyContactsAreObservedWithoutAFractureResponse() {
+    for(const char *material:{"glass","oak","iron"}) {
+        TileImpactRequest request;request.backend=BackendKind::CpuParallel;request.authored_scene=true;
+        request.precise_rigid_scene_json=std::string(R"([{"name":"ball","material":")")+material+
+            R"(","position_m":[0,1,0],"velocity_m_s":[0,-1,0],"parts":[{"shape":"sphere","dimensions_m":[0.04,0.04,0.04],"center_local_m":[0,0,0]}]},)"
+            R"({"name":"plate","material":"oak","position_m":[0,0.9,0],"parts":[{"shape":"box","dimensions_m":[0.4,0.04,0.4],"center_local_m":[0,0,0]}]}])";
+        const auto world=LiveWorld::open(request);world->forgetImpacts();
+        for(int step=0;step<120;++step)world->step(1.0/960);
+        const auto contacts=world->bodyContacts();
+        require(contacts.size()==1,"exact sphere/plate contact was lost or repeated");
+        if(!contacts.empty()) {
+            require(contacts[0].a=="ball" && contacts[0].b=="plate","contact body identities changed");
+            require(contacts[0].closing_speed_m_s>.5,"native closing speed was not observed");
+            require(contacts[0].at_s>.03 && contacts[0].at_s<.13,"contact was reported before the bodies met");
+        }
+        require(world->breakable().empty(),"contact observation added a fracture response");
+        const auto poses=world->poses();double ball_y=0,plate_y=0;
+        for(const auto &pose:poses){if(pose.name=="ball")ball_y=pose.position_m.y;else if(pose.name=="plate")plate_y=pose.position_m.y;}
+        require(ball_y-plate_y-.04>=-.0015,"room-scale contact slop swallowed a small sphere");
+        world->forgetImpacts();require(world->bodyContacts().empty(),"named contact batch was not cleared");
+    }
+}
+
 void anAxleThroughItsWheelsIsCountedOnce() {
     // As the Workshop draws the cart: the axle first, running to the middle of
     // each wheel, so the last 30 mm at each end is inside a hub.
@@ -299,8 +336,8 @@ void malformedPartsAreRefused() {
     const std::string head = R"([{"name":"bad","material":"oak","position_m":[0,1,0],"parts":[)";
     require(refused(head + R"({"shape":"cylinder","dimensions_m":[0.3,0.06,0.2],"center_local_m":[0,0,0]}]}])",
                     "[diameter, length, diameter]"), "an oval cylinder was accepted");
-    require(refused(head + R"({"shape":"sphere","dimensions_m":[0.3,0.3,0.3],"center_local_m":[0,0,0]}]}])",
-                    "box or cylinder"), "an unknown part shape was accepted");
+    require(refused(head + R"({"shape":"cone","dimensions_m":[0.3,0.3,0.3],"center_local_m":[0,0,0]}]}])",
+                    "box, cylinder or sphere"), "an unknown part shape was accepted");
     require(refused(head + R"({"dimensions_m":[0.3,0.3,0.3],"center_local_m":[0,0,0],"rotation_wxyz":[1,0,0,0.1]}]}])",
                     "normalized"), "a rotation that is not a unit quaternion was accepted");
     require(refused(head + R"({"material":"rubber","dimensions_m":[0.3,0.3,0.3],"center_local_m":[0,0,0]}]}])",
@@ -760,6 +797,8 @@ void aCartTiedToTheRoomStaysOutOfTheBag() {
 int main() {
     try {
         aCylinderWeighsAndTurnsAsACylinder();
+        aSphereHasItsMaterialMassAndSphericalInertia();
+        exactBodyContactsAreObservedWithoutAFractureResponse();
         anAxleThroughItsWheelsIsCountedOnce();
         overlappingBoxesAreOneUnion();
         hollowRotatedBoxUnionsHaveAnalyticalMassAndInertia();

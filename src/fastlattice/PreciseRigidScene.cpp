@@ -242,14 +242,20 @@ std::vector<PreciseRigidBody> readPreciseRigidScene(const std::string &text) {
                     "precise part needs dimensions_m and center_local_m");
             RigidCompoundPart part;
             const json shape = p.value("shape", json("box"));
-            require(shape == "box" || shape == "cylinder", "precise part shape must be box or cylinder");
-            part.geometry.kind = shape == "cylinder" ? PrimitiveKind::Cylinder : PrimitiveKind::Box;
+            require(shape == "box" || shape == "cylinder" || shape == "sphere", "precise part shape must be box, cylinder or sphere");
+            part.geometry.kind = shape == "sphere" ? PrimitiveKind::Sphere :
+                                 shape == "cylinder" ? PrimitiveKind::Cylinder : PrimitiveKind::Box;
             part.geometry.dimensions_m = vector(p["dimensions_m"], 6);
             const Vec3 d = part.geometry.dimensions_m;
             require(std::min({d.x, d.y, d.z}) >= .001, "precise part dimensions must be 1..6000 mm");
             if (part.geometry.kind == PrimitiveKind::Cylinder)
                 require(std::abs(d.x - d.z) <= 1e-9 * std::max(1.0, d.x),
                         "a precise cylinder is sized [diameter, length, diameter] about its own y axis");
+            if (part.geometry.kind == PrimitiveKind::Sphere) {
+                require(std::abs(d.x-d.y) <= 1e-9 && std::abs(d.x-d.z) <= 1e-9,
+                        "a precise sphere needs the same diameter on all three axes");
+                part.geometry.radius_m = d.x / 2;
+            }
             part.center_local_m = vector(p["center_local_m"], 6);
             part.rotation_local = unitQuaternion(p.value("rotation_wxyz", json{1, 0, 0, 0}));
             const MaterialPreset made = p.contains("material") ? material(p["material"]) : b.material;

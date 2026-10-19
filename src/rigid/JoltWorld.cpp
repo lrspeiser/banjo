@@ -1973,7 +1973,13 @@ void JoltWorld::addCompound(const RigidCompoundDescription &d){
             lock.GetBody().GetMotionProperties()->SetInverseInertia(JPH::Vec3::sReplicate(1.0e6F)/diagonal,rotation.GetQuaternion());}
         bodies.SetLinearAndAngularVelocity(id,toJolt(d.state.linear_velocity_m_s),toJolt(d.state.angular_velocity_rad_s));
         impl_->bodies_.emplace(d.body_id,id);
-        impl_->contact_states_.emplace(d.body_id,BodyContactState{contact,0,0,false,d.mass_kg,{},std::move(part_contacts),std::move(wheels)});
+        // A single exact sphere uses the same contact/rolling-loss law as an
+        // ordinary round body. A compound containing a sphere is not itself
+        // necessarily round and must not receive that spherical correction.
+        const bool round=d.parts.size()==1 && d.parts.front().geometry.kind==PrimitiveKind::Sphere;
+        const auto sphere_contact=round && d.parts.front().material ? compileContactMaterial(*d.parts.front().material) : contact;
+        impl_->contact_states_.emplace(d.body_id,BodyContactState{sphere_contact,
+            round?d.parts.front().geometry.radius_m:0,.4,round,d.mass_kg,{},std::move(part_contacts),std::move(wheels)});
     }catch(...){impl_->bodies_.erase(d.body_id);impl_->contact_states_.erase(d.body_id);bodies.RemoveBody(id);bodies.DestroyBody(id);throw;}
 }
 

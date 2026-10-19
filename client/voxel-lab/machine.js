@@ -160,7 +160,7 @@ function makeMesh(b) {
     // of mass, as the engine sends it.
     mesh = new THREE.Group();
     for (const part of b.rigid_parts_local) {
-      const piece = new THREE.Mesh(part.shape === 'cylinder'
+      const piece = new THREE.Mesh(part.shape === 'sphere' ? new THREE.SphereGeometry(part.dimensions_m[0]/2,28,18) : part.shape === 'cylinder'
         ? new THREE.CylinderGeometry(part.dimensions_m[0] / 2, part.dimensions_m[0] / 2, part.dimensions_m[1], 20)
         : new THREE.BoxGeometry(...part.dimensions_m), look());
       piece.position.set(...part.center_local_m);
@@ -186,6 +186,8 @@ function makeMesh(b) {
   } else mesh = new THREE.Mesh(new THREE.BoxGeometry(...b.dimensions_m), look());
   mesh.userData = {revision: b.revision, cells: b.cells_local_m ? b.cells_local_m.length : 0, base: hex};
   mesh.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  if(activeDesign?.draft.base?.presentation?.selection_passthrough?.includes(b.name))
+    mesh.traverse(o=>{if(o.isMesh){o.raycast=()=>{};if(o.material.transparent){o.material.opacity=Math.min(o.material.opacity,.12);o.material.depthWrite=false;o.castShadow=false;}}});
   scene.add(mesh);
   return mesh;
 }
@@ -667,10 +669,11 @@ function positionTerminalLabels() {
       } else if(device.kind==='capacitor') {
         const measured=snapshot.devices.find(d=>d.name===device.name);
         feedback.textContent=prefix+`${device.capacitance_f} F · ${(measured?.capacitor_voltage_v||0).toFixed(2)} V · ${(measured?.stored_j||0).toFixed(2)} J · ${(measured?.current_a||0).toFixed(3)} A`;
-      } else if (device.kind==='coil' || device.kind==='motor' || device.kind==='resistor') {
+      } else if (device.kind==='coil' || device.kind==='motor' || device.kind==='generator' || device.kind==='resistor') {
         const measured=snapshot.devices.find(d=>d.name===device.name);
         feedback.textContent=prefix+`${Math.abs(measured?.current_a||0).toFixed(3)} A · ${(measured?.power_w||0).toFixed(1)} W`;
         if(device.kind==='resistor')feedback.textContent=prefix+`${device.resistance_ohm} Ω · ${Math.abs(measured?.voltage_v||0).toFixed(2)} V drop · ${Math.abs(measured?.current_a||0).toFixed(3)} A`;
+        if(device.kind==='generator')feedback.textContent=prefix+`${Math.abs(measured?.voltage_v||0).toFixed(2)} V · ${Math.max(0,-(measured?.power_w||0)).toFixed(3)} W generated`;
         if(device.kind==='coil') {
           const heat=!snapshot.preview&&readouts.heat?.find(h=>h.name===device.heats);
           feedback.textContent+=heat?` · ${heat.temperature_k.toFixed(0)} K${heat.reacting?' · burning':''}`:` → ${device.heats.replace(/^your /,'')}`;
@@ -1525,7 +1528,7 @@ function syncRopes() {
     return new THREE.Vector3(...at).sub(new THREE.Vector3(...b.position_m)).applyQuaternion(q.invert());
   };
   for (const j of machine.joints) {
-    if(j.kind==='fix' && /^your spring \d+ restraint$/.test(j.name)) {
+    if(j.kind==='fix' && /^your (?:wall_)?spring \d+ restraint$/.test(j.name)) {
       const localA=local(j.b,j.at_m);if(!localA)continue;
       // Visible outside the plate: a marker of the native restraint, not
       // an extra collider or a separately simulated withdrawal mechanism.
@@ -1967,7 +1970,7 @@ async function setPlaying(run) {
   try {
     if(previous)await previous;
     if(mine!==polling||session!==requestedSession)return;
-    if(!run)await stopSwitchDrag();
+    if(!run){await stopSwitchDrag();await releasePlayerControls();}
     if(run){clearTimeout(previewTimer);previewAsk++;clearPreview();resetLaserPreview();}
     let frame;
     try {frame=await api({op:'play',session:requestedSession,running:run,speed:Number($('speed').value)});}
@@ -2153,7 +2156,7 @@ function wallWorldPoint(x,y,depth=.3,board=wallPanel()){
 }
 function wallWidthAxis(board=wallPanel()){const a=(board.yaw_deg||0)*Math.PI/180;return new THREE.Vector3(Math.cos(a),0,-Math.sin(a));}
 function wallNormal(board=wallPanel()){const a=(board.yaw_deg||0)*Math.PI/180;return new THREE.Vector3(Math.sin(a),0,Math.cos(a));}
-function pieceKind(p){return p?.piece?.replace(/^wall_(marble|gear|motor|battery|switch|bulb|resistor|capacitor|water_tank|water_collector)$/,'$1');}
+function pieceKind(p){return p?.piece?.replace(/^wall_(marble|gear|motor|battery|switch|bulb|resistor|capacitor|water_tank|water_collector|mirror|lens|solar|spring|pipe|pipe_elbow|pipe_reducer)$/,'$1');}
 function wallPlane(p=ghost?.p) { return worldWallDesign()?wallPanel(p).z_m+.3:wallSurface()?.plane_z_m??.3; }
 function wallCameraControls(){
   $('wall-camera-view').hidden=!wallDesign();$('wall-camera-view').textContent=wallFront?'3D':'Front';
@@ -2177,6 +2180,7 @@ function panWall(dx,dy) {
 function overviewDesign() {
   return level?.free && activeDesign?.draft.base?.presentation?.camera === 'overview';
 }
+function pinballDesign(){return level?.free&&activeDesign?.draft.base?.presentation?.activity==='pinball';}
 function frameCamera(includeGhost=false) {
   if(wallDesign()&&wallFront) {
     const board=wallPanel();
@@ -2246,7 +2250,8 @@ function frameCamera(includeGhost=false) {
     // Keep a multi-storey journey in view rather than diving into its pipes or
     // the underside of the next bridge. Fit projected corners at this angle.
     goal.set((lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(lo[2]+hi[2])/2);target.copy(goal);
-    azimuth=-.65;elevation=.65;
+    azimuth=pinballDesign()?Math.PI:-.65;elevation=pinballDesign()?1.1:.65;
+    if(pinballDesign()){goal.set(0,.8,0);target.copy(goal);}
     const forward=new THREE.Vector3(Math.cos(elevation)*Math.sin(azimuth),Math.sin(elevation),Math.cos(elevation)*Math.cos(azimuth));
     const right=new THREE.Vector3(Math.cos(azimuth),0,-Math.sin(azimuth));
     const up=new THREE.Vector3().crossVectors(forward,right);
@@ -2524,7 +2529,7 @@ const LEVEL_MODE = true;
 let levels = [], level = null, placements = [], placedCost = [], placedEnergy = {}, helped = false, scored = false, lastRun = null, rebuildTimer = null;
 let generatedLevel = null;
 let freeLevel = null;
-let sandboxBase = null, sandboxTemplates = [], wallTemplate = null, legacyWallTray = [], activeDesign = null, sandboxObjects = [];
+let sandboxBase = null, sandboxTemplates = [], wallTemplate = null, pinballTemplate = null, legacyWallTray = [], activeDesign = null, sandboxObjects = [];
 let sharedCourse = null;
 const readOnlyCourse = () => Boolean(sharedCourse || activeDesign?.sharedCourse);
 function sandboxRequest() {
@@ -2681,6 +2686,7 @@ function currentMode() {
 }
 const MODE_HINTS = {build: 'Add and place pieces', tune: 'Change sizes and settings', run: 'The engine runs your machine'};
 function renderPlayMode() {
+  document.body.classList.toggle('playing-pinball',Boolean(pinballDesign()));
   const box = $('play-mode');
   // Hidden on the Levels and Sandbox galleries; the piece library covers the
   // page itself, so Run is there again the moment it closes.
@@ -2904,7 +2910,7 @@ function buildParts(into, parts, lookOf, edge) {
     if (part.shape === 'compound') {
       const body = new THREE.Group();
       body.position.set(...part.at_m); turn(body, part.turn_deg);
-      for (const sub of part.parts) body.add(solid(sub.shape === 'cylinder'
+      for (const sub of part.parts) body.add(solid(sub.shape === 'sphere' ? new THREE.SphereGeometry(sub.size_m[0]/2,28,18) : sub.shape === 'cylinder'
         ? new THREE.CylinderGeometry(sub.size_m[0] / 2, sub.size_m[0] / 2, sub.size_m[1], 20)
         : new THREE.BoxGeometry(...sub.size_m), sub.at_m, sub.turn_deg, sub.material || part.material));
       into.add(body);
@@ -3200,7 +3206,7 @@ function updatePieceHandles() {
     direction:new THREE.Vector3(0,1,0).applyQuaternion(arrow.quaternion)}));
   // Lens curvature changes the refracting faces, not its mounting box.
   // Anchor its grip to the actual front face from the compiled optical setup.
-  if(!anchors.length&&ghost.p.piece==='lens'&&ghost.card==='radius_m'){
+  if(!anchors.length&&pieceKind(ghost.p)==='lens'&&ghost.card==='radius_m'){
     const lens=ghost.optical_setup?.lenses?.find(l=>l.on===ghostName());
     if(lens){const direction=new THREE.Vector3(...lens.axis).normalize();anchors.push({at:new THREE.Vector3(...lens.at_m).add(editGroup.position).add(direction.clone().multiplyScalar((lens.thickness_m||.01)/2)),direction});}
   }
@@ -4060,6 +4066,44 @@ function editByDrag(key,initial,pixels) {
 }
 
 const liveCards=document.createElement('div');liveCards.id='device-live-controls';view.append(liveCards);
+const playerControls=document.createElement('div');playerControls.id='player-controls';playerControls.hidden=true;view.append(playerControls);
+const heldPlayerControls=new Map();
+let playerControlQueue=Promise.resolve();
+function sendPlayerControl(control,pressed,owner=session){
+  playerControlQueue=playerControlQueue.then(()=>{
+    if(owner!==session)return;
+    if(pressed&&!heldPlayerControls.has(control.name))return;
+    return api({op:'player_control',session:owner,name:control.name,pressed});
+  }).catch(error=>powerMessage(error.message));
+  return playerControlQueue;
+}
+function holdPlayerControl(control,node){
+  if(currentMode()!=='run'||!playing||!session||heldPlayerControls.has(control.name))return;
+  const owner=session;
+  node?.setAttribute('aria-pressed','true');
+  sendPlayerControl(control,true,owner);
+  const timer=setInterval(()=>sendPlayerControl(control,true,owner),200);
+  heldPlayerControls.set(control.name,{control,node,owner,timer});
+}
+function releasePlayerControl(name){
+  const hold=heldPlayerControls.get(name);if(!hold)return;
+  heldPlayerControls.delete(name);clearInterval(hold.timer);hold.node?.setAttribute('aria-pressed','false');
+  sendPlayerControl(hold.control,false,hold.owner);
+}
+function releasePlayerControls(){for(const name of [...heldPlayerControls.keys()])releasePlayerControl(name);return playerControlQueue;}
+window.addEventListener('blur',releasePlayerControls);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)releasePlayerControls();});
+for(const type of ['keydown','keyup'])document.addEventListener(type,event=>{
+  const control=(machine?.player_controls||[]).find(c=>c.key===event.code);
+  if(type==='keyup'&&control&&heldPlayerControls.has(control.name)){
+    event.preventDefault();event.stopImmediatePropagation();releasePlayerControl(control.name);return;
+  }
+  if(event.target.closest('input,textarea,select,[contenteditable=true]')||event.ctrlKey||event.metaKey||event.altKey)return;
+  if(!control||currentMode()!=='run'||!playing)return;
+  event.preventDefault();event.stopImmediatePropagation();
+  if(type==='keydown')holdPlayerControl(control,playerControls.querySelector(`[data-control="${CSS.escape(control.name)}"]`));
+  else releasePlayerControl(control.name);
+});
 const controlLeaders=document.createElementNS('http://www.w3.org/2000/svg','svg');
 controlLeaders.id='object-control-leaders';controlLeaders.setAttribute('aria-hidden','true');view.append(controlLeaders);
 const editorLeader=document.createElementNS(controlLeaders.namespaceURI,'line');
@@ -4089,6 +4133,9 @@ function sceneControlObstacles(rect) {
   return boxes;
 }
 function updateLiveControlAvailability(){
+  if(!playing&&heldPlayerControls.size)releasePlayerControls();
+  playerControls.hidden=!(machine?.player_controls?.length)||currentMode()!=='run'||document.body.matches('.on-levels,.on-sandbox');
+  for(const b of playerControls.children)b.disabled=!playing||!session||startingRun;
   for(const card of liveCards.children){
     const released=card.dataset.restraint && readouts.joints?.some(j=>j.name===card.dataset.restraint&&j.attached===false);
     const release=card.querySelector('[data-release]');
@@ -4503,14 +4550,14 @@ function updatePowerFeedback() {
       continue;
     }
     let need;
-    if(d.requirement==='goal')need=`Goal ≥ ${d.required_w.toFixed(1)} W`;
+    if(d.requirement==='goal')need=`Goal ≥ ${d.required_w<.1?d.required_w.toFixed(2):d.required_w.toFixed(1)} W`;
     else if(d.requirement==='rated')need=`Rated ${d.rated_w.toFixed(1)} W`;
     else if(d.requirement==='start_estimate')need=d.exceeds_motor?
       `Needs ${d.required_torque_n_m.toFixed(1)} N·m; stall ${d.rated_torque_n_m.toFixed(1)}`:
       `Start ≈ ${d.required_w.toFixed(1)} W · ${d.required_torque_n_m.toFixed(1)} N·m`;
     else need=`Load varies · ${d.rated_torque_n_m.toFixed(1)} N·m stall`;
     if(Number.isFinite(d.rated_voltage_v))need=`Rated ${d.rated_voltage_v} V · ${d.rated_w.toFixed(1)} W`+
-      (d.requirement==='goal'?` · Goal ≥ ${d.required_w.toFixed(1)} W`:'');
+      (d.requirement==='goal'?` · Goal ≥ ${d.required_w<.1?d.required_w.toFixed(2):d.required_w.toFixed(1)} W`:'');
     // Keep a lesson's supply limit with its objective when a short screen
     // cannot also fit a separate wire reading at the edge.
     const supply=sample.wires.find(w=>w.show_supply_limit&&Number.isFinite(w.supply_max_power_w));
@@ -6453,6 +6500,14 @@ function trayItem(piece,p=ghost?.p) { return piece==='base_object'?(sandboxObjec
 function playerPartTitle(name) { return name.replace(/^your wall_lift\b/,'Marble lift').replace(/^your /,''); }
 
 const PIECE_INFO = {
+  pinball_field:['pinball','An angled playfield with rails, a drain and bearing openings.'],
+  pinball_flipper:['pinball','A wired motor turns a hinged paddle. An axial spring returns it when the physical button opens.'],
+  pinball_button:['pinball','Hold during Run to close its hinged metal contacts. Release opens the circuit.'],
+  pinball_plunger:['pinball','Hold during Run to compress the launcher spring. Release to push the ball through real contact.'],
+  pinball_bumper:['pinball','A passive rubber bumper returns some impact energy.'],
+  pinball_rail:['pinball','A solid guide on the inclined playfield.'],
+  pinball_ball:['pinball','A smooth rigid sphere with material-derived mass and inertia.'],
+  pinball_target:['pinball','A hanging target swings when hit and returns under gravity.'],
   wall_track: ['routes','A sloping wall track with an optional stop at the high end. Drag its ends to change length or turn to change slope.'],
   wall_funnel: ['routes','Two sloping faces gather marbles through a central opening.'],
   wall_cup: ['routes','Catch marbles in a wall-mounted cup.'],
@@ -6460,6 +6515,13 @@ const PIECE_INFO = {
   wall_water_wheel: ['motion','A passive wall-mounted paddle wheel. Falling marbles turn its real axle through contact. Change radius, paddle count or starting angle; no river or motor is required.'],
   wall_lever: ['motion','A freely hinged seesaw. A marble’s weight and contact tip the board.'],
   wall_lift: ['motion','A single-pass marble lift. Wire both motor terminals to a battery. Its cradle raises the marble and tips it onto the upper chute; Reset reloads it.'],
+  wall_water_lift: ['water','Falling water turns paddles on the cradle’s solid shaft. It lifts and unloads a marble once; Reset reloads it.'],
+  wall_generator: ['electrics','Water turns a paddle rotor and DC generator. Wire its two terminals to a load. Drawing current resists the shaft; no charged battery is included.'],
+  wall_air: ['power','An external airflow pushes through native drag. Change air speed and direction; this is a supplied air region, not a battery-powered fan.'],
+  wall_pendulum: ['motion','A rear-mounted hinged pendulum. Its raised bob swings under gravity and strikes other pieces.'],
+  wall_trapdoor: ['motion','A hinged flap opens under its own weight when hinge resistance is low enough.'],
+  wall_spring: ['motion','A latched spring pushes a separate marble or load through contact. Change its stored push, Run, then Release spring.'],
+  wall_boiler: ['power','A preheated boiler receives external firebox heat. Evaporation increases pressure and raises a piston.'],
   marble: ['motion', 'A ball to roll, drop, or set a machine moving.'],
   ring_marble: ['motion', 'A marble with an iron ring fixed on top for tying a string. The ring is wider than the ball, so it lurches and stops instead of rolling true.'],
   track: ['routes', 'A straight, sloping track with rails and an optional gate.'],
@@ -6525,13 +6587,13 @@ async function addTrayPiece(t) {
 }
 // Library filters: tap a category chip; Recent lists pieces you added most
 // lately. The last search and category stay until you change them.
-for(const kind of ['marble','gear','motor','battery','switch','bulb','resistor','capacitor','water_tank','water_collector']){
+for(const kind of ['marble','gear','motor','battery','switch','bulb','resistor','capacitor','water_tank','water_collector','mirror','lens','solar','pipe','pipe_elbow','pipe_reducer']){
   PIECE_INFO['wall_'+kind]=['wall',`Wall-mounted ${kind}. Drag across the mounting face; its depth stays aligned. ${PIECE_INFO[kind]?.[1]||''}`];
 }
 for(const key of Object.keys(PIECE_INFO).filter(key=>key.startsWith('wall_')))PIECE_INFO[key][0]='wall';
 PIECE_INFO.wall_marble=['wall','Place a marble at the wall tracks’ depth, then let it roll freely through the 3D world.'];
 const PIECE_GROUPS = [['all','All'],['blueprints','Blueprints'],['recent','Recent'],['structure','Supports'],['routes','Tracks'],['motion','Motion'],
-  ['power','Power'],['electrics','Wiring'],['optics','Light'],['water','Water'],['wall','Wall mounted']];
+  ['power','Power'],['electrics','Wiring'],['optics','Light'],['water','Water'],['wall','Wall mounted'],['pinball','Pinball']];
 const PIECE_WORDS = {marble:'ball roll sphere', ring_marble:'ball sphere ring loop eye tie string swing pendulum', plank:'board beam bridge wood', block:'cube box brick step', link:'rope string tie glue pin join spring',
   loose_block:'cube box crate', tackle:'pulley rope lift crane', lens:'glass focus', mirror:'reflect bounce', solar:'sun panel',
   battery:'power cell', wire:'cable lead cord', motor:'spin turn', gear:'cog wheel teeth', switch:'button toggle', bulb:'lamp light'};
@@ -7046,6 +7108,20 @@ function renderMachineControls() {
   connectionFramingPending=true;
   liveControlPending = false;
   const controls = $('machine-controls'), rows = $('machine-control-rows');
+  releasePlayerControls();playerControls.replaceChildren();
+  playerControls.hidden=!(machine?.player_controls?.length);
+  for(const control of machine?.player_controls||[]){
+    const b=button(control.label,()=>{}, {title:`Hold to operate${control.key?' · '+control.key:''}`});
+    b.dataset.control=control.name;b.setAttribute('aria-pressed','false');
+    b.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();b.setPointerCapture(e.pointerId);holdPlayerControl(control,b);});
+    for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,()=>releasePlayerControl(control.name));
+    b.addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='Enter'){e.preventDefault();e.stopPropagation();holdPlayerControl(control,b);}});
+    b.addEventListener('keyup',e=>{if(e.code==='Space'||e.code==='Enter'){e.preventDefault();e.stopPropagation();releasePlayerControl(control.name);}});
+    b.addEventListener('blur',()=>releasePlayerControl(control.name));
+    b.addEventListener('pointerenter',()=>setControlGlow([control.part]));
+    b.addEventListener('pointerleave',()=>setControlGlow());
+    playerControls.append(b);
+  }
   rows.replaceChildren();liveCards.replaceChildren();setControlGlow();
   const beside=(node,name,at)=>{
     const card=document.createElement('section');card.className='device-live-card';card.anchor=new THREE.Vector3(...at);
@@ -7096,8 +7172,8 @@ function renderMachineControls() {
     action(`Toggle ${source.name} valve`, () => ({op: 'water_valve', name: source.name, open: opened = !opened}),source.name,source.at_m);
   }
   for (const joint of machine?.joints || []) {
-    if (!/^your (catapult|spring) \d+ restraint$/.test(joint.name)) continue;
-    const spring=joint.name.includes(' spring ');
+    if (!/^your (catapult|spring|wall_spring) \d+ restraint$/.test(joint.name)) continue;
+    const spring=/ (?:wall_)?spring \d+ restraint$/.test(joint.name);
     action(spring?'Release spring':`Release ${joint.name.replace(' restraint', '')}`, () => ({op: 'release_joint', name: joint.name}),joint.name.replace(' restraint',''),joint.at_m||machine.parts.find(p=>p.name===joint.b)?.at_m||[0,.5,0],spring);
     const card=liveCards.lastChild,release=card.querySelector('button');
     card.dataset.restraint=joint.name;release.dataset.release='true';
@@ -7113,6 +7189,23 @@ function renderMachineControls() {
   controls.hidden = true; controls.open = false; $('machine-control-status').textContent = '';
   updateLiveControlAvailability();
 }
+
+const sceneControlPointers=new Map();
+renderer.domElement.addEventListener('pointerdown',e=>{
+  if(currentMode()!=='run'||!playing||e.button!==0)return;
+  pointerRay(e.clientX,e.clientY);
+  const named=new Map([...meshes].map(([name,mesh])=>[mesh,name]));
+  let object=raycaster.intersectObjects([...named.keys()].filter(m=>m.visible),true)[0]?.object;
+  while(object&&!named.has(object))object=object.parent;
+  const control=(machine?.player_controls||[]).find(c=>c.part===named.get(object));if(!control)return;
+  e.preventDefault();e.stopImmediatePropagation();renderer.domElement.setPointerCapture(e.pointerId);
+  sceneControlPointers.set(e.pointerId,control.name);
+  holdPlayerControl(control,playerControls.querySelector(`[data-control="${CSS.escape(control.name)}"]`));
+},true);
+for(const type of ['pointerup','pointercancel','lostpointercapture'])renderer.domElement.addEventListener(type,e=>{
+  const name=sceneControlPointers.get(e.pointerId);if(!name)return;
+  sceneControlPointers.delete(e.pointerId);releasePlayerControl(name);e.preventDefault();e.stopImmediatePropagation();
+},true);
 
 function describeKnobs(p, t) {
   const turned = Object.entries(t.knobs).filter(([k, r]) => pieceKnobVisible(p,k) && r.turning && p[k]).map(([k, r]) => `${r.label || k} ${p[k]}°`);
@@ -7362,7 +7455,7 @@ function showSandboxScreen(show = true) {
   head.append(button('Browse Community',()=>showCommunityScreen(),{id:'community-open'}));
   const more = createLevelMoreMenu(box,{id:'design-more'}).content;
   renderReturnLink(more);
-  renderDesignGallery({box,head,store:designStore(),templates:sandboxTemplates,wallTemplate,
+  renderDesignGallery({box,head,store:designStore(),templates:sandboxTemplates,wallTemplate,pinballTemplate,
     openDesign:d=>chooseLevel('free',d),
     createDesign:(name,draft,template)=>{const d=newDesign(name,draft);if(template){checkpointDesign(d);persist();}return d;}});
 }
@@ -7801,6 +7894,7 @@ async function chooseLevel(id, design = null) {
     if(readOnlyCourse())$('phone-design-tab').hidden=true;
     if(!readOnlyCourse()){store.last = activeDesign.id; persist();}
     if(wallDesign())Object.assign(level,{title:'Wall in the world',brief:'Wall pieces snap to their mounting plane. Other pieces build in the 3D world.'});
+    if(activeDesign.draft.base?.presentation?.activity==='pinball')Object.assign(level,{title:'Pinball',brief:'Run first. Hold the launcher, then release. Hold Left / Right to flip. Reset loads another ball.'});
     syncWallTray();
     if(worldWallDesign()){pieceFilter='wall';$('piece-search').value='';}
   }
@@ -7827,6 +7921,22 @@ async function chooseLevel(id, design = null) {
     'easy-wall-switch':'Drop the marble onto the broad press deck to close the lamp circuit.',
     'easy-wall-fill':'Put the tank over the receiver and open the tap: collect 1 L in 6 seconds.',
     'easy-wall-current':'Put a paddle beside the falling stream to turn the axle by 90°.',
+    'easy-wall-lift':'Put the marble in the low cradle to lift and unload it onto the upper track.',
+    'easy-wall-water-lift':'Open a tank above the right paddles to lift and unload the marble.',
+    'easy-wall-generator':'Open a tank over the right paddles to generate power and light the lamp.',
+    'easy-wall-air':'Increase air speed to roll the marble along the level track into its cup.',
+    'easy-wall-steam':'Increase firebox heat to raise the piston by 10 cm.',
+    'easy-wall-pendulum':'Raise the release angle so the bob pushes the guided marble 15 cm.',
+    'easy-wall-trapdoor':'Reduce hinge resistance so the flap opens by 60°.',
+    'easy-wall-spring':'Place and tension the spring, then Run and Release to lift the marble 30 cm.',
+    'easy-wall-mirror':'Turn a mirror in the beam to send light up to the sensor.',
+    'easy-wall-lens':'Focus the broad beam onto the sensor with the lens.',
+    'easy-wall-gears':'Bridge the gear gap and turn the big wheel through 180°.',
+    'easy-wall-pipe':'Put the pipe inlet under the marble to carry it down to the cup.',
+    'easy-wall-resistor':'Lower series resistance to supply the lamp with 2 W.',
+    'easy-wall-capacitor':'Increase capacitance to store 4 J before time runs out.',
+    'easy-wall-solar':'Tilt the panel and connect Output to the battery Input to store 20 J.',
+    'easy-wall-parallel':'Connect each lamp’s plus to battery plus so both receive full voltage.',
     'easy-block':'Fill the trench with a block as high as the tables.',
     'easy-rope':'Place the ring marble, then drag a string from the beam’s gold ring onto the marble’s ring.',
     cut:'Swing the knife through the cord and drop the weight into the bin.',
@@ -7856,7 +7966,7 @@ async function chooseLevel(id, design = null) {
     'advanced-capacitor':'Increase capacitance to store enough energy before time runs out.'};
   const objective=objectives[level.variant?.family||level.id]||level.brief.split(/(?<=\.)\s+(?=[A-Z])/)[0];
   introduction=levelIntroduction(level,{title:levelTitle(level),objective});
-  $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:level.free?(wallDesign()?'Wall pieces snap onto the wall. Build outward with regular 3D pieces.':'Build anything. Click a piece to adjust it.'):objective}));
+  $('scene-goal').replaceChildren(Object.assign(document.createElement('strong'),{textContent:level.free?activeDesign?.name||'Sandbox':levelTitle(level)}),Object.assign(document.createElement('span'),{textContent:level.free?(pinballDesign()?level.brief:wallDesign()?'Wall pieces snap onto the wall. Build outward with regular 3D pieces.':'Build anything. Click a piece to adjust it.'):objective}));
   $('pull-tool').hidden=true;$('restart-pieces').hidden=true;
   $('scene-goal').title = level.free ? 'Build anything' : `Goal within ${level.time_s} s`;
   if(readOnlyCourse()){$('scene-goal').lastChild.textContent=sharedCourse.description||'Run this shared setup. Copy it to your Sandbox to make changes.';$('scene-goal').title='Shared course';}
@@ -8451,7 +8561,7 @@ async function startGame() {
   }
   await openAnonymousProfile();
   const r = await api({op: 'levels'});
-  levels = r.levels; freeLevel = r.free || null; sandboxBase = r.sandbox_base; sandboxTemplates = r.sandbox || [];wallTemplate=r.wall_sandbox||null;legacyWallTray=r.wall_legacy_tray||[];
+  levels = r.levels; freeLevel = r.free || null; sandboxBase = r.sandbox_base; sandboxTemplates = r.sandbox || [];wallTemplate=r.wall_sandbox||null;pinballTemplate=r.pinball_sandbox||null;legacyWallTray=r.wall_legacy_tray||[];
   // Browse first. A landing page does not build a world or replace /play
   // with the last puzzle's URL before the player chooses a level.
   $('page-loading').hidden = true;

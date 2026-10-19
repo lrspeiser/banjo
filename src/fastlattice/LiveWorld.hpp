@@ -336,6 +336,11 @@ struct LiveBreakCost {
     double cell_size_m{};
 };
 
+struct LiveBodyContact {
+    std::string a,b;
+    double closing_speed_m_s{},at_s{};
+};
+
 struct LiveImpact {
     std::string struck;              // the object that took the hit
     std::string by;                  // what hit it, or "the ground"
@@ -1683,6 +1688,10 @@ public:
     // Start a fresh batch. A host calls this when it has read what it needs,
     // which in practice is at the top of each batch of steps.
     void forgetImpacts();
+    // Observations of native contacts between named bodies, including exact
+    // rigid bodies with no fracture law. At most 8192 distinct pairs per batch.
+    // This observes the solver; it never applies another contact response.
+    [[nodiscard]] std::vector<LiveBodyContact> bodyContacts() const;
 
     // What the last step hit hard enough to break, by name and once each.
     //

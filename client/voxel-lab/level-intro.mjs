@@ -9,6 +9,22 @@ const pieces={plank:'a plank',ramp:'a ramp',knife:'a swinging knife',mirror:'mir
   wall_peg:'a round deflector peg',wall_water_wheel:'a paddle wheel',wall_marble:'a marble',
   wall_funnel:'a wall funnel',wall_lever:'a wall seesaw',wall_water_tank:'a wall water tank'};
 export const LEVEL_MECHANISMS=Object.freeze({
+  'easy-wall-lift':'The wired motor turns a cradle wheel. Put the marble in the low cradle; contact carries it upward and gravity tips it onto the upper track. Reset reloads this one-pass mechanism.',
+  'easy-wall-water-lift':'Water pushes paddles on the same solid shaft as the cradle. Move the tank over the right paddles and open its tap. The wheel lifts and unloads the marble without an electric motor.',
+  'easy-wall-generator':'Falling water turns a wheel and DC generator. Current in its two wires lights the indicator lamp and applies opposing torque to the shaft. There is no charged battery supplying the circuit.',
+  'easy-wall-air':'An external air supply pushes the marble by drag. Increase Air speed to roll it along the level track and into the cup. With no wind, the level track gives it no starting push.',
+  'easy-wall-steam':'Firebox heat boils the boiler’s water. Added vapour raises pressure under the piston and pushes it upward. The boiler starts at boiling temperature; increase Firebox heat to supply energy.',
+  'easy-wall-pendulum':'A raised bob stores gravitational energy. Increase Release angle so it swings into the waiting marble. A vertical pendulum starts with no swing.',
+  'easy-wall-trapdoor':'The hinged flap can hold the marble or open under gravity. Lower Hinge resistance until it opens and lets the marble fall into the cup.',
+  'easy-wall-spring':'The latch holds a compressed spring and push plate. Increase Relaxed length, place the plate under the marble, select Run and press Release spring beside it. The plate lifts the marble by contact.',
+  'easy-wall-mirror':'The mirror reflects the horizontal laser beam upward. Move it into the beam and turn its face; the traced rays show where the light actually goes.',
+  'easy-wall-lens':'A curved glass lens bends a broad beam into a smaller spot. Move it into the beam and adjust Focus / face radius while watching the traced rays and sensor reading.',
+  'easy-wall-gears':'The wired motor turns the left gear. Choose the middle gear’s size and height so its real teeth engage both neighbours and turn the big wheel.',
+  'easy-wall-pipe':'The pipe is hollow, with real colliding walls. Place its inlet beneath the falling marble; the slope carries it through the tube toward the cup.',
+  'easy-wall-resistor':'A series resistor limits current and takes part of the supply voltage. Lower Resistance until the lamp receives enough power; watch volts and current beside it.',
+  'easy-wall-capacitor':'The resistor limits charging current. A capacitor stores energy in its electrical state. Increase Capacitance until it can store four joules within the deadline.',
+  'easy-wall-solar':'The panel collects sunlight according to its face angle. Tilt it toward the sun, then click Output and the battery’s Input to draw a charging cable. Only a connected cable delivers the captured energy.',
+  'easy-wall-parallel':'Each lamp needs its own feed across the same supply. The return leads are ready. Draw battery plus to each lamp plus; a series chain would divide the voltage.',
   'easy-weight':'A falling weight pushes one end of the lever down, turning it around its pivot.',
   'easy-roll':'Gravity pulls the marble down a slope, and it keeps rolling along the floor. On flat ground nothing makes it start.',
   'easy-wall-drop':'Gravity drops the marble straight down. Drag it above the cup; the wall already lines up its depth. Place it, then Run to watch it fall.',
@@ -61,11 +77,11 @@ export const LEVEL_MECHANISMS=Object.freeze({
 function goalDescription(level,fallback){
   const rule=level.goal?.station?.done_when||{},family=level.variant?.family||level.id;
   if(rule.turned_deg){
-    const target={'easy-weight':'lever','easy-gears':'big wheel','easy-river-wheel':'wheel','easy-water-wheel':'wheel','easy-wall-wheel':'paddle wheel','easy-wall-current':'paddle wheel','easy-wall-seesaw':'seesaw'}[family];
+    const target={'easy-weight':'lever','easy-gears':'big wheel','easy-wall-gears':'big wheel','easy-river-wheel':'wheel','easy-water-wheel':'wheel','easy-wall-wheel':'paddle wheel','easy-wall-current':'paddle wheel','easy-wall-seesaw':'seesaw'}[family];
     if(target)return `Turn the ${target} at least ${rule.turned_deg.deg}°.`;
   }
   if(rule.rose_m){
-    const target={'easy-spring':'box','easy-tackle':'glass crate','easy-thread':'glass crate','easy-charge-lift':'flag','easy-river-lift':'gate','easy-water-gate':'gate'}[family];
+    const target={'easy-spring':'box','easy-wall-spring':'marble','easy-wall-steam':'piston','easy-tackle':'glass crate','easy-thread':'glass crate','easy-charge-lift':'flag','easy-river-lift':'gate','easy-water-gate':'gate'}[family];
     if(target)return `Lift the ${target} at least ${Number((rule.rose_m.m*100).toFixed(3))} cm.`;
   }
   if(rule.hinge_beyond_deg)return `Turn the axle past ${rule.hinge_beyond_deg.deg}° in the required direction.`;

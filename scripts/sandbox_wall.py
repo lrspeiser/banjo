@@ -12,6 +12,7 @@ import re
 import machine_world as mw
 import sandbox_electrics as se
 import sandbox_mechanics as sm
+import wall_physics
 
 PLANE = .30
 WIDTH, HEIGHT, DEPTH = 6., 4., .62
@@ -297,12 +298,20 @@ def water_tank(name,k,ctx):
         at_m=[x+.18,y+.03,PLANE],turn_deg=[0,0,opening*.9],parts=[
             dict(shape='cylinder',size_m=[.06,.025,.06],at_m=[0,0,0],turn_deg=[90,0,0]),
             dict(shape='box',size_m=[.10,.02,.02],at_m=[0,0,.02])])
-    return dict(parts=[vessel,tap,mount(name+' bracket',x,floor+.12,PLANE-.13),
+    result=dict(parts=[vessel,tap,mount(name+' bracket',x,floor+.12,PLANE-.13),
         mount(name+' tap bracket',x+.18,y+.03,PLANE-.02)],spouts=[dict(name=name+' outlet',
             at_m=[x,y,PLANE],direction=[0,-1,0],speed_m_s=0,discharge_l_s=0,
             initial_volume_l=k.get('fill_l',4),valve_open=True,reservoir_area_m2=.24*.24,
             outlet_area_m2=.05*.05,head_offset_m=.035,contraction_coefficient=.62,
             opening_fraction=opening/100,reservoir_floor_m=[x,floor+.005,PLANE])])
+    offset=k.get('plane_offset_m',0)
+    if offset:
+        mw.shift_rows([0,0,offset],result['parts']+result['spouts'])
+        for p in result['parts']:
+            if p['name'].endswith(' bracket'):
+                depth=p['parts'][0]['size_m'][2]+offset
+                p['at_m'][2]=depth/2;p['parts'][0]['size_m'][2]=depth
+    return result
 
 
 def water_collector(name,k,ctx):
@@ -319,7 +328,9 @@ def water_collector(name,k,ctx):
 
 def gear(name,k,ctx):
     result=sm.gear(name,dict(k,z_m=PLANE),ctx)
-    result['parts'][0]=mount(name+' post',k['x_m'],k['height_m'],PLANE-.04)
+    # Native anchored box, with no tiny dynamic bracket inertia in series
+    # with the shaft. The motor's reaction still goes into this support.
+    result['parts'][0]=sm.box(name+' post',[.04,.04,.26],[k['x_m'],k['height_m'],.13],'iron')
     return result
 
 
@@ -382,7 +393,7 @@ def lift(name,k,ctx):
     hx=x-r-.32;hy=y+.18
     housing=sm.box(name+' housing',[.18,.14,.14],[hx,hy,.10],'concrete')
     return dict(parts=[sm.box(name+' axle bracket',[.04,.04,.08],[x,y,.04],'iron'),rotor,chute,
-        sm.box(name+' outlet bracket',[.04,.04,.21],[x+end-.08,y+.03,.105],'iron'),housing,
+        mount(name+' outlet bracket',x+end-.08,y+.03,.21),housing,
         mount(name+' housing bracket',hx,hy,.03)],
         joints=[dict(name=name+' axle',kind='hinge',a=name+' axle bracket',b=name+' wheel',
             at_m=[x,y,.10],axis=[0,0,1],lower_deg=-180,upper_deg=0,friction_n_m=.002),
@@ -417,9 +428,22 @@ def electrical(builder):
     return build
 
 
+def water_lift(name,k,ctx):
+    """A paddle rotor and carrier on the same solid shaft; no electric drive."""
+    result=lift(name,k,ctx)
+    result.pop('electrical')
+    rotor=next(p for p in result['parts'] if p['name']==name+' wheel')
+    paddles=mw.paddle_wheel_shapes(k.get('radius_m',.4),8,.18,.12,-1)
+    for shape in paddles:
+        shape['at_m'][2]+=.4
+    rotor['parts']+=paddles+[dict(shape='cylinder',size_m=[.035,.62,.035],
+        at_m=[0,0,.1],turn_deg=[90,0,0])]
+    return result
+
+
 def mounted(builder):
     def build(name,k,ctx):
-        result=builder(name,k,ctx)
+        result=se.connected(builder)(name,k,ctx)
         fixed=[p for p in result.get('parts',[]) if p.get('fixed') and p['shape']=='compound'
                and not any(j.get('kind')=='fix' and j.get('b')==p['name'] for j in result.get('joints',[]))]
         if fixed:
@@ -437,9 +461,10 @@ def mounted(builder):
 
 PIECES=dict(wall_track=track,wall_funnel=funnel,wall_cup=cup,wall_peg=peg,
     wall_lever=lever,wall_lift=lift,wall_water_wheel=water_wheel,
-    wall_water_tank=water_tank,wall_water_collector=water_collector,
+    wall_water_tank=water_tank,wall_water_collector=water_collector,wall_water_lift=water_lift,
     marble=marble,gear=gear,motor=motor,wire=wire,
     **{key:electrical(getattr(se,key)) for key in ('battery','switch','bulb','resistor','capacitor')})
+PIECES.update(wall_physics.PIECES)
 PIECES={key:mounted(builder) for key,builder in PIECES.items()}
 
 # Explicit names distinguish a wall-mounted battery/gear from the same
@@ -451,7 +476,7 @@ WORLD_PIECES={WORLD_ALIASES.get(key,key):builder for key,builder in PIECES.items
 def world_tray(ordinary,base_spec=None):
     boards=panels(base_spec or {})
     result=[]
-    for row in tray():
+    for row in tray(include_new=True):
         if row['piece']=='wire':continue
         original=row['piece'];row['piece']=WORLD_ALIASES.get(original,original)
         row['wall_mounted']=True
@@ -579,13 +604,14 @@ def peg_field_assembly(base_spec,placements,panel_id=None,rows=None,columns=5):
     return placed[before:],check,dict(id='peg_field',requested=rows*columns,added=len(pegs)-sum(p['piece']=='wall_peg' and p.get('wall',FOUNDATION[0])==board['id'] for p in placements),omitted=omitted)
 
 
-def tray():
+def tray(include_new=False):
     names=dict(wall_track='Wall track',wall_funnel='Wall funnel',wall_cup='Catching cup',
         wall_peg='Deflector peg',wall_lever='Wall seesaw',marble='Marble',gear='Wall gear',
         wall_lift='Marble lift wheel',wall_water_wheel='Wall water wheel',
         wall_water_tank='Wall water tank',wall_water_collector='Wall water receiver',
         motor='Powered wall gear',battery='Battery',switch='Switch',bulb='Light bulb',
         wire='Wire',resistor='Resistor',capacitor='Capacitor')
+    if include_new:names['wall_water_lift']='Water-powered marble lift'
     knobs=dict(
         wall_track=dict(length_m=sm.number('Track length (m)',.3,8,1.4),angle_deg=sm.number('Slope (°)',-90,90,-16,1),
             end_stop=sm.choice('High-end stop',['closed','open'],'closed')),
@@ -610,6 +636,7 @@ def tray():
             phase_deg=sm.number('Tooth alignment (°)',-180,180,0,1)),
         motor=dict(teeth=sm.number('Teeth',6,32,12,1),module_m=sm.number('Tooth size (m)',.012,.04,.024,.002),
             phase_deg=sm.number('Tooth alignment (°)',-180,180,0,1),throttle=sm.number('Motor power',-1,1,1,.1)))
+    knobs['wall_water_lift']={key:copy.deepcopy(value) for key,value in knobs['wall_lift'].items() if key!='throttle'}
     original={row['piece']:copy.deepcopy(row) for row in se.TRAY}
     result=[]
     for piece,title in names.items():
@@ -634,7 +661,7 @@ def tray():
         row.update(across=False,turning=False,sandbox_builder=True,cost=0,count=30)
         if piece=='gear':row['primary_knobs']=['teeth','module_m','height_m']
         result.append(row)
-    return result
+    return result+(wall_physics.tray() if include_new else [])
 
 
 def template():

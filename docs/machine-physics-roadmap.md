@@ -1,5 +1,27 @@
 # Physics for the machine: what there is, what to add
 
+October 19 Pinball workshop: an exact sloped deck and rigid sphere, a
+compression spring launcher, two contact-operated powered flippers, return
+springs, passive bumpers and hinged targets now compose a saved Sandbox.
+The machine requests 1/480 s native steps and uses 80 mm cable rods below its
+deck. The native contact observer also reports named exact-body contacts,
+separately from damage impacts, without applying a second response.
+Motors remain lumped reversible DC actuators, springs are axial force elements,
+and mountings are ideal. Exact bodies have no internal fracture or thermal
+model. Powered bumpers, resolved solenoids, repeated scoring and automatic ball
+return remain future work. See [Pinball's model and teaching plan](pinball.md).
+
+October 19 wall physics pack: mounted adapters now expose the existing DC
+generator law, single-pass motor/water marble cradles, springs, pendulums,
+trapdoors, external airflow, boiler/piston, optics, solar conversion and hollow
+pipes. There are 26 wall lessons. The generator has zero stored supply energy;
+its EMF and opposing torque use the native reversible motor/circuit law.
+No new rigid, fluid, electromagnetic or thermal constitutive law is claimed.
+Air remains an external prescribed field; the boiler is preheated/lumped;
+mounts are ideal. Continuous marble recycling, chemical battery charging from
+generators, resolved motor interiors and spatial fluid solvers remain unfinished.
+See [the complete catalogue and limits](wall-physics-catalogue.md).
+
 October 18 wall paddle wheels: a passive wall-mounted water-wheel tool uses
 the same hub/axle/paddle shape generator as the river wheel, on a native hinge
 with a rear bracket and ideal fixed mounting. No motor, prescribed phase or

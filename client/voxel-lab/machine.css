@@ -1095,6 +1095,14 @@ body.panel-tabs:has(#phone-toolbar.one-row) #view #clock{top:6px}
 /* Live controls on a machine (Release spring, valves) are teal, like the
    glow on the part they work, apart from the blue editing controls. */
 .device-live-card{border-color:#46c2b0}
+#player-controls{position:absolute;bottom:8px;left:8px;right:8px;display:flex;gap:6px;justify-content:center;z-index:12;pointer-events:none}
+#player-controls[hidden]{display:none}
+#player-controls button{pointer-events:auto;min-height:52px;flex:1;max-width:230px;min-width:0;font-size:14px;touch-action:none;user-select:none;background:#135a52;border:1px solid #46c2b0;border-radius:8px;color:white}
+#player-controls button[aria-pressed=true]{background:#d58b18;color:#111}
+#player-controls button:disabled{opacity:.55}
+.playing-pinball[data-mode=run] #power-feedback-labels,.playing-pinball[data-mode=run] #terminal-pins,.playing-pinball[data-mode=run] #power-control-leaders{display:none}
+body.playing-pinball.panel-tabs[data-mode=run]:not(.coaching):not(.scene-win) main{grid-template-rows:auto minmax(0,1fr) 86px}
+.playing-pinball[data-mode=run] #control-panel{display:none}
 .device-live-card button{background:#135a52;border-color:#46c2b0}
 .device-live-card button:hover:not(:disabled),.device-live-card button:focus-visible{background:#1a7268}
 /* A plank's end balls (simple handles): drag one to lengthen or shorten the

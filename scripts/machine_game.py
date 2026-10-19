@@ -42,9 +42,10 @@ import sandbox_variants
 import sandbox_motion
 import sandbox_pulleys
 import sandbox_wall
+import sandbox_pinball
 import wall_lessons
 
-SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations, sandbox_motion, sandbox_pulleys)
+SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations, sandbox_motion, sandbox_pulleys, sandbox_pinball)
 EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel', 'easy-river-wheel',
               'easy-spring', 'easy-gears', 'easy-weight', 'easy-motor', 'easy-power', 'easy-switch',
               'easy-bulb', 'easy-loop', 'easy-water-receiver', 'easy-divert-water', 'easy-heat', 'easy-catapult',
@@ -68,6 +69,10 @@ PLAYER_TASK_COUNTS = {
     'easy-wall-track': 1, 'easy-wall-peg': 1, 'easy-wall-wheel': 1,
     'easy-wall-drop': 1, 'easy-wall-funnel': 1, 'easy-wall-seesaw': 1,
     'easy-wall-loop': 1, 'easy-wall-switch': 1, 'easy-wall-fill': 1, 'easy-wall-current': 1,
+    'easy-wall-lift':1,'easy-wall-water-lift':1,'easy-wall-generator':1,'easy-wall-air':1,
+    'easy-wall-steam':1,'easy-wall-trapdoor':1,'easy-wall-pendulum':1,'easy-wall-spring':2,
+    'easy-wall-mirror':1,'easy-wall-lens':1,'easy-wall-gears':1,'easy-wall-pipe':1,
+    'easy-wall-resistor':1,'easy-wall-capacitor':1,'easy-wall-solar':2,'easy-wall-parallel':2,
 }
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1625,7 +1630,7 @@ def ghost(level, placements, index, snapping=False, edit_key=None, nearby=False,
         reply['water_setup'] = compiled['spouts']
     # Draw the compiled terminals while placing a device, including its
     # prepared socket leads. This does not advance the engine.
-    if checked[index]['piece'].removeprefix('wall_') in ('battery', 'switch', 'bulb', 'motor', 'ignition', 'wire', 'cannon', 'resistor', 'capacitor'):
+    if checked[index]['piece'].removeprefix('wall_') in ('battery', 'switch', 'bulb', 'motor', 'generator', 'ignition', 'wire', 'cannon', 'resistor', 'capacitor'):
         reply['electrical_preview'] = compiled.get('electrical', {})
         reply['battery_preview'] = compiled.get('batteries', [])
     if checked[index]['piece'] == 'wire':

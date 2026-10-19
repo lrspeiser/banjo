@@ -29,6 +29,7 @@ jobs:
           python3 tests/machine_host_tests.py --engine build/test-site/banjo_live_world_run
           python3 tests/test_site_tests.py --engine build/test-site/banjo_live_world_run
           python3 tests/sandbox_wall_tests.py --engine build/test-site/banjo_live_world_run
+          python3 tests/sandbox_pinball_tests.py --engine build/test-site/banjo_live_world_run
           python3 tests/machine_game_tests.py --engine build/test-site/banjo_live_world_run
       - name: Package committed runtime sources and native engine
         run: python3 scripts/package-test.py --native build/test-site/banjo_live_world_run --output build/banjo-test.tar.gz

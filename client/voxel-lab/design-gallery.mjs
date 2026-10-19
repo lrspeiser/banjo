@@ -114,7 +114,7 @@ export function preview(document, draft) {
   return svg;
 }
 
-export function renderDesignGallery({box, head, store, templates, wallTemplate, openDesign, createDesign}) {
+export function renderDesignGallery({box, head, store, templates, wallTemplate, pinballTemplate, openDesign, createDesign}) {
   const document = box.ownerDocument;
   const element = (tag, properties = {}) => Object.assign(document.createElement(tag), properties);
   const gallery = element('section', {className: 'design-gallery'});
@@ -134,6 +134,13 @@ export function renderDesignGallery({box, head, store, templates, wallTemplate, 
     wallButton.addEventListener('click',()=>invoke(wallButton,async()=>openDesign(await createDesign(wallTemplate.name,
       {base:wallTemplate.base,placements:wallTemplate.placements},wallTemplate))));
     head.append(wallButton);
+  }
+  if (pinballTemplate) {
+    const pinballButton=element('button',{type:'button',className:'gallery-add',textContent:'Pinball'});
+    pinballButton.id='new-pinball-design';
+    pinballButton.addEventListener('click',()=>invoke(pinballButton,async()=>openDesign(await createDesign(pinballTemplate.name,
+      {base:pinballTemplate.base,placements:pinballTemplate.placements},pinballTemplate))));
+    head.append(pinballButton);
   }
   gallery.append(status); box.append(gallery);
   const entries = [

@@ -697,6 +697,7 @@ struct LiveWorld::Impl {
     // re-offered on the strength of a contact from three steps ago.
     std::vector<LiveImpact> last_impacts;
     std::vector<std::tuple<std::string,std::string,double>> native_contact_pairs;
+    std::map<std::pair<std::string,std::string>,LiveBodyContact> body_contact_batch;
     // Every contact since the host last said it had read them. The hardest of
     // each pair survives, because a landing reports the same pair many times as
     // it settles and the one that matters is the one that arrived.
@@ -6205,7 +6206,8 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         for (std::size_t k = 0; k < body.parts.size(); ++k) {
             const RigidCompoundPart &part = body.parts[k];
             LiveBodyPose::PrecisePart drawn;
-            drawn.shape = part.geometry.kind == PrimitiveKind::Cylinder ? "cylinder" : "box";
+            drawn.shape = part.geometry.kind == PrimitiveKind::Sphere ? "sphere" :
+                          part.geometry.kind == PrimitiveKind::Cylinder ? "cylinder" : "box";
             drawn.center_local_m = part.center_local_m;
             drawn.dimensions_m = part.geometry.dimensions_m;
             drawn.rotation_wxyz = {part.rotation_local.w, part.rotation_local.x,
@@ -6225,6 +6227,19 @@ std::unique_ptr<LiveWorld> LiveWorld::openFrom(const TileImpactRequest &request,
         impl.density_of.push_back(body.mass_kg / body.volume_m3);
         impl.tensile_of.push_back(0); impl.compressive_of.push_back(0);
     }
+
+    // Jolt's room-scale default permits centimetres of penetration. A small
+    // exact sphere needs tolerances derived from its geometry, not that room
+    // scale. Reuse the conservative feature-scaled settings (no Baumgarte
+    // position projection); worlds without exact spheres retain their settings.
+    double sphere_feature=1.0;bool has_exact_sphere=false;
+    for(const auto &[name,body]:impl.precise_bodies) {
+        (void)name;
+        for(const auto &part:body.parts)if(part.geometry.kind==PrimitiveKind::Sphere) {
+            sphere_feature=std::min(sphere_feature,2*part.geometry.radius_m);has_exact_sphere=true;
+        }
+    }
+    if(has_exact_sphere)impl.world->configureVoxelContacts(sphere_feature);
 
     for (std::size_t i = 0; i < impl.described.size(); ++i)
         impl.index_of.emplace(impl.described[i].name, i);
@@ -7626,6 +7641,15 @@ bool LiveWorld::judgeStep() {
         const auto b = index_of_body.find(event.body_b);
         const bool a_known = a != index_of_body.end();
         const bool b_known = b != index_of_body.end();
+        if(a_known && b_known && a->second!=b->second) {
+            auto names=std::minmax(impl_->described[a->second].name,impl_->described[b->second].name);
+            const auto key=std::make_pair(names.first,names.second);
+            const auto found=impl_->body_contact_batch.find(key);
+            if(found!=impl_->body_contact_batch.end())
+                found->second.closing_speed_m_s=std::max(found->second.closing_speed_m_s,event.closing_speed_m_s);
+            else if(impl_->body_contact_batch.size()<8192)
+                impl_->body_contact_batch.emplace(key,LiveBodyContact{key.first,key.second,event.closing_speed_m_s,impl_->time_s});
+        }
         if (!a_known && !b_known) continue;
         const std::size_t pair[2] = {a_known ? a->second : b->second,
                                      b_known ? b->second : a->second};
@@ -10908,7 +10932,13 @@ void LiveWorld::release() {
     }
 }
 
-void LiveWorld::forgetImpacts() { impl_->reported.clear(); }
+void LiveWorld::forgetImpacts() { impl_->reported.clear();impl_->body_contact_batch.clear(); }
+
+std::vector<LiveBodyContact> LiveWorld::bodyContacts() const {
+    std::vector<LiveBodyContact> out;
+    for(const auto &[pair,contact]:impl_->body_contact_batch)out.push_back(contact);
+    return out;
+}
 
 std::vector<LiveImpact> LiveWorld::impacts(double quiet_speed_m_s) const {
     std::vector<LiveImpact> out;

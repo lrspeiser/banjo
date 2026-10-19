@@ -502,8 +502,10 @@ class Tray(unittest.TestCase):
         wall_ids = ['easy-wall-drop', 'easy-wall-track', 'easy-wall-funnel', 'easy-wall-peg', 'easy-wall-seesaw', 'easy-wall-wheel']
         new_ids=['easy-wall-loop','easy-wall-switch','easy-wall-fill','easy-wall-current']
         self.assertEqual(ids[:10], wall_ids+new_ids)
-        self.assertEqual(ids[10], 'easy-weight', 'Introduce depth with a familiar falling weight')
-        self.assertEqual([l['id'] for l in LEVELS if l['onboarding']['chapter']=='Level 1: Wall Basics'], wall_ids+new_ids)
+        import wall_activities
+        expanded=[l['id'] for l in wall_activities.levels()]
+        self.assertEqual(ids[26], 'easy-weight', 'Introduce depth after the wall activities')
+        self.assertEqual(set(l['id'] for l in LEVELS if l['onboarding']['chapter']=='Level 1: Wall Basics'), set(wall_ids+new_ids+expanded))
         builders = dict(mg.PIECES)
         for ident in wall_ids:
             level = mg.level_by_id(ident)
@@ -552,9 +554,10 @@ class Tray(unittest.TestCase):
         # Lessons added after the blind probe are not in its receipt; each
         # must say so in its own estimate basis rather than borrow the probe's.
         unprobed={l['id'] for l in LEVELS if 'not yet probed' in l['onboarding']['estimate_basis']}
+        import wall_activities
         self.assertEqual(unprobed,{'easy-roll','easy-block','easy-rope','easy-thread',
                                   'easy-wall-drop','easy-wall-track','easy-wall-funnel','easy-wall-peg','easy-wall-seesaw','easy-wall-wheel',
-                                  'easy-wall-loop','easy-wall-switch','easy-wall-fill','easy-wall-current'})
+                                  'easy-wall-loop','easy-wall-switch','easy-wall-fill','easy-wall-current'}|{l['id'] for l in wall_activities.levels()})
         self.assertEqual({r['id'] for r in receipt['levels']},{l['id'] for l in LEVELS}-unprobed)
         for level in LEVELS:
             exported=audit.packet(level)
@@ -2478,6 +2481,93 @@ class Engine(unittest.TestCase):
                 energy = mg.measure_energy(level, level['solution'], ENGINE, logs)
                 self.assertLessEqual(energy['j'], level['par_energy_j'])
                 self.assertGreater(energy['j'], .99*level['par_energy_j'])
+
+    @need_engine
+    def test_wall_expansion_wrong_settings_and_missing_energy_fail_physically(self):
+        import wall_activities
+        identities={l['id'] for l in wall_activities.levels()}
+        with tempfile.TemporaryDirectory() as logs:
+            for level in LEVELS:
+                if level['id'] not in identities:continue
+                with self.subTest(level=level['id']):
+                    wrong=mg.trial(level,level['wrong'],ENGINE,Path(logs),runs=3,
+                        release_inputs=level.get('solution_releases'))
+                    self.assertEqual(wrong['worked'],0,wrong)
+                    self.assertTrue(all(r['error'] is None for r in wrong['results']),wrong)
+            spring=mg.level_by_id('easy-wall-spring')
+            self.assertEqual(mg.trial(spring,spring['solution'],ENGINE,Path(logs),runs=1)['worked'],0,
+                'The plate cannot launch the marble through a closed latch')
+            for ident in ('easy-wall-water-lift','easy-wall-generator'):
+                level=mg.level_by_id(ident)
+                closed=[dict(level['solution'][0],opening_percent=0)]
+                self.assertEqual(mg.trial(level,closed,ENGINE,Path(logs),runs=1)['worked'],0)
+            solar=mg.level_by_id('easy-wall-solar')
+            self.assertEqual(mg.trial(solar,solar['solution'][:1],ENGINE,Path(logs),runs=1)['worked'],0,
+                'Sunlight in the collector cannot charge a disconnected receiver')
+
+    @need_engine
+    def test_wall_generator_books_shaft_work_without_a_charged_supply(self):
+        from unittest.mock import patch
+        level=mg.level_by_id('easy-wall-generator')
+        spec=mg.compose(level,level['solution'])[0];spec['stations']=[]
+        measurements=[]
+        with tempfile.TemporaryDirectory() as logs:
+            for dt in (1/240,1/480):
+                for connected in (True,False):
+                    changed=copy.deepcopy(spec)
+                    if not connected:changed['electrical']['wires'].pop()
+                    with patch.object(mw,'DT_S',dt):
+                        r=mw.rehearse(mw.compile_spec(changed),ENGINE,Path(logs),seconds=4,wall_limit_s=45)
+                    self.assertIsNone(r['error'])
+                    network=r['readouts']['electrical']['networks'][0]
+                    ledger=network['ledger'];motor=r['readouts']['machines']['motors'][0]
+                    self.assertEqual(ledger['source_j'],0)
+                    self.assertEqual(r['readouts']['machines']['batteries'][0]['given_j'],0)
+                    self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+                    self.assertLess(abs(ledger['coupling_residual_j']),.02)
+                    self.assertTrue(all(c['connected'] for c in r['readouts']['mechanical_cables']))
+                    if connected:
+                        self.assertLess(ledger['shaft_j'],0)
+                        self.assertGreater(ledger['emitted_j'],0)
+                        self.assertLess(motor['torque_n_m']*motor['speed_rad_s'],0,
+                            'The generating torque must oppose measured shaft motion')
+                    else:
+                        generator=next(d for d in r['readouts']['electrical']['devices'] if d['kind']=='generator')
+                        self.assertLess(abs(generator['current_a']),1e-9)
+                        # The open rotor still loses mechanical work in its
+                        # declared bearing. That heat remains on the ledger.
+                        self.assertLess(abs(ledger['shaft_j']+ledger['heat_j']),.02)
+                        self.assertEqual(ledger['emitted_j'],0)
+                    measurements.append(dict(dt_s=dt,connected=connected,cell_m=.02,
+                        speed_rad_s=motor['speed_rad_s'],ledger=ledger,
+                        water=r['readouts'].get('pour'),wall_s=r['wall_s']))
+            self.assertGreater(measurements[0]['ledger']['heat_j'],measurements[1]['ledger']['heat_j'])
+        print('WALL GENERATOR',json.dumps(measurements),flush=True)
+
+    @need_engine
+    def test_wall_expansion_compares_materials_under_the_same_conditions(self):
+        measurements=[]
+        with tempfile.TemporaryDirectory() as logs:
+            for ident in ('easy-wall-lift','easy-wall-water-lift','easy-wall-air','easy-wall-pendulum'):
+                for material in ('glass','oak','iron'):
+                    level=mg.level_by_id(ident);placements=copy.deepcopy(level['solution'])
+                    if ident=='easy-wall-lift':
+                        level['tray'][0]['knobs']['material']['choices']=['glass','oak','iron']
+                        placements[0]['material']=material
+                    else:
+                        name='target marble' if ident.endswith('pendulum') else 'marble'
+                        next(p for p in level['machine']['parts'] if p['name']==name)['material']=material
+                    compiled=mw.compile_spec(mg.compose(level,placements)[0])
+                    r=mw.rehearse(compiled,ENGINE,Path(logs),seconds=level['time_s'],wall_limit_s=45,
+                        track=['your wall_marble 1' if ident.endswith('-lift') and ident=='easy-wall-lift' else name])
+                    self.assertIsNone(r['error'])
+                    if ident=='easy-wall-lift' or material==('oak' if ident=='easy-wall-air' else 'glass'):
+                        self.assertTrue(r['stations'][0]['done'],(ident,material,r['stations']))
+                    measurements.append(dict(level=ident,material=material,dt_s=1/240,cell_m=.02,
+                        goal_s=r['stations'][0]['at_s'],reached=r['stations'][0]['done'],wall_s=r['wall_s'],
+                        electrical=[n['ledger'] for n in r['readouts']['electrical']['networks']],
+                        heat=r['readouts'].get('heat_ledger'),air=r['readouts'].get('airflow')))
+        print('WALL MATERIALS',json.dumps(measurements),flush=True)
 
     @need_engine
     def test_wall_electricity_and_water_need_real_connections_contacts_and_flow(self):

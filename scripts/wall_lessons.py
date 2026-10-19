@@ -29,7 +29,7 @@ def _fixture(spec, piece, name, **knobs):
 
 def _tray(piece, start, **stock):
     source = next((key for key, value in wall.WORLD_ALIASES.items() if value == piece), piece)
-    row = copy.deepcopy(next(t for t in wall.tray() if t['piece'] == source))
+    row = copy.deepcopy(next(t for t in wall.tray(include_new=True) if t['piece'] == source))
     row['piece'] = piece
     row.update(count=1, wall_mounted=True, open_world=True, start_at_defaults=True)
     row['knobs']['wall'] = dict(choices=['workshop backing'], default='workshop backing', hidden=True)
@@ -178,4 +178,5 @@ def levels():
         dict(turned_deg=dict(joint='your wall_water_wheel 1 axle',deg=90)),
         ['your wall_water_wheel 1 wheel','water source tank'],[0,1.3],[-.8,1.2],
         'The stream needs a lever arm: a hit beside the centre gives the axle turning force.',193000000)
-    return [falling, route, collecting, bounce, tipping, turn, connect, actuate, filling, driving]
+    import wall_activities
+    return [falling, route, collecting, bounce, tipping, turn, connect, actuate, filling, driving]+wall_activities.levels()

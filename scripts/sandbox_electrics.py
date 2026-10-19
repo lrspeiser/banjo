@@ -192,7 +192,7 @@ def physical_manual_switches(spec):
     raw=spec.get('electrical') or {}
     if not isinstance(raw,dict) or not isinstance(raw.get('devices',[]),list): return spec
     devices=[d for d in raw.get('devices',[]) if isinstance(d,dict) and d.get('kind')=='switch'
-             and not d.get('hinge') and isinstance(d.get('name'),str) and isinstance(d.get('closed',False),bool)]
+             and not d.get('hinge') and not d.get('touch') and isinstance(d.get('name'),str) and isinstance(d.get('closed',False),bool)]
     if not devices or not isinstance(spec.get('parts',[]),list): return spec
     result=copy.deepcopy(spec)
     for original in devices:
@@ -569,7 +569,7 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
         if not isinstance(name, str) or not name or name in ids:
             problems.append('electrical device names must be nonempty and unique'); continue
         ids.add(name)
-        if kind not in ('battery', 'switch', 'bulb', 'motor', 'coil', 'socket','resistor','capacitor') or not isinstance(d.get('part'), str) or d['part'] not in names:
+        if kind not in ('battery', 'switch', 'bulb', 'motor', 'generator', 'coil', 'socket','resistor','capacitor') or not isinstance(d.get('part'), str) or d['part'] not in names:
             problems.append(f'electrical {name}: unsupported kind or missing housing'); continue
         keys = ('in', 'out') if kind == 'switch' else (('a','b') if kind in ('resistor','capacitor') else ('plus', 'minus'))
         if not isinstance(d.get('terminals'), dict) or set(d['terminals']) != set(keys):
@@ -582,8 +582,12 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
         if not isinstance(bindings, dict) or any(key not in keys or not isinstance(part,str) or part not in names
                                                for key,part in bindings.items()):
             problems.append(f'electrical {name}: terminal_parts must bind declared terminals to existing bodies')
-        if kind == 'battery' and (not isinstance(d.get('battery'), str) or d['battery'] not in battery_names):
+        if kind in ('battery','generator') and (not isinstance(d.get('battery'), str) or d['battery'] not in battery_names):
             problems.append(f'electrical {name}: battery names its energy store')
+        if kind=='generator':
+            reference=next((b for b in spec.get('batteries',[]) if b.get('name')==d.get('battery')),None)
+            if reference and reference.get('charge_j',reference.get('capacity_j'))!=0:
+                problems.append(f'electrical {name}: a generator reference must start with zero energy')
         if kind == 'bulb':
             d['watts'] = number(d, 'watts', 3, .01, 1000)
             d['rated_voltage_v'] = number(d, 'rated_voltage_v', 12, 1, 1000)
@@ -626,7 +630,7 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
                     not all(isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v) for v in h['at_m']) or
                     not joint or joint.get('b')!=h['part'] or (bodies and bodies[h['part']]['fixed'])):
                     problems.append(f'electrical {name}: handle must belong to its loose hinged body')
-        if kind == 'motor':
+        if kind in ('motor','generator'):
             if not isinstance(d.get('hinge'), str) or d['hinge'] not in hinges: problems.append(f'electrical {name}: driven hinge is missing')
             for key, default, low, high in [('stall_torque_n_m', 1, .01, 1e5), ('no_load_rad_s', 8, .01, 1e4),
                                           ('command', 1, -1, 1), ('gear_ratio', 1, .01, 1e4), ('brake_torque_n_m', 0, 0, 1e5)]:
@@ -717,10 +721,16 @@ def compile_electrical(spec, names, joints, battery_names, problems, parts=None)
     occupied = {c.get('battery') for c in spec.get('circuits', [])}
     for root, ds in groups.items():
         sources = [d for d in ds if d['kind'] == 'battery']
+        generators = [d for d in ds if d['kind'] == 'generator']
         if len(sources) > 1:
             problems.append('electrical: batteries cannot be interconnected; each graph has one supply'); continue
-        if not sources: continue
-        b = sources[0]
+        if sources and generators:
+            problems.append('electrical: generator loads use a separate circuit; battery charging needs a charge controller'); continue
+        if not sources and not generators: continue
+        # A generator-only island uses a zero-energy, disconnected reference
+        # port. The native reversible DC branch supplies EMF and opposing
+        # shaft torque; the reference cannot supply a single joule.
+        b = (sources or generators)[0]
         if b['battery'] in occupied:
             problems.append(f'electrical: {b["battery"]} already supplies another circuit'); continue
         occupied.add(b['battery'])
@@ -763,7 +773,7 @@ def build_electrical(engine, compiled, store_ids, joint_ids):
                 engine.op(op='lamp_light', name=d['name'] + ' light', lamp=lamp, axis=d.get('axis', [0, 1, 0]),
                           half_angle_deg=179, radiant_efficacy_lm_w=683, rays=48, max_bounces=4)
                 row.update(kind='bulb', lamp=lamp, resistance_ohm=d['rated_voltage_v'] ** 2 / d['watts'], efficiency=d['efficiency'])
-            elif d['kind'] == 'motor':
+            elif d['kind'] in ('motor','generator'):
                 motor_id = engine.op(op='motor', joint=joint_ids[d['hinge']], store=store_ids[n['battery']],
                                      stall_torque_n_m=d['stall_torque_n_m'], no_load_rad_s=d['no_load_rad_s'],
                                      brake_torque_n_m=d['brake_torque_n_m'])['motor']
@@ -806,7 +816,8 @@ def readouts(graph, native, batteries=()):
     stores={b['name']:b for b in batteries}
     wire_supply={w['name']:dict(supply_voltage_v=stores[n['battery']]['voltage_v'],
                               supply_max_power_w=stores[n['battery']]['max_power_w'],show_supply_limit=index==0)
-                 for n in graph.get('networks',[]) if n['battery'] in stores for index,w in enumerate(n['wires'])}
+                 for n in graph.get('networks',[]) if n['battery'] in stores and n['source']['kind']=='battery'
+                 for index,w in enumerate(n['wires'])}
     for network in native:
         volts=dict(zip(network.get('nodes',[]),network.get('last',{}).get('voltage_v',[])))
         reference=volts.get(network.get('source',{}).get('negative'),0)

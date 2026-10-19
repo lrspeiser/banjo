@@ -2,6 +2,14 @@
 
 **A Rube Goldberg game where the physics decides what happens.**
 
+**Sandbox → Pinball** opens a saved, editable pinball machine: an angled
+playfield, smooth ball, spring launcher, wired battery-powered flippers,
+spring-return contact buttons, bumpers, guides and hanging targets. Choose
+**Run**, hold the launcher and release it, then hold Left/Right to flip.
+Arrow keys and Space work too. Reset reloads a ball. Find the eight reusable
+tools in **Add a piece → Pinball**. The [workshop model and training sequence](docs/pinball.md)
+describe its current mechanics and the proposed lessons for building it gradually.
+
 **Sandbox → Build on a wall** puts a mounting wall inside the ordinary 3D world.
 Wall pieces drag left/right and up/down at a fixed mounting depth; the full
 Sandbox library remains available to build outward and onto the ground. Orbit
@@ -96,9 +104,9 @@ Prepared materials, damping and unrelated electrical ratings stay out of lessons
 
 ## What there is
 
-**Eight chain-reaction levels, thirty-seven piece lessons and three advanced electronics activities.**
+**Eight chain-reaction levels, fifty-three piece lessons and three advanced electronics activities.**
 Every card shows its task count and stars; Help reveals level details and energy records.
-The 48 challenges are grouped as Level 1: Wall Basics, Level 2: 3D Mechanics,
+The 64 challenges are grouped as Level 1: Wall Basics, Level 2: 3D Mechanics,
 Level 3: Electricity, Level 4: Water, and Level 5: Heat and Chain Reactions,
 with all choices visible. The wall chapter starts with two-axis placement;
 the 3D chapter then introduces depth using familiar gravity and lever mechanisms.
@@ -112,9 +120,15 @@ Six wall lessons added on October 18 start the game: **Drop into the cup**,
 deflection and torque with placement limited to left/right and up/down on a real 3D wall.
 Four more wall lessons introduce completing a lamp circuit, dropping a marble
 onto a physical contact switch, opening a finite tank to fill a receiver on
-time, and driving a paddle wheel with falling water. The ten wall lessons
-precede the 3D chapter. Wall water tanks and receivers are also available in
+time, and driving a paddle wheel with falling water. These expanded the initial
+wall pack to ten lessons. Wall water tanks and receivers are also available in
 the wall Sandbox, with their ordinary placement, flow preview, Undo and saves.
+Sixteen further activities expand Wall Basics to 26 lessons, covering motor
+and water-driven marble lifts, a water-wheel generator, air, steam pressure,
+springs, pendulums, trapdoors, optics, gears, pipes and richer circuits.
+The wall Sandbox has 31 mounted tools alongside the ordinary library.
+The [complete wall catalogue](docs/wall-physics-catalogue.md) explains each
+activity, its controls, energy source and the mechanisms that still need work.
 Their ordering and time estimates are author assessments, not measured human times.
 **Thread a pulley** adds a fourth primitive lesson. **Raise the crate** and
 **Lift with less** now use individual wheels and a routed, massive native rope;
