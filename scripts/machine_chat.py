@@ -5,9 +5,9 @@ banjo.machine.v1). The model only writes the declaration: which parts, kits,
 joints, batteries, circuits and torches, and where. It never writes motion or
 outcomes. The server checks the declaration (nothing below the ground, nothing
 overlapping, every name real) and the engine calculates everything that
-happens. A declaration the checks refuse goes back to the model once, with the
-reasons, so it can change its values; if it is still refused, the person sees
-the reasons and nothing is built.
+happens. Rejected declarations return through a bounded repair loop with
+geometry or native observations. If they remain refused, the person sees
+the reasons and the original build is kept.
 """
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ import machine_world as mw
 ROOT = Path(__file__).resolve().parents[1]
 MAX_MESSAGE = 2000
 MAX_HISTORY = 6
+BUILD_ATTEMPTS = 5
 
 
 class ChatUnavailable(RuntimeError):
@@ -401,6 +402,33 @@ def free_context(level,placements):
     return rows
 
 
+def free_environment(level,placements,active_wall=None):
+    """Expose existing obstructions and the selected mounting face to layout planning."""
+    import machine_game as mg
+    _,_,_,compiled=mg._assemble(level,placements,lenient=True)
+    fixed=[]
+    for part in compiled['parts']:
+        if mg.owner(part):continue
+        points=[p for solid in mw.solids_of(part) for p in mw.footprint_points(solid)]
+        if points:fixed.append(dict(name=part['name'],low=[min(p[i] for p in points) for i in range(3)],
+            high=[max(p[i] for p in points) for i in range(3)]))
+    result=dict(solids=fixed,existing_problems=compiled.get('problems',[])+mg.clashes_of(compiled))
+    result['remaining_part_slots']=max(0,mw.MAX_PARTS-len(compiled['parts']))
+    result['remaining_counts']={t['piece']:t.get('count',1)-sum(p['piece']==t['piece'] for p in placements)
+        for t in level['tray'] if not t.get('attach')}
+    if level.get('wall_mode'):
+        import sandbox_wall
+        walls=sandbox_wall.panels(level['machine'])
+        selected=next((p for p in walls if p['id']==active_wall),None)
+        if active_wall is not None and selected is None:raise mg.LevelRefused(['Choose an existing wall for this request'])
+        result['active_wall']=selected or walls[0]
+        face=result['active_wall']
+        result['wall_coordinates']=dict(left_x_m=face['x_m']-face['width_m']/2,
+            right_x_m=face['x_m']+face['width_m']/2,bottom_height_m=0,top_height_m=face['height_m'],
+            note='x_m is an absolute along-face coordinate, NOT an offset from the wall centre. Add the wall x_m to a local offset.')
+    return result
+
+
 def lift_checks(checks,rehearsal):
     """Observe native paths/contact order. Never operate the mechanism."""
     result=[]
@@ -428,6 +456,42 @@ Include every required object explicitly, including a marble, supports, catchers
 both electrical leads when needed. Nothing appears merely because reply mentions it. Preserve existing
 work unless the player asks to clear it; clear removes placed pieces, not the environment or wall.
 Use add for individual tools, edit for existing numbered pieces and assemblies only for documented recipes.
+Use patterns for repeated wall-mounted tools, such as staggered rows of pegs for Plinko. A pattern expands
+into ordinary individually editable catalog pieces, not a new physics device. Its knobs locate the first
+piece; columns advance step_x_m, rows advance step_y_m, and odd rows add stagger_m to x_m.
+Use positive step_x_m, negative step_y_m for rows going down. Give id a short unique name; generated IDs
+are id_1_1, id_1_2, etc. avoid_occupied=true leaves out slots that clash with existing pieces or wall bounds;
+the server reports every omitted slot. Respect the catalog count (including existing pieces).
+For covering a wall, prefer region:[left,right,bottom,top] as fractions of the selected wall (0..1).
+The server distributes the requested rows/columns across that region, so moved/resized/turned walls work.
+region replaces x_m/height_m and step_x_m/step_y_m; stagger_m remains metres and the last shifted row
+stays inside the region. Use region:null for exact coordinates. A one-row/column region uses its centre.
+Example for a 3 m wall: 5 rows × 5 columns of diameter .12 pegs, region [.08,.92,.34,.87], stagger_m=.25;
+avoid occupied slots. Keep room at the top for the marble and at the bottom for cups. Cover the WHOLE
+requested width, not just the left half where the marble can bounce off the last peg into empty space.
+Vertical guide rails can use existing wall_track with angle_deg=90, end_stop='open'; use short lengths
+whose endpoints stay inside the wall. They physically contain sideward bounces. No invisible guard exists.
+For 'this wall' use environment.active_wall.id and its actual size/position, not assumed origin coordinates.
+Inspect environment.existing_problems BEFORE adding anything. Repair those placements with edit while
+preserving their purpose; the environment and existing pieces must not be cleared just to hide a clash.
+Use wall_peg and wall_marble for a Plinko board, not a 3D track shoved into the backing. Preserve unrelated
+pieces. Include a real catching cup and a marble above the pegs, or reuse the existing ones if suitable.
+PREFERRED START for a Plinko request: assemblies:[{"kind":"peg_field","wall":environment.active_wall.id}].
+This reusable assembly fits visible side rails, staggered rows of existing wall pegs, bottom catching cups
+and a new marble to that wall. It skips occupied peg slots and preserves the existing design. Optional
+rows (3..6) and columns (3..7) choose density; default 4×5. The wall needs at least 2×2 m. It supplies its own
+native verification, so verify may be []. Every resulting tool remains separately editable. You can use
+edit on its expanded pieces to repair a measured failure. Do not add the assembly again during repair.
+Use verify with order='any', minimum_contacts=3 and via:['pattern_id:*', existing peg numbers...] for a
+deflector field: the marble must hit at least three different listed pieces and settle in a named finish.
+Plinko can take different routes after tiny physical nudges. Cover the lower edge with adjacent catching
+cups (or a funnel feeding a cup), not a narrow cup under just one predicted branch. finish may be a list
+of catcher IDs/numbers: settling in ANY of them passes. Keep existing pegs, add rows in the remaining
+clear area, and keep the bottom catcher band free. Do not add an extra peg duplicating the pattern origin.
+When preparing several bottom cups for Plinko, list ALL of them in finish, not only the middle cup.
+Marbles start falling when the player chooses Run. There is no separate Release wall marble button.
+Ordered routes retain order='ordered' and minimum_contacts=null. Repeated patterns can also use other
+mounted tools; the same geometry, overlap, inventory and native checks apply to every expansion.
 The coordinate system is metres, x left/right, y up, z depth. Wall mounting makes placement easier in
 two dimensions inside the SAME 3D physics world; ordinary pieces retain their normal 3D controls.
 Your reply should explain the actual tools and the chain in plain language, then how to start it.
@@ -466,9 +530,15 @@ def free_response_schema(level,require_course=False):
         add=dict(type='array',items=dict(anyOf=[obj(dict(piece=dict(type='string',enum=[t['piece']]),id=text,
             knobs=knob_list(t['knobs']),join=join)) for t in pieces])),
         edit=dict(type='array',items=obj(dict(number=integer,knobs=knobs))),
-        assemblies=dict(type='array',items=obj(dict(kind=dict(type='string',enum=['marble_lift']),x_m=optional,height_m=optional))),
+        patterns=dict(type='array',items=obj(dict(id=text,piece=dict(type='string',enum=[t['piece'] for t in pieces]),
+            knobs=knobs,rows=integer,columns=integer,step_x_m=number,step_y_m=number,stagger_m=number,
+            region=dict(anyOf=[dict(type='null'),dict(type='array',items=number)]),
+            avoid_occupied=dict(type='boolean')))),
+        assemblies=dict(type='array',items=obj(dict(kind=dict(type='string',enum=['marble_lift','peg_field']),x_m=optional,height_m=optional,
+            wall=dict(anyOf=[dict(type='null'),text]),rows=dict(anyOf=[dict(type='null'),integer]),columns=dict(anyOf=[dict(type='null'),integer])))),
         verify=dict(type='array',minItems=1 if require_course else 0,
-            items=obj(dict(marble=ref,via=dict(type='array',items=ref),finish=ref,seconds=number))),
+            items=obj(dict(marble=ref,via=dict(type='array',items=ref),finish=dict(anyOf=[ref,dict(type='array',items=ref)]),seconds=number,
+                order=dict(type='string',enum=['ordered','any']),minimum_contacts=dict(anyOf=[dict(type='null'),integer])))),
         limitations=dict(type='array',items=text)))
 
 
@@ -491,9 +561,14 @@ def normalize_build_answer(answer):
         if isinstance(row,dict) and row.get('join') is None:row.pop('join',None)
     for row in result.get('edit',[]) or []:
         if isinstance(row,dict) and 'knobs' in row:row['set']=settings(row)
+    for row in result.get('patterns',[]) or []:
+        if isinstance(row,dict) and 'knobs' in row:row['set']=settings(row)
+        if isinstance(row,dict) and row.get('region') is None:row.pop('region',None)
+    for row in result.get('verify',[]) or []:
+        if isinstance(row,dict) and row.get('minimum_contacts') is None:row.pop('minimum_contacts',None)
     for row in result.get('assemblies',[]) or []:
         if isinstance(row,dict):
-            for key in ('x_m','height_m'):
+            for key in ('x_m','height_m','wall','rows','columns'):
                 if row.get(key) is None:row.pop(key,None)
     return result
 
@@ -514,23 +589,46 @@ def course_checks(rows, placements, compiled, aliases):
         raise mg.LevelRefused(['A verify reference must name an existing piece number or addition id'])
     checks=[]
     for row in rows:
-        if not isinstance(row,dict) or set(row)-{'marble','via','finish','seconds'}:
+        if not isinstance(row,dict) or set(row)-{'marble','via','finish','seconds','order','minimum_contacts'}:
             raise mg.LevelRefused(['Each verify route takes marble, via, finish and seconds'])
         marble=reference(row.get('marble'))
         ball=next((p for p in parts if p['name']==marble and p['shape']=='sphere' and not p['fixed']),None)
         if not ball:raise mg.LevelRefused(['verify marble must be an existing freely moving marble'])
-        via=row.get('via');seconds=row.get('seconds',15)
-        if not isinstance(via,list) or not 2<=len(via)<=12:
+        via=row.get('via');seconds=row.get('seconds',15);order=row.get('order','ordered')
+        if order not in ('ordered','any'):raise mg.LevelRefused(['verify order is ordered or any'])
+        if not isinstance(via,list) or not 1<=len(via)<=60:
             raise mg.LevelRefused(['verify via needs 2..12 ordered stage pieces'])
-        via=[reference(v) for v in via];finish=reference(row.get('finish'))
-        finish_parts=[p for p in parts if p['name']==finish or mg.owner(p)==finish]
+        expanded=[]
+        for value in via:
+            if isinstance(value,str) and value.endswith(':*'):
+                prefix=value[:-2]+'_'
+                matches=[name for key,name in aliases.items() if re.fullmatch(re.escape(prefix)+r'\d+_\d+',key)]
+                if not matches:raise mg.LevelRefused(['No expanded pattern matches '+value])
+                expanded.extend(matches)
+            else:expanded.append(value)
+        via=expanded
+        if not 2<=len(via)<=(60 if order=='any' else 12):raise mg.LevelRefused(['verify needs 2..12 ordered stages or 2..60 unordered contacts'])
+        via=[reference(v) for v in via]
+        finish=row.get('finish')
+        if isinstance(finish,list):
+            if not 1<=len(finish)<=8:raise mg.LevelRefused(['finish takes one to eight real catchers'])
+            finish=[reference(v) for v in finish]
+            if len(set(finish))!=len(finish):raise mg.LevelRefused(['List each finish catcher once'])
+        else:finish=reference(finish)
+        finishes=finish if isinstance(finish,list) else [finish]
+        finish_parts=[p for p in parts if p['name'] in finishes or mg.owner(p) in finishes]
         if not finish_parts or any(not p['fixed'] for p in finish_parts):
             raise mg.LevelRefused(['verify finish needs a fixed catcher; moving mechanisms can be intermediate stages'])
         if marble in via or len(set(via))!=len(via):
             raise mg.LevelRefused(['verify stages must be different pieces, separate from the marble'])
         if type(seconds) not in (int,float) or not math.isfinite(seconds) or not 1<=seconds<=25:
             raise mg.LevelRefused(['verify seconds must be finite, from 1 to 25'])
-        checks.append(dict(kind='course',marble=marble,via=via,finish=finish,seconds=seconds,radius_m=ball['size_m'][0]/2))
+        minimum=row.get('minimum_contacts',len(via))
+        if type(minimum) is not int or not 2<=minimum<=len(via) or (order=='ordered' and minimum!=len(via)):
+            raise mg.LevelRefused(['minimum_contacts must be 2..the number of targets; ordered routes require every stage'])
+        check=dict(kind='course',marble=marble,via=via,finish=finish,seconds=seconds,radius_m=ball['size_m'][0]/2)
+        if order=='any':check.update(order=order,minimum_contacts=minimum)
+        checks.append(check)
     if len({c['seconds'] for c in checks})>1:
         raise mg.LevelRefused(['Use one shared rehearsal duration for all verify routes'])
     return checks
@@ -563,31 +661,39 @@ def measure_courses(checks,rehearsal,compiled):
         hits.sort(key=lambda h:h['t'])
         stages=[];after=0.
         for target in check['via']:
-            hit=next((h for h in hits if (h.get('other')==target or mg.owner({'name':h.get('other','')})==target) and after<=h['t']<=check['seconds']),None)
-            if not hit:break
-            after=hit['t'];stages.append(dict(piece=target,at_s=after))
+            hit=next((h for h in hits if (h.get('other')==target or mg.owner({'name':h.get('other','')})==target) and
+                (0 if check.get('order')=='any' else after)<=h['t']<=check['seconds']),None)
+            if not hit:
+                if check.get('order')=='any':continue
+                break
+            after=max(after,hit['t']);stages.append(dict(piece=target,at_s=hit['t']))
+        if check.get('order')=='any':stages.sort(key=lambda s:s['at_s'])
         distance=sum(math.dist(a[1:4],b[1:4]) for a,b in zip(points,points[1:]))
-        ended=mg.resting_on(dict(supports,parts=[p for p in supports['parts'] if p['fixed'] and p['name'] in rehearsal.get('intact_fixed',[])]),points[-1][1:4],check['radius_m']) if points else None
-        if ended and ended!=check['finish']:ended=mg.owner({'name':ended}) or ended
+        final_supports=rehearsal.get('supports_final',[p for p in supports['parts'] if p['fixed'] and p['name'] in rehearsal.get('intact_fixed',[])])
+        ended=mg.resting_on(dict(supports,parts=final_supports),points[-1][1:4],check['radius_m']) if points else None
+        finishes=check['finish'] if isinstance(check['finish'],list) else [check['finish']]
+        if ended and ended not in finishes:ended=mg.owner({'name':ended}) or ended
         tail=[p for p in points if p[0]>=points[-1][0]-.5] if points else []
         preceding=[p for p in points if p[0]<points[-1][0]-.5] if points else []
         if preceding:tail.insert(0,preceding[-1])
         settled=bool(tail and tail[-1][0]-tail[0][0]>=.4 and
             max(math.dist(p[1:4],tail[-1][1:4]) for p in tail)<=.02)
-        finish_part=next(p for p in compiled['parts'] if p['name']==check['finish'] or mg.owner(p)==check['finish'])
+        finish_parts=[p for p in compiled['parts'] if p['name'] in finishes or mg.owner(p) in finishes]
+        finish_part=min(finish_parts,key=lambda p:math.dist(p['at_m'],points[-1][1:4])) if points else finish_parts[0]
         remaining=[p for p in points if p[0]>=after]
         crossing=min(remaining,key=lambda p:abs(p[2]-finish_part['at_m'][1]-check['radius_m'])) if remaining else None
-        out.append(dict(kind='course',marble=check['marble'],stages=stages,expected=len(check['via']),
+        minimum=check.get('minimum_contacts',len(check['via']))
+        out.append(dict(kind='course',marble=check['marble'],stages=stages,expected=minimum,order=check.get('order','ordered'),
             distance_m=round(distance,3),finished_on=ended,settled=settled,
             end_at_m=points[-1][1:4] if points else None,
             at_finish_height=crossing,finish_at_m=finish_part['at_m'],
-            happened=len(stages)==len(check['via']) and ended==check['finish'] and distance>=.25 and settled))
+            happened=len(stages)>=minimum and ended in finishes and distance>=.25 and settled))
     return out
 
 
 def free_prompt(level):
     return BUILDER_CONTRACT + _free_layout_prompt(level) + '''
-OUTPUT REMINDER: exact top-level fields are reply, clear, add, edit, assemblies, verify, limitations.
+OUTPUT REMINDER: exact top-level fields are reply, clear, add, edit, patterns, assemblies, verify, limitations.
 The structured response schema uses knobs:[{"name":"length_m","value":1.2}] for tool settings;
 put the catalog's individual knob names and values in that list. Use an empty list for defaults.
 Use join:null unless joining an earlier piece. edit also uses a knobs list. Empty operations use [].
@@ -723,28 +829,33 @@ Answer with ONE JSON object: {{"reply": "one or two plain sentences about what y
 start from an empty table, "add": [{{"piece": ..., knob: value, ..., "join": {{"to": N, "port": P}}}}, ...]}}."""
 
 
-def respond_free(message, level, placements, call=None, rehearse=None):
+def respond_free(message, level, placements, call=None, rehearse=None,active_wall=None):
     """The free build from words: the model says which pieces and what each
     joins to; the server works out where they go (machine_game.join_to),
-    checks the build and rehearses it. Up to three proposals can correct
+    checks the build and rehearses it. Up to five proposals can correct
     rejected layouts, wiring or measured assembly failures before applying."""
     import machine_game as mg
     if not isinstance(message, str) or not message.strip():
         raise ValueError('Say what to build')
     if len(message) > MAX_MESSAGE:
         raise ValueError(f'Keep a request under {MAX_MESSAGE} characters')
-    course_requested=bool(re.search(r'\b(course|rube|zig.?zag)\b',message,re.I))
+    field_requested=bool(re.search(r'\b(plinko|peg.?board|galton)\b',message,re.I))
+    course_requested=field_requested or bool(re.search(r'\b(course|rube|zig.?zag)\b',message,re.I))
     if call is None:
         api_key, model = configuration()
         if not api_key:
             raise ChatUnavailable('No model is configured on this server (OPENAI_API_KEY)')
-        schema=free_response_schema(level,course_requested)
+        schema=free_response_schema(level,course_requested and not field_requested)
         call = lambda messages: _call(api_key, model, messages, want='reply',schema=schema)
     tray = {t['piece']: t for t in level['tray'] if not t.get('attach') or t['piece']=='rope'}
     context=free_context(level,placements)
-    messages = [{'role': 'system', 'content': free_prompt(level)},
-                {'role': 'user', 'content': json.dumps({'request': message, 'on_the_table': context})}]
-    scratch=[dict(p) for p in placements];scratch_aliases={}
+    environment=free_environment(level,placements,active_wall)
+    selected=environment.get('active_wall');focus=''
+    if selected:
+        focus='\nSELECTED MOUNTING FACE FOR THIS REQUEST: '+json.dumps(selected)+'.\nExact coordinate limits: '+json.dumps(environment['wall_coordinates'])+'.\nUse these actual coordinates, not a wall centered at zero.\nRemaining wall_peg inventory: '+str(environment['remaining_counts'].get('wall_peg',0))+'. Remaining native part slots: '+str(environment['remaining_part_slots'])+'. Each peg uses its peg, bracket and mounting bolts. Leave room for the catchers.\n'
+    messages = [{'role': 'system', 'content': free_prompt(level)+focus},
+                {'role': 'user', 'content': json.dumps({'request': message, 'on_the_table': context,'environment':environment})}]
+    scratch=[dict(p) for p in placements];scratch_aliases={};pattern_reports={};assembly_checks=[]
 
     def fit(p):
         out = {'piece': p['piece']}
@@ -772,14 +883,17 @@ def respond_free(message, level, placements, call=None, rehearse=None):
     def built(answer):
         nonlocal scratch,scratch_aliases
         answer=normalize_build_answer(answer)
-        unknown=set(answer)-{'reply','clear','assemblies','edit','add','verify','limitations'}
+        unknown=set(answer)-{'reply','clear','assemblies','edit','add','patterns','verify','limitations'}
         if unknown:raise mg.LevelRefused(['Use only the documented build operations; unsupported fields: '+', '.join(sorted(unknown))])
         limitations=answer.get('limitations',[])
         if not isinstance(limitations,list) or len(limitations)>4 or any(not isinstance(s,str) or len(s)>500 for s in limitations):
             raise mg.LevelRefused(['limitations must list at most four short explanations of unavailable requested features'])
         if not isinstance(answer.get('clear',False),bool):
             raise mg.LevelRefused(['clear must be true or false'])
+        if answer.get('clear') and placements and not re.search(r'\b(clear (?:the )?(?:wall|table|design|machine|everything|all)|remove everything|start over|from scratch|blank|replace|new (?:machine|design|course))\b',message,re.I):
+            raise mg.LevelRefused(['This request adds to the existing design. Keep the original pieces; use edit to repair or move them.'])
         placed = [] if answer.get('clear') else [dict(p) for p in scratch]
+        if answer.get('clear'):pattern_reports.clear()
         edits=answer.get('edit') or [];assemblies=answer.get('assemblies') or [];add=answer.get('add') or []
         if not all(isinstance(rows,list) for rows in (edits,assemblies,add)) or len(edits)>60 or len(add)>60 or len(assemblies)>3:
             raise mg.LevelRefused(['Use lists: at most 60 edits/additions and 3 assemblies'])
@@ -798,8 +912,17 @@ def respond_free(message, level, placements, call=None, rehearse=None):
             if set(knobs)-set(tray[row['piece']]['knobs']):
                 raise mg.LevelRefused(['Only the existing piece\'s declared knobs may be edited'])
             placed[number-1]=fit(dict(row,**knobs))
-        checks=[]
+        checks=[] if answer.get('clear') else copy.deepcopy(assembly_checks)
         for assembly in assemblies:
+            if isinstance(assembly,dict) and assembly.get('kind')=='peg_field':
+                if not level.get('wall_mode') or set(assembly)-{'kind','wall','rows','columns'}:
+                    raise mg.LevelRefused(['peg_field takes a wall id and optional rows/columns on a wall design'])
+                import sandbox_wall
+                try:rows,check,report=sandbox_wall.peg_field_assembly(level['machine'],placed,
+                    assembly.get('wall',environment['active_wall']['id']),assembly.get('rows',4),assembly.get('columns',5))
+                except ValueError as exc:raise mg.LevelRefused([str(exc)]) from None
+                placed+=rows;checks.append(check);pattern_reports[report['id']]=report
+                continue
             if not level.get('wall_mode') or not isinstance(assembly,dict) or assembly.get('kind')!='marble_lift':
                 raise mg.LevelRefused(['The available assembly is marble_lift on the wall workshop'])
             if set(assembly)-{'kind','x_m','height_m'}:
@@ -825,6 +948,69 @@ def respond_free(message, level, placements, call=None, rehearse=None):
                     'move existing pieces or choose another axle position.']+refusal.problems[:3])
         mine = len(placed)
         aliases={} if answer.get('clear') else dict(scratch_aliases)
+        patterns=answer.get('patterns') or []
+        if not isinstance(patterns,list) or len(patterns)>3:raise mg.LevelRefused(['Use at most three repeated patterns'])
+        # Patterns are editing operations only. Expand normal catalog pieces
+        # and test actual geometry before adding a slot to the transaction.
+        reports=[];candidate_count=len(add)
+        for pattern in patterns:
+            allowed={'id','piece','set','rows','columns','step_x_m','step_y_m','stagger_m','region','avoid_occupied'}
+            if not isinstance(pattern,dict) or set(pattern)-allowed or pattern.get('piece') not in tray:
+                raise mg.LevelRefused(['A pattern needs an existing wall-mounted catalog piece and its grid settings'])
+            kind=pattern['piece'];catalog=tray[kind]
+            if not level.get('wall_mode') or not catalog.get('wall_mounted',level['wall_mode']['version']==1) or not {'x_m','height_m'}<=catalog['knobs'].keys():
+                raise mg.LevelRefused(['Repeated patterns currently use wall-mounted catalog pieces'])
+            prefix=pattern.get('id');knobs=pattern.get('set',{})
+            if not isinstance(prefix,str) or not re.fullmatch(r'[a-zA-Z][\w-]{0,25}',prefix) or any(k.startswith(prefix+'_') for k in aliases):
+                raise mg.LevelRefused(['Give each new pattern a different short id; edit previously expanded pieces instead of adding it twice'])
+            if not isinstance(knobs,dict) or set(knobs)-set(catalog['knobs']):raise mg.LevelRefused(['A pattern uses only its piece\'s declared knobs'])
+            rows,cols=pattern.get('rows'),pattern.get('columns')
+            if any(type(n) is not int or n<1 for n in (rows,cols)):
+                raise mg.LevelRefused(['A pattern needs positive rows/columns, at most 60 total candidate additions'])
+            candidate_count+=rows*cols
+            if candidate_count>60:raise mg.LevelRefused(['Use at most 60 total candidate additions across all patterns and add'])
+            dx,dy,stagger=(pattern.get(k,0) for k in ('step_x_m','step_y_m','stagger_m'))
+            if any(type(v) not in (int,float) or not math.isfinite(v) for v in (dx,dy,stagger)):
+                raise mg.LevelRefused(['Use finite pattern spacing; columns need a positive step and rows a nonzero height step'])
+            x=knobs.get('x_m',catalog['knobs']['x_m']['default']);y=knobs.get('height_m',catalog['knobs']['height_m']['default'])
+            if 'region' in pattern:
+                region=pattern['region']
+                if not isinstance(region,list) or len(region)!=4 or any(type(v) not in (int,float) or not math.isfinite(v) or not 0<=v<=1 for v in region) or region[0]>region[1] or region[2]>region[3]:
+                    raise mg.LevelRefused(['region needs [left,right,bottom,top] wall fractions between 0 and 1'])
+                import sandbox_wall
+                panel=next((p for p in sandbox_wall.panels(level['machine']) if p['id']==knobs.get('wall',environment['active_wall']['id'])),None)
+                if panel is None:raise mg.LevelRefused(['Choose an existing wall for the repeated pattern'])
+                left=panel['x_m']+(region[0]-.5)*panel['width_m'];right=panel['x_m']+(region[1]-.5)*panel['width_m']
+                top=region[3]*panel['height_m'];bottom=region[2]*panel['height_m']
+                x=left if cols>1 else (left+right)/2;y=top if rows>1 else (top+bottom)/2
+                dx=(right-left-(stagger if rows>1 else 0))/(cols-1) if cols>1 else 0
+                dy=(bottom-top)/(rows-1) if rows>1 else 0
+            if (cols>1 and dx<=0) or (rows>1 and dy==0):raise mg.LevelRefused(['The pattern needs positive column spacing and nonzero row spacing'])
+            if type(pattern.get('avoid_occupied',False)) is not bool:raise mg.LevelRefused(['avoid_occupied must be true or false'])
+            # Existing collisions must be repaired explicitly, not hidden by
+            # reporting every new pattern slot as occupied.
+            mg.compose(level,placed)
+            report=dict(id=prefix,requested=rows*cols,added=0,omitted=[])
+            for r in range(rows):
+                for c in range(cols):
+                    values=dict(knobs)
+                    if 'wall' in catalog['knobs']:values.setdefault('wall',environment['active_wall']['id'])
+                    values['x_m']=x+c*dx+(stagger if r%2 else 0)
+                    values['height_m']=y+r*dy
+                    row=dict(piece=kind,**values);ident=f'{prefix}_{r+1}_{c+1}'
+                    # Validate knob/count errors separately: only geometric
+                    # obstructions may omit an explicitly requested slot.
+                    mg.check_placements(level,placed+[row])
+                    try:mg.compose(level,placed+[row])
+                    except (mg.LevelRefused,mw.MachineRefused) as error:
+                        if not pattern.get('avoid_occupied') or not all(' goes ' in p or 'extends beyond the wall' in p for p in error.problems):raise
+                        report['omitted'].append(dict(id=ident,problems=error.problems[:2]));continue
+                    placed.append(row);aliases[ident]=f'your {kind} {len(placed)}';report['added']+=1
+            if not report['added']:raise mg.LevelRefused(['The repeated pattern has no clear slots; choose a smaller region or edit its spacing'])
+            reports.append(report)
+        # Direct additions follow the expanded grid. Addition IDs and final
+        # numbering remain authoritative for verification and wire references.
+        mine=len(placed)
         planned=list(placed)
         for number,p in enumerate(add,mine+1):
             if not isinstance(p, dict) or p.get('piece') not in tray:
@@ -876,6 +1062,8 @@ def respond_free(message, level, placements, call=None, rehearse=None):
         valid,_=mg.check_placements(level,placed)
         scratch=[{k:v for k,v in p.items() if k!='cost'} for p in valid]
         scratch_aliases=dict(aliases)
+        assembly_checks[:]=copy.deepcopy(checks)
+        pattern_reports.update({r['id']:r for r in reports})
         try:
             spec, checked, _ = mg.compose(level, placed)
         except (mg.LevelRefused,mw.MachineRefused) as refused:
@@ -883,23 +1071,37 @@ def respond_free(message, level, placements, call=None, rehearse=None):
             except (ValueError,KeyError,TypeError):pass
             raise
         compiled=mw.compile_spec(spec)
+        for check in checks:
+            ball=next((p for p in compiled['parts'] if p['name']==check['marble'] and p['shape']=='sphere' and not p['fixed']),None)
+            if not ball:raise mg.LevelRefused(['Keep the assembly marble as a freely moving sphere'])
+            if check.get('kind')=='course':check['radius_m']=ball['size_m'][0]/2
+            else:check['initial_height_m']=ball['at_m'][1]
         checks+=course_checks(answer.get('verify',[]),checked,compiled,aliases)
         return [{k: v for k, v in p.items() if k != 'cost'} for p in checked], compiled, checks
     answer, usage = call(messages)
     answer = _placements_answer(answer)
     rehearsal=None;required_checks=0;required_routes=int(course_requested);required_stages=0;goal_contract=None
-    for attempt in range(3):
+    # Geometry corrections should not consume every chance before the first
+    # native rehearsal. All attempts remain one unapplied transaction.
+    for attempt in range(BUILD_ATTEMPTS):
         try:
             placed, compiled, checks = built(answer)
             required_checks=max(required_checks,len(checks))
             if len(checks)<required_checks:
                 raise mg.LevelRefused(['Keep the requested assembly and route checks while correcting the layout'])
             courses=[c for c in checks if c.get('kind')=='course']
+            if field_requested and not any(c.get('order')=='any' and c.get('minimum_contacts',0)>=3 for c in courses):
+                raise mg.LevelRefused(['Verify the Plinko marble hits at least three different pegs in any order and settles in a real catcher'])
+            if field_requested:
+                catchers=[f'your {p["piece"]} {i+1}' for i,p in enumerate(placed) if p['piece']=='wall_cup' and
+                    p.get('wall','workshop backing')==environment['active_wall']['id']]
+                if len(catchers)>1 and any(not isinstance(c['finish'],list) or not set(catchers)<=set(c['finish']) for c in courses):
+                    raise mg.LevelRefused(['The Plinko request can finish in any prepared cup. Before rehearsal, list all its catchers in verify.finish: '+json.dumps(catchers)])
             if len(courses)<required_routes or sum(len(c['via']) for c in courses)<required_stages:
                 raise mg.LevelRefused(['Keep all route checks and stages while repairing the course'])
             required_routes=max(required_routes,len(courses))
             required_stages=max(required_stages,sum(len(c['via']) for c in courses))
-            proposed_goals=[{k:c[k] for k in ('marble','via','finish','seconds')} for c in courses]
+            proposed_goals=[{k:c[k] for k in ('marble','via','finish','seconds','order','minimum_contacts') if k in c} for c in courses]
             if goal_contract is None and courses:goal_contract=copy.deepcopy(proposed_goals)
             elif goal_contract is not None and proposed_goals!=goal_contract:
                 raise mg.LevelRefused(['Keep the original route targets, order and deadline; repair the piece settings instead. Required verify: '+json.dumps(goal_contract)])
@@ -930,18 +1132,19 @@ def respond_free(message, level, placements, call=None, rehearse=None):
                     world_time_s=r.get('world_time_s'),wall_s=r.get('wall_s'),verified_runs=1+len(variations),variations=variations)
             break
         except (mg.LevelRefused, mw.MachineRefused) as e:
-            if attempt == 2:
+            if attempt == BUILD_ATTEMPTS-1:
                 raise
             # Again, with what the server refused.
             messages += [{'role': 'assistant', 'content': json.dumps(answer)},
                          {'role': 'user', 'content': json.dumps({'refused': e.problems[:6],
                             'on_the_table':free_context(level,scratch),
                             'original_on_the_table':context,
+                            'environment':free_environment(level,scratch,active_wall),
                             'existing_connections':getattr(e,'connection_context',context),
                             'ask': 'Fix the proposed build, including every connection. Keep the original request '
                                    'and the player\'s original pieces. on_the_table is the current staged proposal, not yet '
-                                   'applied to the player. Edit those numbered pieces to repair it, or clear and provide a '
-                                   'complete replacement. Do not add duplicates. Addition ids from this proposal still '
+                                   'applied to the player. Edit those numbered pieces to repair it. Use clear only if the '
+                                   'original request asked to replace the design. Do not add duplicates or repeat expanded patterns. Addition ids from this proposal still '
                                    'resolve in verify and wiring. Assemblies are already expanded into these editable pieces; '
                                    'edit them instead of adding the same assembly again. Keep every route stage. '
                                    'Do not claim success without engine evidence.'})}]
@@ -949,7 +1152,7 @@ def respond_free(message, level, placements, call=None, rehearse=None):
             answer = _placements_answer(answer)
             usage = _added(usage, more)
     out = {'ok': True, 'reply': answer['reply'], 'placements': placed, 'usage': usage,
-           'limitations':answer.get('limitations',[])}
+           'limitations':answer.get('limitations',[]),'patterns':list(pattern_reports.values())}
     if rehearsal is not None:out['rehearsal']=rehearsal
     return out
 

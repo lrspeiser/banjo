@@ -1,5 +1,13 @@
 # Physics for the machine: what there is, what to add
 
+October 18 peg-field builder: repeated patterns and the reusable Plinko
+assembly declare existing pegs, tracks, cups and a falling marble. Their
+guides are real vertical tracks; no planar motion lock or scripted bounce
+was added. Native final-support observations now retain compound COM/local
+shape origins, including cups held by fix joints. This corrects verification,
+not material/contact laws or mounting strength. See the contact/nudge and
+glass/oak/iron qualification at the start of [machine-game.md](machine-game.md).
+
 October 10, 2026. A list of the physics a Rube Goldberg machine on `/machine` should be able to use, so that a person (or the chat's language model) can build with it. For each: whether the engine (LiveWorld) already calculates it, whether the machine's declaration (`banjo.machine.v1`) lets you use it yet, and what is planned.
 
 **In the machine now** means a person or the chat can put it in a machine today. **In the engine** means LiveWorld calculates it, but the machine cannot ask for it yet. **New physics** means it has to be built.

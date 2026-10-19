@@ -981,7 +981,7 @@ class FreeBuild(unittest.TestCase):
                 count=[]
                 def call(messages):count.append(1);return dict(reply='Proposal',add=[bad]),{}
                 with self.assertRaises(mg.LevelRefused):mc.respond_free('Build it',self.FREE,[],call=call)
-                self.assertEqual(len(count),3)
+                self.assertEqual(len(count),mc.BUILD_ATTEMPTS)
 
     def test_a_failed_course_cannot_pass_by_removing_its_route_checks(self):
         answer=self.course_proposal();calls=[]
@@ -991,7 +991,7 @@ class FreeBuild(unittest.TestCase):
         def run(compiled,**kw):return dict(paths={},hits=[],events=[],error=None)
         with self.assertRaisesRegex(mg.LevelRefused,'Keep'):
             mc.respond_free('Build a marble course',self.FREE,[],call=call,rehearse=run)
-        self.assertEqual(len(calls),3)
+        self.assertEqual(len(calls),mc.BUILD_ATTEMPTS)
         self.assertIn('could not verify',calls[1][-1]['content'])
 
     def test_bad_route_metadata_can_be_corrected_without_preserving_invalid_stages(self):
@@ -1009,7 +1009,7 @@ class FreeBuild(unittest.TestCase):
         with self.assertRaisesRegex(mg.LevelRefused,'original route targets'):
             mc.respond_free('Build a course',self.FREE,[],call=call,
                 rehearse=lambda compiled,**kw:dict(error='test-only physical failure',paths={},hits=[],events=[]))
-        self.assertEqual(len(calls),3)
+        self.assertEqual(len(calls),mc.BUILD_ATTEMPTS)
 
     def test_builder_returns_unavailable_feature_explanations_with_its_answer(self):
         answer=dict(self.course_proposal(),limitations=['Continuous bucket rotation is not available in the single-pass lift.'])

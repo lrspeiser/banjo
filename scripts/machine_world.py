@@ -133,6 +133,15 @@ def turn_of(m):
     return [round(math.degrees(a), 6) + 0.0 for a in (rx, ry, rz)]
 
 
+def turn_of_quaternion(q):
+    """The reported native body's actual orientation, in declaration axes."""
+    norm=math.sqrt(sum(v*v for v in q))
+    w,x,y,z=(v/norm for v in q)
+    return turn_of([[1-2*(y*y+z*z),2*(x*y-z*w),2*(x*z+y*w)],
+        [2*(x*y+z*w),1-2*(x*x+z*z),2*(y*z-x*w)],
+        [2*(x*z-y*w),2*(y*z+x*w),1-2*(x*x+y*y)]])
+
+
 def heading(yaw_deg, pitch_deg, roll_deg):
     """A thing turned as a whole, the way a person turns it in their hands:
     about the vertical by yaw (a positive turn takes +x toward -z), then its
@@ -3555,6 +3564,9 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
         shape_keys=('revision','shape','dimensions_m','position_m','orientation_wxyz','rigid_parts_local','cells_local_m')
         fixed_starts={name:copy.deepcopy({k:body.get(k) for k in shape_keys})
             for name,body in session.bodies.items() if body.get('anchored')}
+        geometry_keys=tuple(k for k in shape_keys if k not in ('position_m','orientation_wxyz'))
+        declared_supports={p['name']:(p,copy.deepcopy({k:session.bodies[p['name']].get(k) for k in geometry_keys}))
+            for p in compiled['parts'] if p['fixed'] and p['name'] in session.bodies}
     if flows:
         session.flow_trail = []
         session.flow_interval = max(.1, seconds/180)
@@ -3616,6 +3628,22 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                 out['intact_fixed']=[name for name,initial in fixed_starts.items()
                     if name in session.bodies and session.bodies[name].get('anchored') and
                     all(initial.get(k)==session.bodies[name].get(k) for k in shape_keys)]
+                # A compound mounted with real fix joints is not reported as
+                # anchored. Probe its observed final pose, not an imaginary
+                # fixed body at the declaration pose. Exclude changed shapes.
+                out['supports_final']=[]
+                for name,(part,initial) in declared_supports.items():
+                    body=session.bodies.get(name)
+                    if body and all(initial.get(k)==body.get(k) for k in geometry_keys):
+                        observed=dict(part,at_m=list(body['position_m']),
+                            turn_deg=turn_of_quaternion(body.get('orientation_wxyz',[1,0,0,0])))
+                        if part['shape']=='compound':
+                            # Precise bodies report their centre of mass;
+                            # their native local parts use that same origin.
+                            observed['parts']=[dict(shape=p['shape'],size_m=p['dimensions_m'],
+                                at_m=p['center_local_m'],turn_deg=turn_of_quaternion(p.get('rotation_wxyz',[1,0,0,0])))
+                                for p in body.get('rigid_parts_local',[])]
+                        out['supports_final'].append(observed)
                 out['hits'] = list(session.trail_hits)
             if flows:
                 session._capture_flows(final=True)

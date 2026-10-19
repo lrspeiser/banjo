@@ -4126,7 +4126,7 @@ function positionPieceEditor() {
   const rect=view.getBoundingClientRect();
   // The toolbar owns its position; readouts yield to it afterwards. Letting
   // both avoid each other's last position makes the buttons oscillate.
-  const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history')]
+  const obstacles=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#wall-camera-view')]
     .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
   const at=pieceToolbarPosition(rect,{left:box.x0,right:box.x1,top:box.y0,bottom:box.y1},editor.getBoundingClientRect(),
     [...obstacles,...sceneControlObstacles(rect)],{edgeOnly:true});
@@ -7899,7 +7899,7 @@ $('free-example').addEventListener('click', () => {
 // to, the server works out where they go and rehearses it once in the engine.
 function builderCheckSummary(checks,runs=1) {
   return checks.map(c=>c.kind==='course'
-    ? `The marble passed ${c.stages.length} stages in order, travelled ${c.distance_m.toFixed(2)} m and finished on ${c.finished_on.replace(/^your /,'').replaceAll('_',' ')}.`
+    ? `The marble ${c.order==='any'?`hit ${c.stages.length} different deflectors`:`passed ${c.stages.length} stages in order`}, travelled ${c.distance_m.toFixed(2)} m and finished on ${c.finished_on.replace(/^your /,'').replaceAll('_',' ')}.`
     : `The marble rose ${Math.round(c.lifted_m*100)} cm and dropped onto the raised chute at ${describeTime(c.released_at_s)}.`).join(' ')+(runs>1?` Passed ${runs} physics trials.`:'')+' Choose Run to watch.';
 }
 async function askFree() {
@@ -7911,12 +7911,13 @@ async function askFree() {
   const sourceSetup=currentSetupKey(),sourceEdit=JSON.stringify(ghost?.p||null);
   say('you', message);
   try {
-    const r = await api({op: 'chat', level: 'free', ...sandboxRequest(), placements, message});
+    const r = await api({op: 'chat', level: 'free', ...sandboxRequest(), placements, message,...(wallDesign()?{active_wall:activeWallId}:{})});
     if(level!==sourceLevel||activeDesign?.id!==sourceDesign)return;
     if(currentSetupKey()!==sourceSetup||JSON.stringify(ghost?.p||null)!==sourceEdit){
       say('model','You changed the design while the builder was working. Your edits were kept; ask again to build from this setup.');return;
     }
     say('model', r.reply);
+    for(const pattern of r.patterns||[])say('model',`Placed ${pattern.added} repeated pieces${pattern.omitted.length?`; left ${pattern.omitted.length} occupied slots clear`:''}. Each piece can be edited separately.`);
     for(const note of r.limitations||[])say('model',note);
     endGhost(); remember();
     placements = r.placements.map(p => ({...p}));

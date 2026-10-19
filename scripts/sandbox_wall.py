@@ -464,6 +464,54 @@ def world_lift_assembly(x=0,y=1.6,offset=0):
     return rows,rename(check)
 
 
+def peg_field_assembly(base_spec,placements,panel_id=None,rows=4,columns=5):
+    """Lay out existing tools on one mounting face; physics is rehearsed later."""
+    import machine_game as mg
+    if base_spec.get('build_surface',{}).get('version')!=2:
+        raise ValueError('Open the wall into the 3D world before adding a peg field.')
+    if type(rows) is not int or type(columns) is not int or not 3<=rows<=6 or not 3<=columns<=7:
+        raise ValueError('A peg field uses 3..6 rows and 3..7 columns.')
+    board=next((p for p in panels(base_spec) if p['id']==(panel_id or FOUNDATION[0])),None)
+    if not board:raise ValueError('Choose an existing wall for the peg field.')
+    width,height=board['width_m'],board['height_m']
+    if width<2 or height<2:raise ValueError('A peg field needs a wall at least 2 m wide and 2 m high.')
+    level=mg.requested_level(dict(level='free',base=base_spec));before=len(placements);placed=copy.deepcopy(placements)
+    mg.compose(level,placed)
+    omitted=[];pegs=[];cups=[]
+    def add(piece,**knobs):
+        row=dict(piece=piece,wall=board['id'],**knobs)
+        mg.compose(level,placed+[row]);placed.append(row)
+        return f'your {piece} {len(placed)}'
+    # Continuous visible side barriers are vertical versions of the ordinary
+    # mounted track. They add contact geometry, never a planar motion rule.
+    bottom=.7;top=height-.1;segments=math.ceil((top-bottom)/8);length=(top-bottom)/segments
+    for x in (board['x_m']-width/2+.12,board['x_m']+width/2-.12):
+        for i in range(segments):
+            add('wall_track',x_m=x,height_m=bottom+(i+.5)*length,length_m=length,angle_deg=90,end_stop='open')
+    bins=math.ceil(width/1.2);bin_width=width/bins-.02
+    for i in range(bins):
+        cups.append(add('wall_cup',x_m=board['x_m']-width/2+(i+.5)*width/bins,height_m=.3,width_m=bin_width))
+    step=(width-.8)/(columns-.5);left=board['x_m']-width/2+.4
+    for r in range(rows):
+        for c in range(columns):
+            x=left+(c+(r%2)*.5)*step;y=height*(.83-r*.49/(rows-1))
+            row=dict(piece='wall_peg',wall=board['id'],x_m=x,height_m=y,diameter_m=.12)
+            try:mg.compose(level,placed+[row])
+            except (mg.LevelRefused,mw.MachineRefused) as exc:
+                if not all(' goes ' in p or 'extends beyond the wall' in p for p in exc.problems):raise
+                omitted.append(dict(x_m=x,height_m=y,problems=exc.problems[:2]));continue
+            placed.append(row);pegs.append(f'your wall_peg {len(placed)}')
+    pegs += [f'your wall_peg {i+1}' for i,p in enumerate(placements) if p['piece']=='wall_peg' and p.get('wall',FOUNDATION[0])==board['id']]
+    if len(pegs)<3:raise ValueError('The wall needs room for at least three separate pegs.')
+    for offset in (-.18,.18,.07,-.07,.4,-.4):
+        try:ball=add('wall_marble',x_m=board['x_m']+offset,height_m=height-.17,diameter_m=.08,material='glass')
+        except (mg.LevelRefused,mw.MachineRefused):continue
+        break
+    else:raise ValueError('Leave a clear marble starting point near the top of the wall.')
+    check=dict(kind='course',marble=ball,via=pegs,finish=cups,seconds=15,radius_m=.04,order='any',minimum_contacts=3)
+    return placed[before:],check,dict(id='peg_field',requested=rows*columns,added=len(pegs)-sum(p['piece']=='wall_peg' and p.get('wall',FOUNDATION[0])==board['id'] for p in placements),omitted=omitted)
+
+
 def tray():
     names=dict(wall_track='Wall track',wall_funnel='Wall funnel',wall_cup='Catching cup',
         wall_peg='Deflector peg',wall_lever='Wall seesaw',marble='Marble',gear='Wall gear',
@@ -471,7 +519,7 @@ def tray():
         motor='Powered wall gear',battery='Battery',switch='Switch',bulb='Light bulb',
         wire='Wire',resistor='Resistor',capacitor='Capacitor')
     knobs=dict(
-        wall_track=dict(length_m=sm.number('Track length (m)',.3,2,1.4),angle_deg=sm.number('Slope (°)',-70,70,-16,1),
+        wall_track=dict(length_m=sm.number('Track length (m)',.3,8,1.4),angle_deg=sm.number('Slope (°)',-90,90,-16,1),
             end_stop=sm.choice('High-end stop',['closed','open'],'closed')),
         wall_funnel=dict(width_m=sm.number('Funnel width (m)',.3,1.4,.7)),
         wall_cup=dict(width_m=sm.number('Cup width (m)',.2,1.2,.6)),

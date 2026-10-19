@@ -116,7 +116,7 @@ class Wall(unittest.TestCase):
         def engine(compiled,**kwargs):return dict(error='test-only failed native trial',events=[])
         with self.assertRaisesRegex(mg.LevelRefused,'failed native trial'):
             machine_chat.respond_free('Lift',level,before,call=call,rehearse=engine)
-        self.assertEqual(len(calls),3)
+        self.assertEqual(len(calls),machine_chat.BUILD_ATTEMPTS)
         self.assertEqual(before,[])
 
     def test_lift_catches_raises_and_unloads_glass_oak_iron_with_nudges(self):
@@ -341,6 +341,148 @@ class WallWorld(unittest.TestCase):
         self.assertEqual(check['marble'],'your wall_marble 7')
         result=machine_chat.respond_free('A lift',self.level,[],call=lambda messages:(dict(reply='Lift',assemblies=[dict(kind='marble_lift')]),{}))
         self.assertEqual(result['placements'][1]['piece'],'wall_marble')
+
+
+class WallPatterns(unittest.TestCase):
+    def setUp(self):
+        added=wall.edit_panel(wall.world_base(),[],None,add=True)
+        self.base=wall.edit_panel(added['base'],[],added['wall']['id'],dict(yaw_deg=90,z_m=2))['base']
+        self.level=mg.requested_level(dict(level='free',base=self.base))
+        self.panel=wall.panels(self.base)[1]
+
+    def pattern(self,**changes):
+        return dict(id='pins',piece='wall_peg',set=dict(wall=self.panel['id'],
+            x_m=self.panel['x_m']-.7,height_m=2.4,diameter_m=.16),
+            rows=3,columns=3,step_x_m=.5,step_y_m=-.5,stagger_m=.25,
+            avoid_occupied=True,**changes)
+
+    def test_repeated_tools_are_individual_mounted_pieces_and_skip_real_obstructions(self):
+        before=[dict(piece='wall_peg',x_m=self.panel['x_m']-.7,height_m=2.4,wall=self.panel['id'])]
+        kept=copy.deepcopy(before)
+        answer=dict(reply='Added staggered pegs',patterns=[self.pattern()])
+        result=machine_chat.respond_free('Add rows of pegs',self.level,before,
+            active_wall=self.panel['id'],call=lambda messages:(answer,{}))
+        self.assertEqual(before,kept)
+        self.assertEqual(result['placements'][0]['x_m'],before[0]['x_m'])
+        self.assertEqual(len(result['placements']),9)
+        self.assertEqual(result['patterns'][0]['added'],8)
+        self.assertEqual(len(result['patterns'][0]['omitted']),1)
+        self.assertTrue(all(p['piece']=='wall_peg' and p['wall']==self.panel['id'] for p in result['placements']))
+        compiled=mw.compile_spec(mg.compose(self.level,result['placements'])[0])
+        self.assertEqual(mg.clashes_of(compiled),[])
+        self.assertAlmostEqual(next(p for p in compiled['parts'] if p['name']=='your wall_peg 2 peg')['at_m'][0],
+            self.panel['x_m']+.3,places=6,msg='the complete grid uses the rotated mounting plane')
+
+    def test_existing_collisions_and_selected_wall_reach_the_model_before_it_plans(self):
+        bad=[dict(piece='track',x_m=0,z_m=0,top_height_m=1,run_m=1,drop_m=.2,yaw_deg=-90)]
+        seen=[]
+        def call(messages):
+            seen.append(json.loads(messages[1]['content']))
+            return dict(reply='Moved the intersecting track in front',edit=[dict(number=1,set=dict(z_m=1))]),{}
+        result=machine_chat.respond_free('Repair the track',self.level,bad,
+            active_wall=self.panel['id'],call=call)
+        env=seen[0]['environment']
+        self.assertTrue(any('workshop backing' in p for p in env['existing_problems']))
+        self.assertEqual(env['active_wall']['id'],self.panel['id'])
+        self.assertEqual(len(result['placements']),1)
+        self.assertEqual(result['placements'][0]['z_m'],1)
+        with self.assertRaises(mg.LevelRefused):machine_chat.free_environment(self.level,[],'unknown wall')
+
+    def test_pattern_validates_controls_and_spacing_instead_of_omitting_bad_settings(self):
+        for changes in (dict(rows=0),dict(rows=9,columns=9),dict(step_x_m=0),dict(step_y_m=float('nan'))):
+            pattern=self.pattern();pattern.update(changes)
+            with self.subTest(changes=changes),self.assertRaises(mg.LevelRefused):
+                machine_chat.respond_free('Repeat pegs',self.level,[],active_wall=self.panel['id'],
+                    call=lambda messages:(dict(reply='Grid',patterns=[pattern]),{}))
+
+    def test_repetition_is_not_specific_to_pegs_and_never_clears_unrelated_work(self):
+        pattern=self.pattern();pattern.update(piece='wall_cup',rows=1,columns=3,step_x_m=.8)
+        pattern['set']=dict(wall=self.panel['id'],x_m=self.panel['x_m']-.8,height_m=.3,width_m=.6)
+        result=machine_chat.respond_free('Add a row of cups',self.level,[],
+            active_wall=self.panel['id'],call=lambda messages:(dict(reply='Cups',patterns=[pattern]),{}))
+        self.assertEqual([p['piece'] for p in result['placements']],['wall_cup']*3)
+        before=[dict(piece='wall_peg',x_m=0,height_m=2)]
+        with self.assertRaisesRegex(mg.LevelRefused,'Keep the original pieces'):
+            machine_chat.respond_free('Cover this wall with pegs',self.level,before,
+                call=lambda messages:(dict(reply='Cleared',clear=True),{}))
+
+    def test_region_fits_the_selected_moved_wall_and_keeps_each_axis_independent(self):
+        pattern=self.pattern();pattern.update(region=[.1,.9,.35,.85],stagger_m=.2)
+        pattern['set']=dict(wall=self.panel['id'],diameter_m=.12)
+        result=machine_chat.respond_free('Fill this wall',self.level,[],active_wall=self.panel['id'],
+            call=lambda messages:(dict(reply='Grid',patterns=[pattern]),{}))
+        ps=result['placements'];self.assertEqual(len(ps),9)
+        self.assertAlmostEqual(min(p['x_m'] for p in ps),self.panel['x_m']-1.2)
+        self.assertAlmostEqual(max(p['x_m'] for p in ps),self.panel['x_m']+1.2)
+        self.assertAlmostEqual(max(p['height_m'] for p in ps),2.55)
+        self.assertAlmostEqual(min(p['height_m'] for p in ps),1.05)
+        for region in ([0,1,0],[-.1,1,0,1],[1,0,0,1],[0,1,float('nan'),1]):
+            bad=dict(pattern,region=region)
+            with self.subTest(region=region),self.assertRaises(mg.LevelRefused):
+                machine_chat.respond_free('Fill wall',self.level,[],call=lambda messages:(dict(reply='Grid',patterns=[bad]),{}))
+
+    def test_any_order_observes_distinct_contacts_and_real_final_catcher_pose(self):
+        ps=[dict(piece='wall_marble',x_m=0,height_m=2),
+            *[dict(piece='wall_peg',x_m=x,height_m=1.5) for x in (-.5,0,.5)],
+            *[dict(piece='wall_cup',x_m=x,height_m=.3,width_m=.6) for x in (-.7,.7)]]
+        compiled=mw.compile_spec(mg.compose(self.level,ps)[0])
+        check=machine_chat.course_checks([dict(marble=1,via=[2,3,4],finish=[5,6],seconds=4,
+            order='any',minimum_contacts=3)],ps,compiled,{})
+        # A unit-level native receipt exercises observation logic only.
+        # The separate native qualification verifies physical peg impacts.
+        ball='your wall_marble 1';cup=next(p for p in compiled['parts'] if p['name']=='your wall_cup 6 cup')
+        at=[cup['at_m'][0],.36,.3]
+        receipt=dict(paths={ball:dict(points=[[0,0,2,.3],[3,*at],[4,*at]])},
+            supports_final=[cup],hits=[dict(body=ball,other=f'your wall_peg {n} peg',t=t)
+                for n,t in ((4,.2),(2,.4),(3,.6))])
+        measured=machine_chat.measure_courses(check,receipt,compiled)[0]
+        self.assertTrue(measured['happened'],measured)
+        self.assertEqual(measured['finished_on'],'your wall_cup 6')
+        receipt['hits']=[dict(body=ball,other='your wall_peg 2 peg',t=t) for t in (.2,.4,.6)]
+        self.assertFalse(machine_chat.measure_courses(check,receipt,compiled)[0]['happened'])
+        receipt['supports_final']=[]
+        self.assertIsNone(machine_chat.measure_courses(check,receipt,compiled)[0]['finished_on'])
+
+    def test_recorded_model_peg_field_keeps_the_original_design_and_passes_native_nudges(self):
+        fixture=json.loads((ROOT/'tests/fixtures/chat-built-plinko-wall.json').read_text(encoding='utf-8'))
+        level=mg.requested_level(dict(level='free',base=fixture['base']))
+        answers=iter(fixture['proposals']);kept=copy.deepcopy(fixture['before'])
+        def run(compiled,**kw):
+            with tempfile.TemporaryDirectory() as logs:return mw.rehearse(compiled,ENGINE,Path(logs),**kw)
+        result=machine_chat.respond_free(fixture['request'],level,fixture['before'],active_wall=fixture['active_wall'],
+            call=lambda messages:(next(answers),{}),rehearse=run)
+        self.assertEqual(fixture['before'],kept)
+        self.assertEqual(result['placements'],fixture['placements'])
+        self.assertEqual(result['rehearsal']['verified_runs'],3)
+        self.assertTrue(all(c['happened'] for c in result['rehearsal']['checks']))
+        original=mw.compile_spec(mg.compose(level,fixture['before'])[0])
+        final=mw.compile_spec(mg.compose(level,result['placements'])[0])
+        names={p['name'] for p in original['parts']}
+        self.assertEqual([p for p in final['parts'] if p['name'] in names],original['parts'])
+        self.assertEqual(result['patterns'][0]['added'],18)
+        self.assertEqual(len(result['patterns'][0]['omitted']),2)
+
+    def test_peg_field_material_comparison_and_rotated_wall_use_actual_contacts(self):
+        fixture=json.loads((ROOT/'tests/fixtures/chat-built-plinko-wall.json').read_text(encoding='utf-8'))
+        board=fixture['active_wall'];base=fixture['base'];before=fixture['before']
+        added,check,_=wall.peg_field_assembly(base,before,board)
+        records=[]
+        for material in ('glass','oak','iron'):
+            ps=copy.deepcopy(before+added);ps[-1]['material']=material
+            compiled=mw.compile_spec(mg.compose(mg.requested_level(dict(level='free',base=base)),ps)[0])
+            for seed in (0,1,2):
+                scene=mg.nudged(compiled,seed) if seed else compiled
+                with tempfile.TemporaryDirectory() as logs:r=mw.rehearse(scene,ENGINE,Path(logs),seconds=15,track=[check['marble']])
+                measured=machine_chat.measure_courses([check],r,scene)[0]
+                self.assertIsNone(r['error']);self.assertTrue(measured['happened'],(material,seed,measured))
+                records.append(dict(material=material,seed=seed,dt_s=1/240,cell_m=.02,check=measured,wall_s=r['wall_s']))
+        turned=wall.edit_panel(base,before,board,dict(yaw_deg=90))
+        self.assertTrue(turned['fits'],turned['problems'])
+        new,rotated_check,_=wall.peg_field_assembly(turned['base'],turned['placements'],board)
+        scene=mw.compile_spec(mg.compose(mg.requested_level(dict(level='free',base=turned['base'])),turned['placements']+new)[0])
+        with tempfile.TemporaryDirectory() as logs:r=mw.rehearse(scene,ENGINE,Path(logs),seconds=15,track=[rotated_check['marble']])
+        self.assertTrue(machine_chat.measure_courses([rotated_check],r,scene)[0]['happened'])
+        print('PLINKO FIELD',json.dumps(records),flush=True)
 
 
 class EditableWalls(unittest.TestCase):

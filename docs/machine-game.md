@@ -1,5 +1,60 @@
 # Puzzles on the machine (/play)
 
+October 18 wall-builder patterns and Plinko: the chat request includes the
+selected wall id, actual environment bounds, existing collision problems,
+remaining inventory and native part slots. For a moved wall, x_m is explicitly
+the wall centre plus the along-face offset. A proposal must not assume the
+wall is centred at the origin. The server rejects unrequested clearing of the
+original design. Up to five proposals may repair geometry/connections and
+native failures, in one transaction; failed proposals never replace saves.
+
+`patterns` expands repeated mounted catalog tools into ordinary placements.
+It supports rows/columns, coordinate steps, alternate-row offset and optional
+`region:[left,right,bottom,top]` fractions of the chosen wall. Region fitting
+uses that wall's size and position before normal mounting rotation. Explicit
+`avoid_occupied` can omit colliding/out-of-bounds slots, with reasons returned;
+it cannot hide invalid knobs, stock limits or engine resource failures.
+IDs name every expanded piece. The existing 60-addition, 120-native-part and
+cell limits are retained. Row/grid tests include cups as well as pegs.
+
+The reusable `peg_field` assembly uses existing wall pegs, wall tracks,
+wall cups and wall marble. Default density is 4×5; it preserves existing
+placements and omits occupied peg slots. A new marble starts 18 cm left of
+the wall centre (other clear launch offsets are fallback placements). Two
+continuous visible vertical track barriers contain sideward bounces. Mounted
+track length now permits the native 8 m box limit, and slopes reach ±90°.
+These are declared geometry and ideal native fix mounts, not hidden planar
+constraints, prescribed trajectories or runtime placement corrections.
+
+Unordered route verification observes distinct physical contacts in any
+order, retaining a minimum count and a settled catch. A finish may list
+several real catchers, appropriate for a branching peg board. Repair cannot
+lower the original contact count, remove targets or change its deadlines.
+The existing 5 mm support probe, 0.25 m travel and 0.02 m settling bounds are
+unchanged. Rehearsals expose final geometry/poses of unchanged declared
+supports, including joint-mounted compounds. Native compound local shapes
+are centred on native COM, rather than the original declaration origin.
+Removed, revised or deformed shapes cannot remain phantom supports.
+
+Qualification: one configured-model response to the exact request “can i
+cover this wall with pegs like plinko” expanded on the moved second wall of
+the reported design. The original 11 placements are compiled-identical;
+18 new pegs, two side tracks, three cups and one marble make 35 placements,
+104 native parts and 101,829 cells. Two of twenty peg slots were omitted for
+actual overlaps. The model reply/geometry is captured without profile keys
+in `tests/fixtures/chat-built-plinko-wall.json`. The model response was not
+used as evidence: three separate native trials supplied the proof.
+
+At dt=1/240 s and 20 mm cells, a 15 s rehearsal of the same setup with glass,
+oak and iron target marbles passes nominal/two nudged runs for each material
+(9/9); each hits four or five different pegs and settles in a cup. Local
+wall time was 1.44–1.58 s per rehearsal. A 90° second-wall turn also passes.
+The unchanged engine SHA-256 is
+`c185b7eca2792b3a84bc9913bd701b6e6dba4d31679b1c72b0e116b9054b1e57`.
+This measures contacts/catching, not a new full rigid/contact energy or
+momentum ledger. No material, force law, timestep, level goal or tolerance
+change; ideal mounting strength and engine model limits remain as documented.
+
 October 18 **Gentle first launch** framing: the opening view includes the
 receiving bin and the launch space beyond its open end. Adding the catapult
 uses its declared x=0, z=0 defaults rather than projecting the camera centre

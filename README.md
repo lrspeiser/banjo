@@ -19,6 +19,13 @@ Front view faces the selected wall; its pieces still drag along its own face.
 Gold adjustment arrows on other pieces can also be grabbed and dragged along
 their shown direction. Exact controls and +/− steps remain available.
 
+Select a wall, choose **Describe a design**, and ask “Cover this wall with pegs
+like Plinko.” A reusable peg field expands into existing wall pegs, vertical
+track barriers, bottom cups and a marble. Occupied peg slots stay clear, and
+native trials check distinct peg contacts and a settled catch before applying.
+The builder also supports repeated rows/grids of other mounted catalog tools.
+Each expanded part remains editable; Undo and saved versions keep the whole edit.
+
 Ask **Describe a design** for a wheel that catches a marble, lifts it and drops
 it higher. The builder expands a single-pass **Marble lift wheel**, a marble,
 battery and two physical wires, finds room and checks the native result before

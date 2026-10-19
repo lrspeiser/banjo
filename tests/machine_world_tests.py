@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import machine_world as mw  # noqa: E402
 import machine_chat as mc   # noqa: E402
+import machine_game as mg   # noqa: E402
 
 ENGINE = None
 if '--engine' in sys.argv:
@@ -68,6 +69,12 @@ def part(name, size, at, **kw):
 
 
 class Declaration(unittest.TestCase):
+    def test_observed_quaternion_round_trip_keeps_native_declaration_axes(self):
+        for turn in ([0,0,0],[21,38,-71],[15,90,23],[12,-90,-38],[0,135,0]):
+            actual=mw.rotation(mw.turn_of_quaternion(mw.quaternion_of_turn(turn)))
+            expected=mw.rotation(turn)
+            for a,b in zip(sum(actual,[]),sum(expected,[])):self.assertAlmostEqual(a,b,places=6)
+
     def test_compilation_cache_preserves_validation_and_caller_ownership(self):
         mw._compiled_declaration.cache_clear()
         source=dict(schema=mw.SCHEMA,parts=[part('block',[.1,.1,.1],[0,.05,0],fixed=True)])
@@ -279,6 +286,44 @@ class Declaration(unittest.TestCase):
 
 
 class Engine(unittest.TestCase):
+    @need_engine
+    def test_final_support_uses_native_pose_for_joint_mounted_compounds(self):
+        spec=dict(schema=mw.SCHEMA,parts=[
+            part('post',[.04,1,.04],[0,.5,0],fixed=True),
+            dict(name='shelf',shape='compound',material='oak',at_m=[0,1,0],fixed=True,
+                parts=[dict(shape='box',size_m=[.4,.04,.4],at_m=[0,0,0])]),
+            dict(name='ball',shape='sphere',material='glass',size_m=[.08]*3,at_m=[.12,1.3,0])],
+            joints=[dict(name='mount',kind='fix',a='post',b='shelf',at_m=[0,1,0])])
+        with tempfile.TemporaryDirectory() as logs:
+            r=mw.rehearse(mw.compile_spec(spec),ENGINE,Path(logs),seconds=3,track=['ball'])
+        self.assertIsNone(r['error'])
+        self.assertNotIn('shelf',r['intact_fixed'],'the precise body uses physical fixing, not the anchored flag')
+        shelf=next(p for p in r['supports_final'] if p['name']=='shelf')
+        point=r['tracked_final']['ball']['at_m']
+        self.assertEqual(mg.resting_on(dict(parts=[shelf]),point,.04),'shelf')
+        # Remove its actual mounting: the precise body falls. The observation
+        # must follow the native shelf instead of retaining a phantom at y=1.
+        spec['joints']=[];spec['parts']=spec['parts'][1:]
+        with tempfile.TemporaryDirectory() as logs:
+            dropped=mw.rehearse(mw.compile_spec(spec),ENGINE,Path(logs),seconds=3,track=['ball'])
+        moved=next(p for p in dropped['supports_final'] if p['name']=='shelf')
+        self.assertLess(moved['at_m'][1],.03)
+        self.assertNotEqual(moved['at_m'],shelf['at_m'])
+
+    @need_engine
+    def test_asymmetric_compound_support_keeps_the_native_centre_of_mass_origin(self):
+        import sandbox_wall
+        level=mg.requested_level(dict(level='free',base=sandbox_wall.world_base()))
+        compiled=mw.compile_spec(mg.compose(level,[dict(piece='wall_cup',x_m=0,height_m=.3,width_m=.98),
+            dict(piece='wall_marble',x_m=0,height_m=.7)])[0])
+        with tempfile.TemporaryDirectory() as logs:r=mw.rehearse(compiled,ENGINE,Path(logs),seconds=4,track=['your wall_marble 2'])
+        self.assertIsNone(r['error'])
+        cup=next(p for p in r['supports_final'] if p['name']=='your wall_cup 1 cup')
+        floor=mw.solids_of(cup)[0]
+        self.assertAlmostEqual(floor['at_m'][1],.3,places=4)
+        self.assertNotAlmostEqual(cup['at_m'][1],.3,places=3,msg='the cup COM differs from its floor origin')
+        self.assertEqual(mg.resting_on(dict(parts=[cup]),r['tracked_final']['your wall_marble 2']['at_m'],.04),'your wall_cup 1 cup')
+
     @need_engine
     def test_a_two_axis_turn_is_the_one_the_engine_reports(self):
         """The turn the declaration's checks use is the engine's own: a plank

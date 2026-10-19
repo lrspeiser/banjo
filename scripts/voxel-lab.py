@@ -380,7 +380,7 @@ class Handler(BaseHTTPRequestHandler):
        ui=data.get('ui'),last_run=data.get('last_run'))
      elif data.get('level')=='free':
       # The free build: the chat builds what it is asked, joined piece to piece.
-      r=machine_chat.respond_free(data.get('message'),machine_game.requested_level(data),data.get('placements') or [],rehearse=host.rehearse)
+      r=machine_chat.respond_free(data.get('message'),machine_game.requested_level(data),data.get('placements') or [],rehearse=host.rehearse,active_wall=data.get('active_wall'))
      elif data.get('level'):
       # A puzzle: the chat hints, or places pieces from the tray -- nothing else.
       r=machine_chat.respond_level(data.get('message'),machine_game.level_by_id(data.get('level')),data.get('placements') or [],
