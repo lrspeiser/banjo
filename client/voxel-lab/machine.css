@@ -1100,6 +1100,16 @@ body.panel-tabs:has(#phone-toolbar.one-row) #view #clock{top:6px}
 #player-controls button{pointer-events:auto;min-height:52px;flex:1;max-width:230px;min-width:0;font-size:14px;touch-action:none;user-select:none;background:#135a52;border:1px solid #46c2b0;border-radius:8px;color:white}
 #player-controls button[aria-pressed=true]{background:#d58b18;color:#111}
 #player-controls button:disabled{opacity:.55}
+#player-controls button[hidden]{display:none}
+#player-controls button.action-page{flex:0 0 44px;max-width:44px;font-size:24px}
+.object-action-card{width:160px}
+.object-action-card button{touch-action:none;user-select:none}
+.object-action-card button[aria-pressed=true]{background:#d58b18;color:#111}
+#object-action-dialog .guide-body{display:flex;flex-direction:column;gap:8px}
+#object-action-dialog input,#object-action-dialog select{width:100%;min-height:44px;box-sizing:border-box;background:#0d202b;color:#e4edf4;border:1px solid #63899d;border-radius:6px;padding:8px}
+.object-action-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.object-action-list button{text-align:left;min-height:44px}
+#design-object-actions>summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
 .playing-pinball[data-mode=run] :is(#power-feedback-labels,#terminal-pins,#power-pins,#power-control-leaders,#scene-sockets){display:none}
 body.playing-pinball.panel-tabs[data-mode=run]:not(.coaching):not(.scene-win) main{grid-template-rows:auto minmax(0,1fr) 86px}
 .playing-pinball[data-mode=run] #control-panel{display:none}

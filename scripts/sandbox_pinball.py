@@ -7,6 +7,7 @@ No ball velocity, flipper angle or switch state is assigned during play.
 import copy
 import math
 import machine_world as mw
+from object_actions import hold
 
 SLOPE = 5
 HEIGHT = .8
@@ -113,8 +114,7 @@ def button(name,k,ctx):
         terminals={'in':[x-.05,.20,z-.044],'out':[x+.045,.1275,z+.075]},
         terminal_normals={'in':[0,0,-1],'out':[0,0,1]})
     return finish(dict(parts=[base,pad,cap,post],joints=joints,electrical=dict(devices=[device]),
-        player_controls=[dict(name=name,part=cap['name'],label=k.get('label','Press button'),
-                              key=k.get('key',''),force_n=[0,-30,0])]),k)
+        **hold(name,cap['name'],[0,-30,0],k.get('label','Press button'),k.get('key',''))),k)
 
 
 def plunger(name,k,ctx):
@@ -143,8 +143,7 @@ def plunger(name,k,ctx):
     joints.append(dict(name=name+' stop joint',kind='fix',a=throat_mount['name'],b=throat['name'],at_m=[x+.046,.16,z+.035]))
     stops=[throat,throat_mount]
     return finish(dict(parts=[anchor,support,pusher,*stops],joints=joints,
-        player_controls=[dict(name=name,part=pusher['name'],label='Pull launcher · release to shoot',
-                              key='Space',force_n=[0,0,-120])]),k)
+        **hold(name,pusher['name'],[0,0,-120],'Pull launcher · release to shoot',k.get('key',''))),k)
 
 
 def bumper(name,k,ctx):
@@ -221,7 +220,7 @@ def template():
         (flipper,'right flipper',dict(x_m=-.43,z_m=-.76,side='left')),
         (button,'left button',dict(x_m=.96,z_m=-.85,label='Left flipper',key='ArrowLeft')),
         (button,'right button',dict(x_m=-.96,z_m=-.85,label='Right flipper',key='ArrowRight')),
-        (plunger,'launcher',{}),
+        (plunger,'launcher',dict(key='Space')),
         (rail,'launch lane',dict(x_m=.51,z_m=-.275,length_m=1.85,angle_deg=90)),
         (rail,'launch turn',dict(x_m=.49,z_m=1.08,length_m=.60,angle_deg=45)),
         # Meet the outer rail opposite the launcher upstream of the flipper.

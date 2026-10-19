@@ -43,9 +43,10 @@ import sandbox_motion
 import sandbox_pulleys
 import sandbox_wall
 import sandbox_pinball
+import object_actions
 import wall_lessons
 
-SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations, sandbox_motion, sandbox_pulleys, sandbox_pinball)
+SANDBOX_MODULES = (sandbox_mechanics, sandbox_electrics, sandbox_water_launch, sandbox_plumbing, sandbox_combinations, sandbox_motion, sandbox_pulleys, sandbox_pinball, object_actions)
 EASY_ORDER = ['easy-cut', 'easy-mirror', 'easy-lens', 'easy-solar', 'easy-tackle', 'easy-water-wheel', 'easy-river-wheel',
               'easy-spring', 'easy-gears', 'easy-weight', 'easy-motor', 'easy-power', 'easy-switch',
               'easy-bulb', 'easy-loop', 'easy-water-receiver', 'easy-divert-water', 'easy-heat', 'easy-catapult',
@@ -726,6 +727,11 @@ def check_placements(level, placements, budget=True):
         knobs = {}
         for key, rule in t['knobs'].items():
             value = p.get(key, rule.get('legacy_default', rule.get('default')))
+            if rule.get('text_max'):
+                if not isinstance(value,str) or not value.strip() or len(value)>rule['text_max']:
+                    problems.append(f'{what}: {key} needs 1 to {rule["text_max"]} characters')
+                else:knobs[key]=value.strip()
+                continue
             if rule.get('part_list'):
                 if not isinstance(value,list) or len(value)>2 or any(not isinstance(v,str) or len(v)>120 for v in value):
                     problems.append(f'{what}: {key} names at most two pulley routes')

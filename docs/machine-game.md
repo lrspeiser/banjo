@@ -1,5 +1,16 @@
 # Puzzles on the machine (/play)
 
+## Reusable object actions — October 19
+
+Sandbox now has **Design → Object actions · advanced**, and **Actions** beside
+an eligible selected handle. Makers can name a held input, set its push force,
+assign a shortcut and choose Auto, Beside object or Bottom bar. The word builder
+uses the same saved `object_action` catalogue entry. Pinball's three prepared
+buttons remain ready to play; ordinary lessons do not show the editor. These
+inputs apply native hand force to actual handles, retaining physical contacts,
+wiring and supply requirements. See [the workflow, measured material comparisons
+and limitations](object-actions.md). An advanced teaching lesson is deferred.
+
 ## Pinball side-lane correction — October 19
 
 New **Sandbox → Pinball** designs have a guide from the outer rail toward

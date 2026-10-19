@@ -26,6 +26,13 @@ negative control. Reset currently restores the initial setup instead.
 
 ## Play and controls
 
+The prepared controls now use the shared [object-action framework](object-actions.md).
+Keep them as supplied to play, or change their label, shortcut, force and screen
+location under **Design → Object actions · advanced**. Auto keeps this table's
+buttons in the bottom row. Custom bindings and the word builder use the same
+catalogue tool. Building such inputs can be taught in an advanced lesson later;
+no new training lesson is shipped here.
+
 Choose Run. Hold **Pull launcher · release to shoot**, then release it.
 Hold **Left flipper** or **Right flipper** to operate the physical buttons.
 Left/Right arrow keys and Space provide the same held inputs. The physical

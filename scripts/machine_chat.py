@@ -417,7 +417,9 @@ def free_environment(level,placements,active_wall=None):
         points=[p for solid in mw.solids_of(part) for p in mw.footprint_points(solid)]
         if points:fixed.append(dict(name=part['name'],low=[min(p[i] for p in points) for i in range(3)],
             high=[max(p[i] for p in points) for i in range(3)]))
-    result=dict(solids=fixed,existing_problems=compiled.get('problems',[])+mg.clashes_of(compiled))
+    import object_actions
+    result=dict(solids=fixed,existing_problems=compiled.get('problems',[])+mg.clashes_of(compiled),
+        action_targets=object_actions.targets(compiled))
     result['remaining_part_slots']=max(0,mw.MAX_PARTS-len(compiled['parts']))
     result['remaining_collision_shapes']=max(0,mw.MAX_COMPOUND_SHAPES-sum(len(p.get('parts',[])) for p in compiled['parts'] if p['shape']=='compound'))
     result['remaining_counts']={t['piece']:t.get('count',1)-sum(p['piece']==t['piece'] for p in placements)
@@ -462,6 +464,17 @@ Include every required object explicitly, including a marble, supports, catchers
 both electrical leads when needed. Nothing appears merely because reply mentions it. Preserve existing
 work unless the player asks to clear it; clear removes placed pieces, not the environment or wall.
 Use add for individual tools, edit for existing numbered pieces and assemblies only for documented recipes.
+Object actions are documented manual inputs, not invented forces or automatic scripts. Add object_action
+with part naming a real moving hinged/sliding handle (use part_references or environment.action_targets),
+label, key and push_x_n/push_y_n/push_z_n. Force is in that handle's initial local axes, totals at most 120 N,
+and acts at its centre of mass while the player holds the button during Run. For example, a pinball_button
+with id press has part "press button"; bind that to [0,-30,0]. Use a real wired switch, battery and motor
+for a powered flipper, not a force on its centred axle. One action per handle; edit the existing object_action
+to change it. Empty key means on-screen only; shortcuts must be distinct. location is auto, object or dock:
+auto docks Pinball actions and places others beside their object with a leader line; object always uses
+the edge callout, dock always uses the fixed bottom bar. A binding on a prepared handle
+replaces its ready-made action. No actions are pressed during the ordinary rehearsal. Explain what the
+player should hold/release without claiming that this interactive behavior was rehearsed.
 Use patterns for repeated wall-mounted tools, such as staggered rows of pegs for Plinko. A pattern expands
 into ordinary individually editable catalog pieces, not a new physics device. Its knobs locate the first
 piece; columns advance step_x_m, rows advance step_y_m, and odd rows add stagger_m to x_m.
@@ -789,7 +802,9 @@ def _free_layout_prompt(level):
             continue
         knobs = []
         for key, rule in t['knobs'].items():
-            if 'choices' in rule:
+            if rule.get('text_max'):
+                knobs.append(f'{key}: nonempty button text, up to {rule["text_max"]} characters')
+            elif 'choices' in rule:
                 knobs.append(f'{key}: one of {rule["choices"]}')
             elif 'min' in rule:
                 knobs.append(f'{key} ({rule.get("label", key)}): {rule["min"]} to {rule["max"]}; default {rule.get("default",rule["min"])}')
@@ -1286,6 +1301,9 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
             usage = _added(usage, more)
     out = {'ok': True, 'reply': answer['reply'], 'placements': placed, 'usage': usage,
            'limitations':answer.get('limitations',[]),'patterns':list(pattern_reports.values())}
+    if compiled.get('player_controls'):
+        out['manual_actions']=[dict(label=c['label'],part=c['part'],key=c['key']) for c in compiled['player_controls']]
+        if rehearsal is not None:rehearsal.update(manual_actions_operated=False)
     if rehearsal is not None:out['rehearsal']=rehearsal
     return out
 

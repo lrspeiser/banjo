@@ -478,6 +478,17 @@ class Handler(BaseHTTPRequestHandler):
     if not self.server.preview_busy.acquire(blocking=False):raise SiteBusy('The engine is working out other previews; trying again in a moment')
     try:r={'ok':True,**machine_game.optical_preview(machine_game.requested_level(data),data.get('placements') or [],host.exe,host.logs)}
     finally:self.server.preview_busy.release()
+   elif op=='object_actions':
+    import object_actions
+    level=machine_game.requested_level(data)
+    if not level.get('free'):raise ValueError('Create object actions in the Sandbox')
+    placed=data.get('placements') or []
+    if data.get('action') is not None:
+     action=data['action']
+     if not isinstance(action,dict) or not {'part','label','key','force_local_n'}<=set(action) or set(action)-{'part','label','key','force_local_n','location'}:raise ValueError('Choose a handle, label, shortcut, location and hand force')
+     placed=object_actions.configure(level,placed,action['part'],action['label'],action['key'],action['force_local_n'],action.get('location','auto'))
+    _,_,_,compiled=machine_game._assemble(level,placed)
+    r={'ok':True,'targets':object_actions.targets(compiled),'placements':placed}
    elif op=='sandbox_object':
     import sandbox_edit
     level=machine_game.requested_level(data)

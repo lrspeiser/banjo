@@ -87,8 +87,8 @@ class Puzzles(unittest.TestCase):
         cls.template_count = len(machine_game.sandbox_templates())
         cls.archived_templates = {row['name']:row for row in machine_game.archived_sandbox_templates()}
         cls.showcase_names = {row['name'] for row in machine_game.sandbox_templates()}
-        cls.piece_count = len([row for row in machine_game.free_build()['tray'] if not row.get('attach') and not row.get('legacy')])
-        cls.wall_piece_count = len([row for row in machine_game.sandbox_wall.world_tray(machine_game.free_build()['tray']) if not row.get('attach') and not row.get('legacy')])
+        cls.piece_count = len([row for row in machine_game.free_build()['tray'] if not row.get('attach') and not row.get('legacy') and not row.get('logical')])
+        cls.wall_piece_count = len([row for row in machine_game.sandbox_wall.world_tray(machine_game.free_build()['tray']) if not row.get('attach') and not row.get('legacy') and not row.get('logical')])
         cls.wall_mounted_piece_count = len([row for row in machine_game.sandbox_wall.world_tray(machine_game.free_build()['tray']) if row.get('wall_mounted') and not row.get('attach') and not row.get('legacy')])
         cls.river_solution = dict(machine_game.sandbox_water_launch.RIVER_SOLUTION)
         import sandbox_variants
@@ -690,7 +690,7 @@ class Puzzles(unittest.TestCase):
             self.mouse('mousePressed',summary['x'],summary['y']); self.mouse('mouseReleased',summary['x'],summary['y'])
         else:
             self.fail('A closed disclosure could not be opened with its visible summary')
-        self.js(f"(() => {{const el={expression}; if (el?.closest('.phone-pane,#level-done,#recent-changes')) el.scrollIntoView({{block:el.closest('#recent-changes')?'center':'nearest',inline:'nearest'}});}})()")
+        self.js(f"(() => {{const el={expression}; if (el?.closest('.phone-pane,#level-done,#recent-changes,#object-action-dialog')) el.scrollIntoView({{block:el.closest('#recent-changes')?'center':'nearest',inline:'nearest'}});}})()")
 
     def create_design(self, name=None):
         self.press('Add New Design'); self.wait(READY,90)
@@ -2982,6 +2982,105 @@ class Puzzles(unittest.TestCase):
             actual=[t.id() for batch in batches for t in batch]
             self.assertEqual(set(actual),expected)
             self.assertEqual(len(actual),len(expected))
+
+    def test_sandbox_object_actions_edit_save_undo_and_drive_the_real_button(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.click_visible('Pinball')
+                self.wait("machineDesign()?.name==='Pinball' && "+READY,90)
+                saved=self.js('machineDesign().id')
+                self.assertFalse(self.js("document.getElementById('object-action-dialog').open"))
+                self.assertFalse(self.js("document.getElementById('design-object-actions').checkVisibility()"))
+                self.click_visible('Design');self.click_summary('#design-object-actions > summary')
+                self.click_visible('Edit action Left flipper')
+                self.wait("document.getElementById('object-action-dialog').open&&!document.getElementById('object-action-save').disabled",30)
+                self.assertEqual(self.js("document.getElementById('object-action-target').value"),'left button button')
+                for field,value in [('object-action-label','Tap'),('object-action-key','KeyA'),('object-action-location','object')]:
+                    self.js(f"(()=>{{const e=document.getElementById({json.dumps(field)});e.value={json.dumps(value)};e.dispatchEvent(new Event('input',{{bubbles:true}}));e.dispatchEvent(new Event('change',{{bubbles:true}}));}})()")
+                self.reveal_control("document.getElementById('object-action-save')")
+                rect=self.js("(()=>{const r=document.getElementById('object-action-save').getBoundingClientRect();return {w:r.width,h:r.height}})()")
+                self.assertGreaterEqual(rect['w'],44);self.assertGreaterEqual(rect['h'],44)
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'object-action-editor-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Save action')
+                self.wait('machinePlacements().length===1 && '+READY,60)
+                self.assertEqual(self.js('machinePlacements()[0].piece'),'object_action')
+                self.assertEqual(self.js('machinePlacements()[0].key'),'KeyA')
+                self.assertEqual(self.js('machinePlacements()[0].location'),'object')
+                self.click_visible('Undo');self.wait('machinePlacements().length===0 && '+READY,60)
+                self.click_visible('Redo');self.wait('machinePlacements().length===1 && '+READY,60)
+                self.click_visible('Reset');self.wait('machinePlacements().length===1 && '+READY,60)
+                self.click_visible('Design');self.click_visible('Save version');self.anonymous_cloud_saved()
+                self.navigate(self.base+'/machine?design='+saved);self.wait('machinePlacements().length===1 && '+READY,60)
+                self.assertEqual(self.js('machinePlacements()[0].label'),'Tap')
+                self.click_visible('Run')
+                self.wait("document.querySelector('#player-controls [data-control]')&&!document.querySelector('#player-controls [data-control]').disabled",30)
+                self.assertEqual(self.js("[...document.querySelectorAll('#player-controls [data-control]')].map(b=>b.textContent)"),
+                    ['Right flipper','Pull launcher · release to shoot'])
+                self.wait("document.querySelector('.object-action-card button')?.checkVisibility()",30)
+                self.assertEqual(self.js("document.querySelector('.object-action-card button').textContent"),'Tap')
+                bounds=self.js("(()=>{const c=document.querySelector('.object-action-card'),r=c.getBoundingClientRect(),v=document.getElementById('view').getBoundingClientRect(),b=c.querySelector('button').getBoundingClientRect();return {inside:r.left>=v.left&&r.right<=v.right+1&&r.top>=v.top&&r.bottom<=v.bottom+1,edge:Math.min(r.left-v.left,v.right-r.right,r.top-v.top,v.bottom-r.bottom),w:b.width,h:b.height,leader:[...document.querySelectorAll('#object-control-leaders line')].some(l=>l.style.display!=='none'&&Number(l.getAttribute('x1'))>0)}})()")
+                self.assertTrue(bounds['inside'],bounds);self.assertLess(bounds['edge'],30,bounds)
+                self.assertGreaterEqual(bounds['w'],44);self.assertGreaterEqual(bounds['h'],44);self.assertTrue(bounds['leader'])
+                (proof/f'object-action-edge-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                session=self.server.machines.get(self.js('machineCableSetupState().session'))
+                def native_until(predicate):
+                    deadline=time.monotonic()+15
+                    while time.monotonic()<deadline:
+                        with session.lock:
+                            self.assertIsNone(session.error)
+                            if predicate(session):return
+                        time.sleep(.03)
+                    self.fail('The configured action did not operate its physical button')
+                self.page.send('Input.dispatchKeyEvent',dict(type='keyDown',key='a',code='KeyA',windowsVirtualKeyCode=65))
+                native_until(lambda s:any(j['name']=='left flipper axle' and j['degrees']>35 for j in s.readouts['joints']))
+                self.page.send('Input.dispatchKeyEvent',dict(type='keyUp',key='a',code='KeyA',windowsVirtualKeyCode=65))
+                native_until(lambda s:any(j['name']=='left flipper axle' and abs(j['degrees'])<4 for j in s.readouts['joints']))
+                self.assertFalse(session._test_pulled)
+                self.click_visible('Build');self.wait(READY,60);self.click_visible('Design')
+                if not self.js("document.getElementById('design-object-actions').open"):self.click_summary('#design-object-actions > summary')
+                self.click_visible('Edit action Tap')
+                self.wait("document.getElementById('object-action-dialog').open&&!document.getElementById('object-action-save').disabled",30)
+                self.assertEqual(self.js("document.getElementById('object-action-location').value"),'object')
+                self.js("document.getElementById('object-action-location').value='dock'")
+                self.click_visible('Save action');self.wait("machinePlacements()[0]?.location==='dock' && "+READY,60)
+                self.click_visible('Run')
+                self.wait("document.querySelectorAll('#player-controls [data-control]').length===3 && !document.querySelector('#player-controls [data-control]').disabled",30)
+                self.assertEqual(self.js("document.querySelectorAll('.object-action-card').length"),0)
+                self.click_visible('Build');self.wait(READY,60);self.click_visible('Design')
+                if not self.js("document.getElementById('design-object-actions').open"):self.click_summary('#design-object-actions > summary')
+                self.click_visible('Edit action Tap')
+                self.wait("document.getElementById('object-action-dialog').open&&!document.getElementById('object-action-save').disabled",30)
+                self.click_visible('Restore ready-made action');self.wait('machinePlacements().length===0 && '+READY,60)
+                index=self.js("machineEditableObjects().find(o=>o.parts.includes('left button button')).index")
+                self.click_piece(index);self.ghost();self.click_visible('Edit object actions')
+                self.wait("document.getElementById('object-action-dialog').open&&!document.getElementById('object-action-save').disabled",30)
+                self.assertEqual(self.js("document.getElementById('object-action-target').value"),'left button button')
+                self.click_visible('Close');self.assertFalse(self.js('document.documentElement.scrollWidth>innerWidth+1'))
+                self.open('easy-wall-drop',width,height,phone=width!=1280)
+                self.assertFalse(self.js("document.getElementById('design-object-actions').checkVisibility()"))
+
+    def test_object_action_dock_pages_keep_touch_buttons_inside_the_scene(self):
+        import machine_game as mg
+        import sandbox_pinball as pinball
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                owner=str(uuid.uuid4());design_id=str(uuid.uuid4());base=pinball.template()['base']
+                mg.merge_fragment(base,pinball.button('extra handle',dict(x_m=1.8,z_m=0,label='Extra handle'),{}))
+                design=dict(id=design_id,name='Four controls',draft=dict(base=base,placements=[]),versions=[],nextVersion=1,at='2026-10-19T00:00:00Z')
+                self.server.profiles.create(owner,dict(sandbox=dict(items=[design],last=design_id)))
+                self.navigate(f'{self.base}/machine?visitor={owner}&design={design_id}');self.wait(READY,60)
+                self.click_visible('Run')
+                self.wait("document.querySelector('#player-controls [data-control]')&&!document.querySelector('#player-controls [data-control]').disabled",30)
+                self.assertEqual(self.js("[...document.querySelectorAll('#player-controls [data-control]')].filter(b=>b.checkVisibility()).length"),2 if width<600 else 3)
+                self.click_visible('More object actions')
+                self.assertEqual(self.js("[...document.querySelectorAll('#player-controls [data-control]')].filter(b=>b.checkVisibility()).length"),2 if width<600 else 1)
+                bounds=self.js("(()=>{const v=document.getElementById('view').getBoundingClientRect();return [...document.querySelectorAll('#player-controls button')].filter(b=>b.checkVisibility()).map(b=>{const r=b.getBoundingClientRect();return {w:r.width,h:r.height,inside:r.left>=v.left&&r.right<=v.right+1&&r.top>=v.top&&r.bottom<=v.bottom+1}})})()")
+                self.assertTrue(all(b['inside'] and b['w']>=44 and b['h']>=44 for b in bounds),bounds)
+                self.click_visible('Previous object actions');self.click_visible('Pause')
+                self.wait("[...document.querySelectorAll('#player-controls [data-control]')].every(b=>b.disabled)",10)
 
     def test_pinball_starter_live_buttons_launch_pause_reset_and_save(self):
         for width,height in ((1280,860),(390,844),(844,390)):
@@ -7339,7 +7438,7 @@ class Puzzles(unittest.TestCase):
     def test_all_placeable_catalogue_properties_are_reachable_beside_the_piece(self):
         import machine_game
         self.open('free',1280,860)
-        catalogue=[t for t in machine_game.free_build()['tray'] if not t.get('attach') and not t.get('legacy') and t['piece'] not in ('wire','power_cable')]
+        catalogue=[t for t in machine_game.free_build()['tray'] if not t.get('attach') and not t.get('legacy') and not t.get('logical') and t['piece'] not in ('wire','power_cable')]
         for item in catalogue:
             with self.subTest(piece=item['piece']):
                 if self.js('Boolean(machineGhostState())'):self.press('Cancel');self.wait(READY,30)
@@ -7570,7 +7669,9 @@ class Puzzles(unittest.TestCase):
 
 def browser_test_batches(count):
     tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Puzzles))
-    added={'test_wall_reset_restores_the_front_view_after_orbit','test_browser_batches_cover_every_case_once'}
+    added={'test_wall_reset_restores_the_front_view_after_orbit','test_browser_batches_cover_every_case_once',
+           'test_sandbox_object_actions_edit_save_undo_and_drive_the_real_button',
+           'test_object_action_dock_pages_keep_touch_buttons_inside_the_scene'}
     batches=[[] for _ in range(count)]
     for i,test in enumerate(t for t in tests if t._testMethodName not in added):
         # Keep the previous distribution, but move the 21-play wall pack away

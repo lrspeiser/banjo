@@ -2125,11 +2125,16 @@ def _compile_spec_uncached(spec, lenient=False):
     physics_dt = spec.get('physics_dt_s',1/240)
     if type(physics_dt) not in (int,float) or physics_dt not in (1/240,1/480,1/960,1/1920):
         problems.append('physics_dt_s is 1/240, 1/480, 1/960 or 1/1920 seconds')
-    for c in spec.get('player_controls', []) or []:
+    import object_actions
+    control_rows=spec.get('player_controls',[]) or []
+    if not isinstance(control_rows,list) or len(control_rows)>24:
+        problems.append('Player controls must be a bounded list');control_rows=[]
+    for c in control_rows:
         if not isinstance(c, dict):
             problems.append('A player control needs a name, moving part and force'); continue
         name = c.get('name')
-        body = next((p for p in checked if p['name'] == c.get('part')), None)
+        part=c.get('part') if isinstance(c.get('part'),str) else None
+        body = next((p for p in checked if p['name'] == part), None)
         force = _vec(c.get('force_n'), 3, 'player control force_n', problems)
         if not isinstance(name, str) or not name or any(r['name'] == name for r in controls):
             problems.append('Player control names must be unique and nonempty'); continue
@@ -2138,10 +2143,31 @@ def _compile_spec_uncached(spec, lenient=False):
         if not 0 < math.hypot(*force) <= 120:
             problems.append(f'Player control {name}: force must be positive and at most 120 N')
         key = c.get('key', '')
-        if key not in ('', 'ArrowLeft', 'ArrowRight', 'Space'):
+        if key not in object_actions.KEYS:
             problems.append(f'Player control {name}: unsupported keyboard key')
-        controls.append(dict(name=name, part=c.get('part'), force_n=force,
-                             label=str(c.get('label',name))[:60], key=key))
+            key=''
+        label=c.get('label',name)
+        if not isinstance(label,str) or not label.strip() or len(label)>60:
+            problems.append(f'Player control {name}: choose a button label of 1 to 60 characters')
+            label=name
+        location=c.get('location','auto')
+        if location not in object_actions.LOCATIONS:
+            problems.append(f'Player control {name}: choose Auto, Beside object or Bottom bar')
+            location='auto'
+        controls.append(dict(name=name, part=part, force_n=force,
+                             label=label, key=key,location=location,replaces=c.get('replaces','')))
+    replaced=set()
+    for c in controls:
+        if not c['replaces']:continue
+        old=next((p for p in controls if p['name']==c['replaces']),None)
+        if not old or old['replaces'] or old['part']!=c['part'] or old['name'] in replaced:
+            problems.append(f'Player control {c["name"]}: replace only one original action on the same handle')
+        else:replaced.add(old['name'])
+    controls=[{k:v for k,v in c.items() if k!='replaces' or v} for c in controls if c['name'] not in replaced]
+    if len({c['part'] for c in controls})!=len(controls):
+        problems.append('Use one object action per moving handle; edit its existing action')
+    keys=[c['key'] for c in controls if c['key']]
+    if len(set(keys))!=len(keys):problems.append('Give each object action its own keyboard shortcut')
     if len(controls) > 12: problems.append('At most twelve player controls')
     if problems and not lenient:
         raise MachineRefused(problems)

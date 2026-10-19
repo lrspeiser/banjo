@@ -22,4 +22,11 @@ assert.equal(blueprintPlacements([{piece: 'link', a: 'your knife 1'}], 0, [0, 0]
 assert.deepEqual(blueprintPlacements([], 2, [1, 1]), []);
 const moved = blueprintPlacements([{piece: 'block', x_m: 0, z_m: 0}], 0, [1.25, -2]);
 assert.deepEqual([moved[0].x_m, moved[0].z_m], [1.25, -2]);
+const withAction=[{piece:'pinball_button',x_m:0,z_m:0,yaw_deg:0},
+  {piece:'object_action',part:'your pinball_button 1 button',label:'Press',key:'KeyA',location:'object',push_x_n:0,push_y_n:-30,push_z_n:0}];
+const turned=blueprintPlacements(withAction,4,[1,1],1);
+assert.equal(turned[1].part,'your pinball_button 5 button');
+assert.equal(turned[1].location,'object');
+assert.equal(turned[0].yaw_deg,90);
+assert.deepEqual([turned[1].push_x_n,turned[1].push_y_n,turned[1].push_z_n],[0,-30,0], 'hand force remains in the handle initial axes');
 console.log('PASS blueprints drop centred on a point and renumber their own piece references');

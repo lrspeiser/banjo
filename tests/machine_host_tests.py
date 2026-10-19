@@ -131,6 +131,30 @@ class BugReports(unittest.TestCase):
 
 class Requests(unittest.TestCase):
     cookie_name='banjo-visitor'
+    def test_object_actions_use_validated_catalog_rows_and_leave_levels_read_only(self):
+        import sandbox_pinball
+        base=sandbox_pinball.template()['base']
+        def command(**data):
+            status,body,_=self.request(['127.0.0.1'],'POST','/api/machine',payload=dict(op='object_actions',**data))
+            return status,json.loads(body)
+        status,catalog=command(level='free',base=base,placements=[])
+        self.assertEqual(status,200,catalog)
+        self.assertIn('left button button',[row['part'] for row in catalog['targets']])
+        action=dict(part='left button button',label='Tap',key='KeyA',force_local_n=[0,-30,0],location='object')
+        status,configured=command(level='free',base=base,placements=[],action=action)
+        self.assertEqual(status,200,configured)
+        self.assertEqual(configured['placements'][0]['piece'],'object_action')
+        self.assertEqual(configured['placements'][0]['location'],'object')
+        self.assertEqual(next(t['control']['label'] for t in configured['targets'] if t['part']=='left button button'),'Tap')
+        for change,expected in ((dict(force_local_n=[0,-121,0]),422),(dict(key='Escape'),422),
+                                (dict(part='pinball table frame'),422),(dict(location='centre'),422),(dict(script='animate'),400)):
+            status,_=command(level='free',base=base,placements=[],action=dict(action,**change))
+            self.assertEqual(status,expected)
+        status,_=command(level='easy-switch',placements=[],action=action)
+        self.assertEqual(status,400)
+        status,_=command(level='free',base=base,placements=[None],action=action)
+        self.assertEqual(status,422)
+
     def test_completion_score_does_not_charge_for_later_live_playback(self):
         import machine_game
         level=machine_game.level_by_id('easy-wall-loop')

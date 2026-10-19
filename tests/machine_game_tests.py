@@ -429,7 +429,7 @@ class Tray(unittest.TestCase):
         self.assertLess(end['marker'][2], -.5)
         self.assertEqual(end['arrows'], [])
         for item in free['tray']:
-            if item.get('attach'):
+            if item.get('attach') or item.get('logical'):
                 continue
             for key, rule in item['knobs'].items():
                 if key in ('x_m', 'z_m'):
@@ -1278,7 +1278,7 @@ class FreeBuild(unittest.TestCase):
 
     def test_every_free_piece_fits_as_it_comes(self):
         for t in self.FREE['tray']:
-            if t.get('attach'):
+            if t.get('attach') or t.get('logical'):
                 continue      # a link is made by joining two parts, not from the tray
             placed = dict({k: knob_default(r) for k, r in t['knobs'].items()}, piece=t['piece'])
             context = copy.deepcopy(self.FREE)

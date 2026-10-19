@@ -10,6 +10,13 @@ Arrow keys and Space work too. Reset reloads a ball. Find the eight reusable
 tools in **Add a piece → Pinball**. The [workshop model and training sequence](docs/pinball.md)
 describe its current mechanics and the proposed lessons for building it gradually.
 
+Sandbox builders can attach held actions to real hinged/sliding handles through
+**Design → Object actions · advanced**, or select a handle and choose **Actions**.
+Choose its label, optional key and button location: Auto, Beside object or Bottom
+bar. Pinball starts with its buttons ready. The word builder uses the same saved
+catalogue bindings; no programming is required to play the table. See
+[object actions](docs/object-actions.md) for the physical model and qualification.
+
 **Sandbox → Build on a wall** puts a mounting wall inside the ordinary 3D world.
 Wall pieces drag left/right and up/down at a fixed mounting depth; the full
 Sandbox library remains available to build outward and onto the ground. Orbit

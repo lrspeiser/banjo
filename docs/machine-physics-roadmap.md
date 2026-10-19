@@ -1,5 +1,13 @@
 # Physics for the machine: what there is, what to add
 
+October 19 object actions: a shared Sandbox/word-builder binding exposes bounded
+held operator force on existing hinged/sliding handles. The compiler validates
+one action per handle and distinct keys; no scripted motion or automatic event
+law is added. Direction is transformed from initial handle axes at compilation,
+then stays fixed in world coordinates. Operator work uses the existing native
+pull receipt. Glass/oak/iron press-handle comparisons retain the same metal
+switch, wired motor and finite supply. See [measurements and limits](object-actions.md).
+
 October 19 Pinball workshop: an exact sloped deck and rigid sphere, a
 compression spring launcher, two contact-operated powered flippers, return
 springs, passive bumpers and hinged targets now compose a saved Sandbox.

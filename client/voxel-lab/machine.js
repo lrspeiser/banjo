@@ -4024,6 +4024,11 @@ function renderGhostBar() {
   turn.setAttribute('aria-pressed',String(editorMode==='turn'&&!looking));
   move.disabled=!movableGhost();turn.hidden=!Object.entries(knobs).some(([k,r])=>r.turning&&pieceKnobVisible(ghost.p,k));
   modes.append(move,turn);
+  if(level?.free){
+    const names=ghost.baseObject?.parts||(machine?.parts||[]).filter(p=>p.name===ghostName()||p.name.startsWith(ghostName()+' ')).map(p=>p.name);
+    if((machine?.joints||[]).some(j=>['hinge','slide'].includes(j.kind)&&names.includes(j.b)))
+      modes.append(button('Actions',()=>openObjectActions(names),{ariaLabel:'Edit object actions'}));
+  }
   if(ghost.baseObject?.wall)modes.append(button('↻ 90°',()=>{
     if(setKnob(ghost.p,'yaw_deg',(ghost.p.yaw_deg||0)+90)){
       ghost.card='yaw_deg';editorMode='turn';looking=false;if(wallFront){wallFront=false;wallCameraControls();}
@@ -4070,7 +4075,85 @@ function editByDrag(key,initial,pixels) {
 const liveCards=document.createElement('div');liveCards.id='device-live-controls';view.append(liveCards);
 const playerControls=document.createElement('div');playerControls.id='player-controls';playerControls.hidden=true;view.append(playerControls);
 const heldPlayerControls=new Map();
-let playerControlQueue=Promise.resolve();
+let playerControlQueue=Promise.resolve(),playerControlPage=0;
+function dockedPlayerControl(control){return control.location==='dock'||((control.location||'auto')==='auto'&&pinballDesign());}
+function playerControlButton(name){return view.querySelector(`[data-control="${CSS.escape(name)}"]`);}
+function pagePlayerControls(){
+  const buttons=[...playerControls.querySelectorAll('[data-control]')],paged=buttons.length>3;
+  const size=view.clientWidth<600?2:3,pages=Math.ceil(buttons.length/size);
+  playerControlPage=Math.max(0,Math.min(playerControlPage,pages-1));
+  buttons.forEach((b,i)=>{b.hidden=paged&&Math.floor(i/size)!==playerControlPage;});
+  for(const nav of playerControls.querySelectorAll('[data-action-page]')){
+    nav.hidden=!paged;nav.disabled=nav.dataset.actionPage==='previous'?playerControlPage===0:playerControlPage>=pages-1;
+  }
+}
+let actionTargets=[], actionScope=null, actionStamp='', actionDesign=null, actionRequest=0;
+const actionDirections={down:[0,-1,0],up:[0,1,0],left:[-1,0,0],right:[1,0,0],forward:[0,0,1],back:[0,0,-1]};
+function renderObjectActions(){
+  const box=$('object-action-list');box.replaceChildren();
+  $('design-object-actions').hidden=!level?.free||readOnlyCourse();
+  if(!level?.free)return;
+  for(const control of machine?.player_controls||[]){
+    box.append(button(`${control.label} · ${playerPartTitle(control.part)}`,()=>openObjectActions([control.part]),
+      {ariaLabel:`Edit action ${control.label}`}));
+  }
+}
+async function openObjectActions(scope=null){
+  if(!level?.free||readOnlyCourse()||!activeDesign)return;
+  try{
+    if(currentMode()==='run')await choosePlayMode('build');
+    if(ghost){if(!placeGhost())throw new Error('Place the selected piece before editing its actions');scheduleRebuild(0);}
+    actionScope=scope;actionStamp=setupSnapshot();actionDesign=activeDesign.id;
+    const request=++actionRequest;
+    $('object-action-status').textContent='Finding moving handles…';
+    $('object-action-save').disabled=true;$('object-action-target').replaceChildren();
+    if(!$('object-action-dialog').open)$('object-action-dialog').showModal();
+    const r=await api({op:'object_actions',level:'free',...sandboxRequest(),placements});
+    if(request!==actionRequest||activeDesign?.id!==actionDesign||setupSnapshot()!==actionStamp)return;
+    actionTargets=r.targets.filter(row=>!actionScope||actionScope.includes(row.part));
+    for(const target of actionTargets)$('object-action-target').append(new Option(playerPartTitle(target.part),target.part));
+    $('object-action-save').disabled=!actionTargets.length;
+    $('object-action-status').textContent=actionTargets.length?'':'Add a hinged or sliding handle first, such as a spring-return button, door or launcher.';
+    showObjectAction();
+  }catch(error){$('object-action-status').textContent=error.data?.problems?.join('; ')||error.message;}
+}
+function showObjectAction(){
+  const target=actionTargets.find(t=>t.part===$('object-action-target').value);if(!target)return;
+  const c=target.control,force=target.force_local_n;
+  $('object-action-label').value=c?.label||'Press handle';$('object-action-key').value=c?.key||'';
+  $('object-action-location').value=c?.location||'auto';
+  $('object-action-direction').value='keep';
+  $('object-action-force').value=Math.max(1,Math.round(Math.hypot(...force)));
+  const custom=placements.find(p=>p.piece==='object_action'&&p.part===target.part);
+  $('object-action-remove').hidden=!custom;
+  $('object-action-remove').textContent=c?.replaces?'Restore ready-made action':'Remove custom action';
+}
+$('object-action-add').addEventListener('click',()=>openObjectActions());
+$('object-action-close').addEventListener('click',()=>$('object-action-dialog').close());
+$('object-action-dialog').addEventListener('close',()=>{actionRequest++;});
+$('object-action-target').addEventListener('change',showObjectAction);
+$('object-action-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  if(!level?.free||activeDesign?.id!==actionDesign||setupSnapshot()!==actionStamp){$('object-action-status').textContent='The design changed. Close and reopen Object actions.';return;}
+  const target=actionTargets.find(t=>t.part===$('object-action-target').value);if(!target)return;
+  const magnitude=Number($('object-action-force').value),direction=actionDirections[$('object-action-direction').value]||target.force_local_n;
+  const norm=Math.hypot(...direction),force=direction.map(v=>Math.trunc(v/norm*magnitude*1e6)/1e6);
+  $('object-action-save').disabled=true;$('object-action-status').textContent='Checking action…';
+  const request=actionRequest;
+  try{
+    const r=await api({op:'object_actions',level:'free',...sandboxRequest(),placements,
+      action:{part:target.part,label:$('object-action-label').value.trim(),key:$('object-action-key').value,location:$('object-action-location').value,force_local_n:force}});
+    if(request!==actionRequest||activeDesign?.id!==actionDesign||setupSnapshot()!==actionStamp)return;
+    remember();placements=r.placements;keepBuild();$('object-action-dialog').close();renderTray();renderPlaced();scheduleRebuild(0);
+  }catch(error){$('object-action-status').textContent=error.data?.problems?.join('; ')||error.message;}
+  finally{$('object-action-save').disabled=false;}
+});
+$('object-action-remove').addEventListener('click',()=>{
+  if(activeDesign?.id!==actionDesign||setupSnapshot()!==actionStamp)return;
+  const index=placements.findIndex(p=>p.piece==='object_action'&&p.part===$('object-action-target').value);
+  if(index<0)return;
+  remember();removePiece(index);keepBuild();$('object-action-dialog').close();renderTray();renderPlaced();scheduleRebuild(0);
+});
 function sendPlayerControl(control,pressed,owner=session){
   playerControlQueue=playerControlQueue.then(()=>{
     if(owner!==session)return;
@@ -4103,7 +4186,7 @@ for(const type of ['keydown','keyup'])document.addEventListener(type,event=>{
   if(event.target.closest('input,textarea,select,[contenteditable=true]')||event.ctrlKey||event.metaKey||event.altKey)return;
   if(!control||currentMode()!=='run'||!playing)return;
   event.preventDefault();event.stopImmediatePropagation();
-  if(type==='keydown')holdPlayerControl(control,playerControls.querySelector(`[data-control="${CSS.escape(control.name)}"]`));
+  if(type==='keydown')holdPlayerControl(control,playerControlButton(control.name));
   else releasePlayerControl(control.name);
 });
 const controlLeaders=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -4136,8 +4219,9 @@ function sceneControlObstacles(rect) {
 }
 function updateLiveControlAvailability(){
   if(!playing&&heldPlayerControls.size)releasePlayerControls();
-  playerControls.hidden=!(machine?.player_controls?.length)||currentMode()!=='run'||document.body.matches('.on-levels,.on-sandbox');
-  for(const b of playerControls.children)b.disabled=!playing||!session||startingRun;
+  playerControls.hidden=!(machine?.player_controls||[]).some(dockedPlayerControl)||currentMode()!=='run'||document.body.matches('.on-levels,.on-sandbox');
+  for(const b of view.querySelectorAll('[data-control]'))b.disabled=!playing||!session||startingRun;
+  pagePlayerControls();
   for(const card of liveCards.children){
     const released=card.dataset.restraint && readouts.joints?.some(j=>j.name===card.dataset.restraint&&j.attached===false);
     const release=card.querySelector('[data-release]');
@@ -4154,13 +4238,15 @@ function updateLiveControlAvailability(){
 }
 function positionLiveControls(){
   updateLiveControlAvailability();
-  const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#wall-camera-view,#piece-editor,#level-done')]
+  const rect=view.getBoundingClientRect(),occupied=[...view.querySelectorAll('#clock,#viewer-zoom,#viewer-perspective,#viewer-history,#wall-camera-view,#piece-editor,#level-done,#player-controls')]
     .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
   for(const card of liveCards.children){
     let leader=liveControlLeaders.get(card);
     if(!leader){leader=document.createElementNS(controlLeaders.namespaceURI,'line');controlLeaders.append(leader);liveControlLeaders.set(card,leader);}
     leader.style.display='none';
     if(card.hidden)continue;
+    const moving=card.actionPart&&world.bodies.get(card.actionPart)?.position_m;
+    if(moving)card.anchor.set(...moving);
     const anchor=card.anchor.clone().project(camera);card.hidden=Math.abs(anchor.z)>1||Math.abs(anchor.x)>1||Math.abs(anchor.y)>1;if(card.hidden)continue;
     if(card.matches(':active')){occupied.push(card.getBoundingClientRect());continue;}
     const x=rect.left+(anchor.x+1)*rect.width/2,y=rect.top+(1-anchor.y)*rect.height/2;
@@ -6631,6 +6717,7 @@ function blueprintAvailable(b){
 function cancelAssembly(){assemblyDraft=null;assemblyVersion++;clearTimeout(assemblyTimer);assemblyCard.hidden=true;
   for(const mesh of [...assemblyGroup.children]){assemblyGroup.remove(mesh);mesh.traverse(m=>m.geometry?.dispose());}assemblyGroup.position.set(0,0,0);}
 function assemblyRows(){return blueprintPlacements(assemblyDraft.blueprint,placements.length,assemblyDraft.at,assemblyDraft.turn,assemblyDraft.bindings).map(p=>{
+  if(p.piece==='object_action'&&p.key&&(machine?.player_controls||[]).some(c=>c.key===p.key))p.key='';
   if(assemblyDraft.lift&&Number.isFinite(p.height_m))p.height_m+=assemblyDraft.lift;
   for(const key of ['at_m','at_b_m'])if(assemblyDraft.lift&&p[key])p[key][1]+=assemblyDraft.lift;
   return p;
@@ -6659,6 +6746,8 @@ function renderAssembly(){
       askAssembly();});label.append(select);assemblyCard.append(label);
   }
   assemblyCard.append(Object.assign(document.createElement('output'),{textContent:a.busy?'Checking fit…':a.problems?.join('; ')||'Drag the gold assembly; drag empty space to change the view.'}));
+  if((a.blueprint.pieces?.map(row=>row.placement)||a.blueprint.placements||[]).some(p=>p.piece==='object_action'&&p.key&&(machine?.player_controls||[]).some(c=>c.key===p.key)))
+    assemblyCard.append(Object.assign(document.createElement('small'),{textContent:'A shortcut already in use will become an on-screen button. Change it in Object actions.'}));
   assemblyCard.append(button('Place assembly',placeAssembly,{disabled:a.busy||!a.fits,className:'primary'}),button('Cancel assembly',cancelAssembly));
 }
 async function askAssembly(){
@@ -6854,7 +6943,7 @@ window.machineGoalState = () => ({goal: activeDesign?.draft.goal ? clone(activeD
   station: playerGoalStation() ? clone(playerGoalStation()) : null, done: Boolean((readouts.stations || [])[0]?.done && playerGoalStation()),
   verdict: $('verdict').textContent + ' ' + $('goal-status').textContent, link: $('goal-share').dataset.url || null});
 function renderPieceChips() {
-  const box = $('piece-category'), tray = level.tray.filter(t => !t.attach && !t.legacy);
+  const box = $('piece-category'), tray = level.tray.filter(t => !t.attach && !t.legacy && !t.logical);
   const present = new Set(tray.map(t => t.wall_mounted?'wall':(PIECE_INFO[t.piece] || ['structure'])[0]));
   const recent = recentPieces.filter(p => tray.some(t => t.piece === p));
   const hasBlueprints = blueprints().some(blueprintAvailable);
@@ -6890,7 +6979,7 @@ function renderPiecePicker() {
   if (pieceFilter === 'blueprints') { renderBlueprintCards(); return; }
   const query = $('piece-search').value.trim().toLowerCase(), category = pieceFilter;
   const words = query.split(/\s+/).filter(Boolean);
-  let items = level.tray.filter(t => !t.attach && !t.legacy).filter(t => {
+  let items = level.tray.filter(t => !t.attach && !t.legacy && !t.logical).filter(t => {
     const [baseGroup, description] = PIECE_INFO[t.piece] || ['structure', 'Add this piece to your machine.'];
     const group=t.wall_mounted?'wall':baseGroup;
     const groupLabel = PIECE_GROUPS.find(([value]) => value === group)?.[1] || '';
@@ -6967,7 +7056,7 @@ $('piece-picker').addEventListener('keydown', e => {
 let trayLevel = null, trayDesign = null, trayPiece = null;
 function browseTray(direction) {
   if (!level || ghost) return;
-  const items = level.tray.filter(t => (!t.attach || !level.free) && !t.legacy && (level.free || piecesLeft(t)>0));
+  const items = level.tray.filter(t => (!t.attach || !level.free) && !t.legacy && !t.logical && (level.free || piecesLeft(t)>0));
   if (items.length < 2) return;
   const index = Math.max(0, items.findIndex(t => t.piece === trayPiece));
   trayPiece = items[(index + direction + items.length) % items.length].piece;
@@ -6983,7 +7072,7 @@ function renderSceneTray() {
   if (bar.hidden) return;
   // A lesson's join (Swing on a rope: one string) is a tray card too: it
   // turns on Attach with a short instruction. Sandbox keeps Attach in Settings.
-  const items = level.tray.filter(t => (!t.attach || !level.free) && !t.legacy && (level.free || piecesLeft(t)>0));
+  const items = level.tray.filter(t => (!t.attach || !level.free) && !t.legacy && !t.logical && (level.free || piecesLeft(t)>0));
   if (trayLevel !== level || trayDesign !== activeDesign?.id || !items.some(t => t.piece === trayPiece)) {
     trayLevel = level; trayDesign = activeDesign?.id; trayPiece = items[0]?.piece;
   }
@@ -7113,7 +7202,8 @@ function renderMachineControls() {
   liveControlPending = false;
   const controls = $('machine-controls'), rows = $('machine-control-rows');
   releasePlayerControls();playerControls.replaceChildren();
-  playerControls.hidden=!(machine?.player_controls?.length);
+  const edgeActions=[];
+  playerControls.hidden=!(machine?.player_controls||[]).some(dockedPlayerControl);
   for(const control of machine?.player_controls||[]){
     const b=button(control.label,()=>{}, {title:`Hold to operate${control.key?' · '+control.key:''}`});
     b.dataset.control=control.name;b.setAttribute('aria-pressed','false');
@@ -7124,8 +7214,16 @@ function renderMachineControls() {
     b.addEventListener('blur',()=>releasePlayerControl(control.name));
     b.addEventListener('pointerenter',()=>setControlGlow([control.part]));
     b.addEventListener('pointerleave',()=>setControlGlow());
-    playerControls.append(b);
+    if(dockedPlayerControl(control))playerControls.append(b);
+    else edgeActions.push({control,button:b});
   }
+  playerControlPage=0;
+  if(playerControls.querySelectorAll('[data-control]').length>3){
+    const previous=button('‹',()=>{releasePlayerControls();playerControlPage--;pagePlayerControls();},{ariaLabel:'Previous object actions',className:'action-page'});
+    const next=button('›',()=>{releasePlayerControls();playerControlPage++;pagePlayerControls();},{ariaLabel:'More object actions',className:'action-page'});
+    previous.dataset.actionPage='previous';next.dataset.actionPage='next';playerControls.prepend(previous);playerControls.append(next);
+  }
+  pagePlayerControls();
   rows.replaceChildren();liveCards.replaceChildren();setControlGlow();
   const beside=(node,name,at)=>{
     const card=document.createElement('section');card.className='device-live-card';card.anchor=new THREE.Vector3(...at);
@@ -7137,6 +7235,12 @@ function renderMachineControls() {
     card.addEventListener('focusout',()=>setControlGlow());
     return node;
   };
+  for(const {control,button:b} of edgeActions){
+    const part=machine.parts.find(p=>p.name===control.part);if(!part)continue;
+    beside(b,control.part,part.at_m);
+    const card=liveCards.lastChild;card.classList.add('object-action-card');card.actionPart=control.part;
+    card.querySelector('strong').textContent=playerPartTitle(control.part);
+  }
   const action = (label, command, name, at, autoStart=false) => {
     const b = button(label, async () => {
       if(currentMode()!=='run'||!session||startingRun)return;
@@ -7204,7 +7308,7 @@ renderer.domElement.addEventListener('pointerdown',e=>{
   const control=(machine?.player_controls||[]).find(c=>c.part===named.get(object));if(!control)return;
   e.preventDefault();e.stopImmediatePropagation();renderer.domElement.setPointerCapture(e.pointerId);
   sceneControlPointers.set(e.pointerId,control.name);
-  holdPlayerControl(control,playerControls.querySelector(`[data-control="${CSS.escape(control.name)}"]`));
+  holdPlayerControl(control,playerControlButton(control.name));
 },true);
 for(const type of ['pointerup','pointercancel','lostpointercapture'])renderer.domElement.addEventListener(type,e=>{
   const name=sceneControlPointers.get(e.pointerId);if(!name)return;
@@ -7255,7 +7359,7 @@ function ghostItem() {
 
 function renderPlaced() {
   syncWallTray();
-  renderBlueprints(); renderGoalControls();
+  renderBlueprints(); renderGoalControls();renderObjectActions();
   $('placed').replaceChildren();
   $('placed-head').hidden=true;
   if (ghost) { showGhostKnobs(); showGhostState(); }
@@ -7291,7 +7395,7 @@ function removePiece(i) {
   const belongs = n => Array.isArray(n)?n.some(belongs):typeof n === 'string' && (n === gone || n.startsWith(gone + ' ') || n.startsWith(gone + ':'));
   const refKeys = p => Object.entries(trayItem(p.piece).knobs).filter(([, r]) => r.part || r.hinge || r.terminal || r.power_port || r.part_list).map(([k]) => k);
   const remaining = placements.map((p, oldIndex) => ({p, oldIndex})).filter(({p, oldIndex}) => oldIndex !== i &&
-    (!['link', 'wire', 'power_cable','rope'].includes(p.piece) || !refKeys(p).some(k => belongs(p[k]))));
+    (!['link', 'wire', 'power_cable','rope','object_action'].includes(p.piece) || !refKeys(p).some(k => belongs(p[k]))));
   const names = new Map(remaining.map(({p, oldIndex}, newIndex) => [`your ${p.piece} ${oldIndex + 1}`, `your ${p.piece} ${newIndex + 1}`]));
   const renamed = name => {
     if(Array.isArray(name))return name.map(renamed);
@@ -7411,7 +7515,7 @@ function checkpointDesign(d, label = '') {
 function renderDesignControls() {
   syncWallTray();
   if(readOnlyCourse())return;
-  renderBlueprints(); renderGoalControls();
+  renderBlueprints(); renderGoalControls();renderObjectActions();
   $('sandbox-controls').hidden = !level?.free;
   $('design-versions').hidden = !level?.free;
   $('machine-data').hidden = !level?.free;
