@@ -89,6 +89,7 @@ class Puzzles(unittest.TestCase):
         cls.showcase_names = {row['name'] for row in machine_game.sandbox_templates()}
         cls.piece_count = len([row for row in machine_game.free_build()['tray'] if not row.get('attach') and not row.get('legacy')])
         cls.wall_piece_count = len([row for row in machine_game.sandbox_wall.world_tray(machine_game.free_build()['tray']) if not row.get('attach') and not row.get('legacy')])
+        cls.wall_mounted_piece_count = len([row for row in machine_game.sandbox_wall.world_tray(machine_game.free_build()['tray']) if row.get('wall_mounted') and not row.get('attach') and not row.get('legacy')])
         cls.river_solution = dict(machine_game.sandbox_water_launch.RIVER_SOLUTION)
         import sandbox_variants
         cls.power_level = sandbox_variants.construct(machine_game.level_by_id('easy-power'),42,version=2)
@@ -628,6 +629,13 @@ class Puzzles(unittest.TestCase):
         # Layout is updated in the game's render loop after a rebuild/edit.
         # Match a browser driver's next-paint actionability check before hit testing.
         self.page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))',await_promise=True)
+        # A late rebuild can append the tray between the initial scroll and
+        # the next paint. Scroll once against that settled layout, retaining
+        # the same full visibility, unobstructed hit and 44 px size checks.
+        scrolled=self.js(f"""(() => {{const el={self.button_expression(label)};if(!el?.closest('.phone-pane'))return false;
+            const r=el.getBoundingClientRect();if(r.top>=0&&r.bottom<=innerHeight)return false;
+            el.scrollIntoView({{block:'nearest',inline:'nearest',behavior:'instant'}});return true;}})()""")
+        if scrolled:self.paint()
         target = self.js(f"""(() => {{ const el = [...document.querySelectorAll('button')].find(b =>
             !b.disabled && b.offsetParent !== null && (!document.getElementById('piece-picker').open || b.closest('#piece-picker')) && (b.getAttribute('aria-label') || b.textContent).trim() === {json.dumps(label)});
             if (!el) return null; const r = el.getBoundingClientRect(), x = r.left + r.width/2, y = r.top + r.height/2;
@@ -2960,7 +2968,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual((turned['x_m'],turned['height_m']),(before_turn['x_m'],before_turn['height_m']))
                 self.click_visible('Throw the ghost away')
                 self.click_visible('Add a piece')
-                self.wait("document.querySelectorAll('#piece-grid .piece-card').length===15",20)
+                self.wait(f"document.querySelectorAll('#piece-grid .piece-card').length==={self.wall_mounted_piece_count}",20)
                 self.wait("[...document.querySelectorAll('#piece-grid .piece-card img')].every(img=>img.naturalWidth>0)",45)
                 self.assertTrue(self.js("[...document.querySelectorAll('#piece-grid .piece-card')].every(b=>b.getBoundingClientRect().height>=44)"))
                 self.press('Add a wall funnel');self.assertTrue(self.ghost()['fits'])

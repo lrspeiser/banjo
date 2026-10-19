@@ -1,6 +1,6 @@
 # Puzzles on the machine (/play)
 
-## Electricity and water in Wall Basics — October 18
+## Electricity and water in Wall Basics — October 19
 
 The next wall pack brings the catalogue to 48 challenges. **Level 1: Wall
 Basics** has ten lessons; the existing 3D Mechanics, Electricity, Water, and
@@ -22,6 +22,10 @@ solutions three times (144/144). The four added lessons pass ordinary scene
 socket wiring or pointer/touch placement, tap controls, Undo/Redo and winning
 playback at 1280×860, 390×844 and 844×390 (12 browser play-throughs). Estimates
 remain author assessments, not timed newcomers or a new blind solver probe.
+Linux runtime verification at `1aa05de5` repeats all 117 game checks in
+791.562 s, all 41 wall checks in 345.537 s, all 44 HTTP checks in 7.199 s,
+and the installed-package checks. Its glass/oak/iron switch trials reproduce
+the same 3/3, 2/3 and 3/3 outcomes recorded below.
 
 The first completed goal now freezes its measured readouts and simulation
 time for HTTP scoring. Later playback keeps its own live ledger, but waiting
@@ -35,6 +39,13 @@ captured from the first recorded successful frame even when playback jumps
 over several frames. Its regression preserves the first goal's ledger while
 later playback continues; the native gap recording and reset/Undo browser
 flow exercise the same scoring interface as live sessions.
+
+The wall library browser check expects the declared mounted-tool inventory
+(17 after adding the tank and receiver), rather than its historical count
+of 15. The browser driver also re-scrolls a phone control once after a late
+layout settles, before checking its unchanged full visibility, unobstructed
+hit target and 44 px minimum dimensions. This corrects the fixture's scroll
+timing; it does not bypass a hidden or blocked control or change gameplay.
 
 The contact switch reuses the existing wood press deck and separate iron leaf
 and pad. At the same 100 mm diameter and 1.8 m release height, glass passes
