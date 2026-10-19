@@ -500,13 +500,14 @@ class Tray(unittest.TestCase):
     def test_wall_lessons_are_early_planar_lessons_without_expanding_the_level_inventory(self):
         ids = [level['id'] for level in LEVELS]
         wall_ids = ['easy-wall-drop', 'easy-wall-track', 'easy-wall-funnel', 'easy-wall-peg', 'easy-wall-seesaw', 'easy-wall-wheel']
-        self.assertEqual(ids[:6], wall_ids)
-        self.assertEqual(ids[6], 'easy-weight', 'Introduce depth with a familiar falling weight')
-        self.assertEqual([l['id'] for l in LEVELS if l['onboarding']['chapter']=='Level 1: Wall Mechanics'], wall_ids)
+        new_ids=['easy-wall-loop','easy-wall-switch','easy-wall-fill','easy-wall-current']
+        self.assertEqual(ids[:10], wall_ids+new_ids)
+        self.assertEqual(ids[10], 'easy-weight', 'Introduce depth with a familiar falling weight')
+        self.assertEqual([l['id'] for l in LEVELS if l['onboarding']['chapter']=='Level 1: Wall Basics'], wall_ids+new_ids)
         builders = dict(mg.PIECES)
         for ident in wall_ids:
             level = mg.level_by_id(ident)
-            self.assertEqual(level['onboarding']['chapter'], 'Level 1: Wall Mechanics')
+            self.assertEqual(level['onboarding']['chapter'], 'Level 1: Wall Basics')
             self.assertEqual(level['wall_mode'], level['machine']['build_surface'])
             self.assertEqual(level['wall_mode']['version'], 2)
             self.assertNotIn('workshop clear guard', {p['name'] for p in level['machine']['parts']})
@@ -552,7 +553,8 @@ class Tray(unittest.TestCase):
         # must say so in its own estimate basis rather than borrow the probe's.
         unprobed={l['id'] for l in LEVELS if 'not yet probed' in l['onboarding']['estimate_basis']}
         self.assertEqual(unprobed,{'easy-roll','easy-block','easy-rope','easy-thread',
-                                  'easy-wall-drop','easy-wall-track','easy-wall-funnel','easy-wall-peg','easy-wall-seesaw','easy-wall-wheel'})
+                                  'easy-wall-drop','easy-wall-track','easy-wall-funnel','easy-wall-peg','easy-wall-seesaw','easy-wall-wheel',
+                                  'easy-wall-loop','easy-wall-switch','easy-wall-fill','easy-wall-current'})
         self.assertEqual({r['id'] for r in receipt['levels']},{l['id'] for l in LEVELS}-unprobed)
         for level in LEVELS:
             exported=audit.packet(level)
@@ -2476,6 +2478,53 @@ class Engine(unittest.TestCase):
                 energy = mg.measure_energy(level, level['solution'], ENGINE, logs)
                 self.assertLessEqual(energy['j'], level['par_energy_j'])
                 self.assertGreater(energy['j'], .99*level['par_energy_j'])
+
+    @need_engine
+    def test_wall_electricity_and_water_need_real_connections_contacts_and_flow(self):
+        with tempfile.TemporaryDirectory() as folder:
+            logs=Path(folder)
+            for ident in ('easy-wall-loop','easy-wall-switch','easy-wall-fill','easy-wall-current'):
+                level=mg.level_by_id(ident)
+                with self.subTest(level=ident):
+                    failed=mg.trial(level,level['wrong'],ENGINE,logs,runs=3)
+                    self.assertEqual(failed['worked'],0,failed)
+                    self.assertTrue(all(r['error'] is None for r in failed['results']))
+                    compiled=mw.compile_spec(mg.compose(level,level['solution'])[0])
+                    run=mw.rehearse(compiled,ENGINE,logs,seconds=level['time_s']+.3,flows=True)
+                    self.assertIsNone(run['error'])
+                    self.assertTrue(run['stations'][0]['done'])
+                    if ident in ('easy-wall-loop','easy-wall-switch'):
+                        wires=run['readouts']['electrical']['wires']
+                        self.assertTrue(all(w['mechanical']['connected'] for w in wires))
+                        for network in run['readouts']['electrical']['networks']:
+                            self.assertLess(abs(network['ledger']['electrical_residual_j']),1e-8)
+                    else:
+                        for source in run['readouts']['pour']['sources']:
+                            self.assertAlmostEqual(source['emitted_m3']+source['remaining_m3'],source['initial_m3'],places=10)
+                        self.assertLess(abs(run['readouts']['pour']['residual_m3']),1e-10)
+            fill=mg.level_by_id('easy-wall-fill')
+            slow=copy.deepcopy(fill['solution']);slow[0]['opening_percent']=10
+            self.assertEqual(mg.trial(fill,slow,ENGINE,logs,runs=3)['worked'],0,'Being aligned is insufficient when flow misses the deadline')
+            wheel=mg.level_by_id('easy-wall-current')
+            dry=mg.compose(wheel,wheel['solution'])[0]
+            dry['spouts'][0]['opening_fraction']=0
+            idle=mw.rehearse(mw.compile_spec(dry),ENGINE,logs,seconds=6)
+            self.assertFalse(idle['stations'][0]['done'])
+            axle=next(j for j in idle['readouts']['joints'] if j['name']=='your wall_water_wheel 1 axle')
+            self.assertAlmostEqual(axle['turned_deg'],0,delta=.01)
+            # The 100 mm marble's material changes its actual mass and contact
+            # response; it never selects a scripted lamp event. Oak can miss
+            # the contact dwell under a nudge, so the lesson stocks iron.
+            measured=[]
+            for material in ('glass','oak','iron'):
+                level=mg.level_by_id('easy-wall-switch')
+                level['tray'][0]['knobs']['material']['choices']=['glass','oak','iron']
+                placed=copy.deepcopy(level['solution']);placed[0]['material']=material
+                result=mg.trial(level,placed,ENGINE,logs,runs=3)
+                self.assertTrue(all(r['error'] is None for r in result['results']))
+                if material in ('glass','iron'):self.assertEqual(result['worked'],3,result)
+                measured.append(dict(material=material,result=result))
+            print('WALL CONTACT MATERIALS',json.dumps(measured))
 
     @need_engine
     def test_starter_ball_block_and_string_lessons_fail_when_the_primitive_is_misused(self):

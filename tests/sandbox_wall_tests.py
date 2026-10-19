@@ -29,13 +29,38 @@ class Wall(unittest.TestCase):
         with tempfile.TemporaryDirectory() as logs:
             return mw.rehearse(mw.compile_spec(spec),ENGINE,logs,seconds=seconds,track=track or ['your marble 1'])
 
+    def test_water_floor_and_meter_turn_with_the_mounting_wall(self):
+        tank=wall.WORLD_PIECES['wall_water_tank']('tank',dict(x_m=1,height_m=2,opening_percent=100),{})
+        receiver=wall.WORLD_PIECES['wall_water_collector']('receiver',dict(x_m=1,height_m=.5),{})
+        board=dict(id='side wall',x_m=1,z_m=2,width_m=3,height_m=3,yaw_deg=90)
+        original=copy.deepcopy(tank['spouts'][0])
+        moved=wall.place_on_panel(tank,board)['spouts'][0]
+        self.assertAlmostEqual(moved['reservoir_floor_m'][0],moved['at_m'][0])
+        self.assertAlmostEqual(moved['reservoir_floor_m'][2],moved['at_m'][2])
+        self.assertAlmostEqual(moved['reservoir_floor_m'][1]-moved['at_m'][1],original['head_offset_m'])
+        region=wall.place_on_panel(receiver,board)['water_regions'][0]
+        self.assertEqual(region['turn_deg'],[0,90,0])
+        centre=region['at_m']
+        # Equal native parcels: one is inside the turned long axis and one
+        # outside its narrow depth, despite both fitting an enclosing AABB.
+        xyz=[round(v*1000) for point in ([centre[0],centre[1],centre[2]+.3],
+                                      [centre[0]+.3,centre[1],centre[2]]) for v in point]
+        parcels=dict(xyz_mm=xyz,sources=[dict(emitted_m3=.002,landed_m3=0,ran_off_m3=0)])
+        self.assertAlmostEqual(mw.water_in_region_l(parcels,region),1)
+        spec=copy.deepcopy(wall.world_base())
+        mg.merge_fragment(spec,wall.WORLD_PIECES['wall_water_collector']('receiver',dict(x_m=0,height_m=.5),{}))
+        compiled=mw.compile_spec(spec)
+        self.assertIsInstance(compiled['parts'],list,'Measurement metadata cannot replace the physical parts list')
+        self.assertTrue(all(isinstance(p,dict) for p in compiled['parts']))
+        self.assertEqual(len(compiled['water_regions']),1)
+
     def test_wall_is_a_saved_surface_with_a_separate_tray(self):
         t=wall.template();before=copy.deepcopy(t)
         restored=json.loads(json.dumps(t))
         self.assertEqual(compose(t['placements'],t['base']),compose(restored['placements'],restored['base']))
         self.assertEqual(t,before)
         rows=mg.requested_level(dict(level='free',base=t['base']))['tray']
-        self.assertEqual(len(rows),16)
+        self.assertEqual(len(rows),18)
         self.assertTrue(all('z_m' not in t['knobs'] for t in rows))
         self.assertFalse(any('wall_' in t['piece'] for t in mg.free_build()['tray']))
         self.assertEqual(len(mg.sandbox_templates()),5)
@@ -163,7 +188,11 @@ class Wall(unittest.TestCase):
         for row in level['tray']:
             if row['piece']=='wire':continue
             with self.subTest(piece=row['piece']),tempfile.TemporaryDirectory() as logs:
-                spec=compose([dict(piece=row['piece'])])
+                base=wall.base()
+                if row['piece']=='wall_water_tank':
+                    import sandbox_water_launch
+                    base['ground']=dict(sandbox_water_launch.CHANNEL_BASE['ground'],nx=100,nz=60)
+                spec=compose([dict(piece=row['piece'])],base)
                 engine,_,_=mw.build_engine(ENGINE,mw.compile_spec(spec),Path(logs))
                 try:
                     before={p['name']:p for p in engine.first['bodies']}
@@ -268,7 +297,7 @@ class WallWorld(unittest.TestCase):
     def test_world_library_has_explicit_wall_mounts_and_every_ordinary_piece(self):
         rows={row['piece']:row for row in self.level['tray']}
         self.assertTrue({r['piece'] for r in mg.free_build()['tray']}<=set(rows))
-        self.assertEqual(len([r for r in rows.values() if r.get('wall_mounted')]),15)
+        self.assertEqual(len([r for r in rows.values() if r.get('wall_mounted')]),17)
         self.assertFalse(any(p['name']==wall.FOUNDATION[1] for p in self.template['base']['parts']))
         self.assertNotIn('z_m',rows['wall_battery']['knobs'])
         self.assertIn('z_m',rows['battery']['knobs'])

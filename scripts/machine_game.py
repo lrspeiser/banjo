@@ -67,6 +67,7 @@ PLAYER_TASK_COUNTS = {
     'easy-roll': 1, 'easy-block': 1, 'easy-rope': 2,
     'easy-wall-track': 1, 'easy-wall-peg': 1, 'easy-wall-wheel': 1,
     'easy-wall-drop': 1, 'easy-wall-funnel': 1, 'easy-wall-seesaw': 1,
+    'easy-wall-loop': 1, 'easy-wall-switch': 1, 'easy-wall-fill': 1, 'easy-wall-current': 1,
 }
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -849,7 +850,7 @@ def _assemble(level, placements, lenient=False):
         if level.get('wall_mode'):
             if level['wall_mode']['version']==1:builders = sandbox_wall.PIECES
             else:builders = dict(builders, **sandbox_wall.WORLD_PIECES)
-            if p['piece']=='wire' and all(str(p.get(key,'')).startswith('your wall_') for key in ('a_terminal','b_terminal')):
+            if p['piece']=='wire' and (tray[p['piece']].get('wall_wire') or all(str(p.get(key,'')).startswith('your wall_') for key in ('a_terminal','b_terminal'))):
                 builders['wire']=sandbox_wall.PIECES['wire']
         made = builders[p['piece']](f'your {p["piece"]} {i + 1}', knobs, ctx)
         if level.get('wall_mode',{}).get('version')==2 and tray[p['piece']].get('wall_mounted'):

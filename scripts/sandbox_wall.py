@@ -139,6 +139,9 @@ def place_on_panel(fragment,panel):
     handles=[device['handle'] for device in devices if device.get('handle')]
     about=[panel['x_m'],0,0];rotation=mw.rotation([0,panel.get('yaw_deg',0),0])
     if panel.get('yaw_deg',0):mw.turn_rows(rotation,about,parts,rows+devices+handles)
+    if panel.get('yaw_deg',0):
+        for region in fragment.get('water_regions',[]):
+            region['turn_deg']=mw.turn_of(mw._mat_mul(rotation,mw.rotation(region.get('turn_deg',[0,0,0]))))
     mw.shift_rows([0,0,dz],parts+rows+devices+handles)
     for device in devices:
         device['terminals']={key:[v+about[i]+(dz if i==2 else 0) for i,v in enumerate(mw._mat_apply(rotation,[at[j]-about[j] for j in range(3)]))]
@@ -275,6 +278,45 @@ def marble(name,k,ctx):
         size_m=[d]*3,at_m=[k['x_m'],k['height_m'],PLANE])]}
 
 
+def water_tank(name,k,ctx):
+    """A fixed reservoir with an open floor outlet, using the native head law.
+
+    The 50 mm square opening has actual clearance through the floor. Water
+    is the existing finite parcel model, not a moving-liquid or CFD model.
+    """
+    x,y=k['x_m'],k['height_m'];opening=k.get('opening_percent',0)
+    floor=y+.03
+    vessel=dict(name=name+' tank',shape='compound',material='glass',fixed=True,
+        at_m=[x,floor+.12,PLANE],parts=[
+            # Four floor strips leave the central 50 x 50 mm outlet open.
+            *[dict(shape='box',size_m=[.095,.01,.24],at_m=[side*.0725,-.12,0]) for side in (-1,1)],
+            *[dict(shape='box',size_m=[.05,.01,.095],at_m=[0,-.12,side*.0725]) for side in (-1,1)],
+            *[dict(shape='box',size_m=[.01,.24,.26],at_m=[side*.125,0,0]) for side in (-1,1)],
+            *[dict(shape='box',size_m=[.24,.24,.01],at_m=[0,0,side*.125]) for side in (-1,1)]])
+    tap=dict(name=name+' tap',shape='compound',material='iron',fixed=True,
+        at_m=[x+.18,y+.03,PLANE],turn_deg=[0,0,opening*.9],parts=[
+            dict(shape='cylinder',size_m=[.06,.025,.06],at_m=[0,0,0],turn_deg=[90,0,0]),
+            dict(shape='box',size_m=[.10,.02,.02],at_m=[0,0,.02])])
+    return dict(parts=[vessel,tap,mount(name+' bracket',x,floor+.12,PLANE-.13),
+        mount(name+' tap bracket',x+.18,y+.03,PLANE-.02)],spouts=[dict(name=name+' outlet',
+            at_m=[x,y,PLANE],direction=[0,-1,0],speed_m_s=0,discharge_l_s=0,
+            initial_volume_l=k.get('fill_l',4),valve_open=True,reservoir_area_m2=.24*.24,
+            outlet_area_m2=.05*.05,head_offset_m=.035,contraction_coefficient=.62,
+            opening_fraction=opening/100,reservoir_floor_m=[x,floor+.005,PLANE])])
+
+
+def water_collector(name,k,ctx):
+    """A wall-mounted box with a transparent front and a retained-water meter."""
+    x,y=k['x_m'],k['height_m'];width=k.get('width_m',.9)
+    result=cup(name,k,ctx)
+    vessel=result['parts'][0];vessel['material']='iron'
+    vessel['parts'].append(dict(shape='box',size_m=[width,.36,.02],at_m=[0,.16,-.27]))
+    result['parts'].append(sm.box(name+' window',[width,.36,.02],[x,y+.16,PLANE+.27],'glass'))
+    result['water_regions']=[dict(title=name,at_m=[x,y+.18,PLANE],
+        size_m=[width-.1,.32,.48],target_l=k.get('target_l',1))]
+    return result
+
+
 def gear(name,k,ctx):
     result=sm.gear(name,dict(k,z_m=PLANE),ctx)
     result['parts'][0]=mount(name+' post',k['x_m'],k['height_m'],PLANE-.04)
@@ -394,7 +436,9 @@ def mounted(builder):
 
 
 PIECES=dict(wall_track=track,wall_funnel=funnel,wall_cup=cup,wall_peg=peg,
-    wall_lever=lever,wall_lift=lift,wall_water_wheel=water_wheel,marble=marble,gear=gear,motor=motor,wire=wire,
+    wall_lever=lever,wall_lift=lift,wall_water_wheel=water_wheel,
+    wall_water_tank=water_tank,wall_water_collector=water_collector,
+    marble=marble,gear=gear,motor=motor,wire=wire,
     **{key:electrical(getattr(se,key)) for key in ('battery','switch','bulb','resistor','capacitor')})
 PIECES={key:mounted(builder) for key,builder in PIECES.items()}
 
@@ -539,6 +583,7 @@ def tray():
     names=dict(wall_track='Wall track',wall_funnel='Wall funnel',wall_cup='Catching cup',
         wall_peg='Deflector peg',wall_lever='Wall seesaw',marble='Marble',gear='Wall gear',
         wall_lift='Marble lift wheel',wall_water_wheel='Wall water wheel',
+        wall_water_tank='Wall water tank',wall_water_collector='Wall water receiver',
         motor='Powered wall gear',battery='Battery',switch='Switch',bulb='Light bulb',
         wire='Wire',resistor='Resistor',capacitor='Capacitor')
     knobs=dict(
@@ -551,6 +596,11 @@ def tray():
             paddles=sm.choice('Paddles',[4,6,8,10,12],8),
             phase_deg=sm.number('Starting paddle angle (°)',-180,180,0,1),
             friction_n_m=sm.number('Axle friction (N·m)',0,1,.002,.001)),
+        wall_water_tank=dict(fill_l=sm.number('Starting water (L)',0,8,4,.5),
+            opening_percent=sm.number('Tap opening (%)',0,100,0,5),
+            outlet_model=dict(choices=['gravity'],default='gravity',hidden=True)),
+        wall_water_collector=dict(width_m=sm.number('Receiver width (m)',.4,1.2,.9,.05),
+            target_l=sm.number('Water target (L)',.25,4,1,.25)),
         wall_lever=dict(length_m=sm.number('Seesaw length (m)',.3,1.2,.7),angle_deg=sm.number('Starting tilt (°)',-30,30,0,1)),
         wall_lift=dict(radius_m=sm.number('Lift radius (m)',.35,.55,.4,.025),
             throttle=sm.number('Motor power',0,1,1,.1),

@@ -7,7 +7,7 @@ const pieces={plank:'a plank',ramp:'a ramp',knife:'a swinging knife',mirror:'mir
   ignition:'a heating coil',cannon:'a cannon',catapult:'a counterweight catapult',
   marble:'a marble',block:'a block',link:'a string',rope:'a rope',wall_track:'a wall track',
   wall_peg:'a round deflector peg',wall_water_wheel:'a paddle wheel',wall_marble:'a marble',
-  wall_funnel:'a wall funnel',wall_lever:'a wall seesaw'};
+  wall_funnel:'a wall funnel',wall_lever:'a wall seesaw',wall_water_tank:'a wall water tank'};
 export const LEVEL_MECHANISMS=Object.freeze({
   'easy-weight':'A falling weight pushes one end of the lever down, turning it around its pivot.',
   'easy-roll':'Gravity pulls the marble down a slope, and it keeps rolling along the floor. On flat ground nothing makes it start.',
@@ -17,6 +17,10 @@ export const LEVEL_MECHANISMS=Object.freeze({
   'easy-wall-track':'The track attaches to the wall. Gravity rolls the marble down its slope and into the waiting cup. Drag the track left/right and up/down; its depth and slope are already set.',
   'easy-wall-peg':'A round peg deflects a falling marble. A hit on its right shoulder pushes the marble toward the cup. Drag the peg across the wall to line up that contact.',
   'easy-wall-wheel':'The falling marble pushes a paddle and turns the wheel around its axle. Hitting beside the axle supplies torque; a miss leaves the wheel still. Drag the wheel across the wall to line up a paddle.',
+  'easy-wall-loop':'Current needs a complete loop. The positive lead is ready; click the lamp’s minus socket and the battery’s minus socket to connect the return. Run to see current flow and the lamp light.',
+  'easy-wall-switch':'The falling marble presses the broad deck. A metal leaf touches the output pad, completing the wired lamp circuit. Put the marble above the deck to the right of its pivot.',
+  'easy-wall-fill':'The tank has four litres. Move its outlet above the receiver and open the tap. A wider opening gives more flow; falling water level slows it. The meter counts water inside the receiver.',
+  'easy-wall-current':'Falling water pushes the paddles. A hit beside the axle gives turning force. Move the wheel into the stream; the source eventually runs dry.',
   'easy-block':'A block stays where you set it and holds up whatever rolls over it. Its top must be level with the tables.',
   'easy-rope':'A string pulls but never pushes. It stops the falling marble moving away from the knot, so the marble swings around it.',
   'easy-thread':'A rope over a pulley redirects the pull. Connect the crate’s gold ring, go over the wheel, and finish on the counterweight. The falling counterweight then lifts the crate.',
@@ -57,7 +61,7 @@ export const LEVEL_MECHANISMS=Object.freeze({
 function goalDescription(level,fallback){
   const rule=level.goal?.station?.done_when||{},family=level.variant?.family||level.id;
   if(rule.turned_deg){
-    const target={'easy-weight':'lever','easy-gears':'big wheel','easy-river-wheel':'wheel','easy-water-wheel':'wheel','easy-wall-wheel':'paddle wheel','easy-wall-seesaw':'seesaw'}[family];
+    const target={'easy-weight':'lever','easy-gears':'big wheel','easy-river-wheel':'wheel','easy-water-wheel':'wheel','easy-wall-wheel':'paddle wheel','easy-wall-current':'paddle wheel','easy-wall-seesaw':'seesaw'}[family];
     if(target)return `Turn the ${target} at least ${rule.turned_deg.deg}°.`;
   }
   if(rule.rose_m){
@@ -69,7 +73,7 @@ function goalDescription(level,fallback){
   if(rule.load_power_w){const r=rule.load_power_w;return `Keep ${r.devices?'both lamps':'the lamp'} powered at ${r.at_least_w} W${r.devices?' each':''} or more for ${r.for_s} s.`;}
   if(rule.capacitor_energy_j)return `Store at least ${rule.capacitor_energy_j.at_least_j} J in the capacitor.`;
   if(rule.charged_j)return `Charge the battery to at least ${rule.charged_j.at_least_j} J.`;
-  if(rule.water_in_zone_l){const r=rule.water_in_zone_l;return `Collect at least ${r.l} litres in the receiver and keep it there for ${r.for_s} s.`;}
+  if(rule.water_in_zone_l){const r=rule.water_in_zone_l;return `Collect at least ${r.l} ${r.l===1?'litre':'litres'} in the receiver and keep it there for ${r.for_s} s.`;}
   if(rule.parted)return 'Heat the cord until it breaks and releases the weight.';
   const zones={gap:'Roll the marble into the cup.','easy-roll':'Roll the marble into the cup.',
     'easy-wall-drop':'Drop the marble into the green cup.',

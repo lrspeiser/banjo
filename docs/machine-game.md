@@ -1,5 +1,66 @@
 # Puzzles on the machine (/play)
 
+## Electricity and water in Wall Basics — October 18
+
+The next wall pack brings the catalogue to 48 challenges. **Level 1: Wall
+Basics** has ten lessons; the existing 3D Mechanics, Electricity, Water, and
+Heat and Chain Reactions chapters retain their IDs, relative ordering and
+saved progress. The four added lessons use the ordinary native subsystems:
+
+| Lesson | Player action | Reference goal time | Existing energy score / par |
+| --- | --- | --- | --- |
+| Connect the wall circuit | Click lamp minus, then battery minus; the positive lead is already fitted | 0.350 s | 1.048 / 1.05 J |
+| A marble lights the wall lamp | Place a 100 mm iron marble above the broad press deck | 0.933–1.050 s | 103.018 / 104 MJ |
+| Fill the wall receiver | Move the finite tank over the box and open its tap; retain 1 L for 0.3 s within 6 s | 3.583 s | 292.988 / 293 MJ |
+| Water drives the wall wheel | Put a paddle beside the falling stream; turn the native hinge 90° | 1.167–1.283 s | 192.052 / 193 MJ |
+
+All four pass nominal and two 1.5 mm nudged runs (12/12). Their misplaced or
+incorrectly wired controls fail. An aligned tank at 10% opening misses the
+unchanged 1 L / 6 s target, and a closed source leaves the wheel still.
+The full local game suite passes 117 methods, including all 48 authored
+solutions three times (144/144). The four added lessons pass ordinary scene
+socket wiring or pointer/touch placement, tap controls, Undo/Redo and winning
+playback at 1280×860, 390×844 and 844×390 (12 browser play-throughs). Estimates
+remain author assessments, not timed newcomers or a new blind solver probe.
+
+The first completed goal now freezes its measured readouts and simulation
+time for HTTP scoring. Later playback keeps its own live ledger, but waiting
+for the browser to display completion cannot add energy to the win. This
+fixes a hand-played wall circuit being charged 1.40 J despite reaching its
+goal on 1.048 J. An HTTP regression continues the native circuit beyond
+1.5 s, then checks that delayed and repeated score requests retain three
+stars against the unchanged 1.05 J par. No goal, par or physics tolerance is
+changed by this correction.
+
+The contact switch reuses the existing wood press deck and separate iron leaf
+and pad. At the same 100 mm diameter and 1.8 m release height, glass passes
+3/3 at 1.167–1.633 s, oak 2/3 at 0.817/1.050 s with one missed dwell, and iron
+3/3 at 0.933–1.050 s. The lesson stocks iron for reliable contact dwell; no
+material law is changed. Its physical wires start below the press deck and
+use normal massive native cable constraints and solved resistive circuits.
+Electrical residual checks use the existing 1e-8 J threshold.
+
+**Wall water tank** adds a fixed glass vessel, an actual 50×50 mm floor
+opening and a visible turning tap. Its existing native reservoir model uses
+0.0576 m² area, 0.0025 m² outlet, 0.62 contraction coefficient, 35 mm outlet
+head offset and a finite four-litre stock. Opening scales effective outlet
+area; declining head reduces flow. **Wall water receiver** has iron bottom,
+sides and back, a glass front, a rear mounting and a retained-volume query.
+Both join the wall Sandbox library; adding water apparatus prepares the
+normal collection channel without replacing the wall. Thumbnail construction
+uses that context in isolation, preserving the saved design.
+
+At 1/240 s and 20 mm solid cells, volume checks preserve emitted plus
+remaining source volume and the parcel balance within 1e-10 m³. The reservoir
+floor and retained-volume query follow a wall's rigid transform; the query
+counts native equal-volume parcel positions in its oriented box at the
+existing millimetre export resolution. These observations do not capture or
+move water. This is the existing parcel/head model, not incompressible CFD,
+moving liquid containment, surface tension or a calibrated material-specific
+water impact law. Ideal wall mountings and the existing cable/contact model
+retain their documented limits; these checks are not a full mechanical
+momentum/energy ledger.
+
 ## Six wall lessons and five chapters — October 18
 
 The game now has 44 challenges in five visible chapters, with no filters or

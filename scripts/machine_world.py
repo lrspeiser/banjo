@@ -155,7 +155,7 @@ def heading(yaw_deg, pitch_deg, roll_deg):
 # directions turn with it, a part's own turn comes after it. A gas region
 # that gives no axis grows up and vents down (ThermoWorld's defaults), so a
 # turned one is given them, turned.
-TURN_POINTS = ('at_m', 'at_b_m', 'over_a_m', 'over_b_m', 'centre_m', 'center_m', 'load_point_m', 'heel_m', 'tip_m')
+TURN_POINTS = ('at_m', 'at_b_m', 'over_a_m', 'over_b_m', 'centre_m', 'center_m', 'load_point_m', 'heel_m', 'tip_m', 'reservoir_floor_m')
 TURN_DIRECTIONS = ('axis', 'vent_axis', 'facing', 'direction', 'normal', 'velocity_m_s')
 GAS_DEFAULTS = {'axis': [0.0, 1.0, 0.0], 'vent_axis': [0.0, -1.0, 0.0]}
 
@@ -2086,7 +2086,10 @@ def _compile_spec_uncached(spec, lenient=False):
         size=_vec(region.get('size_m'),3,'water region size',problems)
         if any(v<=0 for v in size):problems.append('water region size must be positive')
         target=_num(region,'target_l','water region',problems,3,.001,1000)
-        checked_water_regions.append(dict(title=str(region.get('title','Container'))[:80],at_m=at,size_m=size,target_l=target))
+        checked_region=dict(title=str(region.get('title','Container'))[:80],at_m=at,size_m=size,target_l=target)
+        if 'turn_deg' in region:
+            checked_region['turn_deg']=_vec(region['turn_deg'],3,'water region turn',problems)
+        checked_water_regions.append(checked_region)
     airflows=[]
     for a in spec.get('airflows',[]) or []:
         if not isinstance(a,dict): problems.append('airflow must be an object'); continue
@@ -2506,8 +2509,12 @@ def water_in_region_l(parcels,region):
     volume=sum(s.get('emitted_m3',0)-s.get('landed_m3',0)-s.get('ran_off_m3',0)
                for s in parcels.get('sources',[]))
     at,size=region['at_m'],region['size_m']
-    retained=sum(all(abs(xyz[i+j]/1000-at[j])<=size[j]/2 for j in range(3))
-                 for i in range(0,len(xyz),3))
+    inverse=list(zip(*rotation(region['turn_deg']))) if region.get('turn_deg') else None
+    retained=0
+    for i in range(0,len(xyz),3):
+        delta=[xyz[i+j]/1000-at[j] for j in range(3)]
+        if inverse:delta=_mat_apply(inverse,delta)
+        retained+=all(abs(delta[j])<=size[j]/2 for j in range(3))
     return max(0,volume)*1000*retained/count
 
 
@@ -2551,6 +2558,7 @@ class MachineSession:
         self.removed = {}
         self.events = []
         self.readouts = {}
+        self.goal_snapshot = None
         self.runtime = {}
         self.error = None
         # last_used: anything asked of it, a page's polling included (a page
@@ -2964,6 +2972,11 @@ class MachineSession:
             (self.machines or {}).get('motors',[]),native_circuits,out['heat'])
         self.readouts = out
         out['stations'] = self._stations(out)
+        # The first station is a level's goal. Keep its measured ledger when
+        # it first succeeds; playback may continue before the browser asks
+        # for the score. Later electrical consumption is not part of that win.
+        if self.goal_snapshot is None and out['stations'] and out['stations'][0]['done']:
+            self.goal_snapshot = dict(t=self.t, readouts=copy.deepcopy(out))
         self._capture_flows()
 
     def _capture_flows(self, final=False):

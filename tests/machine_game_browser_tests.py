@@ -2840,6 +2840,78 @@ class Puzzles(unittest.TestCase):
                     proof.mkdir(parents=True, exist_ok=True)
                     (proof/f'{ident}-{width}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot', {'format': 'png'})['data']))
 
+    def test_wall_electricity_and_water_use_scene_controls_on_desktop_and_phones(self):
+        import machine_game
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for ident,add in (('easy-wall-loop',None),('easy-wall-switch','Add a marble'),
+                              ('easy-wall-fill','Add a wall water tank'),('easy-wall-current','Add a wall water wheel')):
+                with self.subTest(level=ident,viewport=(width,height)):
+                    self.open(ident,width,height,phone=width!=1280,dismiss_intro=False)
+                    self.assertTrue(self.js("document.getElementById('level-intro-works').textContent.length>20"))
+                    self.click_visible('GO')
+                    if ident=='easy-wall-loop':
+                        self.click_scene_socket('wall lamp:minus',touch=width!=1280);self.ghost()
+                        self.click_scene_socket('wall battery:minus',touch=width!=1280)
+                        self.wait('!machineGhostState() && machinePlacements().length===1 && '+READY,60)
+                        self.assertEqual(self.js('machinePlacements()[0].b_terminal'),'wall battery:minus')
+                    else:
+                        self.click_visible(add);p=self.ghost()['p']
+                        self.click_visible('Move selected piece');self.wait('machineCamera().settled',30);self.paint()
+                        start=self.js('(()=>{const b=machineGhostScreen();return [(b.x0+b.x1)/2,(b.y0+b.y1)/2]})()')
+                        at=self.js(f'machineDragPoint({start[0]},{start[1]})')
+                        solution=machine_game.level_by_id(ident)['solution'][0]
+                        end=self.screen_point([at[0]+solution['x_m']-p['x_m'],at[1]+solution['height_m']-p['height_m'],at[2]])
+                        self.drag(start,end,touch=width!=1280)
+                        held=self.ghost();self.assertTrue(held['fits'],held['problems'])
+                        self.assertNotIn('z_m',held['p'])
+                        if ident=='easy-wall-fill':
+                            self.assertEqual(held['p']['opening_percent'],0)
+                            self.choose_adjustment('Tap opening')
+                            for _ in range(20):
+                                self.click_visible('Increase Tap opening on object');self.ghost()
+                            self.assertEqual(self.ghost()['p']['opening_percent'],100)
+                            self.wait('machineWaterDisplay().some(r=>r.opening===1&&r.litres===4)',30)
+                        self.click_visible('Place');self.wait('!machineGhostState() && '+READY,60)
+                    self.click_visible('Undo');self.wait('machinePlacements().length===0 && '+READY,60)
+                    self.click_visible('Redo');self.wait('machinePlacements().length===1 && '+READY,60)
+                    self.click_visible('Run');self.wait("document.body.classList.contains('scene-win')",60)
+                    if ident=='easy-wall-loop':
+                        self.assertIn('★★★',self.js("document.getElementById('level-done').textContent"))
+                    self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+                    proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                    (proof/f'{ident}-{width}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
+    def test_wall_water_tools_add_the_channel_and_keep_sandbox_designs_editable(self):
+        import sandbox_wall
+        self.anonymous_levels(width=390,height=844)
+        draft=dict(name='Water on a wall',base=sandbox_wall.world_base(),placements=[])
+        packed='j'+base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
+        self.navigate(self.base+'/machine#build='+packed);self.wait(READY,60)
+        self.click_visible('Add a piece');self.click_visible('Show all pieces')
+        self.wait("(()=>{const cards=[...document.querySelectorAll('#piece-grid .piece-card')].filter(b=>b.dataset.piece.startsWith('wall_water_'));return cards.length===3&&cards.every(b=>b.querySelector('img')?.naturalWidth>0);})()",45)
+        self.press('Add a wall water tank');tank=self.ghost()
+        self.assertTrue(tank['fits'],tank['problems'])
+        self.assertEqual(self.js('machineDesign().draft.base.ground.kind'),'flume')
+        self.assertEqual(self.js('machineDesign().draft.base.build_surface.version'),2)
+        self.click_visible('Place');self.wait(READY,60)
+        self.press('Add a wall water receiver');p=self.ghost()['p']
+        self.click_visible('Face the wall');self.click_visible('Move selected piece');self.wait('machineCamera().settled',30);self.paint()
+        start=self.js('(()=>{const b=machineGhostScreen();return [(b.x0+b.x1)/2,(b.y0+b.y1)/2]})()')
+        at=self.js(f'machineDragPoint({start[0]},{start[1]})')
+        end=self.screen_point([at[0],at[1]+.6-p['height_m'],at[2]])
+        self.drag(start,end,touch=True);self.assertTrue(self.ghost()['fits'])
+        self.click_visible('Place');self.wait(READY,60)
+        self.click_visible('Save version');self.anonymous_cloud_saved()
+        self.assertEqual([p['piece'] for p in self.js('machineDesign().draft.placements')],['wall_water_tank','wall_water_collector'])
+        self.click_piece(0);self.ghost();self.choose_adjustment('Tap opening')
+        for _ in range(20):self.click_visible('Increase Tap opening on object');self.ghost()
+        self.click_visible('Place');self.wait(READY,60)
+        self.click_visible('Run')
+        self.wait("(()=>{const meter=document.getElementById('collector-status').textContent;return !meter.startsWith('Preview')&&parseFloat(meter.match(/[\\d.]+(?= L)/)?.[0]||'0')>.2&&parseFloat(document.getElementById('clock').textContent.match(/World ([\\d.]+)/)?.[1]||'0')>=2;})()",30)
+        self.click_visible('Pause')
+        proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+        (proof/'wall-water-sandbox-390.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
     def test_wall_workshop_drag_pan_undo_save_and_run_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
@@ -7016,7 +7088,7 @@ class Puzzles(unittest.TestCase):
         self.js("document.getElementById('levels-open').click()")
         self.wait("!document.getElementById('levels-screen').hidden",10)
         self.assertEqual(self.js("[...document.querySelectorAll('.level-chapter h2')].map(x=>x.textContent)"),
-                         ['Level 1: Wall Mechanics','Level 2: 3D Mechanics','Level 3: Electricity','Level 4: Water','Level 5: Heat and Chain Reactions'])
+                         ['Level 1: Wall Basics','Level 2: 3D Mechanics','Level 3: Electricity','Level 4: Water','Level 5: Heat and Chain Reactions'])
         self.assertEqual(self.js("document.querySelectorAll('.level-card').length"),self.level_count)
         self.assertEqual(self.js("document.querySelectorAll('.level-card-details').length"),0)
         self.assertEqual(self.js("document.querySelectorAll('#levels-screen select').length"),0)

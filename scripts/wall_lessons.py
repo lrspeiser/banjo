@@ -16,9 +16,15 @@ def _board(title):
 
 
 def _fixture(spec, piece, name, **knobs):
-    fragment = wall.WORLD_PIECES[piece](name, knobs, {'tray': {'open_world': True}})
-    for key, rows in fragment.items():
-        spec.setdefault(key, []).extend(rows)
+    builder = wall.WORLD_PIECES.get(piece) or wall.PIECES[piece]
+    fragment = builder(name, knobs, {'tray': {'open_world': True}})
+    def append(target, source):
+        for key, rows in source.items():
+            if isinstance(rows, dict):
+                append(target.setdefault(key, {}), rows)
+            else:
+                target.setdefault(key, []).extend(copy.deepcopy(rows))
+    append(spec, fragment)
 
 
 def _tray(piece, start, **stock):
@@ -111,4 +117,65 @@ def levels():
         dict(turned_deg=dict(joint='your wall_water_wheel 1 axle', deg=90)),
         ['marble', 'your wall_water_wheel 1 wheel'], [0, 1.6], [-.7, 1.35],
         'A marble falling beside the axle pushes a paddle and supplies torque. If it misses the paddles, the wheel stays still.', 193000000)
-    return [falling, route, collecting, bounce, tipping, turn]
+    circuit = _board('Connect the wall circuit')
+    _fixture(circuit, 'wall_battery', 'wall battery', x_m=-.65, height_m=1)
+    _fixture(circuit, 'wall_bulb', 'wall lamp', x_m=.65, height_m=1.8, preset='small')
+    _fixture(circuit, 'wire', 'positive lead', a_terminal='wall battery:plus',
+             b_terminal='wall lamp:plus', length_m=2.4)
+    lead = copy.deepcopy(next(row for row in wall.tray() if row['piece'] == 'wire'))
+    lead.update(count=1, wall_wire=True)
+    for key, value in (('size','low resistance'),('length_m',2.4)):
+        lead['knobs'][key].update(default=value, hidden=True)
+    lead['knobs']['length_m'].update(min=2.4,max=2.4)
+    lead['knobs']['size']['choices']=['low resistance']
+    connect = dict(id='easy-wall-loop', title='Connect the wall circuit', difficulty='easy',
+        teaches='a complete electrical loop', brief='The positive lead is ready. Click the lamp’s minus socket, then the battery’s minus socket to add the return wire. Run it to light the lamp.',
+        time_s=6,budget=100,par=100,style_pieces=1,par_energy_j=1.05,
+        machine=circuit,wall_mode=copy.deepcopy(circuit['build_surface']),tray=[lead],
+        goal=dict(title='Light the wall lamp',focus=['wall lamp bulb'],
+            station=dict(done_when=dict(load_power_w=dict(device='wall lamp',at_least_w=2,for_s=.3)))),
+        hints=['Click the two minus sockets to close the return path.','A wire crossing another wire does not make a connection.'],
+        solution=[dict(piece='wire',a_terminal='wall lamp:minus',b_terminal='wall battery:minus')],
+        wrong=[dict(piece='wire',a_terminal='wall lamp:minus',b_terminal='wall lamp:plus')])
+
+    press = _board('A marble lights the wall lamp')
+    _fixture(press,'wall_battery','wall battery',x_m=-1,height_m=.7)
+    _fixture(press,'wall_switch','press switch',x_m=0,height_m=1.2,mode='paddle',mechanism_version=3,threshold_deg=5)
+    _fixture(press,'wall_bulb','wall lamp',x_m=1,height_m=.7,preset='small')
+    for name,a,b,length in [('lamp lead','press switch:out','wall lamp:plus',2),
+                           ('return lead','wall lamp:minus','wall battery:minus',3),
+                           ('supply lead','wall battery:plus','press switch:in',2)]:
+        _fixture(press,'wire',name,a_terminal=a,b_terminal=b,length_m=length)
+    actuate = _lesson('easy-wall-switch','A marble lights the wall lamp',
+        'Put the marble above the switch’s broad press deck. When it falls, the deck brings two metal contacts together and completes the wired lamp circuit.',
+        press,_tray('wall_marble',[-.9,1.8],diameter_m=.10,material='iron',placement='at height'),
+        dict(load_power_w=dict(device='wall lamp',at_least_w=2,for_s=.1)),
+        ['press switch paddle','wall lamp bulb'],[.12,1.8],[-.9,1.8],
+        'Use the broad deck to the right of the pivot. The wires stay dark until the metal contacts meet.',104000000)
+    actuate['tray'][0]['knobs']['height_m']['min']=1.6
+
+    def water_board(title):
+        spec=_board(title)
+        spec['ground']=dict(kind='flume',nx=40,nz=20,cell_m=.1,trench_z_m=.3,
+            trench_width_m=.6,trench_depth_m=.35,trench_slope=.005,discharge_m3_s=0)
+        return spec
+    fill=water_board('Fill the wall receiver')
+    _fixture(fill,'wall_water_collector','receiving box',x_m=.55,height_m=.5,width_m=.9)
+    filling=_lesson('easy-wall-fill','Fill the wall receiver',
+        'Move the tank above the receiver. Open its tap wide enough to collect 1 litre in 6 seconds. The tank holds a finite supply; its flow slows as it empties.',
+        fill,_tray('wall_water_tank',[-.8,2.3],fill_l=4,outlet_model='gravity'),
+        dict(water_in_zone_l=dict(at_m=[.55,.68,.3],size_m=[.8,.32,.48],l=1,for_s=.3)),
+        ['receiving box cup','receiving box window'],[.55,2.3],[-.8,2.3],
+        'The falling stream must enter the receiver. Tap opening controls how much arrives before the deadline.',293000000)
+    filling['solution'][0]['opening_percent']=100
+    filling['wrong'][0]['opening_percent']=100
+
+    stream=water_board('Water drives the wall wheel')
+    _fixture(stream,'wall_water_tank','water source',x_m=.15,height_m=2.3,fill_l=4,opening_percent=100)
+    driving=_lesson('easy-wall-current','Water drives the wall wheel',
+        'Put the paddle wheel under the falling stream, just to one side of its axle. Water must push its paddles through a quarter turn. The source runs dry.',
+        stream,_tray('wall_water_wheel',[-.8,1.2],radius_m=.3,paddles=8,phase_deg=0,friction_n_m=.002),
+        dict(turned_deg=dict(joint='your wall_water_wheel 1 axle',deg=90)),
+        ['your wall_water_wheel 1 wheel','water source tank'],[0,1.3],[-.8,1.2],
+        'The stream needs a lever arm: a hit beside the centre gives the axle turning force.',193000000)
+    return [falling, route, collecting, bounce, tipping, turn, connect, actuate, filling, driving]

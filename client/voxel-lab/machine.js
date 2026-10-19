@@ -2153,7 +2153,7 @@ function wallWorldPoint(x,y,depth=.3,board=wallPanel()){
 }
 function wallWidthAxis(board=wallPanel()){const a=(board.yaw_deg||0)*Math.PI/180;return new THREE.Vector3(Math.cos(a),0,-Math.sin(a));}
 function wallNormal(board=wallPanel()){const a=(board.yaw_deg||0)*Math.PI/180;return new THREE.Vector3(Math.sin(a),0,Math.cos(a));}
-function pieceKind(p){return p?.piece?.replace(/^wall_(marble|gear|motor|battery|switch|bulb|resistor|capacitor)$/,'$1');}
+function pieceKind(p){return p?.piece?.replace(/^wall_(marble|gear|motor|battery|switch|bulb|resistor|capacitor|water_tank|water_collector)$/,'$1');}
 function wallPlane(p=ghost?.p) { return worldWallDesign()?wallPanel(p).z_m+.3:wallSurface()?.plane_z_m??.3; }
 function wallCameraControls(){
   $('wall-camera-view').hidden=!wallDesign();$('wall-camera-view').textContent=wallFront?'3D':'Front';
@@ -3694,7 +3694,7 @@ function pieceKnobVisible(p,key) {
   if(p.piece==='spring' && p.load && p.load!=='included load' && ['height_m','material','load'].includes(key))return false;
   if(p.piece==='tackle' && p.load && p.load!=='included load' && key==='load_material')return false;
   if(p.piece==='water_wheel' && p.side==='off' && ['side','discharge_l_s'].includes(key))return false;
-  if(p.piece==='water_tank') {
+  if(pieceKind(p)==='water_tank') {
     if(p.outlet_model==='gravity' && (['outlet_model','discharge_l_s'].includes(key) || (key==='valve' && p.valve!=='closed')))return false;
     if(p.outlet_model!=='gravity' && key==='opening_percent')return false;
   }
@@ -6513,7 +6513,7 @@ function libraryTray() { return level.free || level.tray.filter(t => !t.attach).
 function piecesLeft(t) { return (t.count || 1) - placements.filter(p => p.piece === t.piece).length; }
 async function addTrayPiece(t) {
   if (ghost || piecesLeft(t) <= 0) return;
-  if(level.free && ['water_wheel','water_tank','water_chute','water_collector'].includes(t.piece) && !(activeDesign.draft.base||sandboxBase).ground){
+  if(level.free && ['water_wheel','water_tank','water_chute','water_collector'].includes(pieceKind(t)) && !(activeDesign.draft.base||sandboxBase).ground){
     try{if(!await applySandboxGround('channel'))return;t=trayItem(t.piece);}
     catch(e){$('verdict').textContent=e.data?.problems?.join('; ')||e.message;return;}
   }
@@ -6525,7 +6525,7 @@ async function addTrayPiece(t) {
 }
 // Library filters: tap a category chip; Recent lists pieces you added most
 // lately. The last search and category stay until you change them.
-for(const kind of ['marble','gear','motor','battery','switch','bulb','resistor','capacitor']){
+for(const kind of ['marble','gear','motor','battery','switch','bulb','resistor','capacitor','water_tank','water_collector']){
   PIECE_INFO['wall_'+kind]=['wall',`Wall-mounted ${kind}. Drag across the mounting face; its depth stays aligned. ${PIECE_INFO[kind]?.[1]||''}`];
 }
 for(const key of Object.keys(PIECE_INFO).filter(key=>key.startsWith('wall_')))PIECE_INFO[key][0]='wall';
@@ -7088,7 +7088,7 @@ function renderMachineControls() {
         catch(error){liveControlPending=false;showDeviceControlStatus(error.message,input);}
       });
       label.append(input,output);beside(label,source.name.replace(/ outlet$/,''),source.at_m);
-      const owner=/^your water_tank (\d+)/.exec(source.name);
+      const owner=/^your (?:wall_)?water_tank (\d+)/.exec(source.name);
       if(owner)liveCards.lastChild.prepend(button('Adjust tap',()=>pickUp(Number(owner[1])-1),{className:'spring-adjust'}));
       continue;
     }
@@ -7823,6 +7823,10 @@ async function chooseLevel(id, design = null) {
     'easy-wall-track':'Slide the track under the marble to roll it into the green cup.',
     'easy-wall-peg':'Deflect the falling marble off the peg into the green cup.',
     'easy-wall-wheel':'Line up a paddle so the falling marble turns the wheel by 90°.',
+    'easy-wall-loop':'Connect lamp − to battery − to complete the circuit, then Run.',
+    'easy-wall-switch':'Drop the marble onto the broad press deck to close the lamp circuit.',
+    'easy-wall-fill':'Put the tank over the receiver and open the tap: collect 1 L in 6 seconds.',
+    'easy-wall-current':'Put a paddle beside the falling stream to turn the axle by 90°.',
     'easy-block':'Fill the trench with a block as high as the tables.',
     'easy-rope':'Place the ring marble, then drag a string from the beam’s gold ring onto the marble’s ring.',
     cut:'Swing the knife through the cord and drop the weight into the bin.',

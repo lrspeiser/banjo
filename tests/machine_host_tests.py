@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 import uuid
 from unittest.mock import patch
@@ -130,6 +131,39 @@ class BugReports(unittest.TestCase):
 
 class Requests(unittest.TestCase):
     cookie_name='banjo-visitor'
+    def test_completion_score_does_not_charge_for_later_live_playback(self):
+        import machine_game
+        level=machine_game.level_by_id('easy-wall-loop')
+        def command(data):
+            status,body,_=self.request(['127.0.0.1'],'POST','/api/machine',payload=data)
+            result=json.loads(body)
+            self.assertEqual(status,200,result)
+            return result
+        opened=command(dict(op='level_open',level=level['id'],placements=level['solution']))
+        session=self.server.machines.get(opened['session'])
+        try:
+            with session.lock:session.paced=False
+            command(dict(op='play',session=opened['session'],running=True))
+            deadline=time.monotonic()+10
+            with session.lock:
+                while session.t<1.5 and not session.error and time.monotonic()<deadline:
+                    session.lock.wait(.05)
+                session.playing=False
+                self.assertIsNone(session.error)
+                self.assertGreaterEqual(session.t,1.5)
+                snapshot=session.goal_snapshot
+                self.assertIsNotNone(snapshot)
+                self.assertLess(snapshot['t'],.5)
+                current=machine_game.energy_of(session.compiled,session.readouts,session.t)['j']
+            score=command(dict(op='level_score',session=opened['session']))
+            self.assertEqual(score['stars'],3,score)
+            self.assertLess(score['energy_j'],current/2)
+            # The endpoint's score is independent of when it is requested.
+            again=command(dict(op='level_score',session=opened['session']))
+            self.assertEqual(again['energy_j'],score['energy_j'])
+        finally:
+            session.close()
+
     def test_try_it_stops_its_background_preview_and_late_requests_stay_cancelled(self):
         import machine_game
         from types import SimpleNamespace

@@ -500,21 +500,27 @@ class Handler(BaseHTTPRequestHandler):
     # A piece before it is set down: what it would be and where, and why it
     # could not go there. Compiled only, never run, so it is not rationed.
     level=machine_game.requested_level(data)
-    if data.get('thumbnail') and level.get('free') and not level.get('wall_mode'):
+    if data.get('thumbnail') and level.get('free'):
      # Only the picture's construction context changes, never the saved
      # design or running world. Water apparatus needs its declared flume.
      import copy,sandbox_water_launch
      level=copy.deepcopy(level)
-     level['machine']=copy.deepcopy(sandbox_water_launch.CHANNEL_BASE)
+     if not level.get('wall_mode'):
+      level['machine']=copy.deepcopy(sandbox_water_launch.CHANNEL_BASE)
+     elif not level['machine'].get('ground') and any(p.get('piece') in ('wall_water_tank','wall_water_collector') for p in data.get('placements') or []):
+      level['machine']['ground']=dict(sandbox_water_launch.CHANNEL_BASE['ground'],nx=100,nz=60)
     r={'ok':True,**machine_game.ghost(level,data.get('placements'),data.get('index'),snapping=bool(data.get('snap')),edit_key=data.get('edit_key'),nearby=bool(data.get('nearby_snap')),snap_hold=data.get('snap_hold'))}
    elif op=='level_score':
     # Stars from what the engine measured in this session's run.
     s=host.get(data.get('session'));game=getattr(s,'game',None)
     if not game:raise ValueError('That session is not a level')
     level=game.get('definition') or machine_game.level_by_id(game['level'])
-    rows=(s.readouts or {}).get('stations') or [{}]
-    # And what the win took: making the pieces, and what the run put in so far.
-    energy=machine_game.energy_of(s.compiled,s.readouts,s.t)
+    # Capture score inputs together. Live playback can keep running while the
+    # page shows the result; charge only through the first measured goal.
+    with s.lock:
+     snapshot=s.goal_snapshot or dict(readouts=s.readouts,t=s.t)
+     rows=(snapshot['readouts'] or {}).get('stations') or [{}]
+     energy=machine_game.energy_of(s.compiled,snapshot['readouts'],snapshot['t'])
     r={'ok':True,**machine_game.stars(level,game['checked'],game['cost'],rows[0].get('at_s') if rows[0].get('done') else None,game['helped'],energy_j=energy['j']),'energy':energy}
     # General Pull is a test intervention. Validated manual switch handles are
     # ordinary field controls; their native pull work still enters energy.
