@@ -15,6 +15,7 @@ import time
 import unittest
 from unittest.mock import patch
 import uuid
+import urllib.error
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
@@ -166,6 +167,28 @@ class CoHosted(unittest.TestCase):
             self.assertEqual(self.post('/api/machine',dict(op='frame',session=session,after=0))[0],200)
             manager.activate(self.bundle or ROOT,development=self.bundle is None)
         finally:self.post('/api/machine',dict(op='close',session=session))
+
+    def test_stopped_test_child_recovers_the_verified_build_while_new_package_is_missing(self):
+        manager=self.server.test_site
+        root,revision,pid=manager.root,manager.revision,manager.process.pid
+        status,opened,_=self.post('/api/machine',dict(op='level_open',level='easy-weight',placements=[]))
+        self.assertEqual(status,200)
+        try:
+            with patch.object(manager,'_download_latest',side_effect=urllib.error.HTTPError('test-package',404,'pending',{},None)) as missing:
+                manager._close_process(manager.process)
+                manager.auto=True
+                deadline=time.monotonic()+12
+                while time.monotonic()<deadline and not (manager.status()['ready'] and missing.called):time.sleep(.1)
+                self.assertTrue(manager.status()['ready'],manager.status())
+                self.assertTrue(missing.called)
+                self.assertEqual((manager.root,manager.revision),(root,revision))
+                self.assertNotEqual(manager.process.pid,pid)
+                self.assertEqual(self.request('/test/play')[0],200)
+                self.assertEqual(self.post('/api/machine',dict(op='frame',session=opened['session'],after=0))[0],200)
+        finally:
+            manager.auto=False
+            if not manager.status()['ready']:manager.activate(self.bundle or ROOT,development=self.bundle is None)
+            self.post('/api/machine',dict(op='close',session=opened['session']))
 
 
 if __name__=='__main__':unittest.main(argv=[__file__,*remaining],verbosity=2)

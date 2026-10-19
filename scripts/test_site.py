@@ -271,9 +271,17 @@ class TestSite:
                     if root.is_dir() and re.fullmatch('[0-9a-f]{40}',root.name):
                         try:self.activate(root);break
                         except (OSError,ValueError,RuntimeError):self.error='A cached test build could not be started.'
-            due=0
+            due=0;recover_at=0
             while not self.stop.is_set():
                 self._memory_budget()
+                # A stopped child must not wait for an unpublished staging
+                # revision. Revalidate and restart the already accepted build
+                # independently of the update poll, with bounded retries.
+                if self.auto and self.root is not None and not self.status()['ready'] and time.monotonic()>=recover_at:
+                    self.updating=True
+                    try:self.activate(self.root,development=bool(self.source))
+                    except (OSError,ValueError,RuntimeError):self.error='The previous test build could not be restarted.'
+                    finally:self.updating=False;recover_at=time.monotonic()+30
                 if self.auto and time.monotonic()>=due:
                     self.updating=True
                     try:self._download_latest()
