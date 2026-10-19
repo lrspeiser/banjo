@@ -1,5 +1,53 @@
 # Puzzles on the machine (/play)
 
+October 18 direct size grips and wall headings: selecting a mounting wall
+shows both width edges, its top height grip and a heading grip simultaneously.
+Width expands about the wall centre; height retains the grounded bottom.
+Dragging a size grip projects the pointer onto its actual world axis, with a
+retained grab offset, then applies the existing declared size step. Heading
+uses 5-degree steps; **Turn** allows a body drag, and **↻ 90°** is a quarter turn.
+The 44 px grips remain reachable in phone layouts, with leaders when displaced
+from an edge. Keyboard arrows make small changes. This supersedes the earlier
+parallel-panel limitation below; walls remain upright grounded supports.
+
+Optional panel `yaw_deg` (default zero) rotates the declared backing, mounted
+part poses, joint points/axes, electrical terminals and hand controls before
+compilation. A piece's x_m remains its along-wall coordinate relative to that
+panel's x_m; height is vertical. World drag rays intersect the selected wall's
+rotated plane and convert back to those coordinates. The grid and Front camera
+follow the same basis. Ordinary pieces and other walls do not follow the turn.
+Overlap, fixture bounds and tampered backing validation remain authoritative.
+Wall width/height now stop at the native box limit of 8 m; the old UI offered
+12/10 m although the engine refused above 8 m. Larger arrangements use multiple
+walls. Existing zero-heading saves retain their geometry.
+
+The former gold 3D edit arrows were annotations; only their separate +/−
+targets accepted a drag. Their visible shafts/heads now accept a 44 px drag
+hit area and project pointer motion onto the shown screen axis. This uses the
+same stepped knob editor as the precision controls. It does not move simulated
+bodies or inject forces. A held ghost remains editable while its surrounding
+native world rebuilds; stale-world picking is still blocked without a ghost.
+
+Size-control audit: planks retain opposite-end-anchored balls; wall width,
+height and heading are concurrent grips. Tracks, blocks and scaffolding have
+draggable arrows for the selected dimensional property. Pipes expose length
+and radius through the same compiled-geometry guides. Gears retain labelled
+Teeth/Radius/Height choices; discrete choices still need named values. Lens
+face-radius and spring relaxed-length guides describe their actual geometry
+or editing measure. Voltage, resistance, capacitance, stored push, water flow
+and material are not solid dimensions; they retain labelled settings and
+readings rather than implying that stretching a casing changes a physical law.
+
+Native qualification: the motorized lift on a second wall at heading 90°
+raises glass/oak/iron marbles by 0.431/0.433/0.417 m, then contacts its outlet
+at 3.250/2.933/5.033 s. DT=1/240 s, cell size 20 mm, 12 s requested rehearsal;
+native elapsed ledger 11.9167 s. Electrical residual magnitude stays below
+8.7e-12 J; thermal residual below 1.7e-7 J; the existing coupling residual is
+0.00378/0.00390/0.00520 J. Local wall time was 4.27/4.21/5.45 s. These are
+existing model/ledger observations, not a new conservation or structural-bolt
+claim. Geometry/terminal validation, old wall routes and the full wall suite
+also pass. No native law, timestep, level goal or tolerance changes.
+
 October 18 **Close the switch** guidance: its introduction and short instruction
 now explain the Run step before the handle drag. After placing the prewired
 switch, a compact instruction highlights Run as the next action. Run mode
@@ -130,8 +178,9 @@ commits the edit. Move drags change ground X/Z. The wall stays upright and
 grounded. **Add wall** creates a second panel in clear ground space and selects
 it for placement. **Add wall piece** opens the wall library with that panel as
 the target. Front view frames the selected panel. Each panel's own grid follows
-its actual size and position. These are parallel panels; turning/tilting walls,
-wall removal and deformable/failing wall fasteners are not added.
+its actual size and position. Independent headings and direct grips were added
+later the same day as described above. Tilting walls, wall removal and
+deformable/failing wall fasteners are not added.
 
 Optional `build_surface.panels` records stable backing ids, widths, heights and
 ground X/Z. Physical oak backing boxes must match those records. Wall-specific

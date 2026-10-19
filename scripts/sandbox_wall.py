@@ -47,14 +47,18 @@ def world_base():
 
 
 def panels(spec):
-    """Editable parallel mounting faces; old saves keep their original wall."""
+    """Independently editable mounting faces; old saves keep zero heading."""
     return copy.deepcopy(spec.get('build_surface',{}).get('panels') or [
         dict(id=FOUNDATION[0],width_m=WIDTH,height_m=HEIGHT,x_m=0,z_m=0)])
 
 
 def panel_part(panel):
-    return sm.box(panel['id'],[panel['width_m'],panel['height_m'],.02],
+    part=sm.box(panel['id'],[panel['width_m'],panel['height_m'],.02],
                   [panel['x_m'],panel['height_m']/2,panel['z_m']-.01],'oak')
+    yaw=panel.get('yaw_deg',0)
+    if yaw:
+        mw.turn_rows(mw.rotation([0,yaw,0]),[panel['x_m'],0,panel['z_m']],[part])
+    return part
 
 
 def panel_surface(rows):
@@ -67,18 +71,20 @@ def _validate_panels(rows):
     if not isinstance(rows,list) or not 1<=len(rows)<=8:raise ValueError('Use one to eight mounting walls.')
     seen=set()
     for row in rows:
-        if not isinstance(row,dict) or set(row)!={'id','width_m','height_m','x_m','z_m'}:
+        if not isinstance(row,dict) or set(row)-{'id','width_m','height_m','x_m','z_m','yaw_deg'} or not {'id','width_m','height_m','x_m','z_m'}<=set(row):
             raise ValueError('A mounting wall needs its size and ground position.')
         if not isinstance(row['id'],str) or not re.fullmatch(r'workshop backing|mounting wall [2-9]\d*',row['id']) or row['id'] in seen:
             raise ValueError('Every mounting wall needs a unique id.')
         seen.add(row['id'])
-        for key,lo,hi in (('width_m',.5,12),('height_m',.5,10),('x_m',-16,16),('z_m',-16,16)):
-            value=row[key]
+        for key,lo,hi in (('width_m',.5,8),('height_m',.5,8),('x_m',-16,16),('z_m',-16,16),('yaw_deg',-180,180)):
+            value=row.get(key,0)
             if type(value) not in (int,float) or not math.isfinite(value) or not lo<=value<=hi:
-                raise ValueError(f'Wall {key} must be {lo} to {hi} metres.')
+                raise ValueError(f'Wall {key} must be {lo} to {hi} '+('degrees.' if key=='yaw_deg' else 'metres.'))
     for i,a in enumerate(rows):
         for b in rows[i+1:]:
-            if abs(a['z_m']-b['z_m'])<.021 and abs(a['x_m']-b['x_m'])<(a['width_m']+b['width_m'])/2+.001:
+            solids=[dict(panel_part(p),turn_deg=panel_part(p).get('turn_deg',[0,0,0])) for p in (a,b)]
+            for solid in solids:solid['size_m']=[v+.001 for v in solid['size_m']]
+            if mw.overlap_depth(*solids)>0:
                 raise ValueError('The mounting walls overlap; move them apart.')
 
 
@@ -116,21 +122,27 @@ def bounds_problems(compiled, mounted_owners=None, panel_rows=None):
             owner=next(name for name in mounted_owners if p['name']==name or p['name'].startswith(name+' '))
             panel=next(row for row in panel_rows if row['id']==mounted_owners[owner])
         points=[pt for solid in mw.solids_of(p) for pt in mw.footprint_points(solid)]
-        if any(abs(pt[0]-panel['x_m'])>panel['width_m']/2+.001 or pt[1]<0 or pt[1]>panel['height_m']+.001 or
-               pt[2]<panel['z_m']-.001 or (mounted_owners is None and pt[2]>DEPTH+.001) for pt in points):
+        undo=mw.rotation([0,-panel.get('yaw_deg',0),0])
+        local=[mw._mat_apply(undo,[pt[0]-panel['x_m'],pt[1],pt[2]-panel['z_m']]) for pt in points]
+        if any(abs(pt[0])>panel['width_m']/2+.001 or pt[1]<0 or pt[1]>panel['height_m']+.001 or
+               pt[2]<-.001 or (mounted_owners is None and pt[2]>DEPTH+.001) for pt in local):
             problems.append(p['name']+' extends beyond the wall; move it inside the board')
     return problems
 
 
 def place_on_panel(fragment,panel):
-    """Translate declared fixtures, anchors and electrical sockets before running."""
+    """Turn/translate declared fixtures, anchors and sockets before running."""
     dz=panel['z_m']
-    rows=[row for value in fragment.values() if isinstance(value,list) for row in value]
+    parts=fragment.get('parts',[])
+    rows=[row for key,value in fragment.items() if key!='parts' and isinstance(value,list) for row in value]
     devices=fragment.get('electrical',{}).get('devices',[])
-    mw.shift_rows([0,0,dz],rows+devices)
+    handles=[device['handle'] for device in devices if device.get('handle')]
+    about=[panel['x_m'],0,0];rotation=mw.rotation([0,panel.get('yaw_deg',0),0])
+    if panel.get('yaw_deg',0):mw.turn_rows(rotation,about,parts,rows+devices+handles)
+    mw.shift_rows([0,0,dz],parts+rows+devices+handles)
     for device in devices:
-        device['terminals']={key:[at[0],at[1],at[2]+dz] for key,at in device.get('terminals',{}).items()}
-        if device.get('handle'):mw.shift_rows([0,0,dz],[device['handle']])
+        device['terminals']={key:[v+about[i]+(dz if i==2 else 0) for i,v in enumerate(mw._mat_apply(rotation,[at[j]-about[j] for j in range(3)]))]
+                            for key,at in device.get('terminals',{}).items()}
     return fragment
 
 
@@ -144,14 +156,14 @@ def edit_panel(base_spec,placements,panel_id,changes=None,add=False,edit_key=Non
         used={row['id'] for row in rows};number=2
         while 'mounting wall '+str(number) in used:number+=1
         panel_id='mounting wall '+str(number)
-        right=max(row['x_m']+row['width_m']/2 for row in rows)
+        right=max(pt[0] for row in rows for pt in mw.footprint_points(dict(panel_part(row),turn_deg=panel_part(row).get('turn_deg',[0,0,0]))))
         rows.append(dict(id=panel_id,width_m=3.,height_m=3.,x_m=right+2,z_m=rows[-1]['z_m']))
     selected=next((row for row in rows if row['id']==panel_id),None)
     if selected is None:raise ValueError('Choose a mounting wall in this design.')
     old=copy.deepcopy(selected)
     if changes:
-        if not isinstance(changes,dict) or set(changes)-{'x_m','z_m','width_m','height_m'}:
-            raise ValueError('Change wall width, height or ground position.')
+        if not isinstance(changes,dict) or set(changes)-{'x_m','z_m','width_m','height_m','yaw_deg'}:
+            raise ValueError('Change wall width, height, heading or ground position.')
         selected.update(changes)
     _validate_panels(rows)
     wall_types=set(WORLD_PIECES)
@@ -172,6 +184,10 @@ def edit_panel(base_spec,placements,panel_id,changes=None,add=False,edit_key=Non
         x,z=selected['x_m'],selected['z_m'];w,h=selected['width_m'],selected['height_m']
         arrows=([dict(at=[x+w/2,h/2,z],direction=[1,0,0]),dict(at=[x-w/2,h/2,z],direction=[-1,0,0])]
                 if edit_key=='width_m' else [dict(at=[x,h,z],direction=[0,1,0]),dict(at=[x,0,z],direction=[0,-1,0])])
+        rotation=mw.rotation([0,selected.get('yaw_deg',0),0])
+        for arrow in arrows:
+            arrow['at']=[v+[x,0,z][i] for i,v in enumerate(mw._mat_apply(rotation,[arrow['at'][0]-x,arrow['at'][1],arrow['at'][2]-z]))]
+            arrow['direction']=mw._mat_apply(rotation,arrow['direction'])
         guide=dict(key=edit_key,focus=[panel_id],arrows=arrows,marker=None)
     return dict(base=result,placements=placed,parts=parts,selected=dict(id='wall:'+panel_id,parts=[p['name'] for p in parts]),
         wall=selected,fits=not problems,problems=problems[:4],cost=0,sun=[],edit_guide=guide,

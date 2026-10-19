@@ -633,7 +633,9 @@ def _free_layout_prompt(level):
             return f'''You build machines in Banjo's ordinary 3D world with a vertical mounting wall.
 The native engine decides motion. These are the mounting walls: {json.dumps(sandbox_wall.panels(level['machine']))}.
 Pieces named wall_* choose a wall by its id in their wall knob. They mount .30 m in front of that wall.
-Use world x_m and height_m, with angle_deg for slopes. Keep fixtures within their selected wall's bounds.
+For wall_* pieces, x_m is the wall's x_m plus the left/right offset along its face, and height_m is vertical.
+The engine rotates this offset and the .30 m mounting depth by that wall's yaw_deg; z_m locates the wall on the ground.
+Use angle_deg for slopes within its face. Keep fixtures within their selected wall's bounds.
 All other pieces are normal 3D devices. Use their x_m, z_m, height and orientation knobs;
 they can extend away from the wall or stand on the ground. Never flatten their positions onto the wall.
 For a wall-only course choose wall_marble, NOT ordinary marble. It starts at the actual wall lane depth.

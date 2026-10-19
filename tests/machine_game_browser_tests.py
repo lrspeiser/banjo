@@ -2937,21 +2937,28 @@ class Puzzles(unittest.TestCase):
                 self.press('Sandbox: build anything');self.click_visible('Build on a wall');self.wait(READY,60)
                 original=self.js('machineDesign().draft')
                 self.click_piece(self.js('machinePlacements().length'));self.ghost()
+                self.assertEqual(self.js("[...document.querySelectorAll('.wall-size-handle')].filter(h=>h.checkVisibility()).length"),4)
                 for label,key in (('Width','width_m'),('Height','wall_height_m')):
-                    self.click_visible('Adjust '+label);self.ghost();self.paint()
-                    point=self.js(f"(()=>{{const h=document.querySelector('[aria-label=\"Increase {label} on object\"]'),r=h.getBoundingClientRect();return {{start:[r.x+r.width/2,r.y+r.height/2],dx:Number(h.dataset.dx),dy:Number(h.dataset.dy)}};}})()")
+                    self.paint();edge='right' if label=='Width' else 'top'
+                    point=self.js(f"(()=>{{const h=document.querySelector('[data-wall-grip=\"{edge}\"]'),r=h.getBoundingClientRect();return {{start:[r.x+r.width/2,r.y+r.height/2],dx:Number(h.dataset.dx),dy:Number(h.dataset.dy)}};}})()")
                     before=self.ghost()['p'][key]
-                    self.drag(point['start'],[point['start'][0]+point['dx']*24,point['start'][1]+point['dy']*24],touch=width!=1280)
-                    self.assertGreater(self.ghost()['p'][key],before+.3);self.assertTrue(self.ghost()['fits'])
+                    p=self.ghost()['p']
+                    anchor=[p['x_m']+p['width_m']/2,p['wall_height_m']/2,p['z_m']] if label=='Width' else [p['x_m'],p['wall_height_m'],p['z_m']]
+                    farther=list(anchor);farther[0 if label=='Width' else 1]+=.25 if label=='Width' else .5
+                    a,b=self.screen_point(anchor),self.screen_point(farther)
+                    self.drag(point['start'],[point['start'][0]+b[0]-a[0],point['start'][1]+b[1]-a[1]],touch=width!=1280)
+                    self.assertGreater(self.ghost()['p'][key],before+.3);self.assertTrue(self.ghost()['fits'],self.ghost())
                 self.click_visible('Place');self.wait(READY,60)
                 resized=self.js('machineDesign().draft')
                 self.assertGreater(resized['base']['build_surface']['width_m'],6)
                 self.assertGreater(resized['base']['build_surface']['height_m'],4)
                 self.click_visible('Undo');self.wait(READY,60);self.assertEqual(self.js('machineDesign().draft'),original)
                 self.click_visible('Redo');self.wait(READY,60)
-                self.click_visible('Add wall');self.ghost();self.assertEqual(self.js('machineWallState().surface.panels.length'),2)
+                self.click_visible('Add wall');self.wait("machineGhostState()||!document.getElementById('wall-add').disabled",60)
+                self.assertIsNotNone(self.js('machineGhostState()'),self.js("document.getElementById('design-status').textContent"))
+                self.ghost();self.assertEqual(self.js('machineWallState().surface.panels.length'),2)
                 second=self.ghost()['p'];self.drag_ghost_to(second['x_m']+.4,second['z_m']+.8,touch=width!=1280)
-                self.assertAlmostEqual(self.ghost()['p']['z_m'],second['z_m']+.8,delta=.05)
+                self.assertAlmostEqual(self.ghost()['p']['z_m'],second['z_m']+.8,delta=.05,msg=str(self.ghost()))
                 self.click_visible('Place');self.wait(READY,60)
                 self.assertEqual(self.js('machinePlacements()'),original['placements'])
                 wall_index=self.js('machineEditableObjects().find(o=>o.wall?.id.startsWith("mounting wall ")).index')
@@ -2984,6 +2991,66 @@ class Puzzles(unittest.TestCase):
         self.assertEqual(self.js('machineDesign().draft.base.build_surface.version'),2)
         self.press('Add a loose block');self.ghost();self.assertTrue(self.ghost()['fits'])
         self.click_visible('Throw the ghost away')
+
+    def test_second_wall_turns_with_its_mounting_plane_and_keeps_saved_heading(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.click_visible('Build on a wall');self.wait(READY,60)
+                original=self.js('machineDesign().draft')
+                self.click_visible('Add wall');self.ghost();self.click_visible('Turn wall by 90 degrees');self.ghost()
+                self.assertEqual(self.ghost()['p']['yaw_deg'],90)
+                self.click_visible('Place');self.wait(READY,60)
+                board=self.js('machineWallState().surface.panels[1]');self.assertEqual(board['yaw_deg'],90)
+                reported=self.js('machineEditableObjects().find(o=>o.wall?.id===machineWallState().surface.panels[1].id).at_m')
+                native=self.js('machineBodies()[machineWallState().surface.panels[1].id]')
+                for a,b in zip(reported,native):self.assertAlmostEqual(a,b,places=4,msg='the editable centre must match the rotated native backing')
+                self.assertEqual(self.js('machinePlacements()'),original['placements'])
+                self.click_visible('Undo');self.wait(READY,60)
+                self.assertEqual(self.js('machineWallState().surface.panels[1].yaw_deg||0'),0)
+                self.click_visible('Redo');self.wait(READY,60)
+                self.click_piece(self.js('machineEditableObjects().find(o=>o.wall?.id===machineWallState().surface.panels[1].id).index'));self.ghost()
+                self.click_visible('Add a piece to this wall');self.press('Add a wall track');self.ghost()
+                self.click_visible('Face the wall');self.wait('machineCamera().settled',30)
+                self.assertAlmostEqual(self.js('machineCamera().azimuth'),math.pi/2)
+                p=self.ghost()['p'];self.assertEqual(p['wall'],board['id'])
+                self.click_visible('Move selected piece');self.wait('machineCamera().settled',30);self.paint()
+                start=self.screen_point([board['x_m']+.3,p['height_m'],board['z_m']-(p['x_m']-board['x_m'])])
+                end=self.screen_point([board['x_m']+.3,p['height_m']-.15,board['z_m']-(p['x_m']+.2-board['x_m'])])
+                self.drag(start,end,touch=width!=1280)
+                moved=self.ghost()['p'];self.assertAlmostEqual(moved['x_m'],p['x_m']+.2,delta=.025)
+                self.assertAlmostEqual(moved['height_m'],p['height_m']-.15,delta=.025)
+                self.assertTrue(self.ghost()['fits'],self.ghost()['problems'])
+                self.click_visible('Place');self.wait(READY,60)
+                self.click_visible('Save version');self.anonymous_cloud_saved();saved=self.js('machineDesign()')
+                self.press('All designs');self.press('Open design '+saved['name']);self.wait(READY,60)
+                self.assertEqual(self.js('machineDesign().draft'),saved['draft'])
+                self.click_piece(self.js('machineEditableObjects().find(o=>o.wall?.id===machineWallState().surface.panels[1].id).index'));self.ghost()
+                grip=self.js("(()=>{const h=document.querySelector('[data-wall-grip=turn]'),r=h.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()")
+                self.drag(grip,[grip[0]+25,grip[1]],touch=width!=1280)
+                self.assertEqual(self.ghost()['p']['yaw_deg'],115)
+                if width==1280:
+                    self.click_visible('Face the wall');self.click_visible('Turn selected piece');self.paint()
+                    self.assertFalse(self.js('machineWallState().front_view'))
+                    centre=self.js("(()=>{const b=machineGhostScreen();return [(b.x0+b.x1)/2,(b.y0+b.y1)/2]})()")
+                    self.assertEqual(self.js(f'document.elementFromPoint({centre[0]},{centre[1]})?.tagName'),'CANVAS')
+                    self.drag(centre,[centre[0]+20,centre[1]])
+                    self.assertEqual(self.ghost()['p']['yaw_deg'],135,'Turns use the existing one degree per pixel gesture, snapped to 5 degrees')
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'turned-wall-{width}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
+    def test_visible_dimension_arrows_are_draggable_on_desktop_and_touch(self):
+        for piece,key,name,width,height in (('track','run_m','length',1280,860),('loose_block','width_m','Width',390,844),('scaffold','height_m','platform height',844,390),('pipe','length_m','pipe length',1280,860)):
+            with self.subTest(piece=piece,viewport=(width,height)):
+                self.open('free',width,height,phone=width<1000)
+                self.press('Add a '+{'loose_block':'loose block','scaffold':'scaffolding','pipe':'straight pipe'}.get(piece,piece));self.ghost()
+                self.choose_adjustment(name);self.ghost();self.wait('machineCamera().settled',30)
+                grip=self.js("machineEditArrowGrips().find(g=>document.elementFromPoint(...g.screen)?.tagName==='CANVAS')")
+                self.assertIsNotNone(grip,'A visible arrow must be reachable in the scene')
+                before=self.ghost()['p'][key];azimuth=self.js('machineCamera().azimuth')
+                self.drag(grip['screen'],[grip['screen'][0]+grip['dx']*24,grip['screen'][1]+grip['dy']*24],touch=width!=1280)
+                self.assertGreater(self.ghost()['p'][key],before)
+                self.assertAlmostEqual(self.js('machineCamera().azimuth'),azimuth)
 
     def test_wall_wires_connect_at_scene_sockets_and_drive_the_native_motor(self):
         import sandbox_wall

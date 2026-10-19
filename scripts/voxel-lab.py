@@ -425,7 +425,7 @@ class Handler(BaseHTTPRequestHandler):
      wall_names={p['id'] for p in walls}
      r['sandbox_objects']=[o for o in sandbox_edit.objects(level['machine']) if not any(n in wall_names or level.get('wall_mode') and n in machine_game.sandbox_wall.FOUNDATION for n in o['parts'])]
      r['sandbox_objects'] += [dict(id='wall:'+p['id'],name='Mounting wall '+str(i+1),parts=[p['id']],
-        at_m=[p['x_m'],p['height_m']/2,p['z_m']-.01],wall=p) for i,p in enumerate(walls)]
+        at_m=machine_game.sandbox_wall.panel_part(p)['at_m'],wall=p) for i,p in enumerate(walls)]
     if needs:r['needs']=needs
     host.get(r['session']).game={'level':level['id'],'definition':level,'checked':checked,'cost':cost,'helped':bool(data.get('helped'))}
    elif op=='feedback':

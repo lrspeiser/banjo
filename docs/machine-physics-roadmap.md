@@ -17,9 +17,9 @@ were also reviewed. These are proposed experiments, not new runtime models.
 See the [comparison and qualification plan](physics-solvers.md).
 
 October 18 wall-in-world update: only wall-specific placement uses a plane.
-Backing walls can now be resized and translated on the ground, with additional
-parallel panels. Their actual oak boxes, mounted fixtures, joint anchors and
-electrical sockets change in the setup declaration. Native gravity/contact
+Backing walls can now be resized, translated on the ground and independently
+turned about the vertical. Their actual oak boxes, mounted fixtures, joint
+anchors/axes and electrical sockets change in the setup declaration. Native gravity/contact
 still owns subsequent motion; panel editing adds no force or pose projection.
 The backings and brackets remain ideal grounded supports, not tested structural
 bolts or breakable mounting assemblies.

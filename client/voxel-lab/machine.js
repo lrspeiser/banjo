@@ -90,8 +90,8 @@ function syncWallGrid(){
   for(const board of boards)for(const [step,color,opacity] of [[.05,0xeee0c5,.13],[.5,0xeee0c5,.4]]) {
   const points=[];
   const left=board.x_m-board.width_m/2,right=board.x_m+board.width_m/2,z=board.z_m+.003;
-  for(let x=left;x<=right+.001;x+=step)points.push(new THREE.Vector3(x,0,z),new THREE.Vector3(x,board.height_m,z));
-  for(let y=0;y<=board.height_m+.001;y+=step)points.push(new THREE.Vector3(left,y,z),new THREE.Vector3(right,y,z));
+  for(let x=left;x<=right+.001;x+=step)points.push(wallWorldPoint(x,0,.003,board),wallWorldPoint(x,board.height_m,.003,board));
+  for(let y=0;y<=board.height_m+.001;y+=step)points.push(wallWorldPoint(left,y,.003,board),wallWorldPoint(right,y,.003,board));
   wallGrid.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points),
     new THREE.LineBasicMaterial({color,transparent:true,opacity,depthWrite:false})));
   }
@@ -2146,6 +2146,12 @@ function wallPlacement(p=ghost?.p){return wallDesign()&&Boolean(p)&&(!worldWallD
 function wallPanels(){const base=ghost?.baseObject?.wall&&ghost.base?ghost.base:activeDesign?.draft.base;
   return base?.build_surface?.panels||[{id:'workshop backing',width_m:6,height_m:4,x_m:0,z_m:0}];}
 function wallPanel(p=ghost?.p){const rows=wallPanels();return rows.find(row=>row.id===(p?.wall||activeWallId))||rows[0];}
+function wallWorldPoint(x,y,depth=.3,board=wallPanel()){
+  const a=(board.yaw_deg||0)*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
+  return new THREE.Vector3(board.x_m+c*(x-board.x_m)+s*depth,y,board.z_m-s*(x-board.x_m)+c*depth);
+}
+function wallWidthAxis(board=wallPanel()){const a=(board.yaw_deg||0)*Math.PI/180;return new THREE.Vector3(Math.cos(a),0,-Math.sin(a));}
+function wallNormal(board=wallPanel()){const a=(board.yaw_deg||0)*Math.PI/180;return new THREE.Vector3(Math.sin(a),0,Math.cos(a));}
 function pieceKind(p){return p?.piece?.replace(/^wall_(marble|gear|motor|battery|switch|bulb|resistor|capacitor)$/,'$1');}
 function wallPlane(p=ghost?.p) { return worldWallDesign()?wallPanel(p).z_m+.3:activeDesign?.draft.base?.build_surface?.plane_z_m??.3; }
 function wallCameraControls(){
@@ -2165,7 +2171,7 @@ function syncWallTray(){
 $('wall-camera-view').addEventListener('click',()=>{wallFront=!wallFront;frameCamera(Boolean(ghost));wallCameraControls();freshView();});
 function panWall(dx,dy) {
   const scale=2*distance*Math.tan(camera.fov*Math.PI/360)/Math.max(1,renderer.domElement.clientHeight);
-  goal.x-=dx*scale;goal.y+=dy*scale;target.copy(goal);
+  goal.addScaledVector(wallWidthAxis(),-dx*scale);goal.y+=dy*scale;target.copy(goal);
 }
 function overviewDesign() {
   return level?.free && activeDesign?.draft.base?.presentation?.camera === 'overview';
@@ -2173,8 +2179,8 @@ function overviewDesign() {
 function frameCamera(includeGhost=false) {
   if(wallDesign()&&wallFront) {
     const board=wallPanel();
-    goal.set(board.x_m,board.height_m/2,wallPlane());target.copy(goal);
-    azimuth=0;elevation=0;
+    goal.copy(wallWorldPoint(board.x_m,board.height_m/2,.3,board));target.copy(goal);
+    azimuth=(board.yaw_deg||0)*Math.PI/180;elevation=0;
     distance=1.08*Math.max(board.height_m,board.width_m/camera.aspect)/2/Math.tan(camera.fov*Math.PI/360);
     follow=false;$('follow').setAttribute('aria-pressed','false');return;
   }
@@ -2804,7 +2810,8 @@ function repeatOnHold(b, act, {drag=false}={}) {
 // moved since; the server's answer then sets it down again.
 function followGhost() {
   if (!ghost || !ghost.drawnAt) return;
-  ghostGroup.position.set((ghost.p.x_m ?? 0) - ghost.drawnAt.x, wallPlacement()?(ghost.p.height_m??0)-ghost.drawnAt.height:0, (ghost.p.z_m ?? 0) - ghost.drawnAt.z);
+  if(wallPlacement())ghostGroup.position.copy(wallWidthAxis().multiplyScalar((ghost.p.x_m??0)-ghost.drawnAt.x)).add(new THREE.Vector3(0,(ghost.p.height_m??0)-ghost.drawnAt.height,0));
+  else ghostGroup.position.set((ghost.p.x_m ?? 0) - ghost.drawnAt.x,0,(ghost.p.z_m ?? 0) - ghost.drawnAt.z);
 }
 function fitNewPieceInView() {
   const bounds = new THREE.Box3().setFromObject(ghostGroup);
@@ -3075,10 +3082,106 @@ function updateMoveGrip() {
   grip.classList.toggle('dragging', view.classList.contains('grabbing'));
 }
 window.machineMoveGrip = () => !$('move-grip').hidden && $('move-grip').getBoundingClientRect().toJSON();
+function axisPointerDistance(x,y,at,axis){
+  pointerRay(x,y);const {origin,direction}=raycaster.ray,w=at.clone().sub(origin),along=axis.dot(direction),denom=1-along*along;
+  return denom>1e-4?(along*direction.dot(w)-axis.dot(w))/denom:null;
+}
+function wallGripGeometry(){
+  const p=ghost.p,board={x_m:p.x_m,z_m:p.z_m,width_m:p.width_m,height_m:p.wall_height_m,yaw_deg:p.yaw_deg||0};
+  const width=wallWidthAxis(board);
+  return [
+    {id:'left',key:'width_m',label:'Drag left wall edge',at:wallWorldPoint(p.x_m-p.width_m/2,p.wall_height_m/2,0,board),axis:width.clone().negate(),factor:2},
+    {id:'right',key:'width_m',label:'Drag right wall edge',at:wallWorldPoint(p.x_m+p.width_m/2,p.wall_height_m/2,0,board),axis:width,factor:2},
+    {id:'top',key:'wall_height_m',label:'Drag wall top',at:wallWorldPoint(p.x_m,p.wall_height_m,0,board),axis:new THREE.Vector3(0,1,0),factor:1},
+    {id:'turn',key:'yaw_deg',label:'Drag to turn wall',at:wallWorldPoint(p.x_m+p.width_m/2,.2,.3,board),axis:width,factor:0}];
+}
+function updateWallSizeHandles(){
+  if(editHandles.dataset.mode!=='wall'||editHandles.childElementCount!==4){
+    editHandles.replaceChildren();editHandleLinks.replaceChildren();editHandles.dataset.mode='wall';
+    for(const item of wallGripGeometry()){
+      const h=button('',()=>{}, {ariaLabel:item.label});h.className='wall-size-handle';h.dataset.wallGrip=item.id;
+      h.append(Object.assign(document.createElement('span'),{textContent:item.id==='turn'?'↻':item.id==='top'?'↕':'↔'}));
+      h.link=document.createElementNS(editHandleLinks.namespaceURI,'line');editHandleLinks.append(h.link);
+      h.addEventListener('pointerdown',e=>{
+        if(e.button!==0||!ghost)return;e.preventDefault();e.stopPropagation();h.focus({preventScroll:true});
+        const g=wallGripGeometry().find(g=>g.id===item.id);
+        handleDrag={id:e.pointerId,kind:'wall',g,initial:ghost.p[g.key],from:axisPointerDistance(e.clientX,e.clientY,g.at,g.axis),x:e.clientX,y:e.clientY};
+        ghost.card=g.key;editorMode=g.id==='turn'?'turn':'adjust';looking=false;view.classList.remove('looking');
+        if(g.id==='turn'&&wallFront){wallFront=false;wallCameraControls();}
+        h.setPointerCapture(e.pointerId);renderGhostBar();
+      });
+      h.addEventListener('pointermove',e=>{
+        const d=handleDrag;if(!ghost||d?.kind!=='wall'||d.id!==e.pointerId)return;
+        let value;
+        if(d.g.id==='turn')value=d.initial+(e.clientX-d.x);
+        else{const next=axisPointerDistance(e.clientX,e.clientY,d.g.at,d.g.axis);if(next==null||d.from==null)return;value=d.initial+(next-d.from)*d.g.factor;}
+        if(setKnob(ghost.p,d.g.key,value)){followGhost();showGhostKnobs();askGhost();}
+      });
+      for(const type of ['pointerup','pointercancel','lostpointercapture'])h.addEventListener(type,e=>{if(handleDrag?.kind==='wall'&&handleDrag.id===e.pointerId){handleDrag=null;updatePieceHandles();}});
+      h.addEventListener('keydown',e=>{
+        if(!ghost||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();e.stopPropagation();
+        const sign=['ArrowRight','ArrowUp'].includes(e.key)?1:-1,step=item.id==='turn'?5:.1;
+        nudgeKnob(item.key,sign*step);
+      });editHandles.append(h);
+    }
+  }
+  const rect=view.getBoundingClientRect(),used=[];
+  const obstacles=[...view.querySelectorAll('#piece-editor,#clock,#viewer-perspective,#viewer-zoom,#viewer-history')]
+    .filter(n=>!n.hidden&&n.getClientRects().length).map(n=>n.getBoundingClientRect());
+  for(const item of wallGripGeometry()){
+    const h=editHandles.querySelector(`[data-wall-grip="${item.id}"]`),a=item.at.clone().project(camera);
+    const end=item.at.clone().add(item.axis).project(camera),dx=(end.x-a.x)*rect.width,dy=-(end.y-a.y)*rect.height,l=Math.hypot(dx,dy)||1;
+    const ax=rect.left+(a.x+1)*rect.width/2,ay=rect.top+(1-a.y)*rect.height/2;
+    let point=null;
+    for(const offset of [24,48,72,96,128,-24,-48,-72,-96,-128,0]){
+      const x=Math.max(rect.left+24,Math.min(rect.right-24,ax+dx/l*offset)),y=Math.max(rect.top+24,Math.min(rect.bottom-24,ay+dy/l*offset));
+      if(![...obstacles,...used].some(r=>x+23>r.left&&x-23<r.right&&y+23>r.top&&y-23<r.bottom)){point={x,y};break;}
+    }
+    if(!point){
+      let nearest=Infinity;
+      for(let x=rect.left+24;x<=rect.right-24;x+=16)for(let y=rect.top+24;y<=rect.bottom-24;y+=16){
+        const gap=(x-ax)**2+(y-ay)**2;
+        if(gap<nearest&&![...obstacles,...used].some(r=>x+23>r.left&&x-23<r.right&&y+23>r.top&&y-23<r.bottom)){point={x,y};nearest=gap;}
+      }
+    }
+    h.hidden=!point||Math.abs(a.z)>1;h.link.style.display=h.hidden?'none':'';if(h.hidden)continue;
+    h.style.left=`${point.x-rect.left-22}px`;h.style.top=`${point.y-rect.top-22}px`;
+    h.dataset.dx=dx/l;h.dataset.dy=dy/l;h.title=`${item.label}: ${ghost.p[item.key]}${item.id==='turn'?'°':' m'}. Drag in either direction. Arrow keys make small changes.`;
+    used.push({left:point.x-24,right:point.x+24,top:point.y-24,bottom:point.y+24});
+    for(const [k,v] of Object.entries({x1:ax-rect.left,y1:ay-rect.top,x2:point.x-rect.left,y2:point.y-rect.top}))h.link.setAttribute(k,v);
+  }
+}
+// The visible 3D arrows are working grips too, not just decorations beside
+// the +/- precision targets. The same drag path changes the selected knob.
+function editArrowAt(x,y){
+  if(!ghost||!editGroup.visible||handleDrag)return null;
+  const rule=trayItem(ghost.p.piece).knobs[ghost.card];
+  if(!rule||(!rule.choices&&rule.min==null)||rule.choices&&!rule.choices.every(Number.isFinite))return null;
+  const rect=renderer.domElement.getBoundingClientRect();let best=null;
+  for(const {arrow,head} of editArrows){
+    const a=arrow.position.clone().add(editGroup.position),axis=new THREE.Vector3(0,1,0).applyQuaternion(arrow.quaternion);
+    const b=a.clone().addScaledVector(axis,head.position.y+head.scale.y/2),p=a.clone().project(camera),q=b.clone().project(camera);
+    if(Math.abs(q.z)>1)continue;
+    const start=[rect.left+(p.x+1)*rect.width/2,rect.top+(1-p.y)*rect.height/2],end=[rect.left+(q.x+1)*rect.width/2,rect.top+(1-q.y)*rect.height/2];
+    const dx=end[0]-start[0],dy=end[1]-start[1],length=Math.hypot(dx,dy);if(length<4)continue;
+    const t=Math.max(.25,Math.min(1,((x-start[0])*dx+(y-start[1])*dy)/(length*length)));
+    const gap=Math.hypot(x-start[0]-dx*t,y-start[1]-dy*t);
+    if(gap<=22&&(!best||gap<best.gap))best={gap,key:ghost.card,dx:dx/length,dy:dy/length,at:end};
+  }
+  return best;
+}
+window.machineEditArrowGrips=()=>editGroup.visible?editArrows.map(({arrow,head})=>{
+  const a=arrow.position.clone().add(editGroup.position),b=a.clone().addScaledVector(new THREE.Vector3(0,1,0).applyQuaternion(arrow.quaternion),head.position.y+head.scale.y/2),r=renderer.domElement.getBoundingClientRect();a.project(camera);b.project(camera);
+  const dx=(b.x-a.x)*r.width/2,dy=-(b.y-a.y)*r.height/2,l=Math.hypot(dx,dy)||1;
+  return {key:ghost?.card,screen:[r.left+(a.x+1)*r.width/2+dx*.45,r.top+(1-a.y)*r.height/2+dy*.45],dx:dx/l,dy:dy/l};}):[];
 function updatePieceHandles() {
   updateMoveGrip();
   updatePlankEnds();
+  const sizeReading=$('piece-editor').querySelector('.wall-size-reading');
+  if(sizeReading&&ghost){const text=`${ghost.p.width_m} m × ${ghost.p.wall_height_m} m · ${ghost.p.yaw_deg||0}°`;if(sizeReading.textContent!==text)sizeReading.textContent=text;}
   if(handleDrag)return; // Preserve pointer capture while native previews are replaced.
+  if(ghost?.baseObject?.wall){if(looking){editHandles.replaceChildren();editHandleLinks.replaceChildren();}else updateWallSizeHandles();return;}
+  if(editHandles.dataset.mode==='wall'){editHandles.replaceChildren();editHandleLinks.replaceChildren();delete editHandles.dataset.mode;delete editHandles.dataset.key;}
   // A simple plank's end balls replace its +/- length handles.
   if(simplePlank()&&ghost.card==='length_m'){editHandles.replaceChildren();editHandleLinks.replaceChildren();return;}
   const rule=ghost&&trayItem(ghost.p.piece).knobs[ghost.card];
@@ -3217,7 +3320,7 @@ function drawEditGuide(parts) {
 }
 function updateEditGuide() {
   const label = $('edit-guide-label');
-  editGroup.visible = Boolean(ghost && editAnchor && ghost.editGuide?.key === ghost.card) && !(simplePlank() && ghost.card === 'length_m');
+  editGroup.visible = Boolean(ghost && editAnchor && ghost.editGuide?.key === ghost.card) && !ghost.baseObject?.wall && !(simplePlank() && ghost.card === 'length_m');
   if (!editGroup.visible) { label.hidden = true; updatePieceHandles();return; }
   editGroup.position.copy(ghostGroup.position);
   // Keep the arrows legible as the camera zooms, without changing their anchors.
@@ -3332,7 +3435,7 @@ async function checkGhost(g) {
   g.busy = true; g.again = false; g.snapNext = false;
   try {
     const r = await api(g.baseObject?.wall?{op:'wall_edit',base:g.originalBase,placements,wall:g.baseObject.wall.id,
-      changes:{x_m:g.p.x_m,z_m:g.p.z_m,width_m:g.p.width_m,height_m:g.p.wall_height_m},edit_key:g.card}:g.baseObject ? {op:'sandbox_object',level:'free',base:g.originalBase,object:g.baseObject.id,
+      changes:{x_m:g.p.x_m,z_m:g.p.z_m,width_m:g.p.width_m,height_m:g.p.wall_height_m,yaw_deg:g.p.yaw_deg||0},edit_key:g.card}:g.baseObject ? {op:'sandbox_object',level:'free',base:g.originalBase,object:g.baseObject.id,
       delta:[g.p.x_m-g.baseObject.at_m[0],g.p.height_m,g.p.z_m-g.baseObject.at_m[2]],placements,
       snap:snapping&&objectSnapEnabled,nearby_snap:true,snap_hold:g.objectLock} : {op: 'level_ghost', level: level.id, ...sandboxRequest(), placements: ghostPlacements(), index: g.index,
       snap: snapping && objectSnapEnabled, nearby_snap:true, snap_hold:g.objectLock, edit_key: g.card});
@@ -3438,7 +3541,7 @@ function startGhost(p, index, keepPlace = false) {
     if(at&&wallPlacement()){
       const board=wallPanel();
       if(Math.abs(at.x-board.x_m)>Math.max(0,board.width_m/2-.9))at.x=board.x_m;
-      at.y=Math.max(.35,Math.min(board.height_m-.35,at.y));
+      if(at.y<.6||at.y>board.height_m-.6)at.y=board.height_m/2;
     }
     if(at&&worldWallDesign()&&!wallPlacement()&&at.z<.7)at.z=1.2;
     if (at) { setKnob(ghost.p, 'x_m', at.x); setKnob(ghost.p,wallPlacement()?'height_m':'z_m',wallPlacement()?at.y:at.z); showGhostKnobs(); }
@@ -3462,7 +3565,7 @@ async function pickUp(i) {
       if(!opened||request!==runRequest||level!==sourceLevel)return;
       object=sandboxObjects.find(o=>o.id===object.id);if(!object)return;
     }
-    startGhost(object.wall?{piece:'base_object',object:object.id,x_m:object.wall.x_m,z_m:object.wall.z_m,width_m:object.wall.width_m,wall_height_m:object.wall.height_m}:
+    startGhost(object.wall?{piece:'base_object',object:object.id,x_m:object.wall.x_m,z_m:object.wall.z_m,width_m:object.wall.width_m,wall_height_m:object.wall.height_m,yaw_deg:object.wall.yaw_deg||0}:
       {piece:'base_object',object:object.id,x_m:object.at_m[0],z_m:object.at_m[2],height_m:0},placements.length,true);
     return;
   }
@@ -3892,12 +3995,18 @@ function renderGhostBar() {
   const turn=button('Turn',()=>{
     const rules=trayItem(ghost.p.piece).knobs;
     const key=turnKnob(ghost.p,'yaw_deg')||Object.keys(rules).find(k=>rules[k].turning&&pieceKnobVisible(ghost.p,k));
-    if(key){ghost.card=key;editorMode='turn';setLooking(false);askGhost();}
+    if(key){ghost.card=key;editorMode='turn';if(ghost.baseObject?.wall&&wallFront){wallFront=false;wallCameraControls();}setLooking(false);askGhost();}
   },{ariaLabel:'Turn selected piece'});
   move.setAttribute('aria-pressed',String(editorMode==='move'&&!looking));
   turn.setAttribute('aria-pressed',String(editorMode==='turn'&&!looking));
   move.disabled=!movableGhost();turn.hidden=!Object.entries(knobs).some(([k,r])=>r.turning&&pieceKnobVisible(ghost.p,k));
   modes.append(move,turn);
+  if(ghost.baseObject?.wall)modes.append(button('↻ 90°',()=>{
+    if(setKnob(ghost.p,'yaw_deg',(ghost.p.yaw_deg||0)+90)){
+      ghost.card='yaw_deg';editorMode='turn';looking=false;if(wallFront){wallFront=false;wallCameraControls();}
+      renderGhostBar();showGhostKnobs();askGhost();
+    }
+  },{ariaLabel:'Turn wall by 90 degrees',title:'Turn this wall and its mounted pieces together. Place keeps the change.'}));
   // A plank's arrows, axis lines and +/- length handles wait behind Precise;
   // without it the plank shows its end balls and middle grip only.
   if(ghost.p.piece==='plank'&&!ghost.baseObject){
@@ -3908,6 +4017,7 @@ function renderGhostBar() {
   modes.hidden=move.disabled&&turn.hidden&&!modes.querySelector('[aria-label="Precise controls"]');
   const top=Object.assign(document.createElement('div'),{className:'piece-toolbar'});top.append(modes,actions);
   editor.replaceChildren(top,...(another?[another]:[]),...(isGear?[gearControls(knobs)]:[chips]));
+  if(ghost.baseObject?.wall){chips.hidden=true;top.after(Object.assign(document.createElement('output'),{className:'wall-size-reading',ariaLive:'polite'}));}
   if(ghost.p.piece==='spring'&&knobs.rest_m&&pieceKnobVisible(ghost.p,'rest_m'))editor.append(springLengthControls(knobs.rest_m));
   if(isGear)precision.querySelector('summary').after(chips);
   if(rule.choices&&(!isGear||!['teeth','module_m','height_m'].includes(key)))editor.append(row);
@@ -5042,6 +5152,12 @@ function nearGhost(clientX, clientY, margin) {
 }
 function slidePoint(clientX, clientY, y) {
   pointerRay(clientX, clientY);
+  if(worldWallDesign()&&wallPlacement()){
+    const board=wallPanel(),normal=wallNormal(board);
+    slidePlane.setFromNormalAndCoplanarPoint(normal,wallWorldPoint(board.x_m,0,.3,board));
+    const at=raycaster.ray.intersectPlane(slidePlane,new THREE.Vector3());if(!at)return null;
+    return new THREE.Vector3(board.x_m+at.clone().sub(new THREE.Vector3(board.x_m,0,board.z_m)).dot(wallWidthAxis(board)),at.y,board.z_m+.3);
+  }
   slidePlane.normal.set(0,wallPlacement()?0:1,wallPlacement()?1:0);
   slidePlane.constant = wallPlacement()?-wallPlane():-y;
   return raycaster.ray.intersectPlane(slidePlane, new THREE.Vector3());
@@ -5223,7 +5339,9 @@ renderer.domElement.addEventListener('pointerdown', e => {
   // Retained geometry belongs to the preceding setup until the replacement
   // native world is ready. Undo can renumber pieces: never pick an old shape
   // against the new placement indices. Camera gestures remain available.
-  if(LEVEL_MODE&&(!session||builtSetupKey!==currentSetupKey())){
+  // A held ghost has its own checked geometry. Its proposed base may differ
+  // from the running world; that must not disable dragging the ghost itself.
+  if(LEVEL_MODE&&!ghost&&(!session||builtSetupKey!==currentSetupKey())){
     pressedAt=null;socketPress=null;wirePress=null;return;
   }
   $('socket-choices').hidden=true;
@@ -5251,6 +5369,8 @@ renderer.domElement.addEventListener('pointerdown', e => {
   sceneDragged = false;
   draggingGhost = null;
   if (!ghost || e.button !== 0 || e.ctrlKey) return;
+  const arrowGrip=editArrowAt(e.clientX,e.clientY);
+  if(arrowGrip){draggingGhost={id:e.pointerId,kind:'axis-adjust',key:arrowGrip.key,initial:Number(ghost.p[arrowGrip.key]),screenX:e.clientX,screenY:e.clientY,dx:arrowGrip.dx,dy:arrowGrip.dy,active:false};return;}
   if (nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX)) {
     if(editorMode!=='move'){
       const key=ghost.card,rule=trayItem(ghost.p.piece).knobs[key];
@@ -5287,6 +5407,9 @@ renderer.domElement.addEventListener('pointermove', e => {
       $('piece-editor').querySelector('[aria-label="Turn selected piece"]')?.setAttribute('aria-pressed',String(editorMode==='turn'));
       view.classList.add('grabbing');
     }
+    if(draggingGhost.kind==='axis-adjust'){
+      const d=draggingGhost;editByDrag(d.key,d.initial,(e.clientX-d.screenX)*d.dx+(e.clientY-d.screenY)*d.dy);return;
+    }
     if(draggingGhost.kind==='adjust'){
       editByDrag(draggingGhost.key,draggingGhost.initial,e.clientX-draggingGhost.screenX);return;
     }
@@ -5299,7 +5422,7 @@ renderer.domElement.addEventListener('pointermove', e => {
     const moved = [setKnob(ghost.p,'x_m',snapped.point.x),setKnob(ghost.p,wallPlacement()?'height_m':'z_m',snapped.point.z)].some(Boolean);
     ghost.gridLocks=snapped.locks; showGridSnap();
     if (moved) { ghost.snapNext = objectSnapEnabled&&!e.altKey; if(e.altKey)ghost.objectLock=null;followGhost(); showGhostKnobs(); askGhost(); }
-  } else if (!e.buttons) view.classList.toggle('grab', movableGhost() && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
+  } else if (!e.buttons) view.classList.toggle('grab',Boolean(editArrowAt(e.clientX,e.clientY))||movableGhost() && nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX));
 });
 renderer.domElement.addEventListener('pointerup', e => {
   if(switchDragging?.pointerId===e.pointerId){endSwitchPointer(e);pressedAt=null;if(!pointers.size)cameraGesture=false;return;}
@@ -6305,7 +6428,8 @@ const baseObjectTray={piece:'base_object',knobs:{
   height_m:{min:-4,max:4,step:.01,default:0,label:'height change (m)'}}};
 const wallObjectTray={piece:'base_object',focus_knob:'width_m',knobs:{
   x_m:{min:-16,max:16,step:.05,default:0,label:'Ground X (m)'},z_m:{min:-16,max:16,step:.05,default:0,label:'Ground Z (m)'},
-  width_m:{min:.5,max:12,step:.1,default:6,label:'Width (m)'},wall_height_m:{min:.5,max:10,step:.1,default:4,label:'Height (m)'}}};
+  width_m:{min:.5,max:8,step:.1,default:6,label:'Width (m)'},wall_height_m:{min:.5,max:8,step:.1,default:4,label:'Height (m)'},
+  yaw_deg:{min:-180,max:180,step:5,default:0,label:'Heading (°)',turning:true}}};
 function trayItem(piece,p=ghost?.p) { return piece==='base_object'?(sandboxObjects.find(o=>o.id===p?.object)?.wall?wallObjectTray:baseObjectTray):level.tray.find(t => t.piece === piece); }
 function playerPartTitle(name) { return name.replace(/^your wall_lift\b/,'Marble lift').replace(/^your /,''); }
 
@@ -7235,7 +7359,7 @@ $('wall-open-world').addEventListener('click',async()=>{
     design.draft=r.draft;placements=clone(r.draft.placements);framedFree=false;wallFront=false;
     syncWallTray();renderDesignControls();renderTray();renderPlaced();wallCameraControls();
     keepBuild();await rebuildLevel(false);
-  }catch(error){designStatus(error.message);}
+  }catch(error){designStatus(error.data?.problems?.join(' · ')||error.message);}
   finally{b.disabled=false;}
 });
 $('wall-add').addEventListener('click',async()=>{
@@ -7249,7 +7373,7 @@ $('wall-add').addEventListener('click',async()=>{
     keepBuild();renderDesignControls();await rebuildLevel(false);
     const index=sandboxObjects.findIndex(o=>o.wall?.id===r.wall.id);
     if(index>=0)pickUp(placements.length+index);
-  }catch(error){designStatus(error.message);}
+  }catch(error){designStatus(error.data?.problems?.join(' · ')||error.message);}
   finally{$('wall-add').disabled=false;}
 });
 async function applySandboxGround(kind,flow=100){

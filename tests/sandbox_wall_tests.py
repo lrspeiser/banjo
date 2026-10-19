@@ -344,6 +344,53 @@ class WallWorld(unittest.TestCase):
 
 
 class EditableWalls(unittest.TestCase):
+    def test_turning_one_wall_rotates_its_geometry_joints_and_terminals_only(self):
+        added=wall.edit_panel(wall.world_base(),[],None,add=True);second=added['wall']
+        ps=[dict(piece='wall_gear',x_m=-1,height_m=2),
+            dict(piece='wall_motor',x_m=second['x_m'],height_m=2,wall=second['id']),
+            dict(piece='wall_battery',x_m=second['x_m']-1,height_m=2,wall=second['id']),
+            dict(piece='loose_block',x_m=0,z_m=4)]
+        original=mg.compose(mg.requested_level(dict(level='free',base=added['base'])),ps)[0]
+        turned=wall.edit_panel(added['base'],ps,second['id'],dict(yaw_deg=90,z_m=2))
+        self.assertTrue(turned['fits'],turned['problems']);self.assertEqual(turned['placements'],ps)
+        after=mg.compose(mg.requested_level(dict(level='free',base=turned['base'])),ps)[0]
+        for a,b in zip(original['parts'],after['parts']):
+            if a['name'].startswith(('your wall_motor 2','your wall_battery 3')):
+                self.assertEqual(a['size_m'] if 'size_m' in a else a.get('parts'),b['size_m'] if 'size_m' in b else b.get('parts'))
+                dx=a['at_m'][0]-second['x_m'];self.assertAlmostEqual(b['at_m'][0],second['x_m']+a['at_m'][2],places=5)
+                self.assertAlmostEqual(b['at_m'][2],2-dx,places=5)
+            elif a['name']!=second['id']:self.assertEqual(a,b)
+        hinge=next(j for j in after['joints'] if j['name'].startswith('your wall_motor 2') and j['kind']=='hinge')
+        self.assertAlmostEqual(abs(hinge['axis'][0]),1)
+        before=original['electrical']['devices'][0]['terminals'];now=after['electrical']['devices'][0]['terminals']
+        for key,point in before.items():
+            self.assertAlmostEqual(now[key][0],second['x_m']+point[2],places=5)
+            self.assertAlmostEqual(now[key][2],2-(point[0]-second['x_m']),places=5)
+        bad=copy.deepcopy(turned['base']);bad['build_surface']['panels'][1]['yaw_deg']=45
+        with self.assertRaises(ValueError):wall.validate(bad)
+        with self.assertRaises(ValueError):wall.edit_panel(added['base'],[],second['id'],dict(yaw_deg=90,x_m=0,z_m=0))
+        for yaw in (float('nan'),True,181):
+            with self.assertRaises(ValueError):wall.edit_panel(added['base'],[],second['id'],dict(yaw_deg=yaw))
+
+    def test_turned_wall_lift_keeps_native_contacts_and_power_for_three_materials(self):
+        added=wall.edit_panel(wall.world_base(),[],None,add=True);second=added['wall']
+        moved=wall.edit_panel(added['base'],[],second['id'],dict(z_m=2,width_m=4,height_m=4,yaw_deg=90))
+        rows,check=wall.world_lift_assembly(second['x_m'],1.6)
+        for p in rows:
+            if p['piece']!='wire':p['wall']=second['id']
+        records=[]
+        for material in ('glass','oak','iron'):
+            ps=copy.deepcopy(rows);ps[1]['material']=material
+            spec=mg.compose(mg.requested_level(dict(level='free',base=moved['base'])),ps)[0]
+            with tempfile.TemporaryDirectory() as logs:
+                result=mw.rehearse(mw.compile_spec(spec),ENGINE,logs,seconds=12,track=[check['marble']])
+            self.assertIsNone(result['error']);measured=machine_chat.lift_checks([check],result)[0]
+            self.assertTrue(measured['happened'],measured)
+            ledger=result['readouts']['electrical']['networks'][0]['ledger']
+            self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+            records.append(dict(material=material,yaw_deg=90,dt_s=1/240,cell_m=.02,check=measured,ledger=ledger,wall_s=result['wall_s']))
+        print('TURNED WALL LIFT',json.dumps(records),flush=True)
+
     def test_resize_has_real_dimensions_and_refuses_to_strand_fixtures(self):
         template=wall.world_template(mg.free_build()['tray']);saved=copy.deepcopy(template)
         r=wall.edit_panel(template['base'],template['placements'],wall.FOUNDATION[0],dict(width_m=8,height_m=5),edit_key='wall_height_m')

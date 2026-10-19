@@ -839,6 +839,14 @@ body.playing-level #view>.level-done{top:50%;transform:translate(-50%,-50%);z-in
 .piece-dimension-handle{position:absolute;width:56px;height:56px;pointer-events:auto;touch-action:none;cursor:grab;border:1px solid #ffdc72;border-radius:50%;background:#473c20dd;color:#ffdc72;font-size:30px;padding:0;box-shadow:0 0 0 2px #14283688}
 .piece-dimension-handle:active{cursor:grabbing;background:#6b561a}
 .piece-dimension-handle.at-limit{font-size:14px}
+.wall-size-handle{position:absolute;width:44px;height:44px;padding:0;display:grid;place-items:center;pointer-events:auto;touch-action:none;cursor:grab;border:0;background:transparent;color:#302408;user-select:none}
+.wall-size-handle span{display:grid;place-items:center;width:30px;height:30px;border:2px solid #fff0ac;border-radius:50%;background:#ffd34d;box-shadow:0 0 0 2px #182a35bb,0 0 10px #ffd34d77;font:700 23px/1 system-ui}
+.wall-size-handle:hover span,.wall-size-handle:focus-visible span{box-shadow:0 0 0 3px #fff0acaa,0 0 14px #ffd34d99}
+.wall-size-handle:active{cursor:grabbing}
+.wall-size-handle:active span{background:#fff0ac}
+#piece-editor.editing-wall .piece-modes{flex-wrap:nowrap}
+#piece-editor.editing-wall .piece-modes button{min-width:44px;padding:3px}
+#piece-editor.editing-wall .wall-size-reading{font:12px/15px system-ui;color:#ffe398;text-align:center}
 #device-live-controls{position:absolute;inset:0;pointer-events:none;z-index:6}
 .device-live-card{position:absolute;width:212px;box-sizing:border-box;pointer-events:auto;background:#142836ed;border:1px solid #91bcd1;border-radius:7px;padding:5px;display:flex;flex-direction:column;gap:2px}
 .device-live-card strong{font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
@@ -1078,6 +1086,8 @@ body.panel-tabs:has(#phone-toolbar.one-row) #view #clock{top:6px}
    reach the camera row); opening the library places the piece first anyway. */
 @media(max-height:500px){#piece-editor>.add-another{display:none}}
 @media(max-height:500px){#piece-editor.editing-wall{width:212px}#piece-editor.editing-wall .piece-toolbar{flex-direction:row}#piece-editor>.wall-piece-action{display:block}}
+@media(max-width:599px){#piece-editor.editing-wall{width:160px}}
+@media(max-height:500px){#piece-editor.editing-wall{width:264px}#piece-editor.editing-wall .piece-toolbar{flex-wrap:nowrap}#piece-editor.editing-wall .piece-modes{flex:3}#piece-editor.editing-wall .actions{flex:2}}
 /* Live controls on a machine (Release spring, valves) are teal, like the
    glow on the part they work, apart from the blue editing controls. */
 .device-live-card{border-color:#46c2b0}
