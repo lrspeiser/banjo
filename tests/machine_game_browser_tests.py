@@ -2836,7 +2836,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual((turned['x_m'],turned['height_m']),(before_turn['x_m'],before_turn['height_m']))
                 self.click_visible('Throw the ghost away')
                 self.click_visible('Add a piece')
-                self.wait("document.querySelectorAll('#piece-grid .piece-card').length===14",20)
+                self.wait("document.querySelectorAll('#piece-grid .piece-card').length===15",20)
                 self.wait("[...document.querySelectorAll('#piece-grid .piece-card img')].every(img=>img.naturalWidth>0)",45)
                 self.assertTrue(self.js("[...document.querySelectorAll('#piece-grid .piece-card')].every(b=>b.getBoundingClientRect().height>=44)"))
                 self.press('Add a wall funnel');self.assertTrue(self.ghost()['fits'])
@@ -3259,6 +3259,35 @@ class Puzzles(unittest.TestCase):
                 self.assertAlmostEqual(self.js("machineBodies()['your wall_marble 33'][1]"),.36,delta=.006)
                 proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
                 (proof/f'plinko-replacement-{width}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.assertLessEqual(self.js('document.body.scrollWidth'),width)
+
+    def test_words_build_a_water_wheel_plinko_and_native_playback_on_desktop_and_phones(self):
+        fixture=json.loads((ROOT/'tests/fixtures/chat-built-wheel-plinko-wall.json').read_text(encoding='utf-8'))
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                draft=dict(name='Water wheel Plinko',base=fixture['base'],placements=fixture['before'])
+                packed='j'+base64.urlsafe_b64encode(json.dumps(draft).encode()).decode().rstrip('=')
+                self.navigate(self.base+'/machine#build='+packed);self.wait('machinePlacements().length===5',60)
+                original=self.js('machinePlacements()')
+                self.click_visible('Describe a design');self.slide('Your question',fixture['request'])
+                with patch('machine_chat.configuration',return_value=('fixture-key','fixture-model')),patch('machine_chat._call',side_effect=[(p,{}) for p in fixture['proposals']]) as provider:
+                    self.click_visible('Build it');self.wait('machinePlacements().length===26 && '+READY,90)
+                self.assertEqual(provider.call_count,len(fixture['proposals']))
+                chat=self.js("document.getElementById('chat-log').textContent")
+                self.assertIn('turned 4 wheels',chat);self.assertIn('Passed 3 physics trials',chat)
+                self.assertEqual(self.js('machinePlacements()'),fixture['placements'])
+                self.click_visible('Controls');self.click_visible('Save version');self.anonymous_cloud_saved()
+                self.click_visible('Undo');self.wait('machinePlacements().length===5',45)
+                self.assertEqual(self.js('machinePlacements()'),original)
+                self.click_visible('Redo');self.wait('machinePlacements().length===26 && '+READY,60)
+                self.click_visible('Face the wall');self.wait('machineCamera().settled',20)
+                self.click_visible('Run')
+                self.wait("/World (?:[89]|1[0-5])\\./.test(document.getElementById('clock').textContent)",25)
+                self.click_visible('Pause')
+                self.assertAlmostEqual(self.js("machineBodies()['your wall_marble 26'][1]"),.21,delta=.006)
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'wheel-plinko-{width}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
                 self.assertLessEqual(self.js('document.body.scrollWidth'),width)
 
     def test_marble_showcases_load_run_reset_and_fit_the_three_screen_shapes(self):

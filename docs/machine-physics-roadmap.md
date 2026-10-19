@@ -1,5 +1,14 @@
 # Physics for the machine: what there is, what to add
 
+October 18 wall paddle wheels: a passive wall-mounted water-wheel tool uses
+the same hub/axle/paddle shape generator as the river wheel, on a native hinge
+with a rear bracket and ideal fixed mounting. No motor, prescribed phase or
+runtime projection is added. Marble impacts drive it through ordinary rigid
+contact. This adds dry wall mounting, not a new fluid solver or a detailed
+bearing/bolt model. Exact compound rotors retain their no-fracture/thermal
+interior limits. Builder qualification observes contacts, native hinge turns
+and catching, including two nudges; see [machine-game.md](machine-game.md).
+
 October 18 peg-field builder: repeated patterns and the reusable Plinko
 assembly declare existing pegs, tracks, cups and a falling marble. Their
 guides are real vertical tracks; no planar motion lock or scripted bounce
@@ -32,7 +41,7 @@ still owns subsequent motion; panel editing adds no force or pose projection.
 The backings and brackets remain ideal grounded supports, not tested structural
 bolts or breakable mounting assemblies.
 Version 2 removes the global front guard, adds real track rails and admits the
-ordinary 3D library beside fourteen wall-specific types. Normal 3D contact can
+ordinary 3D library beside fifteen wall-specific types. Normal 3D contact can
 carry a marble off the wall onto a track extending outward. Historical version
 1 keeps its physical front guard until the player explicitly converts a copy.
 Real fixed/hinge joints mount tracks, pegs, seesaws and gears; no runtime pose

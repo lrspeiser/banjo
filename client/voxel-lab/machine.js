@@ -6445,6 +6445,7 @@ const PIECE_INFO = {
   wall_funnel: ['routes','Two sloping faces gather marbles through a central opening.'],
   wall_cup: ['routes','Catch marbles in a wall-mounted cup.'],
   wall_peg: ['structure','A round mounted peg deflects falling marbles through contact.'],
+  wall_water_wheel: ['motion','A passive wall-mounted paddle wheel. Falling marbles turn its real axle through contact. Change radius, paddle count or starting angle; no river or motor is required.'],
   wall_lever: ['motion','A freely hinged seesaw. A marble’s weight and contact tip the board.'],
   wall_lift: ['motion','A single-pass marble lift. Wire both motor terminals to a battery. Its cradle raises the marble and tips it onto the upper chute; Reset reloads it.'],
   marble: ['motion', 'A ball to roll, drop, or set a machine moving.'],
@@ -7899,7 +7900,7 @@ $('free-example').addEventListener('click', () => {
 // to, the server works out where they go and rehearses it once in the engine.
 function builderCheckSummary(checks,runs=1) {
   return checks.map(c=>c.kind==='course'
-    ? `The marble ${c.order==='any'?`hit ${c.stages.length} different deflectors`:`passed ${c.stages.length} stages in order`}, travelled ${c.distance_m.toFixed(2)} m and finished on ${c.finished_on.replace(/^your /,'').replaceAll('_',' ')}.`
+    ? `The marble ${c.order==='any'?`hit ${c.stages.length} different deflectors`:`passed ${c.stages.length} stages in order`}${c.turned?` and turned ${c.turned.filter(t=>Math.abs(t.degrees)>=c.minimum_turn_deg).length} wheels`:''}, travelled ${c.distance_m.toFixed(2)} m and finished on ${c.finished_on.replace(/^your /,'').replaceAll('_',' ')}.`
     : `The marble rose ${Math.round(c.lifted_m*100)} cm and dropped onto the raised chute at ${describeTime(c.released_at_s)}.`).join(' ')+(runs>1?` Passed ${runs} physics trials.`:'')+' Choose Run to watch.';
 }
 async function askFree() {

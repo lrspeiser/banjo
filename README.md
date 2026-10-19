@@ -26,6 +26,12 @@ native trials check distinct peg contacts and a settled catch before applying.
 The builder also supports repeated rows/grids of other mounted catalog tools.
 Each expanded part remains editable; Undo and saved versions keep the whole edit.
 
+Ask for “a bunch of water wheels along this wall and have a marble Plinko down
+them into a catcher” to use **Wall water wheels**. These passive paddle rotors
+share the channel wheel geometry, with real wall brackets and native hinges.
+The builder checks at least three contacted wheels actually turn, plus the
+settled catch, in three native trials before applying a design.
+
 Ask **Describe a design** for a wheel that catches a marble, lifts it and drops
 it higher. The builder expands a single-pass **Marble lift wheel**, a marble,
 battery and two physical wires, finds room and checks the native result before

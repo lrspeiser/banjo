@@ -254,6 +254,21 @@ def lever(name,k,ctx):
             at_m=[x,y,PLANE],axis=[0,0,1],lower_deg=-35-initial,upper_deg=35-initial,friction_n_m=.001)]}
 
 
+def water_wheel(name,k,ctx):
+    """An unpowered paddle rotor on a rear mounting bracket.
+
+    Same solids as the channel wheel, on a native hinge. Marble impacts can
+    turn it without a river. No phase controller, motor or hidden drive.
+    """
+    x,y=k['x_m'],k['height_m'];r=k.get('radius_m',.3)
+    return dict(parts=[mount(name+' bracket',x,y,PLANE-.18-.01),
+        dict(name=name+' wheel',shape='compound',material='oak',at_m=[x,y,PLANE],
+            turn_deg=[0,0,k.get('phase_deg',0)],
+            parts=mw.paddle_wheel_shapes(r,k.get('paddles',8),.24,.18,-1))],
+        joints=[dict(name=name+' axle',kind='hinge',a=name+' bracket',b=name+' wheel',
+            at_m=[x,y,PLANE],axis=[0,0,1],friction_n_m=k.get('friction_n_m',.002))])
+
+
 def marble(name,k,ctx):
     d=k.get('diameter_m',.08)
     return {'parts':[dict(name=name,shape='sphere',material=k.get('material','glass'),
@@ -379,7 +394,7 @@ def mounted(builder):
 
 
 PIECES=dict(wall_track=track,wall_funnel=funnel,wall_cup=cup,wall_peg=peg,
-    wall_lever=lever,wall_lift=lift,marble=marble,gear=gear,motor=motor,wire=wire,
+    wall_lever=lever,wall_lift=lift,wall_water_wheel=water_wheel,marble=marble,gear=gear,motor=motor,wire=wire,
     **{key:electrical(getattr(se,key)) for key in ('battery','switch','bulb','resistor','capacitor')})
 PIECES={key:mounted(builder) for key,builder in PIECES.items()}
 
@@ -523,7 +538,7 @@ def peg_field_assembly(base_spec,placements,panel_id=None,rows=None,columns=5):
 def tray():
     names=dict(wall_track='Wall track',wall_funnel='Wall funnel',wall_cup='Catching cup',
         wall_peg='Deflector peg',wall_lever='Wall seesaw',marble='Marble',gear='Wall gear',
-        wall_lift='Marble lift wheel',
+        wall_lift='Marble lift wheel',wall_water_wheel='Wall water wheel',
         motor='Powered wall gear',battery='Battery',switch='Switch',bulb='Light bulb',
         wire='Wire',resistor='Resistor',capacitor='Capacitor')
     knobs=dict(
@@ -532,6 +547,10 @@ def tray():
         wall_funnel=dict(width_m=sm.number('Funnel width (m)',.3,1.4,.7)),
         wall_cup=dict(width_m=sm.number('Cup width (m)',.2,1.2,.6)),
         wall_peg=dict(diameter_m=sm.number('Peg diameter (m)',.08,.4,.16)),
+        wall_water_wheel=dict(radius_m=sm.number('Wheel radius (m)',.15,.65,.3,.02),
+            paddles=sm.choice('Paddles',[4,6,8,10,12],8),
+            phase_deg=sm.number('Starting paddle angle (°)',-180,180,0,1),
+            friction_n_m=sm.number('Axle friction (N·m)',0,1,.002,.001)),
         wall_lever=dict(length_m=sm.number('Seesaw length (m)',.3,1.2,.7),angle_deg=sm.number('Starting tilt (°)',-30,30,0,1)),
         wall_lift=dict(radius_m=sm.number('Lift radius (m)',.35,.55,.4,.025),
             throttle=sm.number('Motor power',0,1,1,.1),

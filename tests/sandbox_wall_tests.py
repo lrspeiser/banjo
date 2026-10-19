@@ -35,7 +35,7 @@ class Wall(unittest.TestCase):
         self.assertEqual(compose(t['placements'],t['base']),compose(restored['placements'],restored['base']))
         self.assertEqual(t,before)
         rows=mg.requested_level(dict(level='free',base=t['base']))['tray']
-        self.assertEqual(len(rows),15)
+        self.assertEqual(len(rows),16)
         self.assertTrue(all('z_m' not in t['knobs'] for t in rows))
         self.assertFalse(any('wall_' in t['piece'] for t in mg.free_build()['tray']))
         self.assertEqual(len(mg.sandbox_templates()),5)
@@ -268,7 +268,7 @@ class WallWorld(unittest.TestCase):
     def test_world_library_has_explicit_wall_mounts_and_every_ordinary_piece(self):
         rows={row['piece']:row for row in self.level['tray']}
         self.assertTrue({r['piece'] for r in mg.free_build()['tray']}<=set(rows))
-        self.assertEqual(len([r for r in rows.values() if r.get('wall_mounted')]),14)
+        self.assertEqual(len([r for r in rows.values() if r.get('wall_mounted')]),15)
         self.assertFalse(any(p['name']==wall.FOUNDATION[1] for p in self.template['base']['parts']))
         self.assertNotIn('z_m',rows['wall_battery']['knobs'])
         self.assertIn('z_m',rows['battery']['knobs'])
@@ -523,6 +523,63 @@ class WallPatterns(unittest.TestCase):
         with tempfile.TemporaryDirectory() as logs:r=mw.rehearse(scene,ENGINE,Path(logs),seconds=15,track=[rotated_check['marble']])
         self.assertTrue(machine_chat.measure_courses([rotated_check],r,scene)[0]['happened'])
         print('PLINKO FIELD',json.dumps(records),flush=True)
+
+
+class WallWaterWheels(unittest.TestCase):
+    def test_passive_mount_has_no_drive_and_contact_turns_it_for_three_marble_materials(self):
+        level=mg.requested_level(dict(level='free',base=wall.world_base()))
+        wheel=dict(piece='wall_water_wheel',x_m=0,height_m=2)
+        records=[]
+        for material in (None,'glass','oak','iron'):
+            ps=[wheel]+([dict(piece='wall_marble',x_m=.18,height_m=3.6,diameter_m=.08,material=material)] if material else [])
+            compiled=mw.compile_spec(mg.compose(level,ps)[0])
+            self.assertEqual(compiled['electrical'].get('devices',[]),[])
+            rotor=next(p for p in compiled['parts'] if p['name']=='your wall_water_wheel 1 wheel')
+            self.assertEqual(rotor['parts'],mw.paddle_wheel_shapes(.3,8,.24,.18,-1))
+            with tempfile.TemporaryDirectory() as logs:r=mw.rehearse(compiled,ENGINE,Path(logs),seconds=5,track=['your wall_marble 2'])
+            turned=next(j['turned_deg'] for j in r['readouts']['joints'] if j['name']=='your wall_water_wheel 1 axle')
+            self.assertIsNone(r['error'])
+            if material:
+                self.assertGreater(abs(turned),30)
+                self.assertTrue(any(h['other']=='your wall_water_wheel 1 wheel' for h in r['hits']))
+            else:self.assertLess(abs(turned),.05,'an idle wheel has no hidden motor or prescribed spin')
+            records.append(dict(material=material,turned_deg=turned,wall_s=r['wall_s']))
+        print('PASSIVE PADDLE CONTACT',json.dumps(records),flush=True)
+
+    def test_recorded_model_build_turns_real_wheels_and_catches_the_marble_in_nudged_runs(self):
+        fixture=json.loads((ROOT/'tests/fixtures/chat-built-wheel-plinko-wall.json').read_text(encoding='utf-8'))
+        level=mg.requested_level(dict(level='free',base=fixture['base']));answers=iter(fixture['proposals'])
+        def run(compiled,**kw):
+            with tempfile.TemporaryDirectory() as logs:return mw.rehearse(compiled,ENGINE,Path(logs),**kw)
+        result=machine_chat.respond_free(fixture['request'],level,fixture['before'],active_wall=fixture['active_wall'],
+            call=lambda messages:(next(answers),{}),rehearse=run)
+        self.assertEqual(result['placements'],fixture['placements'])
+        self.assertEqual(sum(p['piece']=='wall_water_wheel' for p in result['placements']),20)
+        self.assertEqual(result['rehearsal']['verified_runs'],3)
+        for observed in (result['rehearsal']['checks'],*[v['checks'] for v in result['rehearsal']['variations']]):
+            self.assertTrue(observed[0]['happened'],observed)
+            self.assertGreaterEqual(sum(abs(t['degrees'])>=5 for t in observed[0]['turned']),3)
+        # Freeze only the measurement receipt, not the native world: contacts
+        # without observed rotation must not be advertised as a wheel cascade.
+        saved=result['placements'];compiled=mw.compile_spec(mg.compose(level,saved)[0])
+        names=[f'your wall_water_wheel {i+1}' for i in range(20)]
+        check=machine_chat.course_checks([dict(marble=26,via=list(range(1,21)),finish=list(range(21,26)),
+            order='any',minimum_contacts=3,seconds=15)],saved,compiled,{})[0]
+        check.update(turning={n:n+' axle' for n in names},minimum_turn_deg=5)
+        receipt=run(compiled,seconds=15,track=[check['marble']]);receipt['readouts']['joints']=[]
+        self.assertFalse(machine_chat.measure_courses([check],receipt,compiled)[0]['happened'])
+
+    def test_catcher_patterns_resolve_in_finish_and_pegs_cannot_substitute_for_water_wheels(self):
+        level=mg.requested_level(dict(level='free',base=wall.world_base()))
+        ps=[dict(piece='wall_marble',x_m=0,height_m=3.8),
+            *[dict(piece='wall_peg',x_m=x,height_m=2) for x in (-1,0,1)],
+            *[dict(piece='wall_cup',x_m=x,height_m=.3,width_m=.6) for x in (-1,0,1)]]
+        compiled=mw.compile_spec(mg.compose(level,ps)[0])
+        aliases={f'cups_1_{i+1}':f'your wall_cup {i+5}' for i in range(3)}
+        check=machine_chat.course_checks([dict(marble=1,via=[2,3,4],finish='cups:*',seconds=15)],ps,compiled,aliases)
+        self.assertEqual(check[0]['finish'],['your wall_cup 5','your wall_cup 6','your wall_cup 7'])
+        with self.assertRaisesRegex(mg.LevelRefused,'wall_water_wheel'):
+            machine_chat.respond_free('Add water wheels for Plinko',level,ps,call=lambda messages:(dict(reply='No substitutes',verify=[]),{}))
 
 
 class EditableWalls(unittest.TestCase):

@@ -1,5 +1,78 @@
 # Puzzles on the machine (/play)
 
+October 18 water-wheel Plinko: tested the exact request “Replace the current
+parts with a bunch of water wheels along this wall and have a marble Plinko
+down them into a catcher.” The initial in-game attempt failed because the
+river wheel requires a flume and exposes no wall mount. **Wall water wheel**
+now exposes a passive native hinged rotor with a rear bracket and ideal fix
+mounting. Its hub/axle/paddle solids share `paddle_wheel_shapes` with the river
+kit; the channel kit's generated geometry is unchanged. The wall tool uses
+24 cm deep oak paddles, radius 15–65 cm, 4/6/8/10/12 paddles, a starting
+phase and axle friction in N·m (default 0.002). A phase is initial geometry,
+never a motor command. There is no drive, assigned spin or planar constraint.
+
+The builder gets compact measured layout guidance but still creates normal
+patterns/additions and edits. This is not a new canned assembly or motion
+script. The recorded real model response in
+`tests/fixtures/chat-built-wheel-plinko-wall.json` expands four staggered
+rows of five 25 cm radius, eight-paddle wheels; five adjacent cups at 15 cm
+floor height and an 8 cm glass marble at (-0.18,3.85). It has 26 individually
+editable placements, 77 bodies and 240 compound collision shapes. The wall
+and original saved version remain available; Undo restores the previous edit.
+
+For Plinko, the server constructs the unordered target set from the actual
+requested deflectors on the selected wall and includes every prepared cup.
+The model still identifies the marble, deadline and minimum contact count.
+This avoids guessed three-wheel IDs and accidentally counting a cup as a
+deflector. Ordered courses retain their explicit route contract. Wheel
+requests require at least three different wheels, observed native hinge
+turning of at least 5° on those contacted wheels, and a settled catch in
+each nominal/two nudged trial. Contacts without rotation fail. Final native
+joint readings are now included in rehearsal receipts. These readings are
+unwrapped signed turn sampled at the existing probe cadence, not a new
+absolute rotation/work accumulator. The existing 3-contact/15 s default,
+support probe and settling bounds remain unchanged.
+
+Pattern IDs can now expand in `finish` as well as `via`, so a row of cups can
+be referenced as `cups:*`. Valid direct-addition route metadata survives a
+geometric failure and remains available to numbered repairs; invalid route
+metadata is still correctable. A native 256-compound-shape capacity is now
+checked before starting the engine and exposed to the model alongside body,
+cell and stock capacity; it is not silently exceeded or treated as an empty
+pattern slot. No engine capacity or physics law was changed.
+
+At dt=1/240 s and 20 mm cells, the real model's glass setup passed three
+separate native trials, contacting/turning 4/4/5 wheels and settling in a cup
+after about 5–5.5 s. Nominal path length is 4.827 m. With the same declared
+geometry and 15 s duration, material comparison measured glass 3/3, oak 2/3,
+iron 3/3; local wall times were 1.71–1.90 s. The failed oak nudge stops on a
+rotor at (-0.8773,1.7766,0.3344), not in a catcher. This open design is not
+qualified for every marble material. Native passive-mount tests measure
+0° with no marble and -595.15°/-81.58°/-1304.69° after identical 5 s drops of
+glass/oak/iron marbles. Mountings and bearings remain ideal, exact compounds
+remain rigid/nonfracturing, and no full-pipeline rigid-contact energy/momentum
+audit is claimed. The engine binary remains the previously verified SHA
+`c185b7eca2792b3a84bc9913bd701b6e6dba4d31679b1c72b0e116b9054b1e57`.
+
+The unchanged channel-wheel material regression still records body work
+6.419/12.095/1.225 J for glass/oak/iron rotors under the same falling water.
+Parcel ledger energy residuals stay below 1.64e-7 J and momentum residual
+components below 5.81e-12 N·s, including numerical corrections
+0.09769/0.02579/0.06736 J. This is the existing parcel ledger, not proof of
+full rigid/contact conservation for the wall cascade.
+
+The recorded-model HTTP/browser regression passes 1280×860, 390×844 and
+844×390: normal Run playback, native settled catch, save and Undo/Redo.
+It uses real engine rehearsals, while only provider output is replayed.
+Manual verification also submitted that exact request to the live configured
+model through the ordinary game UI in a separate wall design. Its reply
+reported four contacted/turned wheels, 4.83 m travel and a cup-23 finish,
+passing all three native trials. **Save version** named it **Water wheel
+Plinko**, then **Front → Run** played it. This preserves the earlier peg-board
+design. Source registration, declaration, FreeBuild, host, all wall classes
+and the existing channel-wheel material regression pass locally.
+The broader staging CI failures listed below remain outside this checkpoint.
+
 October 18 Plinko replacement repair: reproduced the reported request
 “replace the current parts with a plinko style marble game” against its
 6×4 m wall and five original placements (including an existing backing
@@ -365,8 +438,8 @@ without version 1's global transparent front sheet. The default camera is
 oblique and freely orbits. **Front** is an optional straight-on editing view
 with pan; **3D** returns to the world view. The ground remains visible.
 
-The library includes fourteen explicit wall-mounted types plus all 53 ordinary
-Sandbox types (67 declarations, 64 visible cards; existing attachment/legacy
+The library includes fifteen explicit wall-mounted types plus all 53 ordinary
+Sandbox types (68 declarations, 65 visible cards; existing attachment/legacy
 recipes stay hidden, with the ordinary Wire shared by both). The initial
 **Wall mounted** category keeps easy placement close at hand; **All** and the
 ordinary categories expose the rest. Wall-specific aliases such as

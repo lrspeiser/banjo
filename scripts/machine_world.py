@@ -47,6 +47,7 @@ MAX_HOLD_S = 0.05
 CABLE_FOLLOW_M = 0.001
 CABLE_FOLLOW_COS = math.cos(math.radians(0.5) / 2)
 MAX_PARTS = 120
+MAX_COMPOUND_SHAPES = 256  # PreciseRigidScene.cpp; validate before starting a native process.
 MAX_TIME_S = 120.0
 # The hardest a person testing a part pulls on it, newtons: about what one
 # pulls with an arm.
@@ -912,6 +913,25 @@ def _kit_block_tower(k, problems, name):
     return parts, []
 
 
+def paddle_wheel_shapes(radius, count, width, reach, side=1.0):
+    """Shared solid hub/axle/paddles for channel and mounted paddle wheels.
+
+    Geometry only: native mass, inertia, hinge/contact and fluid forces own
+    the response. Dimensions have already been validated by the caller.
+    """
+    hub_d=max(0.12,0.55*radius)
+    sub=[dict(shape='cylinder',size_m=[0.06,reach+0.05,0.06],
+              at_m=[0,0,side*0.5*(reach-0.05)],turn_deg=[90,0,0]),
+         dict(shape='cylinder',size_m=[hub_d,width,hub_d],at_m=[0,0,0],turn_deg=[90,0,0])]
+    paddle_len=radius-0.5*hub_d+0.02
+    mid=0.5*hub_d-0.02+0.5*paddle_len
+    for i in range(count):
+        th=360.0*i/count
+        sub.append(dict(shape='box',size_m=[paddle_len,0.03,width],
+            at_m=[mid*math.cos(math.radians(th)),mid*math.sin(math.radians(th)),0],turn_deg=[0,0,th]))
+    return sub
+
+
 def _kit_water_wheel(k, problems, name):
     """A paddle wheel in the flume: one rigid body (hub, axle and paddles) on
     a hinge to a post on the bank. The stream's drag on each paddle, as the
@@ -932,18 +952,8 @@ def _kit_water_wheel(k, problems, name):
     side = 1.0 if k.get('post_side', '+z') == '+z' else -1.0
     bed = ground_height(ground, x, z)
     hub_y = bed + clearance + radius
-    hub_d = max(0.12, 0.55 * radius)
     reach = 0.5 * ground['trench_width_m'] + 0.25
-    sub = [{'shape': 'cylinder', 'size_m': [0.06, reach + 0.05, 0.06], 'at_m': [0, 0, side * 0.5 * (reach - 0.05)],
-            'turn_deg': [90, 0, 0]},
-           {'shape': 'cylinder', 'size_m': [hub_d, width, hub_d], 'at_m': [0, 0, 0], 'turn_deg': [90, 0, 0]}]
-    paddle_len = radius - 0.5 * hub_d + 0.02
-    mid = 0.5 * hub_d - 0.02 + 0.5 * paddle_len
-    for i in range(count):
-        th = 360.0 * i / count
-        sub.append({'shape': 'box', 'size_m': [paddle_len, 0.03, width],
-                    'at_m': [mid * math.cos(math.radians(th)), mid * math.sin(math.radians(th)), 0],
-                    'turn_deg': [0, 0, th]})
+    sub=paddle_wheel_shapes(radius,count,width,reach,side)
     post_h = max(0.12, hub_y + 0.06)
     parts = [{'name': name, 'shape': 'compound', 'material': k.get('material', 'oak'), 'size_m': [2 * radius] * 3,
               'at_m': [x, hub_y, z], 'turn_deg': [0, 0, 0], 'fixed': False, 'parts': sub},
@@ -2101,6 +2111,9 @@ def _compile_spec_uncached(spec, lenient=False):
                 occupied.extend(w['mechanical'] for w in c['leads'])
             except (ValueError,KeyError,TypeError,StopIteration) as exc:problems.append(f'circuit {c["name"]}: cable construction: {exc}')
     strands=compile_strands(spec,checked,problems)
+    compound_shapes=sum(len(p.get('parts',[])) for p in checked if p['shape']=='compound')
+    if compound_shapes>MAX_COMPOUND_SHAPES:
+        problems.append(f'This design uses {compound_shapes} compound collision shapes; the engine supports {MAX_COMPOUND_SHAPES}. Use fewer compound tools or fewer paddles/teeth.')
     if problems and not lenient:
         raise MachineRefused(problems)
     return ({'problems': problems} if lenient else {}) | {'schema': SCHEMA, 'title': str(spec.get('title', 'Machine'))[:80], 'cell_m': cell, 'ground': ground,
@@ -3613,7 +3626,7 @@ def rehearse(compiled, exe, logs, seconds=25.0, wall_limit_s=45.0, track=None, a
                    'closest_approach': [c for i, c in sorted(getattr(session, 'closest', {}).items()) if i not in done],
                    'events': [{'t': e['t'], 'text': e['text']} for e in session.events[:80]],
                    # What went in, as it stood at the end: heat, chemistry, batteries.
-                   'readouts': {k: session.readouts.get(k) for k in ('heat_ledger', 'machines', 'circuits', 'electrical', 'mechanical_cables', 'pour', 'water_regions', 'pulls', 'airflow', 'test_pulled')
+                   'readouts': {k: session.readouts.get(k) for k in ('joints', 'heat_ledger', 'machines', 'circuits', 'electrical', 'mechanical_cables', 'pour', 'water_regions', 'pulls', 'airflow', 'test_pulled')
                                 if (session.readouts or {}).get(k) is not None}}
             if track:
                 out['paths'] = {name: {'points': points, 'turn_wxyz': session.trail_turn.get(name)}

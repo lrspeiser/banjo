@@ -1,0 +1,451 @@
+{
+  "source": "Configured in-game model proposal; native validation and three rehearsals, no profile identifiers or credentials.",
+  "request": "Replace the current parts with a bunch of water wheels along this wall and have a marble Plinko down them into a catcher.",
+  "active_wall": "workshop backing",
+  "base": {
+    "schema": "banjo.machine.v1",
+    "title": "Wall workshop",
+    "cell_m": 0.02,
+    "build_surface": {
+      "kind": "wall",
+      "version": 2,
+      "width_m": 6,
+      "height_m": 4,
+      "plane_z_m": 0.3,
+      "depth_m": 0.62
+    },
+    "presentation": {
+      "camera": "wall_world"
+    },
+    "parts": [
+      {
+        "name": "workshop backing",
+        "shape": "box",
+        "material": "oak",
+        "size_m": [
+          6,
+          4,
+          0.02
+        ],
+        "at_m": [
+          0,
+          2,
+          -0.01
+        ],
+        "fixed": true
+      }
+    ],
+    "kits": [],
+    "joints": [],
+    "stations": []
+  },
+  "before": [
+    {
+      "piece": "wall_marble",
+      "x_m": -1.9,
+      "height_m": 3.6
+    },
+    {
+      "piece": "wall_track",
+      "x_m": -1.15,
+      "height_m": 3.15,
+      "length_m": 1.9,
+      "angle_deg": -16
+    },
+    {
+      "piece": "wall_track",
+      "x_m": 0.4,
+      "height_m": 2.45,
+      "length_m": 1.6,
+      "angle_deg": 16
+    },
+    {
+      "piece": "wall_track",
+      "x_m": -0.7,
+      "height_m": 1.65,
+      "length_m": 1.9,
+      "angle_deg": -16
+    },
+    {
+      "piece": "track",
+      "x_m": 0.55,
+      "z_m": 0.15,
+      "top_height_m": 1.05,
+      "run_m": 1.6,
+      "drop_m": 0.6,
+      "yaw_deg": -90,
+      "width_m": 0.56,
+      "end": "stop"
+    }
+  ],
+  "proposals": [
+    {
+      "reply": "Clearing the existing tracks and replacing them with a 4\u00d75 staggered field of wall_water_wheel rotors, a wall_marble start above the top row, and a band of five wall_cup catchers below. Run will drop the marble through the wheels into any catcher.",
+      "clear": true,
+      "add": [
+        {
+          "piece": "wall_marble",
+          "id": "ball",
+          "knobs": [
+            {
+              "name": "diameter_m",
+              "value": 0.08
+            },
+            {
+              "name": "material",
+              "value": "glass"
+            },
+            {
+              "name": "x_m",
+              "value": -0.18
+            },
+            {
+              "name": "height_m",
+              "value": 3.85
+            },
+            {
+              "name": "placement",
+              "value": "at height"
+            },
+            {
+              "name": "wall",
+              "value": "workshop backing"
+            }
+          ],
+          "join": null
+        }
+      ],
+      "edit": [],
+      "patterns": [
+        {
+          "id": "pattern_wheels",
+          "piece": "wall_water_wheel",
+          "knobs": [
+            {
+              "name": "x_m",
+              "value": -1.4625
+            },
+            {
+              "name": "height_m",
+              "value": 3.25
+            },
+            {
+              "name": "radius_m",
+              "value": 0.25
+            },
+            {
+              "name": "paddles",
+              "value": 8
+            },
+            {
+              "name": "phase_deg",
+              "value": 0
+            },
+            {
+              "name": "wall",
+              "value": "workshop backing"
+            }
+          ],
+          "rows": 4,
+          "columns": 5,
+          "step_x_m": 0.65,
+          "step_y_m": -0.8,
+          "stagger_m": 0.325,
+          "region": null,
+          "avoid_occupied": true
+        },
+        {
+          "id": "pattern_cups",
+          "piece": "wall_cup",
+          "knobs": [
+            {
+              "name": "width_m",
+              "value": 1.18
+            },
+            {
+              "name": "x_m",
+              "value": -2.4
+            },
+            {
+              "name": "height_m",
+              "value": 0.15
+            },
+            {
+              "name": "wall",
+              "value": "workshop backing"
+            }
+          ],
+          "rows": 1,
+          "columns": 5,
+          "step_x_m": 1.2,
+          "step_y_m": 0,
+          "stagger_m": 0,
+          "region": null,
+          "avoid_occupied": true
+        }
+      ],
+      "assemblies": [],
+      "verify": [
+        {
+          "marble": "ball",
+          "via": [
+            "pattern_wheels:1",
+            "pattern_wheels:7",
+            "pattern_wheels:13"
+          ],
+          "finish": "pattern_cups:*",
+          "seconds": 15,
+          "order": "any",
+          "minimum_contacts": 3
+        }
+      ],
+      "limitations": []
+    }
+  ],
+  "placements": [
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": -1.4625,
+      "height_m": 3.25,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": -0.8124999999999999,
+      "height_m": 3.25,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": -0.16249999999999987,
+      "height_m": 3.25,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": 0.48750000000000027,
+      "height_m": 3.25,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": 1.1375000000000002,
+      "height_m": 3.25,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": -1.1375,
+      "height_m": 2.45,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": -0.4874999999999999,
+      "height_m": 2.45,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": 0.16250000000000014,
+      "height_m": 2.45,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": 0.8125000000000002,
+      "height_m": 2.45,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": 1.4625000000000001,
+      "height_m": 2.45,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": -1.4625,
+      "height_m": 1.65,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": -0.8124999999999999,
+      "height_m": 1.65,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": -0.16249999999999987,
+      "height_m": 1.65,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": 0.48750000000000027,
+      "height_m": 1.65,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": 1.1375000000000002,
+      "height_m": 1.65,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": -1.1375,
+      "height_m": 0.8499999999999996,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": -0.4874999999999999,
+      "height_m": 0.8499999999999996,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": 0.16250000000000014,
+      "height_m": 0.8499999999999996,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": 0.8125000000000002,
+      "height_m": 0.8499999999999996,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "radius_m": 0.25,
+      "paddles": 8,
+      "phase_deg": 0.0,
+      "friction_n_m": 0.002,
+      "x_m": 1.4625000000000001,
+      "height_m": 0.8499999999999996,
+      "wall": "workshop backing",
+      "piece": "wall_water_wheel"
+    },
+    {
+      "width_m": 1.18,
+      "x_m": -2.4,
+      "height_m": 0.15,
+      "wall": "workshop backing",
+      "piece": "wall_cup"
+    },
+    {
+      "width_m": 1.18,
+      "x_m": -1.2,
+      "height_m": 0.15,
+      "wall": "workshop backing",
+      "piece": "wall_cup"
+    },
+    {
+      "width_m": 1.18,
+      "x_m": 0.0,
+      "height_m": 0.15,
+      "wall": "workshop backing",
+      "piece": "wall_cup"
+    },
+    {
+      "width_m": 1.18,
+      "x_m": 1.1999999999999997,
+      "height_m": 0.15,
+      "wall": "workshop backing",
+      "piece": "wall_cup"
+    },
+    {
+      "width_m": 1.18,
+      "x_m": 2.4,
+      "height_m": 0.15,
+      "wall": "workshop backing",
+      "piece": "wall_cup"
+    },
+    {
+      "diameter_m": 0.08,
+      "material": "glass",
+      "x_m": -0.18,
+      "height_m": 3.85,
+      "placement": "at height",
+      "wall": "workshop backing",
+      "piece": "wall_marble"
+    }
+  ]
+}

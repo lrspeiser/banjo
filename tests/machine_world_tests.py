@@ -69,6 +69,14 @@ def part(name, size, at, **kw):
 
 
 class Declaration(unittest.TestCase):
+    def test_compound_shape_capacity_is_refused_before_native_startup(self):
+        parts=[dict(name=f'compound {i}',shape='compound',material='oak',fixed=True,
+            at_m=[i,1,0],parts=[dict(shape='box',size_m=[.02,.02,.02],at_m=[0,0,0]) for _ in range(64)]) for i in range(5)]
+        with self.assertRaisesRegex(mw.MachineRefused,'320 compound collision shapes'):
+            mw.compile_spec(dict(schema=mw.SCHEMA,parts=parts))
+        loose=mw.compile_spec(dict(schema=mw.SCHEMA,parts=parts),lenient=True)
+        self.assertTrue(any('256' in p for p in loose['problems']))
+
     def test_observed_quaternion_round_trip_keeps_native_declaration_axes(self):
         for turn in ([0,0,0],[21,38,-71],[15,90,23],[12,-90,-38],[0,135,0]):
             actual=mw.rotation(mw.turn_of_quaternion(mw.quaternion_of_turn(turn)))

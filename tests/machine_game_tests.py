@@ -1030,6 +1030,20 @@ class FreeBuild(unittest.TestCase):
         self.assertEqual(len(calls),2)
         self.assertEqual(len(result['placements']),4)
 
+    def test_geometry_repair_retains_valid_direct_route_metadata(self):
+        first=self.course_proposal();duplicate=copy.deepcopy(first['add'][0]);duplicate.pop('id');first['add'].append(duplicate)
+        calls=[]
+        def call(messages):
+            calls.append(copy.deepcopy(messages))
+            if len(calls)==1:return first,{}
+            return dict(reply='Move the overlapping block',edit=[dict(number=5,set=dict(x_m=1.5,z_m=1.5))],verify=[]),{}
+        result=mc.respond_free('Build a marble course',self.FREE,[],call=call)
+        self.assertEqual(len(calls),2)
+        contract=json.loads(calls[1][-1]['content'])['required_verify']
+        self.assertEqual(len(contract),1)
+        self.assertEqual(contract[0]['via'],['your track 1','your bend 2','your track 3'])
+        self.assertEqual(len(result['placements']),5)
+
     def test_a_physical_failure_cannot_be_fixed_by_retargeting_the_goal(self):
         answer=self.course_proposal();calls=[]
         changed=copy.deepcopy(answer);changed['verify'][0]['finish']='entry'

@@ -377,6 +377,11 @@ FREE_HELP.update(wall_track='a mounted sloping track; angle_deg changes slope, n
     wall_marble='a loose marble seated in the wall track lane at its fixed mounting depth; use this on wall courses, with x_m and height_m, no z_m',
     wall_funnel='two slopes with an open central outlet',wall_cup='a fixed catching cup',
     wall_peg='a round mounted deflector',wall_lever='a freely hinged wall seesaw',
+    wall_water_wheel='an unpowered mounted paddle wheel, using the channel wheel solids on a native hinge; '
+        'marble impacts turn it without a river. radius_m sets its swept radius; paddles sets count; '
+        'phase_deg sets its starting angle, not motor speed. Leave at least two radii plus a marble diameter '
+        'between neighbouring axle centres; stagger rows and keep the marble off the hub centre. '
+        'Use this for marble Plinko on wheels, NOT water_wheel (which requires a collection channel).',
     wall_lift='a motor-driven single-pass wheel with a real cradle and raised unloading chute; needs both battery wires; Reset reloads it')
 
 
@@ -414,6 +419,7 @@ def free_environment(level,placements,active_wall=None):
             high=[max(p[i] for p in points) for i in range(3)]))
     result=dict(solids=fixed,existing_problems=compiled.get('problems',[])+mg.clashes_of(compiled))
     result['remaining_part_slots']=max(0,mw.MAX_PARTS-len(compiled['parts']))
+    result['remaining_collision_shapes']=max(0,mw.MAX_COMPOUND_SHAPES-sum(len(p.get('parts',[])) for p in compiled['parts'] if p['shape']=='compound'))
     result['remaining_counts']={t['piece']:t.get('count',1)-sum(p['piece']==t['piece'] for p in placements)
         for t in level['tray'] if not t.get('attach')}
     if level.get('wall_mode'):
@@ -477,6 +483,20 @@ preserving their purpose; the environment and existing pieces must not be cleare
 Use wall_peg and wall_marble for a Plinko board, not a 3D track shoved into the backing. Preserve unrelated
 pieces. Include a real catching cup and a marble above the pegs, or reuse the existing ones if suitable.
 PREFERRED START for a Plinko request: assemblies:[{"kind":"peg_field","wall":environment.active_wall.id}].
+For Plinko specifically on WATER WHEELS, use patterns/add of wall_water_wheel instead of peg_field.
+These are passive wall-mounted paddle rotors; do not add a river or replace them with pegs/gears.
+Fit staggered rows with clear swept circles, a wall_marble above an off-centre paddle and cups below.
+Verify at least three different wheel owners in any order and all prepared catchers. The server also
+requires those contacted wheels to actually turn by at least five degrees in each physics trial.
+Keep the wheel field compact enough to transfer the marble between rows; spreading a few small wheels
+over the whole wall leaves free-fall gaps. A measured starting layout uses four rows of five radius .25 m,
+eight-paddle wheels, axle pitch .65 m, downward row step .8 m and alternate-row offset .325 m.
+Its top row is at 3.25 m and spans x=-1.4625..1.1375; the marble starts at (-.18,3.85).
+Use adjacent cups below the lowest rotor, e.g. floor height .15 m, not through its swept disk.
+For a 6 m wall, five cups of width 1.18 m at x=-2.4,-1.2,0,1.2,2.4 cover the lower edge without overlap.
+Adapt to the selected wall's actual coordinates/bounds. This is geometry guidance, never a guaranteed outcome.
+Every wheel uses paddles+3 compound collision shapes. All compounds together must fit the engine's
+256-shape capacity (environment.remaining_collision_shapes), as well as body/stock/cell limits.
 This reusable assembly fits visible side rails, staggered rows of existing wall pegs, bottom catching cups
 and a new marble to that wall. It skips occupied peg slots and preserves the existing design. Optional
 rows (3..6) and columns (3..7) choose density; omit them to fit row spacing to the wall's height, with five columns.
@@ -590,6 +610,16 @@ def course_checks(rows, placements, compiled, aliases):
             if any(p['name']==name or mg.owner(p)==name for p in parts):return name
         raise mg.LevelRefused(['A verify reference must name an existing piece number or addition id'])
     checks=[]
+    def expand(values):
+        expanded=[]
+        for value in values:
+            if isinstance(value,str) and value.endswith(':*'):
+                prefix=value[:-2]+'_'
+                matches=[name for key,name in aliases.items() if re.fullmatch(re.escape(prefix)+r'\d+_\d+',key)]
+                if not matches:raise mg.LevelRefused(['No expanded pattern matches '+value])
+                expanded.extend(matches)
+            else:expanded.append(value)
+        return expanded
     for row in rows:
         if not isinstance(row,dict) or set(row)-{'marble','via','finish','seconds','order','minimum_contacts'}:
             raise mg.LevelRefused(['Each verify route takes marble, via, finish and seconds'])
@@ -600,18 +630,12 @@ def course_checks(rows, placements, compiled, aliases):
         if order not in ('ordered','any'):raise mg.LevelRefused(['verify order is ordered or any'])
         if not isinstance(via,list) or not 1<=len(via)<=60:
             raise mg.LevelRefused(['verify via needs 2..12 ordered stage pieces'])
-        expanded=[]
-        for value in via:
-            if isinstance(value,str) and value.endswith(':*'):
-                prefix=value[:-2]+'_'
-                matches=[name for key,name in aliases.items() if re.fullmatch(re.escape(prefix)+r'\d+_\d+',key)]
-                if not matches:raise mg.LevelRefused(['No expanded pattern matches '+value])
-                expanded.extend(matches)
-            else:expanded.append(value)
-        via=expanded
+        via=expand(via)
         if not 2<=len(via)<=(60 if order=='any' else 12):raise mg.LevelRefused(['verify needs 2..12 ordered stages or 2..60 unordered contacts'])
         via=[reference(v) for v in via]
         finish=row.get('finish')
+        if isinstance(finish,list):finish=expand(finish)
+        elif isinstance(finish,str) and finish.endswith(':*'):finish=expand([finish])
         if isinstance(finish,list):
             if not 1<=len(finish)<=8:raise mg.LevelRefused(['finish takes one to eight real catchers'])
             finish=[reference(v) for v in finish]
@@ -719,11 +743,18 @@ def measure_courses(checks,rehearsal,compiled):
         remaining=[p for p in points if p[0]>=after]
         crossing=min(remaining,key=lambda p:abs(p[2]-finish_part['at_m'][1]-check['radius_m'])) if remaining else None
         minimum=check.get('minimum_contacts',len(check['via']))
-        out.append(dict(kind='course',marble=check['marble'],stages=stages,expected=minimum,order=check.get('order','ordered'),
+        turning=check.get('turning',{});turned=[]
+        if turning:
+            joints={j['name']:j for j in rehearsal.get('readouts',{}).get('joints',[])}
+            turned=[dict(piece=s['piece'],degrees=joints.get(turning.get(s['piece']),{}).get('turned_deg',0)) for s in stages]
+        motion_ok=not turning or sum(abs(t['degrees'])>=check['minimum_turn_deg'] for t in turned)>=minimum
+        observed=dict(kind='course',marble=check['marble'],stages=stages,expected=minimum,order=check.get('order','ordered'),
             distance_m=round(distance,3),finished_on=ended,settled=settled,
             end_at_m=points[-1][1:4] if points else None,
             at_finish_height=crossing,finish_at_m=finish_part['at_m'],
-            happened=len(stages)>=minimum and ended in finishes and distance>=.25 and settled))
+            happened=len(stages)>=minimum and ended in finishes and distance>=.25 and settled and motion_ok)
+        if turning:observed.update(turned=turned,minimum_turn_deg=check['minimum_turn_deg'])
+        out.append(observed)
     return out
 
 
@@ -876,6 +907,7 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
     if len(message) > MAX_MESSAGE:
         raise ValueError(f'Keep a request under {MAX_MESSAGE} characters')
     field_requested=bool(re.search(r'\b(plinko|peg.?board|galton)\b',message,re.I))
+    wheel_field_requested=field_requested and bool(re.search(r'\bwater\s*wheels?\b',message,re.I))
     course_requested=field_requested or bool(re.search(r'\b(course|rube|zig.?zag)\b',message,re.I))
     if call is None:
         api_key, model = configuration()
@@ -889,9 +921,42 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
     selected=environment.get('active_wall');focus=''
     if selected:
         focus='\nSELECTED MOUNTING FACE FOR THIS REQUEST: '+json.dumps(selected)+'.\nExact coordinate limits: '+json.dumps(environment['wall_coordinates'])+'.\nUse these actual coordinates, not a wall centered at zero.\nRemaining wall_peg inventory: '+str(environment['remaining_counts'].get('wall_peg',0))+'. Remaining native part slots: '+str(environment['remaining_part_slots'])+'. Each peg uses its peg, bracket and mounting bolts. Leave room for the catchers.\n'
+        if wheel_field_requested and selected['width_m']>=3.5 and selected['height_m']>=4:
+            focus+='\nFor THIS water-wheel request, use the compact measured layout with region:null, NOT a whole-wall region. Explicit pattern knobs x_m='+str(selected['x_m']-1.4625)+', height_m=3.25, radius_m=.25, paddles=8, phase_deg=0; rows=4, columns=5, step_x_m=.65, step_y_m=-.8, stagger_m=.325. region would override these spacings and spread the wheels too far apart. Use an .08 m marble, not a smaller one, above the off-centre top paddle at x_m='+str(selected['x_m']-.18)+', height_m=3.85. Cover the lower edge with adjacent cups below the lowest wheel (.15 m floor height), without gaps. Cup centres must be at least their width apart. Prefer a separate cup pattern using region:null and exact spacing: width_m='+str(selected['width_m']/math.ceil(selected['width_m']/1.2)-.02)+', x_m='+str(selected['x_m']-selected['width_m']/2+selected['width_m']/math.ceil(selected['width_m']/1.2)/2)+', height_m=.15, rows=1, columns='+str(math.ceil(selected['width_m']/1.2))+', step_x_m='+str(selected['width_m']/math.ceil(selected['width_m']/1.2))+', step_y_m=0, stagger_m=0. Keep their sidewalls clear of the swept rotor. These are geometry suggestions, still subject to all native checks.\n'
     messages = [{'role': 'system', 'content': free_prompt(level)+focus},
                 {'role': 'user', 'content': json.dumps({'request': message, 'on_the_table': context,'environment':environment})}]
     scratch=[dict(p) for p in placements];scratch_aliases={};pattern_reports={};assembly_checks=[];retained_checks=[]
+
+    def declared_courses(answer,placed,compiled,aliases):
+        rows=answer.get('verify',[])
+        if not field_requested or not selected:return course_checks(rows,placed,compiled,aliases)
+        if not isinstance(rows,list) or len(rows)>4:raise mg.LevelRefused(['verify must be a list of at most four marble routes'])
+        # Plinko's goal is any three real deflectors, not three arbitrarily
+        # guessed numbered targets. Derive that set from the requested field
+        # on the actual mounting face. The native contacts/turns/catch still
+        # decide whether it works. Ordered courses retain their explicit goals.
+        kind='wall_water_wheel' if wheel_field_requested else 'wall_peg'
+        def owners(piece):return [f'your {p["piece"]} {i+1}' for i,p in enumerate(placed)
+            if p['piece']==piece and p.get('wall','workshop backing')==selected['id']]
+        targets=owners(kind);catchers=owners('wall_cup')
+        if len(targets)<3:raise mg.LevelRefused([f'Plinko needs at least three {kind} pieces on the selected wall.'])
+        if not rows:
+            saved=[c for c in merge_builder_checks(retained_checks,assembly_checks) if c.get('kind')=='course']
+            rows=[{k:c[k] for k in ('marble','seconds','minimum_contacts') if k in c} for c in saved]
+            if not rows:
+                marbles=owners('wall_marble')
+                if len(marbles)!=1:raise mg.LevelRefused(['Choose the Plinko starting marble in verify.marble.'])
+                rows=[dict(marble=marbles[0],seconds=15,minimum_contacts=3)]
+        canonical=[]
+        for row in rows:
+            if not isinstance(row,dict) or set(row)-{'marble','via','finish','seconds','order','minimum_contacts'}:
+                raise mg.LevelRefused(['Each verify route takes marble, via, finish and seconds'])
+            if row.get('order','any')!='any':raise mg.LevelRefused(['Plinko verifies different contacts in any order.'])
+            minimum=row.get('minimum_contacts',3)
+            if type(minimum) is not int or minimum<3:raise mg.LevelRefused(['Plinko requires at least three different contacts.'])
+            canonical.append(dict(marble=row.get('marble'),via=targets,finish=catchers,
+                order='any',minimum_contacts=minimum,seconds=row.get('seconds',15)))
+        return course_checks(canonical,placed,compiled,aliases)
 
     def fit(p):
         out = {'piece': p['piece']}
@@ -1105,19 +1170,28 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
         except (mg.LevelRefused,mw.MachineRefused) as refused:
             try:refused.connection_context=free_context(level,placed)
             except (ValueError,KeyError,TypeError):pass
+            # A geometric clash does not invalidate otherwise sound route
+            # metadata. Keep its resolved references for a numbered repair,
+            # even when the model omits verify on its next reply. Invalid
+            # metadata remains correctable and is never retained here.
+            try:
+                _,staged,_,loose=mg._assemble(level,placed,lenient=True)
+                declared=declared_courses(answer,staged,loose,aliases)
+                assembly_checks[:]=merge_builder_checks(checks,declared)
+            except (ValueError,KeyError,TypeError):pass
             raise
         compiled=mw.compile_spec(spec)
         # The server owns the accepted proof obligations for this transaction.
         # A repair can omit their JSON, but can never remove or weaken them.
         checks=merge_builder_checks(retained_checks,checks)
-        checks=merge_builder_checks(checks,course_checks(answer.get('verify',[]),checked,compiled,aliases))
+        checks=merge_builder_checks(checks,declared_courses(answer,checked,compiled,aliases))
         for check in checks:
             ball=next((p for p in compiled['parts'] if p['name']==check['marble'] and p['shape']=='sphere' and not p['fixed']),None)
             if not ball:raise mg.LevelRefused(['Keep the assembly marble as a freely moving sphere'])
             if check.get('kind')=='course':
                 # Revalidate retained names against the proposed machine too;
                 # clear/rebuild must not leave a proof pointing at old pieces.
-                row={k:v for k,v in check.items() if k not in ('kind','radius_m')}
+                row={k:v for k,v in check.items() if k not in ('kind','radius_m','turning','minimum_turn_deg')}
                 course_checks([row],checked,compiled,{})
                 check['radius_m']=ball['size_m'][0]/2
             else:check['initial_height_m']=ball['at_m'][1]
@@ -1138,6 +1212,13 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
                     p.get('wall','workshop backing')==environment['active_wall']['id']]
                 if len(catchers)>1 and any(not isinstance(c['finish'],list) or not set(catchers)<=set(c['finish']) for c in courses):
                     raise mg.LevelRefused(['The Plinko request can finish in any prepared cup. Before rehearsal, list all its catchers in verify.finish: '+json.dumps(catchers)])
+            if wheel_field_requested:
+                wheels={f'your {p["piece"]} {i+1}' for i,p in enumerate(placed) if p['piece']=='wall_water_wheel'}
+                if not courses or any(not set(c['via'])<=wheels or len(c['via'])<3 for c in courses):
+                    raise mg.LevelRefused(['This request needs at least three wall_water_wheel targets, not pegs or gears. Use patterns/add and verify the actual wheel owners.'])
+                for c in courses:
+                    c['turning']={name:next(j['name'] for j in compiled['joints'] if j['kind']=='hinge' and mg.owner({'name':j['b']})==name) for name in c['via']}
+                    c['minimum_turn_deg']=5.
             if course_requested and not courses:
                 raise mg.LevelRefused(['Keep all route checks and stages while repairing the course'])
             proposed_goals=sorted(builder_goal(c) for c in checks)
