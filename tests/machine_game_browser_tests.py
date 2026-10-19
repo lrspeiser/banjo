@@ -3227,6 +3227,7 @@ class Puzzles(unittest.TestCase):
                 self.wait("machineDesign()?.project==='pinball' && "+READY,90)
                 saved=self.js('machineDesign().id')
                 self.assertGreaterEqual(self.js('machineDesign().projectStep'),1)
+                self.assertIn('Step 1 of 10 saved',self.js("document.getElementById('scene-goal').textContent"))
                 self.assertTrue(self.js("machineDesign().versions.some(v=>v.label==='Pinball · step 1 of 10')"))
                 self.anonymous_cloud_saved()
                 self.page.send('Page.reload',{});self.wait(READY,90)

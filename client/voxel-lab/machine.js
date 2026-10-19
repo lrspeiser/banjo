@@ -8218,7 +8218,12 @@ async function chooseLevel(id, design = null) {
     if(readOnlyCourse())$('phone-design-tab').hidden=true;
     if(!readOnlyCourse()){store.last = activeDesign.id; persist();}
     if(wallDesign())Object.assign(level,{title:'Wall in the world',brief:'Wall pieces snap to their mounting plane. Other pieces build in the 3D world.'});
-    if(activeDesign.draft.base?.presentation?.activity==='pinball')Object.assign(level,{title:'Pinball',brief:'Run first. Hold the launcher, then release. Hold Left / Right to flip. Reset loads another ball.'});
+    if(activeDesign.draft.base?.presentation?.activity==='pinball'){
+      const step=activeDesign.draft.base.presentation.pinball_project_step||activeDesign.projectStep;
+      Object.assign(level,{title:'Pinball',brief:step&&step<10
+        ?`Step ${step} of 10 saved. Run to try this build; continue the Pinball project in Levels, or add pieces here.`
+        :'Run first. Hold the launcher, then release. Hold Left / Right to flip. Reset loads another ball.'});
+    }
     syncWallTray();
     if(worldWallDesign()){pieceFilter='wall';$('piece-search').value='';}
   }

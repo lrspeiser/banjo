@@ -158,6 +158,7 @@ def project_build(records,step):
     spec['electrical']['wires']=[w for w in spec['electrical']['wires'] if all(w[k].rsplit(':',1)[0] in devices for k in ('a','b'))]
     spec['batteries']=[b for b in spec['batteries'] if b['in'] in names]
     spec['stations']=[];spec['title']='My Pinball project'
+    spec.setdefault('presentation',{})['pinball_project_step']=step
     # Compile each actual winning assembly and rename its stable ownership.
     for n,owner in [(2,'left inlane guide'),(4,'launch turn'),(5,'left flipper'),(6,'left button'),(8,'right flipper'),(9,'upper bumper')]:
         if n not in settings:continue
