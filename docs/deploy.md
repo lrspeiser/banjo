@@ -1,5 +1,15 @@
 # Hosting the game
 
+October 19 test-child recovery: the supervisor now restarts its already
+verified current package after a child exits or the existing memory budget
+stops it. Recovery runs independently of the staging download, with retries
+at most once every 30 seconds. A missing newer package can no longer leave
+the accepted cached build offline indefinitely. The resource limits,
+package checksum/health checks and production session pool are unchanged.
+The cohosted regression stops the test child, returns 404 for the update,
+checks that the accepted revision restarts, and keeps a production engine
+session usable throughout. This does not make an unverified update available.
+
 The game is hosted on Render as the web service **banjo**
 (`srv-dajite67bikc73c8echg`), at <https://banjo-f1sv.onrender.com/play>. Render
 builds it from the `main` branch of `lrspeiser/banjo` and deploys every new
