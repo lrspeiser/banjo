@@ -3504,6 +3504,8 @@ async function checkGhost(g) {
                       objectLock:r.snap && objectSnapEnabled ? r.snap.to+'|'+r.snap.port : null, alignment:r.alignment||null});
     g.electrical = r.electrical_preview || null;
     g.batteryPreview=r.battery_preview||[];g.proposedParts=r.parts||[];
+    g.placementLayers=r.placement_layers||null;
+    syncPlacementLayers();
     g.optical_setup = r.optical_setup || null;
     g.water_setup = r.water_setup || [];
     g.solar_setup = r.solar_setup || [];
@@ -3838,6 +3840,25 @@ function springLengthControls(rule){
   return group;
 }
 
+function syncPlacementLayers(){
+  const editor=$('piece-editor');editor.querySelector('.placement-layers')?.remove();
+  const layers=ghost?.placementLayers;
+  if(!layers||!level?.free||ghost.baseObject||layers.positions.length<2)return;
+  const row=Object.assign(document.createElement('div'),{className:'placement-layers'});
+  const move=direction=>{
+    if(!ghost||ghost.busy)return;
+    setKnob(ghost.p,'support_layer',layers.index+direction);
+    ghost.placementLayers=null;syncPlacementLayers();askGhost();
+  };
+  row.append(button('↑ Above',()=>move(-1),{ariaLabel:'Move above surface',disabled:layers.index===0,
+    title:'Place on the next clear surface above'}),
+    button('↓ Below',()=>move(1),{ariaLabel:'Move below surface',disabled:layers.index===layers.positions.length-1,
+    title:'Place on the next clear surface below'}));
+  const name=layers.positions[layers.index].support;
+  row.append(Object.assign(document.createElement('output'),{textContent:`On ${name==='ground'?'ground':playerPartTitle(name)}`,title:name}));
+  editor.querySelector('.piece-toolbar')?.after(row);
+}
+
 function renderGhostBar() {
   pendingPieceReference=null;
   const precisionOpen = Boolean($('precision-controls')?.open);
@@ -4093,7 +4114,7 @@ function renderGhostBar() {
   // that teaches gauge still needs its three choices before the second click.
   if(connecting&&!ghost.was&&row.classList.contains('wire-gauge'))fields.append(row);
   if((connecting&&!ghost.was)||needsClip){throwAway.textContent=needsClip?'Cancel heater':'Cancel wire';fields.append(throwAway);}
-  showGhostKnobs(); showGhostState();
+  syncPlacementLayers();showGhostKnobs(); showGhostState();
 }
 
 function editByDrag(key,initial,pixels) {
@@ -7044,7 +7065,7 @@ function renderPiecePicker() {
     const img = Object.assign(document.createElement('img'), {alt: '', hidden: true});
     picture.append(img); pictureInto(img, t);
     card.append(picture, Object.assign(document.createElement('strong'), {textContent: pieceLabel(t.piece)}),
-      Object.assign(document.createElement('span'), {className: 'piece-description', textContent: t.piece==='marble'&&pinballDesign()?'Place on the playfield beneath the glass cover.':PIECE_INFO[t.piece]?.[1] || 'Add this piece to your machine.'}));
+      Object.assign(document.createElement('span'), {className: 'piece-description', textContent: PIECE_INFO[t.piece]?.[1] || 'Add this piece to your machine.'}));
     if (!level.free || left <= 0) card.append(Object.assign(document.createElement('span'), {className: 'piece-count', textContent: left > 0 ? `${left} left` : 'none left'}));
     const example = level.free && sandboxTemplates.find(example => (example.pieces || example.placements?.map(p => p.piece) || []).includes(t.piece));
     if (!example) return card;

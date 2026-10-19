@@ -963,6 +963,48 @@ def knob_default(rule):
 class FreeBuild(unittest.TestCase):
     FREE = mg.level_by_id('free')
 
+    def test_support_layers_are_contextual_geometry_for_marble_plank_and_block(self):
+        base=copy.deepcopy(self.FREE['machine'])
+        base['parts']=[dict(name=name,shape='box',material='oak',size_m=[1,.1,1],
+            at_m=[0,y,0],fixed=True) for name,y in [('lower shelf',.4),('upper shelf',1)]]
+        level=mg.requested_level(dict(level='free',base=base))
+        for piece,knobs in [('marble',{}),('plank',dict(length_m=.4)),
+                            ('block',dict(length_m=.1,tall_m=.1,depth_m=.1))]:
+            p=dict(piece=piece,x_m=0,z_m=0,**knobs)
+            with self.subTest(piece=piece):
+                g=mg.ghost(level,[p],0)
+                self.assertEqual([r['support'] for r in g['placement_layers']['positions']],
+                                 ['upper shelf','lower shelf','ground'])
+                for layer in range(3):
+                    p['support_layer']=layer
+                    g=mg.ghost(level,[p],0)
+                    self.assertTrue(g['fits'],g['problems'])
+                    self.assertEqual(g['placement_layers']['index'],layer)
+                    self.assertAlmostEqual(g['parts'][0]['at_m'][1],
+                        g['placement_layers']['positions'][layer]['height_m'],places=4)
+                # Edits and saves use the ordinary checked placement format.
+                saved=json.loads(json.dumps(p))
+                self.assertEqual(mg._assemble(level,[saved])[3]['parts'],mg._assemble(level,[p])[3]['parts'])
+                self.assertNotIn('placement_layers',mg.ghost(level,[dict(p,x_m=1.5)],0))
+                self.assertTrue(next(t for t in level['tray'] if t['piece']==piece)['knobs']['support_layer']['hidden'])
+        self.assertNotIn('placement_layers',mg.ghost(self.FREE,[dict(piece='marble',x_m=0)],0))
+        self.assertNotIn('placement_layers',mg.ghost(level,[dict(piece='marble',x_m=0,placement='at height',height_m=.7)],0))
+        with self.assertRaises(mg.LevelRefused):mg.ghost(level,[dict(piece='marble',x_m=0,support_layer=.5)],0)
+        for lesson in LEVELS:
+            self.assertTrue(all('support_layer' not in t['knobs'] for t in lesson['tray']))
+
+    def test_support_layers_skip_gaps_too_small_for_the_piece_and_handle_slopes(self):
+        part=dict(name='probe',shape='sphere',size_m=[.04]*3,at_m=[0,0,0],turn_deg=[0,0,0])
+        shelves=[dict(name=name,shape='box',size_m=[1,.1,1],at_m=[0,y,0],turn_deg=[0,0,0])
+                 for name,y in [('lower',.4),('upper',.51)]]
+        layers=mg.support_layers(part,shelves)
+        self.assertEqual([r['support'] for r in layers],['upper','ground'])
+        shelves[1]['at_m'][1]=1
+        shelves[0]['turn_deg']=[0,0,15]
+        for row in mg.support_layers(part,shelves):
+            probe=dict(part,at_m=[0,row['height_m'],0])
+            self.assertTrue(all(mw.overlap_depth(probe,p)<=.0001 for p in shelves))
+
     @staticmethod
     def course_proposal():
         return dict(reply='A marble takes a ramp, a turn and a stopped catch.',clear=True,

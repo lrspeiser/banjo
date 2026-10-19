@@ -235,8 +235,7 @@ def template():
     import machine_game as mg
     spec=dict(schema=mw.SCHEMA,title='Pinball',cell_m=.02,physics_dt_s=1/480,parts=[],joints=[],batteries=[],
               electrical=dict(devices=[],wires=[]),stations=[],presentation={'camera':'overview','activity':'pinball',
-                'selection_passthrough':['pinball table glass cover'],
-                'placement_inside':['pinball table glass cover']})
+                'selection_passthrough':['pinball table glass cover']})
     for build,name,k in [(field,'pinball table',{}),
         (flipper,'left flipper',dict(x_m=.43,z_m=-.76,side='right')),
         (flipper,'right flipper',dict(x_m=-.43,z_m=-.76,side='left')),

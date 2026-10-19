@@ -165,6 +165,11 @@ def free_build():
         height_m=dict(min=.05,max=2,step=.01,default=.6,label='center height (m)'))
     marble['knobs']['material']['choices'].append('glass')
     marble['knobs']['diameter_m']['choices'].extend([.08,.10])
+    # Setup layers are real resting heights, not rendering order. Only the
+    # contextual Above/Below editor exposes this saved choice.
+    for piece in ('marble', 'plank', 'block'):
+        tray[piece]['knobs']['support_layer'] = dict(min=0, max=1000, step=1, default=0,
+            hidden=True, label='support layer from top')
     link = next(row for row in level['tray'] if row['piece'] == 'link')
     link['knobs']['kind']['choices'].append('spring')
     link['knobs'].update(rest_m=dict(min=.01, max=3, default=.3, step=.01, label='spring relaxed length (m)'),
@@ -310,18 +315,11 @@ def requested_level(data):
             raise ValueError('Names starting with "your " are reserved for tray pieces')
         level['machine'] = copy.deepcopy(base)
         level['custom_base'] = True
-        # An explicit interior placement surface means “set it on the deck”,
-        # not on its transparent lid. This changes setup only: the cover stays
-        # in the compiled machine and still collides throughout the run.
         presentation=base.get('presentation') if isinstance(base.get('presentation'),dict) else {}
-        covers=presentation.get('placement_inside',[])
-        if presentation.get('activity')=='pinball' and not covers:
-            covers=presentation.get('selection_passthrough',[])  # older saved tables
-        if isinstance(covers,list) and covers and all(isinstance(n,str) for n in covers):
-            marble=next(t for t in level['tray'] if t['piece']=='marble')
-            marble['placement_inside']=list(covers)
-            marble['exact_sphere']=True
-            marble['description']='Place on the playfield beneath its glass cover. Gravity moves the ball after Run.'
+        # Keep the workshop's smooth ball representation, independently of
+        # where the user places it. There is no cover-placement exception.
+        if presentation.get('activity')=='pinball':
+            next(t for t in level['tray'] if t['piece']=='marble')['exact_sphere']=True
         if sandbox_wall.validate(base):
             level['wall_mode'] = copy.deepcopy(base['build_surface'])
             level['title'] = 'Wall workshop'
@@ -421,6 +419,40 @@ def rest_height(part, parts, gap=0.002):
     return y + gap
 
 
+def support_layers(part, parts, gap=0.002):
+    """Clear resting positions at this footprint, highest first. A support
+    may be sloped or compound. Test every candidate against ALL other solids
+    so Below never means putting the piece into a lid, shelf or narrow gap.
+    This is setup geometry only; contact/gravity still own the running world.
+    """
+    reach = _reach(part)
+    x, z = part['at_m'][0], part['at_m'][2]
+    solids = [sd for p in parts for sd in mw.solids_of(p)
+              for r in [_reach(sd)] if abs(sd['at_m'][0]-x)<r[0]+reach[0]
+              and abs(sd['at_m'][2]-z)<r[2]+reach[2]]
+    candidates = [(reach[1]+gap, 'ground')]
+    for sd in solids:
+        candidates.append((rest_height(part, [sd], gap), sd['name']))
+    layers = []
+    for y, name in sorted(candidates, reverse=True):
+        if layers and abs(y-layers[-1]['height_m'])<.001:
+            continue
+        probe = dict(part, at_m=[x,y,z])
+        # Nanometre arithmetic allowance for coincident box faces at gap=0;
+        # this is not a physical clearance or a simulation contact tolerance.
+        if all(mw.overlap_depth(probe, sd)<=1e-9 for sd in solids):
+            layers.append(dict(height_m=round(y,4), support=name))
+    return layers
+
+
+def _on_support_layer(part, k, parts, gap=0.002):
+    if k.get('support_layer', 0) and k.get('placement')!='at height':
+        layers = support_layers(part, parts, gap)
+        if layers:
+            part['at_m'][1] = layers[min(int(k['support_layer']),len(layers)-1)]['height_m']
+    return part
+
+
 def _turn(k):
     """The player's turn of a piece (the free knobs): yaw about the vertical,
     pitch its +x end up, roll about its length. None when it is not turned."""
@@ -457,10 +489,10 @@ def _plank(name, k, ctx):
         # the square round it, decides what it lands on, so a plank laid end
         # to end with a turned one lies beside it rather than up on it.
         part['at_m'][1] = round(rest_height(part, ctx['parts'], gap=0.002), 4)
-        return {'parts': [part]}
+        return {'parts': [_on_support_layer(part,k,ctx['parts'])]}
     rest = set_down_height(ctx['parts'], x - ext[0], x + ext[0], z - ext[2], z + ext[2])
     part['at_m'][1] = round(rest + ext[1] + 0.002, 4)
-    return {'parts': [part]}
+    return {'parts': [_on_support_layer(part,k,ctx['parts'])]}
 
 
 def _knife(name, k, ctx=None):
@@ -603,9 +635,8 @@ def _marble(name, k, ctx):
     d = k.get('diameter_m', 0.04)
     part = {'name': name, 'shape': 'sphere', 'material': k.get('material', 'iron'), 'size_m': [d, d, d],
             'at_m': [k['x_m'], 0.0, k.get('z_m', 0.0)], 'turn_deg': [0.0, 0.0, 0.0], 'fixed': False}
-    covers=ctx['tray'].get('placement_inside',[])
-    supports=[p for p in ctx['parts'] if p['name'] not in covers]
-    part['at_m'][1] = round(k['height_m'] if k.get('placement')=='at height' else rest_height(part, supports), 4)
+    part['at_m'][1] = round(k['height_m'] if k.get('placement')=='at height' else rest_height(part, ctx['parts']), 4)
+    _on_support_layer(part,k,ctx['parts'])
     if ctx['tray'].get('exact_sphere'):
         size=part.pop('size_m')
         part.update(shape='compound',parts=[dict(shape='sphere',at_m=[0,0,0],size_m=size)])
@@ -662,7 +693,7 @@ def _block(name, k, ctx):
             'size_m': [k['length_m'], k['tall_m'], k['depth_m']], 'at_m': [k['x_m'], 0.0, k.get('z_m', 0.0)],
             'turn_deg': mw.turn_of(mw.heading(*(_turn(k) or [0.0, 0.0, 0.0]))), 'fixed': True}
     part['at_m'][1] = round(rest_height(part, ctx['parts'], gap=0.0), 4)
-    return {'parts': [part]}
+    return {'parts': [_on_support_layer(part,k,ctx['parts'],gap=0.0)]}
 
 
 def _dominoes(name, k, ctx):
@@ -780,6 +811,8 @@ def check_placements(level, placements, budget=True):
                 continue
             if not rule['min'] <= value <= rule['max']:
                 problems.append(f'{what}: {key} is {rule["min"]} to {rule["max"]}')
+            if key=='support_layer' and value!=int(value):
+                problems.append(f'{what}: support layer must be a whole number')
             knobs[key] = float(value)
         if t['piece'] == 'link' and knobs.get('a') == knobs.get('b'):
             problems.append(f'{what}: a link joins two different parts')
@@ -1644,6 +1677,17 @@ def ghost(level, placements, index, snapping=False, edit_key=None, nearby=False,
              'energy': pieces_energy(compiled).get(name),
              'parts': [dict({k: p[k] for k in keys if k in p},
                             **({'parts': p['parts']} if p['shape'] == 'compound' else {})) for p in mine]}
+    p = checked[index]
+    if level.get('free') and p['piece'] in ('marble','plank','block') and p.get('placement')!='at height' and len(mine)==1:
+        # Match the support set available when this tray piece is assembled.
+        supports = [q for q in compiled['parts'] if owner(q) is None or
+                    int(owner(q).split(' ')[-1])<=index]
+        probe = dict(mine[0])
+        if probe['shape']=='compound' and len(probe['parts'])==1 and probe['parts'][0]['shape']=='sphere':
+            probe.update(shape='sphere',size_m=probe['parts'][0]['size_m'])
+        layers = support_layers(probe,supports,gap=0 if p['piece']=='block' else .002)
+        if len(layers)>1:
+            reply['placement_layers'] = dict(index=min(int(p.get('support_layer',0)),len(layers)-1), positions=layers)
     if compiled.get('light'):
         reply['optical_setup'] = compiled['light']
     reply['solar_setup'] = compiled.get('solar_panels', [])

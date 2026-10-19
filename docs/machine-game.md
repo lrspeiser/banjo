@@ -1,12 +1,44 @@
 # Puzzles on the machine (/play)
 
+## Contextual surface layers — October 19
+
+Sandbox marbles, planks and blocks offer **Above / Below** beside the selected
+piece only when its footprint has multiple clear resting positions. This is a
+physical setup height, not rendering order. The default is the highest support;
+Below chooses the next support, including the ground when clear. A too-small
+gap is skipped. The layer choice saves in `support_layer` and uses ordinary
+Place, Undo and design persistence. Explicit marble At height remains separate.
+Lessons and single-surface placements do not show these controls.
+
+There is no automatic Pinball-under-glass rule. Add Marble and choose Below
+for the playfield; the physical cover stays in the compiled machine, including
+for older saves. Existing saved explicit heights are respected. Surface
+candidates use oriented-solid overlap, with a 1 nm floating-point allowance for
+coincident box faces, then the existing 0.1 mm setup height rounding. No native
+force, material or contact tolerance changes. Other apparatus retains its
+dedicated mounting/height controls; the new editor covers these three loose or
+stackable tools, not arbitrary jointed assemblies.
+
+Qualification: 75 tray/free-build regressions pass in 57.168 s, including
+ordinary stacked shelves, all three supported tools, narrow-gap rejection,
+slopes, saved placement reconstruction and absence from lessons. Six native
+glass/oak/iron comparisons retain deck or cover contact as explicitly selected
+(2 Pinball checks, 4.438 s). Contact-local ball heights after 0.5 s are
+49.998–50.005 mm above the deck origin or 269.998–270.001 mm above it on the lid,
+at 1/480 s native steps. There is no new force or conservation claim.
+The browser placement/Undo/reload case passes at 1280×860, 390×844 and 844×390 in
+16.183 s; buttons are visible, unobstructed and at least 44 px in both axes.
+All 46 host checks pass in 9.463 s. A 20-request local Pinball ghost sample
+measures 12.04 ms median and 154.87 ms maximum including its cold first request;
+this is setup geometry/server work, not a hosted or simulation benchmark.
+
 ## Pinball flipper response and interior placement — October 19
 
 New Pinball tables use a hollow aluminum paddle and below-deck return crank,
 shorter-travel physical contacts, close-fitting shaft holes and guides that
 drain missed balls without crossing the shooter lane. The ordinary Marble
-tool sets its exact sphere below the retained glass cover, including in older
-Pinball saves. The glass has an edge outline. Saved hardware stays as built;
+tool retains its exact sphere and offers contextual surface placement as above.
+The glass has an edge outline. Saved hardware stays as built;
 choose Sandbox → Pinball for a new table. See [the construction, timing,
 material comparisons and remaining limits](pinball.md#flipper-drain-and-marble-placement-correction--october-19).
 

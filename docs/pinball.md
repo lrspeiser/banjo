@@ -27,17 +27,18 @@ not current-limited in this comparison: capacitors would not correct the
 mechanical delay. Capacitors remain available elsewhere in the catalogue.
 The stock actuator is still a lumped DC motor, not a resolved solenoid.
 
-The ordinary Marble tool places its exact sphere on the playfield under the
-lid. `presentation.placement_inside` names the lid excluded from automatic
-set-down support; the cover remains unchanged in the compiled physical world.
-Older Pinball saves use their existing clear-cover declaration. An explicit
+The ordinary Marble tool keeps its exact sphere. The general Sandbox
+**Above / Below** controls choose between clear physical supports: choose
+Below to reach the playfield from the glass. No Pinball-specific placement rule
+or cover exclusion is used. Legacy `presentation.placement_inside` is ignored;
+the cover remains unchanged in the compiled physical world. An explicit
 At height placement is still respected. Native glass/oak/iron comparisons
 check deck contact for a ball placed inside and glass contact for a ball placed
 above. A visible edge outline makes the transparent cover easier to recognize.
 
 Hardware changes apply to newly created tables; saved user geometry is kept.
 Create another table with Sandbox → Pinball to use the new mechanism. Ordinary
-Marble placement is corrected for both old and new Pinball designs.
+Marble surface-layer controls work in both old and new Pinball designs.
 
 The response and drain trials keep the existing 1e-8 J electrical residual
 limit and report shaft-coupling residual separately. They do not establish
@@ -59,8 +60,8 @@ of those cycles, the accumulated electrical residual is 4.65e-11 J and the
 separate shaft-coupling residual is 0.63594 J on 239.12581 J of source work.
 The latter is a measured numerical residual, not physical heat. All 73 tray
 and free-build tests and 46 host tests pass in 59.940 and 9.534 s. Two browser
-cases pass in 22.875 s, each at desktop 1280×860, portrait 390×844 and landscape
-844×390; they cover ordinary Marble placement, Undo, independent held inputs,
+cases passed in 22.875 s before the contextual layer replacement, each at desktop
+1280×860, portrait 390×844 and landscape 844×390; they covered Marble placement, Undo, independent held inputs,
 spring launch, Pause, Reset and saved identity. Source registration remains
 274/274. No new native force law was introduced.
 

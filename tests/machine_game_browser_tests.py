@@ -3116,7 +3116,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Previous object actions');self.click_visible('Pause')
                 self.wait("[...document.querySelectorAll('#player-controls [data-control]')].every(b=>b.disabled)",10)
 
-    def test_pinball_marble_tool_places_inside_the_glass_on_desktop_and_phone(self):
+    def test_contextual_above_below_placement_on_desktop_and_phone(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
@@ -3125,7 +3125,14 @@ class Puzzles(unittest.TestCase):
                 self.wait('machineCamera().settled',30)
                 self.click_visible('Add a marble');g=self.ghost()
                 self.assertTrue(g['fits'],g['problems'])
+                self.assertTrue(self.js(f"{self.button_expression('Move above surface')}.disabled"))
+                for label,layer in [('Move below surface',1),('Move above surface',0),('Move below surface',1)]:
+                    b=self.js(f"(()=>{{const b={self.button_expression(label)},r=b.getBoundingClientRect();return {{w:r.width,h:r.height,hit:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}};}})()")
+                    self.assertGreaterEqual(b['w'],44);self.assertGreaterEqual(b['h'],44);self.assertTrue(b['hit'],b)
+                    self.click_visible(label);g=self.ghost()
+                    self.assertEqual(g['p']['support_layer'],layer);self.assertTrue(g['fits'],g['problems'])
                 self.click_visible('Place');self.wait(READY,90)
+                self.assertEqual(self.js('machineDesign().draft.placements[0].support_layer'),1)
                 session=self.server.machines.get(self.js('machineCableSetupState().session'))
                 with session.lock:
                     ball=session.bodies['your marble 1'];lid=session.bodies['pinball table glass cover']
@@ -3134,6 +3141,11 @@ class Puzzles(unittest.TestCase):
                     self.assertEqual(ball['rigid_parts_local'][0]['shape'],'sphere')
                 self.click_visible('Undo');self.wait(READY,90)
                 self.assertEqual(self.js('machineDesign().draft.placements'),[])
+                self.click_visible('Add a marble');self.ghost()
+                self.click_visible('Move below surface');self.ghost()
+                self.click_visible('Place');self.wait(READY,90)
+                self.page.send('Page.reload',{});self.wait(READY,90)
+                self.assertEqual(self.js('machineDesign().draft.placements[0].support_layer'),1)
                 self.assertFalse(self.js('document.documentElement.scrollWidth>innerWidth+1'))
 
     def test_pinball_starter_live_buttons_launch_pause_reset_and_save(self):

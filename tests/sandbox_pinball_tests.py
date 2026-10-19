@@ -155,12 +155,18 @@ class ObjectActions(unittest.TestCase):
 
 
 class Pinball(unittest.TestCase):
-    def test_ordinary_marble_tool_is_placed_inside_the_cover_in_new_and_saved_tables(self):
+    def test_marble_layers_are_explicit_and_keep_the_cover_in_new_and_saved_tables(self):
         for old in [False,True]:
             spec=pinball.template()['base']
-            if old:spec['presentation'].pop('placement_inside')
+            if old:spec['presentation']['placement_inside']=['pinball table glass cover']
             level=mg.requested_level(dict(level='free',base=spec))
-            compiled=mg._assemble(level,[dict(piece='marble',x_m=0,z_m=-.2)])[3]
+            placement=dict(piece='marble',x_m=0,z_m=-.2)
+            ghost=mg.ghost(level,[placement],0)
+            self.assertEqual(ghost['placement_layers']['index'],0)
+            self.assertEqual([p['support'] for p in ghost['placement_layers']['positions']],
+                ['pinball table glass cover','pinball table frame','ground'])
+            placement['support_layer']=1
+            compiled=mg._assemble(level,[placement])[3]
             parts={p['name']:p for p in compiled['parts']}
             ball=parts['your marble 1'];cover=parts['pinball table glass cover']
             self.assertEqual(ball['shape'],'compound')
@@ -177,11 +183,9 @@ class Pinball(unittest.TestCase):
             for above in [False,True]:
                 spec=pinball.template()['base']
                 level=mg.requested_level(dict(level='free',base=spec))
-                k=dict(piece='marble',x_m=0,z_m=-.2,material=material)
+                k=dict(piece='marble',x_m=0,z_m=-.2,material=material,support_layer=0 if above else 1)
                 compiled=mg._assemble(level,[k])[3]
                 name='your marble 1';ball=next(p for p in compiled['parts'] if p['name']==name)
-                if above:
-                    ball['at_m'][1]=pinball.HEIGHT+(.272+ball['at_m'][2]*math.sin(angle))/math.cos(angle)
                 hit='pinball table glass cover' if above else 'pinball table frame'
                 compiled['stations']=[dict(title='Physical support',focus=[name,hit],done_when={'touches':[name,hit]})]
                 with self.subTest(material=material,above=above),tempfile.TemporaryDirectory() as logs:
