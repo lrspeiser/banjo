@@ -62,6 +62,16 @@ from position/turn guides by the compiled before/after solid dimensions.
 This preserves dragging a loose block's width and scaffolding's height on
 phones while keeping near-body dragging and zoom-during-drag stable. The
 annotation changes no native setup, forces, goal or scoring rule.
+Explicit **Move** takes precedence over an overlapping size arrow; choosing
+an adjustment restores resizing. The wall-workshop regression covers free
+3D depth movement without changing block width, and the arrow regression
+covers resizing again after switching through Move. The catalogue's opt-in
+details test now expects the intended five chapters instead of four.
+Tall edge callouts can dock immediately beside a small corner button in a
+short landscape scene, avoiding the previously covered Undo/Move targets.
+The switch-guide camera regression uses a real visible click and waits for
+the rendered projection before comparing its SVG ring; a DOM-only click
+could previously inspect the old frame on the faster Linux browser runner.
 
 ## Beginner wall lessons — October 18
 

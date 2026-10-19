@@ -3746,7 +3746,9 @@ function sceneReferenceControl(p,key,rule,changed){
   return row;
 }
 function selectGhostKnob(key, force=false) {
-  if (!ghost || (ghost.card === key&&!force)) return;
+  if (!ghost) return;
+  ghost.moveOnly=false;
+  if (ghost.card === key&&!force) return;
   const rule=trayItem(ghost.p.piece).knobs[key];
   editorMode=rule?.turning?'turn':rule?.choices||rule?.part||rule?.hinge?'move':'adjust';looking=false;view.classList.remove('looking');
   ghost.card = key;
@@ -3999,7 +4001,12 @@ function renderGhostBar() {
   const isGear=pieceKind(ghost.p)==='gear';editor.classList.toggle('editing-gear',isGear);
   editor.classList.toggle('editing-wall',Boolean(ghost.baseObject?.wall));
   const modes=Object.assign(document.createElement('div'),{className:'piece-modes'});
-  const move=button('Move',()=>{editorMode='move';setLooking(false);},{ariaLabel:'Move selected piece'});
+  const move=button('Move',()=>{
+    // Explicit Move wins over a size arrow beneath a small piece's grab
+    // point. Choosing an adjustment again restores its resize grips.
+    ghost.moveOnly=true;
+    editorMode='move';setLooking(false);
+  },{ariaLabel:'Move selected piece'});
   const turn=button('Turn',()=>{
     const rules=trayItem(ghost.p.piece).knobs;
     const key=turnKnob(ghost.p,'yaw_deg')||Object.keys(rules).find(k=>rules[k].turning&&pieceKnobVisible(ghost.p,k));
@@ -5381,7 +5388,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
   // Translation/turn guides crossing the Move grab margin yield to a free
   // drag. Actual size arrows remain resize grips, including numeric choices
   // whose editor mode is Move. The compiled geometry identifies those.
-  const moveFromPiece=editorMode==='move'&&!ghost.editGuide?.resizes&&nearGhost(e.clientX,e.clientY,GRAB_MARGIN_PX);
+  const moveFromPiece=editorMode==='move'&&(ghost.moveOnly||!ghost.editGuide?.resizes)&&nearGhost(e.clientX,e.clientY,GRAB_MARGIN_PX);
   if(arrowGrip&&!moveFromPiece){draggingGhost={id:e.pointerId,kind:'axis-adjust',key:arrowGrip.key,initial:Number(ghost.p[arrowGrip.key]),screenX:e.clientX,screenY:e.clientY,dx:arrowGrip.dx,dy:arrowGrip.dy,active:false};return;}
   if (nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX)) {
     if(editorMode!=='move'){

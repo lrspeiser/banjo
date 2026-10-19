@@ -27,6 +27,15 @@ for(const [width,height] of [[390,554],[320,310],[844,207]]){
   for(const b of [piece,target,corner])assert.ok(at.x>=b.right||at.x+size.width<=b.left||at.y>=b.bottom||at.y+size.height<=b.top,'callout leaves the piece, target and camera clear');
 }
 
+{
+  const scene={left:0,top:106,right:844,bottom:281},piece={left:395,right:450,top:160,bottom:205};
+  const size={width:250,height:127},undo={left:2,right:46,top:108,bottom:152};
+  const camera={left:481,right:844,top:108,bottom:152};
+  const at=pieceToolbarPosition(scene,piece,size,[undo,camera],{edgeOnly:true});
+  assert.ok(at.x>=undo.right&&at.x+size.width<=piece.left,'a tall callout can dock beside Undo in landscape');
+  assert.ok(at.y>=scene.top&&at.y+size.height<=scene.bottom);
+}
+
 const heated={body:'cord',at_m:[0,.5,1],local_m:[0,.02,0],cell_m:.02,temperature_k:573.15,how:'chars',cut_w:100,held_j:400,needed_j:1000};
 assert.equal(thermalCells({hot_cells:[heated]})[0].progress,.4);
 assert.ok(thermalCells({hot_cells:[heated]})[0].charring);

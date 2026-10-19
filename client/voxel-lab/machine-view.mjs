@@ -352,7 +352,15 @@ export function pieceToolbarPosition(scene, piece, size, obstacles=[], {edgeOnly
   if(edgeOnly) {
     const ys=[(piece.top+piece.bottom-h)/2,scene.top+6,scene.bottom-h-6,
       piece.top-h-gap,piece.bottom+gap,...obstacles.flatMap(o=>[o.bottom+gap,o.top-h-gap])];
-    candidates=[scene.left+6,scene.right-w-6].flatMap(x=>ys.map(y=>[x,y]));
+    const xs=[scene.left+6,scene.right-w-6];
+    // A short landscape scene may fit the card beside a corner button but
+    // not below it. Keep that nearby edge position available, rather than
+    // covering Undo when the card's height uses most of the scene.
+    for(const o of obstacles)if(o.right-o.left<w/2){
+      if(o.left<=scene.left+6)xs.push(o.right+gap);
+      if(o.right>=scene.right-6)xs.push(o.left-w-gap);
+    }
+    candidates=xs.flatMap(x=>ys.map(y=>[x,y]));
   }
   const ranked=candidates.map(bound).map(at=>({...at,penalty:(overlaps(at,piece)?100000:0)+obstacles.filter(o=>overlaps(at,o)).length*10000,
     distance:Math.hypot(at.x+w/2-(piece.left+piece.right)/2,at.y+h/2-(piece.top+piece.bottom)/2)}));
