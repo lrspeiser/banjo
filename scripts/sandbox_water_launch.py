@@ -253,6 +253,12 @@ EASY_LEVELS.append(river_lesson)
 
 # Keep the exact earlier recipes available for shared version-1 IDs.
 LEGACY_LEVELS={level['id']:copy.deepcopy(level) for level in EASY_LEVELS}
+# Frame the receiving bin and the space beyond its open end before the tray
+# piece is added. Spawn at the declared launcher position, not a camera ray
+# through the middle of the bin. This changes editing only, not the recipe.
+_catapult_lesson = next(row for row in EASY_LEVELS if row['id']=='easy-catapult')
+_catapult_lesson['tray'][0]['start_at_defaults'] = True
+_catapult_lesson['camera_area'] = dict(at_m=[-1.15,.65,0], size_m=[4,1.3,1])
 _river_lift = next(row for row in EASY_LEVELS if row['id']=='easy-river-lift')
 _river_lift['tray'][0].update(start_at_defaults=True, frame_on_add=True)
 _river_lift['tray'][0]['knobs']['z_m']['default']=1

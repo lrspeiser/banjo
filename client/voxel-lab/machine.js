@@ -2213,6 +2213,13 @@ function frameCamera(includeGhost=false) {
   // where the player is to build, even before anything stands there.
   const zone = LEVEL_MODE && level && level.goal && (level.goal.station.done_when.in_zone || level.goal.area);
   if (zone) pts.push(zone.at_m, [zone.at_m[0], 0, zone.at_m[2]]);
+  // Authored editing space can include room for the next tray addition.
+  // It affects framing only; the goal and physical apparatus stay unchanged.
+  const area = level?.camera_area;
+  if (area?.at_m?.length===3 && area?.size_m?.length===3 &&
+      area.at_m.every(Number.isFinite) && area.size_m.every(n=>Number.isFinite(n)&&n>0)) {
+    pts.push(area.at_m.map((v,i)=>v-area.size_m[i]/2),area.at_m.map((v,i)=>v+area.size_m[i]/2));
+  }
   // An empty table: its middle, from a little way off.
   if (!pts.length && LEVEL_MODE && level && level.free) pts.push([-1, 0, -.6], [1, .8, .6]);
   for (let i=pts.length-1;i>=0;i--) if (!pts[i]?.every(Number.isFinite)) pts.splice(i,1);

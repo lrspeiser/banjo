@@ -1,5 +1,22 @@
 # Puzzles on the machine (/play)
 
+October 18 **Gentle first launch** framing: the opening view includes the
+receiving bin and the launch space beyond its open end. Adding the catapult
+uses its declared x=0, z=0 defaults rather than projecting the camera centre
+onto the bin. It remains a movable ghost until Place/Run. Optional public
+`camera_area` (centre `at_m`, dimensions `size_m`, metres) contributes bounds
+only to camera fitting; it is not a goal, collision region or placement limit.
+Legacy version-1 recipes keep their prior metadata.
+
+Measured with the unchanged feedback-test native engine (SHA-256
+`c185b7eca2792b3a84bc9913bd701b6e6dba4d31679b1c72b0e116b9054b1e57`):
+the default setup is compiled-identical to the reference solution and wins
+nominal/two nudged runs at 1.083/1.100/1.100 s. Turning it 90° misses 0/3;
+the empty setup is refused because its goal marble is absent. Chrome checks
+the full bin/launch bounds before and after Add, valid default placement and
+a successful ordinary Place/Run at 1280×860, 390×844 and 844×390.
+No physics, material, timestep, goal, deadline, scoring or tolerance changes.
+
 October 18 direct size grips and wall headings: selecting a mounting wall
 shows both width edges, its top height grip and a heading grip simultaneously.
 Width expands about the wall centre; height retains the grounded bottom.

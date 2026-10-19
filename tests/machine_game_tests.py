@@ -2292,6 +2292,26 @@ class Engine(unittest.TestCase):
             self.assertTrue(all(len(f['light'])<=32 for f in bounced['flow_frames']))
 
     @need_engine
+    def test_gentle_first_launch_starts_beyond_the_bin_and_keeps_nudged_wins(self):
+        level=mg.level_by_id('easy-catapult')
+        tray=level['tray'][0]
+        self.assertTrue(tray['start_at_defaults'])
+        placed=[dict(piece='catapult',**{k:v['default'] for k,v in tray['knobs'].items() if 'default' in v})]
+        self.assertEqual(placed[0]['x_m'],0)
+        self.assertGreater(placed[0]['x_m'],-1,'outside the open end, not over the receiving floor')
+        self.assertEqual(mw.compile_spec(mg.compose(level,placed)[0]),
+                         mw.compile_spec(mg.compose(level,level['solution'])[0]))
+        self.assertEqual(mg.public(level)['camera_area'],level['camera_area'])
+        with self.assertRaises(mg.LevelRefused):
+            mg.compose(level,[])
+        with tempfile.TemporaryDirectory() as logs:
+            for rows,wins in ((placed,3),([dict(placed[0],yaw_deg=90)],0)):
+                result=mg.trial(level,rows,ENGINE,Path(logs),runs=3)
+                print('Gentle first launch:',wins,'expected wins;',result['results'],flush=True)
+                self.assertEqual(result['worked'],wins,result)
+                self.assertTrue(all(r['error'] is None for r in result['results']))
+
+    @need_engine
     def test_a_misplaced_piece_fails_for_a_physical_reason(self):
         # The knife set too high swings over the rope and into the weight's arm.
         level = mg.level_by_id('cut')

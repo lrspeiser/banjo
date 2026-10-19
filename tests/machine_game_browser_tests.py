@@ -4383,6 +4383,35 @@ class Puzzles(unittest.TestCase):
                 self.open('easy-catapult',width,height,phone=width<1000)
                 self.assertTrue(self.js("document.getElementById('switch-handle-guide').hidden&&document.getElementById('switch-lesson-guide').hidden&&!document.getElementById('start').classList.contains('switch-run-next')"))
 
+    def test_gentle_launch_frames_bin_and_starts_catapult_at_its_open_end(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-catapult',width,height,phone=width<1000)
+                # The complete bin and the declared launch space are visible
+                # before Add, including on a short landscape canvas.
+                def assert_launch_space_visible():
+                    rect=self.js("document.getElementById('view').getBoundingClientRect().toJSON()")
+                    for x in (-3.15,.85):
+                        for y in (0,1.3):
+                            for z in (-.5,.5):
+                                sx,sy=self.screen_point([x,y,z])
+                                self.assertTrue(rect['left']+8<=sx<=rect['right']-8,(x,y,z,sx,sy,rect))
+                                self.assertTrue(rect['top']+8<=sy<=rect['bottom']-8,(x,y,z,sx,sy,rect))
+                assert_launch_space_visible()
+                self.press('Add a catapult');g=self.ghost()
+                self.assertEqual(g['p']['x_m'],0)
+                self.assertEqual(g['p'].get('z_m',0),0)
+                self.assertTrue(g['fits'],g)
+                self.wait('window.machineCamera().settled',30)
+                assert_launch_space_visible()
+                proof=ROOT/'build'/'ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'gentle-first-launch-{width}.png').write_bytes(base64.b64decode(
+                    self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+                self.click_visible('Place');self.wait(READY,60)
+                self.click_visible('Run')
+                self.wait("!document.getElementById('level-done').hidden",45)
+                self.assertIn('Level Complete',self.js("document.getElementById('level-done').textContent"))
+
     def test_heat_clip_and_two_scene_wires_release_the_weight_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
