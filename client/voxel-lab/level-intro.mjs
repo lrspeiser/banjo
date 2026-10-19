@@ -6,10 +6,14 @@ const pieces={plank:'a plank',ramp:'a ramp',knife:'a swinging knife',mirror:'mir
   water_wheel:'a water wheel',water_chute:'a water chute',steam:'a boiler and piston',
   ignition:'a heating coil',cannon:'a cannon',catapult:'a counterweight catapult',
   marble:'a marble',block:'a block',link:'a string',rope:'a rope',wall_track:'a wall track',
-  wall_peg:'a round deflector peg',wall_water_wheel:'a paddle wheel'};
+  wall_peg:'a round deflector peg',wall_water_wheel:'a paddle wheel',wall_marble:'a marble',
+  wall_funnel:'a wall funnel',wall_lever:'a wall seesaw'};
 export const LEVEL_MECHANISMS=Object.freeze({
   'easy-weight':'A falling weight pushes one end of the lever down, turning it around its pivot.',
   'easy-roll':'Gravity pulls the marble down a slope, and it keeps rolling along the floor. On flat ground nothing makes it start.',
+  'easy-wall-drop':'Gravity drops the marble straight down. Drag it above the cup; the wall already lines up its depth. Place it, then Run to watch it fall.',
+  'easy-wall-funnel':'The funnel’s wide mouth catches the marble. Gravity rolls it down the sloping sides to the narrow opening. Line that opening up with the cup below.',
+  'easy-wall-seesaw':'A marble landing away from the pivot pushes one end down and tips the seesaw. Drag an end beneath the marble’s falling path.',
   'easy-wall-track':'The track attaches to the wall. Gravity rolls the marble down its slope and into the waiting cup. Drag the track left/right and up/down; its depth and slope are already set.',
   'easy-wall-peg':'A round peg deflects a falling marble. A hit on its right shoulder pushes the marble toward the cup. Drag the peg across the wall to line up that contact.',
   'easy-wall-wheel':'The falling marble pushes a paddle and turns the wheel around its axle. Hitting beside the axle supplies torque; a miss leaves the wheel still. Drag the wheel across the wall to line up a paddle.',
@@ -53,7 +57,7 @@ export const LEVEL_MECHANISMS=Object.freeze({
 function goalDescription(level,fallback){
   const rule=level.goal?.station?.done_when||{},family=level.variant?.family||level.id;
   if(rule.turned_deg){
-    const target={'easy-weight':'lever','easy-gears':'big wheel','easy-river-wheel':'wheel','easy-water-wheel':'wheel','easy-wall-wheel':'paddle wheel'}[family];
+    const target={'easy-weight':'lever','easy-gears':'big wheel','easy-river-wheel':'wheel','easy-water-wheel':'wheel','easy-wall-wheel':'paddle wheel','easy-wall-seesaw':'seesaw'}[family];
     if(target)return `Turn the ${target} at least ${rule.turned_deg.deg}°.`;
   }
   if(rule.rose_m){
@@ -68,6 +72,8 @@ function goalDescription(level,fallback){
   if(rule.water_in_zone_l){const r=rule.water_in_zone_l;return `Collect at least ${r.l} litres in the receiver and keep it there for ${r.for_s} s.`;}
   if(rule.parted)return 'Heat the cord until it breaks and releases the weight.';
   const zones={gap:'Roll the marble into the cup.','easy-roll':'Roll the marble into the cup.',
+    'easy-wall-drop':'Drop the marble into the green cup.',
+    'easy-wall-funnel':'Guide the marble through the funnel into the green cup.',
     'easy-wall-track':'Roll the marble along the wall track into the green cup.',
     'easy-wall-peg':'Deflect the falling marble off the peg into the green cup.',
     'easy-block':'Roll the ball across the trench into the cup.','easy-rope':'Swing the marble into the green zone.','easy-catapult':'Launch the marble into the receiving bin.',

@@ -1,5 +1,55 @@
 # Puzzles on the machine (/play)
 
+## Six wall lessons and five chapters — October 18
+
+The game now has 44 challenges in five visible chapters, with no filters or
+locks: **Level 1: Wall Mechanics**, **Level 2: 3D Mechanics**, **Level 3:
+Electricity**, **Level 4: Water**, **Level 5: Heat and Chain Reactions**. Wall
+Mechanics occupies ranks 1–6. The previous mechanics sequence follows in its
+existing order, beginning with Tip the lever and Roll the ball. Other existing
+IDs, stars, goals, deadlines and energy pars retain their meaning.
+
+| Wall lesson, in order | Piece and lesson | Author estimate |
+| --- | --- | --- |
+| Drop into the cup | Move an 80 mm marble above a prepared catcher; gravity drops it | 1–2 min |
+| Roll along the wall | Move a railed slope to carry the falling marble into an offset cup | 1–3 min |
+| Center the funnel | Align the wide mouth below the marble and narrow outlet above the cup | 1–3 min |
+| Bounce off a peg | Put the peg's shoulder under the marble to deflect it into the cup | 2–4 min |
+| Tip the wall seesaw | Put one end under the marble; turn the native hinge at least 20° | 1–3 min |
+| Turn a wall wheel | Catch a falling marble on a paddle to turn its axle at least 90° | 2–4 min |
+
+These are author estimates, not measured human completion times or a new
+blind solver audit. Each lesson uses one normal wall-tool placement with
+left/right and height editing. The wall remains in the 3D scene, which can be
+orbited; moving bodies have no planar projection or invisible front guard.
+Stock geometry, ideal brackets, gravity, native contact and hinge torque
+decide the outcome. The funnel's 1.2 m mouth and rear bracket must stay on the
+3 m wall, so its x editing range is -0.8..0.8 m. Its initial marble height is
+2.15 m to avoid an excessive impact bounce; its outlet and cup require real
+alignment. The seesaw uses the existing ±35° stop and 0.001 N·m bearing
+friction. Nothing drives or animates it on the player's behalf.
+
+At 1/240 s and 20 mm cells, all six authored setups pass nominal plus two
+1.5 mm loose-body nudges for glass, oak and iron marbles (54/54). Their wrong
+placements fail without native errors. Missing pieces cannot win; unloaded
+seesaw/wheel controls remain still. The new lesson measurements are:
+
+| Added lesson | Glass goal time | Oak goal time | Iron goal time | Reference / par energy |
+| --- | --- | --- | --- | --- |
+| Drop into the cup | 0.633 s | 0.633 s | 0.633 s | 10.053 / 10.1 MJ |
+| Center the funnel | 1.183–1.483 s | 1.417–1.467 s | 1.233–1.467 s | 225.767 / 226 MJ |
+| Tip the wall seesaw | 0.583–0.700 s | 1.283–1.400 s | 0.583 s | 129.007 / 130 MJ |
+
+The catch regression now explicitly continues after the first goal until
+6 s, then checks the real cup's floor and inner walls, including marble
+radius. Its 2 mm contact/output tolerance covers native contact slop and
+rounded trail positions. The older check stopped at the win and incorrectly
+used the smaller central scoring zone as the entire catcher's interior; it
+did not establish the documented six-second settling. Existing goals and
+simulation tolerances are unchanged. These checks establish these authored
+layouts, not a complete rigid-contact momentum/energy ledger or new bearing,
+mounting-strength, fracture, air-drag or material-calibration models.
+
 ## Beginner wall lessons — October 18
 
 Three single-piece lessons follow **Roll the ball** in Level 1: Mechanics:

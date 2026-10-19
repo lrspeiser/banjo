@@ -88,6 +88,7 @@ class Puzzles(unittest.TestCase):
         cls.archived_templates = {row['name']:row for row in machine_game.archived_sandbox_templates()}
         cls.showcase_names = {row['name'] for row in machine_game.sandbox_templates()}
         cls.piece_count = len([row for row in machine_game.free_build()['tray'] if not row.get('attach') and not row.get('legacy')])
+        cls.wall_piece_count = len([row for row in machine_game.sandbox_wall.world_tray(machine_game.free_build()['tray']) if not row.get('attach') and not row.get('legacy')])
         cls.river_solution = dict(machine_game.sandbox_water_launch.RIVER_SOLUTION)
         import sandbox_variants
         cls.power_level = sandbox_variants.construct(machine_game.level_by_id('easy-power'),42,version=2)
@@ -644,6 +645,7 @@ class Puzzles(unittest.TestCase):
         self.assertGreaterEqual(target['h'], 44, (label, target))
         self.mouse('mousePressed', target['x'], target['y'])
         self.mouse('mouseReleased', target['x'], target['y'])
+        self.paint()
 
     def retry_existing_setup(self):
         """Old fixtures now use the actual retry/edit/reset path, never a hidden button."""
@@ -861,11 +863,11 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             self.anonymous_levels(width=width,height=height)
             ids=self.js("[...document.querySelectorAll('#levels-screen .level-card')].map(n=>n.dataset.level)")
-            self.assertEqual(len(ids),38);self.assertEqual(ids[0],'easy-weight');self.assertEqual(ids[-1],'fire')
+            self.assertEqual(len(ids),self.level_count);self.assertEqual(ids[0],'easy-wall-drop');self.assertEqual(ids[-1],'fire')
             self.assertLess(ids.index('easy-thread'),ids.index('easy-tackle'))
             self.assertLess(ids.index('easy-mirror'),ids.index('laser'))
             self.assertLess(ids.index('easy-loop'),ids.index('advanced-parallel'))
-            self.assertEqual(self.js("document.querySelectorAll('.level-time-estimate').length"),38)
+            self.assertEqual(self.js("document.querySelectorAll('.level-time-estimate').length"),self.level_count)
             self.assertTrue(self.js(r"[...document.querySelectorAll('.level-time-estimate')].every(n=>/^Est\. [0-9]+–[0-9]+ min$/.test(n.textContent)&&n.title.includes('not measured human'))"))
             self.assertLessEqual(self.js('document.documentElement.scrollWidth'),width)
             self.open('easy-weight',width,height,phone=width!=1280)
@@ -2791,8 +2793,11 @@ class Puzzles(unittest.TestCase):
     def test_beginner_wall_lessons_use_planar_drag_and_solve_on_desktop_and_phones(self):
         import machine_game
         for width, height in ((1280, 860), (390, 844), (844, 390)):
-            for ident, add in (('easy-wall-track', 'Add a wall track'),
+            for ident, add in (('easy-wall-drop', 'Add a marble'),
+                               ('easy-wall-track', 'Add a wall track'),
+                               ('easy-wall-funnel', 'Add a wall funnel'),
                                ('easy-wall-peg', 'Add a deflector peg'),
+                               ('easy-wall-seesaw', 'Add a wall seesaw'),
                                ('easy-wall-wheel', 'Add a wall water wheel')):
                 with self.subTest(level=ident, viewport=(width, height)):
                     self.open(ident, width, height, phone=width != 1280, dismiss_intro=False)
@@ -2954,15 +2959,12 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Throw the ghost away')
                 if width==1280:
                     self.click_visible('Add a piece');self.click_visible('Show all pieces')
-                    self.wait("document.querySelectorAll('#piece-grid .piece-card').length===64",20)
+                    self.wait(f"document.querySelectorAll('#piece-grid .piece-card').length==={self.wall_piece_count}",20)
                     self.wait("[...document.querySelectorAll('#piece-grid .piece-card img')].every(img=>img.naturalWidth>0)",45)
                 self.press('Add a loose block');self.ghost();self.assertFalse(self.js('machineWallState().mounted'))
                 before=self.ghost()['p'];self.click_visible('Move selected piece')
                 self.wait('machineCamera().settled',30)
-                start=self.js(f"machineScreenPoint([{before['x_m']},.1,{before['z_m']}])")
-                end=self.js(f"machineScreenPoint([{before['x_m']+.25},.1,{before['z_m']+.4}])")
-                via=[start[0]+16,start[1]] if math.dist(start,end)<12 else None
-                self.drag(start,end,touch=width!=1280,via=via);moved=self.ghost()['p']
+                self.drag_ghost_to(before['x_m']+.25,before['z_m']+.4,touch=width!=1280);moved=self.ghost()['p']
                 self.assertGreater(moved['z_m'],before['z_m']+.2)
                 self.assertEqual(moved['center_height_m'],before['center_height_m'])
                 self.assertTrue(self.ghost()['fits'])
@@ -7011,8 +7013,8 @@ class Puzzles(unittest.TestCase):
         self.js("document.getElementById('levels-open').click()")
         self.wait("!document.getElementById('levels-screen').hidden",10)
         self.assertEqual(self.js("[...document.querySelectorAll('.level-chapter h2')].map(x=>x.textContent)"),
-                         ['Level 1: Mechanics','Level 2: Electricity','Level 3: Water','Level 4: Heat and chain reactions'])
-        self.assertEqual(self.js("document.querySelectorAll('.level-card').length"),38)
+                         ['Level 1: Wall Mechanics','Level 2: 3D Mechanics','Level 3: Electricity','Level 4: Water','Level 5: Heat and Chain Reactions'])
+        self.assertEqual(self.js("document.querySelectorAll('.level-card').length"),self.level_count)
         self.assertEqual(self.js("document.querySelectorAll('.level-card-details').length"),0)
         self.assertEqual(self.js("document.querySelectorAll('#levels-screen select').length"),0)
 

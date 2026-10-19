@@ -1,5 +1,14 @@
 # Level onboarding audit — October 13, 2026
 
+October 18 chapter revision: six wall lessons now occupy ranks 1–6 in
+**Level 1: Wall Mechanics**: Drop into the cup, Roll along the wall, Center the
+funnel, Bounce off a peg, Tip the wall seesaw, Turn a wall wheel. The previous
+mechanics sequence follows under **Level 2: 3D Mechanics**, beginning with Tip
+the lever and Roll the ball. Electricity, Water, and Heat and Chain Reactions
+are chapters 3–5. Existing level IDs, saved stars, goals and relative ordering
+within those later chapters are retained. The new wall lessons have author
+estimates only (1–4 minutes); no new human timing or blind assessment is claimed.
+
 October 18 note: **Roll along the wall**, **Bounce off a peg** and **Turn a wall wheel**
 now occupy Mechanics ranks 3–5, immediately after **Roll the ball**. They remove
 depth/orientation editing and offer one mounted piece with two movement axes.

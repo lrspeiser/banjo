@@ -954,9 +954,9 @@ if(BANJO_BUILD_TESTS)
                 set_tests_properties(banjo_machine_physics_tests PROPERTIES TIMEOUT 600
                     ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")
                 # The puzzles (/play): every level solvable, and only that way.
-                foreach(game_shard RANGE 0 1)
+                foreach(game_shard RANGE 0 2)
                     add_test(NAME banjo_machine_game_tests_${game_shard} COMMAND ${Python3_EXECUTABLE}
-                        ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_game_tests.py --shard=${game_shard}/2
+                        ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_game_tests.py --shard=${game_shard}/3
                         --engine $<TARGET_FILE:banjo_live_world_run>)
                     set_tests_properties(banjo_machine_game_tests_${game_shard} PROPERTIES TIMEOUT 600
                         ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")

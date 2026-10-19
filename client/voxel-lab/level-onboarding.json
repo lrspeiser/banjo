@@ -3,65 +3,65 @@
   "estimate_basis": "Expert interface review and one solution-blind LLM probe per level; not measured human completion times.",
   "levels": [
     {
-      "id": "easy-weight",
+      "id": "easy-wall-drop",
       "rank": 1,
       "estimated_minutes": [
-        2,
-        4
+        1,
+        2
       ],
       "primary_controls": {
-        "weight": [
+        "wall_marble": [
           "x_m",
-          "z_m",
           "height_m"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 1: Wall Mechanics",
       "lesson_controls": {
-        "weight": [
-          "height_m",
+        "wall_marble": [
           "x_m",
-          "z_m"
+          "height_m"
         ]
-      }
+      },
+      "estimate_basis": "Author interface review only. Added on October 18, 2026 after the solution-blind probe and not yet probed; not measured human completion times."
     },
     {
-      "id": "easy-roll",
+      "id": "easy-wall-track",
       "rank": 2,
       "estimated_minutes": [
         1,
         3
       ],
       "primary_controls": {
-        "marble": [
-          "x_m"
-        ]
-      },
-      "chapter": "Level 1: Mechanics",
-      "lesson_controls": {
-        "marble": [
+        "wall_track": [
           "x_m",
-          "z_m"
+          "height_m"
         ]
       },
-      "estimate_basis": "Author interface review only. Added on October 17, 2026 after the solution-blind probe and not yet probed; not measured human completion times."
+      "chapter": "Level 1: Wall Mechanics",
+      "lesson_controls": {
+        "wall_track": [
+          "x_m",
+          "height_m"
+        ]
+      },
+      "estimate_basis": "Author interface review only. Added on October 18, 2026 after the solution-blind probe and not yet probed; not measured human completion times."
     },
     {
-      "id": "easy-wall-track",
+      "id": "easy-wall-funnel",
       "rank": 3,
       "estimated_minutes": [
         1,
         3
       ],
       "primary_controls": {
-        "wall_track": [
+        "wall_funnel": [
           "x_m",
           "height_m"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 1: Wall Mechanics",
       "lesson_controls": {
-        "wall_track": [
+        "wall_funnel": [
           "x_m",
           "height_m"
         ]
@@ -81,7 +81,7 @@
           "height_m"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 1: Wall Mechanics",
       "lesson_controls": {
         "wall_peg": [
           "x_m",
@@ -91,8 +91,30 @@
       "estimate_basis": "Author interface review only. Added on October 18, 2026 after the solution-blind probe and not yet probed; not measured human completion times."
     },
     {
-      "id": "easy-wall-wheel",
+      "id": "easy-wall-seesaw",
       "rank": 5,
+      "estimated_minutes": [
+        1,
+        3
+      ],
+      "primary_controls": {
+        "wall_lever": [
+          "x_m",
+          "height_m"
+        ]
+      },
+      "chapter": "Level 1: Wall Mechanics",
+      "lesson_controls": {
+        "wall_lever": [
+          "x_m",
+          "height_m"
+        ]
+      },
+      "estimate_basis": "Author interface review only. Added on October 18, 2026 after the solution-blind probe and not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-wall-wheel",
+      "rank": 6,
       "estimated_minutes": [
         2,
         4
@@ -103,7 +125,7 @@
           "height_m"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 1: Wall Mechanics",
       "lesson_controls": {
         "wall_water_wheel": [
           "x_m",
@@ -113,8 +135,52 @@
       "estimate_basis": "Author interface review only. Added on October 18, 2026 after the solution-blind probe and not yet probed; not measured human completion times."
     },
     {
+      "id": "easy-weight",
+      "rank": 7,
+      "estimated_minutes": [
+        2,
+        4
+      ],
+      "primary_controls": {
+        "weight": [
+          "x_m",
+          "z_m",
+          "height_m"
+        ]
+      },
+      "chapter": "Level 2: 3D Mechanics",
+      "lesson_controls": {
+        "weight": [
+          "height_m",
+          "x_m",
+          "z_m"
+        ]
+      }
+    },
+    {
+      "id": "easy-roll",
+      "rank": 8,
+      "estimated_minutes": [
+        1,
+        3
+      ],
+      "primary_controls": {
+        "marble": [
+          "x_m"
+        ]
+      },
+      "chapter": "Level 2: 3D Mechanics",
+      "lesson_controls": {
+        "marble": [
+          "x_m",
+          "z_m"
+        ]
+      },
+      "estimate_basis": "Author interface review only. Added on October 17, 2026 after the solution-blind probe and not yet probed; not measured human completion times."
+    },
+    {
       "id": "easy-block",
-      "rank": 6,
+      "rank": 9,
       "estimated_minutes": [
         2,
         4
@@ -125,7 +191,7 @@
           "x_m"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "block": [
           "tall_m",
@@ -137,7 +203,7 @@
     },
     {
       "id": "gap",
-      "rank": 7,
+      "rank": 10,
       "estimated_minutes": [
         2,
         5
@@ -147,7 +213,7 @@
           "length_m"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "plank": [
           "length_m",
@@ -158,7 +224,7 @@
     },
     {
       "id": "easy-rope",
-      "rank": 8,
+      "rank": 11,
       "estimated_minutes": [
         2,
         5
@@ -171,7 +237,7 @@
           "a"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "ring_marble": [
           "x_m",
@@ -188,7 +254,7 @@
     },
     {
       "id": "easy-spring",
-      "rank": 9,
+      "rank": 12,
       "estimated_minutes": [
         2,
         5
@@ -198,7 +264,7 @@
           "rest_m"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "spring": [
           "rest_m",
@@ -209,7 +275,7 @@
     },
     {
       "id": "easy-thread",
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "estimated_minutes": [
         2,
         4
@@ -227,11 +293,11 @@
       },
       "primary_controls": {},
       "estimate_basis": "Author review only; not yet probed and not measured human completion times.",
-      "rank": 10
+      "rank": 13
     },
     {
       "id": "easy-tackle",
-      "rank": 11,
+      "rank": 14,
       "estimated_minutes": [
         3,
         7
@@ -251,7 +317,7 @@
           "height_m"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "anchor": [
           "x_m",
@@ -289,7 +355,7 @@
     },
     {
       "id": "easy-lens",
-      "rank": 12,
+      "rank": 15,
       "estimated_minutes": [
         3,
         9
@@ -300,7 +366,7 @@
           "diameter_m"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "lens": [
           "radius_m",
@@ -312,7 +378,7 @@
     },
     {
       "id": "easy-cut",
-      "rank": 13,
+      "rank": 16,
       "estimated_minutes": [
         3,
         8
@@ -324,7 +390,7 @@
           "yaw_deg"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "knife": [
           "pivot_height_m",
@@ -337,7 +403,7 @@
     },
     {
       "id": "easy-mirror",
-      "rank": 14,
+      "rank": 17,
       "estimated_minutes": [
         3,
         8
@@ -347,7 +413,7 @@
           "angle_deg"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "mirror": [
           "angle_deg",
@@ -358,7 +424,7 @@
     },
     {
       "id": "easy-catapult",
-      "rank": 15,
+      "rank": 18,
       "estimated_minutes": [
         3,
         8
@@ -370,7 +436,7 @@
           "yaw_deg"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "catapult": [
           "counterweight_m",
@@ -383,7 +449,7 @@
     },
     {
       "id": "cut",
-      "rank": 16,
+      "rank": 19,
       "estimated_minutes": [
         4,
         10
@@ -395,7 +461,7 @@
           "yaw_deg"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "knife": [
           "pivot_height_m",
@@ -408,7 +474,7 @@
     },
     {
       "id": "tackle",
-      "rank": 17,
+      "rank": 20,
       "estimated_minutes": [
         6,
         15
@@ -428,7 +494,7 @@
           "height_m"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "anchor": [
           "x_m",
@@ -466,7 +532,7 @@
     },
     {
       "id": "laser",
-      "rank": 18,
+      "rank": 21,
       "estimated_minutes": [
         8,
         18
@@ -476,7 +542,7 @@
           "angle_deg"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "mirror": [
           "angle_deg",
@@ -487,7 +553,7 @@
     },
     {
       "id": "easy-gears",
-      "rank": 19,
+      "rank": 22,
       "estimated_minutes": [
         8,
         20
@@ -499,7 +565,7 @@
           "height_m"
         ]
       },
-      "chapter": "Level 1: Mechanics",
+      "chapter": "Level 2: 3D Mechanics",
       "lesson_controls": {
         "gear": [
           "teeth",
@@ -512,7 +578,7 @@
     },
     {
       "id": "easy-motor",
-      "rank": 20,
+      "rank": 23,
       "estimated_minutes": [
         1,
         3
@@ -523,7 +589,7 @@
           "throttle"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "motor": [
           "direction",
@@ -535,7 +601,7 @@
     },
     {
       "id": "easy-bulb",
-      "rank": 21,
+      "rank": 24,
       "estimated_minutes": [
         2,
         5
@@ -545,7 +611,7 @@
           "size"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "bulb": [
           "size",
@@ -556,7 +622,7 @@
     },
     {
       "id": "easy-loop",
-      "rank": 22,
+      "rank": 25,
       "estimated_minutes": [
         1,
         3
@@ -566,7 +632,7 @@
           "a_terminal"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "wire": [
           "a_terminal",
@@ -576,7 +642,7 @@
     },
     {
       "id": "advanced-resistor",
-      "rank": 23,
+      "rank": 26,
       "estimated_minutes": [
         1,
         4
@@ -586,7 +652,7 @@
           "resistance_ohm"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "resistor": [
           "resistance_ohm",
@@ -597,7 +663,7 @@
     },
     {
       "id": "easy-switch",
-      "rank": 24,
+      "rank": 27,
       "estimated_minutes": [
         2,
         5
@@ -607,7 +673,7 @@
           "x_m"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "switch": [
           "x_m",
@@ -617,7 +683,7 @@
     },
     {
       "id": "easy-marble-light",
-      "rank": 25,
+      "rank": 28,
       "estimated_minutes": [
         2,
         6
@@ -627,7 +693,7 @@
           "x_m"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "switch": [
           "x_m",
@@ -637,7 +703,7 @@
     },
     {
       "id": "easy-power",
-      "rank": 26,
+      "rank": 29,
       "estimated_minutes": [
         3,
         8
@@ -650,7 +716,7 @@
           "size"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "battery": [
           "voltage_v"
@@ -664,7 +730,7 @@
     },
     {
       "id": "advanced-parallel",
-      "rank": 27,
+      "rank": 30,
       "estimated_minutes": [
         4,
         9
@@ -674,7 +740,7 @@
           "a_terminal"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "wire": [
           "a_terminal",
@@ -684,7 +750,7 @@
     },
     {
       "id": "advanced-capacitor",
-      "rank": 28,
+      "rank": 31,
       "estimated_minutes": [
         4,
         10
@@ -694,7 +760,7 @@
           "capacitance_f"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "capacitor": [
           "capacitance_f",
@@ -705,7 +771,7 @@
     },
     {
       "id": "easy-solar",
-      "rank": 29,
+      "rank": 32,
       "estimated_minutes": [
         4,
         10
@@ -721,7 +787,7 @@
           "a_port"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "solar": [
           "pitch_deg",
@@ -738,7 +804,7 @@
     },
     {
       "id": "easy-charge-lift",
-      "rank": 30,
+      "rank": 33,
       "estimated_minutes": [
         5,
         12
@@ -753,7 +819,7 @@
           "a_port"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "solar": [
           "pitch_deg",
@@ -770,7 +836,7 @@
     },
     {
       "id": "sun",
-      "rank": 31,
+      "rank": 34,
       "estimated_minutes": [
         8,
         20
@@ -785,7 +851,7 @@
           "a_port"
         ]
       },
-      "chapter": "Level 2: Electricity",
+      "chapter": "Level 3: Electricity",
       "lesson_controls": {
         "solar": [
           "pitch_deg",
@@ -802,7 +868,7 @@
     },
     {
       "id": "easy-water-receiver",
-      "rank": 32,
+      "rank": 35,
       "estimated_minutes": [
         2,
         5
@@ -812,7 +878,7 @@
           "opening_percent"
         ]
       },
-      "chapter": "Level 3: Water",
+      "chapter": "Level 4: Water",
       "lesson_controls": {
         "water_tank": [
           "opening_percent",
@@ -823,7 +889,7 @@
     },
     {
       "id": "easy-river-wheel",
-      "rank": 33,
+      "rank": 36,
       "estimated_minutes": [
         2,
         5
@@ -833,7 +899,7 @@
           "z_m"
         ]
       },
-      "chapter": "Level 3: Water",
+      "chapter": "Level 4: Water",
       "lesson_controls": {
         "water_wheel": [
           "x_m",
@@ -843,7 +909,7 @@
     },
     {
       "id": "easy-water-wheel",
-      "rank": 34,
+      "rank": 37,
       "estimated_minutes": [
         2,
         6
@@ -854,7 +920,7 @@
           "height_m"
         ]
       },
-      "chapter": "Level 3: Water",
+      "chapter": "Level 4: Water",
       "lesson_controls": {
         "water_tank": [
           "opening_percent",
@@ -866,7 +932,7 @@
     },
     {
       "id": "easy-river-lift",
-      "rank": 35,
+      "rank": 38,
       "estimated_minutes": [
         3,
         7
@@ -877,7 +943,7 @@
           "load_part"
         ]
       },
-      "chapter": "Level 3: Water",
+      "chapter": "Level 4: Water",
       "lesson_controls": {
         "water_wheel": [
           "load_part",
@@ -888,7 +954,7 @@
     },
     {
       "id": "easy-water-gate",
-      "rank": 36,
+      "rank": 39,
       "estimated_minutes": [
         4,
         10
@@ -904,7 +970,7 @@
           "height_m"
         ]
       },
-      "chapter": "Level 3: Water",
+      "chapter": "Level 4: Water",
       "lesson_controls": {
         "water_wheel": [
           "radius_m",
@@ -922,7 +988,7 @@
     },
     {
       "id": "easy-divert-water",
-      "rank": 37,
+      "rank": 40,
       "estimated_minutes": [
         5,
         12
@@ -932,7 +998,7 @@
           "yaw_deg"
         ]
       },
-      "chapter": "Level 3: Water",
+      "chapter": "Level 4: Water",
       "lesson_controls": {
         "water_chute": [
           "yaw_deg",
@@ -943,7 +1009,7 @@
     },
     {
       "id": "steam",
-      "rank": 38,
+      "rank": 41,
       "estimated_minutes": [
         3,
         7
@@ -953,7 +1019,7 @@
           "heat_kw"
         ]
       },
-      "chapter": "Level 4: Heat and chain reactions",
+      "chapter": "Level 5: Heat and Chain Reactions",
       "lesson_controls": {
         "steam": [
           "heat_kw",
@@ -964,7 +1030,7 @@
     },
     {
       "id": "easy-heat",
-      "rank": 39,
+      "rank": 42,
       "estimated_minutes": [
         4,
         10
@@ -977,7 +1043,7 @@
           "a_terminal"
         ]
       },
-      "chapter": "Level 4: Heat and chain reactions",
+      "chapter": "Level 5: Heat and Chain Reactions",
       "lesson_controls": {
         "ignition": [
           "preset",
@@ -993,7 +1059,7 @@
     },
     {
       "id": "chain",
-      "rank": 40,
+      "rank": 43,
       "estimated_minutes": [
         5,
         12
@@ -1005,7 +1071,7 @@
           "foot_height_m"
         ]
       },
-      "chapter": "Level 4: Heat and chain reactions",
+      "chapter": "Level 5: Heat and Chain Reactions",
       "lesson_controls": {
         "ramp": [
           "top_height_m",
@@ -1018,7 +1084,7 @@
     },
     {
       "id": "fire",
-      "rank": 41,
+      "rank": 44,
       "estimated_minutes": [
         6,
         15
@@ -1033,7 +1099,7 @@
           "a_terminal"
         ]
       },
-      "chapter": "Level 4: Heat and chain reactions",
+      "chapter": "Level 5: Heat and Chain Reactions",
       "lesson_controls": {
         "cannon": [
           "bore_height_m",

@@ -96,17 +96,20 @@ Prepared materials, damping and unrelated electrical ratings stay out of lessons
 
 ## What there is
 
-**Eight chain-reaction levels, thirty piece lessons and three advanced electronics activities.**
+**Eight chain-reaction levels, thirty-three piece lessons and three advanced electronics activities.**
 Every card shows its task count and stars; Help reveals level details and energy records.
-The 41 challenges are grouped as Level 1: Mechanics, Level 2: Electricity,
-Level 3: Water, and Level 4: Heat and chain reactions, with all choices visible.
+The 44 challenges are grouped as Level 1: Wall Mechanics, Level 2: 3D Mechanics,
+Level 3: Electricity, Level 4: Water, and Level 5: Heat and Chain Reactions,
+with all choices visible. The wall chapter starts with two-axis placement;
+the 3D chapter then introduces depth using familiar gravity and lever mechanisms.
 Within each chapter they retain the [audited relative order](docs/level-onboarding-audit.md).
 Three starter lessons added on October 17 (**Roll the ball**, **Fill the trench**
 and **Swing on a rope**) teach the ball, block and string before **Raise the crate**;
 they were placed by author review and are not part of that blind audit.
-Three wall lessons added on October 18 (**Roll along the wall**, **Bounce off a peg**
-and **Turn a wall wheel**) follow **Roll the ball**. They teach gravity, deflection
-and torque with placement limited to left/right and up/down on a real 3D wall.
+Six wall lessons added on October 18 start the game: **Drop into the cup**,
+**Roll along the wall**, **Center the funnel**, **Bounce off a peg**,
+**Tip the wall seesaw** and **Turn a wall wheel**. They teach gravity, routing,
+deflection and torque with placement limited to left/right and up/down on a real 3D wall.
 Their ordering and time estimates are author assessments, not measured human times.
 **Thread a pulley** adds a fourth primitive lesson. **Raise the crate** and
 **Lift with less** now use individual wheels and a routed, massive native rope;

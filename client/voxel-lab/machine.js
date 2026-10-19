@@ -5378,10 +5378,10 @@ renderer.domElement.addEventListener('pointerdown', e => {
   draggingGhost = null;
   if (!ghost || e.button !== 0 || e.ctrlKey) return;
   const arrowGrip=editArrowAt(e.clientX,e.clientY);
-  // A positional guide starts at the piece. Its shaft must not turn a grab
-  // on the piece itself into the numeric adjustment's pixels-per-step drag.
-  // Outside the piece, its arrow remains an explicit single-axis handle.
-  const moveFromPiece=editorMode==='move'&&['x_m','z_m','height_m'].includes(arrowGrip?.key)&&nearGhost(e.clientX,e.clientY,0);
+  // In Move, guides crossing the piece's grab margin must not steal a free
+  // drag for a numeric adjustment. Tune still offers the dimension arrows;
+  // arrows outside the grab margin remain explicit adjustment handles.
+  const moveFromPiece=editorMode==='move'&&nearGhost(e.clientX,e.clientY,GRAB_MARGIN_PX);
   if(arrowGrip&&!moveFromPiece){draggingGhost={id:e.pointerId,kind:'axis-adjust',key:arrowGrip.key,initial:Number(ghost.p[arrowGrip.key]),screenX:e.clientX,screenY:e.clientY,dx:arrowGrip.dx,dy:arrowGrip.dy,active:false};return;}
   if (nearGhost(e.clientX, e.clientY, GRAB_MARGIN_PX)) {
     if(editorMode!=='move'){
@@ -7810,6 +7810,9 @@ async function chooseLevel(id, design = null) {
   const objectives={
     gap:'Bridge the gap with a plank so the marble reaches the cup.',
     'easy-roll':'Set the marble on the slope so gravity rolls it into the cup.',
+    'easy-wall-drop':'Move the marble above the green cup, then Place and Run.',
+    'easy-wall-funnel':'Catch the marble in the funnel and guide it into the green cup.',
+    'easy-wall-seesaw':'Put one end beneath the marble to tip the seesaw through 20°.',
     'easy-wall-track':'Slide the track under the marble to roll it into the green cup.',
     'easy-wall-peg':'Deflect the falling marble off the peg into the green cup.',
     'easy-wall-wheel':'Line up a paddle so the falling marble turns the wheel by 90°.',

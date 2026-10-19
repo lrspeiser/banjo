@@ -369,7 +369,7 @@ The final unbatched local run passes all 22 methods in 961.844 s. The partition
 check covers every method and all 23 native families exactly once; two native
 family batches additionally pass in 143.871 s and 60.018 s.
 
-CI runs those six recipe batches, sixteen browser batches and five game
+CI runs those six recipe batches, sixteen browser batches and seven game
 integration groups on independent runners. The native CTest job excludes only
 those explicitly named groups; the aggregate release gate requires every group
 to succeed. Game integration keeps each suite's original 600-second deadline.
@@ -459,3 +459,12 @@ each retaining the 600 s deadline. A partition regression verifies every case
 runs exactly once. CMake and CI use the same partition; the unbatched CLI still
 runs everything, as does the test-package job. No physical timestep, goal,
 negative control or assertion tolerance changed in this scheduling correction.
+
+October 18 six-wall-lesson release: the combined native game batch reached
+600 s with its last wall-material case still running; the preceding scenarios
+had passed. The game CLI and CMake now use three disjoint batches: alternating
+native scenarios in batches 0/3 and 1/3, declaration/free-build/goal checks in
+2/3. Each retains 600 s. CI's seven integration groups include all three and
+its native CTest exclusion matches the three explicit independent runners.
+The partition regression proves complete coverage without duplicates. No
+scenario, physical goal, nudge or physics tolerance is removed or relaxed.

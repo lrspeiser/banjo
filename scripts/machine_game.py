@@ -66,6 +66,7 @@ PLAYER_TASK_COUNTS = {
     'easy-river-lift': 2, 'advanced-resistor':1,'advanced-parallel':4,'advanced-capacitor':1,
     'easy-roll': 1, 'easy-block': 1, 'easy-rope': 2,
     'easy-wall-track': 1, 'easy-wall-peg': 1, 'easy-wall-wheel': 1,
+    'easy-wall-drop': 1, 'easy-wall-funnel': 1, 'easy-wall-seesaw': 1,
 }
 
 ROOT = Path(__file__).resolve().parents[1]

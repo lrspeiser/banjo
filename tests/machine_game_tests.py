@@ -54,10 +54,11 @@ class Tray(unittest.TestCase):
         ids=[{test.id() for test in batch} for batch in batches]
         full=unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
         expected={test.id() for group in full for test in group}
-        self.assertFalse(ids[0]&ids[1])
-        self.assertEqual(ids[0]|ids[1],expected)
-        self.assertTrue(all(type(test) is Engine for test in batches[0]))
-        self.assertTrue(all(type(test) is not Engine for test in batches[1]))
+        self.assertEqual(len(batches),3)
+        self.assertEqual(sum(map(len,ids)),len(set().union(*ids)))
+        self.assertEqual(set().union(*ids),expected)
+        self.assertTrue(all(type(test) is Engine for batch in batches[:2] for test in batch))
+        self.assertTrue(all(type(test) is not Engine for test in batches[2]))
 
     def test_setup_requirements_expose_only_piece_counts(self):
         self.assertEqual(mg.public(mg.level_by_id('easy-power'))['required_pieces'],{'battery':1,'wire':2})
@@ -466,15 +467,15 @@ class Tray(unittest.TestCase):
 
     def test_every_level_is_well_formed_and_its_solution_fits_its_tray(self):
         ids=[l['id'] for l in LEVELS]
-        self.assertEqual(ids[0],'easy-weight','start with a visible lever and one placement task')
+        self.assertEqual(ids[0],'easy-wall-drop','start with gravity and a cup, without depth alignment')
         self.assertLess(ids.index('easy-loop'),ids.index('easy-power'))
         self.assertLess(ids.index('easy-power'),ids.index('advanced-parallel'))
         self.assertLess(ids.index('easy-mirror'),ids.index('laser'))
         self.assertLess(ids.index('easy-river-wheel'),ids.index('easy-river-lift'))
         chapters=[l['onboarding']['chapter'] for l in LEVELS]
         self.assertEqual(chapters,sorted(chapters),'mechanics precedes electricity, water and mixed heat tasks')
-        self.assertEqual(mg.level_by_id('easy-gears')['onboarding']['chapter'],'Level 1: Mechanics')
-        self.assertEqual(mg.level_by_id('easy-power')['onboarding']['chapter'],'Level 2: Electricity')
+        self.assertEqual(mg.level_by_id('easy-gears')['onboarding']['chapter'],'Level 2: 3D Mechanics')
+        self.assertEqual(mg.level_by_id('easy-power')['onboarding']['chapter'],'Level 3: Electricity')
         self.assertEqual([l['onboarding']['rank'] for l in LEVELS],list(range(1,len(LEVELS)+1)))
         self.assertEqual(len({l['id'] for l in LEVELS}), len(LEVELS))
         for level in LEVELS:
@@ -485,12 +486,14 @@ class Tray(unittest.TestCase):
 
     def test_wall_lessons_are_early_planar_lessons_without_expanding_the_level_inventory(self):
         ids = [level['id'] for level in LEVELS]
-        wall_ids = ['easy-wall-track', 'easy-wall-peg', 'easy-wall-wheel']
-        self.assertEqual(ids[2:5], wall_ids)
+        wall_ids = ['easy-wall-drop', 'easy-wall-track', 'easy-wall-funnel', 'easy-wall-peg', 'easy-wall-seesaw', 'easy-wall-wheel']
+        self.assertEqual(ids[:6], wall_ids)
+        self.assertEqual(ids[6], 'easy-weight', 'Introduce depth with a familiar falling weight')
+        self.assertEqual([l['id'] for l in LEVELS if l['onboarding']['chapter']=='Level 1: Wall Mechanics'], wall_ids)
         builders = dict(mg.PIECES)
         for ident in wall_ids:
             level = mg.level_by_id(ident)
-            self.assertEqual(level['onboarding']['chapter'], 'Level 1: Mechanics')
+            self.assertEqual(level['onboarding']['chapter'], 'Level 1: Wall Mechanics')
             self.assertEqual(level['wall_mode'], level['machine']['build_surface'])
             self.assertEqual(level['wall_mode']['version'], 2)
             self.assertNotIn('workshop clear guard', {p['name'] for p in level['machine']['parts']})
@@ -536,7 +539,7 @@ class Tray(unittest.TestCase):
         # must say so in its own estimate basis rather than borrow the probe's.
         unprobed={l['id'] for l in LEVELS if 'not yet probed' in l['onboarding']['estimate_basis']}
         self.assertEqual(unprobed,{'easy-roll','easy-block','easy-rope','easy-thread',
-                                  'easy-wall-track','easy-wall-peg','easy-wall-wheel'})
+                                  'easy-wall-drop','easy-wall-track','easy-wall-funnel','easy-wall-peg','easy-wall-seesaw','easy-wall-wheel'})
         self.assertEqual({r['id'] for r in receipt['levels']},{l['id'] for l in LEVELS}-unprobed)
         for level in LEVELS:
             exported=audit.packet(level)
@@ -2409,11 +2412,15 @@ class Engine(unittest.TestCase):
         # constrains authoring only; a miss is free fall and the wheel is passive.
         with tempfile.TemporaryDirectory() as logs:
             logs = Path(logs)
-            for ident in ('easy-wall-track', 'easy-wall-peg', 'easy-wall-wheel'):
+            for ident in ('easy-wall-drop', 'easy-wall-track', 'easy-wall-funnel', 'easy-wall-peg', 'easy-wall-seesaw', 'easy-wall-wheel'):
                 level = mg.level_by_id(ident)
                 for material in ('glass', 'oak', 'iron'):
                     changed = copy.deepcopy(level)
-                    next(p for p in changed['machine']['parts'] if p['name'] == 'marble')['material'] = material
+                    marble = next((p for p in changed['machine']['parts'] if p['name']=='marble'), None)
+                    if marble:
+                        marble['material'] = material
+                    else:
+                        changed['tray'][0]['knobs']['material'].update(choices=[material], default=material)
                     result = mg.trial(changed, changed['solution'], ENGINE, logs, runs=3)
                     print('WALL_LESSON', ident, material, result['results'])
                     self.assertEqual(result['worked'], 3, result)
@@ -2421,26 +2428,38 @@ class Engine(unittest.TestCase):
                 wrong = mg.trial(level, level['wrong'], ENGINE, logs, runs=3)
                 self.assertEqual(wrong['worked'], 0, wrong)
                 self.assertTrue(all(r['error'] is None for r in wrong['results']))
-                if ident == 'easy-wall-wheel':
+                if ident in ('easy-wall-wheel', 'easy-wall-seesaw'):
                     with self.assertRaises(mg.LevelRefused):
                         mg.compose(level, [])
                     spec = mg.compose(level, level['solution'])[0]
                     spec['parts'] = [p for p in spec['parts'] if p['name'] != 'marble']
-                    spec['stations'][0]['focus'] = ['your wall_water_wheel 1 wheel']
+                    held = 'your wall_water_wheel 1' if ident=='easy-wall-wheel' else 'your wall_lever 1'
+                    spec['stations'][0]['focus'] = [held+(' wheel' if ident=='easy-wall-wheel' else ' lever')]
                     idle = mw.rehearse(mw.compile_spec(spec), ENGINE, logs, seconds=6, wall_limit_s=30)
                     self.assertFalse(idle['stations'][0]['done'], 'An unpowered wheel must not turn on its own')
-                    joint = next(j for j in idle['readouts']['joints'] if j['name'] == 'your wall_water_wheel 1 axle')
+                    joint = next(j for j in idle['readouts']['joints'] if j['name'] == held+' axle')
                     self.assertAlmostEqual(joint['turned_deg'], 0, delta=.01)
                 else:
-                    empty = mg.trial(level, [], ENGINE, logs, runs=3)
-                    self.assertEqual(empty['worked'], 0, empty)
+                    if ident=='easy-wall-drop':
+                        with self.assertRaises(mg.LevelRefused):mg.compose(level, [])
+                    else:
+                        empty = mg.trial(level, [], ENGINE, logs, runs=3)
+                        self.assertEqual(empty['worked'], 0, empty)
                     spec = mg.compose(level, level['solution'])[0]
-                    run = mw.rehearse(mw.compile_spec(spec), ENGINE, logs, seconds=6, wall_limit_s=30, track=['marble'])
-                    at = run['paths']['marble']['points'][-1][1:4]
-                    zone = level['goal']['station']['done_when']['in_zone']
-                    self.assertTrue(all(abs(at[i]-zone['at_m'][i]) <= zone['size_m'][i]/2 for i in range(3)),
-                                    'The marble must remain caught, rather than just fly through the goal: '+str(at))
-                    self.assertTrue(any(hit['other'].startswith('your ') for hit in run['hits']))
+                    body = 'your wall_marble 1' if ident=='easy-wall-drop' else 'marble'
+                    run = mw.rehearse(mw.compile_spec(spec), ENGINE, logs, seconds=6, after_s=6, wall_limit_s=30, track=[body])
+                    at = run['paths'][body]['points'][-1][1:4]
+                    cup = next(p for p in spec['parts'] if p['name']=='catching cup cup')
+                    floor = cup['parts'][0]['size_m']
+                    # After continuing past the win, a ball may rest beside a
+                    # cup wall outside the smaller central scoring zone. Test
+                    # actual containment and its floor, not that central zone.
+                    # 2 mm covers native contact slop and rounded trail output.
+                    self.assertLessEqual(abs(at[0]-cup['at_m'][0]), floor[0]/2-.04-.04+.002)
+                    self.assertLessEqual(abs(at[2]-cup['at_m'][2]), floor[2]/2-.04+.002)
+                    self.assertAlmostEqual(at[1],cup['at_m'][1]+floor[1]/2+.04,delta=.002)
+                    self.assertGreaterEqual(run['world_time_s'], 6)
+                    self.assertTrue(any(hit['other'].startswith('your ') if ident!='easy-wall-drop' else hit['other']=='catching cup cup' for hit in run['hits']))
                 energy = mg.measure_energy(level, level['solution'], ENGINE, logs)
                 self.assertLessEqual(energy['j'], level['par_energy_j'])
                 self.assertGreater(energy['j'], .99*level['par_energy_j'])
@@ -2494,7 +2513,8 @@ def game_test_batches():
     cases=[test for cls in list(globals().values())
            if isinstance(cls,type) and issubclass(cls,unittest.TestCase)
            for test in unittest.defaultTestLoader.loadTestsFromTestCase(cls)]
-    return [[test for test in cases if type(test) is Engine],
+    engine=[test for test in cases if type(test) is Engine]
+    return [engine[::2],engine[1::2],
             [test for test in cases if type(test) is not Engine]]
 
 
@@ -2502,10 +2522,10 @@ if __name__ == '__main__':
     shard=next((arg for arg in sys.argv[1:] if arg.startswith('--shard=')),None)
     if shard:
         index,count=map(int,shard.split('=',1)[1].split('/'))
-        if count!=2 or not 0<=index<count:raise SystemExit('game batches use INDEX/2')
+        if count!=3 or not 0<=index<count:raise SystemExit('game batches use INDEX/3')
         sys.argv.remove(shard)
         batches=game_test_batches()
-        print(f'Game batch {index+1}/2: {len(batches[index])} of {sum(map(len,batches))} cases',flush=True)
+        print(f'Game batch {index+1}/3: {len(batches[index])} of {sum(map(len,batches))} cases',flush=True)
         result=unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(batches[index]))
         raise SystemExit(0 if result.wasSuccessful() else 1)
     unittest.main(verbosity=2)
