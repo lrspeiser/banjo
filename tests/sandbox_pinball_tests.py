@@ -16,7 +16,7 @@ import machine_game as mg
 import sandbox_pinball as pinball
 
 parser=argparse.ArgumentParser(add_help=False);parser.add_argument('--engine')
-args,rest=parser.parse_known_args();ENGINE=Path(args.engine or os.environ.get('BANJO_LIVE_ENGINE',''))
+args,rest=parser.parse_known_args();ENGINE=Path(args.engine or os.environ.get('BANJO_LIVE_ENGINE','')).resolve()
 
 
 def advance(session, seconds, dt=1/240):

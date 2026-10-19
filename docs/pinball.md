@@ -121,6 +121,11 @@ compute, with no recorded scheduling backlog. This is a local measurement,
 not a guarantee for all phones or the hosted CPU. The native rigid/contact,
 rolling-loss and precise-shape regression targets also pass.
 
+The clean full-game rerun passes all 120 checks in 629.137 s after the
+contact-reporting correction. The Pinball test runner resolves its native
+executable path before launching from a temporary directory; the Linux
+package gate caught the relative-path portability error before publication.
+
 ## Training sequence after the workshop is qualified
 
 Each lesson should expose only its essential controls, start with a visible
