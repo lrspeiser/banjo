@@ -36,6 +36,7 @@
  <div id="contact-switch-labels" class="contact-switch-labels" aria-label="Physical pressure switch parts" hidden></div>
  <div id="power-pins" class="power-labels" aria-label="Power endpoints"></div>
 <div id="terminal-pins" class="power-labels" aria-label="Electrical endpoints"></div>
+<div id="switch-handle-guide" class="switch-handle-guide" hidden aria-hidden="true"><svg><circle r="18"/><path/></svg></div>
 <div id="power-feedback-labels" class="power-feedback-labels" aria-label="Cable power and object requirements"></div>
 <svg id="scene-sockets" class="scene-sockets" aria-hidden="true"></svg>
 <div id="socket-choices" class="socket-choices" hidden aria-label="Choose a piece or connection point"></div>
@@ -76,6 +77,7 @@
 </div>
 <p id="scene-goal" class="scene-goal"></p>
 <section id="control-panel" class="control-panel" aria-label="Machine and piece controls">
+<output id="switch-lesson-guide" class="switch-lesson-guide" hidden aria-live="polite"></output>
 <div id="view-controls" class="view-controls" aria-label="View controls">
 <button id="view-left" type="button" aria-label="Turn the view left" title="Turn the view left">◀</button><button id="view-right" type="button" aria-label="Turn the view right" title="Turn the view right">▶</button>
 <button id="view-in" type="button" aria-label="Zoom in" title="Zoom in">＋</button><button id="view-out" type="button" aria-label="Zoom out" title="Zoom out">−</button>
@@ -186,6 +188,7 @@
 <div class="guide-head"><h2 id="recent-changes-title">Recent Changes</h2><button id="recent-changes-done" type="button">Close</button></div>
 <div class="guide-body changes-body" tabindex="0" aria-label="Game updates, newest first">
 <section aria-labelledby="changes-oct18"><h3 id="changes-oct18"><time datetime="2026-10-18">October 18, 2026</time></h3>
+<article><h4>Know when to close the switch</h4><p><strong>Close the switch</strong> now walks you through placing the switch, choosing <strong>Run</strong> and dragging its handle down. Run is highlighted when it is the next step. In Run mode, a gold ring and downward arrow point to the actual handle; the edge control says <strong>Drag down</strong> and has a line back to it. The cues clear when the engine measures closed contacts.</p></article>
 <article><h4>Describe a whole marble course</h4><p><strong>Sandbox → Describe a design</strong> uses Banjo’s existing pieces and their controls to assemble your idea, on a wall or in 3D. Try “Build a downhill marble course with two bends and a finish catcher.” The builder places the marble too, checks the layout and tests the route in the engine, including two small placement variations. Its reply reports the stages the marble reached and where it finished. Failed proposals can be repaired before they reach your design; repairs must keep the same goals. If the builder cannot verify the course, your pieces stay as they were. Undo and saved versions work with the completed build.</p></article>
 <article><h4>Get back to building faster</h4><p>Large wired Sandbox designs, including <strong>Electric marble relay</strong>, reuse checks of unchanged cable layouts when you run, reset or select a part. Returning from Run to <strong>Tune</strong> waits for one rebuild before selecting your piece. If you choose <strong>Build</strong>, <strong>Reset</strong> or another design while it is preparing, the earlier selection is canceled instead of starting another rebuild. Pausing and continuing keep your current simulation.</p></article>
 <article><h4>Resize walls and build on more than one</h4><p>Click an open part of a Sandbox wall to select it. Choose <strong>Width</strong> or <strong>Height</strong>, then drag the gold handles at its edges. Choose <strong>Place</strong> to keep the change. <strong>Add wall</strong> creates another wall you can drag to a different ground position. Select it and choose <strong>Add wall piece</strong> to build on its face. Mounted pieces follow their wall when you move it; ordinary pieces keep their own positions. Undo and saved versions keep both wall sizes and positions. A wall cannot be shrunk past its mounted pieces.</p></article>

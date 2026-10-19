@@ -1055,7 +1055,7 @@ def easy_levels():
     levels[-1]['tray'][0]['knobs']['mode'].update(default='manual', choices=['manual'])
     levels[-1]['solution'] = [{'piece': 'switch', 'state': 'open'}]
     levels[-1]['solution_inputs'] = [dict(name='your switch 1', force_n=[0,-8,0])]
-    levels[-1]['brief'] = 'Add the prewired switch. Drag its field handle downward to close the lamp circuit. Run it alone leaves the handle open.'
+    levels[-1]['brief'] = 'Place the prewired switch. Select Run above the scene, then drag its highlighted handle downward to light the lamp.'
     levels[-1]['hints'][0] = levels[-1]['brief']
     s = empty('Light the bulb'); merge(s, battery('supply', {'x_m': -.6}, {})); merge(s, switch('control', {'state': 'closed'}, {}))
     link(s, 'supply wire', 'supply:plus', 'control:in')

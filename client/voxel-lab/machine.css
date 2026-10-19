@@ -557,6 +557,18 @@ body.panel-tabs .scene-mode button{min-width:44px;padding:4px 6px;font-size:12px
 .power-pin button[aria-pressed=true],.terminal-control-pin button[aria-pressed=true]{outline:3px solid #ffe29b;outline-offset:1px}
 .terminal-control-pin .terminal-buttons{gap:4px}
 .terminal-control-pin button{background:#294c60f2}
+.terminal-control-pin .switch-lesson-handle{border:2px solid #ffda70;border-radius:12px;background:#624813;color:#fff4cb;padding:6px 10px;font-size:15px;white-space:nowrap;box-shadow:0 0 0 3px #ffd34d33}
+.power-leaders .switch-handle-leader{stroke:#ffda70;stroke-width:1.5;stroke-dasharray:4 4}
+.switch-handle-guide{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;overflow:hidden}
+.switch-handle-guide>svg{display:block;width:100%;height:100%;overflow:hidden}
+.switch-handle-guide[hidden],.switch-lesson-guide[hidden]{display:none}
+.switch-handle-guide circle,.switch-handle-guide path{fill:none;stroke:#ffda70;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 1px 2px #000)}
+.switch-lesson-guide{display:block;margin:0 0 10px;padding:8px 10px;border-left:3px solid #ffda70;color:#fff0bb;background:#25333b;font-size:16px;line-height:1.4}
+#play-mode #start.switch-run-next{border-color:#ffda70;box-shadow:0 0 0 3px #ffd34d55;color:#fff0bb}
+@media(prefers-reduced-motion:no-preference){.switch-lesson-handle,#start.switch-run-next{animation:switch-next-step 1.8s ease-in-out infinite}.switch-handle-guide path{animation:switch-drag-down 1.5s ease-in-out infinite}}
+@keyframes switch-next-step{50%{box-shadow:0 0 0 5px #ffd34d66}}
+@keyframes switch-drag-down{50%{transform:translateY(5px)}}
+@media(max-height:500px){.switch-lesson-guide{margin-bottom:4px;padding:4px 8px;font-size:14px}}
 .terminal-control-pin .terminal-buttons button{margin:0;width:44px;flex:none;border-radius:50%}
 body.panel-tabs #preview-legend{position:static;max-width:none;width:100%;margin:0;padding:0;border:0;border-radius:0;background:none;pointer-events:auto}
 body.panel-tabs #preview-legend details{margin:0}

@@ -584,7 +584,7 @@ function syncTerminalLabels() {
       {ariaLabel:`Inspect ${device.name} contacts`});inspect.className='contact-inspect';card.append(inspect);}
     const overlay = document.createElement('section'); overlay.className='terminal-control-pin';
     overlay.append(controls); pins.append(overlay);
-    let handle;
+    let handle, handleLeader;
     if (device.handle) {
       handle=button(device.handle.label||'↕',()=>{}, {ariaLabel:`Drag ${device.name} handle`});
       handle.style.cssText='min-height:44px;min-width:44px;touch-action:none;cursor:ns-resize';
@@ -598,8 +598,10 @@ function syncTerminalLabels() {
         endSwitchPointer(e);pointers.delete(e.pointerId);pinch=0;if(!pointers.size)cameraGesture=false;
       });
       overlay.append(handle);
+      handleLeader=document.createElementNS(svg.namespaceURI,'line');
+      handleLeader.classList.add('switch-handle-leader');handleLeader.style.display='none';svg.append(handleLeader);
     }
-    host.append(card); terminalLabels.set(device.name, {card, overlay, controls, rows, device, feedback,handle});
+    host.append(card); terminalLabels.set(device.name, {card, overlay, controls, rows, device, feedback,handle,handleLeader});
   }
   showInstrumentPanel();
 }
@@ -648,7 +650,8 @@ function positionTerminalLabels() {
   const editable = !playing && !terminalBusy && Boolean(tray && (ghost?.p.piece === 'wire' || (!ghost && piecesLeft(tray) > 0)));
   const snapshot=contactSnapshot(), previewTerminals=snapshot.preview?new Map((snapshot.terminals||[]).map(t=>[t.name,t.at_m])):null;
   const physical=shownElectrical().devices?.some(d=>d.kind==='socket');
-  for (const {card: reading, overlay: card, controls, rows, device, feedback,handle} of terminalLabels.values()) {
+  for (const {card: reading, overlay: card, controls, rows, device, feedback,handle,handleLeader} of terminalLabels.values()) {
+    if(handleLeader)handleLeader.style.display='none';
     reading.hidden = false;
     controls.hidden = playing || !wiringMode;
     feedback.hidden=false;
@@ -686,6 +689,10 @@ function positionTerminalLabels() {
       handle.hidden=currentMode()!=='run';handle.disabled=currentMode()!=='run'||Boolean(ghost||pullMode||attachMode||!session);
       const measured=snapshot.devices.find(d=>d.name===device.name);
       feedback.hidden=false;feedback.textContent=(snapshot.preview?'Preview · ':'')+(measured?`${measured.closed?'Closed':'Open'} · ${Math.abs(measured.current_a||0).toFixed(3)} A`:'Drag to operate');
+      const guided=switchLesson()&&currentMode()==='run'&&!measured?.closed&&!scored;
+      handle.classList.toggle('switch-lesson-handle',guided);
+      handle.textContent=guided?'↓ Drag down':device.handle.label||'↕';
+      if(guided)handle.setAttribute('aria-describedby','switch-lesson-guide');else handle.removeAttribute('aria-describedby');
     }
     for (const row of rows) {
       row.at = previewTerminals?.get(row.name)||terminalAt(row.device,row.key,row.declaredAt);
@@ -714,6 +721,12 @@ function positionTerminalLabels() {
     // Hide overflow rather than covering Run or another terminal; zoom/pan to inspect.
     if (!pos) { card.hidden = true; for (const row of rows) row.leader.style.display = 'none'; continue; }
     card.style.left = `${pos.x}px`; card.style.top = `${pos.y}px`; occupied.push({...pos,w,h});
+    if(handleLeader&&handle.classList.contains('switch-lesson-handle')&&!handle.hidden&&grip){
+      const b=handle.getBoundingClientRect();handleLeader.style.display='';
+      handleLeader.setAttribute('x1',String(ax));handleLeader.setAttribute('y1',String(ay));
+      handleLeader.setAttribute('x2',String(Math.max(b.left-rect.left,Math.min(b.right-rect.left,ax))));
+      handleLeader.setAttribute('y2',String(b.top-rect.top+b.height/2));
+    }
     for (const row of rows) {
       if (controls.hidden) {row.leader.style.display='none';continue;}
       if (!row.at) {row.leader.style.display='none'; continue;}
@@ -722,6 +735,32 @@ function positionTerminalLabels() {
       row.leader.setAttribute('x2', String(b.left-rect.left+b.width/2)); row.leader.setAttribute('y2', String(b.bottom-rect.top));
     }
   }
+}
+function switchLesson(){return !level?.free&&(level?.variant?.family||level?.id)==='easy-switch'&&!(level.variant?.version<3);}
+function updateSwitchLessonGuide(){
+  const guide=$('switch-lesson-guide'),drawing=$('switch-handle-guide');
+  const visible=switchLesson()&&!document.body.matches('.on-levels,.on-sandbox')&&!scored;
+  guide.hidden=!visible;
+  if(!visible){drawing.hidden=true;$('start').classList.remove('switch-run-next');return;}
+  const device=(machine?.electrical?.devices||[]).find(d=>d.handle);
+  const closed=(readouts.electrical?.devices||[]).find(d=>d.name===device?.name)?.closed;
+  const inRun=currentMode()==='run';
+  const text=ghost||!device?'Place the prewired switch. Next: select Run above.':
+    !inRun?'1. Select Run above. 2. Drag the switch handle down.':
+    closed?'Contacts closed — current can reach the lamp.':'2. Drag the gold switch handle down to light the lamp.';
+  if(guide.textContent!==text)guide.textContent=text;
+  const ready=Boolean(device&&!ghost&&session&&!startingRun&&!closed);
+  $('start').classList.toggle('switch-run-next',ready&&!inRun);
+  guide.dataset.step=ghost||!device?'place':!inRun?'run':closed?'closed':'drag';
+  if(!ready||!inRun||$('level-intro').open||!$('level-done').hidden){drawing.hidden=true;return;}
+  const grip=terminalAt({name:device.name,part:device.handle.part},'',device.handle.at_m);
+  if(!grip||!meshes.get(device.handle.part)?.visible){drawing.hidden=true;return;}
+  const p=new THREE.Vector3(...grip).project(camera),w=view.clientWidth,h=view.clientHeight;
+  const x=(p.x+1)*w/2,y=(1-p.y)*h/2;
+  if(Math.abs(p.z)>1||x<22||x>w-22||y<22||y>h-78){drawing.hidden=true;return;}
+  drawing.hidden=false;
+  const circle=drawing.querySelector('circle');circle.setAttribute('cx',x);circle.setAttribute('cy',y);
+  drawing.querySelector('path').setAttribute('d',`M${x} ${y+25}v43m-9-10 9 10 9-10`);
 }
 window.machineWiringState = () => ({selected:terminalStart, busy:terminalBusy,
   wires:wires.filter(w => w.terminalWire).map(w => ({name:w.name, route:w.route, visible:w.line.visible, color:w.line.material.color.getHex(),
@@ -2368,6 +2407,7 @@ function render() {
   if (stringEnd && !stringEnd.drag) placeStringEnd();
   positionPowerLabels();
   positionTerminalLabels();
+  updateSwitchLessonGuide();
   drawSceneSockets();
   updatePowerFeedback();
   paintCoachGuide();
@@ -7644,7 +7684,7 @@ async function chooseLevel(id, design = null) {
     'easy-power':'Set the battery voltage and connect both leads with suitable wire thickness.',
     'easy-solar':'Aim the panel in sunlight and connect its output to the battery input.',
     'easy-tackle':'Choose enough counterweight to lift the glass crate with the pulleys.',
-    'easy-switch':'Place the switch, then drag its handle to close the lamp circuit.',
+    'easy-switch':'Close the switch to light the lamp.',
     'easy-bulb':'Choose a smaller bulb that the supply can power.',
     'easy-heat':'Clip the heater to the hanging cord, wire both leads and heat it to release the weight.',
     'easy-water-receiver':'Widen the tap to fill the waiting box with 3 L in 5 seconds.',

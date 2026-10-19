@@ -1,5 +1,21 @@
 # Puzzles on the machine (/play)
 
+October 18 **Close the switch** guidance: its introduction and short instruction
+now explain the Run step before the handle drag. After placing the prewired
+switch, a compact instruction highlights Run as the next action. Run mode
+shows a gold ring at the actual projected handle, a downward drag arrow and a
+44 px minimum **Drag down** edge control with a leader back to the handle.
+The annotations follow the camera, do not intercept scene input and stop
+highlighting when native readings report closed contacts. Reduced-motion
+preferences disable the pulsing and arrow animation. Replaying with the pieces
+returns to the Run prompt; Reset returns to the placement prompt. The cues
+apply to the canonical lesson and version-3-or-newer challenges, preserving
+historical challenge modes. Desktop (1280×860), phone portrait (390×844) and
+landscape (844×390) browser checks cover the state sequence, camera tracking,
+unobstructed controls, real downward operation and the native lamp goal. This
+is an instruction/annotation change; it adds no force, contact shortcut or
+physics model and changes no goal, timestep or tolerance.
+
 October 18 word-builder course verification: the shared prompt explicitly limits
 the builder to the active Sandbox catalog, its actual knobs and connections.
 Wall mounting uses two placement coordinates in the same 3D world; ordinary

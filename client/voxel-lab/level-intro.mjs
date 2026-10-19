@@ -26,7 +26,7 @@ export const LEVEL_MECHANISMS=Object.freeze({
   'easy-bulb':'The bulb needs enough voltage and power from the shared supply. Changing its size changes its power demand.',
   'easy-loop':'Current needs a complete path from the supply, through the lamp, and back to the supply. Crossing wires do not join.',
   'advanced-resistor':'A series resistor limits current and takes part of the supply voltage, leaving less power for the lamp.',
-  'easy-switch':'Moving the handle brings its metal contacts together, completing the path that powers the lamp.',
+  'easy-switch':'Place the prewired switch, then select Run above the scene to unlock its handle. Drag the highlighted handle downward to bring its metal contacts together and light the lamp.',
   'easy-marble-light':'The marble presses a broad deck. That lowers a metal contact onto its pad and closes the lamp circuit.',
   'easy-power':'The battery supplies voltage. A complete feed and return carry current; thin wires can lose voltage along the way.',
   'advanced-parallel':'Series lamps share the supply voltage. Parallel branches each have a path across the supply.',
