@@ -89,6 +89,7 @@ class ReplaySession:
         self.playing, self.closed, self._test_pulled = False, False, False
         self.speed, self.t, self.cursor, self.index = 1, 0, 0, -1
         self.bodies, self.removed, self.events, self.readouts = {}, {}, [], {}
+        self.goal_snapshot = None
         self.lock = threading.RLock()
         self.duration = json.loads(frames[-1])['t']
         self._apply(json.loads(frames[0]))
@@ -106,6 +107,8 @@ class ReplaySession:
                 '_cells_seq': frame['seq'] if 'cells_local_m' in body else old.get('_cells_seq', 0)}
         self.events.extend(frame.get('events', []))
         self.readouts = frame['readouts']
+        if self.goal_snapshot is None and self.readouts.get('stations') and self.readouts['stations'][0]['done']:
+            self.goal_snapshot = dict(t=self.t,readouts=copy.deepcopy(self.readouts))
 
     def _advance(self):
         now = time.monotonic()

@@ -30,7 +30,11 @@ fixes a hand-played wall circuit being charged 1.40 J despite reaching its
 goal on 1.048 J. An HTTP regression continues the native circuit beyond
 1.5 s, then checks that delayed and repeated score requests retain three
 stars against the unchanged 1.05 J par. No goal, par or physics tolerance is
-changed by this correction.
+changed by this correction. Prepared playback exposes the same snapshot,
+captured from the first recorded successful frame even when playback jumps
+over several frames. Its regression preserves the first goal's ledger while
+later playback continues; the native gap recording and reset/Undo browser
+flow exercise the same scoring interface as live sessions.
 
 The contact switch reuses the existing wood press deck and separate iron leaf
 and pad. At the same 100 mm diameter and 1.8 m release height, glass passes

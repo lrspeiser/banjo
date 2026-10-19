@@ -69,6 +69,26 @@ class Prepared(unittest.TestCase):
                              ({},dict(joints=[{'name':'spring restraint'}]))):
             self.assertFalse(replay.eligible(level,{**base,**change}))
 
+    def test_large_playback_jump_keeps_the_first_measured_goal_ledger(self):
+        def readings(done,given):
+            return dict(stations=[dict(done=done,at_s=.3 if done else None)],
+                        machines=dict(batteries=[dict(name='cell',given_j=given)]))
+        frames=[frame(1,0,[],readouts=readings(False,0)),
+                frame(2,.3,[],readouts=readings(True,.9)),
+                frame(3,2,[],readouts=readings(True,6))]
+        with patch('machine_replay.time.monotonic',return_value=0):
+            session=replay.ReplaySession({},frames)
+            self.assertIsNone(session.goal_snapshot)
+            session.play(True)
+        with patch('machine_replay.time.monotonic',return_value=10):
+            session.frame(0,0)
+        self.assertEqual(session.t,2)
+        self.assertEqual(session.readouts['machines']['batteries'][0]['given_j'],6)
+        self.assertEqual(session.goal_snapshot['t'],.3)
+        self.assertEqual(session.goal_snapshot['readouts']['machines']['batteries'][0]['given_j'],.9)
+        session.readouts['machines']['batteries'][0]['given_j']=9
+        self.assertEqual(session.goal_snapshot['readouts']['machines']['batteries'][0]['given_j'],.9)
+
     @unittest.skipUnless(args.engine and args.engine.is_file(),'native engine required')
     def test_native_gap_recording_matches_goal_and_energy_without_rerunning(self):
         level=machine_game.level_by_id('gap');job=machine_world.PreviewJob()
@@ -82,6 +102,8 @@ class Prepared(unittest.TestCase):
             final=session.frame(0,0)
         self.assertAlmostEqual(final['readouts']['stations'][0]['at_s'],result['goal_at_s'],places=9)
         self.assertTrue(final['readouts']['stations'][0]['done'])
+        self.assertIsNotNone(session.goal_snapshot)
+        self.assertEqual(session.goal_snapshot['readouts']['stations'][0]['at_s'],result['goal_at_s'])
         score=machine_game.energy_of(session.compiled,session.readouts,session.t)
         self.assertEqual(score['run']['j'],0)
         self.assertGreater(score['pieces_j'],0)
