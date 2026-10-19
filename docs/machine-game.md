@@ -9,6 +9,8 @@ uses 5-degree steps; **Turn** allows a body drag, and **↻ 90°** is a quarter 
 The 44 px grips remain reachable in phone layouts, with leaders when displaced
 from an edge. Keyboard arrows make small changes. This supersedes the earlier
 parallel-panel limitation below; walls remain upright grounded supports.
+The five wall mode/placement buttons have separate 44 px targets, checked
+without overlaps at 1280×860, 390×844 and 844×390.
 
 Optional panel `yaw_deg` (default zero) rotates the declared backing, mounted
 part poses, joint points/axes, electrical terminals and hand controls before

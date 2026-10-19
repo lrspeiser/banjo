@@ -2999,6 +2999,12 @@ class Puzzles(unittest.TestCase):
                 self.press('Sandbox: build anything');self.click_visible('Build on a wall');self.wait(READY,60)
                 original=self.js('machineDesign().draft')
                 self.click_visible('Add wall');self.ghost();self.click_visible('Turn wall by 90 degrees');self.ghost()
+                self.paint()
+                toolbar=self.js("[...document.querySelectorAll('#piece-editor .piece-toolbar button')].map(b=>b.getBoundingClientRect().toJSON())")
+                self.assertEqual(len(toolbar),5)
+                self.assertTrue(all(r['width']>=44 and r['height']>=44 for r in toolbar))
+                for i,a in enumerate(toolbar):
+                    for b in toolbar[i+1:]:self.assertTrue(a['right']<=b['left']+.1 or b['right']<=a['left']+.1 or a['bottom']<=b['top']+.1 or b['bottom']<=a['top']+.1,'wall mode and placement targets must not overlap')
                 self.assertEqual(self.ghost()['p']['yaw_deg'],90)
                 self.click_visible('Place');self.wait(READY,60)
                 board=self.js('machineWallState().surface.panels[1]');self.assertEqual(board['yaw_deg'],90)
