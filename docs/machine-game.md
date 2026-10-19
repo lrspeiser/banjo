@@ -48,6 +48,23 @@ HTTP error contains the short feedback rather than verification internals.
 The existing moved-wall add-to-design fixture also retains its 11 original
 pieces and passes the native/material qualification.
 
+Manual delivery used the actual reported saved design and the live configured
+model through **Describe a design**, followed by **Save version**, **Front**,
+**Run**, **Pause** and **Reset**. The in-game reply reports five distinct peg
+contacts, 7.04 m travel and a catch in cup 4, passing all three rehearsals.
+The owned local server on 18894 was refreshed with the verified engine.
+
+Release boundary: this checkpoint targets staging, not production. The
+previous staging revision `73fcaf86` passed source/native/integration,
+apparatus and recipe jobs but failed browser groups 3/6/7/8/12 in
+[CI run 39186108879](https://github.com/lrspeiser/banjo/actions/runs/39186108879).
+Failures concern wall/depth dragging, switch cues, gear result text, river
+previews/placement, rope action wording and zoom while dragging. Those
+controls are unchanged here; they remain unresolved and this fix does not
+certify the entire level suite. Targeted builder (26), host (42), wall-pattern
+(10, including both material sets), replacement browser and source guard
+checks pass locally. New staging CI must still be assessed before release.
+
 October 18 wall-builder patterns and Plinko: the chat request includes the
 selected wall id, actual environment bounds, existing collision problems,
 remaining inventory and native part slots. For a moved wall, x_m is explicitly
