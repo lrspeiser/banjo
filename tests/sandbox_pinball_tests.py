@@ -41,6 +41,86 @@ def advance(session, seconds, dt=1/240):
 
 
 class ObjectActions(unittest.TestCase):
+    @unittest.skipUnless(ENGINE.is_file(),'native engine required')
+    def test_flat_push_button_drives_a_wired_motor_and_requires_charge(self):
+        import sandbox_electrics as e
+        for charge in (1000,0):
+            with self.subTest(charge=charge),tempfile.TemporaryDirectory() as logs:
+                spec=e.empty('Push to run');spec['physics_dt_s']=1/480
+                for make,name,k in [(e.battery,'supply',dict(x_m=-.8,z_m=-.4)),
+                    (e.push_button,'press',{}),(e.motor,'drive',dict(x_m=.8,z_m=.4))]:
+                    mg.merge_fragment(spec,make(name,k,{}))
+                spec['batteries'][0]['charge_j']=charge
+                for n,a,b in [('feed','supply:plus','press:in'),('switched feed','press:out','drive:plus'),('return','drive:minus','supply:minus')]:e.link(spec,n,a,b)
+                q=mw.MachineSession(mw.compile_spec(spec),ENGINE,Path(logs),paced=False)
+                try:
+                    advance(q,.2);q.player_control('press',True);r=advance(q,1.)
+                    self.assertTrue(next(d['closed'] for d in r['electrical']['devices'] if d['name']=='press'))
+                    angle=next(j['degrees'] for j in r['joints'] if j['name']=='drive axle')
+                    if charge:self.assertGreater(abs(angle),30)
+                    else:self.assertLess(abs(angle),1)
+                    q.player_control('press',False);r=advance(q,.4)
+                    self.assertFalse(next(d['closed'] for d in r['electrical']['devices'] if d['name']=='press'))
+                    self.assertLess(abs(r['electrical']['networks'][0]['ledger']['electrical_residual_j']),1e-8)
+                finally:q.close()
+
+    def selector(self,material='aluminum',charge=1000,angle=-50):
+        import sandbox_electrics as e
+        s=e.selector_bench()
+        replacement=e.rotary_selector('power selector',dict(handle_material=material,angle_deg=angle),{})
+        s['parts']=[p for p in s['parts'] if not p['name'].startswith('power selector')]+replacement['parts']
+        s['joints']=replacement['joints'];s['player_controls']=replacement['player_controls']
+        for b in s['batteries']:b['charge_j']=charge
+        e.link(s,'lamp return','lamp:minus','supply:minus')
+        return s
+
+    @unittest.skipUnless(ENGINE.is_file(),'native engine required')
+    def test_rotary_selector_contact_power_materials_and_reverse_hand_input(self):
+        records=[]
+        for dt in (1/480,1/960):
+            for material in ('glass','oak','iron'):
+                with self.subTest(dt=dt,material=material),tempfile.TemporaryDirectory() as logs:
+                    spec=self.selector(material);spec['physics_dt_s']=dt
+                    q=mw.MachineSession(mw.compile_spec(spec),ENGINE,Path(logs),paced=False)
+                    try:
+                        def power(r):return next(d['power_w'] for d in r['electrical']['devices'] if d['name']=='lamp')
+                        low=power(advance(q,.3))
+                        q.player_control('power selector',True,1);advance(q,.6)
+                        q.player_control('power selector',False);high=power(advance(q,.3))
+                        raised=next(j['degrees'] for j in q.readouts['joints'] if j['name']=='power selector dial axle')
+                        q.player_control('power selector',True,-1);advance(q,.6)
+                        q.player_control('power selector',False);returned=power(advance(q,.3))
+                        ledger=q.readouts['electrical']['networks'][0]['ledger']
+                        records.append(dict(dt_s=dt,handle=material,low_w=low,high_w=high,returned_w=returned,
+                            turn_deg=raised,ledger=ledger,operator_pulls=q.readouts.get('pulls')))
+                        self.assertGreater(low,.2);self.assertLess(low,.5)
+                        self.assertGreater(high,2.5);self.assertGreater(raised,85)
+                        self.assertGreater(returned,.2);self.assertLess(returned,.5)
+                        self.assertLess(abs(ledger['electrical_residual_j']),1e-8)
+                        self.assertFalse(q._test_pulled)
+                    finally:q.close()
+        print('ROTARY MATERIAL CONTACTS '+json.dumps(records),flush=True)
+
+    @unittest.skipUnless(ENGINE.is_file(),'native engine required')
+    def test_selector_gaps_empty_supply_and_invalid_operator_values(self):
+        for angle,charge,low,high in [(-25,1000,0,1e-9),(0,1000,1.2,1.5),(50,0,0,1e-9)]:
+            with self.subTest(angle=angle,charge=charge),tempfile.TemporaryDirectory() as logs:
+                spec=self.selector(angle=angle,charge=charge)
+                q=mw.MachineSession(mw.compile_spec(spec),ENGINE,Path(logs),paced=False)
+                try:
+                    r=advance(q,.4)
+                    power=next(d['power_w'] for d in r['electrical']['devices'] if d['name']=='lamp')
+                    self.assertGreaterEqual(power,low);self.assertLessEqual(power,high)
+                    for value in (True,None,2,-2,float('nan')):
+                        with self.assertRaises(ValueError):q.player_control('power selector',True,value)
+                    self.assertFalse(q._pull_queue)
+                finally:q.close()
+        level=mg.level_by_id('easy-power-selector')
+        with tempfile.TemporaryDirectory() as logs:
+            self.assertEqual(mg.trial(level,level['solution'],ENGINE,Path(logs),runs=3,action_inputs=level['solution_actions'])['worked'],3)
+            self.assertEqual(mg.trial(level,level['wrong'],ENGINE,Path(logs),runs=3,action_inputs=level['solution_actions'])['worked'],0)
+            self.assertEqual(mg.trial(level,level['solution'],ENGINE,Path(logs),runs=1)['worked'],0)
+
     def level(self,material='aluminum',charge=10000):
         base=pinball.template()['base']
         if material!='aluminum':
@@ -109,12 +189,13 @@ class ObjectActions(unittest.TestCase):
 
     def test_builder_resolves_an_action_target_from_an_added_tool_alias(self):
         answer=dict(reply='Hold Push during Run.',add=[dict(piece='pinball_button',id='press',x_m=0,z_m=0),
-            dict(piece='object_action',part='press button',label='Push',key='KeyA',push_y_n=-30)])
+            dict(piece='object_action',part='press button',label='Push',key='KeyA',push_y_n=-30,mode='turn',location='near')])
         r=machine_chat.respond_free('Add a physical button with an A action',mg.free_build(),[],call=lambda messages:(answer,{}))
         self.assertEqual(r['placements'][1]['part'],'your pinball_button 1 button')
         self.assertEqual(len(r['manual_actions']),1)
         self.assertEqual(mw.compile_spec(mg.compose(mg.free_build(),r['placements'])[0])['player_controls'][0]['key'],'KeyA')
-        self.assertEqual(r['placements'][1]['location'],'auto')
+        self.assertEqual(r['placements'][1]['location'],'near')
+        self.assertEqual(r['manual_actions'][0]['mode'],'turn')
 
     def test_removing_prepared_apparatus_prunes_its_actions(self):
         import sandbox_edit

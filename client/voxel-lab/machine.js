@@ -4354,7 +4354,14 @@ const liveCards=document.createElement('div');liveCards.id='device-live-controls
 const playerControls=document.createElement('div');playerControls.id='player-controls';playerControls.hidden=true;view.append(playerControls);
 const heldPlayerControls=new Map();
 let playerControlQueue=Promise.resolve(),playerControlPage=0;
-function dockedPlayerControl(control){return control.location==='dock'||((control.location||'auto')==='auto'&&pinballDesign());}
+function playerControlLocation(control){
+  // Older ready-made tables stored all three inputs in the bottom bar.
+  // Keep custom bindings at the location their maker chose.
+  if(pinballDesign()&&!control.replaces&&['left button','right button','launcher'].includes(control.name))
+    return control.name==='launcher'?'near':'surface';
+  return control.location||'object';
+}
+function dockedPlayerControl(control){return playerControlLocation(control)==='dock';}
 function playerControlButton(name){return view.querySelector(`[data-control="${CSS.escape(name)}"]`);}
 function pagePlayerControls(){
   const buttons=[...playerControls.querySelectorAll('[data-control]')],paged=buttons.length>3;
@@ -4400,6 +4407,7 @@ function showObjectAction(){
   const c=target.control,force=target.force_local_n;
   $('object-action-label').value=c?.label||'Press handle';$('object-action-key').value=c?.key||'';
   $('object-action-location').value=c?.location||'auto';
+  $('object-action-mode').value=c?.mode||'hold';
   $('object-action-direction').value='keep';
   $('object-action-force').value=Math.max(1,Math.round(Math.hypot(...force)));
   const custom=placements.find(p=>p.piece==='object_action'&&p.part===target.part);
@@ -4420,7 +4428,7 @@ $('object-action-form').addEventListener('submit',async event=>{
   const request=actionRequest;
   try{
     const r=await api({op:'object_actions',level:'free',...sandboxRequest(),placements,
-      action:{part:target.part,label:$('object-action-label').value.trim(),key:$('object-action-key').value,location:$('object-action-location').value,force_local_n:force}});
+      action:{part:target.part,label:$('object-action-label').value.trim(),key:$('object-action-key').value,location:$('object-action-location').value,mode:$('object-action-mode').value,force_local_n:force}});
     if(request!==actionRequest||activeDesign?.id!==actionDesign||setupSnapshot()!==actionStamp)return;
     remember();placements=r.placements;keepBuild();$('object-action-dialog').close();renderTray();renderPlaced();scheduleRebuild(0);
   }catch(error){$('object-action-status').textContent=error.data?.problems?.join('; ')||error.message;}
@@ -4432,21 +4440,24 @@ $('object-action-remove').addEventListener('click',()=>{
   if(index<0)return;
   remember();removePiece(index);keepBuild();$('object-action-dialog').close();renderTray();renderPlaced();scheduleRebuild(0);
 });
-function sendPlayerControl(control,pressed,owner=session){
+function sendPlayerControl(control,pressed,owner=session,value=1){
   playerControlQueue=playerControlQueue.then(()=>{
     if(owner!==session)return;
     if(pressed&&!heldPlayerControls.has(control.name))return;
-    return api({op:'player_control',session:owner,name:control.name,pressed});
+    return api({op:'player_control',session:owner,name:control.name,pressed,value});
   }).catch(error=>powerMessage(error.message));
   return playerControlQueue;
 }
-function holdPlayerControl(control,node){
-  if(currentMode()!=='run'||!playing||!session||heldPlayerControls.has(control.name))return;
+function holdPlayerControl(control,node,value=1){
+  if(currentMode()!=='run'||!playing||!session)return;
+  const previous=heldPlayerControls.get(control.name);
+  if(previous){if(previous.value!==value){previous.value=value;sendPlayerControl(control,true,previous.owner,value);}return;}
   const owner=session;
   node?.setAttribute('aria-pressed','true');
-  sendPlayerControl(control,true,owner);
-  const timer=setInterval(()=>sendPlayerControl(control,true,owner),200);
-  heldPlayerControls.set(control.name,{control,node,owner,timer});
+  const hold={control,node,owner,value};
+  heldPlayerControls.set(control.name,hold);
+  sendPlayerControl(control,true,owner,value);
+  hold.timer=setInterval(()=>sendPlayerControl(control,true,owner,hold.value),200);
 }
 function releasePlayerControl(name){
   const hold=heldPlayerControls.get(name);if(!hold)return;
@@ -4501,6 +4512,11 @@ function updateLiveControlAvailability(){
   for(const b of view.querySelectorAll('[data-control]'))b.disabled=!playing||!session||startingRun;
   pagePlayerControls();
   for(const card of liveCards.children){
+    if(card.turningControl){
+      const control=card.turningControl,leaf=control.part.replace(/ knob$/,' wiper');
+      const active=(readouts.electrical?.networks||[]).flatMap(n=>n.branches||[]).find(b=>b.follows_contact?.a===leaf&&b.closed);
+      card.querySelector('.turn-contact-state').textContent=active?`${active.id.match(/(low|medium|high) contact$/)?.[1]||'Contact closed'} · drag ↔`:'Between contacts · off · drag ↔';
+    }
     if(card.lessonGuide){
       const guide=card.lessonGuide;
       card.hidden=document.body.matches('.on-levels,.on-sandbox,.scene-win')||Boolean(guide.when_missing&&(currentMode()==='run'||placements.some(p=>p.piece===guide.when_missing)));
@@ -4537,9 +4553,14 @@ function positionLiveControls(){
     const objects=[...meshes].filter(([name,m])=>m.visible&&(name===card.deviceName||name.startsWith(card.deviceName+' '))).map(([,m])=>m);
     const body=objects.length?coachObjectBox(objects):null;
     const bounds=body?{left:body.x,right:body.x+body.width,top:body.y,bottom:body.y+body.height}:{left:x-20,right:x+20,top:y-20,bottom:y+20};
-    const at=pieceToolbarPosition(rect,bounds,card.getBoundingClientRect(),[...occupied,...sceneControlObstacles(rect)],{edgeOnly:true});
+    let at;
+    if(card.actionLocation==='surface'){
+      const size=card.getBoundingClientRect();
+      at={x:Math.max(rect.left+4,Math.min(rect.right-size.width-4,x-size.width/2)),
+          y:Math.max(rect.top+sceneReadoutTop(rect)+4,Math.min(rect.bottom-size.height-4,y-size.height/2))};
+    }else at=pieceToolbarPosition(rect,bounds,card.getBoundingClientRect(),[...occupied,...sceneControlObstacles(rect)],{edgeOnly:card.actionLocation!=='near'});
     card.style.left=`${at.x-rect.left}px`;card.style.top=`${at.y-rect.top}px`;occupied.push(card.getBoundingClientRect());
-    controlLeader(leader,card,{x,y});
+    if(card.actionLocation!=='surface')controlLeader(leader,card,{x,y});
   }
   for(const [card,leader] of liveControlLeaders)if(!card.isConnected){leader.remove();liveControlLeaders.delete(card);}
 }
@@ -7033,6 +7054,8 @@ const PIECE_INFO = {
   ignition: ['electrics', 'A wired heating coil attached to a material target.'],
   resistor: ['electrics', 'A rated two-terminal resistance with measured voltage drop and Joule heat.'],
   capacitor: ['electrics', 'A nonpolar capacitor: charge, stored energy, internal resistance and leakage.'],
+  push_button:['electrics','Hold the real contact cap to close a wired circuit. Release lets its spring open it.'],
+  rotary_selector:['electrics','Turn a spring-loaded metal wiper between three resistor paths; gaps open the circuit.'],
   water_wheel: ['water', 'River current or falling water pushes the paddles. Connect its drum to lift a load.'],
   water_tank: ['water', 'A separate finite gravity tank. Open its tap wider for more flow; falling water level slows it.'],
   water_chute: ['water', 'Aim and tip a supported open trough. Gravity and contact divert the falling water.'],
@@ -7068,7 +7091,8 @@ const PIECE_GROUPS = [['all','All'],['blueprints','Blueprints'],['recent','Recen
   ['power','Power'],['electrics','Wiring'],['optics','Light'],['water','Water'],['wall','Wall mounted'],['pinball','Pinball']];
 const PIECE_WORDS = {marble:'ball roll sphere', ring_marble:'ball sphere ring loop eye tie string swing pendulum', plank:'board beam bridge wood', block:'cube box brick step', link:'rope string tie glue pin join spring',
   loose_block:'cube box crate', tackle:'pulley rope lift crane', lens:'glass focus', mirror:'reflect bounce', solar:'sun panel',
-  battery:'power cell', wire:'cable lead cord', motor:'spin turn', gear:'cog wheel teeth', switch:'button toggle', bulb:'lamp light'};
+  battery:'power cell', wire:'cable lead cord', motor:'spin turn', gear:'cog wheel teeth', switch:'button toggle', bulb:'lamp light',
+  push_button:'press switch momentary contact motor',rotary_selector:'knob dial power resistance switch rheostat'};
 let pieceFilter = 'all', recentPieces = [];
 try { recentPieces = JSON.parse(localStorage.getItem('banjo.recentPieces') || '[]').filter(p => typeof p === 'string').slice(0, 8); } catch { recentPieces = []; }
 // The last filter and search come back on the next visit too, not only while
@@ -7588,12 +7612,15 @@ function renderMachineControls() {
   const edgeActions=[];
   playerControls.hidden=!(machine?.player_controls||[]).some(dockedPlayerControl);
   for(const control of machine?.player_controls||[]){
-    const b=button(control.label,()=>{}, {title:`Hold to operate${control.key?' · '+control.key:''}`});
+    const turning=control.mode==='turn';let dragStart=null;
+    const b=button(control.label,()=>{}, {title:turning?'Drag left or right to turn the real handle; release to let go. Keyboard: left/right arrows while focused.':`Hold to operate${control.key?' · '+control.key:''}`});
     b.dataset.control=control.name;b.setAttribute('aria-pressed','false');
-    b.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();b.setPointerCapture(e.pointerId);holdPlayerControl(control,b);});
-    for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,()=>releasePlayerControl(control.name));
-    b.addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='Enter'){e.preventDefault();e.stopPropagation();holdPlayerControl(control,b);}});
-    b.addEventListener('keyup',e=>{if(e.code==='Space'||e.code==='Enter'){e.preventDefault();e.stopPropagation();releasePlayerControl(control.name);}});
+    b.classList.toggle('turn-handle',turning);
+    b.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();b.setPointerCapture(e.pointerId);dragStart=e.clientX;holdPlayerControl(control,b,turning?0:1);});
+    if(turning)b.addEventListener('pointermove',e=>{if(dragStart==null)return;holdPlayerControl(control,b,Math.max(-1,Math.min(1,(e.clientX-dragStart)/60)));});
+    for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,()=>{dragStart=null;releasePlayerControl(control.name);});
+    b.addEventListener('keydown',e=>{if(['Space','Enter',...(turning?['ArrowLeft','ArrowRight']:[])].includes(e.code)){e.preventDefault();e.stopPropagation();holdPlayerControl(control,b,e.code==='ArrowLeft'?-1:1);}});
+    b.addEventListener('keyup',e=>{if(['Space','Enter',...(turning?['ArrowLeft','ArrowRight']:[])].includes(e.code)){e.preventDefault();e.stopPropagation();releasePlayerControl(control.name);}});
     b.addEventListener('blur',()=>releasePlayerControl(control.name));
     b.addEventListener('pointerenter',()=>setControlGlow([control.part]));
     b.addEventListener('pointerleave',()=>setControlGlow());
@@ -7622,7 +7649,14 @@ function renderMachineControls() {
     const part=machine.parts.find(p=>p.name===control.part);if(!part)continue;
     beside(b,control.part,part.at_m);
     const card=liveCards.lastChild;card.classList.add('object-action-card');card.actionPart=control.part;
+    card.actionLocation=playerControlLocation(control);
+    card.classList.toggle('on-device-action',card.actionLocation==='surface');
+    card.classList.toggle('near-device-action',card.actionLocation==='near');
     card.querySelector('strong').textContent=playerPartTitle(control.part);
+    if(control.mode==='turn'){
+      card.turningControl=control;
+      card.append(Object.assign(document.createElement('small'),{className:'turn-contact-state',textContent:'Drag ↔ to turn'}));
+    }
   }
   for(const guide of level?.setup_guides||[]){
     if(!guide.title)continue;
@@ -7675,6 +7709,7 @@ function renderMachineControls() {
     const spring=/ (?:wall_)?spring \d+ restraint$/.test(joint.name);
     action(spring?'Release spring':`Release ${joint.name.replace(' restraint', '')}`, () => ({op: 'release_joint', name: joint.name}),joint.name.replace(' restraint',''),joint.at_m||machine.parts.find(p=>p.name===joint.b)?.at_m||[0,.5,0],spring);
     const card=liveCards.lastChild,release=card.querySelector('button');
+    card.actionLocation='near';
     card.dataset.restraint=joint.name;release.dataset.release='true';
     const index=placements.findIndex((p,i)=>`your ${p.piece} ${i+1} restraint`===joint.name);
     if(spring&&index>=0&&!readOnlyCourse()){
@@ -7699,12 +7734,17 @@ renderer.domElement.addEventListener('pointerdown',e=>{
   const control=(machine?.player_controls||[]).find(c=>c.part===named.get(object));if(!control)return;
   inspectElectricalPart(control.part);
   e.preventDefault();e.stopImmediatePropagation();renderer.domElement.setPointerCapture(e.pointerId);
-  sceneControlPointers.set(e.pointerId,control.name);
-  holdPlayerControl(control,playerControlButton(control.name));
+  sceneControlPointers.set(e.pointerId,{control,start:e.clientX});
+  holdPlayerControl(control,playerControlButton(control.name),control.mode==='turn'?0:1);
+},true);
+renderer.domElement.addEventListener('pointermove',e=>{
+  const grip=sceneControlPointers.get(e.pointerId);if(!grip||grip.control.mode!=='turn')return;
+  holdPlayerControl(grip.control,playerControlButton(grip.control.name),Math.max(-1,Math.min(1,(e.clientX-grip.start)/60)));
+  e.preventDefault();e.stopImmediatePropagation();
 },true);
 for(const type of ['pointerup','pointercancel','lostpointercapture'])renderer.domElement.addEventListener(type,e=>{
-  const name=sceneControlPointers.get(e.pointerId);if(!name)return;
-  sceneControlPointers.delete(e.pointerId);releasePlayerControl(name);e.preventDefault();e.stopImmediatePropagation();
+  const grip=sceneControlPointers.get(e.pointerId);if(!grip)return;
+  sceneControlPointers.delete(e.pointerId);releasePlayerControl(grip.control.name);e.preventDefault();e.stopImmediatePropagation();
 },true);
 
 function describeKnobs(p, t) {

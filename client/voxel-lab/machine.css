@@ -1108,6 +1108,12 @@ body.panel-tabs:has(#phone-toolbar.one-row) #view #clock{top:6px}
 .object-action-card{width:160px}
 .object-action-card button{touch-action:none;user-select:none}
 .object-action-card button[aria-pressed=true]{background:#d58b18;color:#111}
+.object-action-card.on-device-action{width:auto;min-width:44px;padding:0;border:0;background:transparent;box-shadow:none}
+.on-device-action>strong,.on-device-action>output,.near-device-action>strong,.near-device-action>output{display:none}
+.on-device-action button{min-width:56px;min-height:48px;border-radius:24px;background:#135a52ed;border:2px solid #66dcc4;font-weight:650}
+.object-action-card.near-device-action{width:150px;padding:4px}
+.turn-handle{min-height:64px!important;border-radius:32px!important;cursor:ew-resize}
+.turn-handle::before{content:'↶  ';font-size:22px}.turn-handle::after{content:'  ↷';font-size:22px}
 .lesson-guide-card{width:190px;font-size:12px;pointer-events:none}
 .lesson-guide-card strong{white-space:normal;font-size:13px}
 @media(max-width:600px){.lesson-guide-card{width:140px}}

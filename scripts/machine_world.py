@@ -2169,10 +2169,13 @@ def _compile_spec_uncached(spec, lenient=False):
             label=name
         location=c.get('location','auto')
         if location not in object_actions.LOCATIONS:
-            problems.append(f'Player control {name}: choose Auto, Beside object or Bottom bar')
+            problems.append(f'Player control {name}: choose Auto, On the device, Near the handle, At the scene edge or Bottom bar')
             location='auto'
+        mode=c.get('mode','hold')
+        if mode not in object_actions.MODES:
+            problems.append(f'Player control {name}: choose Hold or Turn');mode='hold'
         controls.append(dict(name=name, part=part, force_n=force,
-                             label=label, key=key,location=location,replaces=c.get('replaces','')))
+                             label=label, key=key,location=location,mode=mode,replaces=c.get('replaces','')))
     replaced=set()
     for c in controls:
         if not c['replaces']:continue
@@ -3487,7 +3490,7 @@ class MachineSession:
                     # as HTTP, scheduled in simulated time. Never in live play.
                     while getattr(self,'_reference_actions',[]) and self._reference_actions[0]['at_s']<=self.t+1e-9:
                         action=self._reference_actions.pop(0)
-                        self.player_control(action['name'],action['pressed'])
+                        self.player_control(action['name'],action['pressed'],action.get('value',1))
                     queued, self._pull_queue = self._pull_queue, {}
                     for body,deadline in list(self._switch_force_until.items()):
                         if time.monotonic()>deadline:
@@ -3618,7 +3621,7 @@ class MachineSession:
             self.lock.notify_all()
         return dict(name=name,body=body,force_n=list(force))
 
-    def player_control(self, name, pressed):
+    def player_control(self, name, pressed, value=1):
         """Hold a declared handle with a bounded force, never assign its pose.
 
         The native pull ledger records operator work. A one-second lease stops
@@ -3628,16 +3631,20 @@ class MachineSession:
         if not isinstance(pressed, bool): raise ValueError('pressed must be boolean')
         control = next((c for c in self.compiled.get('player_controls',[]) if c['name']==name),None)
         if not control: raise ValueError('Choose an existing player control')
+        if type(value) not in (int,float) or not math.isfinite(value) or not -1<=value<=1:
+            raise ValueError('Handle input must be a finite fraction from -1 to 1')
+        if control.get('mode','hold')!='turn' and value!=1:
+            raise ValueError('Only turning handles accept a variable direction')
         with self.lock:
             if self.error: raise ValueError(self.error)
             body = self.bodies.get(control['part'])
             if not body or body.get('anchored'): raise ValueError('This handle no longer moves')
-            force = control['force_n'] if pressed else [0.,0.,0.]
+            force = [v*value for v in control['force_n']] if pressed else [0.,0.,0.]
             self._pull_queue[body['name']] = (list(body['position_m']),list(force))
             if pressed: self._switch_force_until[body['name']] = time.monotonic()+1.
             else: self._switch_force_until.pop(body['name'],None)
             self.last_used=self.last_action=time.monotonic(); self.lock.notify_all()
-        return dict(name=name,pressed=pressed,force_n=list(force))
+        return dict(name=name,pressed=pressed,value=value,force_n=list(force))
 
     def play(self, running, speed=None):
         with self.lock:

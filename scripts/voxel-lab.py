@@ -355,7 +355,7 @@ class Handler(BaseHTTPRequestHandler):
     r=host.get(data.get('session')).play(bool(data.get('running')),data.get('speed'))
    elif op=='pull':r={'ok':True,**host.get(data.get('session')).pull(data.get('body'),data.get('at'),data.get('force'))}
    elif op=='mechanical_switch_pull':r={'ok':True,**host.get(data.get('session')).mechanical_switch_pull(data.get('name'),data.get('body'),data.get('at'),data.get('force'))}
-   elif op=='player_control':r={'ok':True,**host.get(data.get('session')).player_control(data.get('name'),data.get('pressed'))}
+   elif op=='player_control':r={'ok':True,**host.get(data.get('session')).player_control(data.get('name'),data.get('pressed'),data.get('value',1))}
    elif op=='electrical_switch':
     if type(data.get('closed')) is not bool:raise ValueError('Switch state must be true or false')
     r={'ok':True,**host.get(data.get('session')).electrical_switch(data.get('name'),data['closed'])}
@@ -487,8 +487,8 @@ class Handler(BaseHTTPRequestHandler):
     placed=data.get('placements') or []
     if data.get('action') is not None:
      action=data['action']
-     if not isinstance(action,dict) or not {'part','label','key','force_local_n'}<=set(action) or set(action)-{'part','label','key','force_local_n','location'}:raise ValueError('Choose a handle, label, shortcut, location and hand force')
-     placed=object_actions.configure(level,placed,action['part'],action['label'],action['key'],action['force_local_n'],action.get('location','auto'))
+     if not isinstance(action,dict) or not {'part','label','key','force_local_n'}<=set(action) or set(action)-{'part','label','key','force_local_n','location','mode'}:raise ValueError('Choose a handle, label, shortcut, control type, location and hand force')
+     placed=object_actions.configure(level,placed,action['part'],action['label'],action['key'],action['force_local_n'],action.get('location','auto'),action.get('mode','hold'))
     _,_,_,compiled=machine_game._assemble(level,placed)
     r={'ok':True,'targets':object_actions.targets(compiled),'placements':placed}
    elif op=='sandbox_object':

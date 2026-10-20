@@ -9,6 +9,7 @@ const pieces={plank:'a plank',ramp:'a ramp',knife:'a swinging knife',mirror:'mir
   wall_peg:'a round deflector peg',wall_water_wheel:'a paddle wheel',wall_marble:'a marble',
   wall_funnel:'a wall funnel',wall_lever:'a wall seesaw',wall_water_tank:'a wall water tank',wall_pendulum:'a hinged arm with a square weight (the bob)'};
 export const LEVEL_MECHANISMS=Object.freeze({
+  'easy-power-selector':'The knob moves a spring-loaded metal contact across Low, Medium and High resistor pads. High lets more current reach the bulb; gaps turn it off. In Run, drag left or right, then let go to keep the setting.',
   'pinball-01':'Gravity rolls the ball down the angled deck. The green box is recessed into the table: the ball must drop through its opening and settle inside.',
   'pinball-02':'A solid rail redirects the marble through contact. Put it across the marble’s downhill path and point its lower end toward the green opening. The marble must drop into the recessed box and settle inside.',
   'pinball-03':'Holding the launcher compresses an axial spring. Release removes your hand force; the spring pushes the rod into the ball.',

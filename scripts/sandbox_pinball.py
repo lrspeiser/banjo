@@ -135,7 +135,7 @@ def button(name,k,ctx):
         terminals={'in':[x-.05,.20,z-.044],'out':[x+.045,.1775,z+.075]},
         terminal_normals={'in':[0,0,-1],'out':[0,0,1]})
     return finish(dict(parts=[base,pad,cap,post],joints=joints,electrical=dict(devices=[device]),
-        **hold(name,cap['name'],[0,-30,0],k.get('label','Press button'),k.get('key',''))),k)
+        **hold(name,cap['name'],[0,-30,0],k.get('label','Press button'),k.get('key',''),location='surface')),k)
 
 
 def plunger(name,k,ctx):
@@ -164,7 +164,7 @@ def plunger(name,k,ctx):
     joints.append(dict(name=name+' stop joint',kind='fix',a=throat_mount['name'],b=throat['name'],at_m=[x+.046,.16,z+.035]))
     stops=[throat,throat_mount]
     return finish(dict(parts=[anchor,support,pusher,*stops],joints=joints,
-        **hold(name,pusher['name'],[0,0,-120],'Pull launcher · release to shoot',k.get('key',''))),k)
+        **hold(name,pusher['name'],[0,0,-120],'Pull launcher · release to shoot',k.get('key',''),location='near')),k)
 
 
 def bumper(name,k,ctx):

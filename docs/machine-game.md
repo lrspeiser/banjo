@@ -1,5 +1,27 @@
 # Puzzles on the machine (/play)
 
+## Device inputs and rotary power lesson — October 19
+
+Pinball's Left/Right controls sit on its real contact caps; the launcher
+control sits beside the shooter. This also updates the layout of older
+ready-made tables while preserving custom bindings. Held controls still
+operate the physical mechanism, with simultaneous touch and the same keys.
+The action editor adds a signed **Drag to turn both ways** input and On-device /
+Near-handle placement. Other spring releases now use near-device callouts.
+Sandbox **Wiring** adds reusable Push button and Rotary power selector tools.
+**Turn up the lamp** in Electricity asks for the missing return wire and
+a live turn from Low to High, rather than a setup-only rating change.
+Its 2 W for 0.4 s goal and eight-second deadline are authored for this lesson.
+Its reference uses 2.622 J (operator work included), rounded up to a 2.63 J par.
+All three reference/nudged runs win at 1.033 s; wrong wiring fails all three,
+and the correct wire without any handle input fails.
+See [the shared inputs, physics and material/timestep qualification](object-actions.md).
+Browser checks cover mouse and touch on 1280×860, 390×844 and 844×390, including
+simultaneous flippers, launcher release, wired selector completion, saved action
+edits, Undo/Redo and explicit bottom-bar paging. API checks cover production and
+`/test` routing. All 75 reference solutions meet their own goals and energy pars;
+this is not a repeat of every older level's nudged or blind-user trials.
+
 ## Compact navigation — October 19
 
 The Levels chooser no longer repeats Sandbox and the Pinball project as large

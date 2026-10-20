@@ -12,8 +12,12 @@ describe its current mechanics and the proposed lessons for building it graduall
 
 Sandbox builders can attach held actions to real hinged/sliding handles through
 **Design → Object actions · advanced**, or select a handle and choose **Actions**.
-Choose its label, optional key and button location: Auto, Beside object or Bottom
-bar. Pinball starts with its buttons ready. The word builder uses the same saved
+Choose its label, optional key, Hold/Turn input and location: On the device,
+Near the handle, At the scene edge or Bottom bar. Pinball's flipper controls
+sit on its physical caps; its shooter control sits beside the launcher.
+Sandbox's Wiring library also has a Push button and Rotary power selector;
+**Turn up the lamp** teaches the selector in Electricity.
+Pinball starts with its buttons ready. The word builder uses the same saved
 catalogue bindings; no programming is required to play the table. See
 [object actions](docs/object-actions.md) for the physical model and qualification.
 

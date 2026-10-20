@@ -66,6 +66,7 @@ PLAYER_TASK_COUNTS = {
     'easy-tackle': 5, 'easy-water-wheel': 1, 'easy-river-wheel': 1, 'easy-spring': 2,
     'easy-gears': 2, 'easy-weight': 1, 'easy-motor': 1, 'easy-power': 3,
     'easy-switch': 2, 'easy-bulb': 1, 'easy-loop': 1,
+    'easy-power-selector': 2,
     'easy-water-receiver': 1, 'easy-divert-water': 1, 'easy-heat': 3, 'easy-catapult': 1,
     'easy-marble-light': 1, 'easy-water-gate': 3, 'easy-charge-lift': 2,
     'easy-river-lift': 2, 'advanced-resistor':1,'advanced-parallel':4,'advanced-capacitor':1,

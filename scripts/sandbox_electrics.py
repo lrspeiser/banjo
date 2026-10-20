@@ -1278,3 +1278,88 @@ TEMPLATES.extend([
          base=copy.deepcopy(next(lv['machine'] for lv in EASY_LEVELS if lv['id']=='advanced-parallel')),placements=[],
          pieces=['resistor','capacitor','bulb','battery','wire'])])
 _marble_lesson['hints'][0]=_marble_lesson['brief']
+
+
+def push_button(name,k,ctx):
+    """The same real contact button on a flat bench, independent of Pinball."""
+    from sandbox_pinball import button
+    return button(name,dict(k,slope_deg=0,table_height_m=.01),ctx)
+
+
+def rotary_selector(name,k,ctx):
+    """A frictional metal wiper selecting three actual resistor/contact paths.
+
+    The operator turns the offset grip with bounded hand force. Contact, not
+    angle comparisons or UI state, connects a path. Gaps between pads are off.
+    Resistors retain the existing lumped thermal/circuit model.
+    """
+    from object_actions import hold
+    x,z=k.get('x_m',0),k.get('z_m',0)
+    angle=math.radians(k.get('angle_deg',-50))
+    base=name+' base';wiper=name+' wiper';grip=name+' knob';bus=name+' output'
+    centre=[x+.10*math.cos(angle),.20,z-.10*math.sin(angle)]
+    parts=[box(base,[x-.285,.05,z],[.07,.10,.64],'ceramic'),
+        box(name+' right frame',[x+.285,.05,z],[.07,.10,.64],'ceramic'),
+        box(name+' front frame',[x,.05,z+.285],[.50,.10,.07],'ceramic'),
+        box(name+' rear frame',[x,.05,z-.285],[.50,.10,.07],'ceramic'),
+        box(name+' bearing',[x,.155,z],[.06,.06,.06],'ceramic'),
+        dict(name=wiper,shape='compound',material='aluminum',fixed=False,at_m=centre,
+             turn_deg=[0,k.get('angle_deg',-50),0],color_rgba=0x53cabcff,parts=[
+                 dict(shape='box',at_m=[.02,0,0],size_m=[.24,.01,.018])]),
+        dict(name=grip,shape='compound',material=k.get('handle_material','aluminum'),fixed=False,
+             at_m=[centre[0],.25,centre[2]],turn_deg=[0,k.get('angle_deg',-50),0],color_rgba=0x53cabcff,
+             parts=[dict(shape='sphere',at_m=[0,0,0],size_m=[.065]*3)]),
+        box(bus,[x-.28,.16,z+.20],[.06,.08,.20])]
+    devices=[dict(name=name,kind='socket',part=base,
+        terminals={'plus':[x-.012,.20,z],'minus':[x-.28,.16,z+.305]},
+        terminal_parts={'plus':wiper,'minus':bus},terminal_normals={'plus':[-1,0,0],'minus':[0,0,1]})]
+    contacts=[];wires=[];mountings=[]
+    for index,(angle,resistance,label,color) in enumerate([(-50,96,'Low',0x66b5ffff),(0,24,'Medium',0xffd36aff),(50,2,'High',0xff8066ff)]):
+        a=math.radians(angle);px=x+.20*math.cos(a);pz=z-.20*math.sin(a)
+        pad=name+' '+label.lower();body=pad+' pad'
+        parts.append(dict(name=body,shape='compound',material='iron',fixed=True,at_m=[px,.16,pz],
+            color_rgba=color,parts=[dict(shape='sphere',at_m=[0,0,0],size_m=[.07]*3)]))
+        mountings.append(dict(name=pad+' mounting',kind='fix',a=base,b=body,at_m=[px,.16,pz]))
+        devices.append(dict(name=pad,kind='resistor',part=body,resistance_ohm=resistance,
+            terminals={'a':[px,.195,pz],'b':[px,.122,pz]},terminal_parts={'a':body,'b':body},
+            terminal_normals={'a':[0,1,0],'b':[0,-1,0]}))
+        contacts.append(dict(name=name+' '+label.lower()+' contact',a=name+':plus',b=pad+':a',
+            touch=[wiper,body],resistance_ohm=.001))
+        wires.append(dict(name=name+' '+label.lower()+' return',a=pad+':b',b=name+':minus'))
+    joints=[dict(name=name+' dial axle',kind='hinge',a=name+' bearing',b=grip,at_m=[x,.25,z],
+        axis=[0,1,0],lower_deg=-55-k.get('angle_deg',-50),upper_deg=55-k.get('angle_deg',-50),friction_n_m=.03),
+        dict(name=name+' contact slide',kind='slide',a=grip,b=wiper,at_m=centre,axis=[0,1,0],lower_m=-.01,upper_m=.01,friction_n=.01),
+        dict(name=name+' contact spring',kind='spring',a=grip,b=wiper,
+             at_m=[centre[0],.24,centre[2]],at_b_m=centre,rest_m=.043,stiffness_n_m=100,damping_n_s_m=2)]+mountings
+    return dict(parts=parts,joints=joints,electrical=dict(devices=devices,wires=wires,contacts=contacts),
+        **hold(name,grip,[0,0,-6],k.get('label','Turn power selector'),location='near',mode='turn'))
+
+
+PIECES.update(push_button=connected(push_button),rotary_selector=connected(rotary_selector))
+TRAY.extend([
+    dict(piece='push_button',title='Push button',description='Hold the visible metal cap to close a real contact; its spring opens it when released. Wire it in series with a lamp or motor.',
+        count=20,cost=0,sandbox_builder=True,turning=False,across=False,knobs=dict(x_m=knob(0,-5,5,.01,'across (m)'),z_m=knob(0,-5,5,.01,'along (m)'))),
+    dict(piece='rotary_selector',title='Rotary power selector',description='Turn its metal wiper over Low, Medium or High resistor pads. Real contact selects the circuit path; gaps are off. Connect its two sockets in series with a load.',
+        count=20,cost=0,sandbox_builder=True,turning=False,across=False,knobs=dict(x_m=knob(0,-5,5,.01,'across (m)'),z_m=knob(0,-5,5,.01,'along (m)'),
+            angle_deg=knob(-50,-55,55,5,'Starting knob angle (degrees)')))])
+
+
+def selector_bench():
+    s=empty('Turn up the lamp');s['physics_dt_s']=1/480
+    for make,name,k in [(rotary_selector,'power selector',{}),(battery,'supply',dict(x_m=-.8,z_m=-.4)),
+                        (bulb,'lamp',dict(x_m=.8,z_m=.4))]:
+        fragment=make(name,k,{})
+        merge(s,fragment)
+        s.setdefault('player_controls',[]).extend(fragment.get('player_controls',[]))
+    link(s,'selector feed','supply:plus','power selector:plus')
+    link(s,'selector load','power selector:minus','lamp:plus')
+    return s
+
+
+_selector_lesson=easy('easy-power-selector','Turn up the lamp',
+    'Connect the lamp’s minus socket to the supply’s minus socket. Choose Run, then drag the power selector right to High until the lamp receives 2 W. The gaps between contacts turn it off.',
+    selector_bench(),tray('wire'),dict(piece='wire',a_terminal='lamp:minus',b_terminal='supply:minus'),
+    dict(load_power_w=dict(device='lamp',at_least_w=2,for_s=.4)),dict(piece='wire',a_terminal='lamp:minus',b_terminal='supply:plus'),seconds=8)
+_selector_lesson.update(par_energy_j=2.63,solution_actions=[dict(name='power selector',at_s=.2,pressed=True,value=1),
+    dict(name='power selector',at_s=1.0,pressed=False)],camera_min_m=2.5)
+EASY_LEVELS.append(_selector_lesson)

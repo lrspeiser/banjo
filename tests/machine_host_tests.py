@@ -146,8 +146,11 @@ class Requests(unittest.TestCase):
         self.assertEqual(configured['placements'][0]['piece'],'object_action')
         self.assertEqual(configured['placements'][0]['location'],'object')
         self.assertEqual(next(t['control']['label'] for t in configured['targets'] if t['part']=='left button button'),'Tap')
+        status,turning=command(level='free',base=base,placements=[],action=dict(action,mode='turn',location='surface'))
+        self.assertEqual(status,200,turning)
+        self.assertEqual(turning['placements'][0]['mode'],'turn')
         for change,expected in ((dict(force_local_n=[0,-121,0]),422),(dict(key='Escape'),422),
-                                (dict(part='pinball table frame'),422),(dict(location='centre'),422),(dict(script='animate'),400)):
+                                (dict(part='pinball table frame'),422),(dict(location='centre'),422),(dict(mode='script'),422),(dict(script='animate'),400)):
             status,_=command(level='free',base=base,placements=[],action=dict(action,**change))
             self.assertEqual(status,expected)
         status,_=command(level='easy-switch',placements=[],action=action)

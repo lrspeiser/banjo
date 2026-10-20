@@ -1,5 +1,51 @@
 # Object actions
 
+## Controls on the device — October 19
+
+Pinball's ready-made flipper touch targets sit on its physical button caps.
+The launcher control sits close to its rod, with a leader. Older ready-made
+Pinball controls use this layout without changing their saved geometry or
+overriding custom action bindings. Arrow keys, Space and simultaneous touch
+continue to apply the same bounded operator forces.
+
+The shared action editor offers **Hold to press** and **Drag to turn both ways**,
+and locations **On the device**, **Near the handle**, **At the scene edge** and
+**Bottom bar**. Auto uses the edge. A turning input scales the declared hand
+force by −1 to +1; release removes it. It does not set the handle's angle or
+electrical state. Native friction/contact decides where the released handle
+stays. Run, Pause, cancellation, blur and the one-second input lease apply to
+both types. The UI renews a held input every 200 ms. Spring-release controls
+use the same near-device layout, while their existing ideal restraint-release
+operation is unchanged; they are not newly modelled electromagnetic latches.
+
+**Wiring** in Sandbox now includes **Push button**, the flat-bench version of
+the Pinball contact mechanism, and **Rotary power selector**. The push button
+is a momentary, spring-return contact: wire it in series with a load. The
+selector has a real hinged grip, vertically compliant aluminum wiper, contact
+spring and three rounded iron contacts with separate 96, 24 and 2 ohm resistor
+paths. Its flexible return leads run through the open mounting frame below
+the wiper. Two sockets connect the whole selector in series with a load.
+Gaps between contacts are open circuits. This is a stepped selector, not a
+continuous potentiometer, PWM controller or a source of electrical power.
+
+The native circuit's body-contact query chooses the connected branch; no
+angle threshold, prescribed angle, current or velocity makes it succeed.
+Resistors use the existing lumped circuit/thermal model. Mountings and joints
+remain ideal; contact arcing, wear, resolved spring-wire stress and insulation
+breakdown are not modelled. Saved catalogue actions and the word builder use
+the same `mode` (`hold`/`turn`) and `location` (`auto`/`surface`/`near`/`object`/`dock`).
+Ordinary lessons expose authored controls, while the binding editor stays in
+Sandbox. **Turn up the lamp** teaches the selector and its return wire.
+
+At both 1/480 and 1/960 s, the same metal wiper with glass, oak and iron grip
+spheres reaches High under a 6 N hand input, stays there after release, and
+returns to Low under the reversed input. The 12 V/3 W lamp receives about
+0.333 W at Low, 1.330 W at Medium and 2.754 W at High; a contact gap or empty
+supply gives zero power within 1 nW. The six material/timestep cycling trials
+keep electrical residual below 1e−8 J. Native operator-work and circuit ledgers
+are recorded separately; these are subsystem checks, not a full mechanical
+energy or momentum conservation proof. No new native force law was introduced.
+
 October 19, 2026. Sandbox makers and the word builder now share `object_action`,
 a saved catalogue binding to a real moving hinged/sliding handle. It gives the
 player a held button and an optional keyboard shortcut. This is an operator
@@ -17,10 +63,9 @@ eligible Sandbox object and choose **Actions** beside Move and Turn. Set:
 - A player-facing label of 1–60 characters.
 - An optional shortcut: arrows, Space, A/D/W/S/E/Q. Shortcuts must be distinct.
 - Push direction in the handle's initial local axes and force from 1 to 120 N.
-- **Auto**, **Beside object**, or **Bottom bar** for its screen location.
+- A control type and screen location, described above.
 
-Auto uses the fixed bottom row for Pinball and an edge callout for other
-machines. Beside object always uses the edge callout with a thin leader to the
+Auto uses an edge callout. At the scene edge uses a thin leader to the
 moving handle; the layout avoids apparatus and other controls where space
 permits. Bottom bar stays fixed while the camera moves. More than three docked
 actions use pages, with two per page on narrow screens and three on desktop.
@@ -60,8 +105,8 @@ automation, latch programming or a new constitutive law.
 
 The existing structured add/edit operations accept `object_action`. The builder
 receives eligible handles and current bindings in `environment.action_targets`.
-It supplies `part`, `label`, `key`, `location` (`auto`, `object`, `dock`) and
-`push_x_n`, `push_y_n`, `push_z_n`. Added-tool aliases resolve through the same
+It supplies `part`, `label`, `key`, `location` (listed above) and
+`push_x_n`, `push_y_n`, `push_z_n` and optional `mode`. Added-tool aliases resolve through the same
 reference system as wires: a `pinball_button` with ID `press` exposes
 `press button`. Human edits and word proposals use the same composition and
 compiler checks. API replies list manual inputs separately. Ordinary builder

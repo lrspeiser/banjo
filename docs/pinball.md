@@ -87,8 +87,9 @@ negative control. Reset currently restores the initial setup instead.
 
 The prepared controls now use the shared [object-action framework](object-actions.md).
 Keep them as supplied to play, or change their label, shortcut, force and screen
-location under **Design → Object actions · advanced**. Auto keeps this table's
-buttons in the bottom row. Custom bindings and the word builder use the same
+location under **Design → Object actions · advanced**. The ready-made flipper
+controls now sit on the physical caps, and the shooter control follows the
+launcher nearby. Custom bindings and the word builder use the same
 catalogue tool. Building such inputs can be taught in an advanced lesson later;
 no new training lesson is shipped here.
 
@@ -101,8 +102,8 @@ window blur and Pause let go; the server expires an unrenewed force after one
 second. Text inputs retain their ordinary keyboard behavior.
 
 The opening camera faces the player end of the table from above, with the
-named left paddle on screen left. Controls stay in one row along the scene's
-lower edge. Run gives the table more screen space and hides setup wiring labels;
+named left paddle on screen left. Controls follow their handles as the camera
+moves. Run gives the table more screen space and hides setup wiring labels;
 Build restores them for inspection. The glass guard remains a physical collider
 even though its transparent surface allows selecting the mechanisms beneath it.
 

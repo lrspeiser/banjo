@@ -1114,8 +1114,30 @@
       }
     },
     {
-      "id": "easy-switch",
+      "id": "easy-power-selector",
       "rank": 47,
+      "estimated_minutes": [
+        2,
+        5
+      ],
+      "primary_controls": {
+        "wire": [
+          "a_terminal",
+          "b_terminal"
+        ]
+      },
+      "chapter": "Level 3: Electricity",
+      "lesson_controls": {
+        "wire": [
+          "a_terminal",
+          "b_terminal"
+        ]
+      },
+      "estimate_basis": "Author interface assessment, October 19, 2026; not yet probed; not measured human completion times."
+    },
+    {
+      "id": "easy-switch",
+      "rank": 48,
       "estimated_minutes": [
         2,
         5
@@ -1135,7 +1157,7 @@
     },
     {
       "id": "easy-marble-light",
-      "rank": 48,
+      "rank": 49,
       "estimated_minutes": [
         2,
         6
@@ -1155,7 +1177,7 @@
     },
     {
       "id": "easy-power",
-      "rank": 49,
+      "rank": 50,
       "estimated_minutes": [
         3,
         8
@@ -1182,7 +1204,7 @@
     },
     {
       "id": "advanced-parallel",
-      "rank": 50,
+      "rank": 51,
       "estimated_minutes": [
         4,
         9
@@ -1202,7 +1224,7 @@
     },
     {
       "id": "advanced-capacitor",
-      "rank": 51,
+      "rank": 52,
       "estimated_minutes": [
         4,
         10
@@ -1223,7 +1245,7 @@
     },
     {
       "id": "easy-solar",
-      "rank": 52,
+      "rank": 53,
       "estimated_minutes": [
         4,
         10
@@ -1256,7 +1278,7 @@
     },
     {
       "id": "easy-charge-lift",
-      "rank": 53,
+      "rank": 54,
       "estimated_minutes": [
         5,
         12
@@ -1288,7 +1310,7 @@
     },
     {
       "id": "sun",
-      "rank": 54,
+      "rank": 55,
       "estimated_minutes": [
         8,
         20
@@ -1320,7 +1342,7 @@
     },
     {
       "id": "easy-water-receiver",
-      "rank": 55,
+      "rank": 56,
       "estimated_minutes": [
         2,
         5
@@ -1341,7 +1363,7 @@
     },
     {
       "id": "easy-river-wheel",
-      "rank": 56,
+      "rank": 57,
       "estimated_minutes": [
         2,
         5
@@ -1361,7 +1383,7 @@
     },
     {
       "id": "easy-water-wheel",
-      "rank": 57,
+      "rank": 58,
       "estimated_minutes": [
         2,
         6
@@ -1384,7 +1406,7 @@
     },
     {
       "id": "easy-river-lift",
-      "rank": 58,
+      "rank": 59,
       "estimated_minutes": [
         3,
         7
@@ -1406,7 +1428,7 @@
     },
     {
       "id": "easy-water-gate",
-      "rank": 59,
+      "rank": 60,
       "estimated_minutes": [
         4,
         10
@@ -1440,7 +1462,7 @@
     },
     {
       "id": "easy-divert-water",
-      "rank": 60,
+      "rank": 61,
       "estimated_minutes": [
         5,
         12
@@ -1461,7 +1483,7 @@
     },
     {
       "id": "steam",
-      "rank": 61,
+      "rank": 62,
       "estimated_minutes": [
         3,
         7
@@ -1482,7 +1504,7 @@
     },
     {
       "id": "easy-heat",
-      "rank": 62,
+      "rank": 63,
       "estimated_minutes": [
         4,
         10
@@ -1511,7 +1533,7 @@
     },
     {
       "id": "chain",
-      "rank": 63,
+      "rank": 64,
       "estimated_minutes": [
         5,
         12
@@ -1536,7 +1558,7 @@
     },
     {
       "id": "fire",
-      "rank": 64,
+      "rank": 65,
       "estimated_minutes": [
         6,
         15
@@ -1568,7 +1590,7 @@
     },
     {
       "id": "pinball-01",
-      "rank": 65,
+      "rank": 66,
       "chapter": "Project: Build a Pinball Machine",
       "estimated_minutes": [
         2,
@@ -1590,7 +1612,7 @@
     },
     {
       "id": "pinball-02",
-      "rank": 66,
+      "rank": 67,
       "chapter": "Project: Build a Pinball Machine",
       "estimated_minutes": [
         2,
@@ -1614,7 +1636,7 @@
     },
     {
       "id": "pinball-03",
-      "rank": 67,
+      "rank": 68,
       "chapter": "Project: Build a Pinball Machine",
       "estimated_minutes": [
         2,
@@ -1634,7 +1656,7 @@
     },
     {
       "id": "pinball-04",
-      "rank": 68,
+      "rank": 69,
       "chapter": "Project: Build a Pinball Machine",
       "estimated_minutes": [
         2,
@@ -1658,7 +1680,7 @@
     },
     {
       "id": "pinball-05",
-      "rank": 69,
+      "rank": 70,
       "chapter": "Project: Build a Pinball Machine",
       "estimated_minutes": [
         2,
@@ -1678,7 +1700,7 @@
     },
     {
       "id": "pinball-06",
-      "rank": 70,
+      "rank": 71,
       "chapter": "Project: Build a Pinball Machine",
       "estimated_minutes": [
         2,
@@ -1698,7 +1720,7 @@
     },
     {
       "id": "pinball-07",
-      "rank": 71,
+      "rank": 72,
       "chapter": "Project: Build a Pinball Machine",
       "estimated_minutes": [
         2,
@@ -1720,7 +1742,7 @@
     },
     {
       "id": "pinball-08",
-      "rank": 72,
+      "rank": 73,
       "chapter": "Project: Build a Pinball Machine",
       "estimated_minutes": [
         2,
@@ -1740,7 +1762,7 @@
     },
     {
       "id": "pinball-09",
-      "rank": 73,
+      "rank": 74,
       "chapter": "Project: Build a Pinball Machine",
       "estimated_minutes": [
         2,
@@ -1764,7 +1786,7 @@
     },
     {
       "id": "pinball-10",
-      "rank": 74,
+      "rank": 75,
       "chapter": "Project: Build a Pinball Machine",
       "estimated_minutes": [
         2,

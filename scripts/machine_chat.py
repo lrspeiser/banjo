@@ -470,9 +470,12 @@ label, key and push_x_n/push_y_n/push_z_n. Force is in that handle's initial loc
 and acts at its centre of mass while the player holds the button during Run. For example, a pinball_button
 with id press has part "press button"; bind that to [0,-30,0]. Use a real wired switch, battery and motor
 for a powered flipper, not a force on its centred axle. One action per handle; edit the existing object_action
-to change it. Empty key means on-screen only; shortcuts must be distinct. location is auto, object or dock:
-auto docks Pinball actions and places others beside their object with a leader line; object always uses
-the edge callout, dock always uses the fixed bottom bar. A binding on a prepared handle
+to change it. Empty key means on-screen only; shortcuts must be distinct. mode is hold (held push) or turn
+(a signed hand force while the player drags either way). location is surface (on the device), near
+(close to its handle), object (edge callout), dock (bottom bar), or auto (edge callout).
+Use push_button for a reusable spring-return metal contact and rotary_selector for a three-step power
+control. Wire the selector's plus/minus sockets in series with a load. Its metal wiper must physically
+touch a resistor pad; gaps are off. It does not create power. A binding on a prepared handle
 replaces its ready-made action. No actions are pressed during the ordinary rehearsal. Explain what the
 player should hold/release without claiming that this interactive behavior was rehearsed.
 Use patterns for repeated wall-mounted tools, such as staggered rows of pegs for Plinko. A pattern expands
@@ -1302,7 +1305,7 @@ def respond_free(message, level, placements, call=None, rehearse=None,active_wal
     out = {'ok': True, 'reply': answer['reply'], 'placements': placed, 'usage': usage,
            'limitations':answer.get('limitations',[]),'patterns':list(pattern_reports.values())}
     if compiled.get('player_controls'):
-        out['manual_actions']=[dict(label=c['label'],part=c['part'],key=c['key']) for c in compiled['player_controls']]
+        out['manual_actions']=[dict(label=c['label'],part=c['part'],key=c['key'],mode=c.get('mode','hold'),location=c.get('location','auto')) for c in compiled['player_controls']]
         if rehearsal is not None:rehearsal.update(manual_actions_operated=False)
     if rehearsal is not None:out['rehearsal']=rehearsal
     return out

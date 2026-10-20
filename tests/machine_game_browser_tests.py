@@ -3076,12 +3076,10 @@ class Puzzles(unittest.TestCase):
                 self.navigate(self.base+'/machine?design='+saved);self.wait('machinePlacements().length===1 && '+READY,60)
                 self.assertEqual(self.js('machinePlacements()[0].label'),'Tap')
                 self.click_visible('Run')
-                self.wait("document.querySelector('#player-controls [data-control]')&&!document.querySelector('#player-controls [data-control]').disabled",30)
-                self.assertEqual(self.js("[...document.querySelectorAll('#player-controls [data-control]')].map(b=>b.textContent)"),
-                    ['Right flipper','Pull launcher · release to shoot'])
-                self.wait("document.querySelector('.object-action-card button')?.checkVisibility()",30)
-                self.assertEqual(self.js("document.querySelector('.object-action-card button').textContent"),'Tap')
-                bounds=self.js("(()=>{const c=document.querySelector('.object-action-card'),r=c.getBoundingClientRect(),v=document.getElementById('view').getBoundingClientRect(),b=c.querySelector('button').getBoundingClientRect();return {inside:r.left>=v.left&&r.right<=v.right+1&&r.top>=v.top&&r.bottom<=v.bottom+1,edge:Math.min(r.left-v.left,v.right-r.right,r.top-v.top,v.bottom-r.bottom),w:b.width,h:b.height,leader:[...document.querySelectorAll('#object-control-leaders line')].some(l=>l.style.display!=='none'&&Number(l.getAttribute('x1'))>0)}})()")
+                self.wait("document.querySelector('#view [data-control]')&&!document.querySelector('#view [data-control]').disabled",30)
+                self.assertEqual(self.js("document.querySelectorAll('#player-controls [data-control]').length"),0)
+                self.wait("[...document.querySelectorAll('.object-action-card button')].some(b=>b.textContent==='Tap'&&b.checkVisibility())",30)
+                bounds=self.js("(()=>{const c=[...document.querySelectorAll('.object-action-card')].find(c=>c.querySelector('button').textContent==='Tap'),r=c.getBoundingClientRect(),v=document.getElementById('view').getBoundingClientRect(),b=c.querySelector('button').getBoundingClientRect();return {inside:r.left>=v.left&&r.right<=v.right+1&&r.top>=v.top&&r.bottom<=v.bottom+1,edge:Math.min(r.left-v.left,v.right-r.right,r.top-v.top,v.bottom-r.bottom),w:b.width,h:b.height,leader:[...document.querySelectorAll('#object-control-leaders line')].some(l=>l.style.display!=='none'&&Number(l.getAttribute('x1'))>0)}})()")
                 self.assertTrue(bounds['inside'],bounds);self.assertLess(bounds['edge'],30,bounds)
                 self.assertGreaterEqual(bounds['w'],44);self.assertGreaterEqual(bounds['h'],44);self.assertTrue(bounds['leader'])
                 (proof/f'object-action-edge-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
@@ -3107,8 +3105,8 @@ class Puzzles(unittest.TestCase):
                 self.js("document.getElementById('object-action-location').value='dock'")
                 self.click_visible('Save action');self.wait("machinePlacements()[0]?.location==='dock' && "+READY,60)
                 self.click_visible('Run')
-                self.wait("document.querySelectorAll('#player-controls [data-control]').length===3 && !document.querySelector('#player-controls [data-control]').disabled",30)
-                self.assertEqual(self.js("document.querySelectorAll('.object-action-card').length"),0)
+                self.wait("document.querySelectorAll('#player-controls [data-control]').length===1 && !document.querySelector('#player-controls [data-control]').disabled",30)
+                self.assertEqual(self.js("document.querySelectorAll('.object-action-card').length"),2)
                 self.click_visible('Build');self.wait(READY,60);self.click_visible('Design')
                 if not self.js("document.getElementById('design-object-actions').open"):self.click_summary('#design-object-actions > summary')
                 self.click_visible('Edit action Tap')
@@ -3130,11 +3128,13 @@ class Puzzles(unittest.TestCase):
                 self.anonymous_levels(width=width,height=height)
                 owner=str(uuid.uuid4());design_id=str(uuid.uuid4());base=pinball.template()['base']
                 mg.merge_fragment(base,pinball.button('extra handle',dict(x_m=1.8,z_m=0,label='Extra handle'),{}))
+                base['presentation']['activity']='control workshop'
+                for control in base['player_controls']:control['location']='dock'
                 design=dict(id=design_id,name='Four controls',draft=dict(base=base,placements=[]),versions=[],nextVersion=1,at='2026-10-19T00:00:00Z')
                 self.server.profiles.create(owner,dict(sandbox=dict(items=[design],last=design_id)))
                 self.navigate(f'{self.base}/machine?visitor={owner}&design={design_id}');self.wait(READY,60)
                 self.click_visible('Run')
-                self.wait("document.querySelector('#player-controls [data-control]')&&!document.querySelector('#player-controls [data-control]').disabled",30)
+                self.wait("document.querySelector('#view [data-control]')&&!document.querySelector('#view [data-control]').disabled",30)
                 self.assertEqual(self.js("[...document.querySelectorAll('#player-controls [data-control]')].filter(b=>b.checkVisibility()).length"),2 if width<600 else 3)
                 self.click_visible('More object actions')
                 self.assertEqual(self.js("[...document.querySelectorAll('#player-controls [data-control]')].filter(b=>b.checkVisibility()).length"),2 if width<600 else 1)
@@ -3263,7 +3263,7 @@ class Puzzles(unittest.TestCase):
             self.press('Add a spring-return button');self.ghost()
             self.click_visible('Place');self.wait(READY,60)
             self.click_visible('Run')
-            self.wait("document.getElementById('player-controls').checkVisibility()",30)
+            self.wait("document.querySelector('#view [data-control]')?.checkVisibility()",30)
             self.reveal_control(self.button_expression('Press button'));self.paint()
             point=self.js(f"(()=>{{const r={self.button_expression('Press button')}.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];}})()")
             self.mouse('mousePressed',*point)
@@ -3300,6 +3300,40 @@ class Puzzles(unittest.TestCase):
     def test_pinball_catcher_on_phone_landscape(self):
         self._check_pinball_catcher(844,390)
 
+    def test_rotary_power_selector_wires_and_turns_by_mouse_and_touch(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.open('easy-power-selector',width,height,phone=width!=1280)
+                self.click_scene_socket('lamp:minus',touch=width!=1280);self.ghost()
+                self.click_scene_socket('supply:minus',touch=width!=1280)
+                self.wait('!machineGhostState() && '+READY,60)
+                self.click_visible('Run')
+                self.wait("document.querySelector('.turn-handle')?.checkVisibility()&&!document.querySelector('.turn-handle').disabled",30)
+                self.wait('machineCamera().settled',30);self.paint()
+                at=self.js("(()=>{const b=document.querySelector('.turn-handle'),r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height,hit:b.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}})()")
+                self.assertGreaterEqual(at['w'],44);self.assertGreaterEqual(at['h'],44)
+                self.assertTrue(at['hit'],at)
+                end=min(width-8,at['x']+80)
+                if width==1280:
+                    self.page.send('Input.dispatchMouseEvent',dict(type='mousePressed',x=at['x'],y=at['y'],button='left',buttons=1,clickCount=1))
+                    self.page.send('Input.dispatchMouseEvent',dict(type='mouseMoved',x=end,y=at['y'],button='left',buttons=1))
+                else:
+                    self.page.send('Input.dispatchTouchEvent',dict(type='touchStart',touchPoints=[dict(x=at['x'],y=at['y'],id=1)]))
+                    self.page.send('Input.dispatchTouchEvent',dict(type='touchMove',touchPoints=[dict(x=end,y=at['y'],id=1)]))
+                try:self.wait("document.body.classList.contains('scene-win')",15)
+                except AssertionError:
+                    q=self.server.machines.get(self.js('machineCableSetupState().session'))
+                    with q.lock:print('ROTARY INPUT DIAGNOSTIC '+json.dumps(dict(joints=q.readouts.get('joints'),pulls=q.readouts.get('pulls'))),flush=True)
+                    print('ROTARY UI '+json.dumps(self.js("({pressed:document.querySelector('.turn-handle').getAttribute('aria-pressed'),state:document.querySelector('.turn-contact-state').textContent})")),flush=True)
+                    raise
+                if width==1280:self.mouse('mouseReleased',end,at['y'])
+                else:self.page.send('Input.dispatchTouchEvent',dict(type='touchEnd',touchPoints=[]))
+                self.assertFalse(self.server.machines.get(self.js('machineCableSetupState().session'))._test_pulled)
+                self.click_visible('Close level complete')
+                self.assertIn('high',self.js("document.querySelector('.turn-contact-state').textContent"))
+                proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+                (proof/f'rotary-selector-{width}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
     def test_pinball_starter_live_buttons_launch_pause_reset_and_save(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
@@ -3310,7 +3344,11 @@ class Puzzles(unittest.TestCase):
                 saved=self.js('machineDesign().id')
                 self.assertIn('Hold the launcher',self.js("document.getElementById('scene-goal').textContent"))
                 self.click_visible('Run')
-                self.wait("document.getElementById('player-controls').checkVisibility() && !document.querySelector('#player-controls button').disabled",30)
+                self.wait("document.querySelector('#view [data-control]')?.checkVisibility() && !document.querySelector('#view [data-control]').disabled",30)
+                self.assertEqual(self.js("document.querySelectorAll('#player-controls [data-control]').length"),0)
+                for name in ('left button','right button'):
+                    aligned=self.js(f"(()=>{{const b=document.querySelector('[data-control={json.dumps(name)}]'),r=b.getBoundingClientRect(),p=machineBodyScreen({json.dumps(name+' button')});return Math.hypot(r.x+r.width/2-p[0],r.y+r.height/2-p[1]);}})()")
+                    self.assertLess(aligned,40,'flipper touch targets follow the physical caps')
                 self.assertFalse(self.js("document.getElementById('scene-sockets').checkVisibility()"))
                 self.assertLess(self.js("machineBodyScreen('left flipper paddle')[0]"),
                                 self.js("machineBodyScreen('right flipper paddle')[0]"))
@@ -3360,13 +3398,13 @@ class Puzzles(unittest.TestCase):
                 native_until(lambda s:s.bodies.get('pinball',{}).get('position_m',[0,0,-2])[2]>.1)
                 self.assertFalse(session._test_pulled,'Playing the declared controls is part of the machine')
                 self.click_visible('Pause')
-                self.wait("document.querySelectorAll('#player-controls [aria-pressed=true]').length===0",10)
+                self.wait("document.querySelectorAll('#view [data-control][aria-pressed=true]').length===0",10)
                 proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
                 (proof/f'pinball-{width}x{height}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
                 self.click_visible('Reset');self.wait(READY,90)
                 self.assertEqual(self.js('machineDesign().id'),saved)
                 self.assertEqual(self.js('machineCableSetupState().t'),0)
-                self.assertEqual(self.js('document.querySelectorAll("#player-controls [aria-pressed=true]").length'),0)
+                self.assertEqual(self.js('document.querySelectorAll("#view [data-control][aria-pressed=true]").length'),0)
                 self.assertFalse(self.js('document.documentElement.scrollWidth>innerWidth+1'))
 
     def test_wall_water_tools_add_the_channel_and_keep_sandbox_designs_editable(self):
@@ -8004,6 +8042,7 @@ class Puzzles(unittest.TestCase):
 def browser_test_batches(count):
     tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Puzzles))
     added={'test_wall_reset_restores_the_front_view_after_orbit','test_browser_batches_cover_every_case_once',
+           'test_rotary_power_selector_wires_and_turns_by_mouse_and_touch',
            'test_sandbox_object_actions_edit_save_undo_and_drive_the_real_button',
            'test_object_action_dock_pages_keep_touch_buttons_inside_the_scene',
            'test_pendulum_starts_with_visible_target_mount_and_finish_mark'}
