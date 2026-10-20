@@ -377,9 +377,9 @@ both builds have the same host and filesystem.
 
 ### Installing branch revisions
 
-The `test-site-package` GitHub Actions workflow builds the engine on a standard
-Ubuntu 24.04 runner, runs source registration, HTTP/co-host isolation and authored
-machine tests, and publishes the immutable prerelease asset
+The staging CI run builds the shared engine on a standard Ubuntu 24.04 runner,
+requires every verification group, checks installed-package HTTP/co-host isolation,
+and publishes the immutable prerelease asset
 `banjo-test-<40-character-SHA>/banjo-test.tar.gz`. It packages committed runtime
 sources, client files, documentation, the engine and checksummed build receipts.
 It includes no database, logs, local drafts or credentials. This repository is
@@ -428,11 +428,12 @@ drain the live outbox. Test bug reports remain pending in its separate outbox;
 confirmed Linear delivery remains a production check. Provider credentials are
 never packaged or sent to the browser.
 
-### Development and promotion
+### Earlier verification measurements
 
-CI runs sixteen browser batches on separate Ubuntu runners alongside the
-native test job. Each browser runner builds the checked-out engine and keeps
-the existing 1200-second batch deadline. The `build-and-test` check succeeds
+Before the October 20 changes above, CI ran sixteen browser batches on separate
+Ubuntu runners alongside the native test job. Each browser runner built the
+checked-out engine with the existing 1200-second batch deadline. The
+`build-and-test` check succeeded
 only when source registration, every non-browser native check and all sixteen
 browser batches succeed; failed, skipped or cancelled dependencies fail the
 gate. Native JUnit/floating-point evidence remains attached to the run, and
@@ -450,17 +451,21 @@ The final unbatched local run passes all 22 methods in 961.844 s. The partition
 check covers every method and all 23 native families exactly once; two native
 family batches additionally pass in 143.871 s and 60.018 s.
 
-CI runs those six recipe batches, sixteen browser batches and seven game
-integration groups on independent runners. The native CTest job excludes only
-those explicitly named groups; the aggregate release gate requires every group
-to succeed. Game integration keeps each suite's original 600-second deadline.
-The remaining C++/API/client checks stay in CTest, and ordinary local CTest still
-registers the complete suite. This changes verification scheduling, not the
-game's CPU allocation or Render hosting.
-The 149 browser scenarios retain all layouts and assertions. Sixteen disjoint
-batches replace eight because the earlier batch 2 reached its 1200-second total
+At that earlier checkpoint, CI ran six recipe batches, sixteen browser batches
+and seven game integration groups on independent runners. The native CTest job
+excluded only those explicitly named groups; the aggregate required every group
+to succeed. Game integration kept each suite's original 600-second deadline.
+The remaining C++/API/client checks stayed in CTest. The then-current 149 browser
+scenarios retained all layouts and assertions. Sixteen disjoint batches replaced
+eight because the earlier batch 2 reached its 1200-second total
 deadline after fifteen passing scenarios, before the remaining scenarios could
 finish. The per-batch 1200-second deadline and required release gate remain.
+
+### Development and promotion
+
+The current verification graph is described under **Faster verification** above.
+Local CTest registers the complete suite; the hosted graph changes scheduling,
+not the game's CPU allocation or Render hosting.
 
 1. Start a feature branch from current main, preserving unrelated changes.
 2. Verify its scope, update Recent Changes and integrate into `codex/staging`.
