@@ -296,7 +296,7 @@ PIECE_HELP = {
             'are in Controls → Settings → Precision controls. Native contact, not an ideal ratio, carries '
             'torque. It needs a separate powered wheel or motor; the moving Preview shows predicted contact.',
     'ignition': 'a hollow heating coil: first click the material’s Clip ring or Clip to cord button, '
-                'then choose its Warm (12 ohm) or Hot (0.12 ohm) winding and Place. '
+                'then open its Open controls panel → Heating power to choose Warm (12 ohm) or Hot (0.12 ohm), and Place device. '
                 'Draw supply + to heater + and heater - to supply - using the scene rings. '
                 'A clip alone supplies no current. Without attachment it heats its own housing. '
                 'Current, watts and the attached material temperature report native heating; '
@@ -1358,7 +1358,7 @@ def heater_setup_guide(level, spec, editing, targets):
         # Player piece names retain their stable placement row in composed scenes.
         match = re.fullmatch(r'your ignition (\d+)', coil['name'])
         if match:
-            return step('Click your heater to adjust it. Its Warm winding supplies much less heat; choose Hot for a faster release.', 'piece:'+str(int(match.group(1))-1))
+            return step('Click your heater, then Open controls → Heating power → Hot. Warm supplies much less heat; Hot gives a faster release. Apply settings, then Run.', 'piece:'+str(int(match.group(1))-1))
     graph = {}
     for wire in spec['electrical'].get('wires', []):
         graph.setdefault(wire['a'], set()).add(wire['b'])

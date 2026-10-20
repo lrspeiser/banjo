@@ -2879,18 +2879,19 @@ def game_test_batches():
            if isinstance(cls,type) and issubclass(cls,unittest.TestCase)
            for test in unittest.defaultTestLoader.loadTestsFromTestCase(cls)]
     engine=[test for test in cases if type(test) is Engine]
+    project=[test for test in cases if type(test) is PinballProject]
     return [engine[::2],engine[1::2],
-            [test for test in cases if type(test) is not Engine]]
+            [test for test in cases if type(test) not in (Engine,PinballProject)],project]
 
 
 if __name__ == '__main__':
     shard=next((arg for arg in sys.argv[1:] if arg.startswith('--shard=')),None)
     if shard:
         index,count=map(int,shard.split('=',1)[1].split('/'))
-        if count!=3 or not 0<=index<count:raise SystemExit('game batches use INDEX/3')
+        if count!=4 or not 0<=index<count:raise SystemExit('game batches use INDEX/4')
         sys.argv.remove(shard)
         batches=game_test_batches()
-        print(f'Game batch {index+1}/3: {len(batches[index])} of {sum(map(len,batches))} cases',flush=True)
+        print(f'Game batch {index+1}/4: {len(batches[index])} of {sum(map(len,batches))} cases',flush=True)
         result=unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(batches[index]))
         raise SystemExit(0 if result.wasSuccessful() else 1)
     unittest.main(verbosity=2)

@@ -1,5 +1,61 @@
 # Puzzles on the machine (/play)
 
+## Electrical device controls and safe cable selection — October 19
+
+**Open controls** beside a selected electrical tool opens a larger device panel.
+**Open device controls** in Controls lists devices by name, including small
+prepared parts, wall generators, solar inputs and older powered mechanisms.
+The panel explains the device, lists connected/unconnected terminals and shows
+its measured readings. Inspection during Run keeps the native session running;
+**Stop and edit settings** explicitly returns to the starting setup for editing.
+Close or Escape keeps the selection. Apply/Place uses the existing checked
+placement, Undo and anonymous saved-design flow.
+
+| Device audited | Settings in its tool panel | Why use a panel |
+| --- | --- | --- |
+| Heating coil | Warm/Hot heating power and attachment status | The clip is tiny; winding power is not a spatial dimension. |
+| Battery | Voltage, capacity, starting charge and supply limit | Electrical ratings need labels and units. |
+| Bulb | Size and rated preset where editable | Explain the rating alongside the actual current/power. |
+| Switch | Initial state or required paddle travel where editable | Keep the real Run-mode handle operation distinct from setup. |
+| Motor | Direction and throttle | Explain the powered axle and its load. |
+| Resistor | Resistance | Surface appearance does not communicate ohms. |
+| Capacitor | Capacitance, internal/leakage resistance | Several related ratings must be visible together. |
+| Solar panel / power input | Allowed aiming settings; sunlight, charge and connection status | Make the output/input and sunlight measurement discoverable. |
+| Generator / prepared powered mechanism | Inspection, shaft/contact/target and connection details | Reach small apparatus without requiring a precise scene click. |
+
+Level fields still follow `pieceKnobVisible` and the authored tray restrictions;
+locked apparatus remains inspection-only. Sandbox catalogue tools expose their
+full allowed settings, including construction choices. This is not an internal
+circuit editor for arbitrary prepared assemblies. It changes no material,
+geometry, collision, electrical or thermal law. Heat to release now directs
+players to **Open controls → Heating power → Hot**; its existing two real wires,
+cord breakage goal and 12-second deadline are unchanged. An unattached clip
+cannot bypass placement through this panel.
+
+Cable taps now inspect endpoints first. **Keep connected** or Escape leaves the
+setup untouched; **Disconnect wire** removes the selected lead explicitly and
+Undo restores it. **Wire settings** opens the existing gauge/stock editor.
+Solid device selection wins over an incidental cable hit. A wire action requires
+a fresh press inside its dialog, preventing the opening touch from activating
+an action under the same finger. Native cable gravity/contact/pull-out remain
+unchanged. Shared-course connections remain read-only.
+
+Focused browser qualification uses 1280×860, 390×844 and 844×390, actual scene
+sockets, checked field edits, saving/reopening and Undo. The native engine binary
+is unchanged. The previous Pinball checkpoint's Linux energy reference varied
+from 12,592,339.638 to 12,592,441.506 J; its complete-table par is now rounded up
+to three significant figures (12,600,000 J), matching the benchmark convention.
+Its physical goal/deadline and the existing 1% energy comparison are unchanged.
+The all-74-level reference-energy/goal check passes locally in 76.064 s.
+The final heater/live-temperature and safe-disconnect/Undo browser cases pass
+in 75.081 s across all three layouts. Six panel/save/catalogue cases pass in
+81.987 s; four prepared-device, battery, shared-course and Pinball selection
+compatibility cases pass in 214.069 s. The seven native Pinball project cases
+pass in 276.814 s, including all ten solutions with nudges and physical negatives.
+Pinball's seven construction tests also have a dedicated fourth CMake/CI game
+batch, rather than sharing the non-Engine batch that hit Linux's 600-second
+limit. All 131 game cases remain present exactly once; timeouts are unchanged.
+
 ## Build a Pinball Machine — October 19
 
 The chooser's Pinball project card and its ten-step chapter teach an angled
@@ -34,8 +90,8 @@ badges follow the selected object. Unselected devices no longer add data cards
 to the scene or Controls panel. Terminal rings and actual current indicators
 remain available; filtering readings does not change circuit flow rendering.
 While Run is active, clicking a device inspects it without picking it up or
-restarting the native world. Cable taps retain their existing removal behavior;
-select a cable through its placed-wire control to edit gauge and inspect it.
+restarting the native world. Cable taps now inspect first, with a separate
+Disconnect wire action; the placed-wire control still edits gauge and stock.
 No geometry, material, collision, circuit law or native force changes.
 
 Setup selection and inspection also use the displayed, interpolated mechanism

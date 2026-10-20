@@ -533,7 +533,7 @@ body.panel-tabs #clock{right:auto;max-width:calc(100% - 20px);padding:2px 6px;bo
 body.panel-tabs .scene-mode button{min-width:44px;padding:4px 6px;font-size:12px}
 #instrument-panel>summary{min-height:44px;display:flex;align-items:center}
 #precision-controls:not([open])>:not(summary){display:none!important}
-#instrument-panel #wire-mode{min-height:44px;padding:8px 14px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;font:14px system-ui;cursor:pointer}
+#instrument-panel :is(#wire-mode,#device-controls-open){min-height:44px;padding:8px 14px;background:#294c60;color:#e7f2f8;border:1px solid #63899d;border-radius:6px;font:14px system-ui;cursor:pointer}
 #instrument-panel #wire-mode[aria-pressed=true]{background:#356178;border-color:#9ed6ef}
 #instrument-panel .power-label,#instrument-panel .terminal-label{position:static;width:100%;margin-top:8px;padding:8px;box-shadow:none;pointer-events:auto}
 #instrument-panel .power-status{position:static;display:block;margin-top:8px}
@@ -1159,3 +1159,33 @@ body.read-only-course.panel-tabs #toolbar-right{grid-column:3;grid-row:1}
 .community-card-action{color:#9fdec2}
 @media(max-width:520px){#course-view-bar{gap:6px;font-size:.85rem;padding:6px}#course-view-bar strong{flex-basis:65%}#course-copy{flex:1}#publish-course .chat-actions button{flex:1 1 100%}}
 #wall-camera-view{position:absolute;right:8px;top:56px;z-index:7;min-width:44px;min-height:44px;padding:6px;border:1px solid #7195a7;border-radius:8px;background:#285064;color:#eff8ff;font:inherit;cursor:pointer}
+/* Physical handles stay in the scene; open electrical settings on demand. */
+#device-controls{box-sizing:border-box;width:min(420px,calc(100vw - 24px));max-height:calc(100dvh - 24px);margin:auto 12px auto auto;padding:16px;border:1px solid #82bad4;border-radius:14px;background:#142836;color:#edf5fa;overflow:auto;overscroll-behavior:contain}
+#device-controls::backdrop{background:#07101875}
+.device-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:-16px;background:#142836;padding:8px 0;z-index:1}
+.device-panel-head h2{margin:0;font-size:1.25rem}
+#device-controls button{min-width:44px;min-height:44px;padding:9px 12px;background:#285064;border:1px solid #7195a7;border-radius:8px;color:#eff8ff;font:inherit;cursor:pointer}
+#device-controls button[aria-pressed=true]{background:#28654e;border-color:#a4e5bd;box-shadow:inset 0 0 0 1px #a4e5bd}
+#device-controls button:disabled{opacity:.5;cursor:wait}
+.device-explanation{line-height:1.5;margin:12px 0}
+#device-panel-readings,#device-panel-connections{display:block;white-space:pre-line;line-height:1.6;overflow-wrap:anywhere}
+#device-panel-readings{padding:10px;background:#0b1d29;border-radius:8px;color:#ffdf89}
+.device-connections h3{font-size:1rem;margin:14px 0 6px}
+.device-field{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;margin:16px 0;padding-top:12px;border-top:1px solid #3a5261}
+.device-field>label{font-weight:650;align-self:center;text-transform:capitalize}
+.device-field input[type=range]{width:100%;min-height:44px;grid-column:1/-1;margin:0}
+.device-field input[type=number]{width:110px;max-width:100%;box-sizing:border-box;min-height:44px;background:#0b1d29;color:#fff;border:1px solid #7195a7;border-radius:6px;padding:8px;grid-column:2}
+.device-choices{display:flex;flex-wrap:wrap;gap:8px;grid-column:1/-1}
+.device-choices button{flex:1 1 120px}
+.device-list{display:grid;gap:8px}.device-list button{text-align:left}
+#device-controls .device-primary{display:block;width:100%;margin-top:16px;background:#256b4d;border-color:#8bd3aa;font-weight:650}
+.device-attachment{padding:10px;border-left:3px solid #ffcf59}.device-fixed-note{font-size:.9rem;color:#becfdb;line-height:1.5}
+#socket-choices p{max-width:260px;overflow-wrap:anywhere;margin:6px 0 10px}
+#socket-choices{z-index:30;max-height:calc(100% - 12px);overflow:auto;box-sizing:border-box}
+#socket-choices button{min-height:44px}
+#wire-actions{width:min(360px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:16px;background:#142836;border:1px solid #8bc6db;border-radius:12px;color:#eff8ff;overflow:auto}
+#wire-actions::backdrop{background:#07101875}
+#wire-actions p{overflow-wrap:anywhere;line-height:1.5}
+#wire-actions button{display:block;width:100%;min-height:44px;margin-top:8px;border:1px solid #7195a7;border-radius:8px;background:#285064;color:#eff8ff;font:inherit;cursor:pointer}
+@media(max-width:599px){#device-controls{width:calc(100vw - 16px);max-height:calc(100dvh - 24px);margin:auto 8px 12px;padding:14px}.device-panel-head{top:-14px}}
+@media(max-height:450px){#device-controls{max-height:calc(100dvh - 12px);margin:6px 8px 6px auto}.device-explanation{font-size:.9rem;margin:8px 0}}

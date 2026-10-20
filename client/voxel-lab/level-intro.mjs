@@ -80,7 +80,7 @@ export const LEVEL_MECHANISMS=Object.freeze({
   'easy-water-gate':'Water from the separate tank turns the paddles. The wheel winds a connected rope to lift the gate.',
   'easy-divert-water':'Run starts the water automatically. The chute redirects it; gravity carries it downhill toward the receiving container.',
   steam:'Heat raises the pressure beneath the piston. That pressure pushes against the piston and moves it upward.',
-  'easy-heat':'Click Clip to cord to attach the coil, choose Hot, then Place. Connect supply + to heater + and heater − to supply −. Current heats and weakens the cord until the weight drops.',
+  'easy-heat':'Click Clip to cord to attach the coil. Open controls → Heating power → Hot, then Place device. Connect supply + to heater + and heater − to supply −. Run: current heats the cord until the weight drops.',
   chain:'The marble tips the seesaw and closes its metal contacts. Current heats the cannon’s igniter, releasing the shot.',
   fire:'Closing the wired trigger heats the cannon’s powder. Expanding gas pushes the ball, which must strike the block.'
 });

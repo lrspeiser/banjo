@@ -567,8 +567,9 @@ function setWiringMode(value) {
 }
 $('wire-mode').addEventListener('click', () => setWiringMode(!wiringMode));
 function showInstrumentPanel() {
-  $('instrument-panel').hidden = !powerLabels.size && !terminalLabels.size && !contactCircuitRows.size;
+  $('instrument-panel').hidden = !powerLabels.size && !terminalLabels.size && !contactCircuitRows.size && !devicePanelDevices().length;
   $('wire-mode').hidden = !powerLabels.size && !terminalLabels.size;
+  $('device-controls-open').hidden = !devicePanelDevices().length;
 }
 function shownElectrical() { return ghost?.electrical || machine?.electrical || {}; }
 function syncTerminalLabels() {
@@ -2617,6 +2618,168 @@ function inspectElectricalPart(part) {
   const object=sandboxObjects.find(o=>o.parts.includes(part));
   electricalInspection={name:owner||part,parts:object?.parts||[part]};
 }
+
+// A deliberately opened, full-size editor for settings that have no useful
+// spatial handle. The fields use the same tray rules and compiler as the scene.
+let devicePanelName=null, devicePanelStamp='';
+const DEVICE_GUIDES={
+  coil:['Heating coil','Clip the coil to the material, choose heating power, then Place. Connect both leads to a supply. Current heats the attached material during Run.'],
+  battery:['Battery','Voltage drives current around a complete circuit. Capacity and charge set the energy available; the power limit caps the supply.'],
+  bulb:['Light bulb','Match the bulb rating to the supply and complete both sides of the circuit. Brightness follows the power reaching the bulb.'],
+  resistor:['Resistor','Resistance limits current and dissipates heat. In series it reduces current throughout the loop; parallel branches share voltage.'],
+  capacitor:['Capacitor','Stores energy as current charges it. Capacitance controls how much charge it holds; internal and leakage resistance affect charging and retention.'],
+  motor:['Motor','A complete powered loop turns the axle. Throttle changes drive; direction reverses it. The load determines how much torque and current it needs.'],
+  switch:['Switch','Run first, then move the real handle to bring its metal contacts together. A closed contact completes the circuit; an open contact interrupts it.'],
+  solar:['Solar panel','Aim the collecting face at the sun and keep it out of shadow. Connect Output to a power input. The meter reports the engine’s measured sunlight and charging.'],
+  generator:['Generator','Turn the shaft to generate voltage. A complete wired circuit lets current reach the load; the electrical load resists the shaft’s rotation.'],
+  power_input:['Power input','Connect a solar Output here to charge the device’s energy store. The connected mechanism uses that energy during Run.'],
+  circuit:['Powered mechanism','This prepared circuit connects a supply to its physical switch and load. Its current and work are measured during Run.'],
+  socket:['Battery holder','Metal contacts must touch the matching battery contacts to complete the connection. Inspect the contacts and wires while the engine runs.']
+};
+function devicePanelDevices(){
+  const e=shownElectrical();
+  const legacy=(machine?.circuits||[]).map(c=>({...c,kind:'circuit',legacy:c,
+    part:c.switch?.touch?.flat()?.[0]||c.coil?.heats||(machine.joints||[]).find(j=>j.name===c.motor?.hinge)?.b}));
+  return [...(e.devices||[]),...(e.power_ports||[]).map(p=>({...p,kind:p.kind==='output'?'solar':'power_input'})),...legacy];
+}
+function panelDeviceTitle(d){
+  const title=DEVICE_GUIDES[d.kind]?.[0]||playerPartTitle(d.name);
+  const name=d.name.replace(/:power$/,'');
+  const number=name.match(/^your \S+ (\d+)$/)?.[1];
+  return number?`${title} ${number}`:`${playerPartTitle(name)} · ${title}`;
+}
+function panelEndpointTitle(value){
+  const match=value?.match(/^(.*):(plus|minus|a|b|in|out|power)$/);
+  return match?`${playerPartTitle(match[1])} (${{plus:'+',minus:'−',a:'A',b:'B',in:'input',out:'output',power:'power'}[match[2]]})`:playerPartTitle(value||'unconnected');
+}
+function devicePlacementIndex(d){
+  const m=d.name.match(/^your (\S+) (\d+)(?=:| |$)/),i=m?Number(m[2])-1:-1;
+  if(i>=0&&placements[i]?.piece===m[1])return i;
+  const object=sandboxObjects.findIndex(o=>o.parts.includes(d.part));
+  return level?.free&&object>=0?placements.length+object:-1;
+}
+function devicePanelMatchesGhost(d){return Boolean(ghost&&(d.name===ghostName()||d.name.startsWith(ghostName()+':')||ghost.baseObject?.parts.includes(d.part)));}
+function devicePanelKeys(){
+  if(!ghost)return [];
+  return Object.entries(trayItem(ghost.p.piece).knobs).filter(([key,r])=>
+    !['x_m','z_m','height_m','support_layer'].includes(key)&&!r.part&&!r.hinge&&!r.terminal&&!r.power_port&&!r.connection_target&&pieceKnobVisible(ghost.p,key));
+}
+function devicePanelCanApply(){return Boolean(ghost?.fits&&!ghost.busy&&ghost.answered&&!(ghost.p.piece==='ignition'&&ghost.p.attachment_version===2&&!ghost.p.target));}
+async function openDeviceControls(name){
+  const pending=ghost,sourceLevel=level;
+  try{while(pending&&ghost===pending&&pending.busy)await pending.check;}
+  catch(e){powerMessage(e.message);return;}
+  if(ghost!==pending||level!==sourceLevel)return;
+  closeValueChoices();
+  const list=devicePanelDevices();
+  const selected=list.find(d=>devicePanelMatchesGhost(d))||list.find(d=>electricalLabelSelected(d.name,d.part));
+  devicePanelName=name||selected?.name||null;devicePanelStamp='';
+  renderDeviceControls();
+  if(!$('device-controls').open)$('device-controls').showModal();
+}
+async function selectPanelDevice(name){
+  const d=devicePanelDevices().find(d=>d.name===name);if(!d)return;
+  const wasOpen=$('device-controls').open,sourceLevel=level;
+  if(!readOnlyCourse()&&currentMode()!=='run'&&!devicePanelMatchesGhost(d)){
+    const index=devicePlacementIndex(d);
+    if(index>=0){await selectScenePiece(index);if(ghost&&!devicePanelMatchesGhost(d))return;}
+  }
+  if(level!==sourceLevel)return;
+  inspectElectricalPart(d.part);devicePanelName=name;devicePanelStamp='';renderDeviceControls();
+  if(wasOpen&&!$('device-controls').open)$('device-controls').showModal();
+}
+function panelFieldLabel(key,r){return key==='preset'&&ghost?.p.piece==='ignition'?'Heating power':knobName(r,key);}
+function panelChoiceLabel(key,value){return key==='preset'&&ghost?.p.piece==='ignition'?(value==='hot'?'Hot · fast heating':'Warm · gentle heating'):choiceText(key,value);}
+function refreshDeviceField(key){
+  const field=$('device-controls-body').querySelector(`[data-device-key="${key}"]`);if(!field||!ghost)return;
+  for(const b of field.querySelectorAll('[data-value]'))b.setAttribute('aria-pressed',String(b.dataset.value===String(ghost.p[key])));
+  for(const input of field.querySelectorAll('input'))if(document.activeElement!==input)input.value=ghost.p[key];
+  const output=field.querySelector('output');if(output)output.textContent=String(ghost.p[key]);
+}
+function renderDeviceControls(){
+  const host=$('device-controls-body'),devices=devicePanelDevices(),d=devices.find(d=>d.name===devicePanelName);
+  const stamp=JSON.stringify([devicePanelName,ghost?.index,ghost?.baseObject?.id,currentMode(),devices.map(d=>d.name),devicePanelKeys().map(([k])=>k)]);
+  if(stamp===devicePanelStamp)return;devicePanelStamp=stamp;host.replaceChildren();
+  $('device-controls-title').textContent=d?panelDeviceTitle(d):'Device controls';
+  const menu=Object.assign(document.createElement('div'),{className:'device-list'});
+  if(!d){
+    host.append(Object.assign(document.createElement('p'),{textContent:'Choose a device to see its settings and connections.'}),menu);
+    for(const row of devices)menu.append(button(panelDeviceTitle(row),()=>selectPanelDevice(row.name),{ariaLabel:`Open ${panelDeviceTitle(row)}`}));
+    return;
+  }
+  if(devices.length>1)host.append(button('All devices',()=>{devicePanelName=null;devicePanelStamp='';renderDeviceControls();}));
+  host.append(Object.assign(document.createElement('p'),{className:'device-explanation',textContent:DEVICE_GUIDES[d.kind]?.[1]||'Inspect this device and its connections.'}));
+  const editable=devicePanelMatchesGhost(d)&&!readOnlyCourse()&&currentMode()!=='run';
+  const live=Object.assign(document.createElement('output'),{id:'device-panel-readings',ariaLive:'off'});host.append(live);
+  const connections=Object.assign(document.createElement('section'),{className:'device-connections'});
+  connections.append(Object.assign(document.createElement('h3'),{textContent:'Connections'}),Object.assign(document.createElement('div'),{id:'device-panel-connections'}));host.append(connections);
+  const fields=Object.assign(document.createElement('section'),{className:'device-fields'});host.append(fields);
+  if(editable){
+    for(const [key,r] of devicePanelKeys()){
+      const field=Object.assign(document.createElement('div'),{className:'device-field'});field.dataset.deviceKey=key;
+      const label=panelFieldLabel(key,r),labelEl=Object.assign(document.createElement('label'),{textContent:key==='preset'&&ghost.p.piece==='ignition'?label:r.label||label});field.append(labelEl);
+      const change=value=>{
+        if(!ghost||!devicePanelMatchesGhost(d)||!setKnob(ghost.p,key,value))return;
+        renderGhostBar();followGhost();showGhostKnobs();askGhost();refreshDeviceField(key);
+      };
+      if(r.choices){
+        const choices=Object.assign(document.createElement('div'),{className:'device-choices'});
+        for(const value of r.choices){const b=button(panelChoiceLabel(key,value),()=>change(value),{ariaLabel:`Set ${label} to ${panelChoiceLabel(key,value)}`});b.dataset.value=value;choices.append(b);}
+        field.append(choices);
+      }else if(Number.isFinite(r.min)&&Number.isFinite(r.max)){
+        const input=Object.assign(document.createElement('input'),{type:'range',id:`device-field-${key}`,min:r.min,max:r.max,step:r.step||.01,value:ghost.p[key]});
+        input.setAttribute('aria-label',label);labelEl.htmlFor=input.id;addSliderTicks(input,r);
+        const exact=Object.assign(document.createElement('input'),{type:'number',min:r.min,max:r.max,step:r.step||.01,value:ghost.p[key]});exact.setAttribute('aria-label',`Exact ${label} in device controls`);
+        input.addEventListener('input',()=>change(Number(input.value)));
+        exact.addEventListener('change',()=>{if(exact.value!==''&&exact.checkValidity())change(Number(exact.value));});
+        field.append(Object.assign(document.createElement('output'),{textContent:String(ghost.p[key])}),input,input.tickList,exact);
+      }
+      fields.append(field);refreshDeviceField(key);
+    }
+    if(d.kind==='coil'){
+      fields.prepend(Object.assign(document.createElement('p'),{className:'device-attachment',textContent:ghost.p.target?`Clipped to ${ghost.p.target}`:'Not clipped yet. Close this panel and click Clip to cord in the scene.'}));
+    }
+    const apply=button(ghost.was||ghost.baseObject?'Apply settings':'Place device',()=>{if(devicePanelCanApply()){$('device-controls').close();setGhostDown();}},{id:'device-panel-apply',className:'device-primary'});
+    host.append(apply);
+  }else{
+    const index=devicePlacementIndex(d);
+    if(index>=0&&!readOnlyCourse())host.append(button(currentMode()==='run'?'Stop and edit settings':'Edit settings',async()=>{
+      const sourceLevel=level;
+      if(currentMode()==='run')await choosePlayMode('build');
+      if(level!==sourceLevel)return;
+      await selectScenePiece(devicePlacementIndex(d));devicePanelStamp='';renderDeviceControls();
+      if(!$('device-controls').open)$('device-controls').showModal();
+    },{className:'device-primary'}));
+    else host.append(Object.assign(document.createElement('p'),{className:'device-fixed-note',textContent:'This is prepared apparatus. Its settings stay fixed for this level; you can inspect it and connect its terminals.'}));
+  }
+  updateDevicePanelReadings();
+}
+function updateDevicePanelReadings(){
+  if(!$('device-controls').open)return;
+  renderDeviceControls();
+  const d=devicePanelDevices().find(d=>d.name===devicePanelName),out=$('device-panel-readings');if(!d||!out)return;
+  const matching=[...powerFeedbackRows.entries()].filter(([id,r])=>id==='device:'+d.name||r.card.dataset.device===d.name||r.card.dataset.device===d.part).map(([,r])=>r);
+  const measured=readouts.electrical?.devices?.find(row=>row.name===d.name)||readouts.circuits?.find(row=>row.name===d.name);
+  const solar=['solar','power_input'].includes(d.kind)?[...powerLabels.values()].find(row=>row.port.name===d.name):null;
+  const status=(solar?[solar.watts?.textContent,solar.detail?.textContent,solar.state?.textContent].filter(Boolean).join('\n'):'')||matching.map(r=>r.output.textContent).join('\n')||(measured?measured.kind==='switch'?(measured.closed?'Contacts closed':'Contacts open'):`${(measured.current_a||0).toFixed(3)} A · ${(measured.power_w??measured.coil_w??0).toFixed(2)} W`:'Run to measure this device.');
+  if(out.textContent!==status)out.textContent=status;
+  const e=shownElectrical(),rows=Object.keys(d.terminals||{}).map(key=>{
+    const endpoint=d.name+':'+key,leads=(e.wires||[]).filter(w=>w.a===endpoint||w.b===endpoint);
+    return `${{plus:'Positive (+)',minus:'Negative (−)',a:'Terminal A',b:'Terminal B',in:'Input',out:'Output'}[key]||key}: ${leads.length?leads.map(w=>panelEndpointTitle(w.a===endpoint?w.b:w.a)).join(', '):'not connected'}`;
+  });
+  if(d.kind==='solar'){const lead=e.power_cables?.find(w=>w.a===d.name||w.b===d.name);rows.push(`Output: ${lead?playerPartTitle(lead.a===d.name?lead.b:lead.a):'not connected'}`);}
+  if(d.kind==='power_input'){const lead=e.power_cables?.find(w=>w.a===d.name||w.b===d.name);rows.push(`Input: ${lead?playerPartTitle(lead.a===d.name?lead.b:lead.a):'not connected'}`);}
+  if(d.legacy){
+    rows.push(`Supply: ${playerPartTitle(d.battery)}`);
+    if(d.switch?.touch)rows.push(`Switch contacts: ${d.switch.touch.map(parts=>(Array.isArray(parts)?parts:[parts]).map(playerPartTitle).join(' + ')).join(' ↔ ')}`);
+    if(d.coil)rows.push(`Heating target: ${playerPartTitle(d.coil.heats)} · ${d.coil.resistance_ohm} Ω`);
+    if(d.motor)rows.push(`Driven axle: ${playerPartTitle(d.motor.hinge)}`);
+  }
+  const text=rows.join('\n');if($('device-panel-connections').textContent!==text)$('device-panel-connections').textContent=text;
+  const apply=$('device-panel-apply');if(apply)apply.disabled=!devicePanelCanApply();
+}
+$('device-controls-open').addEventListener('click',()=>openDeviceControls());
+$('device-controls-close').addEventListener('click',()=>$('device-controls').close());
 const raycaster = new THREE.Raycaster();
 const ghostLook = {
   fits: new THREE.MeshStandardMaterial({color: 0x6cc6ff, transparent: true, opacity: .35, depthWrite: false, roughness: .6}),
@@ -3680,6 +3843,7 @@ async function pickUp(i) {
 }
 
 function endGhost() {
+  if($('device-controls').open)$('device-controls').close();
   closeValueChoices();
   $('socket-choices').hidden=true;
   clearTimeout(solarTimer);solarTimer=null;solarWanted='';solarStamp='';solarResult=null;solarVersion++;solarPending=false;solarError='';
@@ -4103,6 +4267,7 @@ function renderGhostBar() {
     const prompt=Object.assign(document.createElement('p'),{className:'wire-prompt',textContent:ghost.p.target?
       `Heater clipped to ${ghost.p.target}. Click a Clip ring to move the attachment.`:'Click a Clip ring on the material in the 3D scene. Then set the heater down and connect both power leads.'});
     head.after(prompt);
+    if(!ghost.p.target)fields.append(button('Open controls',()=>openDeviceControls(),{ariaLabel:'Open selected device controls'}));
     if(ghost.p.target)unclipButton=button('Unclip heater',()=>{ghost.p.target='';renderGhostBar();askGhost();});
   }
   for(const id of ['laser-preview-status','water-status','river-wheel-status','solar-lift-guide'])fields.append($(id));
@@ -4134,6 +4299,7 @@ function renderGhostBar() {
   turn.setAttribute('aria-pressed',String(editorMode==='turn'&&!looking));
   move.disabled=!movableGhost();turn.hidden=!Object.entries(knobs).some(([k,r])=>r.turning&&pieceKnobVisible(ghost.p,k));
   modes.append(move,turn);
+  if(['ignition','battery','bulb','switch','motor','resistor','capacitor','solar'].includes(pieceKind(ghost.p))||devicePanelDevices().some(d=>devicePanelMatchesGhost(d)))modes.append(button('Open controls',()=>openDeviceControls(),{ariaLabel:'Open selected device controls',title:'Larger settings, connections and readings'}));
   if(level?.free){
     const names=ghost.baseObject?.parts||(machine?.parts||[]).filter(p=>p.name===ghostName()||p.name.startsWith(ghostName()+' ')).map(p=>p.name);
     if((machine?.joints||[]).some(j=>['hinge','slide'].includes(j.kind)&&names.includes(j.b)))
@@ -4152,7 +4318,7 @@ function renderGhostBar() {
       {ariaLabel:'Precise controls',title:'Show the arrows, axis lines and exact numbers for this plank'});
     precise.setAttribute('aria-pressed',String(precisionOpen));modes.append(precise);
   }
-  modes.hidden=move.disabled&&turn.hidden&&!modes.querySelector('[aria-label="Precise controls"]');
+  modes.hidden=move.disabled&&turn.hidden&&!modes.querySelector('[aria-label="Precise controls"],[aria-label="Open selected device controls"]');
   const top=Object.assign(document.createElement('div'),{className:'piece-toolbar'});top.append(modes,actions);
   editor.replaceChildren(top,...(another?[another]:[]),...(isGear?[gearControls(knobs)]:[chips]));
   if(ghost.baseObject?.wall){chips.hidden=true;top.after(Object.assign(document.createElement('output'),{className:'wall-size-reading',ariaLive:'polite'}));}
@@ -4716,6 +4882,7 @@ function feedbackCurve(w) {
 }
 
 function updatePowerFeedback() {
+  updateDevicePanelReadings();
   updateSolarLiftGuide();
   updateWireAdjustments();
   const host=$('power-feedback-labels'),sample=powerFeedbackSnapshot();let items=[];
@@ -4870,7 +5037,7 @@ function updatePowerFeedback() {
     const title=item.displayName||item.name;
     row.name.hidden=item.kind==='wire';if(row.name.textContent!==title)row.name.textContent=title;
     if(row.output.textContent!==item.text)row.output.textContent=item.text;row.card.title=item.title;
-    if(row.card.classList.contains('editable-wire'))row.card.title+=' Click this label to adjust the wire; click its cable to remove it.';
+    if(row.card.classList.contains('editable-wire'))row.card.title+=' Click this label to adjust the wire; click its cable for connection actions.';
     row.card.classList.toggle('low',Boolean(item.low));row.card.hidden=false;
     const p=new THREE.Vector3(...item.at).project(camera);
     row.leader.style.display='none';
@@ -5508,13 +5675,34 @@ function clickExistingWire(x,y,touch,rows=wireCandidates(x,y,touch)) {
   // just because its projected centreline is a few pixels closer.
   if(rows[1]) {
     const choice=$('socket-choices');choice.replaceChildren();
-    for(const row of rows.slice(0,4))choice.append(button(`Remove ${row.name.replace(/^your /,'')}`,()=>{choice.hidden=true;disconnectPlacedWire(row);}));
+    for(const row of rows.slice(0,4))choice.append(button(`Inspect ${row.name.replace(/^your /,'')}`,()=>showWireActions(row,x,y)));
     choice.append(button('Cancel',()=>{choice.hidden=true;}));choice.hidden=false;
     const rect=renderer.domElement.getBoundingClientRect();
     choice.style.left=`${Math.max(6,Math.min(rect.width-choice.offsetWidth-6,x-rect.left+12))}px`;
     choice.style.top=`${Math.max(6,Math.min(rect.height-choice.offsetHeight-6,y-rect.top+12))}px`;
-  } else disconnectPlacedWire(rows[0]);
+  } else showWireActions(rows[0],x,y);
   return true;
+}
+function showWireActions(row,x,y){
+  let choice=$('wire-actions');
+  if(!choice){
+    choice=document.createElement('dialog');choice.id='wire-actions';choice.setAttribute('aria-label','Wire connection');view.append(choice);
+    // A touch that opens the dialog can synthesize a click at the same screen
+    // coordinates. Require a fresh press inside it before any pointer action.
+    choice.addEventListener('pointerdown',()=>{choice.pointerArmed=true;},true);
+    choice.addEventListener('click',e=>{if(e.detail&&!choice.pointerArmed){e.preventDefault();e.stopImmediatePropagation();}choice.pointerArmed=false;},true);
+  }
+  const p=placements[row.index];if(!p)return;
+  const before=JSON.stringify(p);
+  electricalInspection={name:row.name,parts:[]};
+  choice.replaceChildren(Object.assign(document.createElement('strong'),{textContent:playerPartTitle(row.name)}),
+    Object.assign(document.createElement('p'),{textContent:`${panelEndpointTitle(p.a_terminal||p.a_port)} → ${panelEndpointTitle(p.b_terminal||p.b_port)}`}),
+    button('Disconnect wire',()=>{choice.close();if(JSON.stringify(placements[row.index])===before)disconnectPlacedWire(row);}),
+    button('Wire settings',()=>{choice.close();if(JSON.stringify(placements[row.index])===before)pickUp(row.index);}),
+    button('Keep connected',()=>choice.close(),{autofocus:true}));
+  $('socket-choices').hidden=true;
+  choice.pointerArmed=false;
+  if(!choice.open)choice.showModal();
 }
 function movableGhost() {
   if (!ghost || ['wire', 'power_cable'].includes(ghost.p.piece)) return false;
@@ -5747,7 +5935,11 @@ renderer.domElement.addEventListener('pointerup', e => {
   if(click&&!ghost&&readOnlyCourse()&&pressedWires?.length){
     electricalInspection={name:pressedWires[0].name,parts:[]};draggingGhost=null;pressedAt=null;return;
   }
-  if(click && !ghost && !e.ctrlKey && clickExistingWire(e.clientX,e.clientY,e.pointerType==='touch',pressedWires)) {
+  // Device bodies win over a wire draped across them. A cable selection is
+  // inspection first, with a separate, labelled Disconnect action.
+  const solidChoice=click&&!ghost?placedOwnersAt(e.clientX,e.clientY):[];
+  const bodyWins=solidChoice.some(i=>placements[i]&&!['wire','power_cable','link'].includes(placements[i].piece)||i>=placements.length);
+  if(click && !ghost && !e.ctrlKey && !bodyWins && clickExistingWire(e.clientX,e.clientY,e.pointerType==='touch',pressedWires)) {
     draggingGhost=null;pressedAt=null;return;
   }
   if(ghost&&click&&pendingPieceReference){

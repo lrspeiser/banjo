@@ -706,7 +706,7 @@ class Puzzles(unittest.TestCase):
             self.mouse('mousePressed',summary['x'],summary['y']); self.mouse('mouseReleased',summary['x'],summary['y'])
         else:
             self.fail('A closed disclosure could not be opened with its visible summary')
-        self.js(f"(() => {{const el={expression}; if (el?.closest('.phone-pane,#level-done,#recent-changes,#object-action-dialog')) el.scrollIntoView({{block:el.closest('#recent-changes')?'center':'nearest',inline:'nearest'}});}})()")
+        self.js(f"(() => {{const el={expression}; if (el?.closest('.phone-pane,#level-done,#recent-changes,#object-action-dialog,#device-controls,#socket-choices,#wire-actions')) el.scrollIntoView({{block:el.closest('#recent-changes')?'center':'nearest',inline:'nearest'}});}})()")
 
     def create_design(self, name=None):
         self.press('Add New Design'); self.wait(READY,90)
@@ -887,7 +887,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             self.anonymous_levels(width=width,height=height)
             ids=self.js("[...document.querySelectorAll('#levels-screen .level-card')].map(n=>n.dataset.level)")
-            self.assertEqual(len(ids),self.level_count);self.assertEqual(ids[0],'easy-wall-drop');self.assertEqual(ids[-1],'fire')
+            self.assertEqual(len(ids),self.level_count);self.assertEqual(ids[0],'easy-wall-drop');self.assertEqual(ids[-1],'pinball-10');self.assertEqual(ids[-11],'fire')
             self.assertLess(ids.index('easy-thread'),ids.index('easy-tackle'))
             self.assertLess(ids.index('easy-mirror'),ids.index('laser'))
             self.assertLess(ids.index('easy-loop'),ids.index('advanced-parallel'))
@@ -3985,7 +3985,7 @@ class Puzzles(unittest.TestCase):
                 self.assertFalse(self.js("document.getElementById('levels-screen').innerText.includes('New challenge')"))
                 before=self.js('location.href')
                 self.page.events.clear()
-                self.assertEqual(self.js("document.querySelectorAll('.level-chapter').length"),5)
+                self.assertEqual(self.js("document.querySelectorAll('.level-chapter').length"),6)
                 self.assertEqual(self.js('location.href'),before)
                 self.click_summary('#level-more > summary')
                 self.assertTrue(self.js("document.getElementById('level-more').open"))
@@ -4626,7 +4626,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run');self.wait("!document.getElementById('level-done').hidden",30)
                 self.assertIn('Goal at',self.js("document.getElementById('level-done').textContent"))
 
-    def click_existing_wire(self,name,touch=False,fraction=.5,hold=0):
+    def click_existing_wire(self,name,touch=False,fraction=.5,hold=0,disconnect=True):
         self.wait('machineCamera().settled',30)
         # Setup gravity remains active. Give precise repeated taps after Undo
         # two native seconds to settle; retain an early held tap to exercise
@@ -4665,10 +4665,12 @@ class Puzzles(unittest.TestCase):
             self.mouse('mousePressed',x,y)
             if hold:time.sleep(hold)
             self.mouse('mouseReleased',x,y)
-        if self.js("!document.getElementById('socket-choices').hidden"):
-            self.click_visible('Remove '+name.removeprefix('your '))
+        if self.js("Boolean([...document.querySelectorAll('#socket-choices button')].find(b=>b.checkVisibility()&&b.textContent==='Inspect '+"+json.dumps(name.removeprefix('your '))+"))"):
+            self.click_visible('Inspect '+name.removeprefix('your '))
+        if disconnect and self.js("document.getElementById('wire-actions')?.open===true"):
+            self.click_visible('Disconnect wire')
 
-    def test_existing_wire_click_removes_it_and_undo_redo_restore_the_exact_connection(self):
+    def test_existing_wire_click_inspects_then_disconnect_and_undo_redo_restore_the_exact_connection(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.open('easy-loop',width,height,phone=width!=1280)
@@ -4678,6 +4680,15 @@ class Puzzles(unittest.TestCase):
                 self.ghost();self.click_scene_socket('supply:minus',touch=width!=1280)
                 self.wait(f'!window.machineGhostState() && {READY}',60)
                 kept=self.js('window.machinePlacements()')
+                before_session=self.js('window.machineCableSetupState().session')
+                self.click_existing_wire('your wire 1',touch=width!=1280,disconnect=False)
+                self.paint()
+                self.assertTrue(self.js("document.getElementById('wire-actions')?.open===true"),'a tap must not fall through onto an action in the new dialog')
+                self.assertIsNone(self.js('machineGhostState()'))
+                self.assertEqual(self.js('window.machinePlacements()'),kept,'a cable tap must preserve the circuit')
+                self.assertEqual(self.js('window.machineCableSetupState().session'),before_session)
+                self.click_visible('Keep connected')
+                self.assertEqual(self.js('window.machinePlacements()'),kept)
                 self.click_existing_wire('your wire 1',touch=width!=1280)
                 self.wait(f'window.machinePlacements().length===0 && !window.machineGhostState() && {READY}',60)
                 self.click_visible('Run');self.wait("!document.getElementById('level-done').hidden",30)
@@ -5103,6 +5114,12 @@ class Puzzles(unittest.TestCase):
                 self.wait("document.getElementById('heater-attach').checkVisibility()",10)
                 self.assertTrue(self.js("(()=>{const e=document.getElementById('heater-attach'),r=e.getBoundingClientRect();return r.width>=44&&r.height>=56&&r.left>=0&&r.right<=innerWidth&&r.top>=document.getElementById('clock').getBoundingClientRect().bottom&&r.bottom<=document.getElementById('view').getBoundingClientRect().bottom&&document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e;})()"))
                 self.assertEqual([p['name'] for p in self.js('machineSceneSockets().points')],['heat:weight rope'])
+                self.click_visible('Open selected device controls')
+                self.wait("document.getElementById('device-controls').open",5)
+                self.assertTrue(self.js("document.getElementById('device-panel-apply').disabled"),'an unattached heater cannot be placed from the panel')
+                self.click_visible('Set Heating power to Hot · fast heating');self.ghost()
+                self.assertEqual(self.ghost()['p']['preset'],'hot')
+                self.click_visible('Close')
                 self.click_visible('Help')
                 with patch('machine_chat.configuration',return_value=(None,'no-model')):
                     self.js("document.getElementById('message').value='How do I attach this heater?' ")
@@ -5113,7 +5130,9 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Clip heater to hanging cord')
                 self.wait("window.machineGhostState()?.p.target==='weight rope' && "+SETTLED,30)
                 self.assertTrue(self.ghost()['fits'])
-                self.click_visible('Toggle coil preset');self.ghost()
+                self.click_visible('Open selected device controls')
+                self.assertEqual(self.js("document.querySelector('#device-controls [data-value=hot]').getAttribute('aria-pressed')"),'true')
+                self.click_visible('Close');self.ghost()
                 self.assertEqual(self.ghost()['p']['preset'],'hot')
                 self.assertIn('Hot',self.js("document.getElementById('piece-choice-toggle').textContent"))
                 self.click_visible('Place');self.wait(READY,60)
@@ -5126,10 +5145,98 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Run')
                 self.inspect_body('your ignition 1 housing')
                 self.wait("document.getElementById('power-feedback-labels').textContent.includes('Material')",20)
+                session=self.js('machineCableSetupState().session')
+                self.click_visible('Open device controls')
+                self.wait("document.getElementById('device-panel-readings').textContent.includes('Material')",10)
+                self.assertEqual(self.js('machineCableSetupState().session'),session)
+                self.assertIn('supply',self.js("document.getElementById('device-panel-connections').textContent"))
+                self.click_visible('Close')
                 self.wait("!document.getElementById('level-done').hidden",45)
                 self.assertRegex(self.js("document.getElementById('level-done').textContent"),'Level Complete|Achievement Unlocked')
                 self.click_visible('Reset');self.wait(READY,60)
                 self.assertEqual(self.js('window.machinePlacements().length'),0)
+
+    def test_electrical_device_panels_expose_lesson_controls_and_large_device_picker(self):
+        cases=[('easy-power','Add a battery','voltage_v'),('easy-bulb','Add a bulb','size'),
+               ('easy-switch','Add a switch',None),('easy-motor','Add a motor','direction'),
+               ('advanced-resistor','Add a resistor','resistance_ohm'),
+               ('advanced-capacitor','Add a capacitor','capacitance_f'),('sun','Add a solar panel',None)]
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for level,add,field in cases:
+                with self.subTest(viewport=(width,height),level=level):
+                    self.open(level,width,height,phone=width!=1280)
+                    self.press(add);g=self.ghost();before=g['p'].copy()
+                    self.click_visible('Open selected device controls')
+                    self.wait("document.getElementById('device-controls').open",5)
+                    bounds=self.js("(()=>{const r=document.getElementById('device-controls').getBoundingClientRect();return [r.left,r.top,r.right,r.bottom];})()")
+                    self.assertGreaterEqual(bounds[0],0);self.assertGreaterEqual(bounds[1],0)
+                    self.assertLessEqual(bounds[2],width);self.assertLessEqual(bounds[3],height)
+                    if field:self.assertTrue(self.js(f"Boolean(document.querySelector('#device-controls [data-device-key={field}]'))"))
+                    self.assertFalse(self.js("Boolean(document.querySelector('#device-controls [data-device-key=housing_material]'))"),'unrelated lesson settings stay hidden')
+                    self.assertTrue(self.js("[...document.querySelectorAll('#device-controls button,input')].filter(e=>e.checkVisibility()).every(e=>e.getBoundingClientRect().height>=44)"))
+                    self.click_visible('Close')
+                    self.assertEqual(self.ghost()['p'],before,'opening inspection must not change a component')
+            self.open('easy-loop',width,height,phone=width!=1280)
+            self.click_visible('Open device controls')
+            self.wait("document.getElementById('device-controls').open",5)
+            self.assertTrue(self.js("document.querySelectorAll('#device-controls .device-list button').length>=2"))
+            # A prepared lamp is reachable without hitting its tiny 3D mesh.
+            self.click_visible('Open lamp · Light bulb')
+            self.assertIn('prepared apparatus',self.js("document.getElementById('device-controls-body').textContent"))
+            self.assertIn('Connections',self.js("document.getElementById('device-controls-body').textContent"))
+            self.assertIsNone(self.js('window.machineGhostState()'))
+
+    def test_sandbox_device_panel_changes_persist_and_undo_restores_the_component(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            with self.subTest(viewport=(width,height)):
+                self.anonymous_levels(width=width,height=height)
+                self.press('Sandbox: build anything');self.create_design()
+                self.press('Add a piece');self.press('Add a capacitor');self.ghost()
+                self.click_visible('Open selected device controls')
+                for key in ('capacitance_f','esr_ohm','leakage_ohm','housing_material'):
+                    self.assertTrue(self.js(f"Boolean(document.querySelector('#device-controls [data-device-key={key}]'))"))
+                self.slide('Exact capacitance in device controls',.2)
+                self.slide('Exact internal resistance in device controls',.2)
+                self.slide('Exact leakage resistance in device controls',100000)
+                self.ghost();self.click_visible('Place device');self.wait(READY,60)
+                saved=self.js('machinePlacements()[0]')
+                self.assertEqual(saved['capacitance_f'],.2);self.assertEqual(saved['esr_ohm'],.2);self.assertEqual(saved['leakage_ohm'],100000)
+                self.click_visible('Open device controls');self.click_visible('Edit settings');self.ghost()
+                self.slide('Exact capacitance in device controls',.4);self.ghost()
+                self.click_visible('Apply settings');self.wait(READY,60)
+                self.assertEqual(self.js('machinePlacements()[0].capacitance_f'),.4)
+                self.click_visible('Undo');self.wait(READY,60)
+                self.assertEqual(self.js('machinePlacements()[0]'),saved)
+                self.anonymous_cloud_saved();url=self.js('location.href')
+                self.navigate(url);self.wait(READY,60)
+                self.assertEqual(self.js('machinePlacements()[0]'),saved)
+                self.click_visible('Open device controls');self.click_visible('Open Capacitor 1');self.ghost()
+                self.assertEqual(self.js("document.querySelector('#device-controls input[aria-label=\"Exact capacitance in device controls\"]').value"),'0.2')
+                self.key('Escape');self.wait("!document.getElementById('device-controls').open",5)
+                self.assertEqual(self.ghost()['p']['capacitance_f'],.2,'Escape closes inspection without discarding the selected component')
+                self.click_visible('Throw the ghost away');self.click_visible('Run')
+                self.wait('machinePlayMode().mode===\'run\' && machineCableSetupState().t>.2',20)
+                session=self.js('machineCableSetupState().session')
+                self.click_visible('Open device controls');self.click_visible('Open Capacitor 1')
+                self.assertEqual(self.js('machineCableSetupState().session'),session,'live inspection must not reset the world')
+                self.assertEqual(self.js('machinePlayMode().mode'),'run')
+                self.click_visible('Stop and edit settings');self.ghost()
+                self.assertTrue(self.js("document.getElementById('device-controls').open"))
+                self.assertNotEqual(self.js('machinePlayMode().mode'),'run')
+                self.assertEqual(self.ghost()['p']['capacitance_f'],.2)
+
+    def test_prepared_generator_solar_input_and_legacy_circuit_have_device_panels(self):
+        for width,height in ((1280,860),(390,844),(844,390)):
+            for level,title,expected in [('easy-wall-generator','dynamo · Generator','resists the shaft'),
+                                         ('sun','winch · Power input','Input: not connected'),
+                                         ('chain','firing circuit · Powered mechanism','cannon charge')]:
+                with self.subTest(viewport=(width,height),level=level):
+                    self.open(level,width,height,phone=width!=1280)
+                    self.click_visible('Open device controls')
+                    self.click_visible('Open '+title)
+                    self.assertIn(expected,self.js("document.getElementById('device-controls-body').textContent"))
+                    self.assertIsNone(self.js('machineGhostState()'))
+                    self.click_visible('Close')
 
     def test_marble_switch_wires_stay_dark_until_actual_contact_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
@@ -7543,7 +7650,7 @@ class Puzzles(unittest.TestCase):
         self.js("document.getElementById('levels-open').click()")
         self.wait("!document.getElementById('levels-screen').hidden",10)
         self.assertEqual(self.js("[...document.querySelectorAll('.level-chapter h2')].map(x=>x.textContent)"),
-                         ['Level 1: Wall Basics','Level 2: 3D Mechanics','Level 3: Electricity','Level 4: Water','Level 5: Heat and Chain Reactions'])
+                         ['Level 1: Wall Basics','Level 2: 3D Mechanics','Level 3: Electricity','Level 4: Water','Level 5: Heat and Chain Reactions','Project: Build a Pinball Machine'])
         self.assertEqual(self.js("document.querySelectorAll('.level-card').length"),self.level_count)
         self.assertEqual(self.js("document.querySelectorAll('.level-card-details').length"),0)
         self.assertEqual(self.js("document.querySelectorAll('#levels-screen select').length"),0)
