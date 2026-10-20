@@ -431,8 +431,8 @@ class Puzzles(unittest.TestCase):
             self.wait('machineCamera().settled',30);self.paint()
             return
         if name!='GO' and self.js("Boolean(document.getElementById('level-intro')?.open)"):self.click_visible('GO')
-        if name in ('Sandbox','Pinball'):
-            ident={'Sandbox':'sandbox-open','Pinball':'pinball-open'}[name]
+        if name=='Sandbox':
+            ident='sandbox-open'
             point=self.js(f"(()=>{{const a=document.getElementById('{ident}'),r=a.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];}})()")
             self.mouse('mousePressed',*point);self.mouse('mouseReleased',*point)
             return
@@ -2114,7 +2114,9 @@ class Puzzles(unittest.TestCase):
                 self.js("(()=>{const b=document.getElementById('start');if(b.textContent.includes('Pause'))b.click();})()")
                 self.wait("machinePlaybackState().queued===0 && machinePlaybackState().blended.length===0 && "
                           "machinePlaybackState().shown_t===machinePlaybackState().newest_t",30)
-                drawn,applied=self.js('machineDrawnBodies()'),self.js('machineBodies()')
+                # Read both in one browser task: a final paused engine frame
+                # can arrive between two CDP calls, even after the queue drains.
+                drawn,applied=self.js('[machineDrawnBodies(),machineBodies()]')
                 for name,at in applied.items():
                     if name in drawn:self.assertTrue(all(abs(a-b)<1e-12 for a,b in zip(drawn[name],at)),(name,drawn[name],at))
                 rows=[r for r in self.js('machineDrawingRecord()') if r['bodies']['ball']['drawn'] and r['bodies']['ball']['applied']]
@@ -3279,13 +3281,10 @@ class Puzzles(unittest.TestCase):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
                 self.assertEqual(self.js("document.querySelectorAll('#levels-screen .ls-free').length"),0)
-                self.press('Pinball');self.wait(READY,60)
+                self.press('Play level 1, '+self.js("document.querySelector('.level-card[data-level=\"pinball-01\"] .level-card-title').textContent"));self.wait(READY,60)
                 self.wait("document.getElementById('level-intro').open",10)
-                # The same visitor keeps progress when changing device layouts.
-                # The header resumes step two after the desktop's first win.
-                if width!=1280:
-                    self.assertIn('Pinball 2 of 10',self.js("document.getElementById('level-intro-title').textContent"))
-                    self.open('pinball-01',width,height,phone=True,dismiss_intro=False)
+                # Pinball is opened through its ordinary lesson card.
+                self.assertIsNone(self.js("document.getElementById('pinball-open')"))
                 self.assertIn('Pinball 1 of 10',self.js("document.getElementById('level-intro-title').textContent"))
                 self.click_visible('GO')
                 self.assertGreater(self.js('machineCamera().elevation'),.9)
@@ -3296,7 +3295,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Place');self.wait(READY,60)
                 self.click_visible('Run');self.wait("document.body.classList.contains('scene-win')",60)
                 self.wait("document.getElementById('pinball-project-status')?.textContent.includes('saved in Sandbox')",30)
-                self.assertTrue(self.js("document.getElementById('pinball-open').href.endsWith('/play?level=pinball-02')"))
+                self.assertIsNone(self.js("document.getElementById('pinball-open')"))
                 self.click_visible('Open my Pinball project')
                 self.wait("machineDesign()?.project==='pinball' && "+READY,90)
                 saved=self.js('machineDesign().id')
@@ -4118,7 +4117,7 @@ class Puzzles(unittest.TestCase):
                 self.anonymous_levels(width=width,height=height)
                 titles=self.js("[...document.querySelectorAll('#levels-screen .level-card-title')].map(e=>e.textContent)")
                 self.assertLess(titles.index('Bounce to the target'),titles.index('Bounce the beam'))
-                self.assertFalse(self.js("document.getElementById('level-more').open"))
+                self.assertIsNone(self.js("document.getElementById('level-more')"))
                 self.assertEqual(self.js("document.querySelectorAll('#levels-screen .level-card-details').length"),0)
                 self.assertTrue(self.js("[...document.querySelectorAll('#levels-screen .level-card-details')].every(d=>!d.open)"))
                 self.assertFalse(self.js("document.getElementById('levels-screen').innerText.includes('Energy par:')"))
@@ -4127,10 +4126,9 @@ class Puzzles(unittest.TestCase):
                 self.page.events.clear()
                 self.assertEqual(self.js("document.querySelectorAll('.level-chapter').length"),6)
                 self.assertEqual(self.js('location.href'),before)
-                self.click_summary('#level-more > summary')
-                self.assertTrue(self.js("document.getElementById('level-more').open"))
-                self.assertTrue(self.js("Boolean(document.getElementById('visitor-return-link').closest('#level-more'))"))
-                self.assertFalse(self.js("Boolean(document.querySelector('#level-more #challenge-family'))"))
+                self.assertIsNone(self.js("document.getElementById('visitor-return-link')"))
+                self.press('Share')
+                self.assertEqual(self.js("document.getElementById('header-share').href"),'https://banjo.is/play')
                 requests=[e['params']['request'] for e in self.page.events if e['method']=='Network.requestWillBeSent']
                 opens=[r for r in requests if r['url'].endswith('/api/machine') and r.get('postData') and json.loads(r['postData']).get('op') in ('open','level_open')]
                 self.assertEqual(opens,[],'Reading details and save tools cannot initialize a machine')
@@ -5813,7 +5811,7 @@ class Puzzles(unittest.TestCase):
         self.page.events.clear()
         try:
             self.navigate(self.base + '/')
-            self.wait(f"document.querySelectorAll('.ls-list .level-card').length === {self.level_count} && Boolean(document.getElementById('visitor-return-link'))", 30)
+            self.wait(f"document.querySelectorAll('.ls-list .level-card').length === {self.level_count} && Boolean(window.machineSave?.().current)", 30)
             self.assertNotIn('Landing test', self.js("document.getElementById('levels-screen').textContent"))
             self.assertEqual(self.js('location.pathname'), '/play')
             self.assertEqual(self.js("new URLSearchParams(location.search).get('visitor')"),self.js('machineSave().current'))
@@ -5836,8 +5834,8 @@ class Puzzles(unittest.TestCase):
         previous=self.js('performance.timeOrigin')
         response=self.navigate(url or f'{self.base}/play')
         self.assertFalse(response.get('errorText'),response)
-        self.wait(f"performance.timeOrigin!=={previous} && document.getElementById('levels-screen')?.hidden===false && Boolean(document.getElementById('visitor-return-link'))",90)
-        link=self.js("document.getElementById('visitor-return-link').href")
+        self.wait(f"performance.timeOrigin!=={previous} && document.getElementById('levels-screen')?.hidden===false && Boolean(window.machineSave?.().current) && document.querySelectorAll('.ls-list .level-card').length==={self.level_count}",90)
+        link=self.js('location.href')
         visitor=parse_qs(urlsplit(link).query)['visitor'][0]
         self.assertEqual(str(uuid.UUID(visitor)),visitor,'Return links use canonical anonymous UUIDs')
         self.assertEqual(self.js('machineSave().current'),visitor)
@@ -5906,17 +5904,10 @@ class Puzzles(unittest.TestCase):
             self.assertEqual(self.js("document.querySelectorAll('.save-help-panel:popover-open').length"),0)
             self.assertNotIn('Keep this link private',self.js("document.getElementById('levels-screen').innerText"))
             self.assertNotIn('restores progress',self.js("document.getElementById('levels-screen').innerText"))
-            self.click_visible('About your return link')
-            self.wait("Boolean(document.querySelector('.save-help-panel:popover-open'))",5)
-            self.assertIn('Keep this link private',self.js("document.querySelector('.save-help-panel:popover-open').innerText"))
-            self.assertTrue(self.js("(()=>{const r=document.querySelector('.save-help-panel:popover-open').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;})()"))
-            self.click_visible('Close save help')
-            self.assertEqual(self.js("document.activeElement.getAttribute('aria-label')"),'About your return link')
-            self.click_visible('About your return link');self.key('Escape')
-            self.assertEqual(self.js("document.querySelectorAll('.save-help-panel:popover-open').length"),0)
-            self.assertEqual(self.js("document.activeElement.getAttribute('aria-label')"),'About your return link')
-            self.click_visible('About your return link');self.click_visible('Copy return link')
-            self.assertEqual(self.js("document.querySelectorAll('.save-help-panel:popover-open').length"),0,'Clicking outside dismisses the help')
+            self.assertIsNone(self.js("document.getElementById('visitor-return-link')"))
+            self.assertIsNone(self.js("document.getElementById('level-more')"))
+            self.press('Share')
+            self.assertEqual(self.js("document.getElementById('header-share').href"),'https://banjo.is/play')
             self.press('Sandbox');self.wait("document.getElementById('sandbox-screen').hidden===false",10)
             self.assertFalse(self.js("document.getElementById('sandbox-screen').innerText.includes('Save designs, reopen versions')"))
             self.press('Add New Design');self.wait(READY,60)
@@ -5946,8 +5937,9 @@ class Puzzles(unittest.TestCase):
             for width,height in ((1280,860),(390,844),(844,390)):
                 returned,_=self.anonymous_levels(width=width,height=height)
                 self.assertEqual(returned,visitor)
-                self.click_visible('Copy return link')
-                self.wait("/Return link copied|copy its address/.test(document.querySelector('#levels-screen .visitor-return-status').textContent)",10)
+                self.press('Share')
+                self.assertEqual(self.js("document.getElementById('header-share').href"),'https://banjo.is/play')
+                self.assertIsNone(self.js("document.getElementById('copy-return-link')"))
             self.assertEqual(self.anonymous_levels(link)[0],visitor)
         finally:self.anonymous_fixture_restore(backup)
 
@@ -5965,10 +5957,9 @@ class Puzzles(unittest.TestCase):
             self.assertNotIn('Other builder',self.js("document.getElementById('levels-screen').textContent"))
             second=next(key for key in migrated['players'] if key!=first)
             second_link=f'{self.base}/play?visitor={second}'
-            self.assertTrue(self.js(f"[...document.querySelectorAll('#levels-screen .previous-save')].some(a=>a.href==={json.dumps(second_link)})"))
-            self.js(f"(()=>{{const a=[...document.querySelectorAll('#levels-screen .previous-save')].find(a=>a.href==={json.dumps(second_link)});a.closest('details').open=true;a.click();}})()")
+            self.assertEqual(self.anonymous_levels(second_link)[0],second)
             self.wait(f"window.machineSave?.().current==={json.dumps(second)} && document.querySelector('.ls-list .level-card[data-level=gap]')?.textContent.includes('Best win: 28.8 MJ')",30)
-            self.assertEqual(self.anonymous_levels()[0],second,'The Previous saves link updates the remembered cookie')
+            self.assertEqual(self.anonymous_levels()[0],second,'A recovery URL updates the remembered cookie')
             self.assertIn('Best win: 28.8 MJ',self.js("document.querySelector('.ls-list .level-card[data-level=gap]').textContent"))
             self.assertNotIn('12.3 MJ',self.js("document.querySelector('.ls-list .level-card[data-level=gap]').textContent"))
             self.assertEqual(self.anonymous_levels(first_link)[0],first)

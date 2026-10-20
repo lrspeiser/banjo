@@ -40,6 +40,14 @@ artifacts use [GitHub Actions artifacts](https://github.com/actions/download-art
 within the same run; they are not downloaded from an unrelated branch/run.
 New timing claims require a completed run of this graph; cold-cache and queued
 runner time should be reported separately from test execution.
+The first cold-cache attempt at `9954aa3f` finished in 26.7 minutes and passed
+its engine build and 39 jobs, but correctly
+refused packaging after one browser check failed. Its final-pose assertion read
+the drawn and engine positions in separate browser tasks; a final paused frame
+could arrive between those reads. The check now reads both in one task and
+retains the exact same 1e-12 tolerance and interpolation assertions.
+That failed attempt is not a successful-release timing benchmark: packaging
+was skipped. The following checkpoint must pass all tests and package checks.
 Local checks pass: actionlint 1.7.12 validates both workflows;
 receipt/proof regressions reject changed bytes, wrong revisions,
 platforms, branches and incomplete/failed runs. The new portrait catalogue and

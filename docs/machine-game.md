@@ -100,19 +100,28 @@ edits, Undo/Redo and explicit bottom-bar paging. API checks cover production and
 `/test` routing. All 75 reference solutions meet their own goals and energy pars;
 this is not a repeat of every older level's nudged or blind-user trials.
 
-## Compact navigation — October 19
+## Compact navigation — October 20
 
 The Levels chooser no longer repeats Sandbox and the Pinball project as large
-purple cards. Both are ordinary links in the shared header. **Sandbox** opens
-the design list; **Pinball** resumes the first unfinished project lesson (or
-the final lesson when all ten are complete). Its normal link target follows
-that progress and preserves the `/test` prefix. The full Pinball chapter and
-all level cards remain available. Phone navigation retains one row and 44 px
+purple cards. **Sandbox** opens the design list from the header. Pinball's ten
+lessons remain in the Levels chapter and its complete table in Sandbox; it no
+longer has a separate header shortcut. The More save-link box is removed from
+Levels and Sandbox. **Share** in the header copies the current public level or
+run-only design link, without the private recovery credential. Cookies and
+server-saved progress/designs still restore normally, including existing private
+recovery URLs. Phone navigation retains one row and 44 px
 touch targets, including when the TEST badge is visible. This changes only
 navigation/layout; the native engine and physical level declarations are unchanged.
 Browser checks cover 1280×860, 390×844, 844×390 and 320×568 headers with and
-without the TEST badge. Pinball entry, continued progress, win/save/reopen and
-the existing Changes dialog pass across desktop and phone layouts.
+without the TEST badge. October 20's seven focused browser scenarios pass in
+46.604 s, including desktop and both phone orientations, Pinball entry and
+win/save/reopen, private URL restoration, save help, public Share and the
+stopped-pose check. Its drawn/engine coordinates are sampled in one browser
+task to avoid a final paused frame arriving between reads; its exact 1e-12
+tolerance and interpolation assertions remain unchanged.
+Three additional header/settings and saved-version recovery scenarios pass in
+17.578 s, including 320 px navigation and `/test` headers. The real browser
+also shows the compact navigation and copies the public level link.
 
 ## Recessed Pinball catchers — October 19
 
@@ -211,7 +220,7 @@ limit. All 131 game cases remain present exactly once; timeouts are unchanged.
 
 ## Build a Pinball Machine — October 19
 
-The header's Pinball link and the chooser's ten-step chapter teach an angled
+The chooser's ten-step Pinball chapter teaches an angled
 deck, containment guide, spring launch, return guide, unpowered returning
 paddle, physical button contact, wired motor, independent parallel flippers,
 passive bumper/target and complete table. Each starts with GO guidance and

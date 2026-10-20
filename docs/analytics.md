@@ -44,8 +44,19 @@ Useful initial PostHog Product analytics insights:
 6. Simulation lag and machine request failures by build revision. Do not infer
    a full client CPU profile from these summary measurements.
 
+The signed-in owner authorized creation of
+[Banjo Player Overview](https://us.posthog.com/project/676387/dashboard/2235687)
+in the dedicated Banjo project on October 20. Its eight saved native Trends
+insights cover visitors, players, completed level runs, daily activity, activity
+by level, scored-attempt win rates, median winning attempt and median time to
+win. All eight returned production data when refreshed. The dashboard defaults
+to seven days. First-day comparison badges are hidden because there is no
+earlier tracking history. Counts are anonymous browsers; repeat wins are
+separate completed runs. Winning time is wall-clock time, including thinking
+and background tabs. No other PostHog project was edited.
+
 The public project token can ingest events, but cannot create dashboards or
-query stored events. No dashboard creation is claimed without account access.
+query stored events; dashboard work used the owner's signed-in PostHog session.
 
 ## Identity, privacy and limits
 

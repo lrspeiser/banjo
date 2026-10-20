@@ -2,7 +2,7 @@ import * as THREE from './three.module.js';
 import {mergeFrame, family, materialColor, heatTint, focusPoint, stationPoint, describeTime, beamSegments, lensOutline, clearWireRoute, contactCircuitDiagram, PLACEMENT_GRID, snapGroundPoint, workingAlignment, wheelAlignment, thermalCells, draggedKnobValue, pieceToolbarPosition, springCoilPoints, blendPose, FramePlayback, glides, frameBlend, pathPoint, blueprintPlacements, makeBlueprint} from './machine-view.mjs';
 import {anonymousSave, validVisitor, returnURL} from './anonymous-profile.mjs';
 import {ProfileSync, mergeProfiles} from './profile-sync.mjs';
-import {renderLevelCards,createLevelMoreMenu} from './level-library.mjs';
+import {renderLevelCards} from './level-library.mjs';
 import {renderDesignGallery} from './design-gallery.mjs';
 import {renderCommunity} from './community-gallery.mjs';
 import {levelIntroduction} from './level-intro.mjs';
@@ -6984,7 +6984,6 @@ function keepResult(id, r) {
   if(r.earned.goal&&level.project?.id==='pinball')row.project_placements=clone(placements);
   me().last = id;
   persist();
-  updatePinballLink();
   return {was, better: lessEnergy || r.stars > (was.stars || 0), unlocked};
 }
 let pinballProjectSave=Promise.resolve();
@@ -8046,27 +8045,11 @@ function showSandboxScreen(show = true) {
   const head = add(box, 'div', {className: 'ls-head'});
   add(head, 'h1', {textContent: 'Sandbox'});
   head.append(button('Browse Community',()=>showCommunityScreen(),{id:'community-open'}));
-  const more = createLevelMoreMenu(box,{id:'design-more'}).content;
-  renderReturnLink(more);
   renderDesignGallery({box,head,store:designStore(),templates:sandboxTemplates,wallTemplate,pinballTemplate,
     openDesign:d=>chooseLevel('free',d),
     createDesign:(name,draft,template)=>{const d=newDesign(name,draft);if(template){checkpointDesign(d);persist();}return d;}});
 }
 $('sandbox-open').addEventListener('click', e => { e.preventDefault(); if (freeLevel) showSandboxScreen(); });
-function nextPinballStep() {
-  const steps=levels.filter(l=>l.project?.id==='pinball');
-  return steps.find(l=>!bestStars(l.id))||steps.at(-1);
-}
-function updatePinballLink() {
-  const next=nextPinballStep(),link=$('pinball-open');
-  link.hidden=!next;
-  if(next){link.href=appPath('/play')+'?level='+next.id;link.title=`Continue at Pinball step ${next.project.step} of 10`;}
-}
-$('pinball-open').addEventListener('click',e=>{
-  if(e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
-  const next=nextPinballStep();if(!next)return;
-  e.preventDefault();chooseLevel(next.id).catch(()=>{});
-});
 $('designs-open').addEventListener('click', () => showSandboxScreen());
 $('wall-open-world').addEventListener('click',async()=>{
   if(readOnlyCourse()||!wallDesign()||worldWallDesign()||ghostInTheWay())return;
@@ -8389,24 +8372,6 @@ function showDone(r, kept = {was: {}, better: false, unlocked: []}) {
 }
 
 // ---- the levels screen: every level, and how far this player has got --------------------
-function renderReturnLink(box) {
-  for (const old of document.querySelectorAll('.visitor-return,.previous-saves')) old.remove();
-  const line = document.createElement('div'); line.className = 'visitor-return';
-  const link = document.createElement('a'); link.id = 'visitor-return-link'; link.href = returnURL(location.origin, save.current, APP_BASE); link.textContent = 'Your return link';
-  const copy = button('Copy return link', async () => {
-    try { await navigator.clipboard.writeText(link.href); status.textContent = 'Return link copied.'; }
-    catch { status.textContent = 'Open the return link to copy its address.'; }
-  }, {id:'copy-return-link'});
-  const status = document.createElement('span'); status.className = 'visitor-return-status'; status.setAttribute('role','status');
-  const sync = document.createElement('span'); sync.className = 'visitor-return-status profile-sync-status'; sync.setAttribute('role','status'); sync.textContent = profileStatus();
-  line.append(link, copy); addSaveHelp(line,'About your return link'); line.append(status,sync); box.append(line);
-  const others = Object.keys(save.players).filter(id => id !== save.current);
-  if (others.length) {
-    const previous = document.createElement('details'), summary = document.createElement('summary'); previous.className = 'previous-saves'; summary.textContent = 'Previous saves'; previous.append(summary);
-    others.forEach((id, index) => { const a = document.createElement('a'); a.href = returnURL(location.origin, id, APP_BASE); a.textContent = `Saved profile ${index + 1}`; a.className = 'previous-save'; previous.append(a); });
-    box.append(previous);
-  }
-}
 function showLevelsScreen(show) {
   if(show){parkDesign();setSharedCourse(null);document.body.classList.remove('on-community');$('test-busy').hidden=true;}
   const box = $('levels-screen');
@@ -8427,21 +8392,17 @@ function showLevelsScreen(show) {
     history_.replaceState(null, '', level.free ? appPath('/machine') + '?design=' + encodeURIComponent(activeDesign.id) : appPath('/play') + '?level=' + level.id);
     await rebuildLevel(false);
   }));
-  const more = createLevelMoreMenu(box,{id:'level-more'}).content;
-  renderReturnLink(more);
   history_.replaceState(null, '', returnURL(location.origin, save.current, APP_BASE));
   updateHeaderShare();
   const won = levels.filter(l => bestStars(l.id) > 0).length, starsAll = levels.reduce((s, l) => s + bestStars(l.id), 0);
   const nextUp = levels.find(l => !bestStars(l.id));
   add(box, 'p', {className: 'ls-summary', textContent: `${won}/${levels.length} levels · ${starsAll} stars`});
-  updatePinballLink();
-  const freshStatus = add(more, 'p', {role: 'status'});
   if (me().freshChallenges?.length) {
-    const recent = add(more, 'section', {className: 'chat-actions', ariaLabel: 'Recent challenges'});
+    const recent = add(box, 'section', {className: 'chat-actions', ariaLabel: 'Recent challenges'});
     add(recent, 'h2', {textContent: 'Return to a challenge'});
+    const freshStatus = add(recent, 'p', {role: 'status'});
     for (const saved of me().freshChallenges) recent.append(button(saved.title, () => chooseLevel(saved.id).catch(e => { freshStatus.textContent = e.message; })));
   }
-  box.append(more.parentElement);
   const list = add(box, 'ol', {className: 'ls-list'});
   renderLevelCards(list,levels,{record,bestStars,energyText,pieceLabel,nextUp,
     onChoose:l=>{showLevelsScreen(false);chooseLevel(l.id).catch(()=>{});}});
@@ -9212,7 +9173,6 @@ async function startGame() {
   await openAnonymousProfile();
   const r = await api({op: 'levels'});
   levels = r.levels; freeLevel = r.free || null; sandboxBase = r.sandbox_base; sandboxTemplates = r.sandbox || [];wallTemplate=r.wall_sandbox||null;pinballTemplate=r.pinball_sandbox||null;legacyWallTray=r.wall_legacy_tray||[];
-  updatePinballLink();
   // Browse first. A landing page does not build a world or replace /play
   // with the last puzzle's URL before the player chooses a level.
   $('page-loading').hidden = true;
