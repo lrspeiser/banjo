@@ -431,6 +431,11 @@ class Puzzles(unittest.TestCase):
             self.wait('machineCamera().settled',30);self.paint()
             return
         if name!='GO' and self.js("Boolean(document.getElementById('level-intro')?.open)"):self.click_visible('GO')
+        if name in ('Sandbox','Pinball'):
+            ident={'Sandbox':'sandbox-open','Pinball':'pinball-open'}[name]
+            point=self.js(f"(()=>{{const a=document.getElementById('{ident}'),r=a.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];}})()")
+            self.mouse('mousePressed',*point);self.mouse('mouseReleased',*point)
+            return
         if name in ('Share','Share this design'):
             point=self.js("(()=>{const a=document.getElementById('header-share');a.scrollIntoView({block:'nearest',inline:'nearest'});const r=a.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2];})()")
             self.mouse('mousePressed',*point);self.mouse('mouseReleased',*point)
@@ -1528,7 +1533,7 @@ class Puzzles(unittest.TestCase):
 
     def test_individual_gear_example_library_and_saved_version_reopen(self):
         self.anonymous_levels(width=390,height=844)
-        self.press('Sandbox: build anything')
+        self.press('Sandbox')
         self.wait("!document.getElementById('sandbox-screen').hidden",10)
         self.press('Start from Fast wheel slow wheel');self.wait(READY,60)
         original=self.js('window.machinePlacements()')
@@ -1554,7 +1559,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(width=width,height=height):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.wait("!document.getElementById('sandbox-screen').hidden",10)
+                self.press('Sandbox');self.wait("!document.getElementById('sandbox-screen').hidden",10)
                 self.press('Start from Water through pipes');self.wait(READY,60)
                 self.assertEqual([p['piece'] for p in self.js('machinePlacements()')],
                                  ['water_tank','pipe_elbow','pipe_reducer','water_collector'])
@@ -1586,7 +1591,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(width=width,height=height):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.wait("!document.getElementById('sandbox-screen').hidden",10)
+                self.press('Sandbox');self.wait("!document.getElementById('sandbox-screen').hidden",10)
                 self.press('Start from Marble through a pipe');self.wait(READY,60)
                 self.click_visible('Run')
                 self.wait("machineBodies()['your marble 2'][0]>.65",30)
@@ -1693,7 +1698,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Close level complete');self.click_visible('Reset');self.wait(READY,30)
                 self.assertEqual(self.js('machinePlacements()'),[])
                 self.assertFalse(self.js("Boolean(document.querySelector('#device-live-controls button,#device-live-controls input'))"))
-        self.anonymous_levels(width=1280,height=860);self.press('Sandbox: build anything')
+        self.anonymous_levels(width=1280,height=860);self.press('Sandbox')
         self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
         self.press('Start from Divert water into a container');self.wait(READY,30)
         self.assertTrue(self.js("[...document.querySelectorAll('#device-live-controls button')].some(b=>b.textContent==='Toggle water supply valve')"))
@@ -2625,7 +2630,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.wait("!document.getElementById('sandbox-screen').hidden",10)
+                self.press('Sandbox');self.wait("!document.getElementById('sandbox-screen').hidden",10)
                 self.press('Start from Gate and split');self.wait(READY,60)
                 kept=self.js('machinePlacements()');base=self.js('machineDesign().draft.base')
                 versions=self.js('machineDesign().versions')
@@ -2725,7 +2730,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything')
+                self.press('Sandbox')
                 self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",60)
                 self.press('Start from Chain reaction');self.wait(READY,90)
                 before=self.js('machineDesign().draft.base')
@@ -2762,7 +2767,7 @@ class Puzzles(unittest.TestCase):
     def test_sandbox_add_remove_and_river_environment_keep_design_and_history(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
-                self.anonymous_levels(width=width,height=height);self.press('Sandbox: build anything')
+                self.anonymous_levels(width=width,height=height);self.press('Sandbox')
                 self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",60);self.create_design()
                 self.press('Add a battery');self.ghost();self.slide('along (m) of your battery 1',1);self.ghost()
                 self.click_visible('✓ Set down');self.wait(READY,90)
@@ -2795,7 +2800,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen').hidden===false",10)
+                self.press('Sandbox');self.wait("document.getElementById('sandbox-screen').hidden===false",10)
                 self.assertIsNone(self.js("document.getElementById('new-design-name')"))
                 self.assertIsNone(self.js("document.querySelector('.design-gallery [role=tablist]')"))
                 self.assertFalse(self.js("document.getElementById('design-panel-owned').hidden"))
@@ -3043,7 +3048,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.click_visible('Pinball')
+                self.press('Sandbox');self.click_visible('Pinball')
                 self.wait("machineDesign()?.name==='Pinball' && "+READY,90)
                 saved=self.js('machineDesign().id')
                 self.assertFalse(self.js("document.getElementById('object-action-dialog').open"))
@@ -3146,7 +3151,7 @@ class Puzzles(unittest.TestCase):
             for width,height in ((1280,860),(390,844),(844,390)):
                 with self.subTest(legacy=legacy,viewport=(width,height)),patch.object(sandbox_pinball,'template',return_value=template):
                     self.anonymous_levels(width=width,height=height)
-                    self.press('Sandbox: build anything');self.click_visible('Pinball')
+                    self.press('Sandbox');self.click_visible('Pinball')
                     self.wait("machineDesign()?.name==='Pinball' && "+READY,90)
                     self.wait('machineCamera().settled',30)
                     self.wait("machineFlowPreviewState()?.drawn?.mechanisms?.some(m=>m.name==='left flipper paddle')",60)
@@ -3181,7 +3186,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.click_visible('Pinball')
+                self.press('Sandbox');self.click_visible('Pinball')
                 self.wait("machineDesign()?.name==='Pinball' && "+READY,90)
                 self.wait('machineCamera().settled',30)
                 self.click_visible('Add a marble');g=self.ghost()
@@ -3212,7 +3217,15 @@ class Puzzles(unittest.TestCase):
     def test_pinball_project_intro_drag_win_save_and_reopen_on_desktop_and_phones(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
-                self.open('pinball-01',width,height,phone=width!=1280,dismiss_intro=False)
+                self.anonymous_levels(width=width,height=height)
+                self.assertEqual(self.js("document.querySelectorAll('#levels-screen .ls-free').length"),0)
+                self.press('Pinball');self.wait(READY,60)
+                self.wait("document.getElementById('level-intro').open",10)
+                # The same visitor keeps progress when changing device layouts.
+                # The header resumes step two after the desktop's first win.
+                if width!=1280:
+                    self.assertIn('Pinball 2 of 10',self.js("document.getElementById('level-intro-title').textContent"))
+                    self.open('pinball-01',width,height,phone=True,dismiss_intro=False)
                 self.assertIn('Pinball 1 of 10',self.js("document.getElementById('level-intro-title').textContent"))
                 self.click_visible('GO')
                 self.assertGreater(self.js('machineCamera().elevation'),.9)
@@ -3223,6 +3236,7 @@ class Puzzles(unittest.TestCase):
                 self.click_visible('Place');self.wait(READY,60)
                 self.click_visible('Run');self.wait("document.body.classList.contains('scene-win')",60)
                 self.wait("document.getElementById('pinball-project-status')?.textContent.includes('saved in Sandbox')",30)
+                self.assertTrue(self.js("document.getElementById('pinball-open').href.endsWith('/play?level=pinball-02')"))
                 self.click_visible('Open my Pinball project')
                 self.wait("machineDesign()?.project==='pinball' && "+READY,90)
                 saved=self.js('machineDesign().id')
@@ -3290,7 +3304,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.click_visible('Pinball')
+                self.press('Sandbox');self.click_visible('Pinball')
                 self.wait("machineDesign()?.name==='Pinball' && "+READY,90)
                 self.wait('machineCamera().settled',30)
                 saved=self.js('machineDesign().id')
@@ -3390,7 +3404,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.click_visible('Build on a wall')
+                self.press('Sandbox');self.click_visible('Build on a wall')
                 self.wait("machineDesign()?.draft.base?.build_surface?.kind==='wall' && "+READY,60)
                 self.wait('machineCamera().settled',30)
                 self.assertEqual(self.js('machinePlacements().length'),5)
@@ -3481,7 +3495,7 @@ class Puzzles(unittest.TestCase):
                     type(self).chrome=chrome_driver.Chrome(width,height);type(self).page=type(self).chrome.page
                     self.page.send('Network.enable');self.page.send('Runtime.enable')
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.click_visible('Build on a wall');self.wait(READY,60)
+                self.press('Sandbox');self.click_visible('Build on a wall');self.wait(READY,60)
                 self.assertEqual(self.js('machineDesign().draft.base.build_surface.version'),2)
                 self.assertTrue(self.js('machineWallState().ground_visible'))
                 self.assertFalse(self.js("Boolean(machineBodies()['workshop clear guard'])"))
@@ -3530,7 +3544,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.click_visible('Build on a wall');self.wait(READY,60)
+                self.press('Sandbox');self.click_visible('Build on a wall');self.wait(READY,60)
                 original=self.js('machineDesign().draft')
                 self.click_piece(self.js('machinePlacements().length'));self.ghost()
                 self.assertEqual(self.js("[...document.querySelectorAll('.wall-size-handle')].filter(h=>h.checkVisibility()).length"),4)
@@ -3592,7 +3606,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.click_visible('Build on a wall');self.wait(READY,60)
+                self.press('Sandbox');self.click_visible('Build on a wall');self.wait(READY,60)
                 original=self.js('machineDesign().draft')
                 self.click_visible('Add wall');self.ghost();self.click_visible('Turn wall by 90 degrees');self.ghost()
                 self.paint()
@@ -3686,7 +3700,7 @@ class Puzzles(unittest.TestCase):
 
     def test_word_builder_does_not_overwrite_an_edit_made_while_it_was_thinking(self):
         import machine_game_tests
-        self.anonymous_levels();self.press('Sandbox: build anything');self.press('Add New Design');self.wait(READY,30)
+        self.anonymous_levels();self.press('Sandbox');self.press('Add New Design');self.wait(READY,30)
         self.click_visible('Describe a design');self.slide('Your question','Build a complete marble course')
         entered=threading.Event();release=threading.Event()
         def provider(*args,**kwargs):
@@ -3726,7 +3740,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.press('Add New Design');self.wait(READY,30)
+                self.press('Sandbox');self.press('Add New Design');self.wait(READY,30)
                 self.assertEqual(self.js('machinePlacements()'),[])
                 self.click_visible('Describe a design')
                 self.assertTrue(self.js("document.getElementById('builder-scope').checkVisibility()"))
@@ -3754,7 +3768,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.click_visible('Build on a wall')
+                self.press('Sandbox');self.click_visible('Build on a wall')
                 self.wait("machineDesign()?.draft.base?.build_surface?.kind==='wall' && "+READY,60)
                 original=self.js('machinePlacements()')
                 self.click_visible('Describe a design')
@@ -3893,7 +3907,7 @@ class Puzzles(unittest.TestCase):
         for width,height,name,stages in ((1280,860,expected[0],6),(390,844,expected[1],6),(844,390,expected[0],6)):
             with self.subTest(viewport=(width,height),machine=name):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything')
+                self.press('Sandbox')
                 self.wait("document.getElementById('sandbox-screen').hidden===false",30)
                 self.assertEqual(self.js("[...document.querySelectorAll('#prebuilt-designs button')].map(b=>b.getAttribute('aria-label').replace('Start from ',''))"),expected)
                 self.press('Start from '+name);self.wait(READY,90)
@@ -3919,7 +3933,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('machineDesign().draft.base.title'),name)
 
     def test_electric_relay_can_stop_edit_and_restart_without_repeated_builds(self):
-        self.anonymous_levels();self.press('Sandbox: build anything')
+        self.anonymous_levels();self.press('Sandbox')
         self.press('Start from Electric marble relay');self.wait(READY,90)
         original=self.js('machineDesign().draft')
         selected=self.js('machineEditableObjects().at(-1)')
@@ -3960,7 +3974,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.press('Start from Electric marble relay');self.wait(READY,90)
+                self.press('Sandbox');self.press('Start from Electric marble relay');self.wait(READY,90)
                 original=self.js('machineDesign().draft')
                 self.click_visible('Run');self.wait("/World [1-9]/.test(document.getElementById('clock').textContent)",30)
                 self.click_visible('Pause');self.click_visible('Tune')
@@ -3977,7 +3991,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.js('machineDesign().draft'),original)
 
     def test_each_new_marble_showcase_runs_and_saves_its_prepared_base(self):
-        self.anonymous_levels();self.press('Sandbox: build anything')
+        self.anonymous_levels();self.press('Sandbox')
         for name,count in (('Marble skyscraper',6),('Waterworks express',6),('Solar pinball factory',6),
                            ('Light the fuse',5),('Electric marble relay',8)):
             with self.subTest(machine=name):
@@ -4753,7 +4767,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything')
+                self.press('Sandbox')
                 self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",30)
                 self.press('Start from Sun powers the flag')
                 initial=set(self.js('machineRenderedBodies()'))
@@ -5218,7 +5232,7 @@ class Puzzles(unittest.TestCase):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
                 self.anonymous_levels(width=width,height=height)
-                self.press('Sandbox: build anything');self.create_design()
+                self.press('Sandbox');self.create_design()
                 self.press('Add a piece');self.press('Add a capacitor');self.ghost()
                 self.click_visible('Open selected device controls')
                 for key in ('capacitance_f','esr_ohm','leakage_ohm','housing_material'):
@@ -5580,7 +5594,7 @@ class Puzzles(unittest.TestCase):
             self.assertFalse(self.js("document.getElementById('recent-changes').open"))
             before = self.js("({url:location.href,setup:window.machinePlacements(),ghost:window.machineGhostState(),save:localStorage.getItem('banjo-play-save'),scroll:scrollY})")
             navigation = self.js("[...document.querySelectorAll('header nav a')].map(e=>{const r=e.getBoundingClientRect();return {label:e.getAttribute('aria-label')||e.textContent,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})")
-            self.assertEqual([r['label'] for r in navigation], ['Levels','Sandbox','How to play','Recent Changes','Share'])
+            self.assertEqual([r['label'] for r in navigation], ['Levels','Sandbox','Pinball','How to play','Recent Changes','Share'])
             for target in navigation:
                 self.assertTrue(target['visible'] and target['hit'], target)
                 self.assertGreaterEqual(target['w'], 44); self.assertGreaterEqual(target['h'], 44)
@@ -5805,7 +5819,7 @@ class Puzzles(unittest.TestCase):
             self.assertEqual(self.js("document.activeElement.getAttribute('aria-label')"),'About your return link')
             self.click_visible('About your return link');self.click_visible('Copy return link')
             self.assertEqual(self.js("document.querySelectorAll('.save-help-panel:popover-open').length"),0,'Clicking outside dismisses the help')
-            self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen').hidden===false",10)
+            self.press('Sandbox');self.wait("document.getElementById('sandbox-screen').hidden===false",10)
             self.assertFalse(self.js("document.getElementById('sandbox-screen').innerText.includes('Save designs, reopen versions')"))
             self.press('Add New Design');self.wait(READY,60)
             self.anonymous_cloud_saved()
@@ -5874,7 +5888,7 @@ class Puzzles(unittest.TestCase):
             self.test_legitimate_switch_handle_operation_can_win_with_actual_work()
             self.anonymous_cloud_saved()
             self.anonymous_levels()
-            self.press('Sandbox: build anything')
+            self.press('Sandbox')
             self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
             self.press('Add New Design');self.wait(READY,90)
             self.press('Add a marble');self.assertTrue(self.ghost()['fits'])
@@ -5893,7 +5907,7 @@ class Puzzles(unittest.TestCase):
                 self.assertEqual(self.page.send('Network.getCookies',{'urls':[self.base]})['cookies'],[],'A second browser has no identity or cached save')
                 self.assertEqual(self.anonymous_levels(link)[0],visitor)
                 self.assertGreater(self.js('machineSave().players[machineSave().current].levels["easy-switch"].stars'),0,'A real native win returns on the other device')
-                self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+                self.press('Sandbox');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
                 self.press(f"Open design {design['name']}");self.wait(READY,90)
                 self.assertEqual(self.js('machinePlacements()'),placed)
                 self.assertEqual(self.js('machineDesign().versions'),design['versions'])
@@ -5910,7 +5924,7 @@ class Puzzles(unittest.TestCase):
                 self.page=original_page;other.close()
             self.anonymous_fixture_clear()
             self.assertEqual(self.anonymous_levels(link)[0],visitor)
-            self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+            self.press('Sandbox');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
             self.press(f"Open design {design['name']}");self.wait(READY,90)
             self.assertEqual(self.js('machinePlacements()'),placed)
             self.assertEqual(self.js('machineDesign().versions'),design['versions'])
@@ -5938,7 +5952,7 @@ class Puzzles(unittest.TestCase):
         try:
             self.anonymous_fixture_clear()
             visitor,_=self.anonymous_levels()
-            self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+            self.press('Sandbox');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
             self.create_design('Cookie return')
             self.press('Save version');self.wait('machineDesign().versions.length===1',10)
             self.anonymous_cloud_saved();design=self.js('machineDesign()')
@@ -5946,7 +5960,7 @@ class Puzzles(unittest.TestCase):
             self.assertEqual(self.anonymous_levels()[0],visitor,'The server cookie alone restores the existing save')
             self.assertEqual(self.js('Object.keys(machineSave().players)'),[visitor])
             self.assertEqual(self.js("document.querySelectorAll('#levels-screen .previous-save').length"),0,'A temporary bootstrap ID must not become an orphan Previous save')
-            self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+            self.press('Sandbox');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
             self.press('Open design Cookie return');self.wait(READY,90)
             self.assertEqual(self.js('machineDesign().versions'),design['versions'])
         finally:self.anonymous_fixture_restore(backup)
@@ -5956,7 +5970,7 @@ class Puzzles(unittest.TestCase):
         try:
             self.anonymous_fixture_clear()
             visitor,link=self.anonymous_levels()
-            self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+            self.press('Sandbox');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
             self.create_design('Unicode declaration')
             self.js("""window.unicodeSaves=[];const original=window.fetch;
               window.fetch=async (...args)=>{let data;try{data=JSON.parse(args[1]?.body||'null');}catch{}
@@ -5980,7 +5994,7 @@ class Puzzles(unittest.TestCase):
             try:
                 self.page=other.page;self.page.send('Network.enable')
                 self.assertEqual(self.anonymous_levels(link)[0],visitor)
-                self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+                self.press('Sandbox');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
                 self.press('Open design Unicode declaration');self.wait(READY,90)
                 self.assertTrue(self.js("machineDesign().draft.base.description==='水'.repeat(12000)"))
                 self.assertTrue(self.js("machineDesign().versions[0].draft.base.description==='水'.repeat(12000)"))
@@ -5995,8 +6009,8 @@ class Puzzles(unittest.TestCase):
         self.page.send('Emulation.setDeviceMetricsOverride', {'width': 1280, 'height': 860, 'deviceScaleFactor': 1,
                                                               'mobile': False})
         self.navigate(f'{self.base}/play')
-        self.wait("document.querySelector('.ls-free') && !document.getElementById('levels-screen').hidden", 90)
-        self.press('Sandbox: build anything')
+        self.wait("document.querySelector('.level-card') && !document.getElementById('levels-screen').hidden", 90)
+        self.press('Sandbox')
         self.wait("document.getElementById('sandbox-screen')?.hidden===false", 10)
         self.press('Add New Design')
         self.wait(READY, 90)
@@ -6081,7 +6095,7 @@ class Puzzles(unittest.TestCase):
             try:
                 self.page=other.page;self.page.send('Network.enable')
                 self.assertEqual(self.anonymous_levels(f'{self.base}/play?visitor={visitor}')[0],visitor)
-                self.press('Sandbox: build anything');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
+                self.press('Sandbox');self.wait("document.getElementById('sandbox-screen')?.hidden===false",10)
                 self.press('Open design My free build');self.wait(READY,90)
                 self.assertEqual(self.js('machineDesign().versions'),kept['versions'])
                 self.assertEqual(self.js('machinePlacements()'),first)
@@ -7454,7 +7468,7 @@ class Puzzles(unittest.TestCase):
     def test_loose_board_is_individually_selectable_repositionable_and_saved(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):
-                self.anonymous_levels(width=width,height=height);self.press('Sandbox: build anything')
+                self.anonymous_levels(width=width,height=height);self.press('Sandbox')
                 self.wait("Boolean(document.querySelector('#prebuilt-designs button'))",60)
                 self.press('Start from Support a loose board');self.wait(READY,60)
                 original=self.js('machineDesign().draft.base')

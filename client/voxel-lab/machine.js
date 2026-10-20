@@ -6912,6 +6912,7 @@ function keepResult(id, r) {
   if(r.earned.goal&&level.project?.id==='pinball')row.project_placements=clone(placements);
   me().last = id;
   persist();
+  updatePinballLink();
   return {was, better: lessEnergy || r.stars > (was.stars || 0), unlocked};
 }
 let pinballProjectSave=Promise.resolve();
@@ -7959,6 +7960,20 @@ function showSandboxScreen(show = true) {
     createDesign:(name,draft,template)=>{const d=newDesign(name,draft);if(template){checkpointDesign(d);persist();}return d;}});
 }
 $('sandbox-open').addEventListener('click', e => { e.preventDefault(); if (freeLevel) showSandboxScreen(); });
+function nextPinballStep() {
+  const steps=levels.filter(l=>l.project?.id==='pinball');
+  return steps.find(l=>!bestStars(l.id))||steps.at(-1);
+}
+function updatePinballLink() {
+  const next=nextPinballStep(),link=$('pinball-open');
+  link.hidden=!next;
+  if(next){link.href=appPath('/play')+'?level='+next.id;link.title=`Continue at Pinball step ${next.project.step} of 10`;}
+}
+$('pinball-open').addEventListener('click',e=>{
+  if(e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
+  const next=nextPinballStep();if(!next)return;
+  e.preventDefault();chooseLevel(next.id).catch(()=>{});
+});
 $('designs-open').addEventListener('click', () => showSandboxScreen());
 $('wall-open-world').addEventListener('click',async()=>{
   if(readOnlyCourse()||!wallDesign()||worldWallDesign()||ghostInTheWay())return;
@@ -8317,21 +8332,7 @@ function showLevelsScreen(show) {
   const won = levels.filter(l => bestStars(l.id) > 0).length, starsAll = levels.reduce((s, l) => s + bestStars(l.id), 0);
   const nextUp = levels.find(l => !bestStars(l.id));
   add(box, 'p', {className: 'ls-summary', textContent: `${won}/${levels.length} levels · ${starsAll} stars`});
-  // The free build: no goal, every piece, kept for this player.
-  if (freeLevel) {
-    const free = button('', () => showSandboxScreen(), {className: 'ls-card ls-free', ariaLabel: 'Sandbox: build anything'});
-    add(free, 'strong', {textContent: 'Sandbox'});
-    add(free, 'span', {className: 'teaches', textContent: 'Your designs and examples'});
-    box.append(free);
-  }
-  const pinballSteps=levels.filter(l=>l.project?.id==='pinball');
-  if(pinballSteps.length){
-    const nextStep=pinballSteps.find(l=>!bestStars(l.id))||pinballSteps.at(-1);
-    const card=button('',()=>chooseLevel(nextStep.id).catch(()=>{}),{className:'ls-card ls-free',ariaLabel:'Build a Pinball Machine'});
-    add(card,'strong',{textContent:'Build a Pinball Machine'});
-    add(card,'span',{className:'teaches',textContent:`10 steps · ${pinballSteps.filter(l=>bestStars(l.id)>0).length} complete · Continue at step ${nextStep.project.step}`});
-    box.append(card);
-  }
+  updatePinballLink();
   const freshStatus = add(more, 'p', {role: 'status'});
   if (me().freshChallenges?.length) {
     const recent = add(more, 'section', {className: 'chat-actions', ariaLabel: 'Recent challenges'});
@@ -9085,6 +9086,7 @@ async function startGame() {
   await openAnonymousProfile();
   const r = await api({op: 'levels'});
   levels = r.levels; freeLevel = r.free || null; sandboxBase = r.sandbox_base; sandboxTemplates = r.sandbox || [];wallTemplate=r.wall_sandbox||null;pinballTemplate=r.pinball_sandbox||null;legacyWallTray=r.wall_legacy_tray||[];
+  updatePinballLink();
   // Browse first. A landing page does not build a world or replace /play
   // with the last puzzle's URL before the player chooses a level.
   $('page-loading').hidden = true;

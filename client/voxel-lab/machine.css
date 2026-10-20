@@ -311,7 +311,6 @@ body.on-sandbox main{display:none}
 .ls-card .status{font-size:13px;color:#9fdcff}
 .ls-list li.won .ls-card{border-color:#5fe08f}
 .ls-list li.next .ls-card{outline:2px solid #6cc6ff}
-.levels-screen .ls-free{min-height:0;margin:0 0 12px;border-color:#b98cff;background:#251f3a}
 /* What a win took. */
 .level-done .energy{font-size:18px;font-weight:700;margin:6px 0 2px}
 .level-done .breakdown{font-size:13px;color:#b9cbd6}
@@ -468,7 +467,6 @@ main{position:relative}
 .preview-legend .head{margin:0;font-size:12px}
 @media(max-width:359px){body.panel-tabs .control-panel .ghost-bar>.move-pad{grid-template-columns:repeat(4,44px);grid-template-rows:repeat(2,44px)}}
 .levels-screen .ls-summary{margin:8px 0;font-size:14px}
-.levels-screen .ls-free{min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:12px}
 .level-library-more{margin:8px 0 12px;border:1px solid #3d5b6d;border-radius:8px;padding:0 10px}
 .level-library-more>summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
 .level-library-more-content{padding-bottom:10px}
@@ -974,10 +972,13 @@ body.panel-tabs #view #clock{top:50px;bottom:auto;left:6px;width:auto;max-width:
   #viewer-corner:has(#redo-pieces:not(:disabled)) #viewer-zoom{width:89px}
 }
 @media(max-width:374px){
+  header .brand{flex-direction:column;gap:0}
+  header nav{gap:0;font-size:11px}
   header .brand .brand-name{display:none}
   #viewer-corner #view-zoom{display:none}
   #viewer-corner #viewer-zoom{width:89px}
 }
+@media(min-width:375px) and (max-width:449px){header .brand:has(#environment-badge:not([hidden])) .brand-name{display:none}}
 body.playing-level #view>.level-done:not(.retry-result){top:54px;bottom:auto;transform:translateX(-50%);max-height:calc(100% - 66px)}
 #view>.level-done:not(.retry-result) .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
 #view>.level-done:not(.retry-result) .actions button{min-width:0;white-space:normal}
