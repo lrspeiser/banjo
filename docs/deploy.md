@@ -1,5 +1,52 @@
 # Hosting the game
 
+## Faster verification — October 20
+
+The earlier release measured 41 minutes of CI and 49 minutes to finish its
+separate test-package workflow. That graph compiled the engine 33 times.
+The native CTest group alone spent 1,510 s testing, including 489 s of Pinball
+and 365 s of wall mechanisms; packaging then repeated those and the full game
+suite sequentially. The busiest browser batch took 1,182 s of its unchanged
+1,200 s deadline. These are observed baseline times, not an estimate of new speed.
+
+The revised graph:
+
+- Builds one shared Release game engine for browser, game and recipe jobs,
+  with a current-revision receipt and SHA-256 checked before every use. The
+  independent native unit build remains, reducing 33 builds to two. Both use
+  bounded compiler caches; compiler/flag/source validation remains in ccache.
+- Runs wall and Pinball mechanisms as separate integration groups, retaining
+  their cases and the existing 600 s deadlines. The native CTest exclusion
+  removes only those now-delegated groups; all other existing exclusions stay.
+- Divides the all-level UI audit by its three existing viewports and separates
+  the precision-control phone audit. All prior assertions and level/viewpoint
+  combinations remain, now in 218 disjoint browser methods. Optional onboarding
+  timing reports gain a `-WIDTHxHEIGHT` suffix.
+  CMake and CI both register the same sixteen browser batches.
+- Packages the same engine only after `build-and-test` succeeds in that CI run.
+  It repeats the installed-package routing/save isolation checks, not the
+  already-passed gameplay suites. `test-site.yml` is manual recovery only;
+  it requires full exact-revision CI before building a replacement package.
+- Runs full verification on staging and PRs. Feature pushes do not launch a
+  second copy alongside their PR. A main push reuses a completed, successful
+  staging **push** run only when repository, workflow and exact commit all match.
+  Source registration still runs; a changed revision, unavailable proof or a
+  direct main fix runs the full suite. The aggregate records the reused run ID.
+
+No physics law, goal, assertion, timestep or tolerance changes. Promotion still
+uses `scripts/promote-test.py` and requires the running `/test` revision to match
+staging with successful source-registration and build-and-test checks. Shared
+artifacts use [GitHub Actions artifacts](https://github.com/actions/download-artifact)
+within the same run; they are not downloaded from an unrelated branch/run.
+New timing claims require a completed run of this graph; cold-cache and queued
+runner time should be reported separately from test execution.
+Local checks pass: actionlint 1.7.12 validates both workflows;
+receipt/proof regressions reject changed bytes, wrong revisions,
+platforms, branches and incomplete/failed runs. The new portrait catalogue and
+phone precision-control methods pass in the ordinary browser (64.847 s total),
+and the distribution regression covers every one of the 218 methods exactly
+once for 1, 4 and 16 batches. These checks do not yet establish a new CI duration.
+
 October 20 analytics: the dedicated Banjo US project token is a public ingestion
 token bundled with the page; no Render secret or other-project change is needed.
 Only production HTTPS banjo.is/www.banjo.is sends explicit events. Local and

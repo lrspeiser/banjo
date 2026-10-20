@@ -2,6 +2,7 @@ name: ci
 
 on:
   push:
+    branches: [main, codex/staging]
   pull_request:
 
 # On a branch a new commit makes older runs obsolete, so they are cancelled.
@@ -14,14 +15,67 @@ concurrency:
 jobs:
   source-registration:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      reuse-main: ${{ steps.proof.outputs.reuse }}
+      verified-run: ${{ steps.proof.outputs.run_id }}
     steps:
       - uses: actions/checkout@v5
       - name: Check every source under src/ and tests/ is in a CMake target
         run: python3 scripts/check-source-registration.py
+      - name: Reuse successful staging verification only for an identical promoted main revision
+        id: proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci-engine.py reuse-main --revision "$GITHUB_SHA"
+
+  engine-build:
+    needs: source-registration
+    if: needs.source-registration.outputs.reuse-main != 'true'
+    runs-on: ubuntu-24.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/build/.ccache-engine
+      CCACHE_MAXSIZE: 256M
+      CCACHE_COMPILERCHECK: content
+      CCACHE_BASEDIR: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install compiler cache and electrical solver
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ccache libngspice0-dev
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: banjo-engine-ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: |
+            banjo-engine-ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}-
+            banjo-engine-ccache-${{ runner.os }}-
+      - name: Build this revision's shared game engine
+        run: |
+          cmake -S . -B build/shared-native -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=OFF -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          cmake --build build/shared-native --parallel 2 --target banjo_live_world_run
+          python3 scripts/ci-engine.py create --revision "$GITHUB_SHA" --binary build/shared-native/banjo_live_world_run --receipt build/shared-native/engine-receipt.json
+          mkdir -p build/engine-artifact
+          tar -czf build/engine-artifact/engine.tar.gz -C build/shared-native banjo_live_world_run engine-receipt.json
+          ccache --show-stats
+      - uses: actions/upload-artifact@v4
+        with:
+          name: banjo-engine-${{ github.sha }}
+          path: build/engine-artifact/engine.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 2
 
   native-tests:
     needs: source-registration
+    if: needs.source-registration.outputs.reuse-main != 'true'
     runs-on: ubuntu-24.04
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/build/.ccache-native
+      CCACHE_MAXSIZE: 256M
+      CCACHE_COMPILERCHECK: content
+      CCACHE_BASEDIR: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v5
 
@@ -31,10 +85,18 @@ jobs:
           node-version: '22'
 
       - name: Install the electrical solver
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libngspice0-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ccache libngspice0-dev
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: banjo-native-ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}-${{ github.sha }}
+          restore-keys: |
+            banjo-native-ccache-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}-
+            banjo-native-ccache-${{ runner.os }}-
 
       - name: Configure
-        run: cmake -S . -B build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=ON
+        run: cmake -S . -B build/ci -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=ON -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
         run: cmake --build build/ci --parallel 2
@@ -51,7 +113,7 @@ jobs:
           --output-junit ${{ github.workspace }}/ctest-results.xml
           --test-output-size-passed 20000000 --test-output-size-failed 20000000
           -LE "long|performance"
-          -E "^banjo_machine_game_browser_tests_[0-3]$|^banjo_machine_game_tests_[0-4]$|^banjo_sandbox_apparatus_tests_[0-3]$|^banjo_(machine_world|sandbox_(mechanics|water_launch|combinations|motion)|battery_socket|mechanical_switch)_tests$|^banjo_sandbox_electrics_tests_[0-1]$|^banjo_sandbox_variants_tests_[0-5]$"
+          -E "^banjo_machine_game_browser_tests_[0-9]+$|^banjo_machine_game_tests_[0-4]$|^banjo_sandbox_apparatus_tests_[0-3]$|^banjo_(machine_world|sandbox_(mechanics|water_launch|combinations|motion|wall|pinball)|battery_socket|mechanical_switch)_tests$|^banjo_sandbox_electrics_tests_[0-1]$|^banjo_sandbox_variants_tests_[0-5]$"
 
       - name: Keep the test and floating-point evidence
         if: always()
@@ -65,7 +127,8 @@ jobs:
           if-no-files-found: warn
 
   browser-tests:
-    needs: source-registration
+    needs: [source-registration, engine-build]
+    if: needs.source-registration.outputs.reuse-main != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
@@ -74,17 +137,12 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     steps:
       - uses: actions/checkout@v5
-      - name: Install the electrical solver
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libngspice0-dev
-      - name: Build this revision's game engine
-        # Independent runners keep software rendering and native simulations
-        # from competing for the same CPU. No runtime artifact is shared.
-        run: |
-          cmake -S . -B build/browser-engine -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=OFF
-          cmake --build build/browser-engine --parallel 2 --target banjo_live_world_run
+      - uses: ./.github/actions/shared-engine
+        with:
+          revision: ${{ github.sha }}
       - name: Play browser batch ${{ matrix.shard }} of 16
         env:
-          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/browser-engine/banjo_live_world_run
+          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/shared-engine/banjo_live_world_run
           BANJO_CHROME: /usr/bin/google-chrome
           BANJO_CHROME_ARGS: "--no-sandbox --disable-dev-shm-usage --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader"
           BANJO_BROWSER_TESTS: required
@@ -101,7 +159,8 @@ jobs:
           if-no-files-found: ignore
 
   game-integration-tests:
-    needs: source-registration
+    needs: [source-registration, engine-build]
+    if: needs.source-registration.outputs.reuse-main != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
@@ -133,17 +192,18 @@ jobs:
             suites: sandbox_combinations
           - name: water-and-interaction
             suites: machine_world sandbox_water_launch sandbox_motion battery_socket mechanical_switch
+          - name: wall-workshop
+            suites: sandbox_wall
+          - name: pinball-mechanisms
+            suites: sandbox_pinball
     steps:
       - uses: actions/checkout@v5
-      - name: Install the electrical solver
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libngspice0-dev
-      - name: Build this revision's game engine
-        run: |
-          cmake -S . -B build/integration-engine -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=OFF
-          cmake --build build/integration-engine --parallel 2 --target banjo_live_world_run
+      - uses: ./.github/actions/shared-engine
+        with:
+          revision: ${{ github.sha }}
       - name: Verify ${{ matrix.name }}
         env:
-          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/integration-engine/banjo_live_world_run
+          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/shared-engine/banjo_live_world_run
           BANJO_MACHINE_ENGINE: required
           SUITES: ${{ matrix.suites }}
           ELECTRICAL_SHARD: ${{ matrix.electrical_shard }}
@@ -159,6 +219,7 @@ jobs:
 
   apparatus-tests:
     needs: source-registration
+    if: needs.source-registration.outputs.reuse-main != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -173,7 +234,8 @@ jobs:
         run: timeout 600s python3 -u tests/sandbox_apparatus_tests.py --shard=${{ matrix.shard }}/4
 
   recipe-tests:
-    needs: source-registration
+    needs: [source-registration, engine-build]
+    if: needs.source-registration.outputs.reuse-main != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     strategy:
@@ -182,26 +244,26 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v5
-      - name: Install the electrical solver
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libngspice0-dev
-      - name: Build this revision's game engine
-        run: |
-          cmake -S . -B build/recipe-engine -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=OFF
-          cmake --build build/recipe-engine --parallel 2 --target banjo_live_world_run
+      - uses: ./.github/actions/shared-engine
+        with:
+          revision: ${{ github.sha }}
       - name: Verify saved recipe batch ${{ matrix.shard }} of 6
         env:
-          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/recipe-engine/banjo_live_world_run
+          BANJO_LIVE_ENGINE: ${{ github.workspace }}/build/shared-engine/banjo_live_world_run
           BANJO_MACHINE_ENGINE: required
         run: timeout 600s python3 -u tests/sandbox_variants_tests.py --shard=${{ matrix.shard }}/6
 
   build-and-test:
     if: ${{ always() }}
-    needs: [source-registration, native-tests, browser-tests, game-integration-tests, apparatus-tests, recipe-tests]
+    needs: [source-registration, engine-build, native-tests, browser-tests, game-integration-tests, apparatus-tests, recipe-tests]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every native check and every browser batch
         env:
           SOURCE_RESULT: ${{ needs['source-registration'].result }}
+          REUSE_MAIN: ${{ needs['source-registration'].outputs.reuse-main }}
+          VERIFIED_RUN: ${{ needs['source-registration'].outputs.verified-run }}
+          ENGINE_RESULT: ${{ needs['engine-build'].result }}
           NATIVE_RESULT: ${{ needs['native-tests'].result }}
           BROWSER_RESULT: ${{ needs['browser-tests'].result }}
           INTEGRATION_RESULT: ${{ needs['game-integration-tests'].result }}
@@ -210,9 +272,41 @@ jobs:
         run: |
           set -euo pipefail
           test "$SOURCE_RESULT" = success
+          if [[ "$REUSE_MAIN" == true ]]; then
+            test "$GITHUB_REF" = refs/heads/main
+            test "$GITHUB_EVENT_NAME" = push
+            test -n "$VERIFIED_RUN"
+            echo "This exact revision already passed complete staging CI in run $VERIFIED_RUN."
+            exit 0
+          fi
+          test "$ENGINE_RESULT" = success
           test "$NATIVE_RESULT" = success
           test "$BROWSER_RESULT" = success
           test "$INTEGRATION_RESULT" = success
           test "$APPARATUS_RESULT" = success
           test "$RECIPE_RESULT" = success
-          echo "Source registration, native checks, sixteen browser batches, nine game integration groups, four apparatus batches and six recipe batches passed."
+          echo "Source registration, shared engine, native checks, sixteen browser batches, eleven game integration groups, four apparatus batches and six recipe batches passed."
+
+  test-site-package:
+    if: github.ref == 'refs/heads/codex/staging' && github.event_name == 'push'
+    needs: [engine-build, build-and-test]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/shared-engine
+        with:
+          revision: ${{ github.sha }}
+      - name: Package the exact engine that passed all game and browser checks
+        run: python3 scripts/package-test.py --native build/shared-engine/banjo_live_world_run --output build/banjo-test.tar.gz
+      - name: Verify the installed package, routing and separate saves
+        run: python3 -u tests/test_site_tests.py --engine build/shared-engine/banjo_live_world_run --bundle build/banjo-test.tar.gz
+      - name: Publish the immutable test package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="banjo-test-${GITHUB_SHA}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" build/banjo-test.tar.gz --target "$GITHUB_SHA" --prerelease --title "Banjo test build ${GITHUB_SHA:0:7}" --notes "Exact CI-verified engine and sources for banjo.is/test. Production is unchanged."
+          fi

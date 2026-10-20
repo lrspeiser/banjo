@@ -858,9 +858,18 @@ class Puzzles(unittest.TestCase):
                 self.assertFalse(self.js('window.machineThermalState().visible'))
 
     def test_catalogue_audit_opens_every_level_with_attached_touch_controls(self):
+        self.catalogue_control_audit(((1280,860),))
+
+    def test_catalogue_audit_touch_controls_on_phone_portrait(self):
+        self.catalogue_control_audit(((390,844),))
+
+    def test_catalogue_audit_touch_controls_on_phone_landscape(self):
+        self.catalogue_control_audit(((844,390),))
+
+    def catalogue_control_audit(self, viewports):
         import machine_game as game
         timings=[]
-        for width,height in ((1280,860),(390,844),(844,390)):
+        for width,height in viewports:
             # A long browser sweep reported ERR_NO_BUFFER_SPACE while fetching
             # a module. Bound fixture accumulation with a fresh owned profile
             # per viewport, retaining the same waits and assertions. Keep the
@@ -886,7 +895,10 @@ class Puzzles(unittest.TestCase):
                 # a catalogue sweep never consumes the live-session budget.
                 self.server.machines.close_all()
         if os.environ.get('BANJO_ONBOARDING_UI_REPORT'):
-            Path(os.environ['BANJO_ONBOARDING_UI_REPORT']).write_text(json.dumps(timings,indent=2),encoding='utf-8')
+            report=Path(os.environ['BANJO_ONBOARDING_UI_REPORT'])
+            # Independent viewport jobs must not overwrite each other's report.
+            report=report.with_name(report.stem+f'-{viewports[0][0]}x{viewports[0][1]}'+report.suffix)
+            report.write_text(json.dumps(timings,indent=2),encoding='utf-8')
 
     def test_audited_level_order_estimates_and_primary_controls(self):
         for width,height in ((1280,860),(390,844),(844,390)):
@@ -7823,9 +7835,15 @@ class Puzzles(unittest.TestCase):
 
 
     def test_lesson_control_audit_excludes_sandbox_settings_even_in_precision_controls(self):
+        self.lesson_control_audit(((1280,860),))
+
+    def test_lesson_control_audit_precision_controls_on_both_phone_orientations(self):
+        self.lesson_control_audit(((390,844),(844,390)))
+
+    def lesson_control_audit(self, viewports):
         import machine_game as game
         levels=game.load_levels()
-        for width,height in ((1280,860),(390,844),(844,390)):
+        for width,height in viewports:
             selected=levels if width==1280 else [l for l in levels if l['id'] in
                 ('easy-spring','easy-gears','easy-lens','advanced-capacitor','easy-water-wheel','easy-switch')]
             for level in selected:
@@ -8090,6 +8108,9 @@ class Puzzles(unittest.TestCase):
 def browser_test_batches(count):
     tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Puzzles))
     added={'test_wall_reset_restores_the_front_view_after_orbit','test_browser_batches_cover_every_case_once',
+           'test_catalogue_audit_touch_controls_on_phone_portrait',
+           'test_catalogue_audit_touch_controls_on_phone_landscape',
+           'test_lesson_control_audit_precision_controls_on_both_phone_orientations',
            'test_analytics_records_real_level_attempts_results_and_retries_without_private_data',
            'test_rotary_power_selector_wires_and_turns_by_mouse_and_touch',
            'test_sandbox_object_actions_edit_save_undo_and_drive_the_real_button',
@@ -8105,7 +8126,12 @@ def browser_test_batches(count):
                'test_wall_optics_spring_and_contact_mechanisms_use_scene_controls':10}
         bucket=moves.get(test._testMethodName,i%count) if count==16 else i%count
         batches[bucket].append(test)
-    batches[7%count].extend(t for t in tests if t._testMethodName in added)
+    split_audits={'test_catalogue_audit_touch_controls_on_phone_portrait':8,
+                  'test_catalogue_audit_touch_controls_on_phone_landscape':3,
+                  'test_lesson_control_audit_precision_controls_on_both_phone_orientations':4}
+    for test in tests:
+        if test._testMethodName in added:
+            batches[split_audits.get(test._testMethodName,7)%count].append(test)
     return batches
 
 

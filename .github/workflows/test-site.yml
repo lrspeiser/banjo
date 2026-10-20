@@ -1,7 +1,7 @@
 name: test-site-package
 on:
-  push:
-    branches: [codex/staging]
+  # Ordinary staging packages are produced by the successful CI run itself.
+  # Manual recovery keeps its own exact-revision gate, without repeating tests.
   workflow_dispatch:
 
 concurrency:
@@ -14,8 +14,13 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      checks: read
     steps:
       - uses: actions/checkout@v5
+      - name: Require the full CI result for this exact source revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci-engine.py require-checks --revision "$GITHUB_SHA"
       - name: Install engine dependencies
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libngspice0-dev
       - name: Verify registered sources
@@ -24,13 +29,6 @@ jobs:
         run: |
           cmake -S . -B build/test-site -G Ninja -DCMAKE_BUILD_TYPE=Release -DBANJO_BUILD_TESTS=OFF
           cmake --build build/test-site --parallel 2 --target banjo_live_world_run
-      - name: Verify routing, saves and authored machines
-        run: |
-          python3 tests/machine_host_tests.py --engine build/test-site/banjo_live_world_run
-          python3 tests/test_site_tests.py --engine build/test-site/banjo_live_world_run
-          python3 tests/sandbox_wall_tests.py --engine build/test-site/banjo_live_world_run
-          python3 tests/sandbox_pinball_tests.py --engine build/test-site/banjo_live_world_run
-          python3 tests/machine_game_tests.py --engine build/test-site/banjo_live_world_run
       - name: Package committed runtime sources and native engine
         run: python3 scripts/package-test.py --native build/test-site/banjo_live_world_run --output build/banjo-test.tar.gz
       - name: Run the installed runtime package

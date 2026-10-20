@@ -20,11 +20,46 @@ import urllib.error
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 import test_site
+ci_engine_spec=importlib.util.spec_from_file_location('ci_engine',ROOT/'scripts/ci-engine.py')
+ci_engine=importlib.util.module_from_spec(ci_engine_spec);ci_engine_spec.loader.exec_module(ci_engine)
 parser=argparse.ArgumentParser(add_help=False);parser.add_argument('--engine');parser.add_argument('--bundle',type=Path)
 args,remaining=parser.parse_known_args();ENGINE=Path(args.engine or os.environ.get('BANJO_LIVE_ENGINE',''))
 
 
 class Bundles(unittest.TestCase):
+    def test_main_ci_reuse_requires_a_complete_successful_staging_run_for_the_same_revision(self):
+        revision='a'*40
+        run=dict(id=42,head_sha=revision,head_branch='codex/staging',event='push',status='completed',
+                 conclusion='success',path='.github/workflows/ci.yml',repository={'full_name':'lrspeiser/banjo'})
+        self.assertTrue(ci_engine.verified_staging_run(run,revision))
+        for key,value in [('id',None),('head_sha','b'*40),('head_branch','main'),('event','pull_request'),
+                          ('status','in_progress'),('conclusion','failure'),('path','.github/workflows/other.yml'),
+                          ('repository',{'full_name':'another/banjo'})]:
+            changed=dict(run);changed[key]=value
+            self.assertFalse(ci_engine.verified_staging_run(changed,revision),(key,value))
+        with patch.object(ci_engine.subprocess,'check_output',return_value=json.dumps({'workflow_runs':[run]})):
+            self.assertEqual(ci_engine.main_reuse_proof(revision,'refs/heads/main','push'),42)
+        with patch.object(ci_engine.subprocess,'check_output',side_effect=OSError('unavailable')):
+            self.assertIsNone(ci_engine.main_reuse_proof(revision,'refs/heads/main','push'))
+        with patch.object(ci_engine.subprocess,'check_output',side_effect=AssertionError('must not query')):
+            self.assertIsNone(ci_engine.main_reuse_proof(revision,'refs/heads/codex/staging','push'))
+            self.assertIsNone(ci_engine.main_reuse_proof(revision,'refs/pull/1/merge','pull_request'))
+
+    def test_shared_ci_engine_is_bound_to_revision_platform_and_exact_bytes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            binary=Path(folder)/'banjo_live_world_run';binary.write_bytes(b'fixture native bytes')
+            receipt=Path(folder)/'engine-receipt.json';revision='a'*40
+            original=ci_engine.engine_receipt(binary,revision)
+            receipt.write_text(json.dumps(original))
+            self.assertEqual(ci_engine.verify_engine(binary,receipt,revision),original)
+            with self.assertRaises(ValueError):ci_engine.verify_engine(binary,receipt,'b'*40)
+            for key,value in [('platform','wrong'),('machine','wrong'),('sha256','0'*64),('size',0)]:
+                changed=dict(original);changed[key]=value;receipt.write_text(json.dumps(changed))
+                with self.assertRaises(ValueError):ci_engine.verify_engine(binary,receipt,revision)
+            receipt.write_text(json.dumps(original));binary.write_bytes(b'changed native bytes')
+            with self.assertRaises(ValueError):ci_engine.verify_engine(binary,receipt,revision)
+            with self.assertRaises(ValueError):ci_engine.engine_receipt(binary,'branch-name')
+
     def test_packaged_revision_does_not_consult_a_parent_checkout(self):
         spec=importlib.util.spec_from_file_location('receipt_server',ROOT/'scripts/voxel-lab.py')
         lab=importlib.util.module_from_spec(spec);spec.loader.exec_module(lab)

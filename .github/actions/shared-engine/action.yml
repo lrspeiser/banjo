@@ -1,0 +1,23 @@
+name: Verified shared game engine
+description: Download this run's Release engine and verify its source revision and checksum
+inputs:
+  revision:
+    description: Exact source revision built by the engine job
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install the electrical runtime
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libngspice0
+    - uses: actions/download-artifact@v4
+      with:
+        name: banjo-engine-${{ inputs.revision }}
+        path: build/shared-engine
+    - name: Check the shared engine before running it
+      shell: bash
+      env:
+        EXPECTED_REVISION: ${{ inputs.revision }}
+      run: |
+        tar -xzf build/shared-engine/engine.tar.gz -C build/shared-engine
+        python3 scripts/ci-engine.py verify --revision "$EXPECTED_REVISION" --binary build/shared-engine/banjo_live_world_run --receipt build/shared-engine/engine-receipt.json

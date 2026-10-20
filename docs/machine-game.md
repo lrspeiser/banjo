@@ -1,5 +1,16 @@
 # Puzzles on the machine (/play)
 
+## Release checks without repeating the same work — October 20
+
+Browser catalogue checks retain all existing levels and the desktop, phone
+portrait and phone landscape assertions, with one viewport per independently
+scheduled audit. Precision controls retain the all-level desktop audit and both
+phone samples. The complete browser set now has 218 disjoint methods; no
+assertion or game behavior changes. CI shares an exact-revision engine artifact,
+keeps native/material tests, and builds the test package after those checks
+rather than repeating gameplay validation serially. See [the CI graph and
+baseline measurements](deploy.md#faster-verification--october-20).
+
 ## Usage and stopped-frame display — October 20
 
 Production now sends explicit anonymous visit, level attempt/result, help and

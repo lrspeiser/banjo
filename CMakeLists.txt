@@ -1007,11 +1007,11 @@ if(BANJO_BUILD_TESTS)
                 # Keep all cases but report bounded batches. The aggregate
                 # software-rendered Linux run exceeded 1200 s at e52b87ac;
                 # sharding retains every assertion, wait and physical deadline.
-                foreach(browser_shard RANGE 0 3)
+                foreach(browser_shard RANGE 0 15)
                     add_test(NAME banjo_machine_game_browser_tests_${browser_shard} COMMAND ${CMAKE_COMMAND} -E env
                         BANJO_LIVE_ENGINE=$<TARGET_FILE:banjo_live_world_run>
                         ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/machine_game_browser_tests.py
-                        --shard=${browser_shard}/4)
+                        --shard=${browser_shard}/16)
                     set_tests_properties(banjo_machine_game_browser_tests_${browser_shard} PROPERTIES TIMEOUT 1200
                         LABELS "native;world;machine;browser")
                 endforeach()
