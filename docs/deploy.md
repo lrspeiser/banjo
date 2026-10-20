@@ -17,6 +17,13 @@ deadlines, with the expensive wall-wheel builder moved off the overloaded
 runner and new control cases assigned to a lighter runner. No scenario,
 goal, physical timestep or tolerance is removed or relaxed.
 
+The expanded browser control audit took 563 s on its runner; combined with
+the tackle and other UI checks it exhausted the unchanged 1200 s batch limit.
+Both catalogue-wide audits now run with lighter groups, and the wall mechanisms
+check moves off the next busiest group. All 215 scenarios remain disjoint and
+covered exactly once, including the new analytics browser check. This changes
+assignment only, not deadlines, assertions or game behavior.
+
 October 19 test-child recovery: the supervisor now restarts its already
 verified current package after a child exits or the existing memory budget
 stops it. Recovery runs independently of the staging download, with retries
