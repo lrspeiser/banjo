@@ -2067,6 +2067,8 @@ def _compile_spec_uncached(spec, lenient=False):
                     size = _vec(arg.get('size_m'), 3, what + ' in_zone size_m', problems)
                     if min(size) <= 0:
                         problems.append(f'{what}: in_zone size_m must be positive')
+                    if 'hold_s' in arg:_num(arg,'hold_s',what+' in_zone',problems,0,0,60)
+                    if 'max_speed_m_s' in arg:_num(arg,'max_speed_m_s',what+' in_zone',problems,0,0,100)
             elif kind in ('rose_m', 'moved_m'):
                 if not isinstance(arg, dict) or arg.get('part') not in names or \
                         not isinstance(arg.get('m'), (int, float)):
@@ -2860,15 +2862,25 @@ class MachineSession:
                 # to know how far off a miss was.
                 z = rule['in_zone']
                 nearest = self.__dict__.setdefault('zone_nearest', {})
+                inside=None
                 for b in self.bodies.values():
                     if family(b['name']) != z['part']:
                         continue
                     gap = math.sqrt(sum(max(0.0, abs(b['position_m'][k] - z['at_m'][k]) - 0.5 * z['size_m'][k]) ** 2
                                         for k in range(3)))
                     nearest[i] = min(nearest.get(i, gap), gap)
-                    if gap == 0.0:
-                        crossed_at(i,st)
+                    speed=math.hypot(*b.get('velocity_m_s',[math.inf,0,0])) if 'max_speed_m_s' in z else 0
+                    if gap == 0.0 and speed<=z.get('max_speed_m_s',math.inf):
+                        inside=b['name']
                         break
+                if not z.get('hold_s'):
+                    if inside:crossed_at(i,st)
+                else:
+                    since=self.__dict__.setdefault('_zone_since',{})
+                    if inside is None:since.pop(i,None)
+                    else:
+                        if since.get(i,(None,))[0]!=inside:since[i]=(inside,self.t)
+                        if self.t-since[i][1]>=z['hold_s']:crossed_at(i,st)
                 continue
             r = rule.get('rose_m') or rule.get('moved_m')
             start = self.starts.get(r.get('part'))

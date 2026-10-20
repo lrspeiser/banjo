@@ -3258,6 +3258,34 @@ class Puzzles(unittest.TestCase):
             self.mouse('mouseReleased',*point)
             self.wait("document.body.classList.contains('scene-win')",30)
 
+    def _check_pinball_catcher(self,width,height):
+        # Each layout gets the normal fresh-browser setup. Reusing one mobile
+        # emulation across completed WebGL worlds can strand a touch/CDP event.
+        self.open('pinball-02',width,height,phone=width!=1280,dismiss_intro=False)
+        self.assertIn('recessed box',self.js("document.getElementById('level-intro-works').textContent"))
+        self.click_visible('GO');self.press('Add a pinball guide rail');self.ghost()
+        self.slide('Rail heading (degrees) of your pinball_rail 1',55);self.ghost()
+        self.drag_ghost_to(-.5,-.15,touch=width!=1280);g=self.ghost()
+        self.assertTrue(g['fits'],g['problems'])
+        self.click_visible('Place');self.wait(READY,60)
+        self.click_visible('Run');self.wait("document.body.classList.contains('scene-win')",30)
+        final=self.js("machineBodies()['lesson ball']")
+        angle=math.radians(5)
+        local_y=(final[1]-.8)*math.cos(angle)-final[2]*math.sin(angle)
+        self.assertLess(local_y,-.025,'completion must show the ball below the wooden deck, inside the box')
+        self.click_visible('Close level complete')
+        proof=ROOT/'build/ui-proof';proof.mkdir(parents=True,exist_ok=True)
+        (proof/f'pinball-catcher-{width}.png').write_bytes(base64.b64decode(self.page.send('Page.captureScreenshot',{'format':'png'})['data']))
+
+    def test_pinball_catcher_on_desktop(self):
+        self._check_pinball_catcher(1280,860)
+
+    def test_pinball_catcher_on_phone_portrait(self):
+        self._check_pinball_catcher(390,844)
+
+    def test_pinball_catcher_on_phone_landscape(self):
+        self._check_pinball_catcher(844,390)
+
     def test_pinball_starter_live_buttons_launch_pause_reset_and_save(self):
         for width,height in ((1280,860),(390,844),(844,390)):
             with self.subTest(viewport=(width,height)):

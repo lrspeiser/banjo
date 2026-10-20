@@ -54,11 +54,12 @@ class Tray(unittest.TestCase):
         ids=[{test.id() for test in batch} for batch in batches]
         full=unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
         expected={test.id() for group in full for test in group}
-        self.assertEqual(len(batches),3)
+        self.assertEqual(len(batches),4)
         self.assertEqual(sum(map(len,ids)),len(set().union(*ids)))
         self.assertEqual(set().union(*ids),expected)
         self.assertTrue(all(type(test) is Engine for batch in batches[:2] for test in batch))
-        self.assertTrue(all(type(test) is not Engine for test in batches[2]))
+        self.assertTrue(all(type(test) not in (Engine,PinballProject) for test in batches[2]))
+        self.assertTrue(all(type(test) is PinballProject for test in batches[3]))
 
     def test_setup_requirements_expose_only_piece_counts(self):
         self.assertEqual(mg.public(mg.level_by_id('easy-power'))['required_pieces'],{'battery':1,'wire':2})
@@ -2752,6 +2753,44 @@ class Engine(unittest.TestCase):
 
 
 class PinballProject(unittest.TestCase):
+    @need_engine
+    def test_beginner_catchers_really_retain_the_marble_below_the_deck(self):
+        import sandbox_pinball as pinball
+        a=math.radians(pinball.SLOPE)
+        receipts=[]
+        with tempfile.TemporaryDirectory() as logs:
+            for identity in ('pinball-01','pinball-02'):
+                level=mg.level_by_id(identity);name='lesson ball' if identity=='pinball-02' else 'your pinball_ball 1'
+                for material in ('glass','oak','iron'):
+                    for seed in range(3):
+                        spec=mg.compose(level,level['solution'])[0]
+                        next(p for p in spec['parts'] if p['name']==name)['material']=material
+                        compiled=mw.compile_spec(spec)
+                        if seed:compiled=mg.nudged(compiled,seed)
+                        run=mw.rehearse(compiled,ENGINE,Path(logs),seconds=8,after_s=8,track=[name])
+                        self.assertIsNone(run['error']);self.assertTrue(run['stations'][0]['done'],run['stations'])
+                        final=run['tracked_final'][name]['at_m'];local_y=(final[1]-pinball.HEIGHT)*math.cos(a)-final[2]*math.sin(a)
+                        self.assertAlmostEqual(local_y,-.05,delta=.002,msg='the marble must land on the recessed floor, not the wooden deck')
+                        tail=[p for p in run['paths'][name]['points'] if p[0]>=run['world_time_s']-.5]
+                        self.assertTrue(all(math.dist(p[1:],final)<.003 for p in tail),'the marble must remain caught after the goal')
+                        receipts.append(dict(level=identity,material=material,seed=seed,goal_s=run['stations'][0]['at_s'],final=final,local_y=local_y,dt_s=1/480))
+                negative=mg.trial(level,level['wrong'],ENGINE,Path(logs),runs=3)
+                self.assertEqual(negative['worked'],0,negative)
+            # Retain the reported fault: a raised floor blocks the incoming
+            # ball. Grazing its front edge must no longer count as winning.
+            level=mg.level_by_id('pinball-02');spec=mg.compose(level,level['solution'])[0]
+            floor=next(p for p in spec['parts'] if p['name']=='lesson catcher floor')
+            floor['at_m']=mg.pinball_lessons.point(-.16,.045,-.85)
+            blocked=mw.rehearse(mw.compile_spec(spec),ENGINE,Path(logs),seconds=8,track=['lesson ball'])
+            self.assertIsNone(blocked['error']);self.assertFalse(blocked['stations'][0]['done'])
+            # These are ordinary 5 cm placement increments and 5-degree
+            # turning clicks, not the former 0.526 m reference-only setting.
+            for x,z,angle in [(-.5,-.15,50),(-.5,-.15,55),(-.45,-.15,55),(-.5,-.2,55)]:
+                placed=[dict(piece='pinball_rail',x_m=x,z_m=z,angle_deg=angle)]
+                nearby=mg.trial(level,placed,ENGINE,Path(logs),runs=3)
+                self.assertEqual(nearby['worked'],3,(placed,nearby))
+        print('PINBALL INSET CATCHERS',json.dumps(receipts),flush=True)
+
     @need_engine
     def test_completed_saved_project_really_launches_and_collects_with_nudges(self):
         records={identity:mg.level_by_id(identity)['solution'] for identity in mg.pinball_lessons.IDS}

@@ -220,16 +220,42 @@ def project_build(records,step):
 
 
 def _goal_target(spec,x,z,width=.3):
-    """A visible physical catch tray, excluded from the exported project."""
-    for suffix,at,size in [('floor',[x,.01,z],[width,.02,.3]),
-                            ('end',[x,.08,z-.15],[width,.14,.025]),
-                            ('left',[x-width/2,.08,z],[.025,.14,.3]),
-                            ('right',[x+width/2,.08,z],[.025,.14,.3])]:
+    """An inset catch box with an actual opening in the wooden playfield.
+
+    Coordinates are local to the inclined deck. The original raised floor
+    made a 25 mm step in front of a 40 mm marble; the new box is below it.
+    Assessment geometry is excluded from the exported project.
+    """
+    opening=(x-width/2-.025,x+width/2+.025,z-.175,z+.15)
+    frame=next(part for part in spec['parts'] if part['name']=='pinball table frame')
+    deck=[]
+    for part in frame['parts']:
+        # Cut only the flat deck slabs; retain rails, guides and shaft holes.
+        if part['shape']!='box' or part['at_m'][1]!=0 or part.get('turn_deg',[0,0,0])!=[0,0,0]:
+            deck.append(part);continue
+        px,py,pz=part['at_m'];sx,sy,sz=part['size_m']
+        left,right=max(px-sx/2,opening[0]),min(px+sx/2,opening[1])
+        back,front=max(pz-sz/2,opening[2]),min(pz+sz/2,opening[3])
+        if left>=right or back>=front:deck.append(part);continue
+        for a,b,c,d in [(px-sx/2,left,pz-sz/2,pz+sz/2),(right,px+sx/2,pz-sz/2,pz+sz/2),
+                        (left,right,pz-sz/2,back),(left,right,front,pz+sz/2)]:
+            if b-a>1e-8 and d-c>1e-8:
+                deck.append(dict(part,at_m=[(a+b)/2,py,(c+d)/2],size_m=[b-a,sy,d-c]))
+    frame['parts']=deck
+    for suffix,at,size in [('floor',[x,-.08,z],[width,.02,.3]),
+                            ('end',[x,-.03,z-.1625],[width+.05,.12,.025]),
+                            ('left',[x-width/2-.0125,-.03,z],[.025,.12,.3]),
+                            ('right',[x+width/2+.0125,-.03,z],[.025,.12,.3])]:
         fragment=p.finish(dict(parts=[p.rigid('lesson catcher '+suffix,at,size,'iron')]),{})
-        # The floor sits above the wooden deck, with a small real lip.
-        fragment['parts'][0]['at_m'][1]+=.035
         fragment['parts'][0]['color_rgba']=0x40b77aff
         _merge(spec,fragment)
+
+
+def _caught(part,x,z,width):
+    # Count a marble inside the physical box, below the deck, moving slowly
+    # for a continuous interval. Passing its front edge is not a catch.
+    return dict(in_zone=dict(part=part,at_m=point(x,-.05,z),size_m=[width,.08,.3],
+                             hold_s=.4,max_speed_m_s=.06))
 
 
 def _lesson(i,title,brief,spec,tray,rule,focus,solution,wrong,controls,actions=None,steps=None,time_s=8):
@@ -258,18 +284,20 @@ def _levels():
     rows=[]
     spec=_base('Let gravity play',1);_goal_target(spec,0,-.9,.45)
     rows.append(_lesson(1,'Let gravity play',
-        'Place a marble uphill of the green catcher. The tilted deck supplies its downhill motion; no motor is needed.',
-        spec,[_tray('pinball_ball',[-.5,.8],['x_m','z_m'])],zone('your pinball_ball 1',0,-.85,.35,.25),
+        'Place a marble uphill of the green catcher. Gravity rolls it down the tilted deck; it must drop into the recessed box and stay there.',
+        spec,[_tray('pinball_ball',[-.5,.8],['x_m','z_m'])],_caught('your pinball_ball 1',0,-.9,.45),
         ['lesson catcher floor'],[dict(piece='pinball_ball',x_m=0,z_m=.8)],
         [dict(piece='pinball_ball',x_m=-.5,z_m=.8)],{'pinball_ball':['x_m','z_m']}))
 
-    spec=_base('Keep it on the table',2);_fixture(spec,p.ball,'lesson ball',x_m=-.71,z_m=.5)
+    # Leave room beside the side wall so a rail on ordinary centimetre/grid
+    # increments hits its face, rather than needing a sub-millimetre end fit.
+    spec=_base('Keep it on the table',2);_fixture(spec,p.ball,'lesson ball',x_m=-.60,z_m=.5)
     _goal_target(spec,-.16,-.85,.4)
     rows.append(_lesson(2,'Keep it on the table',
-        'Place a slanted guide across the left side lane. The solid rail must steer the marble into the green catcher. The clear guard keeps it on the table.',
+        'Place a slanted guide across the left side lane. Steer the marble into the opening of the green catcher so it drops in and stays there. The clear guard keeps it on the table.',
         spec,[_tray('pinball_rail',[0,.2],['x_m','z_m','angle_deg'],length_m=.72)],
-        zone('lesson ball',-.16,-.8,.3,.25),['lesson ball','lesson catcher floor'],
-        [dict(piece='pinball_rail',x_m=-.526,z_m=-.16,angle_deg=55)],
+        _caught('lesson ball',-.16,-.85,.4),['lesson ball','lesson catcher floor'],
+        [dict(piece='pinball_rail',x_m=-.5,z_m=-.15,angle_deg=55)],
         [dict(piece='pinball_rail',x_m=.2,z_m=.3,angle_deg=0)],{'pinball_rail':['x_m','z_m','angle_deg']}))
 
     spec=_base('Build the spring launch',3);_fixture(spec,p.ball,'lesson ball')

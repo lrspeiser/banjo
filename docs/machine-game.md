@@ -1,5 +1,44 @@
 # Puzzles on the machine (/play)
 
+## Recessed Pinball catchers — October 19
+
+**Let gravity play** and **Keep it on the table** now use a green box below a
+real opening in the inclined wooden deck. The previous floor was about 25 mm
+above the deck; a reference marble struck that lip, grazed the goal volume at
+3.05 s, then left the table. The revised floor top is 100 mm below the deck
+surface. The deck compound is partitioned around the opening, retaining its
+rails and shaft holes; the box has a floor and three actual walls with rims
+flush with the playfield. All use the
+existing material-derived native rigid bodies and explicit table mountings.
+Assessment geometry still stays out of the saved learner's Pinball table.
+The first two lessons start nearer to overhead so the caught marble is visible
+below the rim, rather than hidden by the front wall.
+
+The task remains catching the marble within eight seconds. Its former crossing
+check is replaced by residence inside the physical box, below the deck, at no
+more than 0.06 m/s for 0.4 continuous seconds. This tightens the catch requirement;
+it does not increase the deadline or change contact/rolling tolerances. Generic
+`in_zone` criteria accept optional `hold_s` (0–60 s) and `max_speed_m_s` (0–100 m/s),
+observed from native positions, velocities and elapsed time. Leaving the region,
+moving too fast, changing the tracked fragment or missing required velocity data
+resets the dwell. Existing criteria without these options retain their crossing rule.
+
+The second lesson's initial marble is 150 mm from the left wall rather than
+40 mm. Its reference guide is on ordinary 5 cm coordinates (−0.50, −0.15 m),
+turned 55°, rather than requiring x = −0.526 m. Nearby 5 cm placements and
+5° changes are qualified with nudges; incorrect placements still miss.
+
+At 1/480 s, glass/oak/iron each remain caught at 8 s in all three trials for
+both lessons (18 runs). Final ball centres are about 50 mm below the deck's
+local midplane. Completion times: first lesson glass 4.483–4.517 s, oak
+4.183–4.250 s, iron 4.117–4.183 s; second lesson glass 3.250 s, oak 3.300 s,
+iron 3.267–3.283 s. Wrong placements fail all three runs in each lesson, and
+restoring the obstructing raised floor also fails the strengthened goal.
+These are geometry/goal observations, not new constitutive laws or a claim of
+full mechanical energy conservation. The existing Jolt contact, material
+rolling, drag and damping models are unchanged. Zone validation/dwell regressions
+and desktop/phone drag-to-place, catch and project-save flows are covered.
+
 ## Electrical device controls and safe cable selection — October 19
 
 **Open controls** beside a selected electrical tool opens a larger device panel.

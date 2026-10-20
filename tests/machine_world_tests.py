@@ -1150,5 +1150,41 @@ class CpuBudget(unittest.TestCase):
                 for pipe in (process.stdin,process.stdout,process.stderr):pipe.close()
 
 
+class ZoneDwell(unittest.TestCase):
+    def session(self,**limits):
+        s=object.__new__(mw.MachineSession)
+        s.compiled={'stations':[{'done_when':{'in_zone':dict(part='ball',at_m=[0,0,0],size_m=[.2,.2,.2],**limits)}}]}
+        s.bodies={'ball':dict(name='ball',position_m=[0,0,0],velocity_m_s=[0,0,0])};s.t=0
+        return s
+
+    def test_catch_requires_continuous_slow_residence_and_resets_after_a_pass(self):
+        s=self.session(hold_s=.4,max_speed_m_s=.06)
+        def sample(t,x=0,speed=0):
+            s.t=t;s.bodies['ball'].update(position_m=[x,0,0],velocity_m_s=[speed,0,0]);s._track_moves()
+        sample(0);sample(.3)
+        self.assertNotIn(0,s._crossed)
+        sample(.35,x=.2);sample(.4);sample(.7)
+        self.assertNotIn(0,s._crossed,'leaving the box must reset the dwell timer')
+        sample(.75,speed=.5);sample(.8);sample(1.1)
+        self.assertNotIn(0,s._crossed,'a fast pass cannot contribute to a later catch')
+        sample(1.21)
+        self.assertAlmostEqual(s._crossed[0],1.21)
+
+    def test_old_zone_rules_still_cross_immediately_and_missing_speed_is_not_rest(self):
+        s=self.session();s._track_moves();self.assertEqual(s._crossed[0],0)
+        s=self.session(hold_s=.4,max_speed_m_s=.06)
+        s.bodies['ball'].pop('velocity_m_s');s._track_moves();s.t=1;s._track_moves()
+        self.assertNotIn(0,s._crossed)
+
+    def test_dwell_and_speed_limits_are_validated(self):
+        spec=dict(schema=mw.SCHEMA,parts=[dict(name='ball',shape='box',material='iron',fixed=False,at_m=[0,1,0],size_m=[.04]*3)],
+                  stations=[dict(title='Catch',done_when=dict(in_zone=dict(part='ball',at_m=[0,1,0],size_m=[.1]*3)))])
+        for key in ('hold_s','max_speed_m_s'):
+            for bad in (-1,True,'slow',math.inf):
+                with self.subTest(key=key,value=bad):
+                    broken=copy.deepcopy(spec);broken['stations'][0]['done_when']['in_zone'][key]=bad
+                    with self.assertRaises(mw.MachineRefused):mw.compile_spec(broken)
+
+
 if __name__ == '__main__':
     unittest.main()

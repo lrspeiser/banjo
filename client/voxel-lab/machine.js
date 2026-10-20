@@ -2301,7 +2301,9 @@ function frameCamera(includeGhost=false) {
     // Keep a multi-storey journey in view rather than diving into its pipes or
     // the underside of the next bridge. Fit projected corners at this angle.
     goal.set((lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(lo[2]+hi[2])/2);target.copy(goal);
-    azimuth=pinballDesign()?Math.PI:-.65;elevation=pinballDesign()?1.1:.65;
+    azimuth=pinballDesign()?Math.PI:-.65;
+    // The first two lessons must show a marble below the catcher's rim.
+    elevation=pinballDesign()?(level?.project?.step<=2?1.4:1.1):.65;
     if(pinballDesign()){goal.set(0,.8,0);target.copy(goal);}
     const forward=new THREE.Vector3(Math.cos(elevation)*Math.sin(azimuth),Math.sin(elevation),Math.cos(elevation)*Math.cos(azimuth));
     const right=new THREE.Vector3(Math.cos(azimuth),0,-Math.sin(azimuth));
