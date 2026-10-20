@@ -7,11 +7,26 @@ import {renderDesignGallery} from './design-gallery.mjs';
 import {renderCommunity} from './community-gallery.mjs';
 import {levelIntroduction} from './level-intro.mjs';
 import {sitePath} from './site-paths.mjs';
+import {createAnalytics} from './analytics.mjs';
 
 const APP_BASE = document.documentElement.dataset.banjoBase || '';
 const TEST_BUILD = document.documentElement.dataset.banjoEnvironment === 'test';
 const appPath = path => sitePath(APP_BASE, path);
 const SHARE_SITE = TEST_BUILD ? location.origin + APP_BASE : 'https://banjo.is';
+const analytics = createAnalytics();
+let analyticsLevel = null, analyticsRun = null, analyticsAttempt = 0, analyticsOpenedAt = 0, analyticsCompleted = false;
+function leaveAnalyticsLevel() {
+  if (!analyticsLevel) return;
+  analytics.track('banjo_level_left', {attempts: analyticsAttempt, completed: analyticsCompleted,
+    elapsed_ms: performance.now() - analyticsOpenedAt});
+  analyticsLevel = null;
+}
+function trackRunStart() {
+  if (!session || analyticsRun === session) return;
+  analyticsRun = session; analyticsAttempt++;
+  analytics.track('banjo_run_started', {attempt: analyticsAttempt, piece_count: placements.length});
+}
+addEventListener('pagehide', () => { leaveAnalyticsLevel(); analytics.leave(); });
 
 // The machine page. It asks the server to build a declaration, then shows
 // what the engine measures, frame by frame. It never moves a body itself.
@@ -135,13 +150,24 @@ function material(hex, kind) {
 
 const previewOwner = crypto.randomUUID();
 let previewEpoch = 0;
+const analyticsErrorAt = new Map();
 function api(body) {
+  const began = performance.now();
   if(body.op==='level_open'||body.op==='close'||body.op==='play'&&body.running)previewEpoch++;
   return fetch(appPath('/api/machine'), {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...body,preview_owner:previewOwner,preview_epoch:previewEpoch})})
     .then(async r => {
       if (r.status === 401) { location.href = '/login'; throw Error('Log in first'); }
       const data = await r.json().catch(() => ({ok: false, error: 'The server answered with something that is not JSON'}));
-      if (!r.ok || data.ok === false) { const e = Error(data.error || 'Request failed'); e.data = data; e.status = r.status; throw e; }
+      if (!r.ok || data.ok === false) {
+        // Fit refusals are ordinary editing feedback. Report operational
+        // failures at most once per operation/status per 30 seconds.
+        const errorKey=body.op+':'+r.status,now=performance.now();
+        if (body.op !== 'frame' && (r.status>=500 || r.status===429) && now-(analyticsErrorAt.get(errorKey)??-Infinity)>=30000) {
+          analyticsErrorAt.set(errorKey,now);
+          analytics.track('banjo_api_error', {operation: body.op, status: r.status, duration_ms: now - began});
+        }
+        const e = Error(data.error || 'Request failed'); e.data = data; e.status = r.status; throw e;
+      }
       return data;
     });
 }
@@ -2030,7 +2056,7 @@ async function setPlaying(run) {
     }
     if(mine!==polling||session!==requestedSession)return;
     // A pause ends the run's pace report now, not at the next (slower) poll.
-    playing=frame.playing;logRunPace(frame);renderClock(frame);if(wake)wake();
+    playing=frame.playing;if(playing)trackRunStart();logRunPace(frame);renderClock(frame);if(wake)wake();
   } finally {finish();}
 }
 
@@ -2061,6 +2087,13 @@ function applyFrame(frame) {
   if (frame.mine !== polling) return;
   // Everything worked out from this frame uses its poses; the drawing loop
   // blends toward the next frame again afterwards.
+  // A delta can omit a body that has stopped moving. Restore its last
+  // authoritative pose before clearing the interpolation bookkeeping.
+  // Otherwise the final mesh can remain between frames after a pause.
+  for (const name of blendedPoses.keys()) {
+    const body = world.bodies.get(name), mesh = meshes.get(name);
+    if (body && mesh) place(mesh, body);
+  }
   blendedPoses = new Map();
   const changed = frame.bodies;
   world = mergeFrame(world, frame);
@@ -2122,6 +2155,7 @@ function logRunPace(frame) {
     frames: playback.received, longest_wait_ms: Math.round(playback.longestWait_ms), world_s_per_frame: Number((playback.gap ?? 0).toFixed(3))};
   playbackStats.lastRun = report; playbackStats.behind_max_s = 0;
   console.info('Banjo run pace', JSON.stringify(report));
+  analytics.track('banjo_run_pace', {world_s: frame.t, behind_s: report.server_behind_max_s, wait_ms: report.longest_wait_ms});
 }
 // For tests: record what each drawn frame showed of the named bodies, cords
 // and power ports, with the applied frame and the next one drawn toward.
@@ -2165,6 +2199,7 @@ async function poll(mine) {
       const frame = await api({op: 'frame', session, after: receivedSeq, wait_ms: playing || cableSetupActive ? 120 : 0});
       if (mine !== polling) return;
       receivedSeq = frame.seq; playing = frame.playing;
+      if(playing)trackRunStart();
       cableSetupActive = Boolean(frame.cable_setup);
       cableSetupSeconds = frame.cable_setup_s || 0;
       logRunPace(frame);
@@ -2569,6 +2604,7 @@ $('chat-form').addEventListener('submit', async e => {
 
 fetch(appPath('/api/checkpoint')).then(r => r.ok ? r.json() : null).then(c => {
   if (!c) return;
+  analytics.setRevision(c.website_revision);
   $('build').textContent = `${c.environment === 'test' ? 'TEST · ' : ''}${(c.website_revision || 'unknown').slice(0, 7)}${c.local_changes ? ' + local edits' : ''}`;
   $('build').title = c.branch ? `Branch: ${c.branch}` : '';
 }).catch(() => {});
@@ -7953,6 +7989,7 @@ function newDesign(name, draft = {base: null, placements: []}) {
   const d = {id: crypto.randomUUID(), name: name.trim().slice(0, 60) || 'Untitled design',
     draft: clone(draft), versions: [], nextVersion: 1, at: new Date().toISOString()};
   store.items.push(d); store.last = d.id; persist();
+  analytics.track('banjo_design_created', {piece_count: draft.placements?.length || 0});
   return d;
 }
 function checkpointDesign(d, label = '') {
@@ -7999,6 +8036,7 @@ function showSandboxScreen(show = true) {
   if (!show) for (const panel of box.querySelectorAll('.save-help-panel:popover-open')) panel.hidePopover();
   document.body.classList.toggle('on-sandbox', show); renderPlayMode();
   if (!show) { resize(); return; }
+  leaveAnalyticsLevel(); analytics.screen('sandbox');
   parkDesign(); showLevelsScreen(false);
   document.body.classList.remove('on-community');setSharedCourse(null);
   history_.replaceState(null, '', appPath('/machine'));
@@ -8098,6 +8136,7 @@ $('save-design').addEventListener('click', async () => {
     if (!activeDesign?.versions.some(v => v.number === savedVersion.number && v.at === savedVersion.at)) return;
     renderDesignControls(); $('title').textContent = activeDesign.name;
     designStatus(`Version ${savedVersion.number} saved${profileStoragePersistent ? '' : ' (temporary)'}.`);
+    analytics.track('banjo_design_saved', {piece_count: placements.length, version_count: activeDesign.versions.length});
   } catch (e) { if (activeDesign === d || activeDesign?.versions.some(v => v.number === savedVersion?.number && v.at === savedVersion?.at)) {
     renderDesignControls(); designStatus('Version not synced: ' + (e.data?.problems?.join('; ') || e.message));
   } }
@@ -8118,6 +8157,7 @@ $('restore-version').addEventListener('click', async () => {
     await rebuildLevel(false); await profileSync.flush();
     if (activeDesign?.id !== restoredDesign) return;
     designStatus(`Restored version ${v.number}.`);
+    analytics.track('banjo_design_restored', {piece_count: placements.length});
   } catch (error) { if (activeDesign?.id === restoredDesign) designStatus('Restored locally, not synced: ' + error.message); }
 });
 window.machineDesign = () => activeDesign ? clone(activeDesign) : null;
@@ -8194,6 +8234,11 @@ async function score(row) {
                  motors:(readouts.machines.motors||[]).slice(0,32)}:null})};
   const r = await api({op: 'level_score', session:ran});
   if(session!==ran || level!==sourceLevel)return;
+  analyticsCompleted ||= Boolean(r.earned.goal);
+  analytics.track('banjo_level_result', {success: Boolean(r.earned.goal), stars: r.stars,
+    attempt: analyticsAttempt, helped: Boolean(r.helped), tested: Boolean(r.tested),
+    elapsed_ms: performance.now() - analyticsOpenedAt, world_s: world.t,
+    energy_j: r.energy_j, par_energy_j: r.par_energy_j, piece_count: placements.length});
   const v = $('verdict'); v.replaceChildren();
   v.append(Object.assign(document.createElement('span'), {className: 'stars', textContent: '★'.repeat(r.stars) + '☆'.repeat(3 - r.stars)}));
   const said = [r.earned.goal ? `Goal at ${describeTime(r.goal_at_s)}, on ${energyText(r.energy_j)} (par ${energyText(r.par_energy_j)}).`
@@ -8216,6 +8261,7 @@ let advanceTimer = null;
 // Back to the level's beginning, not running: with the same pieces (to move
 // or change them) or with none.
 function startOver(keep) {
+  if (analyticsAttempt) analytics.track('banjo_retry', {keep_pieces: Boolean(keep), attempt: analyticsAttempt});
   cancelAssembly();
   runRequest++;
   tuneArmed = false; runArmed = false; editorMode = 'move';
@@ -8368,6 +8414,7 @@ function showLevelsScreen(show) {
   if (!show) for (const panel of box.querySelectorAll('.save-help-panel:popover-open')) panel.hidePopover();
   document.body.classList.toggle('on-levels', show); renderPlayMode();
   if (!show) { resize(); return; }
+  leaveAnalyticsLevel(); analytics.screen('levels');
   stopSwitchDrag();
   box.replaceChildren();
   const add = (parent, tag, props) => parent.appendChild(Object.assign(document.createElement(tag), props));
@@ -8412,6 +8459,7 @@ renderer.domElement.addEventListener('pointerdown', () => {
 });
 
 async function chooseLevel(id, design = null) {
+  leaveAnalyticsLevel();
   courseDescription='';
   wallFront=false;
   activeWallId='workshop backing';
@@ -8478,6 +8526,12 @@ async function chooseLevel(id, design = null) {
     if(worldWallDesign()){pieceFilter='wall';$('piece-search').value='';}
   }
   $('scene-note').textContent=readOnlyCourse()?'Run this course · Drag to look around · Copy to my Sandbox to edit':wallDesign()?'Drag wall pieces across the wall · Drag empty space to orbit · Front faces the wall':'Drag a ghost to move · Drag empty space to turn · Wheel or trackpad pinch to zoom';
+  analyticsAttempt = 0; analyticsRun = session; analyticsCompleted = false; analyticsOpenedAt = performance.now();
+  analytics.screen(level.free ? 'design' : 'level', level.free ? {
+    activity: wallDesign() ? 'wall' : activeDesign.draft.base?.presentation?.activity === 'pinball' ? 'pinball' : 'sandbox',
+    read_only: readOnlyCourse()
+  } : {level_id: level.id.split('--v')[0], chapter: level.onboarding?.chapter?.split(':')[0] || 'unknown'});
+  if (!level.free) analyticsLevel = level.id;
   wallCameraControls();
   endGhost(); tuneArmed=false;runArmed=false;runRequest++;editorMode='move';shownMode='';gridSnapEnabled=true;objectSnapEnabled=true;lastEdited=null;closeDone(); previewAsk++; clearPreview(); resetLaserPreview();
   for(const id of ['grid-snap','object-snap'])$(id)?.setAttribute('aria-pressed','true');
@@ -8618,6 +8672,7 @@ function builderCheckSummary(checks,runs=1) {
 async function askFree() {
   const message = $('message').value.trim();
   if (!message) { $('message').focus(); return; }
+  analytics.track('banjo_help_requested', {mode: 'builder', piece_count: placements.length});
   $('send').disabled = true;
   $('chat-status').textContent = 'Assembling the pieces and testing their marble routes…';
   const sourceLevel=level,sourceDesign=activeDesign?.id;
@@ -8636,13 +8691,17 @@ async function askFree() {
     placements = r.placements.map(p => ({...p}));
     renderTray(); renderPlaced();
     const checks=r.rehearsal?.checks||[];
+    analytics.track('banjo_builder_result', {success: true, piece_count: placements.length});
     if(checks.length) {
       say('model',builderCheckSummary(checks,r.rehearsal.verified_runs));
     } else say('model','The engine ran this layout; no completion goal was checked. Choose Run to try it.');
     $('message').value = '';
     framedFree = false;
     await rebuildLevel(false);
-  } catch (err) { say('refused', err.data && err.data.problems ? `${err.message}: ${err.data.problems.join('; ')}` : err.message); }
+  } catch (err) {
+    analytics.track('banjo_builder_result', {success: false});
+    say('refused', err.data && err.data.problems ? `${err.message}: ${err.data.problems.join('; ')}` : err.message);
+  }
   finally { $('send').disabled = false; $('chat-status').textContent = ''; }
 }
 
@@ -8673,6 +8732,7 @@ async function openSharedCourse(id){
   await chooseLevel('free',courseDesign(course));
 }
 async function showCommunityScreen(){
+  leaveAnalyticsLevel(); analytics.screen('community');
   parkDesign();showLevelsScreen(false);setSharedCourse(null);
   document.body.classList.add('on-sandbox','on-community');
   const box=$('sandbox-screen');box.hidden=false;
@@ -8685,6 +8745,7 @@ $('course-copy').addEventListener('click',async()=>{
   try{
     const d=newDesign(activeDesign.name+' (copy)',activeDesign.sharedCourse.draft);
     checkpointDesign(d);persist();await profileSync.flush();await chooseLevel('free',d);
+    analytics.track('banjo_course_copied', {piece_count: placements.length});
   }catch(error){$('course-view-status').textContent=error.message;}
   finally{b.disabled=false;}
 });
@@ -8697,6 +8758,7 @@ async function shareCurrentCourse(publish=false){
   await profileSync.flush();
   if(activeDesign!==design)throw new Error('Open the design again before sharing.');
   const {course}=await communityRequest({op:'share',visitor:save.current,revision:profileSync.state().revision,design_id:design.id,description:courseDescription,publish});
+  analytics.track('banjo_course_shared', {published: Boolean(publish), piece_count: placements.length});
   return course;
 }
 $('publish-open').addEventListener('click',async()=>{
@@ -8858,6 +8920,7 @@ function closeCoach() {
 }
 async function askCoach() {
   if(!level||$('coach-open').disabled)return;
+  analytics.track('banjo_help_requested', {mode: 'coach', attempt: analyticsAttempt});
   selectPhonePanel('controls',true);
   const strong=$('scene-goal').querySelector('strong'),span=$('scene-goal').querySelector(':scope > span');
   if(!coach)coach={title:strong.textContent,task:span.textContent,guide:null,reply:''};
@@ -8927,6 +8990,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&coach&&!document.qu
 
 async function askLevel(mode, {popup=false,message:requestedMessage}={}) {
   if($('send').disabled)return;
+  analytics.track('banjo_help_requested', {mode, attempt: analyticsAttempt});
   const requestLevel=level;
   const message = requestedMessage || $('message').value.trim() || (mode === 'hint' ? 'Give me a hint.' : 'Place the pieces for me.');
   if(popup){$('run-help-reply').textContent='Thinking about your last attempt…';$('run-help').showModal();$('run-help-dismiss').focus();}
@@ -9040,6 +9104,13 @@ function installPhonePanels() {
   const content=Object.assign(document.createElement('div'),{id:'help-settings-content'});
   const snapping=Object.assign(document.createElement('div'),{id:'snap-settings'});
   settings.append(Object.assign(document.createElement('summary'),{textContent:'Settings'}),snapping,content);
+  const usageLabel=document.createElement('label');
+  const usage=Object.assign(document.createElement('input'),{type:'checkbox',id:'usage-analytics',
+    checked:analytics.enabled(),disabled:!analytics.allowed});
+  usage.addEventListener('change',()=>analytics.setEnabled(usage.checked));
+  usageLabel.append(usage,' Share anonymous usage to improve Banjo');
+  settings.append(usageLabel,Object.assign(document.createElement('p'),{
+    textContent:'Tracks visits, level attempts and results. No save links, design contents or chat text. Local and test builds are excluded; browser privacy signals are respected.'}));
   for(const [id,label,read,write] of [
     ['grid-snap','Snap to grid',()=>gridSnapEnabled,v=>{gridSnapEnabled=v;if(ghost)ghost.gridLocks=null;}],
     ['object-snap','Snap to objects',()=>objectSnapEnabled,v=>{objectSnapEnabled=v;if(ghost){ghost.objectLock=null;ghost.joined=null;}}]

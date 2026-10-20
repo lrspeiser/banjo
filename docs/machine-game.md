@@ -1,5 +1,22 @@
 # Puzzles on the machine (/play)
 
+## Usage and stopped-frame display — October 20
+
+Production now sends explicit anonymous visit, level attempt/result, help and
+Sandbox events to the owner's dedicated Banjo US PostHog project. Local and
+`/test` traffic are excluded. Changes → Settings offers an opt-out. Save tokens,
+design contents, chat text and URL queries are excluded; blocked analytics does
+not delay gameplay. See [the event catalogue and qualification](analytics.md).
+Moving pieces are restored to their last authoritative pose before applying
+delta frames, including final deltas that omit an already stopped body. This
+corrects the display after a pause; no engine law or scoring goal changes.
+Six analytics client checks and three production/test asset/CSP routing checks
+pass. The browser follows a winning and failing Mind the Gap attempt, verifies
+attempt/result/retry events and then opt-out (23.529 s). Settings remain usable
+at 1280×860, 390×844, 320×568 and 844×390. The stopped-pose and between-frame
+drawing checks pass on desktop and both phone orientations with their existing
+position/time assertions unchanged.
+
 ## Release routing checks — October 20
 
 The Pinball workshop's upper turning rail is 0.76 m long rather than 0.60 m,

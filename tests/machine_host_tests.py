@@ -404,6 +404,22 @@ class Requests(unittest.TestCase):
         self.assertEqual(status, 303)
         self.assertEqual(dict(headers)['Location'], '/play')
 
+    def test_analytics_asset_is_local_and_only_production_csp_allows_us_ingestion(self):
+        status,source,_=self.request(['banjo.is'],path='/analytics.mjs')
+        self.assertEqual(status,200)
+        self.assertEqual(source,(ROOT/'client/voxel-lab/analytics.mjs').read_bytes())
+        original=self.server.environment
+        try:
+            for environment,allowed in [('production',True),('local',False),('test',False)]:
+                self.server.environment=environment
+                status,_,headers=self.request(['banjo.is'],path='/play')
+                csp=dict(headers)['Content-Security-Policy']
+                self.assertEqual(status,200)
+                self.assertEqual('https://us.i.posthog.com' in csp,allowed)
+                self.assertIn("script-src 'self';",csp)
+                self.assertNotIn('https://*.posthog.com',csp)
+        finally:self.server.environment=original
+
     def test_simultaneous_bootstrap_scripts_return_every_complete_body(self):
         # Each browser's bootstrap needs the entire module before setup can
         # start. Exercise the real listener and handler, with no connection

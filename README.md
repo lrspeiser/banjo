@@ -93,6 +93,10 @@ in a level is scripted: the game only checks whether the goal happened.
 **Play it:** <https://banjo.is/play>. It is open to anyone, with
 no login.
 
+Production uses the dedicated Banjo PostHog project for anonymous visits,
+level attempts/results and Sandbox usage. Local/test builds are excluded;
+Changes → Settings offers an opt-out. See [events and privacy](docs/analytics.md).
+
 **Sandbox → Browse Community** opens shared courses. In a design, use
 **Design → Share / publish** for a run-only link or explicitly publish its
 current setup to Community. Visitors can Run, Reset and operate mechanisms;

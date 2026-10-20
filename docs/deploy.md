@@ -1,5 +1,12 @@
 # Hosting the game
 
+October 20 analytics: the dedicated Banjo US project token is a public ingestion
+token bundled with the page; no Render secret or other-project change is needed.
+Only production HTTPS banjo.is/www.banjo.is sends explicit events. Local and
+`/test` stay excluded, including in browser CI; production CSP permits only the
+US ingestion origin as an extra connection destination. See
+[events, privacy controls and verification](analytics.md).
+
 October 20 device-control release checks: the all-level nudge audit now has
 its own 600-second game batch. The remaining engine scenarios are split
 between two other batches; declarations and Pinball retain their own batches.

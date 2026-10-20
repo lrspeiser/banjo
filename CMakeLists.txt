@@ -1244,6 +1244,9 @@ if(BANJO_BUILD_TESTS)
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/fp_link_order_compare.cmake)
     endif()
     if(BANJO_NODE_EXECUTABLE)
+        add_test(NAME banjo_analytics_tests COMMAND ${BANJO_NODE_EXECUTABLE} --test
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/analytics_tests.mjs)
+        set_tests_properties(banjo_analytics_tests PROPERTIES TIMEOUT 10 LABELS "client;machine")
         add_test(NAME banjo_design_gallery_tests COMMAND ${BANJO_NODE_EXECUTABLE} --test
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/design_gallery_tests.mjs)
         set_tests_properties(banjo_design_gallery_tests PROPERTIES TIMEOUT 10 LABELS "client;machine")

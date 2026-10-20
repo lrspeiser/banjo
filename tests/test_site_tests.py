@@ -129,9 +129,10 @@ class CoHosted(unittest.TestCase):
         self.assertIn(b'src="/test/machine.js"',html)
         self.assertIn(b'href="/test/machine"',html)
         self.assertIn('connect-src https://banjo.is/test/',headers['Content-Security-Policy'])
+        self.assertNotIn('posthog.com',headers['Content-Security-Policy'])
         status,html,_=self.request('/play')
         self.assertEqual(status,200);self.assertNotIn(b'id="environment-badge">TEST',html)
-        for name in ('machine.js','three.module.js','site-paths.mjs','machine-view.mjs'):
+        for name in ('machine.js','three.module.js','site-paths.mjs','machine-view.mjs','analytics.mjs'):
             self.assertEqual(self.request('/test/'+name)[0],200)
         status,manifest,_=self.request('/test/manifest.webmanifest')
         manifest=json.loads(manifest)

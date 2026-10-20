@@ -2028,6 +2028,52 @@ class Puzzles(unittest.TestCase):
                 self.wait('window.machineDesign().versions.length===1',5)
                 self.assertEqual(len(self.js('window.machineDesign().versions[0].draft.placements')),1)
 
+    def test_analytics_records_real_level_attempts_results_and_retries_without_private_data(self):
+        # Exercise real hooks with an isolated transport. Host/privacy gates
+        # are unit-tested; no CI/local event reaches the real PostHog project.
+        from unittest.mock import patch
+        handler=self.server.RequestHandlerClass
+        original=handler.do_GET
+        source=(ROOT/'client/voxel-lab/analytics.mjs').read_text(encoding='utf-8')
+        source=source.replace('export function createAnalytics(', 'function originalCreateAnalytics(')
+        source+='''\nexport function createAnalytics(){
+          window.analyticsFixtureEvents=[];
+          return originalCreateAnalytics({environment:'production',base:'',
+            location:{protocol:'https:',hostname:'banjo.is',pathname:'/play'},
+            navigator:{maxTouchPoints:0},
+            fetch:(url,options)=>{window.analyticsFixtureEvents.push(JSON.parse(options.body));return Promise.resolve({ok:true});}
+          });
+        }'''
+        def fixture_get(request):
+            if request.route_path()=='/analytics.mjs':
+                request.send(200,source.encode(),'text/javascript; charset=utf-8')
+            else:original(request)
+        with patch.object(handler,'do_GET',fixture_get):
+            self.open('gap')
+            self.press('Add a plank');self.ghost();self.drag_ghost_to(.3,0)
+            self.slide('Cut to length of your plank 1',.7);self.ghost()
+            self.click_visible('Run');self.wait("!document.getElementById('level-done').hidden",30)
+            self.wait("analyticsFixtureEvents.some(e=>e.event==='banjo_level_result'&&e.properties.success)",5)
+            self.click_visible('Reset');self.wait(READY,30)
+            self.click_visible('Run');self.wait("analyticsFixtureEvents.filter(e=>e.event==='banjo_level_result').length===2",30)
+            events=self.js('analyticsFixtureEvents')
+            runs=[e for e in events if e['event']=='banjo_run_started']
+            results=[e for e in events if e['event']=='banjo_level_result']
+            self.assertEqual([e['properties']['attempt'] for e in runs],[1,2])
+            self.assertEqual([e['properties']['success'] for e in results],[True,False])
+            self.assertEqual(len([e for e in events if e['event']=='banjo_retry']),1)
+            for e in runs+results:
+                self.assertEqual(e['properties']['level_id'],'gap')
+                self.assertEqual(e['properties']['$current_url'],'https://banjo.is/play')
+                self.assertNotIn('visitor',e['properties']);self.assertNotIn('placements',e['properties'])
+            self.js("document.getElementById('recent-changes-open').click()");self.click_summary('#help-settings > summary')
+            # The stopped-run pace receipt may arrive while opening Changes.
+            # Measure only after the actual opt-out click, atomically.
+            count=self.js("(()=>{document.getElementById('usage-analytics').click();return analyticsFixtureEvents.length;})()")
+            self.press('Close');self.click_visible('Reset');self.wait(READY,30)
+            self.assertEqual(self.js('analyticsFixtureEvents.length'),count)
+            self.assertIsNone(self.js("localStorage.getItem('banjo.analytics.v1.id')"))
+
     def test_running_pieces_are_drawn_between_engine_frames_on_desktop_and_phones(self):
         # The page asks for at most about 20 engine frames a second, while a
         # screen draws about 60. Each frame is drawn a moment after it arrives,
@@ -8044,6 +8090,7 @@ class Puzzles(unittest.TestCase):
 def browser_test_batches(count):
     tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Puzzles))
     added={'test_wall_reset_restores_the_front_view_after_orbit','test_browser_batches_cover_every_case_once',
+           'test_analytics_records_real_level_attempts_results_and_retries_without_private_data',
            'test_rotary_power_selector_wires_and_turns_by_mouse_and_touch',
            'test_sandbox_object_actions_edit_save_undo_and_drive_the_real_button',
            'test_object_action_dock_pages_keep_touch_buttons_inside_the_scene',

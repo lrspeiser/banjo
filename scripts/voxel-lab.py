@@ -25,6 +25,7 @@ ASSETS={'/play':'client/voxel-lab/machine.html','/machine':'client/voxel-lab/mac
  '/community-gallery.mjs':'client/voxel-lab/community-gallery.mjs',
  '/level-intro.mjs':'client/voxel-lab/level-intro.mjs',
  '/site-paths.mjs':'client/voxel-lab/site-paths.mjs',
+ '/analytics.mjs':'client/voxel-lab/analytics.mjs',
  '/banjo-mark.png':'client/voxel-lab/brand/banjo-mark.png',
  '/banjo-app-icon.jpg':'client/voxel-lab/brand/banjo-app-icon.jpg',
  '/banjo-app-icon.png':'client/voxel-lab/brand/banjo-app-icon.png',
@@ -181,6 +182,8 @@ class Handler(BaseHTTPRequestHandler):
  def send(self,status,body,kind='application/json',headers=None):
   try:
    csp="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; object-src 'none'; frame-ancestors 'none'"
+   if self.server.environment=='production' and not self.server.base_path:
+    csp=csp.replace("connect-src 'self'", "connect-src 'self' https://us.i.posthog.com")
    if self.server.base_path or (self.server.test_site and self.path.split('?')[0].startswith('/test/')):
     host=self.headers.get('Host','');local=(urlsplit('//'+host).hostname or '') in access_gate.LOOPBACK
     prefix=('https' if self.server.public and not local or self.headers.get('X-Forwarded-Proto')=='https' else 'http')+'://'+host+'/test/'
