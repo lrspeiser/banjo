@@ -26,6 +26,26 @@ def families():
     return [level for level in game.load_levels() if level['id'] in variants.POLICIES]
 
 
+def native_family_batches():
+    # Heat's four presets took 370 s by themselves on the hosted runner.
+    # Keep them together in their own batch, rather than timing out the
+    # adjacent electrical families. Every family still runs every preset.
+    rows=families()
+    return [[f for f in rows[index::3] if f['id']!='easy-heat'] for index in range(3)]+[
+        [f for f in rows if f['id']=='easy-heat']]
+
+
+def recipe_test_batches():
+    tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Recipes))
+    native='test_native_all_twenty_seeded_challenges'
+    heat='test_heat_v2_clips_and_wires_while_v1_retains_the_original_attachment'
+    others=[test for test in tests if test._testMethodName not in (native,heat)]
+    native_case=lambda:[test for test in tests if test._testMethodName==native]
+    return [native_case(),native_case(),native_case(),
+            [test for test in tests if test._testMethodName==heat],
+            others[::2],others[1::2],native_case()]
+
+
 def receipt(valid):
     return {'valid': valid, 'mean_energy_j': 1234.1, 'engine_sha256': 'test-engine',
             'scenarios': {name: {'runs': 3, 'worked': 3 if name == 'solution' and valid else 0}
@@ -33,6 +53,16 @@ def receipt(valid):
 
 
 class Recipes(unittest.TestCase):
+    def test_recipe_batches_cover_every_case_and_native_family_once(self):
+        from collections import Counter
+        all_cases=Counter(t._testMethodName for t in unittest.defaultTestLoader.loadTestsFromTestCase(Recipes))
+        all_cases['test_native_all_twenty_seeded_challenges']=4
+        self.assertEqual(Counter(t._testMethodName for group in recipe_test_batches() for t in group),all_cases)
+        self.assertEqual(Counter(f['id'] for group in native_family_batches() for f in group),
+                         Counter(f['id'] for f in families()))
+        self.assertEqual([f['id'] for f in native_family_batches()[3]],['easy-heat'])
+        self.assertTrue(all(recipe_test_batches()))
+
     def test_contact_spring_v3_presets_require_a_release_and_preserve_private_inputs(self):
         family=game.level_by_id('easy-spring');seen={}
         for seed in range(32):
@@ -462,9 +492,10 @@ class Recipes(unittest.TestCase):
         measured = []
         selected=families()
         if NATIVE_FAMILY_BATCH is not None:
-            selected=selected[NATIVE_FAMILY_BATCH::3]
+            selected=native_family_batches()[NATIVE_FAMILY_BATCH]
         with tempfile.TemporaryDirectory() as logs:
             for family in selected:
+                print('NATIVE_RECIPE_FAMILY '+family['id'],flush=True)
                 seeds = {}
                 for seed in [42] + list(range(32)):
                     candidate = variants.construct(family, seed)
@@ -498,20 +529,13 @@ if __name__ == '__main__':
     shard=next((arg for arg in sys.argv[1:] if arg.startswith('--shard=')),None)
     if shard:
         index,count=map(int,shard.split('=',1)[1].split('/'))
-        if count!=6 or not 0<=index<count:raise SystemExit('recipe batches use INDEX/6')
+        if count!=7 or not 0<=index<count:raise SystemExit('recipe batches use INDEX/7')
         sys.argv.remove(shard)
-        tests=list(unittest.defaultTestLoader.loadTestsFromTestCase(Recipes))
-        native='test_native_all_twenty_seeded_challenges'
-        heat='test_heat_v2_clips_and_wires_while_v1_retains_the_original_attachment'
-        if index<3:
-            NATIVE_FAMILY_BATCH=index
-            chosen=[test for test in tests if test._testMethodName==native]
-        elif index==3:chosen=[test for test in tests if test._testMethodName==heat]
-        else:
-            others=[test for test in tests if test._testMethodName not in (native,heat)]
-            chosen=others[index-4::2]
-        print(f'Recipe batch {index+1}/6: {len(chosen)} cases'+
-              (f', native family subset {index+1}/3' if index<3 else ''),flush=True)
+        if index<3 or index==6:NATIVE_FAMILY_BATCH=3 if index==6 else index
+        chosen=recipe_test_batches()[index]
+        print(f'Recipe batch {index+1}/7: {len(chosen)} cases'+
+              (f', native families: {[f["id"] for f in native_family_batches()[NATIVE_FAMILY_BATCH]]}'
+               if NATIVE_FAMILY_BATCH is not None else ''),flush=True)
         result=unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(chosen))
         raise SystemExit(0 if result.wasSuccessful() else 1)
     unittest.main()

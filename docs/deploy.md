@@ -18,6 +18,11 @@ The revised graph:
 - Runs wall and Pinball mechanisms as separate integration groups, retaining
   their cases and the existing 600 s deadlines. The native CTest exclusion
   removes only those now-delegated groups; all other existing exclusions stay.
+- Uses seven recipe batches. The four current Heat to release presets have
+  their own native batch: they previously took 370 s inside a 578 s batch,
+  and that combined batch later reached its 600 s deadline. All 23 families,
+  every preset, three solution nudges and both physical negative controls
+  remain. A partition regression checks coverage; logs identify each family.
 - Divides the all-level UI audit by its three existing viewports and separates
   the precision-control phone audit. All prior assertions and level/viewpoint
   combinations remain, now in 218 disjoint browser methods. Optional onboarding
@@ -33,7 +38,7 @@ The revised graph:
   Source registration still runs; a changed revision, unavailable proof or a
   direct main fix runs the full suite. The aggregate records the reused run ID.
 
-No physics law, goal, assertion, timestep or tolerance changes. Promotion still
+No native physics law, goal, timestep or tolerance changes. Promotion still
 uses `scripts/promote-test.py` and requires the running `/test` revision to match
 staging with successful source-registration and build-and-test checks. Shared
 artifacts use [GitHub Actions artifacts](https://github.com/actions/download-artifact)
@@ -48,6 +53,21 @@ could arrive between those reads. The check now reads both in one task and
 retains the exact same 1e-12 tolerance and interpolation assertions.
 That failed attempt is not a successful-release timing benchmark: packaging
 was skipped. The following checkpoint must pass all tests and package checks.
+The shared engine build at `7bed98cb` took 99 s with the populated compiler
+cache, versus 268 s cold. That run then exposed the combined recipe deadline
+above; its package was correctly blocked too. Neither attempt is described as
+a successful release. Subsequent verification includes the separated heat batch.
+The two affected native recipe groups pass locally after separation: the seven
+remaining families in batch 1 take 133.041 s and all four Heat to release presets
+in batch 6 take 177.945 s. Both retain every solution nudge and physical negative.
+The same run also found the old Pinball header expectation and a real-time
+lease expiring during offline launcher verification. The header expectation now
+matches the requested navigation. Explicit rehearsal actions now retain their
+scheduled simulation-time release; ordinary browser controls still expire an
+abandoned press after one wall-clock second. A native regression advances the
+host clock by two seconds during a press and compares the actual force commands
+and resulting stations with the unstalled run. This changes neither the
+launcher geometry nor its forces, physical model, target or deadline.
 Local checks pass: actionlint 1.7.12 validates both workflows;
 receipt/proof regressions reject changed bytes, wrong revisions,
 platforms, branches and incomplete/failed runs. The new portrait catalogue and
@@ -448,7 +468,7 @@ gate. Native JUnit/floating-point evidence remains attached to the run, and
 browser progress and failure traces stream in the job logs. Failure screenshots
 are retained as artifacts. This adds no Render service.
 
-Saved-recipe verification uses six CTest batches, each with the existing
+At that earlier checkpoint, saved-recipe verification used six CTest batches, each with the existing
 600-second deadline. Three disjoint subsets cover all 23 native recipe
 families; historical heater validation has its own batch, and the remaining
 20 test methods are split between two batches. Every previous method and

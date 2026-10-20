@@ -987,9 +987,9 @@ if(BANJO_BUILD_TESTS)
                     set_tests_properties(banjo_sandbox_electrics_tests_${electrical_shard} PROPERTIES TIMEOUT 600
                         ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine;electrical")
                 endforeach()
-                foreach(recipe_shard RANGE 0 5)
+                foreach(recipe_shard RANGE 0 6)
                     add_test(NAME banjo_sandbox_variants_tests_${recipe_shard} COMMAND ${Python3_EXECUTABLE}
-                        ${CMAKE_CURRENT_SOURCE_DIR}/tests/sandbox_variants_tests.py --shard=${recipe_shard}/6
+                        ${CMAKE_CURRENT_SOURCE_DIR}/tests/sandbox_variants_tests.py --shard=${recipe_shard}/7
                         --engine $<TARGET_FILE:banjo_live_world_run>)
                     set_tests_properties(banjo_sandbox_variants_tests_${recipe_shard} PROPERTIES TIMEOUT 600
                         ENVIRONMENT "BANJO_MACHINE_ENGINE=required" LABELS "native;world;machine")

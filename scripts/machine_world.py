@@ -3491,6 +3491,12 @@ class MachineSession:
                     while getattr(self,'_reference_actions',[]) and self._reference_actions[0]['at_s']<=self.t+1e-9:
                         action=self._reference_actions.pop(0)
                         self.player_control(action['name'],action['pressed'],action.get('value',1))
+                        # A rehearsal supplies the complete press/release
+                        # schedule in simulated time. A slow host must not
+                        # turn the live browser's wall-clock safety lease
+                        # into an earlier, unscheduled release.
+                        control=next(c for c in self.compiled['player_controls'] if c['name']==action['name'])
+                        self._switch_force_until.pop(control['part'],None)
                     queued, self._pull_queue = self._pull_queue, {}
                     for body,deadline in list(self._switch_force_until.items()):
                         if time.monotonic()>deadline:

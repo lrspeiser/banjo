@@ -5690,7 +5690,7 @@ class Puzzles(unittest.TestCase):
             self.assertFalse(self.js("document.getElementById('recent-changes').open"))
             before = self.js("({url:location.href,setup:window.machinePlacements(),ghost:window.machineGhostState(),save:localStorage.getItem('banjo-play-save'),scroll:scrollY})")
             navigation = self.js("[...document.querySelectorAll('header nav a')].map(e=>{const r=e.getBoundingClientRect();return {label:e.getAttribute('aria-label')||e.textContent,x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};})")
-            self.assertEqual([r['label'] for r in navigation], ['Levels','Sandbox','Pinball','How to play','Recent Changes','Share'])
+            self.assertEqual([r['label'] for r in navigation], ['Levels','Sandbox','How to play','Recent Changes','Share'])
             for target in navigation:
                 self.assertTrue(target['visible'] and target['hit'], target)
                 self.assertGreaterEqual(target['w'], 44); self.assertGreaterEqual(target['h'], 44)

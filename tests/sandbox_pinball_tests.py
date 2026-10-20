@@ -485,6 +485,39 @@ class Pinball(unittest.TestCase):
                         finally:session.close()
 
     @unittest.skipUnless(ENGINE.is_file(),'native engine required')
+    def test_reference_launcher_hold_does_not_expire_when_the_host_is_slow(self):
+        from unittest.mock import patch
+        import time
+        level=mg.level_by_id('pinball-10')
+        compiled=mg.nudged(mw.compile_spec(mg.compose(level,level['solution'])[0]),3)
+        launcher_force=next(c['force_n'] for c in compiled['player_controls'] if c['name']=='launcher')
+        original_op=mw.Engine.op
+        original_clock=time.monotonic
+        receipts=[]
+        with tempfile.TemporaryDirectory() as logs:
+            for slow_host in (False,True):
+                state=dict(t=0,offset=0,pulls=[])
+                def measured_op(engine, **command):
+                    if command['op']=='pull' and command['body']=='launcher pusher':
+                        state['pulls'].append((round(state['t'],3),command['force']))
+                    reply=original_op(engine,**command)
+                    if command['op']=='step':
+                        state['t']=reply.get('t',state['t'])
+                        # Model a host stall after the press, without sleeping
+                        # or changing any simulated timestep or physical law.
+                        if slow_host and state['t']>=.3:state['offset']=2
+                    return reply
+                with patch.object(mw.Engine,'op',measured_op),patch.object(mw.time,'monotonic',lambda:original_clock()+state['offset']):
+                    run=mw.rehearse(compiled,ENGINE,Path(logs),seconds=25.5,wall_limit_s=120,
+                                    action_inputs=level['solution_actions'])
+                self.assertIsNone(run['error'])
+                self.assertEqual(state['pulls'],[(.2,launcher_force),(.7,[0.,0.,0.])])
+                self.assertTrue(run['stations'][0]['done'],run['stations'])
+                receipts.append(dict(slow_host=slow_host,pulls=state['pulls'],stations=run['stations']))
+        self.assertEqual(receipts[0]['stations'],receipts[1]['stations'])
+        print('REFERENCE LAUNCHER HOST CLOCK '+json.dumps(receipts),flush=True)
+
+    @unittest.skipUnless(ENGINE.is_file(),'native engine required')
     def test_a_lost_button_lease_stops_its_force(self):
         import time
         with tempfile.TemporaryDirectory() as logs:

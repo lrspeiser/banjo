@@ -10,6 +10,25 @@ assertion or game behavior changes. CI shares an exact-revision engine artifact,
 keeps native/material tests, and builds the test package after those checks
 rather than repeating gameplay validation serially. See [the CI graph and
 baseline measurements](deploy.md#faster-verification--october-20).
+Seven recipe batches retain all 23 native families and every preset, nudge and
+negative control. Heat to release's current presets run separately from the
+electrical families that previously shared their nearly ten-minute batch.
+The 600 s deadline remains. A regression checks that no family or method is
+lost or duplicated, and native recipe logs identify each running family.
+The separated groups pass locally in 133.041 s (seven non-heat families) and
+177.945 s (all four Heat to release presets); the original 600 s deadlines stay.
+
+Offline, scheduled launcher presses now end at their explicit simulation-time
+release, even if the host stalls. The browser's one-second abandoned-button
+lease remains in place. A native regression first reproduced an unwanted release
+at 0.317 s instead of 0.7 s after a two-second host-clock advance. With the fix,
+the stalled and unstalled runs both apply the same bounded 120 N launcher force
+from 0.2 to 0.7 s and reach both unchanged goals at identical times (1.067 s,
+6.433 s on Windows). That regression and the live abandoned-button check pass
+in 22.040 s. No native law, geometry, material, goal or tolerance was changed.
+The same two checks pass on the exact hosted Linux engine in 27.364 s; both
+clock conditions reach its goals at 1.1 s and 8.967 s. Cross-platform trajectories
+are not claimed identical.
 
 ## Usage and stopped-frame display — October 20
 
