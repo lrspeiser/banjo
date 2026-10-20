@@ -277,7 +277,9 @@ resting pocket. Final qualification uses actual repeated flipper presses,
 then releases them, rather than treating the table as an automatic machine.
 The authored goal remains the upper marker followed by the original central
 drain region within 25 seconds. The three reference/nudged trials reach it at
-6.317, 6.600 and 4.350 seconds. These are reference play sequences, not measured human
+6.317, 6.600 and 8.967 seconds on Linux after closing the upper launch-turn
+notch. Its rail now joins the outer wall (0.76 m rather than 0.60 m); a
+marble can no longer lodge between its endpoint and that wall. These are reference play sequences, not measured human
 completion times.
 
 Training mountings explicitly fix stationary fixtures to the grounded table

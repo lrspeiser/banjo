@@ -51,7 +51,7 @@ jobs:
           --output-junit ${{ github.workspace }}/ctest-results.xml
           --test-output-size-passed 20000000 --test-output-size-failed 20000000
           -LE "long|performance"
-          -E "^banjo_machine_game_browser_tests_[0-3]$|^banjo_machine_game_tests_[0-3]$|^banjo_sandbox_apparatus_tests_[0-3]$|^banjo_(machine_world|sandbox_(mechanics|water_launch|combinations|motion)|battery_socket|mechanical_switch)_tests$|^banjo_sandbox_electrics_tests_[0-1]$|^banjo_sandbox_variants_tests_[0-5]$"
+          -E "^banjo_machine_game_browser_tests_[0-3]$|^banjo_machine_game_tests_[0-4]$|^banjo_sandbox_apparatus_tests_[0-3]$|^banjo_(machine_world|sandbox_(mechanics|water_launch|combinations|motion)|battery_socket|mechanical_switch)_tests$|^banjo_sandbox_electrics_tests_[0-1]$|^banjo_sandbox_variants_tests_[0-5]$"
 
       - name: Keep the test and floating-point evidence
         if: always()
@@ -110,16 +110,19 @@ jobs:
         include:
           - name: authored-machines-0
             suites: machine_game
-            game_shard: 0/4
+            game_shard: 0/5
           - name: authored-machines-1
             suites: machine_game
-            game_shard: 1/4
+            game_shard: 1/5
           - name: authored-machines-2
             suites: machine_game sandbox_mechanics
-            game_shard: 2/4
+            game_shard: 2/5
           - name: pinball-project
             suites: machine_game
-            game_shard: 3/4
+            game_shard: 3/5
+          - name: authored-machines-4
+            suites: machine_game
+            game_shard: 4/5
           - name: electrical-machines-0
             suites: sandbox_electrics
             electrical_shard: 0/2
@@ -212,4 +215,4 @@ jobs:
           test "$INTEGRATION_RESULT" = success
           test "$APPARATUS_RESULT" = success
           test "$RECIPE_RESULT" = success
-          echo "Source registration, native checks, sixteen browser batches, eight game integration groups, four apparatus batches and six recipe batches passed."
+          echo "Source registration, native checks, sixteen browser batches, nine game integration groups, four apparatus batches and six recipe batches passed."

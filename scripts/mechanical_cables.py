@@ -149,6 +149,7 @@ def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupie
         if isinstance(cached,str):raise ValueError(cached)
         path=cached
     # Add real manufactured slack on clear spans. This adds material, not force.
+    routed=path
     roomy=[]
     for p,q in zip(path,path[1:]):
         roomy.append(p)
@@ -156,9 +157,17 @@ def construction_path(a, b, parts, lane=0, radius=.003,stock_length=None,occupie
             mid=[(p[k]+q[k])/2 for k in range(3)];mid[1]+=.10+lane*.025+lift
             dx,dz=q[0]-p[0],q[2]-p[2];horizontal=math.hypot(dx,dz) or 1
             mid[0]-=dz/horizontal*side_shift;mid[2]+=dx/horizontal*side_shift
-            if not any(intersects(p,mid,o) or intersects(mid,q,o) for o in boxes):roomy.append(mid)
+            if (not any(intersects(p,mid,o) or intersects(mid,q,o) for o in boxes)
+                    and clear_stock([p,mid,q],radius,occupied)):
+                roomy.append(mid)
     roomy.extend((path[-1],list(b)))
     path=[list(a)]+[p for i,p in enumerate(roomy) if length(p,([list(a)]+roomy)[i])>1e-8]
+    # A clear visibility route need not have room for added slack. Retain
+    # that route when a raised midpoint folds back into this cord or a
+    # neighbouring one; never manufacture intersecting rods for Jolt to fix.
+    if not clear_stock(path,radius,occupied):
+        plain=[list(a)]+routed+[list(b)]
+        path=[p for i,p in enumerate(plain) if i==0 or length(p,plain[i-1])>1e-8]
     if stock_length is None:
         if not clear_stock(path,radius,occupied):raise ValueError('Initial cable route intersects another cord')
         return path

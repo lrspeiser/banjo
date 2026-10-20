@@ -54,10 +54,12 @@ class Tray(unittest.TestCase):
         ids=[{test.id() for test in batch} for batch in batches]
         full=unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__])
         expected={test.id() for group in full for test in group}
-        self.assertEqual(len(batches),4)
+        self.assertEqual(len(batches),5)
         self.assertEqual(sum(map(len,ids)),len(set().union(*ids)))
         self.assertEqual(set().union(*ids),expected)
-        self.assertTrue(all(type(test) is Engine for batch in batches[:2] for test in batch))
+        self.assertEqual([t._testMethodName for t in batches[0]],
+                         ['test_every_level_is_solved_by_its_solution_every_time_and_not_without_pieces'])
+        self.assertTrue(all(type(test) is Engine for batch in (batches[0],batches[1],batches[4]) for test in batch))
         self.assertTrue(all(type(test) not in (Engine,PinballProject) for test in batches[2]))
         self.assertTrue(all(type(test) is PinballProject for test in batches[3]))
 
@@ -556,7 +558,7 @@ class Tray(unittest.TestCase):
         # must say so in its own estimate basis rather than borrow the probe's.
         unprobed={l['id'] for l in LEVELS if 'not yet probed' in l['onboarding']['estimate_basis']}
         import wall_activities
-        self.assertEqual(unprobed,{'easy-roll','easy-block','easy-rope','easy-thread',
+        self.assertEqual(unprobed,{'easy-roll','easy-block','easy-rope','easy-thread','easy-power-selector',
                                   'easy-wall-drop','easy-wall-track','easy-wall-funnel','easy-wall-peg','easy-wall-seesaw','easy-wall-wheel',
                                   'easy-wall-loop','easy-wall-switch','easy-wall-fill','easy-wall-current'}|{l['id'] for l in wall_activities.levels()}|set(mg.pinball_lessons.IDS))
         self.assertEqual({r['id'] for r in receipt['levels']},{l['id'] for l in LEVELS}-unprobed)
@@ -2919,18 +2921,22 @@ def game_test_batches():
            for test in unittest.defaultTestLoader.loadTestsFromTestCase(cls)]
     engine=[test for test in cases if type(test) is Engine]
     project=[test for test in cases if type(test) is PinballProject]
-    return [engine[::2],engine[1::2],
-            [test for test in cases if type(test) not in (Engine,PinballProject)],project]
+    # The all-level nudge audit is one expensive test; give it a runner of
+    # its own while retaining every case and the 600-second batch deadline.
+    audit=[t for t in engine if t._testMethodName=='test_every_level_is_solved_by_its_solution_every_time_and_not_without_pieces']
+    other=[t for t in engine if t not in audit]
+    return [audit,other[::2],
+            [test for test in cases if type(test) not in (Engine,PinballProject)],project,other[1::2]]
 
 
 if __name__ == '__main__':
     shard=next((arg for arg in sys.argv[1:] if arg.startswith('--shard=')),None)
     if shard:
         index,count=map(int,shard.split('=',1)[1].split('/'))
-        if count!=4 or not 0<=index<count:raise SystemExit('game batches use INDEX/4')
+        if count!=5 or not 0<=index<count:raise SystemExit('game batches use INDEX/5')
         sys.argv.remove(shard)
         batches=game_test_batches()
-        print(f'Game batch {index+1}/4: {len(batches[index])} of {sum(map(len,batches))} cases',flush=True)
+        print(f'Game batch {index+1}/5: {len(batches[index])} of {sum(map(len,batches))} cases',flush=True)
         result=unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(batches[index]))
         raise SystemExit(0 if result.wasSuccessful() else 1)
     unittest.main(verbosity=2)

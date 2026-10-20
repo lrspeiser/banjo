@@ -1,5 +1,44 @@
 # Puzzles on the machine (/play)
 
+## Release routing checks — October 20
+
+The Pinball workshop's upper turning rail is 0.76 m long rather than 0.60 m,
+joining the outer wall instead of leaving a marble-sized end notch. The
+Linux final-lesson nudge that previously rested at x = 0.730 m, z = 0.855 m
+now drains. All ten lesson reference solutions and their two nudges pass,
+with the original held actions, goals and deadlines; wrong setups still fail.
+The final lesson's Linux completion times are 6.317, 6.600 and 8.967 s.
+All 75 Windows reference energy-par checks also pass. No native contact,
+material, spring or circuit law changes in this correction.
+
+Cable construction now checks proposed slack against other cords, and keeps
+the clear underlying route when extra slack would self-intersect. This fixes
+the stock Rotary power selector in Free Build without bypassing cable fitting,
+contact or pull-out. All free pieces pass their default fit checks; the
+selector's ordinary mouse and touch lesson checks pass on desktop and both
+phone orientations. Native circuit qualification still uses the live turn
+input; the electrical sweep now forwards that input as the game already does.
+
+Electric marble relay's carrier now has actual oak side rails, a low exit lip
+and a counterweight behind its tray. Its native DC actuator command is 0.6
+instead of 1; no velocity is assigned. The ball waits for the powered turn
+and then tips onto the existing course. The previous open plate could throw
+it out after a delayed start, or lose it before power arrived. With 2 and 8 s
+of cable settling, all eight stations now occur in causal order, finishing at
+15.567 and 15.700 s with the same 20 s native deadline, 1/240 s steps and
+20 mm voxel resolution. The regression also covers a half-second setup.
+All five gallery examples complete, save and reopen in the ordinary browser
+check (86.798 s total); its existing 90 s per-course deadline is unchanged.
+These are qualified setups, not a claim that every material or arbitrary
+edited assembly follows the same path. Existing lumped motor/circuit and
+ideal rigid-compound limits remain.
+Under the same 80 mm ball geometry, half-second setup, native timestep and
+resolution, glass/oak/iron finish at 16.850 / 15.200 / 14.733 s. Electrical
+residual magnitudes stay below 5.6e-12 J; the separate thermal residual is at
+most 1.05e-7 J and motor coupling residual at most 8.05e-3 J. Supply work is
+158.069 / 137.627 / 131.179 J over those different completion times. This
+circuit account does not certify full mechanical pipeline conservation.
+
 ## Device inputs and rotary power lesson — October 19
 
 Pinball's Left/Right controls sit on its real contact caps; the launcher

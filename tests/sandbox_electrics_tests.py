@@ -21,6 +21,13 @@ if '--engine' in sys.argv:
 
 
 class Graph(unittest.TestCase):
+    def test_manufactured_slack_keeps_a_clear_route_between_existing_cords(self):
+        cable=e.mechanical_cables
+        prior=[dict(name='crossing lead',path_m=[[.5,.2,-.1],[.5,.2,.1]],radius_m=.003)]
+        path=cable.construction_path([0,.1,0],[1,.1,0],[],occupied=prior)
+        self.assertTrue(cable.clear_stock(path,.003,prior))
+        self.assertEqual(path[0],[0,.1,0]);self.assertEqual(path[-1],[1,.1,0])
+
     def test_cable_obstacle_broad_phase_preserves_slab_decisions(self):
         import random
         def oracle(p,q,o):
@@ -903,10 +910,10 @@ class Native(unittest.TestCase):
                     print('SOLAR_WALL_AND_LEAD',identity,condition,bad['worked'],'power_w',panel['power_w'],
                           'energy_residual_j',panel['sunlight_j']-panel['collected_j']-panel['spilled_j']-panel['heat_j'])
 
-    def run_spec(self, spec, seconds=1, *, handle_inputs=None):
+    def run_spec(self, spec, seconds=1, *, handle_inputs=None, action_inputs=None):
         with tempfile.TemporaryDirectory(prefix='banjo-electrical-') as logs:
             result = mw.rehearse(mw.compile_spec(spec), ENGINE, Path(logs), seconds=seconds, wall_limit_s=40,
-                                 handle_inputs=handle_inputs)
+                                 handle_inputs=handle_inputs, action_inputs=action_inputs)
         self.assertIsNone(result.get('error'), result)
         return result
 
@@ -1072,11 +1079,12 @@ class Native(unittest.TestCase):
         for level in e.EASY_LEVELS:
             with self.subTest(level=level['id']):
                 spec = mg.compose(level, level['solution'])[0]
-                result = self.run_spec(spec, level['time_s'], handle_inputs=level.get('solution_inputs'))
+                result = self.run_spec(spec, level['time_s'], handle_inputs=level.get('solution_inputs'),
+                                       action_inputs=level.get('solution_actions'))
                 self.assertTrue(result['stations'][0]['done'], result)
                 with tempfile.TemporaryDirectory(prefix='banjo-electrical-nudged-') as logs:
                     trial = mg.trial(level, level['solution'], ENGINE, Path(logs), runs=3,
-                                     handle_inputs=level.get('solution_inputs'))
+                                     handle_inputs=level.get('solution_inputs'), action_inputs=level.get('solution_actions'))
                     self.assertEqual(trial['worked'], 3, trial)
                 if level.get('wrong'):
                     wrong = mg.compose(level, level['wrong'])[0]

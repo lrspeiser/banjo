@@ -8050,9 +8050,11 @@ def browser_test_batches(count):
     for i,test in enumerate(t for t in tests if t._testMethodName not in added):
         # Keep the previous distribution, but move the 21-play wall pack away
         # from the expensive Plinko builder. Retain the 1200-second deadline.
-        bucket=1 if count==16 and test._testMethodName=='test_wall_optics_spring_and_contact_mechanisms_use_scene_controls' else i%count
+        moves={'test_wall_optics_spring_and_contact_mechanisms_use_scene_controls':1,
+               'test_words_build_a_water_wheel_plinko_and_native_playback_on_desktop_and_phones':0}
+        bucket=moves.get(test._testMethodName,i%count) if count==16 else i%count
         batches[bucket].append(test)
-    batches[11%count].extend(t for t in tests if t._testMethodName in added)
+    batches[7%count].extend(t for t in tests if t._testMethodName in added)
     return batches
 
 

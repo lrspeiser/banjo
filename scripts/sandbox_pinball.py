@@ -250,7 +250,9 @@ def template():
         (button,'right button',dict(x_m=-.96,z_m=-.85,label='Right flipper',key='ArrowRight')),
         (plunger,'launcher',dict(key='Space')),
         (rail,'launch lane',dict(x_m=.51,z_m=-.275,length_m=1.85,angle_deg=90)),
-        (rail,'launch turn',dict(x_m=.49,z_m=1.08,length_m=.60,angle_deg=45)),
+        # Join the outer wall: the old 60 cm rail left a ball-sized notch
+        # at its end, where a nudged launch could lodge instead of returning.
+        (rail,'launch turn',dict(x_m=.49,z_m=1.08,length_m=.76,angle_deg=45)),
         # Meet the outer rail opposite the launcher upstream of the flipper.
         # The launch-lane side must leave the shooter lane unobstructed.
         (rail,'right inlane guide',dict(x_m=.34,z_m=-.25,length_m=.40,angle_deg=-45)),

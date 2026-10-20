@@ -322,6 +322,16 @@ def circuit_cascade():
         if wire['b']=='relay supply:minus':wire['b']='supply:minus'
     carrier=next(p for p in factory['parts'] if p['name']=='relay carrier gear wheel')
     next(p for p in carrier['parts'] if p['size_m']==[.5,.06,.12])['size_m'][1]=.04
+    # A real shallow cradle retains the waiting ball. The circuit's sharper
+    # start needs a lower actuator command, rather than launching the ball
+    # out of the course or relying on it to roll away before power arrives.
+    carrier['parts'] += [dict(shape='box',size_m=[.5,.06,.015],at_m=[.15,.04,z])
+                         for z in (-.24,-.12)]
+    carrier['parts'].append(dict(shape='box',size_m=[.025,.025,.15],at_m=[-.10,.0275,-.18]))
+    # Counterbalance most of the oak tray, leaving a slight downward preload
+    # against its rest stop. This is real mass/inertia on the rotating body.
+    carrier['parts'].append(dict(shape='box',size_m=[.12,.14,.15],at_m=[-.16,0,-.04]))
+    next(d for d in factory['electrical']['devices'] if d['kind']=='motor')['command']=.6
     for row in factory['stations']:row['title']=row['title'].replace('Sun-powered','Circuit-powered')
     stations=factory.pop('stations')
     merge(spec,factory)

@@ -156,11 +156,14 @@ class MarbleShowcases(unittest.TestCase):
     def test_electrical_relay_finishes_after_cords_have_settled(self):
         row=next(t for t in mg.sandbox_templates() if t['name']=='Electric marble relay')
         compiled=mw.compile_spec(row['base'])
-        for setup in (2,8):
+        for setup in (.5,2,8):
             with self.subTest(setup_s=setup):
                 result=self.run_machine(compiled,setup_s=setup)
                 self.assertIsNone(result['error'])
-                self.assertTrue(all(s['done'] for s in result['stations']),result['stations'])
+                self.assertTrue(all(s['done'] for s in result['stations']),
+                                dict(stations=result['stations'],final=result.get('tracked_final')))
+                times=[s['at_s'] for s in result['stations']]
+                self.assertEqual(times,sorted(times),'The waiting marble must leave after its carrier is powered')
                 print('MARBLE SETTLED',setup,'stations',[s['at_s'] for s in result['stations']],
                       'wall_s',result['wall_s'],flush=True)
 

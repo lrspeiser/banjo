@@ -1,5 +1,15 @@
 # Hosting the game
 
+October 20 device-control release checks: the all-level nudge audit now has
+its own 600-second game batch. The remaining engine scenarios are split
+between two other batches; declarations and Pinball retain their own batches.
+CMake, CI and the CLI use five disjoint batches, with a coverage regression
+ensuring every method runs once. The unbatched test-package check still runs
+the complete suite. Browser tests keep sixteen runners and their 1200-second
+deadlines, with the expensive wall-wheel builder moved off the overloaded
+runner and new control cases assigned to a lighter runner. No scenario,
+goal, physical timestep or tolerance is removed or relaxed.
+
 October 19 test-child recovery: the supervisor now restarts its already
 verified current package after a child exits or the existing memory budget
 stops it. Recovery runs independently of the staging download, with retries
