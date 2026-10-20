@@ -385,13 +385,15 @@ def _levels():
     # optional short right guide can form a V pocket against that wall.
     return_gutter(spec)
     rows.append(_lesson(10,'Your own table',
-        'Load your ball in the shooter lane. Run, hold and release the launcher, then use the flippers. Reach the upper marker and collect the ball in the green return gutter. Your table is saved in Sandbox; Reset reloads it.',
+        'Load your ball in the shooter lane. Run, hold and release the launcher. Reach the upper marker, then let the ball return to the green gutter. Use the flippers to keep playing in Sandbox; Reset reloads the ball.',
         spec,[_tray('pinball_ball',[.3,-1.1],['x_m','z_m'])],
         dict(in_zone=dict(part='your pinball_ball 1',at_m=[0,.2,-1.6],size_m=[.5,.6,.5])),
         ['your pinball_ball 1'],[dict(piece='pinball_ball',x_m=.63,z_m=-1.13)],
         [dict(piece='pinball_ball',x_m=.3,z_m=-1.1)],{'pinball_ball':['x_m','z_m']},
-        actions('launcher')+[a for t in (3,5,7,9,11) for name in ('left button','right button')
-            for a in actions(name,t,t+.2)],steps=[
+        # This goal is a launch and return. Blind timed flipper pulses can
+        # keep the ball in play or hit a different trajectory after a nudge;
+        # the paddle lessons separately qualify actual press/release inputs.
+        actions('launcher'),steps=[
             dict(title='Reach the top',done_when=zone('your pinball_ball 1',.63,.8,.2,.4))],time_s=25))
     for row in rows:
         previous=None

@@ -5,9 +5,13 @@
 The Pinball workshop's upper turning rail is 0.76 m long rather than 0.60 m,
 joining the outer wall instead of leaving a marble-sized end notch. The
 Linux final-lesson nudge that previously rested at x = 0.730 m, z = 0.855 m
-now drains. All ten lesson reference solutions and their two nudges pass,
-with the original held actions, goals and deadlines; wrong setups still fail.
-The final lesson's Linux completion times are 6.317, 6.600 and 8.967 s.
+now drains. All ten lesson reference solutions and their two nudges pass;
+wrong setups still fail. The final lesson now explains a launch and return,
+and its reference supplies only the actual held launcher input. Scheduled
+flipper pulses were sensitive to contact trajectories across Linux hosts;
+press/release and independent flippers retain their own lesson qualification.
+The goal volume, upper-marker prerequisite and 25 s deadline are unchanged.
+The final lesson's local Linux completion times are 11.083, 6.600 and 8.967 s.
 All 75 Windows reference energy-par checks also pass. No native contact,
 material, spring or circuit law changes in this correction.
 
@@ -18,6 +22,13 @@ contact or pull-out. All free pieces pass their default fit checks; the
 selector's ordinary mouse and touch lesson checks pass on desktop and both
 phone orientations. Native circuit qualification still uses the live turn
 input; the electrical sweep now forwards that input as the game already does.
+
+Selected-wire readings use a visible point on the actual rendered cable if
+its midpoint has sagged outside the camera. They still occupy scene edges
+and avoid devices, controls and sockets. The leader is checked against the
+native cable curve at its chosen fraction, with the existing 2 px tolerance;
+the regression additionally requires that its origin is inside the view.
+Desktop, phone portrait and phone landscape pass (13.898 s).
 
 Electric marble relay's carrier now has actual oak side rails, a low exit lip
 and a counterweight behind its tray. Its native DC actuator command is 0.6

@@ -5016,7 +5016,8 @@ function updatePowerFeedback() {
     if(w.show_supply_limit&&Number.isFinite(w.supply_max_power_w))text+=`\nShared supply ≤ ${w.supply_max_power_w.toFixed(1)} W · ${w.supply_voltage_v} V`;
     const drawnWire=wires.find(row=>row.name===w.name&&row.line.visible);
     const labelCurve=drawnWire?.line.geometry.parameters?.path||curve;
-    items.push({id:'wire:'+w.name,name:w.name,kind:'wire',at:labelCurve.getPoint(.5).toArray(),
+    const anchor=visibleWireReadingAnchor(labelCurve);
+    items.push({id:'wire:'+w.name,name:w.name,kind:'wire',at:anchor.at.toArray(),anchorFraction:anchor.fraction,
       text:(gauge?((ghost?.p.piece==='wire'&&ghost.busy)?'Gauge updating…':gauge)+'\n':'')+
         (pending?'Updating…':(sample.preview?'Preview · ':'')+text)+
         (w.mechanical?.segments_m?`\n${w.mechanical.connected?'Connected': 'Terminal pulled out'} · ${w.mechanical.retention_n} N hold`:''),
@@ -5057,6 +5058,7 @@ function updatePowerFeedback() {
       const leader=document.createElementNS(feedbackLeaders.namespaceURI,'line');feedbackLeaders.append(leader);
       row={card,name,output,leader};powerFeedbackRows.set(item.id,row);
     }
+    row.anchorFraction=item.anchorFraction;
     const title=item.displayName||item.name;
     row.name.hidden=item.kind==='wire';if(row.name.textContent!==title)row.name.textContent=title;
     if(row.output.textContent!==item.text)row.output.textContent=item.text;row.card.title=item.title;
@@ -5079,6 +5081,19 @@ function updatePowerFeedback() {
     row.leader.setAttribute('x2',String(Math.max(labelX,Math.min(labelX+placed.width,ax))));
     row.leader.setAttribute('y2',String(Math.max(labelY,Math.min(labelY+placed.height,ay))));
   }
+}
+function visibleWireReadingAnchor(curve) {
+  const middle={at:curve.getPoint(.5),fraction:.5};
+  const visible=(at,margin=1)=>{const p=at.clone().project(camera);return Math.abs(p.z)<=1&&Math.abs(p.x)<=margin&&Math.abs(p.y)<=margin;};
+  if(visible(middle.at))return middle;
+  // A sagging service loop can leave the view while its plugs stay visible.
+  // Attach the selected reading to an actual visible point on that cable,
+  // rather than hiding the gauge or pointing at an invented screen position.
+  for(let step=1;step<=10;step++)for(const sign of [-1,1]) {
+    const fraction=.5+sign*step*.05,at=curve.getPoint(fraction);
+    if(visible(at,.96))return {at,fraction};
+  }
+  return middle;
 }
 function updateWireAdjustments() {
   const host=$('wire-adjustments');
@@ -5137,7 +5152,7 @@ window.machineReadoutCallouts=()=>{
   const rect=renderer.domElement.getBoundingClientRect();
   return {width:rect.width,height:rect.height,bodies:readoutBodyRects(rect),
     labels:[...powerFeedbackRows.values()].filter(r=>!r.card.hidden).map(r=>{
-      const box=r.card.getBoundingClientRect();return {wire:r.card.dataset.wire,device:r.card.dataset.device,
+      const box=r.card.getBoundingClientRect();return {wire:r.card.dataset.wire,device:r.card.dataset.device,anchor_fraction:r.anchorFraction,
         x:box.left-rect.left,y:box.top-rect.top,w:box.width,h:box.height,
         leader:r.leader.style.display!=='none',
         from:[Number(r.leader.getAttribute('x1')),Number(r.leader.getAttribute('y1'))],

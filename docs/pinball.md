@@ -273,11 +273,15 @@ The final layout includes a solid two-sided return gutter below its front
 edge. It catches either front lane and slopes toward a central opening;
 it does not teleport or elevate the ball. The short optional right inlane
 guide is left out of this beginner layout because its junction can form a
-resting pocket. Final qualification uses actual repeated flipper presses,
-then releases them, rather than treating the table as an automatic machine.
+resting pocket. Final qualification holds and releases the actual launcher,
+then lets the ball return. Blind timed flipper pulses were sensitive to
+nudged contact paths across Linux hosts and could keep or wedge the ball
+instead of draining it; they are not required by this launch-and-return goal.
+Lessons 5–8 and the Sandbox starter retain actual flipper press/release,
+contact, parallel-independence and empty-supply qualification.
 The authored goal remains the upper marker followed by the original central
 drain region within 25 seconds. The three reference/nudged trials reach it at
-6.317, 6.600 and 8.967 seconds on Linux after closing the upper launch-turn
+11.083, 6.600 and 8.967 seconds on local Linux after closing the upper launch-turn
 notch. Its rail now joins the outer wall (0.76 m rather than 0.60 m); a
 marble can no longer lodge between its endpoint and that wall. These are reference play sequences, not measured human
 completion times.

@@ -1151,7 +1151,7 @@ class Puzzles(unittest.TestCase):
                         const layout=machineReadoutCallouts();
                         const view=document.getElementById('view').getBoundingClientRect().toJSON();
                         const anchors=Object.fromEntries(layout.labels.filter(label=>label.wire)
-                            .map(label=>[label.wire,machineWireScreen(label.wire)]));
+                            .map(label=>[label.wire,machineWireScreen(label.wire,label.anchor_fraction)]));
                         resolve({layout,view,anchors});
                     }))''',await_promise=True)
                     layout=snapshot['layout']
@@ -1159,6 +1159,8 @@ class Puzzles(unittest.TestCase):
                     for label in layout['labels']:
                         self.assertTrue(label['x']<=8 or label['x']+label['w']>=layout['width']-8,(label,layout))
                         self.assertTrue(label['leader'],label)
+                        self.assertTrue(0<=label['from'][0]<=layout['width'] and
+                                        0<=label['from'][1]<=layout['height'],label)
                         self.assertGreaterEqual(label['y'],0);self.assertLessEqual(label['y']+label['h'],layout['height'])
                         for body in layout['bodies']:
                             overlap=(label['x']<body['x']+body['w'] and label['x']+label['w']>body['x'] and
